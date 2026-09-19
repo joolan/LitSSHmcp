@@ -1,0 +1,80 @@
+{
+  "servers": [
+    {
+      "id": "web-server-01",
+      "name": "Web服务器",
+      "host": "192.168.1.100",
+      "port": 22,
+      "username": "root",
+      "authType": "Password",
+      "password": "your-password-here",
+      "description": "生产环境Web服务器",
+      "tags": ["web", "production"],
+      "sudoType": "CurrentUser",
+      "sudoPassword": "your-sudo-password"
+    },
+    {
+      "id": "db-server-01",
+      "name": "数据库服务器",
+      "host": "192.168.1.101",
+      "port": 22,
+      "username": "admin",
+      "authType": "KeyFile",
+      "keyFilePath": "C:\\Users\\xxx\\.ssh\\id_rsa",
+      "description": "MySQL数据库服务器",
+      "tags": ["database", "production"],
+      "sudoType": "RootUser",
+      "sudoPassword": "root-password"
+    }
+  ],
+  "security": {
+    "commandFilter": {
+      "blockedCommands": [
+        "rm -rf /",
+        "mkfs",
+        "dd if=/dev/zero",
+        ":(){ :|:& };:",
+        "chmod -R 777 /",
+        "wget | sh",
+        "curl | sh"
+      ],
+      "sensitiveCommands": [
+        "rm ",
+        "chmod",
+        "chown",
+        "systemctl stop",
+        "systemctl restart",
+        "reboot",
+        "shutdown",
+        "kill",
+        "pkill",
+        "apt remove",
+        "yum remove",
+        "docker rm",
+        "docker stop"
+      ],
+      "sensitivePatterns": [
+        "\\brm\\b",
+        "\\bchmod\\b",
+        "\\bchown\\b",
+        "\\breboot\\b",
+        "\\bshutdown\\b",
+        "\\bkill\\b"
+      ]
+    },
+    "fileTransfer": {
+      "enabled": true,
+      "allowedLocalPaths": [
+        "C:\\Users\\xxx\\Desktop",
+        "C:\\Users\\xxx\\Documents"
+      ],
+      "allowedRemotePaths": [
+        "/home",
+        "/tmp",
+        "/var/log"
+      ],
+      "maxFileSizeBytes": 104857600,
+      "requireApproval": true
+    }
+  }
+}

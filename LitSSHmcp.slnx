@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LitSSHmcp.App/LitSSHmcp.App.csproj" />
+    <Project Path="src/LitSSHmcp.Cli/LitSSHmcp.Cli.csproj" />
+    <Project Path="src/LitSSHmcp.Core/LitSSHmcp.Core.csproj" />
+    <Project Path="src/LitSSHmcp.McpServer/LitSSHmcp.McpServer.csproj" />
+  </Folder>
+</Solution>

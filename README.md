@@ -3,8 +3,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![.NET](https://img.shields.io/badge/.NET-8.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://windows.com/)
+[![AI Assistant](https://img.shields.io/badge/AI%20Assistant-Opencode-blue.svg)](https://opencode.ai/)
 
 Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管理远程服务器。
+
+> 🤖 本项目使用 [Opencode](https://opencode.ai/) AI助手开发
 
 ## ✨ 功能特性
 

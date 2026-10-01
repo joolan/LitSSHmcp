@@ -1,0 +1,43 @@
+<Window x:Class="LitSSHmcp.App.Views.ToolGroupsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="工具分组设置" Height="560" Width="640"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="Gray"
+                   Text="选择要暴露给 AI 的工具分组。默认全部启用；分组的含义与包含的工具见 docs/TOOLS.md「工具分组」。修改保存后需重启 MCP 服务器（或让 AI 客户端重连）生效。"/>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Groups}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,4">
+                            <CheckBox Content="{Binding Label}" IsChecked="{Binding IsEnabled}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding Tools}" Foreground="Gray" FontSize="11"
+                                       Margin="20,1,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <TextBlock Grid.Row="2" Text="{Binding Warning}" Foreground="#B00020" TextWrapping="Wrap" Margin="0,6,0,0"/>
+
+        <DockPanel Grid.Row="3" Margin="0,8,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="启用全部" Width="80" Padding="6,4" Margin="0,0,6,0" Click="OnEnableAll"/>
+                <Button Content="全部停用" Width="80" Padding="6,4" Margin="0,0,6,0" Click="OnDisableAll"/>
+                <Button Content="重新加载" Width="80" Padding="6,4" Margin="0,0,6,0" Click="OnReload"/>
+                <Button Content="保存" Width="80" Padding="6,4" Click="OnSave"/>
+            </StackPanel>
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="Gray" TextTrimming="CharacterEllipsis"/>
+        </DockPanel>
+    </Grid>
+</Window>

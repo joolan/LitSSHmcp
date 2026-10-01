@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.Core.Services.Storage;
 using Renci.SshNet;
 
 namespace LitSSHmcp.Core.Services.SSH;
@@ -9,12 +11,23 @@ public class SshService : ISshService
 {
     private readonly string _logDir;
     private readonly object _logLock = new();
+    private readonly ISshKnownHostsStore? _knownHosts;
+    private readonly ISecurityOptionsProvider? _securityOptions;
+    private readonly ITargetLimiter? _targetLimiter;
 
     public SshService()
     {
-        _logDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs");
+        _logDir = ConfigPaths.LogsDir;
         if (!Directory.Exists(_logDir))
             Directory.CreateDirectory(_logDir);
+    }
+
+    public SshService(ISshKnownHostsStore knownHosts, ISecurityOptionsProvider securityOptions, ITargetLimiter targetLimiter)
+        : this()
+    {
+        _knownHosts = knownHosts;
+        _securityOptions = securityOptions;
+        _targetLimiter = targetLimiter;
     }
 
     private void Log(string message, string level = "INFO")
@@ -59,6 +72,9 @@ public class SshService : ISshService
     {
         return await Task.Run(() =>
         {
+            if (!TryAcquireTarget($"ssh:{server.Id}", out var lease, out var limitReason))
+                return RateLimitedCommand(limitReason);
+
             var sw = Stopwatch.StartNew();
             try
             {
@@ -95,6 +111,10 @@ public class SshService : ISshService
                     Duration = sw.Elapsed
                 };
             }
+            finally
+            {
+                lease?.Dispose();
+            }
         }, ct);
     }
 
@@ -102,6 +122,9 @@ public class SshService : ISshService
     {
         return await Task.Run(() =>
         {
+            if (!TryAcquireTarget($"ssh:{server.Id}", out var lease, out var limitReason))
+                return RateLimitedCommand(limitReason);
+
             var sw = Stopwatch.StartNew();
             try
             {
@@ -144,6 +167,10 @@ public class SshService : ISshService
                     ExitCode = -1,
                     Duration = sw.Elapsed
                 };
+            }
+            finally
+            {
+                lease?.Dispose();
             }
         }, ct);
     }
@@ -277,6 +304,9 @@ public class SshService : ISshService
     {
         return await Task.Run(() =>
         {
+            if (!TryAcquireTarget($"ssh:{server.Id}", out var lease, out var limitReason))
+                return RateLimitedFile(limitReason);
+
             var sw = Stopwatch.StartNew();
             try
             {
@@ -342,6 +372,10 @@ public class SshService : ISshService
                     Duration = sw.Elapsed
                 };
             }
+            finally
+            {
+                lease?.Dispose();
+            }
         }, ct);
     }
 
@@ -349,6 +383,9 @@ public class SshService : ISshService
     {
         return await Task.Run(() =>
         {
+            if (!TryAcquireTarget($"ssh:{server.Id}", out var lease, out var limitReason))
+                return RateLimitedFile(limitReason);
+
             var sw = Stopwatch.StartNew();
             var tempPath = localPath + ".tmp";
 
@@ -430,6 +467,10 @@ public class SshService : ISshService
                     Message = $"Download failed: {ex.Message}",
                     Duration = sw.Elapsed
                 };
+            }
+            finally
+            {
+                lease?.Dispose();
             }
         }, ct);
     }
@@ -626,35 +667,32 @@ public class SshService : ISshService
         }, ct);
     }
 
-    private SshClient CreateSshClient(SshServerConfig server)
+    private bool TryAcquireTarget(string key, out IDisposable? lease, out string? reason)
     {
-        if (server.AuthType == AuthType.KeyFile && !string.IsNullOrEmpty(server.KeyFilePath))
-        {
-            var keyFile = string.IsNullOrEmpty(server.KeyFilePassphrase)
-                ? new PrivateKeyFile(server.KeyFilePath)
-                : new PrivateKeyFile(server.KeyFilePath, server.KeyFilePassphrase);
-            return new SshClient(server.Host, server.Port, server.Username, keyFile);
-        }
+        lease = null;
+        reason = null;
+        if (_targetLimiter == null)
+            return true;
 
-        return new SshClient(server.Host, server.Port, server.Username, server.Password ?? string.Empty);
+        return _targetLimiter.TryAcquire(key, out lease, out reason);
     }
 
-    private SftpClient CreateSftpClient(SshServerConfig server)
+    private static CommandResult RateLimitedCommand(string? reason) => new()
     {
-        SftpClient client;
-        if (server.AuthType == AuthType.KeyFile && !string.IsNullOrEmpty(server.KeyFilePath))
-        {
-            var keyFile = string.IsNullOrEmpty(server.KeyFilePassphrase)
-                ? new PrivateKeyFile(server.KeyFilePath)
-                : new PrivateKeyFile(server.KeyFilePath, server.KeyFilePassphrase);
-            client = new SftpClient(server.Host, server.Port, server.Username, keyFile);
-        }
-        else
-        {
-            client = new SftpClient(server.Host, server.Port, server.Username, server.Password ?? string.Empty);
-        }
+        Success = false,
+        Error = $"操作被限流({reason})。该目标调用过于频繁或并发过高，请稍后重试。",
+        ExitCode = -1
+    };
 
-        client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(30);
-        return client;
-    }
+    private static FileTransferResult RateLimitedFile(string? reason) => new()
+    {
+        Success = false,
+        Message = $"操作被限流({reason})。该目标调用过于频繁或并发过高，请稍后重试。"
+    };
+
+    private SshClient CreateSshClient(SshServerConfig server) =>
+        SshClientFactory.Create(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);
+
+    private SftpClient CreateSftpClient(SshServerConfig server) =>
+        SshClientFactory.CreateSftp(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);
 }

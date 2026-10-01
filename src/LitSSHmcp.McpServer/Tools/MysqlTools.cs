@@ -1,0 +1,278 @@
+// 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
+//   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
+// 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
+using System.ComponentModel;
+using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Datasource;
+using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.Core.Services.Storage;
+using LitSSHmcp.McpServer.Services;
+using ModelContextProtocol.Server;
+
+namespace LitSSHmcp.McpServer.Tools;
+
+[McpServerToolType]
+public class MysqlTools
+{
+    private readonly IConfigService _configService;
+    private readonly IDatasourceDriverRegistry _driverRegistry;
+    private readonly ISqlFilterService _sqlFilter;
+    private readonly IApprovalService _approvalService;
+    private readonly IAuditLogService _auditLogService;
+    private readonly ISecurityOptionsProvider _securityOptions;
+
+    public MysqlTools(
+        IConfigService configService,
+        IDatasourceDriverRegistry driverRegistry,
+        ISqlFilterService sqlFilter,
+        IApprovalService approvalService,
+        IAuditLogService auditLogService,
+        ISecurityOptionsProvider securityOptions)
+    {
+        _configService = configService;
+        _driverRegistry = driverRegistry;
+        _sqlFilter = sqlFilter;
+        _approvalService = approvalService;
+        _auditLogService = auditLogService;
+        _securityOptions = securityOptions;
+    }
+
+    [McpServerTool(Name = "mysql_query", UseStructuredContent = true, OutputSchemaType = typeof(QueryResultDto), ReadOnly = true, OpenWorld = true)]
+    [Description("在MySQL数据源执行只读SQL(SELECT/SHOW/EXPLAIN/DESC/WITH)。写SQL用mysql_execute, 整体诊断用mysql_diagnostics")]
+    public async Task<QueryResultDto> MysqlQuery(
+        [Description("数据源ID, 可用datasource_list列出")] string datasourceId,
+        [Description("只读SQL语句")] string sql,
+        [Description("最大返回行数(默认100, 上限1000)")] int maxRows = 100)
+    {
+        var (ds, driver, config, status, error) = await ResolveAsync(datasourceId);
+        if (ds == null || driver == null) return QueryResultDto.Fail(status!, error!);
+
+        maxRows = Math.Clamp(maxRows, 1, 1000);
+        if (ds.MaxRows is int maxRowsCap && maxRowsCap > 0)
+            maxRows = Math.Min(maxRows, maxRowsCap);
+
+        var filterResult = _sqlFilter.CheckReadOnly(sql);
+        if (filterResult == SqlFilterResult.Blocked)
+        {
+            await AuditAsync(ds, SqlOperation.Query, sql, CommandStatus.Blocked,
+                "非只读或多语句或命中禁止规则, 只读查询仅允许 SELECT/SHOW/EXPLAIN/DESC/WITH");
+            return QueryResultDto.Fail("blocked",
+                "该语句不允许在只读查询工具中执行。mysql_query 仅允许 SELECT/SHOW/EXPLAIN/DESC/WITH。" +
+                "写操作请使用 mysql_execute(会经过安全过滤与用户审批)。");
+        }
+
+        using var cts = CreateTimeout(ds);
+        var result = await driver.QueryAsync(ds, sql, maxRows, cts.Token);
+
+        if (result.Success)
+            ResultMasker.Apply(result.Columns, result.Rows, config.Security.Masking);
+
+        await AuditAsync(ds, SqlOperation.Query, sql,
+            result.Success ? CommandStatus.Executed : CommandStatus.Failed,
+            result.Success ? $"rows={result.RowCount} truncated={result.Truncated}" : Truncate(result.Error, 500),
+            result.RowCount, result.DurationMs);
+
+        return new QueryResultDto
+        {
+            Success = result.Success,
+            Status = result.Success ? null : "query_error",
+            Error = result.Error,
+            DatasourceId = ds.Id,
+            Name = ds.Name,
+            Columns = result.Columns,
+            Rows = result.Rows,
+            RowCount = result.RowCount,
+            Truncated = result.Truncated,
+            DurationMs = result.DurationMs
+        };
+    }
+
+    [McpServerTool(Name = "mysql_execute", UseStructuredContent = true, OutputSchemaType = typeof(ExecuteResultDto), Destructive = true, OpenWorld = true)]
+    [Description("在MySQL数据源执行写SQL(INSERT/UPDATE/DELETE/DDL)。危险语句拒绝、敏感语句桌面确认; 只读用mysql_query")]
+    public async Task<ExecuteResultDto> MysqlExecute(
+        [Description("数据源ID, 可用datasource_list列出")] string datasourceId,
+        [Description("要执行的SQL语句(单条)")] string sql)
+    {
+        var (ds, driver, _, status, error) = await ResolveAsync(datasourceId);
+        if (ds == null || driver == null) return ExecuteResultDto.Fail(status!, error!);
+
+        if (ds.ReadOnly)
+        {
+            await AuditAsync(ds, SqlOperation.Execute, sql, CommandStatus.Blocked, "数据源为只读, 拒绝写操作");
+            return ExecuteResultDto.Fail("readonly_datasource", $"数据源 {ds.Name} 已配置为只读, 拒绝写操作。");
+        }
+
+        var keyword = SqlFilterConfig.GetFirstKeyword(sql);
+        if (keyword is "select" or "show" or "explain" or "desc" or "describe")
+            return ExecuteResultDto.Fail("readonly_statement", "这是只读语句, 请改用 mysql_query 执行。");
+
+        var filterResult = _sqlFilter.CheckWrite(sql);
+        if (filterResult == SqlFilterResult.Blocked)
+        {
+            await AuditAsync(ds, SqlOperation.Execute, sql, CommandStatus.Blocked, "命中SQL禁止规则");
+            return ExecuteResultDto.Fail("blocked",
+                "该SQL被安全策略禁止执行(如无WHERE的DELETE/UPDATE、DROP TABLE/DATABASE、GRANT等)。" +
+                "被禁止的语句不会以任何方式执行。");
+        }
+
+        if (filterResult == SqlFilterResult.Sensitive)
+        {
+            if (ds.WriteApproval == WriteApprovalMode.AutoApprove)
+            {
+                await AuditAsync(ds, SqlOperation.Execute, sql, CommandStatus.Approved, "数据源策略自动放行(WriteApproval=AutoApprove)");
+            }
+            else
+            {
+                var approved = await _approvalService.RequestApprovalAsync(
+                    $"数据源 {ds.Name}", sql, CommandFilterResult.Sensitive, null, "SQL写操作");
+
+                if (!approved)
+                {
+                    await AuditAsync(ds, SqlOperation.Execute, sql, CommandStatus.Rejected, "用户拒绝");
+                    return ExecuteResultDto.Fail("rejected", "敏感SQL被用户拒绝执行。");
+                }
+
+                await AuditAsync(ds, SqlOperation.Execute, sql, CommandStatus.Approved, "用户批准");
+            }
+        }
+
+        using var cts = CreateTimeout(ds);
+        var result = await driver.ExecuteAsync(ds, sql, cts.Token);
+
+        await AuditAsync(ds, SqlOperation.Execute, sql,
+            result.Success ? CommandStatus.Executed : CommandStatus.Failed,
+            result.Success ? $"rowsAffected={result.RowsAffected}" : Truncate(result.Error, 500),
+            result.RowsAffected, result.DurationMs);
+
+        return new ExecuteResultDto
+        {
+            Success = result.Success,
+            Status = result.Success ? null : "execute_error",
+            Error = result.Error,
+            DatasourceId = ds.Id,
+            Name = ds.Name,
+            RowsAffected = result.RowsAffected,
+            DurationMs = result.DurationMs
+        };
+    }
+
+    [McpServerTool(Name = "mysql_explain", UseStructuredContent = true, OutputSchemaType = typeof(QueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
+    [Description("对SQL执行EXPLAIN分析执行计划(排查慢查询/优化)")]
+    public async Task<QueryResultDto> MysqlExplain(
+        [Description("数据源ID, 可用datasource_list列出")] string datasourceId,
+        [Description("要分析的SELECT语句")] string sql)
+    {
+        var (ds, driver, _, status, error) = await ResolveAsync(datasourceId);
+        if (ds == null || driver == null) return QueryResultDto.Fail(status!, error!);
+
+        var filterResult = _sqlFilter.CheckReadOnly(sql);
+        if (filterResult == SqlFilterResult.Blocked)
+            return QueryResultDto.Fail("blocked", "EXPLAIN 仅接受只读SELECT/WITH语句。");
+
+        using var cts = CreateTimeout(ds);
+        var result = await driver.ExplainAsync(ds, sql, cts.Token);
+
+        await AuditAsync(ds, SqlOperation.Explain, $"EXPLAIN {Truncate(sql, 400)}",
+            result.Success ? CommandStatus.Executed : CommandStatus.Failed,
+            result.Success ? $"rows={result.RowCount}" : Truncate(result.Error, 500),
+            result.RowCount, result.DurationMs);
+
+        return new QueryResultDto
+        {
+            Success = result.Success,
+            Status = result.Success ? null : "explain_error",
+            Error = result.Error,
+            DatasourceId = ds.Id,
+            Name = ds.Name,
+            Columns = result.Columns,
+            Rows = result.Rows,
+            RowCount = result.RowCount,
+            DurationMs = result.DurationMs
+        };
+    }
+
+    [McpServerTool(Name = "mysql_diagnostics", UseStructuredContent = true, OutputSchemaType = typeof(DiagnosticsResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
+    [Description("MySQL整体诊断: 连接数/慢查询/锁/复制/进程列表。问'数据库慢/卡/连接数暴涨'时优先用; 查具体数据用mysql_query")]
+    public async Task<DiagnosticsResultDto> MysqlDiagnostics(
+        [Description("数据源ID, 可用datasource_list列出")] string datasourceId)
+    {
+        var (ds, driver, _, status, error) = await ResolveAsync(datasourceId);
+        if (ds == null || driver == null) return DiagnosticsResultDto.Fail(status!, error!);
+
+        using var cts = CreateTimeout(ds);
+        var result = await driver.DiagnoseAsync(ds, cts.Token);
+
+        await AuditAsync(ds, SqlOperation.Diagnostics, "-- diagnostics",
+            result.Success ? CommandStatus.Executed : CommandStatus.Failed,
+            result.Success ? Truncate(result.Summary, 500) : Truncate(result.Error, 500),
+            null, result.DurationMs);
+
+        return new DiagnosticsResultDto
+        {
+            Success = result.Success,
+            Status = result.Success ? null : "diagnostics_error",
+            Error = result.Error,
+            DatasourceId = ds.Id,
+            Name = ds.Name,
+            Summary = result.Summary,
+            Data = result.Data,
+            DurationMs = result.DurationMs
+        };
+    }
+
+    private async Task<(DataSourceConfig? Ds, IDatasourceDriver? Driver, AppConfig Config, string? Status, string? Error)> ResolveAsync(string datasourceId)
+    {
+        var config = await _configService.LoadConfigAsync();
+        var ds = config.DataSources.FirstOrDefault(d => d.Id == datasourceId);
+        if (ds == null)
+            return (null, null, config, "datasource_not_found", $"数据源未找到: {datasourceId}。可用ID见 datasource_list。");
+
+        if (!ds.Type.Equals("mysql", StringComparison.OrdinalIgnoreCase))
+            return (null, null, config, "unsupported_type",
+                $"数据源 {ds.Name} 的类型是 {ds.Type}, 不是 mysql。MySQL 工具只能在 type=mysql 的数据源上执行。");
+
+        var driver = _driverRegistry.Get(ds.Type);
+        if (driver == null)
+            return (null, null, config, "unsupported_type", $"暂不支持的数据源类型: {ds.Type}");
+
+        return (ds, driver, config, null, null);
+    }
+
+    // 每数据源命令超时（秒）；未配置时使用默认 30s
+    private static CancellationTokenSource CreateTimeout(DataSourceConfig ds) =>
+        ds.TimeoutSeconds is int s && s > 0
+            ? new CancellationTokenSource(TimeSpan.FromSeconds(s))
+            : new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+    private async Task AuditAsync(
+        DataSourceConfig ds,
+        SqlOperation operation,
+        string sql,
+        CommandStatus status,
+        string? result,
+        long? rows = null,
+        double? durationMs = null)
+    {
+        var audit = _securityOptions.Audit;
+        var storedSql = audit.StoreSqlText
+            ? (audit.MaskLiterals ? SqlRedactor.Mask(sql) : sql)
+            : "[未记录: storeSqlText=false]";
+
+        await _auditLogService.LogSqlAsync(new SqlAuditLog
+        {
+            DataSourceId = ds.Id,
+            DataSourceName = ds.Name,
+            Operation = operation,
+            Sql = storedSql.Length > 4000 ? storedSql[..4000] + "..." : storedSql,
+            Status = status,
+            Result = result,
+            RowsAffected = rows,
+            DurationMs = durationMs
+        });
+    }
+
+    private static string Truncate(string? value, int max) =>
+        string.IsNullOrEmpty(value) ? string.Empty : (value.Length <= max ? value : value[..max] + "...");
+}

@@ -27,6 +27,61 @@
       "sudoPassword": "root-password"
     }
   ],
+  "dataSources": [
+    {
+      "id": "mysql-order-01",
+      "name": "订单库",
+      "type": "mysql",
+      "host": "192.168.1.101",
+      "port": 3306,
+      "username": "order_app",
+      "password": "enc:xxxx (DPAPI密文, 由管理界面保存时自动生成, 切勿手工填明文以外的占位符)",
+      "defaultDatabase": "orders",
+      "accessMode": "sshTunnel",
+      "tunnelServerId": "db-server-01",
+      "description": "订单服务主库, 经数据库服务器隧道访问",
+      "tags": ["production", "order"]
+    }
+  ],
+  "applications": [
+    {
+      "id": "order-service",
+      "name": "订单服务",
+      "type": "java",
+      "port": 8080,
+      "host": "192.168.1.100",
+      "description": "运行在Web服务器上的Java应用",
+      "tags": ["production"]
+    },
+    {
+      "id": "order-worker",
+      "name": "订单Worker",
+      "type": "docker",
+      "containerName": "order-worker",
+      "host": "192.168.1.100",
+      "description": "Docker 容器应用; AI 用 ssh_execute_command 走 docker 管理",
+      "tags": ["production", "docker"]
+    }
+  ],
+  "relations": [
+    { "from": "app:order-service", "to": "ssh:web-server-01", "type": "runsOn", "note": "订单服务部署在Web服务器" },
+    { "from": "app:order-worker", "to": "ssh:web-server-01", "type": "runsOn", "note": "订单Worker容器运行在Web服务器" },
+    { "from": "app:order-service", "to": "ds:mysql-order-01", "type": "connectsTo", "note": "订单服务连接订单库" },
+    { "from": "ssh:web-server-01", "to": "ds:mysql-order-01", "type": "canAccess", "note": "Web服务器可访问订单库" }
+  ],
+  "tools": {
+    "enabledGroups": [
+      "ssh",
+      "command",
+      "fileTransfer",
+      "datasource",
+      "mysql",
+      "postgres",
+      "redis",
+      "topology",
+      "guide"
+    ]
+  },
   "security": {
     "commandFilter": {
       "blockedCommands": [
@@ -36,7 +91,15 @@
         ":(){ :|:& };:",
         "chmod -R 777 /",
         "wget | sh",
-        "curl | sh"
+        "curl | sh",
+        "docker system prune",
+        "docker volume prune",
+        "docker network prune",
+        "docker volume rm",
+        "docker service rm",
+        "docker swarm leave",
+        "docker run --privileged",
+        "docker run -v /"
       ],
       "sensitiveCommands": [
         "rm ",
@@ -51,7 +114,15 @@
         "apt remove",
         "yum remove",
         "docker rm",
-        "docker stop"
+        "docker rmi",
+        "docker kill",
+        "docker stop",
+        "docker restart",
+        "docker run",
+        "docker exec",
+        "docker cp",
+        "docker compose down",
+        "docker compose rm"
       ],
       "sensitivePatterns": [
         "\\brm\\b",
@@ -75,6 +146,66 @@
       ],
       "maxFileSizeBytes": 104857600,
       "requireApproval": true
+    },
+    "sqlFilter": {
+      "readOnlyStatements": ["select", "show", "explain", "desc", "describe", "with", "table", "help", "use"],
+      "blockedPatterns": [
+        "\\bdrop\\s+(database|table|user|index)\\b",
+        "\\btruncate\\b",
+        "\\bgrant\\b",
+        "\\brevoke\\b",
+        "\\bcreate\\s+user\\b",
+        "\\bset\\s+password\\b",
+        "\\bflush\\s+privileges\\b",
+        "\\bshutdown\\b",
+        "\\binto\\s+(outfile|dumpfile)\\b",
+        "\\bload\\s+file\\s*\\(",
+        "\\bdelete\\s+from\\b(?![^;]*\\bwhere\\b)",
+        "\\bupdate\\b(?![^;]*\\bwhere\\b)"
+      ],
+      "sensitivePatterns": [
+        "\\binsert\\b",
+        "\\bupdate\\b",
+        "\\bdelete\\b",
+        "\\balter\\b",
+        "\\brename\\b",
+        "\\bcreate\\b",
+        "\\bcall\\b",
+        "\\bkill\\b",
+        "\\bload\\s+data\\b",
+        "\\bset\\s+global\\b",
+        "\\block\\s+tables?\\b",
+        "\\bunlock\\s+tables?\\b",
+        "\\btruncate\\b",
+        "\\bdrop\\b"
+      ]
+    },
+    "sshHostKey": {
+      "mode": "tofu"
+    },
+    "discovery": {
+      "allowedSearchPaths": ["/opt", "/home", "/srv", "/app", "/data"]
+    },
+    "limits": {
+      "maxConcurrentPerTarget": 3,
+      "maxCallsPerMinutePerTarget": 60
+    },
+    "audit": {
+      "storeSqlText": true,
+      "maskLiterals": false,
+      "retentionDays": 90
+    },
+    "masking": {
+      "rules": [
+        { "column": "phone|mobile", "mode": "phone" },
+        { "column": "idcard", "mode": "last4" }
+      ]
+    },
+    "approval": {
+      "style": "process",
+      "channels": ["desktop"],
+      "timeoutSeconds": 120,
+      "topMost": true
     }
   }
 }

@@ -5,35 +5,76 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://windows.com/)
 [![AI Assistant](https://img.shields.io/badge/AI%20Assistant-Opencode-blue.svg)](https://opencode.ai/)
 
-Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管理远程服务器。
+Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管理远程服务器，并集成 MySQL / PostgreSQL / Redis 数据源与资产拓扑，支撑跨服务器/应用(含Docker容器)/数据库的全链路故障排查。
 
 > 🤖 本项目使用 [Opencode](https://opencode.ai/) AI助手开发
+
+## 📚 文档导航
+
+| 文档 | 内容 |
+|------|------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计：分层结构、核心模块、安全模型、拓扑模型、线程模型、扩展点 |
+| [docs/TOOLS.md](docs/TOOLS.md) | 29个MCP工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | 迭代历史：每个版本的新增/修复/变更记录 |
+| [docs/UPGRADE_PLAN.md](docs/UPGRADE_PLAN.md) | 升级方案（Roadmap）：安全、可视化配置、运维、质量的分期计划 |
 
 ## ✨ 功能特性
 
 ### MCP Tools (AI可调用的工具)
 
+> 完整的工具参数/返回/用法与"用户意图 → 工具"路由表见 [docs/TOOLS.md](docs/TOOLS.md)（**唯一事实来源**），也可在 App 菜单 **MCP工具说明** 中查看并一键复制到提示词。工具发生变动时，MCP 服务器端注解、`docs/TOOLS.md`、App 展示三处必须同步（各处均有"同步约定"注释）。各工具 `[Description]` 保持精简（1~2 句 + 关键互斥提示），详细路由以 `docs/TOOLS.md` 为准，避免工具清单挤占 AI 上下文。
+
 | Tool | 描述 |
 |------|------|
-| `list_servers` | 列出所有已配置的SSH服务器 |
-| `execute_command` | 在指定服务器执行Shell命令 |
-| `execute_with_sudo` | 使用提权执行命令（权限不足时使用） |
-| `get_sudo_status` | 获取服务器提权配置状态 |
-| `get_server_status` | 获取服务器连接状态 |
-| `test_connection` | 测试SSH连接 |
-| `get_command_history` | 查看命令执行历史 |
-| `upload_file` | 上传本地文件到服务器 |
-| `download_file` | 从服务器下载文件到本地 |
-| `list_remote_files` | 浏览服务器目录 |
-| `get_usage_guide` | 获取使用指南 |
+| `ssh_list_servers` | 列出所有已配置的SSH服务器 |
+| `ssh_execute_command` | 在指定服务器执行Shell命令 |
+| `ssh_execute_sudo` | 使用提权执行命令（权限不足时使用） |
+| `ssh_get_sudo_status` | 获取服务器提权配置状态 |
+| `ssh_get_server_status` | 获取服务器连接状态 |
+| `ssh_test_connection` | 测试SSH连接 |
+| `ssh_get_command_history` | 查看命令执行历史 |
+| `ssh_upload_file` | 上传本地文件到服务器 |
+| `ssh_download_file` | 从服务器下载文件到本地 |
+| `ssh_list_files` | 浏览服务器目录 |
+| `datasource_list` | 列出MySQL/PostgreSQL/Redis等数据源（主机/端口/账号/绑定关系，**无密码**） |
+| `datasource_test_connection` | 测试数据库连通性（直连或SSH隧道） |
+| `mysql_query` | 只读SQL查询（SELECT/SHOW/EXPLAIN） |
+| `mysql_execute` | 写SQL（危险语句拒绝，敏感语句桌面审批） |
+| `mysql_explain` | SQL执行计划分析 |
+| `mysql_diagnostics` | MySQL诊断：连接数/慢查询/锁/复制/进程列表 |
+| `postgres_query` | 只读SQL查询（PostgreSQL） |
+| `postgres_execute` | 写SQL（PostgreSQL，危险语句拒绝，敏感语句审批） |
+| `postgres_explain` | SQL执行计划分析（PostgreSQL） |
+| `postgres_diagnostics` | PostgreSQL诊断：连接/活动会话/等待锁/复制/缓存命中/死锁 |
+| `redis_read` | Redis只读命令（GET/HGETALL/INFO/SCAN/SLOWLOG等白名单） |
+| `redis_execute` | Redis写/管理命令（一律桌面审批，危险命令直接拒绝） |
+| `redis_diagnostics` | Redis诊断：内存/客户端/命中率/键空间/慢日志/主从/持久化 |
+| `datasource_get_sql_history` | SQL与Redis命令审计历史 |
+| `topology_get_overview` | 资产拓扑图（服务器/应用/数据库及关系） |
+| `topology_get_dependencies` | 查询某资产的上下游依赖 |
+| `topology_discover` | 自动发现拓扑（java进程/网络连接/JDBC配置/docker容器/processlist） |
+| `mcp_usage_guide` | 获取使用指南 |
+| `mcp_self_check` | MCP 自检（配置/审计/主机密钥，可测连通性） |
+
+各工具的适用场景与参数详见 [docs/TOOLS.md](docs/TOOLS.md)。
+
+**工具分组（可选，按部署裁剪）**：默认暴露全部 29 个工具；可在 App 菜单 **配置 → 工具分组设置** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `topology` / `guide`），降低 AI 上下文占用与误选。留空/不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。分组与工具对应表见 [docs/TOOLS.md](docs/TOOLS.md)。
 
 ### 安全控制
 
 - **禁止命令列表**: 直接拒绝执行危险命令
 - **敏感命令列表**: 弹出桌面窗口提示用户确认后执行
-- **文件传输审批**: 上传/下载文件需要用户确认
-- **审计日志**: 记录所有命令执行历史
+- **授权确认弹窗**: 置顶确认框，默认 **120 秒无操作自动拒绝**；可选独立子进程/原生弹窗样式（`security.approval`）
+- **审批通道（带外）**: `security.approval.channels` 可选 `cli` —— 无桌面/headless 时操作员用 `litssh approvals` 查看、`litssh approve <id>` / `litssh deny <id>` 决定（首个决定者生效，超时拒绝）
+- **文件传输审批**: 上传/下载需用户确认，并受**本地/远程路径白名单**与大小上限约束（`allowedLocalPaths` / `allowedRemotePaths` / `maxFileSizeBytes`）
+- **主机密钥校验(TOFU)**: 首次连接记录 SSH 主机指纹，之后指纹变化即拒绝（`security.sshHostKey.mode = tofu|strict|off`）
+- **按目标限流**: 单服务器/数据源的并发数与每分钟调用上限（`security.limits`）
+- **审计日志**: 记录所有命令与 SQL（含被拒绝的），支持 SQL 原文开关、字面量脱敏、**超期记录归档到历史表永久保留**；审计写入 **HMAC-SHA256 哈希链**，可在「审计日志」中**校验完整性**检测篡改（`security.audit`）
 - **提权执行**: 权限不足时可使用sudo提权
+- **凭据隔离**: 数据库/SSH账号密码仅保存在MCP本机（DPAPI加密落盘），任何MCP工具的入参与出参都不包含密码，AI智能体只能通过`datasourceId`引用数据源
+- **SQL安全过滤**: `mysql_query`仅允许只读语句；`mysql_execute`中无WHERE的DELETE/UPDATE、DROP TABLE/DATABASE、GRANT等直接拒绝，其余敏感写语句需用户桌面确认
+- **Redis安全策略**: `redis_read`只放行只读白名单命令；`redis_execute`第一期**所有写操作一律桌面审批**，FLUSHALL/SHUTDOWN/DEBUG/SUBSCRIBE等危险与阻塞类命令直接拒绝（不会执行），Redis命令同样写审计
+- **Docker 安全规则**: 默认拒绝 `docker system prune`/`docker volume rm`/`docker network prune`/`docker run --privileged` 等；`docker rm/rmi/kill/stop/restart/run/exec/compose down` 等写操作需桌面确认（只读的 `docker ps/logs/inspect/stats` 不受限）
 
 ## 🚀 快速开始
 
@@ -41,6 +82,7 @@ Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管�
 
 ```bash
 dotnet build LitSSHmcp.slnx
+dotnet test LitSSHmcp.slnx   # 全部测试(Core 单测 + MCP 服务器层一致性)
 ```
 
 ### 2. 发布为独立exe
@@ -59,7 +101,17 @@ dotnet publish src/LitSSHmcp.McpServer -c Release -r win-x64 --self-contained -o
 dotnet run --project src/LitSSHmcp.App
 ```
 
-打开管理界面后，点击"添加"按钮配置SSH服务器。
+打开管理界面后：顶部菜单分为 **资产**（数据源管理 / 应用管理 / 拓扑关系管理 / 资产拓扑图）、**安全**（安全设置）、**审计**（审计日志）、**配置**（工具分组设置 / 导出配置 / 导入配置）、**MCP工具说明**（MCP 介绍 + 29 个工具的用途/参数/用法与意图路由）。
+
+主界面为轻量客户端布局：**左侧**是 SSH 服务器列表（每项两行显示 名称 + `主机:端口`），顶部仅 **添加 / 刷新**，条目**右键菜单**为 连接 / 编辑 / 删除，**双击**即连接。连接后在右侧打开一个**会话标签页**：可执行命令、查看输出与最近活动、测试连接，标签顶部 `✕` 可关闭会话。
+
+- **数据源管理**：维护 MySQL / PostgreSQL / Redis 等数据源；顶部仅 **添加 / 刷新**，条目标**右键菜单**为 测试连接 / 编辑 / 删除，双击也可编辑（类型切换时自动带出对应默认端口 3306/5432/6379）；可设置**治理**项（只读、最大行数、超时、写审批策略）。密码仅本机 DPAPI 加密保存、不对 AI 开放。删除时会提示并级联清理引用它的关系。
+- **应用管理**：维护 `app:` 应用节点（名称/类型/端口/主机/描述）；Docker 应用把类型填 `docker` 并填**容器名**（与 `docker ps` 的 NAMES 一致），AI 即可用 SSH 工具管理；顶部 **添加 / 刷新**，条目**右键菜单**为 编辑 / 删除，双击也可编辑。
+- **拓扑关系管理**：声明 `runsOn` / `connectsTo` / `canAccess` 关系（节点与类型均可下拉选择，选中可回填编辑）；**添加/更新时做逻辑校验**（如 `runsOn` 只能是 应用/数据库→服务器，`connectsTo` 只能 应用→数据库，`canAccess` 只能 服务器→数据库，禁止自环），非法关系会被拒绝并提示原因。
+- **资产拓扑图**：可视化服务器/应用/数据库及关系（`runsOn` 内嵌显示、节点悬浮看详情、支持自动发现）。
+- **安全设置**：可视化编辑命令/SQL 过滤、文件传输、主机密钥、限流、审计策略、**授权弹窗样式与审批通道**、**查询结果列级脱敏**。
+- **审计日志**：查看命令/SQL 审计；支持按 服务器/数据源ID 筛选 + **命令关键字模糊查询**、复制、导出 CSV、**含归档**（超期记录永久保留）与 **校验完整性**（哈希链防篡改）。
+- **MCP工具说明**：在 AI 智能体里更准确地使用 MCP —— 展示 MCP 接入配置（stdio + 客户端配置样例）、意图 → 工具路由表，以及 29 个工具的参数/返回/使用要点；左侧按分组浏览、可搜索，支持**复制本节 / 复制全部说明**粘贴到提示词。内容与 `docs/TOOLS.md`、MCP 服务器端工具注解**双向同步**（工具变动时三处一起改，代码内有同步约定注释）。
 
 **方式二：手动编辑配置文件**
 
@@ -80,20 +132,89 @@ dotnet run --project src/LitSSHmcp.App
       "sudoPassword": "your-sudo-password"
     }
   ],
+  "dataSources": [
+    {
+      "id": "mysql-order-01",
+      "name": "订单库",
+      "type": "mysql",
+      "host": "192.168.1.101",
+      "port": 3306,
+      "username": "order_app",
+      "password": "your-db-password",
+      "defaultDatabase": "orders",
+      "accessMode": "sshTunnel",
+      "tunnelServerId": "my-server"
+    },
+    {
+      "id": "redis-cache-01",
+      "name": "缓存",
+      "type": "redis",
+      "host": "192.168.1.101",
+      "port": 6379,
+      "username": "",
+      "password": "your-redis-password",
+      "defaultDatabase": "0",
+      "accessMode": "sshTunnel",
+      "tunnelServerId": "my-server"
+    },
+    {
+      "id": "pg-report-01",
+      "name": "报表库",
+      "type": "postgres",
+      "host": "192.168.1.101",
+      "port": 5432,
+      "username": "report_app",
+      "password": "your-pg-password",
+      "defaultDatabase": "report",
+      "accessMode": "sshTunnel",
+      "tunnelServerId": "my-server",
+      "readOnly": true,
+      "maxRows": 500,
+      "timeoutSeconds": 30,
+      "writeApproval": "Always"
+    }
+  ],
+  "applications": [
+    { "id": "order-service", "name": "订单服务", "type": "java", "port": 8080, "host": "192.168.1.100" },
+    { "id": "order-worker", "name": "订单Worker", "type": "docker", "containerName": "order-worker", "host": "192.168.1.100" }
+  ],
+  "relations": [
+    { "from": "app:order-service", "to": "ssh:my-server", "type": "runsOn" },
+    { "from": "app:order-worker", "to": "ssh:my-server", "type": "runsOn" },
+    { "from": "app:order-service", "to": "ds:mysql-order-01", "type": "connectsTo" },
+    { "from": "ssh:my-server", "to": "ds:mysql-order-01", "type": "canAccess" }
+  ],
+  "tools": {
+    "enabledGroups": ["ssh", "command", "datasource", "mysql", "postgres", "redis", "topology", "guide"]
+  },
   "security": {
     "commandFilter": {
       "blockedCommands": ["rm -rf /", "mkfs", "dd if=/dev/zero"],
       "sensitiveCommands": ["rm ", "chmod", "reboot", "shutdown"],
       "sensitivePatterns": ["\\brm\\b", "\\bchmod\\b"]
     },
+    "sqlFilter": {
+      "blockedPatterns": ["\\btruncate\\b", "\\bgrant\\b"],
+      "sensitivePatterns": ["\\binsert\\b", "\\bupdate\\b", "\\bdelete\\b"]
+    },
     "fileTransfer": {
       "enabled": true,
       "requireApproval": true,
-      "maxFileSizeBytes": 104857600
-    }
+      "maxFileSizeBytes": 104857600,
+      "allowedLocalPaths": ["C:\\Users\\you\\Desktop"],
+      "allowedRemotePaths": ["/home", "/tmp", "/var/log"]
+    },
+    "sshHostKey": { "mode": "tofu" },
+    "discovery": { "allowedSearchPaths": ["/opt", "/home", "/srv", "/app", "/data"] },
+    "limits": { "maxConcurrentPerTarget": 3, "maxCallsPerMinutePerTarget": 60 },
+    "audit": { "storeSqlText": true, "maskLiterals": false, "retentionDays": 90 },
+    "masking": { "rules": [ { "column": "phone|mobile", "mode": "phone" } ] },
+    "approval": { "style": "process", "channels": ["desktop"], "timeoutSeconds": 120, "topMost": true }
   }
 }
 ```
+
+> 所有明文密码在保存/加载时会自动迁移为DPAPI密文（`enc:`前缀），仅当前Windows用户可解密。完整字段示例见 [`config/config.example.json`](config/config.example.json)；访问模式、拓扑关系类型、审批弹窗样式等含义详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ### 4. 在AI客户端中配置MCP
 
@@ -175,7 +296,7 @@ dotnet run --project src/LitSSHmcp.App
 请列出所有SSH服务器
 ```
 
-AI会调用 `list_servers` 工具返回服务器列表。
+AI会调用 `ssh_list_servers` 工具返回服务器列表。
 
 ## 📖 使用示例
 
@@ -191,7 +312,7 @@ AI会调用 `list_servers` 工具返回服务器列表。
 查看nginx进程状态（需要root权限）
 ```
 
-AI会自动使用 `execute_with_sudo` 工具提权执行。
+AI会自动使用 `ssh_execute_sudo` 工具提权执行。
 
 ### 文件传输
 
@@ -202,6 +323,50 @@ AI会自动使用 `execute_with_sudo` 工具提权执行。
 ```
 下载服务器上的 /var/log/nginx/access.log 到桌面
 ```
+
+### 数据源与拓扑排查
+
+```
+订单服务报错了，帮我排查一下
+```
+
+AI的典型排查链路：
+
+1. `topology_get_overview` 拿到全局拓扑：订单服务（Java）运行在哪台SSH服务器、连接了哪个MySQL
+2. `topology_get_dependencies(app:order-service)` 精确获取上下游依赖
+3. SSH侧：`ssh_execute_command` 查看 java 进程、端口、应用日志中的数据库连接异常
+4. 数据库侧：`mysql_diagnostics` 看连接数/慢查询/锁等待/复制状态，`mysql_query` 查 `SHOW FULL PROCESSLIST` 与慢日志，`mysql_explain` 分析问题SQL；涉及缓存时用 `redis_diagnostics` 看内存/命中率/慢日志、`redis_read` 查具体key
+5. 跨机关联：应用日志里的数据库IP与 `datasource_list` 返回的 `host/port` 对应，即可确认是哪个数据源（MySQL 3306 / Redis 6379 皆可匹配）
+6. 拓扑过期时用 `topology_discover` 自动补全（扫描java进程、ESTAB连接、配置文件JDBC地址、docker容器、MySQL processlist）
+
+### 资产拓扑可视化
+
+在 WPF 界面 **资产 → 资产拓扑图** 中查看：
+
+- **`runsOn` 以嵌套呈现**：应用与数据库若声明了 `runsOn` 关系，会显示在所属服务器区块内部（一眼看出某台服务器上运行着哪些应用/MySQL）；服务器标题下标注 `N 应用 / M 数据库`。
+- **端口展示**：节点标题带端口（如 `订单库 :3306`、`缓存 :6379`、`web-01 :22`）。
+- **连线带类型**：`connectsTo`（应用→数据库）、`canAccess`（服务器→数据库）；`topology_discover` 自动发现的关系用虚线区分。
+- **悬浮看详情**：鼠标悬停节点显示主机/端口/账号/类型/描述/标签（**密码等敏感信息不展示**）。
+- 多个应用连接同一个数据库会各自绘制一条 `connectsTo`。
+
+关系示例：
+
+```
+app:order-service  --runsOn-->     ssh:web-server-01    # 应用运行在服务器
+ds:mysql-order-01  --runsOn-->     ssh:db-server-01     # MySQL 运行在服务器(数据库也可 runsOn)
+app:order-service  --connectsTo--> ds:mysql-order-01    # 应用连接数据库
+ssh:web-server-01  --canAccess-->  ds:mysql-order-01    # 服务器可访问数据库
+```
+
+### 授权确认弹窗
+
+敏感操作（敏感命令、敏感 SQL、文件传输）会弹出确认框，默认 **置顶** 且 **120 秒无操作自动拒绝**。样式由 `security.approval.style` 控制：
+
+- `process`（推荐）：启动独立子进程显示弹窗，规避部分宿主（如 Electron 客户端）的隐藏窗口问题；
+- `dialog`：MCP 进程内显示；
+- `native`：原生置顶 MessageBox（无超时）。
+
+审批**通道**由 `security.approval.channels` 控制：`desktop`（本机弹窗）/ `cli`（带外，操作员用 `litssh approvals` 查看、`litssh approve/deny <id>` 决定）；可同时启用，**首个给出决定者生效**，超时或所有通道不可用则拒绝（fail-closed）。
 
 ## 🔐 提权配置
 
@@ -219,30 +384,6 @@ AI会自动使用 `execute_with_sudo` 工具提权执行。
 - `sudo command` 需要输入**当前SSH用户**的密码
 - 如果sudoers配置了 `NOPASSWD`，则不需要密码
 - root用户执行sudo不需要密码
-
-## 📁 项目结构
-
-```
-LitSSHmcp/
-├── LitSSHmcp.slnx                    # 解决方案文件
-├── README.md                         # 使用说明
-├── LICENSE                           # MIT协议
-├── .gitignore                        # Git忽略文件
-├── config/
-│   └── config.example.json           # 配置文件示例
-└── src/
-    ├── LitSSHmcp.Core/               # 核心业务逻辑
-    │   ├── Models/                   # 数据模型
-    │   └── Services/                 # SSH、安全、存储服务
-    ├── LitSSHmcp.McpServer/          # MCP服务器(Stdio传输)
-    │   ├── Program.cs                # 入口点
-    │   └── Tools/                    # 11个MCP Tools
-    ├── LitSSHmcp.App/                # WPF桌面管理界面
-    │   ├── Views/                    # 窗口界面
-    │   └── ViewModels/               # MVVM视图模型
-    └── LitSSHmcp.Cli/                # 命令行SSH工具
-        └── Program.cs                # CLI入口
-```
 
 ## 🛠️ 命令行工具 (CLI)
 
@@ -266,11 +407,16 @@ litssh connect web-server
 # 在服务器上执行单条命令
 litssh run web-server "df -h"
 litssh run my-server "docker ps"
+
+# 带外审批(无桌面/headless 时)
+litssh approvals            # 列出待审批的敏感操作
+litssh approve <审批ID>     # 批准
+litssh deny <审批ID>        # 拒绝
 ```
 
 ## 🤝 贡献
 
-欢迎贡献！请提交Issue或Pull Request。
+欢迎贡献！请提交Issue或Pull Request。架构与开发约定见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## 📄 许可证
 

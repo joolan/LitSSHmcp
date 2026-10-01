@@ -1,0 +1,41 @@
+<Window x:Class="LitSSHmcp.App.Views.ApplicationEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding WindowTitle}" Height="430" Width="440"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="名称 *" FontWeight="SemiBold" Margin="0,0,0,2"/>
+            <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+
+            <TextBlock Text="类型 (java/nginx/docker/...)" Margin="0,0,0,2"/>
+            <TextBox Text="{Binding Type, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+
+            <TextBlock Text="Docker 容器名 (可选, type=docker 时填, 用于匹配容器)" Margin="0,0,0,2"/>
+            <TextBox Text="{Binding ContainerName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"
+                     ToolTip="与 'docker ps' 的 NAMES 一致；拓扑发现据此自动建立 应用→服务器 关系"/>  
+
+            <TextBlock Text="主机 (可选)" Margin="0,0,0,2"/>
+            <TextBox Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+
+            <TextBlock Text="端口 (可选)" Margin="0,0,0,2"/>
+            <TextBox Text="{Binding PortText, UpdateSourceTrigger=PropertyChanged}" Width="100" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+
+            <TextBlock Text="描述 (可选)" Margin="0,0,0,2"/>
+            <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="56" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <DockPanel Grid.Row="1" Margin="0,12,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="取消" Command="{Binding CancelCommand}" Width="80" Padding="6,4" Margin="0,0,8,0"/>
+                <Button Content="保存" Command="{Binding SaveCommand}" Width="80" Padding="6,4"/>
+            </StackPanel>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="Gray" VerticalAlignment="Center" TextWrapping="Wrap"/>
+        </DockPanel>
+    </Grid>
+</Window>

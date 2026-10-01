@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Approval;
 using LitSSHmcp.Core.Services.Storage;
 using Renci.SshNet;
 
@@ -40,6 +41,25 @@ class Program
                 }
                 return await RunCommand(args[1], string.Join(" ", args.Skip(2)));
 
+            case "approvals":
+                return ListApprovals();
+
+            case "approve":
+                if (args.Length < 2)
+                {
+                    Console.WriteLine("用法: litssh approve <审批ID>");
+                    return 1;
+                }
+                return Decide(args[1], approved: true);
+
+            case "deny":
+                if (args.Length < 2)
+                {
+                    Console.WriteLine("用法: litssh deny <审批ID>");
+                    return 1;
+                }
+                return Decide(args[1], approved: false);
+
             default:
                 Console.WriteLine($"未知命令: {command}");
                 PrintUsage();
@@ -55,13 +75,65 @@ class Program
   litssh list                    列出所有已配置的服务器
   litssh connect <服务器名称>     连接到服务器(交互式)
   litssh run <服务器名称> <命令>  在服务器上执行命令
+  litssh approvals               列出待审批的敏感操作(带外审批)
+  litssh approve <审批ID>        批准某个待审批操作
+  litssh deny <审批ID>           拒绝某个待审批操作
 
 示例:
   litssh list
   litssh connect web-server
   litssh run web-server ""df -h""
-  litssh run my-server ""docker ps""");
+  litssh approvals
+  litssh approve 3f2a9c...");
     }
+
+    static int ListApprovals()
+    {
+        var dir = ConfigPaths.ApprovalsDir;
+        var pending = ApprovalFileStore.ListPending(dir);
+        if (pending.Count == 0)
+        {
+            Console.WriteLine("没有待审批的请求");
+            return 0;
+        }
+
+        Console.WriteLine($"待审批请求 ({pending.Count}):");
+        Console.WriteLine(new string('-', 70));
+        foreach (var request in pending)
+        {
+            Console.WriteLine($"ID: {request.Id}");
+            Console.WriteLine($"  服务器: {request.Server}   操作: {request.Operation}");
+            Console.WriteLine($"  创建: {request.CreatedAt.LocalDateTime:HH:mm:ss}   过期: {request.ExpiresAt.LocalDateTime:HH:mm:ss}");
+            Console.WriteLine($"  内容: {Clip(request.Command, 200)}");
+            Console.WriteLine();
+        }
+
+        return 0;
+    }
+
+    static int Decide(string id, bool approved)
+    {
+        var dir = ConfigPaths.ApprovalsDir;
+        var pending = ApprovalFileStore.ListPending(dir).FirstOrDefault(r => r.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (pending == null)
+        {
+            Console.WriteLine($"未找到待审批请求: {id}（可先运行 litssh approvals 查看）");
+            return 1;
+        }
+
+        ApprovalFileStore.WriteDecision(dir, new ApprovalDecisionFile
+        {
+            Id = pending.Id,
+            Approved = approved,
+            DecidedAt = DateTimeOffset.Now,
+            Channel = "cli"
+        });
+
+        Console.WriteLine($"已{(approved ? "批准" : "拒绝")}: {pending.Id}（{pending.Operation} @ {pending.Server}）");
+        return 0;
+    }
+
+    static string Clip(string value, int max) => value.Length <= max ? value : value[..max] + "...";
 
     static async Task<int> ListServers()
     {

@@ -51,6 +51,16 @@ appsettings.Local.json
 id_rsa
 id_ed25519
 
+# LitSSH local/runtime sensitive artifacts (defensive)
+config/config.json
+**/known_hosts.json
+**/audit.db
+publish_new/
+*.pfx
+*.p12
+.env
+*.secrets.json
+
 # Publish output
 publish/
 

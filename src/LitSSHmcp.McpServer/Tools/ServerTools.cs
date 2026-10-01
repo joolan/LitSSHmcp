@@ -1,8 +1,13 @@
+// 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
+//   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
+// 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
-using System.Text.Json;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
+using LitSSHmcp.McpServer.Services;
 using ModelContextProtocol.Server;
 
 namespace LitSSHmcp.McpServer.Tools;
@@ -21,57 +26,59 @@ public class ServerTools
         _auditLogService = auditLogService;
     }
 
-    [McpServerTool]
-    [Description("List all configured SSH servers")]
-    public async Task<string> ListServers()
+    [McpServerTool(Name = "ssh_list_servers", UseStructuredContent = true, OutputSchemaType = typeof(SshServerListDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("列出已配置的SSH服务器。数据源列表用datasource_list")]
+    public async Task<SshServerListDto> ListServers()
     {
         var config = await _configService.LoadConfigAsync();
-        var servers = config.Servers.Select(s => new
+        var servers = config.Servers.Select(s => new SshServerSummaryDto
         {
-            s.Id,
-            s.Name,
-            s.Host,
-            s.Port,
-            s.Username,
-            s.AuthType,
-            s.Description,
-            s.Tags,
-            s.LastConnectedAt
-        });
-        return JsonSerializer.Serialize(servers, new JsonSerializerOptions { WriteIndented = true });
+            Id = s.Id,
+            Name = s.Name,
+            Host = s.Host,
+            Port = s.Port,
+            Username = s.Username,
+            AuthType = s.AuthType.ToString(),
+            Description = s.Description,
+            Tags = s.Tags,
+            LastConnectedAt = s.LastConnectedAt
+        }).ToList();
+
+        return new SshServerListDto { Success = true, Count = servers.Count, Servers = servers };
     }
 
-    [McpServerTool]
-    [Description("Get connection status of an SSH server")]
-    public async Task<string> GetServerStatus(
-        [Description("Server ID")] string serverId)
+    [McpServerTool(Name = "ssh_get_server_status", UseStructuredContent = true, OutputSchemaType = typeof(ServerStatusDto), ReadOnly = true, OpenWorld = true)]
+    [Description("获取SSH服务器连接状态(是否在线)")]
+    public async Task<ServerStatusDto> GetServerStatus(
+        [Description("服务器ID, 可用ssh_list_servers列出")] string serverId)
     {
         var config = await _configService.LoadConfigAsync();
         var server = config.Servers.FirstOrDefault(s => s.Id == serverId);
         if (server == null)
-            return JsonSerializer.Serialize(new { error = $"Server not found: {serverId}" });
+            return ServerStatusDto.Fail($"Server not found: {serverId}");
 
         var isConnected = await _sshService.TestConnectionAsync(server);
-        return JsonSerializer.Serialize(new
+        return new ServerStatusDto
         {
-            server.Id,
-            server.Name,
-            server.Host,
+            Success = true,
+            Id = server.Id,
+            Name = server.Name,
+            Host = server.Host,
             Status = isConnected ? "Connected" : "Disconnected"
-        });
+        };
     }
 
-    [McpServerTool]
-    [Description("Test SSH connection to a server")]
-    public async Task<string> TestConnection(
-        [Description("Server ID")] string serverId)
+    [McpServerTool(Name = "ssh_test_connection", UseStructuredContent = true, OutputSchemaType = typeof(SshTestConnectionDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
+    [Description("测试SSH服务器连通性。数据源连通性用datasource_test_connection")]
+    public async Task<SshTestConnectionDto> TestConnection(
+        [Description("服务器ID, 可用ssh_list_servers列出")] string serverId)
     {
         var config = await _configService.LoadConfigAsync();
         var server = config.Servers.FirstOrDefault(s => s.Id == serverId);
         if (server == null)
-            return JsonSerializer.Serialize(new { success = false, error = $"Server not found: {serverId}" });
+            return SshTestConnectionDto.Fail($"Server not found: {serverId}");
 
         var success = await _sshService.TestConnectionAsync(server);
-        return JsonSerializer.Serialize(new { success, serverId, server.Name });
+        return new SshTestConnectionDto { Success = success, ServerId = serverId, Name = server.Name };
     }
 }

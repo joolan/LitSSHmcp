@@ -1,5 +1,7 @@
 namespace LitSSHmcp.Core.Models;
 
+using System.Text.Json.Serialization;
+
 public enum AuthType
 {
     Password,
@@ -33,4 +35,7 @@ public class SshServerConfig
     public SudoType SudoType { get; set; } = SudoType.None;
     public string? SudoUsername { get; set; }
     public string? SudoPassword { get; set; }
+
+    [JsonIgnore]
+    public string TagsText => Tags.Length == 0 ? string.Empty : string.Join(", ", Tags);
 }

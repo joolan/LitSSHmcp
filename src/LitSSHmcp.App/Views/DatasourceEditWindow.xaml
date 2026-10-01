@@ -1,0 +1,139 @@
+<Window x:Class="LitSSHmcp.App.Views.DatasourceEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="编辑数据源" Height="680" Width="460"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid Margin="15">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="110"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 名称 -->
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="名称:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+
+        <!-- 类型 -->
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="类型:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <ComboBox Grid.Row="1" Grid.Column="1" SelectedIndex="{Binding TypeIndex}" Margin="0,0,0,8"
+                  ToolTip="MySQL: 只读SQL/写SQL/执行计划/诊断; Redis: 只读命令/写命令(审批)/运行诊断; PostgreSQL: 只读/写SQL">
+            <ComboBoxItem Content="MySQL"/>
+            <ComboBoxItem Content="Redis"/>
+            <ComboBoxItem Content="PostgreSQL"/>
+        </ComboBox>
+
+        <!-- 主机 -->
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="主机地址:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                 ToolTip="数据库IP或主机名, 可与应用日志中的地址对应"/>
+
+        <!-- 端口 -->
+        <TextBlock Grid.Row="3" Grid.Column="0" Text="端口:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding PortText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                 ToolTip="MySQL默认3306, Redis默认6379, PostgreSQL默认5432(切换类型时自动带出)"/>
+
+        <!-- 用户名 -->
+        <TextBlock Grid.Row="4" Grid.Column="0" Text="用户名:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                 ToolTip="MySQL/PostgreSQL账号; Redis 6+ ACL用户名(无ACL留空, 只用密码AUTH)"/>
+
+        <!-- 密码 -->
+        <TextBlock Grid.Row="5" Grid.Column="0" Text="密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <PasswordBox Grid.Row="5" Grid.Column="1" x:Name="PasswordBox" Margin="0,0,0,8"
+                     ToolTip="仅保存在本机(DPAPI加密), 不会通过MCP暴露给AI"/>
+
+        <!-- 默认库 -->
+        <TextBlock Grid.Row="6" Grid.Column="0" Text="默认库:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding DefaultDatabase, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                 ToolTip="MySQL/PostgreSQL: 默认数据库名; Redis: DB索引(0..15), 留空=DB0"/>
+
+        <!-- 访问模式 -->
+        <TextBlock Grid.Row="7" Grid.Column="0" Text="访问模式:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <ComboBox Grid.Row="7" Grid.Column="1" SelectedIndex="{Binding AccessModeIndex}" Margin="0,0,0,8">
+            <ComboBoxItem Content="直连"/>
+            <ComboBoxItem Content="经SSH隧道"/>
+        </ComboBox>
+
+        <!-- 隧道服务器 -->
+        <TextBlock Grid.Row="8" Grid.Column="0" Text="跳板服务器:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <ComboBox Grid.Row="8" Grid.Column="1" SelectedIndex="{Binding TunnelServerIndex}" Margin="0,0,0,8"
+                  ItemsSource="{Binding TunnelServerOptions}"
+                  IsEnabled="{Binding IsTunnelMode}"
+                  ToolTip="仅隧道模式需要; 选'自动'时按 ssh->数据源 关系推导"/>
+
+        <!-- 描述 -->
+        <TextBlock Grid.Row="9" Grid.Column="0" Text="描述:" VerticalAlignment="Top" Margin="0,0,10,8"/>
+        <TextBox Grid.Row="9" Grid.Column="1" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+
+        <!-- 标签 -->
+        <TextBlock Grid.Row="10" Grid.Column="0" Text="标签:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <TextBox Grid.Row="10" Grid.Column="1" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"
+                 ToolTip="多个标签用逗号分隔" Margin="0,0,0,8"/>
+
+        <!-- 治理: 只读 / 限额 / 写审批 -->
+        <TextBlock Grid.Row="11" Grid.Column="0" Text="只读:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <CheckBox Grid.Row="11" Grid.Column="1" Content="只读数据源(拒绝写操作)" IsChecked="{Binding ReadOnlyMode}" Margin="0,0,0,8"
+                  ToolTip="勾选后该数据源上的 mysql_execute / redis_execute 一律拒绝"/>
+
+        <TextBlock Grid.Row="12" Grid.Column="0" Text="限额:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <StackPanel Grid.Row="12" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="最大行数:" VerticalAlignment="Center"/>
+            <TextBox Text="{Binding MaxRowsText, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,12,0"
+                     ToolTip="留空 = 默认(工具默认/上限1000)"/>
+            <TextBlock Text="超时(秒):" VerticalAlignment="Center"/>
+            <TextBox Text="{Binding TimeoutText, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,0,0"
+                     ToolTip="留空 = 默认30秒"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="13" Grid.Column="0" Text="写审批:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+        <ComboBox Grid.Row="13" Grid.Column="1" ItemsSource="{Binding WriteApprovalOptions}"
+                  SelectedIndex="{Binding WriteApprovalIndex}" Margin="0,0,0,8"
+                  ToolTip="写操作审批策略; '自动放行'仅用于受信任目标(仍受硬拦截规则约束)"/>
+
+        <TextBlock Grid.Row="14" Grid.Column="0" Grid.ColumnSpan="2"
+                   Text="提示: 账号密码仅人工录入, MCP工具只暴露主机/端口/账号, 密码永不返回给AI"
+                   Foreground="Gray" FontSize="10" TextWrapping="Wrap" Margin="0,4,0,8"/>
+
+        <!-- 测试连接 -->
+        <Grid Grid.Row="15" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,5,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0" Content="测试连接" Command="{Binding TestConnectionCommand}"
+                    Padding="10,5" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" VerticalAlignment="Center"
+                       Foreground="Gray" TextWrapping="Wrap"/>
+        </Grid>
+
+        <TextBlock Grid.Row="16" Grid.Column="0" Grid.ColumnSpan="2" Height="0"/>
+
+        <!-- 底部按钮 -->
+        <StackPanel Grid.Row="17" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,10,0,0">
+            <Button Content="确定" Command="{Binding SaveCommand}" Width="80" Margin="0,0,10,0" IsDefault="True"/>
+            <Button Content="取消" Command="{Binding CancelCommand}" Width="80" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

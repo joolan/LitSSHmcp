@@ -12,31 +12,27 @@ public enum CommandFilterResult
 public interface ICommandFilterService
 {
     CommandFilterResult CheckCommand(string command);
-    void UpdateConfig(CommandFilterConfig config);
 }
 
 public class CommandFilterService : ICommandFilterService
 {
-    private CommandFilterConfig _config = new();
+    private readonly ISecurityOptionsProvider _options;
 
-    public CommandFilterService(CommandFilterConfig config)
+    public CommandFilterService(ISecurityOptionsProvider options)
     {
-        _config = config;
+        _options = options;
     }
 
     public CommandFilterResult CheckCommand(string command)
     {
-        if (_config.IsBlocked(command))
+        var config = _options.CommandFilter;
+
+        if (config.IsBlocked(command))
             return CommandFilterResult.Blocked;
 
-        if (_config.IsSensitive(command))
+        if (config.IsSensitive(command))
             return CommandFilterResult.Sensitive;
 
         return CommandFilterResult.Allowed;
-    }
-
-    public void UpdateConfig(CommandFilterConfig config)
-    {
-        _config = config;
     }
 }

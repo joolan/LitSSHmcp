@@ -4,6 +4,14 @@
     <ProjectReference Include="..\LitSSHmcp.Core\LitSSHmcp.Core.csproj" />
   </ItemGroup>
 
+  <!-- 【同步约定】MCP 工具说明的唯一事实来源是 docs/TOOLS.md。
+       这里把它嵌入 App 程序集, 供菜单"配置 → MCP工具说明"(McpToolsWindow) 展示。
+       MCP 工具发生变动时, 必须同步更新: ① MCP 服务器端 Tools/*.cs 注解与 UsageGuideTools 内置清单
+       ② docs/TOOLS.md ③ 本文件嵌入内容(无需改代码, 刷新文档即可) — 详见 docs/TOOLS.md 顶部"同步约定"。 -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\docs\TOOLS.md" Link="docs\TOOLS.md" LogicalName="LitSSHmcp.App.docs.TOOLS.md" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>

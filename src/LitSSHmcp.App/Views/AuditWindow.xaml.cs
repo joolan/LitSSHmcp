@@ -25,6 +25,7 @@ public partial class AuditWindow : Window
     {
         _viewModel.FilterText = FilterBox.Text;
         _viewModel.Keyword = KeywordBox.Text;
+        _viewModel.SessionFilter = SessionBox.Text;
         _viewModel.LimitText = LimitBox.Text;
         _viewModel.Load();
         FilterBox.Text = _viewModel.FilterText;
@@ -44,8 +45,11 @@ public partial class AuditWindow : Window
         if (dialog.ShowDialog() != true)
             return;
 
-        var isSqlTab = SqlList.IsVisible;
-        var csv = isSqlTab ? _viewModel.BuildSqlCsv() : _viewModel.BuildCommandsCsv();
+        var csv = SqlList.IsVisible
+            ? _viewModel.BuildSqlCsv()
+            : SessionsList.IsVisible
+                ? _viewModel.BuildSessionsCsv()
+                : _viewModel.BuildCommandsCsv();
 
         File.WriteAllText(dialog.FileName, csv, new System.Text.UTF8Encoding(true));
         _viewModel.StatusMessage = $"已导出: {dialog.FileName}";
@@ -71,9 +75,11 @@ public partial class AuditWindow : Window
         var text = listView?.SelectedItem switch
         {
             CommandAuditLog c => string.Join('\t',
-                c.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"), c.ServerName, c.Command, c.Status.ToString(), c.ExitCode?.ToString() ?? ""),
+                c.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"), c.SessionId ?? "", c.Tool ?? "", c.ServerName, c.Command, c.Status.ToString(), c.ExitCode?.ToString() ?? ""),
             SqlAuditLog s => string.Join('\t',
-                s.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"), s.DataSourceName, s.Operation.ToString(), s.Sql, s.Status.ToString()),
+                s.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"), s.SessionId ?? "", s.Tool ?? "", s.DataSourceName, s.Operation.ToString(), s.Sql, s.Status.ToString()),
+            AuditSession a => string.Join('\t',
+                a.SessionId, a.ClientName ?? "", a.ClientVersion ?? "", a.StartedAt.ToString("yyyy-MM-dd HH:mm:ss"), a.LastSeenAt.ToString("yyyy-MM-dd HH:mm:ss")),
             _ => null
         };
 

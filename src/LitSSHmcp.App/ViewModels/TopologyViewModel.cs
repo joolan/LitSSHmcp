@@ -3,10 +3,12 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using LitSSHmcp.App.Services;
+using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Topology;
@@ -1910,10 +1912,171 @@ public class TopologyViewModel : INotifyPropertyChanged
             StatusMessage = $"发现完成: 新增 {result.NewEdges.Length} 条, 更新 {result.UpdatedEdges.Length} 条, 错误 {result.Errors.Length} 个";
             Load();
         }
+        catch (DiscoveryInProgressException)
+        {
+            StatusMessage = "已有自动发现在执行，请稍后再试。";
+        }
         catch (Exception ex)
         {
             StatusMessage = $"自动发现失败: {ex.Message}";
         }
+    }
+
+    /// <summary>把选中的"待确认"节点确认为已登记资产（弹出对应新增窗口并预填），再把发现边重定向到新资产。</summary>
+    public async void ConfirmSelectedNode() => ConfirmNode(_selectedId);
+
+    /// <summary>把指定的"待确认"节点确认为已登记资产。</summary>
+    public async void ConfirmNode(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || !id.Contains(":disc:", StringComparison.Ordinal))
+        {
+            StatusMessage = "请先选中一个「待确认」节点(带 disc: 的节点)。";
+            return;
+        }
+
+        try
+        {
+            var newId = await RegisterPendingNodeAsync(id);
+            if (newId == null)
+                return;
+
+            await _topologyStore.ReplaceNodeAsync(id, newId);
+            StatusMessage = $"已确认并登记: {id} → {newId}";
+            Load();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"确认失败: {ex.Message}";
+        }
+    }
+
+    /// <summary>删除一个"待确认"节点（清理其所有发现边）。</summary>
+    public async void DeleteDiscoveredNode(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || !id.Contains(":disc:", StringComparison.Ordinal))
+            return;
+
+        try
+        {
+            await _topologyStore.RemoveEdgesByNodeAsync(id);
+            if (string.Equals(_selectedId, id, StringComparison.Ordinal))
+                SelectNode(null);
+            StatusMessage = $"已删除待确认节点: {id}";
+            Load();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"删除节点失败: {ex.Message}";
+        }
+    }
+
+    private async Task<string?> RegisterPendingNodeAsync(string id)
+    {
+        var owner = Application.Current?.MainWindow;
+
+        // 读取该节点的发现信息（type/host/ports/path），用于预填确认窗口
+        string? infoType = null, infoHost = null, infoPath = null;
+        int? infoPort = null;
+        try
+        {
+            var infos = await _topologyStore.GetNodeInfosAsync();
+            if (infos.TryGetValue(id, out var json) &&
+                JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json) is { } info)
+            {
+                if (info.TryGetValue("type", out var t) && t.ValueKind == JsonValueKind.String) infoType = t.GetString();
+                if (info.TryGetValue("host", out var h) && h.ValueKind == JsonValueKind.String) infoHost = h.GetString();
+                if (info.TryGetValue("path", out var pa) && pa.ValueKind == JsonValueKind.String) infoPath = pa.GetString();
+                if (info.TryGetValue("ports", out var ps) && ps.ValueKind == JsonValueKind.String)
+                {
+                    var first = ps.GetString()?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+                    if (int.TryParse(first, out var pp)) infoPort = pp;
+                }
+            }
+        }
+        catch { /* info 缺失不阻断 */ }
+
+        // 待确认应用 → 新增应用（预填名称/类型/端口/路径）
+        if (id.StartsWith(AssetNode.AppPrefix + "disc:", StringComparison.Ordinal))
+        {
+            var name = id[(AssetNode.AppPrefix.Length + 5)..];
+            var window = new ApplicationEditWindow { Owner = owner };
+            var vm = new ApplicationEditViewModel(_configService, null,
+                new ApplicationConfig { Name = name, Type = infoType ?? "java", Port = infoPort, Path = infoPath });
+            window.DataContext = vm;
+            var ok = false;
+            vm.DialogClosed += (_, r) => { ok = r; window.Close(); };
+            window.ShowDialog();
+            if (!ok) return null;
+
+            var config = await _configService.LoadConfigAsync();
+            var created = config.Applications.LastOrDefault(a => a.Name == name);
+            if (created == null) { StatusMessage = "已保存但未找到新应用，请刷新。"; return null; }
+            return AssetNode.App(created.Id);
+        }
+
+        // 待确认数据源 → 新增数据源（预填 host/port/类型）
+        if (id.StartsWith(AssetNode.DsPrefix + "disc:", StringComparison.Ordinal))
+        {
+            var rest = id[(AssetNode.DsPrefix.Length + 5)..];
+            var idx = rest.LastIndexOf('-');
+            string host;
+            int port;
+            if (infoPort is int ip)
+            {
+                port = ip;
+                host = infoHost ?? (idx > 0 && int.TryParse(rest[(idx + 1)..], out _) ? rest[..idx] : string.Empty);
+            }
+            else if (idx > 0 && int.TryParse(rest[(idx + 1)..], out var p))
+            {
+                host = rest[..idx];
+                port = p;
+            }
+            else
+            {
+                host = infoHost ?? string.Empty;
+                port = 3306;
+            }
+
+            var dsType = string.IsNullOrWhiteSpace(infoType) ? "mysql" : infoType!;
+            var config = await _configService.LoadConfigAsync();
+            var window = new DatasourceEditWindow { Owner = owner };
+            var vm = new DatasourceEditViewModel(_configService, window, config.Servers, null,
+                new DataSourceConfig { Name = string.IsNullOrEmpty(host) ? rest : host, Host = host, Port = port, Type = dsType });
+            window.DataContext = vm;
+            var ok = false;
+            vm.DialogClosed += (_, r) => { ok = r; window.Close(); };
+            window.ShowDialog();
+            if (!ok) return null;
+
+            var after = await _configService.LoadConfigAsync();
+            var created = string.IsNullOrEmpty(host)
+                ? after.DataSources.LastOrDefault(d => d.Port == port && d.Type.Equals(dsType, StringComparison.OrdinalIgnoreCase))
+                : after.DataSources.LastOrDefault(d => d.Host == host && d.Port == port);
+            if (created == null) { StatusMessage = "已保存但未找到新数据源，请刷新。"; return null; }
+            return AssetNode.Ds(created.Id);
+        }
+
+        // 待确认服务器 → 新增服务器（预填 host）
+        if (id.StartsWith(AssetNode.SshPrefix + "disc:", StringComparison.Ordinal))
+        {
+            var host = id[(AssetNode.SshPrefix.Length + 5)..];
+            var window = new ServerEditWindow { Owner = owner };
+            var vm = new ServerEditViewModel(_configService, AppServiceFactory.CreateSshService(), window, null,
+                new SshServerConfig { Name = host, Host = host, Port = 22 });
+            window.DataContext = vm;
+            var ok = false;
+            vm.DialogClosed += (_, r) => { ok = r; window.Close(); };
+            window.ShowDialog();
+            if (!ok) return null;
+
+            var config = await _configService.LoadConfigAsync();
+            var created = config.Servers.LastOrDefault(s => s.Host == host);
+            if (created == null) { StatusMessage = "已保存但未找到新服务器，请刷新。"; return null; }
+            return AssetNode.Ssh(created.Id);
+        }
+
+        StatusMessage = "该类型的待确认节点暂不支持一键登记（MQ 端点可在「资产关系」里手动管理）。";
+        return null;
     }
 
     private static void Add(Dictionary<string, List<TopologyNode>> map, string key, TopologyNode node)

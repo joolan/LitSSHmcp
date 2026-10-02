@@ -47,7 +47,11 @@ public class SshService : ISshService
     }
 
     public async Task<bool> TestConnectionAsync(SshServerConfig server, CancellationToken ct = default)
+        => (await ProbeConnectionAsync(server, ct)).Success;
+
+    public async Task<ConnectionProbeResult> ProbeConnectionAsync(SshServerConfig server, CancellationToken ct = default)
     {
+        var sw = Stopwatch.StartNew();
         return await Task.Run(() =>
         {
             try
@@ -58,15 +62,59 @@ public class SshService : ISshService
                 client.Connect();
                 Log($"Connection to {server.Host}:{server.Port} successful");
                 client.Disconnect();
-                return true;
+                return new ConnectionProbeResult { Success = true, Duration = sw.Elapsed };
             }
             catch (Exception ex)
             {
                 Log($"Connection to {server.Host}:{server.Port} failed: {ex.Message}", "ERROR");
-                return false;
+                return new ConnectionProbeResult
+                {
+                    Success = false,
+                    ErrorKind = ClassifySshException(ex),
+                    Error = ex.Message,
+                    Duration = sw.Elapsed
+                };
             }
         }, ct);
     }
+
+    /// <summary>
+    /// 把底层异常归类成模型可处置的失败类型。
+    /// 只回 bool 会让"密码错 / 超时 / 主机密钥被换"三者不可分——
+    /// 其中主机密钥变化可能是中间人攻击，必须能单独暴露。
+    /// </summary>
+    public static string ClassifySshException(Exception? ex)
+    {
+        for (var depth = 0; ex != null && depth < 5; depth++, ex = ex.InnerException)
+        {
+            switch (ex)
+            {
+                case Renci.SshNet.Common.SshAuthenticationException:
+                    return "auth";
+                case Renci.SshNet.Common.SshOperationTimeoutException:
+                    return "timeout";
+                case System.Net.Sockets.SocketException:
+                    return "network";
+                case OperationCanceledException:
+                    return "timeout";
+            }
+
+            var msg = ex.Message ?? string.Empty;
+            if (ContainsAny(msg, "host key", "fingerprint", "key exchange"))
+                return "host_key";
+            if (ContainsAny(msg, "authentication failed", "permission denied", "username/password"))
+                return "auth";
+            if (ContainsAny(msg, "timed out", "timeout"))
+                return "timeout";
+            if (ContainsAny(msg, "no route", "refused", "unreachable", "name or service", "not known", "network is"))
+                return "network";
+        }
+
+        return "unknown";
+    }
+
+    private static bool ContainsAny(string haystack, params string[] needles) =>
+        needles.Any(n => haystack.Contains(n, StringComparison.OrdinalIgnoreCase));
 
     public async Task<CommandResult> ExecuteCommandAsync(SshServerConfig server, string command, CancellationToken ct = default)
     {
@@ -107,6 +155,7 @@ public class SshService : ISshService
                 {
                     Success = false,
                     Error = ex.Message,
+                    ErrorKind = ClassifySshException(ex),
                     ExitCode = -1,
                     Duration = sw.Elapsed
                 };
@@ -129,31 +178,37 @@ public class SshService : ISshService
             try
             {
                 Log($"Executing sudo command on {server.Host}:{server.Port}");
+
+                // 去掉 AI 可能在命令里自带的 `sudo` 前缀：否则在"已是 root/目标用户"的直连路径下会执行
+                // 一个无 tty 的 `sudo ...`，sudo 会直接报 "a password is required"，而我们的提权密码注入
+                // 只走 sudo/su 的交互式通道，管不到 AI 自带的那层 sudo。
+                var effectiveCommand = StripSudoPrefix(command);
+
                 using var client = CreateSshClient(server);
                 client.Connect();
 
                 switch (server.SudoType)
                 {
                     case SudoType.None:
-                        return ExecuteCommandDirect(client, command, sw);
+                        return ExecuteCommandDirect(client, effectiveCommand, sw);
 
                     case SudoType.CurrentUser:
-                        return ExecuteWithCurrentUserSudo(client, server, command, sw);
+                        return ExecuteWithCurrentUserSudo(client, server, effectiveCommand, sw);
 
                     case SudoType.RootUser:
                         if (server.Username == "root")
-                            return ExecuteCommandDirect(client, command, sw);
-                        return ExecuteWithSuUser(client, server, "root", command, sw);
+                            return ExecuteCommandDirect(client, effectiveCommand, sw);
+                        return ExecuteWithSuUser(client, server, "root", effectiveCommand, sw);
 
                     case SudoType.CustomUser:
                         if (string.IsNullOrEmpty(server.SudoUsername))
-                            return ExecuteCommandDirect(client, command, sw);
+                            return ExecuteCommandDirect(client, effectiveCommand, sw);
                         if (server.Username == server.SudoUsername)
-                            return ExecuteCommandDirect(client, command, sw);
-                        return ExecuteWithSuUser(client, server, server.SudoUsername, command, sw);
+                            return ExecuteCommandDirect(client, effectiveCommand, sw);
+                        return ExecuteWithSuUser(client, server, server.SudoUsername, effectiveCommand, sw);
 
                     default:
-                        return ExecuteCommandDirect(client, command, sw);
+                        return ExecuteCommandDirect(client, effectiveCommand, sw);
                 }
             }
             catch (Exception ex)
@@ -197,8 +252,70 @@ public class SshService : ISshService
     private CommandResult ExecuteWithCurrentUserSudo(SshClient client, SshServerConfig server, string command, Stopwatch sw)
     {
         var password = server.SudoPassword ?? server.Password ?? string.Empty;
-        var sudoCmd = $"sudo -S bash -c '{command.Replace("'", "'\\''")}'";
-        return ExecuteWithPasswordViaShell(client, sudoCmd, password, sw);
+        // sudo -S 从 stdin 读取密码（不依赖 tty）；-p '' 关闭提示语。
+        // 交互式 shell(pty) 的提示检测在真实环境里并不可靠（审计中该路径 exit=-1），这里改用更稳的 stdin 注入。
+        var sudoCmd = $"sudo -S -p '' bash -c '{command.Replace("'", "'\\''")}'";
+        return ExecuteWithStdinPassword(client, sudoCmd, password, sw);
+    }
+
+    /// <summary>
+    /// 通过 exec 通道执行命令，并把提权密码写入其 stdin（sudo -S 从 stdin 读密码）。
+    /// 这是 SSH.NET 官方推荐的 sudo -S 用法，不依赖交互式 shell，也不会有密码回显。
+    /// </summary>
+    private CommandResult ExecuteWithStdinPassword(SshClient client, string command, string password, Stopwatch sw)
+    {
+        using var cmd = client.CreateCommand(command);
+        cmd.CommandTimeout = TimeSpan.FromSeconds(SudoShellTimeoutSeconds);
+        try
+        {
+            // 先启动执行，再获取 stdin（SSH.NET 2026 要求：输入流只能在执行期间使用）
+            var async = cmd.BeginExecute();
+            Stream? stdin = null;
+            try
+            {
+                stdin = cmd.CreateInputStream();
+                // 即使密码为空也写一行，避免 sudo 一直等 stdin 造成挂起
+                var bytes = Encoding.UTF8.GetBytes((password ?? string.Empty) + "\n");
+                stdin.Write(bytes, 0, bytes.Length);
+                stdin.Flush();
+            }
+            catch (Exception ex)
+            {
+                Log($"写入 sudo 密码失败: {ex.Message}", "ERROR");
+            }
+
+            var stdout = new StringBuilder();
+            using (var reader = new StreamReader(cmd.OutputStream, Encoding.UTF8))
+            {
+                var buffer = new char[4096];
+                int read;
+                while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+                    stdout.Append(buffer, 0, read);
+            }
+
+            cmd.EndExecute(async);
+            stdin?.Dispose();
+            sw.Stop();
+
+            var output = Redact(stdout.ToString(), password);
+            var error = Redact(cmd.Error ?? string.Empty, password);
+            var exit = cmd.ExitStatus ?? -1;
+            return new CommandResult
+            {
+                Success = exit == 0,
+                Output = output,
+                Error = exit == 0 ? string.Empty : DescribeSudoFailure(error + "\n" + output),
+                ErrorKind = cmd.ExitStatus is null ? "timeout" : null,
+                ExitCode = exit,
+                Duration = sw.Elapsed
+            };
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            Log($"sudo (stdin) execution failed: {ex.Message}", "ERROR");
+            return new CommandResult { Success = false, Error = ex.Message, ExitCode = -1, Duration = sw.Elapsed };
+        }
     }
 
     private CommandResult ExecuteWithSuUser(SshClient client, SshServerConfig server, string targetUser, string command, Stopwatch sw)
@@ -208,6 +325,10 @@ public class SshService : ISshService
         var shellCmd = $"su - {targetUser} -c '{escapedCmd}'";
         return ExecuteWithPasswordViaShell(client, shellCmd, password, sw);
     }
+
+    // sudo/su 交互式提权的整体等待上限（秒）。提权命令可能较慢（装包/重启服务），必须给足时间；
+    // 旧实现把"未取到退出码(-1)"也当作成功，导致失败被吞掉，这里改为明确超时。
+    private const int SudoShellTimeoutSeconds = 120;
 
     private CommandResult ExecuteWithPasswordViaShell(SshClient client, string command, string password, Stopwatch sw)
     {
@@ -220,44 +341,40 @@ public class SshService : ISshService
             var startTime = DateTime.UtcNow;
             var lastOutputTime = DateTime.UtcNow;
 
-            shell.WriteLine(command);
+            // 关键：必须由外层 shell 回传退出码标记。此前从未写入过标记，
+            // 导致 exitCode 恒为 -1 且被判定为成功 —— sudo 命令无论成败都报成功。
+            shell.WriteLine(command + "; echo LITSSH_EXIT:$?");
             Thread.Sleep(300);
 
-            while ((DateTime.UtcNow - startTime).TotalSeconds < 30)
+            while ((DateTime.UtcNow - startTime).TotalSeconds < SudoShellTimeoutSeconds)
             {
                 if (shell.DataAvailable)
                 {
-                    var data = shell.Read();
-                    output.Append(data);
+                    output.Append(shell.Read());
                     lastOutputTime = DateTime.UtcNow;
 
-                    if (!passwordSent)
+                    if (output.ToString().Contains("LITSSH_EXIT:", StringComparison.Ordinal))
+                        break;
+
+                    if (!passwordSent && LooksLikePasswordPrompt(output.ToString()))
                     {
-                        var currentOutput = output.ToString().ToLower();
-                        if (currentOutput.Contains("[sudo]") || currentOutput.Contains("password for"))
-                        {
-                            shell.Write(password + "\n");
-                            passwordSent = true;
-                            Thread.Sleep(200);
-                        }
+                        shell.Write(password + "\n");
+                        passwordSent = true;
+                        Thread.Sleep(200);
                     }
                 }
-                else
+                else if (passwordSent &&
+                         (DateTime.UtcNow - lastOutputTime).TotalSeconds > 15)
                 {
-                    if ((DateTime.UtcNow - lastOutputTime).TotalMilliseconds > 500)
-                    {
-                        if (passwordSent)
-                        {
-                            Thread.Sleep(300);
-                            if (!shell.DataAvailable)
-                                break;
-                        }
-                    }
-                    Thread.Sleep(50);
+                    // 已喂过密码且长时间无输出：远端 shell 大概率已结束但标记丢失，按超时退出
+                    break;
                 }
+                Thread.Sleep(50);
             }
 
             var fullOutput = output.ToString();
+            // 返回给 AI 的输出必须脱敏：即使远端回显了密码，也绝不外泄
+            var safeOutput = Redact(fullOutput, password);
             var lines = fullOutput.Split('\n');
             var exitCode = -1;
 
@@ -276,12 +393,27 @@ public class SshService : ISshService
             }
 
             sw.Stop();
-            Log($"Sudo command executed via shell, duration: {sw.ElapsedMilliseconds}ms");
+            Log($"Sudo command executed via shell, exit code: {exitCode}, duration: {sw.ElapsedMilliseconds}ms");
+
+            var timedOut = exitCode < 0;
+            string? error = null;
+            string? errorKind = null;
+            if (timedOut)
+            {
+                error = $"sudo 执行超时或未取得退出码({SudoShellTimeoutSeconds}秒内未回传 LITSSH_EXIT)";
+                errorKind = "timeout";
+            }
+            else if (exitCode != 0)
+            {
+                error = DescribeSudoFailure(safeOutput);
+            }
 
             return new CommandResult
             {
-                Success = exitCode == 0 || exitCode == -1,
-                Output = fullOutput,
+                Success = exitCode == 0,
+                Output = StripExitMarker(safeOutput),
+                Error = error ?? string.Empty,
+                ErrorKind = errorKind,
                 ExitCode = exitCode,
                 Duration = sw.Elapsed
             };
@@ -298,6 +430,50 @@ public class SshService : ISshService
                 Duration = sw.Elapsed
             };
         }
+    }
+
+    /// <summary>
+    /// 识别 sudo / su 的密码提示。此前只匹配 "[sudo]"/"password for"，导致 `su` 的 "Password:"
+    /// 提示不被识别、密码从未发送，最终 30 秒超时（旧实现又把超时当成功，掩盖了这个 bug）。
+    /// </summary>
+    public static bool LooksLikePasswordPrompt(string text)
+    {
+        var t = text.ToLowerInvariant();
+        return t.Contains("[sudo]")
+            || t.Contains("password for")
+            || t.Contains("password:")
+            || t.Contains("密码");
+    }
+
+    /// <summary>去掉 AI 命令里自带的 `sudo` 前缀（`sudo cmd` 形式），避免与外层提权叠加、以及无 tty 时报错。</summary>
+    public static string StripSudoPrefix(string command)
+    {
+        var t = command.TrimStart();
+        if (t == "sudo")
+            return string.Empty;
+
+        if (t.StartsWith("sudo ", StringComparison.Ordinal))
+        {
+            var rest = t[5..].TrimStart();
+            // 仅剥离"sudo 后直接是命令"的情形；若后随 sudo 选项（以 '-' 开头）则保留，避免误删 -u/-S 等
+            if (rest.Length > 0 && !rest.StartsWith('-'))
+                return rest;
+        }
+
+        return command;
+    }
+
+    private static string Redact(string text, string? password) =>
+        string.IsNullOrEmpty(password) ? text : text.Replace(password, "******");
+
+    private static string DescribeSudoFailure(string output)
+    {
+        if (output.Contains("a password is required", StringComparison.OrdinalIgnoreCase) ||
+            output.Contains("a terminal is required", StringComparison.OrdinalIgnoreCase))
+            return "提权失败：sudo/su 未获得密码（请检查该服务器的 SudoType / SudoPassword 配置是否完整）。";
+
+        var last = output.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.Length > 0);
+        return string.IsNullOrEmpty(last) ? "提权命令执行失败。" : last;
     }
 
     public async Task<FileTransferResult> UploadFileAsync(SshServerConfig server, string localPath, string remotePath, IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default)
@@ -589,10 +765,14 @@ public class SshService : ISshService
         }
     }
 
-    public async Task<RemoteFileInfo[]> ListRemoteFilesAsync(SshServerConfig server, string remotePath, CancellationToken ct = default)
+    /// <summary>单次列目录最多返回的条目数，避免 /proc、node_modules 之类的目录打爆上下文。</summary>
+    private const int MaxListEntries = 500;
+
+    public async Task<RemoteFileListResult> ListRemoteFilesAsync(SshServerConfig server, string remotePath, CancellationToken ct = default)
     {
         return await Task.Run(() =>
         {
+            Exception? sftpFailure = null;
             try
             {
                 Log($"Listing files in {server.Host}:{remotePath}");
@@ -601,7 +781,7 @@ public class SshService : ISshService
 
                 var files = sftp.ListDirectory(remotePath);
                 Log($"Listed {files.Count()} files via SFTP");
-                return files
+                var mapped = files
                     .Where(f => f.Name != "." && f.Name != "..")
                     .Select(f => new RemoteFileInfo
                     {
@@ -613,56 +793,83 @@ public class SshService : ISshService
                         IsSymbolicLink = f.IsSymbolicLink
                     })
                     .ToArray();
+
+                return new RemoteFileListResult
+                {
+                    Success = true,
+                    Files = mapped.Take(MaxListEntries).ToArray(),
+                    Truncated = mapped.Length > MaxListEntries
+                };
             }
-            catch (Exception sftpEx)
+            catch (Exception ex)
             {
-                Log($"SFTP list failed: {sftpEx.Message}, trying SSH exec fallback", "WARN");
-                try
+                sftpFailure = ex;
+                Log($"SFTP list failed: {ex.Message}, trying SSH exec fallback", "WARN");
+            }
+
+            try
+            {
+                using var client = CreateSshClient(server);
+                client.Connect();
+
+                var escapedPath = remotePath.Replace("'", "'\\''");
+                using var cmd = client.CreateCommand($"ls -la '{escapedPath}'");
+                cmd.CommandTimeout = TimeSpan.FromSeconds(30);
+                var result = cmd.Execute();
+
+                if (cmd.ExitStatus != 0)
                 {
-                    using var client = CreateSshClient(server);
-                    client.Connect();
+                    var detail = string.IsNullOrWhiteSpace(cmd.Error) ? "ls 返回非零退出码" : cmd.Error;
+                    return new RemoteFileListResult { Success = false, ErrorKind = "list_failed", Error = detail };
+                }
 
-                    var escapedPath = remotePath.Replace("'", "'\\''");
-                    using var cmd = client.CreateCommand($"ls -la '{escapedPath}'");
-                    cmd.CommandTimeout = TimeSpan.FromSeconds(30);
-                    var result = cmd.Execute();
-
-                    if (cmd.ExitStatus == 0)
+                Log($"Listed files via SSH exec fallback");
+                var entries = result.Split('\n')
+                    .Where(line => !string.IsNullOrWhiteSpace(line) && !line.StartsWith("total"))
+                    .Select(line =>
                     {
-                        Log($"Listed files via SSH exec fallback");
-                        return result.Split('\n')
-                            .Where(line => !string.IsNullOrWhiteSpace(line) && !line.StartsWith("total"))
-                            .Select(line =>
-                            {
-                                var parts = line.Split(new[] { ' ' }, 9, StringSplitOptions.RemoveEmptyEntries);
-                                if (parts.Length >= 9)
-                                {
-                                    var name = parts[8];
-                                    var isDir = parts[0].StartsWith("d");
-                                    var isLink = parts[0].StartsWith("l");
-                                    long.TryParse(parts[4], out var size);
+                        var parts = line.Split(new[] { ' ' }, 9, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 9)
+                        {
+                            var name = parts[8];
+                            var isDir = parts[0].StartsWith("d");
+                            var isLink = parts[0].StartsWith("l");
+                            long.TryParse(parts[4], out var size);
 
-                                    return new RemoteFileInfo
-                                    {
-                                        Name = name,
-                                        FullName = remotePath.TrimEnd('/') + "/" + name,
-                                        Size = size,
-                                        IsDirectory = isDir,
-                                        IsSymbolicLink = isLink
-                                    };
-                                }
-                                return null;
-                            })
-                            .Where(f => f != null && f.Name != "." && f.Name != "..")
-                            .Cast<RemoteFileInfo>()
-                            .ToArray();
-                    }
-                }
-                catch (Exception ex)
+                            return new RemoteFileInfo
+                            {
+                                Name = name,
+                                FullName = remotePath.TrimEnd('/') + "/" + name,
+                                Size = size,
+                                IsDirectory = isDir,
+                                IsSymbolicLink = isLink
+                            };
+                        }
+                        return null;
+                    })
+                    .Where(f => f != null && f.Name != "." && f.Name != "..")
+                    .Cast<RemoteFileInfo>()
+                    .ToArray();
+
+                return new RemoteFileListResult
                 {
-                    Log($"SSH exec list failed: {ex.Message}", "ERROR");
-                }
-                return Array.Empty<RemoteFileInfo>();
+                    Success = true,
+                    Files = entries.Take(MaxListEntries).ToArray(),
+                    Truncated = entries.Length > MaxListEntries
+                };
+            }
+            catch (Exception ex)
+            {
+                Log($"SSH exec list failed: {ex.Message}", "ERROR");
+                // 关键：绝不返回空数组冒充"空目录"。列目录失败必须让调用方看到。
+                return new RemoteFileListResult
+                {
+                    Success = false,
+                    ErrorKind = ClassifySshException(ex),
+                    Error = string.IsNullOrWhiteSpace(ex.Message)
+                        ? (sftpFailure?.Message ?? "列目录失败")
+                        : ex.Message
+                };
             }
         }, ct);
     }
@@ -680,18 +887,27 @@ public class SshService : ISshService
     private static CommandResult RateLimitedCommand(string? reason) => new()
     {
         Success = false,
-        Error = $"操作被限流({reason})。该目标调用过于频繁或并发过高，请稍后重试。",
+        Error = $"操作被限流({reason})。该目标调用过于频繁或并发过高，请稍后退避重试(建议等待5秒)。",
+        ErrorKind = "rate_limited",
         ExitCode = -1
     };
 
     private static FileTransferResult RateLimitedFile(string? reason) => new()
     {
         Success = false,
-        Message = $"操作被限流({reason})。该目标调用过于频繁或并发过高，请稍后重试。"
+        Message = $"操作被限流({reason})。该目标调用过于频繁或并发过高，请稍后退避重试(建议等待5秒)。"
     };
 
-    private SshClient CreateSshClient(SshServerConfig server) =>
-        SshClientFactory.Create(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);
+    /// <summary>去掉远端回传的退出码标记行，避免污染给模型的输出。</summary>
+    private static string StripExitMarker(string output)
+    {
+        var idx = output.IndexOf("LITSSH_EXIT:", StringComparison.Ordinal);
+        if (idx < 0) return output;
+        var lineStart = output.LastIndexOf('\n', idx);
+        return lineStart >= 0 ? output[..(lineStart + 1)] : string.Empty;
+    }
+
+    private SshClient CreateSshClient(SshServerConfig server) =>        SshClientFactory.Create(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);
 
     private SftpClient CreateSftpClient(SshServerConfig server) =>
         SshClientFactory.CreateSftp(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);

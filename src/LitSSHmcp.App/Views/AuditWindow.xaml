@@ -22,18 +22,23 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="筛选(服务器ID/数据源ID):" VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <TextBox Grid.Column="1" x:Name="FilterBox" VerticalContentAlignment="Center" MinWidth="140" Margin="0,0,12,0"/>
+            <TextBox Grid.Column="1" x:Name="FilterBox" VerticalContentAlignment="Center" MinWidth="120" Margin="0,0,12,0"/>
             <TextBlock Grid.Column="2" Text="命令关键字:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <TextBox Grid.Column="3" x:Name="KeywordBox" VerticalContentAlignment="Center" MinWidth="140" Margin="0,0,12,0"/>
-            <TextBlock Grid.Column="4" Text="条数:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <TextBox Grid.Column="5" x:Name="LimitBox" Width="70" Text="200" VerticalContentAlignment="Center" Margin="0,0,12,0"/>
-            <Button Grid.Column="6" Content="刷新" Width="70" Padding="6,4" Margin="0,0,6,0" Click="OnRefresh"/>
-            <Button Grid.Column="7" Content="导出CSV" Width="90" Padding="6,4" Margin="0,0,6,0" Click="OnExport"/>
-            <CheckBox Grid.Column="8" Content="含归档" IsChecked="{Binding IncludeHistory}" VerticalAlignment="Center" Margin="0,0,10,0"
+            <TextBox Grid.Column="3" x:Name="KeywordBox" VerticalContentAlignment="Center" MinWidth="120" Margin="0,0,12,0"/>
+            <TextBlock Grid.Column="4" Text="会话ID:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <TextBox Grid.Column="5" x:Name="SessionBox" VerticalContentAlignment="Center" MinWidth="150" Margin="0,0,12,0"
+                     ToolTip="只显示某个 MCP 会话产生的记录；当前会话ID见 mcp_self_check 的输出"/>
+            <TextBlock Grid.Column="6" Text="条数:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <TextBox Grid.Column="7" x:Name="LimitBox" Width="60" Text="200" VerticalContentAlignment="Center" Margin="0,0,12,0"/>
+            <Button Grid.Column="8" Content="刷新" Width="70" Padding="6,4" Margin="0,0,6,0" Click="OnRefresh"/>
+            <Button Grid.Column="9" Content="导出CSV" Width="90" Padding="6,4" Margin="0,0,6,0" Click="OnExport"/>
+            <CheckBox Grid.Column="10" Content="含归档" IsChecked="{Binding IncludeHistory}" VerticalAlignment="Center" Margin="0,0,10,0"
                       ToolTip="包含超过保留天数、已移动到历史归档表的记录(永久保留)"/>
-            <Button Grid.Column="9" Content="校验完整性" Width="100" Padding="6,4" Click="OnVerify"
+            <Button Grid.Column="11" Content="校验完整性" Width="100" Padding="6,4" Click="OnVerify"
                     ToolTip="校验审计哈希链: 检测审计记录是否被篡改/删除"/>
         </Grid>
 
@@ -50,8 +55,10 @@
                     <ListView.View>
                         <GridView>
                             <GridViewColumn Header="时间" Width="140" DisplayMemberBinding="{Binding Timestamp, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}"/>
-                            <GridViewColumn Header="服务器" Width="120" DisplayMemberBinding="{Binding ServerName}"/>
-                            <GridViewColumn Header="命令" Width="420" DisplayMemberBinding="{Binding Command}"/>
+                            <GridViewColumn Header="会话" Width="180" DisplayMemberBinding="{Binding SessionId}"/>
+                            <GridViewColumn Header="工具" Width="160" DisplayMemberBinding="{Binding Tool}"/>
+                            <GridViewColumn Header="服务器" Width="100" DisplayMemberBinding="{Binding ServerName}"/>
+                            <GridViewColumn Header="命令" Width="320" DisplayMemberBinding="{Binding Command}"/>
                             <GridViewColumn Header="状态" Width="80" DisplayMemberBinding="{Binding Status}"/>
                             <GridViewColumn Header="退出码" Width="60" DisplayMemberBinding="{Binding ExitCode}"/>
                         </GridView>
@@ -70,10 +77,32 @@
                     <ListView.View>
                         <GridView>
                             <GridViewColumn Header="时间" Width="140" DisplayMemberBinding="{Binding Timestamp, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}"/>
-                            <GridViewColumn Header="数据源" Width="140" DisplayMemberBinding="{Binding DataSourceName}"/>
+                            <GridViewColumn Header="会话" Width="180" DisplayMemberBinding="{Binding SessionId}"/>
+                            <GridViewColumn Header="工具" Width="160" DisplayMemberBinding="{Binding Tool}"/>
+                            <GridViewColumn Header="数据源" Width="120" DisplayMemberBinding="{Binding DataSourceName}"/>
                             <GridViewColumn Header="操作" Width="70" DisplayMemberBinding="{Binding Operation}"/>
-                            <GridViewColumn Header="SQL/Redis命令" Width="430" DisplayMemberBinding="{Binding Sql}"/>
+                            <GridViewColumn Header="SQL/Redis命令" Width="320" DisplayMemberBinding="{Binding Sql}"/>
                             <GridViewColumn Header="状态" Width="80" DisplayMemberBinding="{Binding Status}"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </TabItem>
+            <TabItem Header="会话">
+                <ListView x:Name="SessionsList" ItemsSource="{Binding Sessions}" Padding="3" FontFamily="Consolas" FontSize="11"
+                          PreviewMouseRightButtonDown="OnListPreviewRightClick">
+                    <ListView.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="复制整行" Click="OnCopyRow"/>
+                            <MenuItem Header="复制单元格" Click="OnCopyCell"/>
+                        </ContextMenu>
+                    </ListView.ContextMenu>
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="会话ID" Width="230" DisplayMemberBinding="{Binding SessionId}"/>
+                            <GridViewColumn Header="客户端" Width="190" DisplayMemberBinding="{Binding ClientName}"/>
+                            <GridViewColumn Header="版本" Width="100" DisplayMemberBinding="{Binding ClientVersion}"/>
+                            <GridViewColumn Header="首次活动" Width="170" DisplayMemberBinding="{Binding StartedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}"/>
+                            <GridViewColumn Header="最近活动" Width="170" DisplayMemberBinding="{Binding LastSeenAt, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}"/>
                         </GridView>
                     </ListView.View>
                 </ListView>

@@ -21,37 +21,41 @@ public class CommandTools
     private readonly ICommandFilterService _commandFilter;
     private readonly IApprovalService _approvalService;
     private readonly IAuditLogService _auditLogService;
+    private readonly ISecurityOptionsProvider _securityOptions;
 
     public CommandTools(
         IConfigService configService,
         ISshService sshService,
         ICommandFilterService commandFilter,
         IApprovalService approvalService,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        ISecurityOptionsProvider securityOptions)
     {
         _configService = configService;
         _sshService = sshService;
         _commandFilter = commandFilter;
         _approvalService = approvalService;
         _auditLogService = auditLogService;
+        _securityOptions = securityOptions;
     }
 
     [McpServerTool(Name = "ssh_execute_command", UseStructuredContent = true, OutputSchemaType = typeof(CommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("在SSH服务器执行Shell命令(查日志/进程/磁盘/网络等)。危险命令拒绝, 敏感命令需桌面确认; SQL用mysql_*, Redis用redis_*")]
+    [Description("在SSH服务器执行Shell命令(查日志/进程/磁盘/网络等)。危险命令返回status=blocked, 敏感命令需人工确认(可能返回rejected/approval_timeout/approval_unavailable); SQL用mysql_*/postgres_*, Redis用redis_*; 输出最多2万字符, 超出置truncated=true")]
     public async Task<CommandResultDto> ExecuteCommand(
-        [Description("服务器ID, 可用ssh_list_servers列出")] string serverId,
-        [Description("要执行的Shell命令(单条), 如 'df -h'、'tail -n 100 /var/log/app.log'")] string command)
+        [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
+        [Description("要执行的Shell命令(单条), 如 'df -h'、'tail -n 100 /var/log/app.log'")] string command,
+        CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
-        var server = config.Servers.FirstOrDefault(s => s.Id == serverId);
+        var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverId);
         if (server == null)
-            return CommandResultDto.Fail("server_not_found", $"服务器未找到: {serverId}");
+            return CommandResultDto.Fail(resolveStatus!, resolveError!, "server_not_found", command);
 
         var filterResult = _commandFilter.CheckCommand(command);
 
         if (filterResult == CommandFilterResult.Blocked)
         {
-            await _auditLogService.LogCommandAsync(new CommandAuditLog
+            await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
             {
                 ServerId = server.Id,
                 ServerName = server.Name,
@@ -61,15 +65,17 @@ public class CommandTools
 
             return CommandResultDto.Fail("blocked",
                 "命令被安全策略禁止执行。原因: 该命令属于危险命令列表，可能对系统造成不可逆损害。",
-                "blocked_command", command);
+                "blocked_command", command, server.Id, server.Name, server.Host);
         }
 
         if (filterResult == CommandFilterResult.Sensitive)
         {
-            var approved = await _approvalService.RequestApprovalAsync(server.Name, command, filterResult);
-            if (!approved)
+            var outcome = await _approvalService.RequestApprovalAsync(
+                ToolSupport.ServerLabel(server), command, filterResult, null, null, cancellationToken);
+
+            if (outcome != ApprovalOutcome.Approved)
             {
-                await _auditLogService.LogCommandAsync(new CommandAuditLog
+                await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
                 {
                     ServerId = server.Id,
                     ServerName = server.Name,
@@ -77,12 +83,11 @@ public class CommandTools
                     Status = CommandStatus.Rejected
                 });
 
-                return CommandResultDto.Fail("rejected",
-                    "敏感命令被用户拒绝执行。该命令需要用户手动确认后才能执行。",
-                    "user_rejected", command);
+                var (status, error) = ApprovalOutcomeText.Describe(outcome, _securityOptions.Approval.TimeoutSeconds);
+                return CommandResultDto.Fail(status, error, "approval", command, server.Id, server.Name, server.Host);
             }
 
-            await _auditLogService.LogCommandAsync(new CommandAuditLog
+            await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
             {
                 ServerId = server.Id,
                 ServerName = server.Name,
@@ -91,36 +96,74 @@ public class CommandTools
             });
         }
 
-        var result = await _sshService.ExecuteCommandAsync(server, command);
+        var result = await _sshService.ExecuteCommandAsync(server, command, cancellationToken);
 
-        await _auditLogService.LogCommandAsync(new CommandAuditLog
+        // 命令已在远端执行, 审计失败不能让工具报错(否则模型重试会重复执行)
+        await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
         {
             ServerId = server.Id,
             ServerName = server.Name,
             Command = command,
-            Result = result.Output,
+            Result = result.Output.Length > ToolSupport.MaxAuditResultChars
+                ? result.Output[..ToolSupport.MaxAuditResultChars]
+                : result.Output,
             Status = result.Success ? CommandStatus.Executed : CommandStatus.Failed,
             ExitCode = result.ExitCode
         });
 
+        var (output, truncated, originalLength) = ToolSupport.Truncate(result.Output, ToolSupport.MaxOutputChars);
         return new CommandResultDto
         {
             Success = result.Success,
-            Status = result.Success ? null : "failed",
+            Status = result.Success ? null : ToolSupport.CommandFailureStatus(result),
             Error = result.Error,
-            Output = result.Output,
+            ServerId = server.Id,
+            ServerName = server.Name,
+            Host = server.Host,
+            Output = output,
+            Truncated = truncated,
+            OutputChars = originalLength,
             ExitCode = result.ExitCode,
             DurationMs = result.Duration.TotalMilliseconds
         };
     }
 
     [McpServerTool(Name = "ssh_get_command_history", UseStructuredContent = true, OutputSchemaType = typeof(CommandHistoryDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("查看SSH命令执行历史(审计)。SQL/Redis操作历史用datasource_get_sql_history")]
+    [Description("查看SSH命令执行历史(审计), 返回的result已截断到4000字符。支持limit/offset翻页; SQL/Redis操作历史用datasource_get_sql_history")]
     public async Task<CommandHistoryDto> GetCommandHistory(
-        [Description("服务器ID(可选, 留空查全部, 可用ssh_list_servers列出)")] string? serverId = null,
-        [Description("返回条数(默认50)")] int limit = 50)
+        [Description("服务器标识(可选, 留空查全部, 可用ssh_list_servers列出)")] string? serverId = null,
+        [Description(ToolSupport.HistoryLimitDescription)] int limit = ToolSupport.DefaultHistoryLimit,
+        [Description("跳过的条数, 与limit配合翻页(默认0)")] int offset = 0,
+        [Description("会话ID(可选): 只查某个 MCP 会话产生的记录; 当前会话ID见 mcp_self_check")] string? sessionId = null,
+        [Description("工具名(可选): 只查由某个 MCP 工具产生的记录, 如 ssh_execute_command / docker_logs")] string? tool = null)
     {
-        var records = (await _auditLogService.GetLogsAsync(serverId, limit)).ToList();
-        return new CommandHistoryDto { Success = true, Count = records.Count, Records = records };
+        var config = await _configService.LoadConfigAsync();
+        string? filterId = null;
+        if (!string.IsNullOrWhiteSpace(serverId))
+        {
+            var (server, status, error) = ToolSupport.ResolveServer(config, serverId!);
+            if (server == null)
+                return CommandHistoryDto.Fail(status!, error!);
+            filterId = server.Id;
+        }
+
+        var effectiveLimit = ToolSupport.ClampLimit(limit);
+        var records = (await _auditLogService.GetLogsAsync(
+                filterId, effectiveLimit, null, false, Math.Max(0, offset), sessionId, tool))
+            .ToList();
+
+        foreach (var record in records)
+        {
+            if (record.Result != null && record.Result.Length > ToolSupport.MaxAuditResultChars)
+                record.Result = record.Result[..ToolSupport.MaxAuditResultChars] + "...[已截断]";
+        }
+
+        return new CommandHistoryDto
+        {
+            Success = true,
+            Count = records.Count,
+            HasMore = records.Count >= effectiveLimit,
+            Records = records
+        };
     }
 }

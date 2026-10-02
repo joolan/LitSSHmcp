@@ -434,6 +434,21 @@ public partial class TopologyWindow : Window
         var relations = new MenuItem { Header = "查看/编辑关系…" };
         relations.Click += (_, _) => OpenNodeRelations(id);
         menu.Items.Add(relations);
+
+        // 待确认节点(disc:)额外提供 确认/删除
+        if (id.Contains(":disc:", StringComparison.Ordinal))
+        {
+            menu.Items.Add(new Separator());
+
+            var confirm = new MenuItem { Header = "确认节点（登记为资产）" };
+            confirm.Click += (_, _) => _viewModel.ConfirmNode(id);
+            menu.Items.Add(confirm);
+
+            var removeNode = new MenuItem { Header = "删除节点（清理发现边）" };
+            removeNode.Click += (_, _) => _viewModel.DeleteDiscoveredNode(id);
+            menu.Items.Add(removeNode);
+        }
+
         menu.IsOpen = true;
         e.Handled = true;
     }

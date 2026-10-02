@@ -14,7 +14,7 @@ Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管�
 | 文档 | 内容 |
 |------|------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计：分层结构、核心模块、安全模型、拓扑模型、线程模型、扩展点 |
-| [docs/TOOLS.md](docs/TOOLS.md) | 29个MCP工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
+| [docs/TOOLS.md](docs/TOOLS.md) | 49个MCP工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 迭代历史：每个版本的新增/修复/变更记录 |
 | [docs/UPGRADE_PLAN.md](docs/UPGRADE_PLAN.md) | 升级方案（Roadmap）：安全、可视化配置、运维、质量的分期计划 |
 
@@ -49,28 +49,51 @@ Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管�
 | `redis_read` | Redis只读命令（GET/HGETALL/INFO/SCAN/SLOWLOG等白名单） |
 | `redis_execute` | Redis写/管理命令（一律桌面审批，危险命令直接拒绝） |
 | `redis_diagnostics` | Redis诊断：内存/客户端/命中率/键空间/慢日志/主从/持久化 |
-| `datasource_get_sql_history` | SQL与Redis命令审计历史 |
+| `datasource_get_sql_history` | SQL与Redis命令审计历史（带 sessionId/tool，可过滤） |
+| `docker_ps` | 列出Docker容器（结构化：名称/镜像/状态/端口） |
+| `docker_logs` | 查看容器日志 |
+| `docker_inspect` | 容器详情（inspect：环境/挂载/网络/健康检查） |
+| `docker_stats` | 容器资源占用快照（CPU/内存/网络/磁盘IO） |
+| `docker_images` | 镜像列表（版本/大小） |
+| `docker_restart` | 重启容器（需审批） |
+| `docker_exec` | 容器内执行命令（需审批） |
+| `service_status` | systemd 服务状态 |
+| `service_list` | 列出 systemd 服务 |
+| `service_restart` | 重启 systemd 服务（需审批） |
+| `service_logs` | 服务日志（journalctl） |
+| `log_tail` | 查看日志文件尾部（可传 path 或 appId） |
+| `log_grep` | 日志按关键字/正则检索（可传 path 或 appId） |
+| `log_find` | 发现最近修改的日志文件（不知路径时先用它） |
+| `java_processes` | 列出 Java 进程（可传 appId 过滤） |
+| `java_threads` | 抓取线程栈（jstack，可传 appId 自动解析 pid） |
+| `java_heap` | 堆内存/GC（jcmd + jstat） |
+| `java_info` | JVM 版本/运行时长 |
+| `app_health_snapshot` | 按应用聚合体检（所在服务器进程/容器/端口 + 依赖数据源连通性） |
 | `topology_get_overview` | 资产拓扑图（服务器/应用/数据库及关系） |
 | `topology_get_dependencies` | 查询某资产的上下游依赖 |
-| `topology_discover` | 自动发现拓扑（java进程/网络连接/JDBC配置/docker容器/processlist） |
+| `topology_discover` | 自动发现拓扑（java/服务进程/端口/ESTAB/JDBC/Redis/RabbitMQ/Kafka/Nginx/docker/processlist；有节流） |
 | `mcp_usage_guide` | 获取使用指南 |
-| `mcp_self_check` | MCP 自检（配置/审计/主机密钥，可测连通性） |
+| `mcp_self_check` | MCP 自检（配置/审计/主机密钥，可测连通性；返回当前会话ID/客户端） |
+| `mcp_list_sessions` | 列出最近 MCP 会话（会话ID/客户端/首末活动） |
 
 各工具的适用场景与参数详见 [docs/TOOLS.md](docs/TOOLS.md)。
 
-**工具分组（可选，按部署裁剪）**：默认暴露全部 29 个工具；可在 App 菜单 **配置 → 工具分组设置** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `topology` / `guide`），降低 AI 上下文占用与误选。留空/不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。分组与工具对应表见 [docs/TOOLS.md](docs/TOOLS.md)。
+**工具分组（可选，按部署裁剪）**：默认暴露全部 49 个工具；可在 App 菜单 **配置 → 工具分组设置** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `docker` / `service` / `log` / `java` / `topology` / `app` / `guide`），降低 AI 上下文占用与误选。留空/不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。分组与工具对应表见 [docs/TOOLS.md](docs/TOOLS.md)。
+
+**AI 排障 skill**：仓库内置 [`docs/litssh-mcp-ops-skill/SKILL.md`](docs/litssh-mcp-ops-skill/SKILL.md)（工具无关，随仓库分发），供支持 skills 的 AI 智能体（opencode / Claude 等）使用。内容包含工具路由、标准排障流程、日志路径发现，以及 **MCP 未覆盖能力经 SSH 变通**的方案（如按 Java 启动命令/配置文件定位日志后再用 `log_tail`）。可复制到对应智能体的 skill 目录，或在 opencode 中用 `skills.paths` 指向该目录。
 
 ### 安全控制
 
 - **全局开关**: 安全设置中的「启用 MCP 服务」关闭后**拒绝所有工具调用**（`security.enabled`，按配置热生效、无需重启）
 - **禁止命令列表**: 直接拒绝执行危险命令
 - **敏感命令列表**: 弹出桌面窗口提示用户确认后执行
-- **授权确认弹窗**: 置顶确认框，默认 **120 秒无操作自动拒绝**；可选独立子进程/原生弹窗样式（`security.approval`）
-- **审批通道（带外）**: `security.approval.channels` 可选 `cli` —— 无桌面/headless 时操作员用 `litssh approvals` 查看、`litssh approve <id>` / `litssh deny <id>` 决定（首个决定者生效，超时拒绝）
+- **授权确认弹窗**: 置顶确认框，默认 **45 秒无操作自动拒绝**；可选独立子进程/原生弹窗样式（`security.approval`）
+- **审批通道**: `security.approval.channels` 默认 `["desktop","cli"]` —— 无桌面/headless 时操作员用 `litssh approvals` 查看、`litssh approve <id>` / `litssh deny <id>` 决定（首个决定者生效；超时→`approval_timeout`，无可用通道→`approval_unavailable`）
+- **审计会话/工具区分**: 每次启动 MCP 服务生成会话 ID，命令/SQL 审计带 `sessionId` 与 `tool`（哪个工具产生），并参与哈希链防篡改；可用 `mcp_list_sessions` / `*_history` 过滤
 - **文件传输审批**: 上传/下载需用户确认，并受**本地/远程路径白名单**与大小上限约束（`allowedLocalPaths` / `allowedRemotePaths` / `maxFileSizeBytes`）
 - **主机密钥校验(TOFU)**: 首次连接记录 SSH 主机指纹，之后指纹变化即拒绝（`security.sshHostKey.mode = tofu|strict|off`）
 - **按目标限流**: 单服务器/数据源的并发数与每分钟调用上限（`security.limits`）
-- **审计日志**: 记录所有命令与 SQL（含被拒绝的），支持 SQL 原文开关、字面量脱敏、**超期记录归档到历史表永久保留**；审计写入 **HMAC-SHA256 哈希链**，可在「审计日志」中**校验完整性**检测篡改（`security.audit`）
+- **审计日志**: 记录所有命令与 SQL（含被拒绝的），支持 SQL 原文开关、字面量脱敏、**超期记录归档到历史表永久保留**；审计写入 **HMAC-SHA256 哈希链**，可在「审计日志」中**校验完整性**检测篡改（`security.audit`）；每条记录带 **MCP 会话 ID**（每次启动 MCP 服务生成），便于按会话区分
 - **提权执行**: 权限不足时可使用sudo提权
 - **凭据隔离**: 数据库/SSH账号密码仅保存在MCP本机（DPAPI加密落盘），任何MCP工具的入参与出参都不包含密码，AI智能体只能通过`datasourceId`引用数据源
 - **SQL安全过滤**: `mysql_query`仅允许只读语句；`mysql_execute`中无WHERE的DELETE/UPDATE、DROP TABLE/DATABASE、GRANT等直接拒绝，其余敏感写语句需用户桌面确认
@@ -102,7 +125,7 @@ dotnet publish src/LitSSHmcp.McpServer -c Release -r win-x64 --self-contained -o
 dotnet run --project src/LitSSHmcp.App
 ```
 
-打开管理界面后：顶部菜单分为 **资产**（数据源管理 / 应用管理 / 资产拓扑(可视化编辑)）、**安全**（安全设置）、**审计**（审计日志）、**配置**（工具分组设置 / 导出配置 / 导入配置）、**MCP工具说明**（MCP 介绍 + 29 个工具的用途/参数/用法与意图路由）。
+打开管理界面后：顶部菜单分为 **资产**（数据源管理 / 应用管理 / 资产拓扑(可视化编辑)）、**安全**（安全设置）、**审计**（审计日志）、**配置**（工具分组设置 / 导出配置 / 导入配置）、**MCP工具说明**（MCP 介绍 + 49 个工具的用途/参数/用法与意图路由）。
 
 主界面为轻量客户端布局：**左侧**是 SSH 服务器列表（每项两行显示 名称 + `主机:端口`），顶部仅 **添加 / 刷新**，条目**右键菜单**为 连接 / 编辑 / 删除，**双击**即连接。连接后在右侧打开一个**会话标签页**：可执行命令、查看输出与最近活动、测试连接，标签顶部 `✕` 可关闭会话。
 
@@ -120,8 +143,8 @@ dotnet run --project src/LitSSHmcp.App
   - 关系逻辑校验（`runsOn` 只能 应用/数据库→服务器且**每节点只 runsOn 一台**、`connectsTo` 只能 应用→数据库、`canAccess` 只能 服务器→数据库、禁止自环）在创建时即时生效。
   - **性能诊断**：设置环境变量 `LITSSH_PERF=1` 后再操作画布，会把 `CommitLayout` / `RebuildEdges` 耗时、拖动会话汇总（`DragSession`，VM 每帧耗时）与帧率探针（`FrameProbe`，含 `tier=0` 软件渲染/RDP 标记）写入 `%APPDATA%\LitSSH\topology-perf.log`，二者对照即可区分瓶颈在 VM 还是渲染层（默认关闭、零开销）。
 - **安全设置**：可视化编辑命令/SQL 过滤、文件传输、主机密钥、限流、审计策略、**授权弹窗样式与审批通道**、**查询结果列级脱敏**。
-- **审计日志**：查看命令/SQL 审计；支持按 服务器/数据源ID 筛选 + **命令关键字模糊查询**、复制、导出 CSV、**含归档**（超期记录永久保留）与 **校验完整性**（哈希链防篡改）。
-- **MCP工具说明**：在 AI 智能体里更准确地使用 MCP —— 展示 MCP 接入配置（stdio + 客户端配置样例）、意图 → 工具路由表，以及 29 个工具的参数/返回/使用要点；左侧按分组浏览、可搜索，支持**复制本节 / 复制全部说明**粘贴到提示词。内容与 `docs/TOOLS.md`、MCP 服务器端工具注解**双向同步**（工具变动时三处一起改，代码内有同步约定注释）。
+- **审计日志**：查看命令/SQL 审计；支持按 服务器/数据源ID 筛选 + **命令关键字模糊查询** + **按会话ID 筛选**、复制、导出 CSV、**含归档**（超期记录永久保留）与 **校验完整性**（哈希链防篡改）。
+- **MCP工具说明**：在 AI 智能体里更准确地使用 MCP —— 展示 MCP 接入配置（stdio + 客户端配置样例）、意图 → 工具路由表，以及 49 个工具的参数/返回/使用要点；左侧按分组浏览、可搜索，支持**复制本节 / 复制全部说明**粘贴到提示词。内容与 `docs/TOOLS.md`、MCP 服务器端工具注解**双向同步**（工具变动时三处一起改，代码内有同步约定注释）。
 
 **方式二：手动编辑配置文件**
 
@@ -195,7 +218,7 @@ dotnet run --project src/LitSSHmcp.App
     { "from": "ssh:my-server", "to": "ds:mysql-order-01", "type": "canAccess" }
   ],
   "tools": {
-    "enabledGroups": ["ssh", "command", "datasource", "mysql", "postgres", "redis", "topology", "guide"]
+    "enabledGroups": ["ssh", "command", "datasource", "mysql", "postgres", "redis", "docker", "service", "log", "java", "topology", "app", "guide"]
   },
   "security": {
     "enabled": true,
@@ -216,11 +239,11 @@ dotnet run --project src/LitSSHmcp.App
       "allowedRemotePaths": ["/home", "/tmp", "/var/log"]
     },
     "sshHostKey": { "mode": "tofu" },
-    "discovery": { "allowedSearchPaths": ["/opt", "/home", "/srv", "/app", "/data"] },
+    "discovery": { "allowedSearchPaths": ["/opt", "/home", "/srv", "/app", "/data", "/etc/nginx"], "useSudo": false },
     "limits": { "maxConcurrentPerTarget": 3, "maxCallsPerMinutePerTarget": 60 },
     "audit": { "storeSqlText": true, "maskLiterals": false, "retentionDays": 90 },
     "masking": { "rules": [ { "column": "phone|mobile", "mode": "phone" } ] },
-    "approval": { "style": "process", "channels": ["desktop"], "timeoutSeconds": 120, "topMost": true }
+    "approval": { "style": "process", "channels": ["desktop", "cli"], "timeoutSeconds": 45, "topMost": true }
   }
 }
 ```
@@ -348,7 +371,7 @@ AI的典型排查链路：
 3. SSH侧：`ssh_execute_command` 查看 java 进程、端口、应用日志中的数据库连接异常
 4. 数据库侧：`mysql_diagnostics` 看连接数/慢查询/锁等待/复制状态，`mysql_query` 查 `SHOW FULL PROCESSLIST` 与慢日志，`mysql_explain` 分析问题SQL；涉及缓存时用 `redis_diagnostics` 看内存/命中率/慢日志、`redis_read` 查具体key
 5. 跨机关联：应用日志里的数据库IP与 `datasource_list` 返回的 `host/port` 对应，即可确认是哪个数据源（MySQL 3306 / Redis 6379 皆可匹配）
-6. 拓扑过期时用 `topology_discover` 自动补全（扫描java进程、ESTAB连接、配置文件JDBC地址、docker容器、MySQL processlist）
+6. 拓扑过期时用 `topology_discover` 自动补全（扫描 java/通用服务进程、监听端口、ESTAB 连接、配置文件 JDBC/Redis/RabbitMQ/Kafka/Nginx、docker 容器、MySQL processlist）；发现做了**节流**（同时只跑一个）；未登记的应用/数据源/客户端会以 `*:disc:*` "待确认"节点出现，可在拓扑页**右键 → 确认节点**登记为资产。
 
 ### 资产拓扑可视化
 
@@ -371,13 +394,13 @@ ssh:web-server-01  --canAccess-->  ds:mysql-order-01    # 服务器可访问数�
 
 ### 授权确认弹窗
 
-敏感操作（敏感命令、敏感 SQL、文件传输）会弹出确认框，默认 **置顶** 且 **120 秒无操作自动拒绝**。样式由 `security.approval.style` 控制：
+敏感操作（敏感命令、敏感 SQL、文件传输）会弹出确认框，默认 **置顶** 且 **45 秒无操作自动拒绝**。样式由 `security.approval.style` 控制：
 
 - `process`（推荐）：启动独立子进程显示弹窗，规避部分宿主（如 Electron 客户端）的隐藏窗口问题；
 - `dialog`：MCP 进程内显示；
 - `native`：原生置顶 MessageBox（无超时）。
 
-审批**通道**由 `security.approval.channels` 控制：`desktop`（本机弹窗）/ `cli`（带外，操作员用 `litssh approvals` 查看、`litssh approve/deny <id>` 决定）；可同时启用，**首个给出决定者生效**，超时或所有通道不可用则拒绝（fail-closed）。
+审批**通道**由 `security.approval.channels` 控制（默认 `["desktop","cli"]`）：`desktop`（本机弹窗）/ `cli`（带外，操作员用 `litssh approvals` 查看、`litssh approve/deny <id>` 决定）；可同时启用，**首个给出决定者生效**。结果为 `rejected`（拒绝）/ `approval_timeout`（超时）/ `approval_unavailable`（无可用通道）。
 
 ## 🔐 提权配置
 

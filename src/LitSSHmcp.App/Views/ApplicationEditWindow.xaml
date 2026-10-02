@@ -1,7 +1,7 @@
 <Window x:Class="LitSSHmcp.App.Views.ApplicationEditWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="{Binding WindowTitle}" Height="430" Width="440"
+        Title="{Binding WindowTitle}" Height="610" Width="440"
         WindowStartupLocation="CenterOwner">
     <Grid Margin="14">
         <Grid.RowDefinitions>
@@ -20,11 +20,19 @@
             <TextBox Text="{Binding ContainerName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"
                      ToolTip="与 'docker ps' 的 NAMES 一致；拓扑发现据此自动建立 应用→服务器 关系"/>  
 
+            <TextBlock Text="应用路径 (可选, 部署目录/jar/可执行文件路径)" Margin="0,0,0,2"/>
+            <TextBox Text="{Binding AppPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"
+                     ToolTip="如 /opt/order/order.jar 或 /www/server/nginx；自动发现时会尝试推断并预填"/>  
+
             <TextBlock Text="主机 (可选)" Margin="0,0,0,2"/>
             <TextBox Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
 
             <TextBlock Text="端口 (可选)" Margin="0,0,0,2"/>
             <TextBox Text="{Binding PortText, UpdateSourceTrigger=PropertyChanged}" Width="100" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+
+            <TextBlock Text="日志路径 (每行一条, 可选; 供 log_tail/log_grep 按应用查日志)" Margin="0,0,0,2"/>
+            <TextBox Text="{Binding LogPaths, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="52" FontFamily="Consolas" Margin="0,0,0,10"
+                     ToolTip="如 /var/log/myapp/app.log 或 /opt/myapp/logs/；须在安全设置 security.logs.allowedPaths 白名单内"/>
 
             <TextBlock Text="描述 (可选)" Margin="0,0,0,2"/>
             <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="56" TextWrapping="Wrap"/>

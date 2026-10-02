@@ -24,6 +24,12 @@ public class SqlFilterService : ISqlFilterService
         _options = options;
     }
 
+    /// <summary>
+    /// 只读入口(mysql_query / *_explain)的过滤。
+    /// 关键点: 首关键字为只读(含 with / explain)并不等于整条语句只读 ——
+    /// 数据修改 CTE(WITH ... DELETE/UPDATE)与 EXPLAIN ANALYZE &lt;DML&gt; 都会真的写库,
+    /// 因此这里必须再跑一遍敏感规则, 把它们从"只读通道"里踢出去。
+    /// </summary>
     public SqlFilterResult CheckReadOnly(string sql)
     {
         var config = _options.SqlFilter;
@@ -36,6 +42,9 @@ public class SqlFilterService : ISqlFilterService
 
         if (config.IsBlocked(sql))
             return SqlFilterResult.Blocked;
+
+        if (config.IsSensitive(sql))
+            return SqlFilterResult.Sensitive;
 
         return SqlFilterResult.Allowed;
     }

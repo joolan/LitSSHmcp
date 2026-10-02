@@ -11,6 +11,14 @@ public static class AppServiceFactory
 {
     public static IConfigService CreateConfigService() => new ConfigService();
 
+    public static ISshService CreateSshService()
+    {
+        var security = new SecurityOptionsProvider();
+        var knownHosts = new FileSshKnownHostsStore();
+        var limiter = new TargetLimiter(security);
+        return new SshService(knownHosts, security, limiter);
+    }
+
     public static IDatasourceDriverRegistry CreateDriverRegistry(IConfigService configService)
     {
         var security = new SecurityOptionsProvider();
@@ -31,6 +39,7 @@ public static class AppServiceFactory
         var ssh = new SshService(knownHosts, security, limiter);
         var registry = CreateDriverRegistry(configService);
         var store = new TopologyStore();
-        return new TopologyService(configService, ssh, registry, store);
+        return new TopologyService(configService, ssh, registry, store,
+            new CommandFilterService(security), new AuditLogService(security));
     }
 }

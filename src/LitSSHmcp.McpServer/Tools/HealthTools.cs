@@ -20,26 +20,30 @@ public class HealthTools
     private readonly ISshKnownHostsStore _knownHosts;
     private readonly ISshService _sshService;
     private readonly IDatasourceDriverRegistry _driverRegistry;
+    private readonly McpSessionTracker _sessionTracker;
 
     public HealthTools(
         IConfigService configService,
         IAuditLogService auditLogService,
         ISshKnownHostsStore knownHosts,
         ISshService sshService,
-        IDatasourceDriverRegistry driverRegistry)
+        IDatasourceDriverRegistry driverRegistry,
+        McpSessionTracker sessionTracker)
     {
         _configService = configService;
         _auditLogService = auditLogService;
         _knownHosts = knownHosts;
         _sshService = sshService;
         _driverRegistry = driverRegistry;
+        _sessionTracker = sessionTracker;
     }
 
     [McpServerTool(Name = "mcp_self_check", UseStructuredContent = true, OutputSchemaType = typeof(HealthCheckDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("MCP自检: 配置/审计库/主机密钥可读写, 可选测服务器或数据源连通性。问'MCP是否正常/工具用不了'时用")]
+    [Description("MCP自检: 配置/审计库/主机密钥可读写, 可选测某服务器或数据源连通性。问'MCP是否正常/工具用不了'时用")]
     public async Task<HealthCheckDto> HealthCheck(
-        [Description("可选: 要测试连通性的服务器ID, 可用ssh_list_servers列出")] string? serverId = null,
-        [Description("可选: 要测试连通性的数据源ID, 可用datasource_list列出")] string? datasourceId = null)
+        [Description("可选: 要测试连通性的服务器标识(ID/名称/主机名), 可用ssh_list_servers列出")] string? serverId = null,
+        [Description("可选: 要测试连通性的数据源标识(ID/名称), 可用datasource_list列出")] string? datasourceId = null,
+        CancellationToken cancellationToken = default)
     {
         var checks = new List<HealthCheckItemDto>();
         var ok = true;
@@ -85,21 +89,23 @@ public class HealthTools
         if (!string.IsNullOrWhiteSpace(serverId))
         {
             var config = await _configService.LoadConfigAsync();
-            var server = config.Servers.FirstOrDefault(s => s.Id == serverId);
+            var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverId!);
             if (server == null)
             {
                 ok = false;
-                checks.Add(new HealthCheckItemDto { Name = $"ssh:{serverId}", Status = "server_not_found", Detail = "服务器未找到" });
+                checks.Add(new HealthCheckItemDto { Name = $"ssh:{serverId}", Status = resolveStatus ?? "server_not_found", Detail = resolveError ?? string.Empty });
             }
             else
             {
-                var reachable = await _sshService.TestConnectionAsync(server);
-                if (!reachable) ok = false;
+                var probe = await _sshService.ProbeConnectionAsync(server, cancellationToken);
+                if (!probe.Success) ok = false;
                 checks.Add(new HealthCheckItemDto
                 {
-                    Name = $"ssh:{serverId}",
-                    Status = reachable ? "ok" : "error",
-                    Detail = reachable ? "连接成功" : "连接失败或主机密钥校验不通过"
+                    Name = $"ssh:{server.Name} ({server.Host})",
+                    Status = probe.Success ? "ok" : ToolSupport.ConnectionFailureStatus(probe.ErrorKind),
+                    Detail = probe.Success
+                        ? $"连接成功 ({probe.Duration.TotalMilliseconds:F0}ms)"
+                        : $"{probe.Error} [kind={probe.ErrorKind}]"
                 });
             }
         }
@@ -107,11 +113,11 @@ public class HealthTools
         if (!string.IsNullOrWhiteSpace(datasourceId))
         {
             var config = await _configService.LoadConfigAsync();
-            var ds = config.DataSources.FirstOrDefault(d => d.Id == datasourceId);
+            var (ds, resolveStatus, resolveError) = ToolSupport.ResolveDatasource(config, datasourceId!);
             if (ds == null)
             {
                 ok = false;
-                checks.Add(new HealthCheckItemDto { Name = $"ds:{datasourceId}", Status = "datasource_not_found", Detail = "数据源未找到" });
+                checks.Add(new HealthCheckItemDto { Name = $"ds:{datasourceId}", Status = resolveStatus ?? "datasource_not_found", Detail = resolveError ?? string.Empty });
             }
             else
             {
@@ -119,16 +125,21 @@ public class HealthTools
                 if (driver == null)
                 {
                     ok = false;
-                    checks.Add(new HealthCheckItemDto { Name = $"ds:{datasourceId}", Status = "unsupported_type", Detail = ds.Type });
+                    checks.Add(new HealthCheckItemDto
+                    {
+                        Name = $"ds:{ds.Name} ({ds.Host}:{ds.Port})",
+                        Status = "unsupported_type",
+                        Detail = $"类型 {ds.Type} 暂不支持, 支持: {string.Join(", ", _driverRegistry.SupportedTypes)}"
+                    });
                 }
                 else
                 {
-                    var result = await driver.TestAsync(ds);
+                    var result = await driver.TestAsync(ds, cancellationToken);
                     if (!result.Success) ok = false;
                     checks.Add(new HealthCheckItemDto
                     {
-                        Name = $"ds:{datasourceId}",
-                        Status = result.Success ? "ok" : "error",
+                        Name = $"ds:{ds.Name} ({ds.Host}:{ds.Port})",
+                        Status = result.Success ? "ok" : "connection_error",
                         Detail = result.Success
                             ? $"连接成功 ({result.DurationMs:F0}ms) {result.Version}" + (result.ViaTunnelServer != null ? $" 经隧道 {result.ViaTunnelServer}" : "")
                             : result.Error
@@ -137,6 +148,30 @@ public class HealthTools
             }
         }
 
-        return new HealthCheckDto { Success = ok, Checks = checks };
+        return new HealthCheckDto
+        {
+            Success = ok,
+            SessionId = _auditLogService.SessionId,
+            ClientName = _sessionTracker.ClientName,
+            ClientVersion = _sessionTracker.ClientVersion,
+            Checks = checks
+        };
+    }
+
+    [McpServerTool(Name = "mcp_list_sessions", UseStructuredContent = true, OutputSchemaType = typeof(SessionListDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("列出最近的 MCP 会话(会话ID/客户端名称与版本/首末活动时间)。审计记录带 sessionId, 用它能知道是哪个AI客户端、哪次连接产生的; 配合 *_history 工具的 sessionId 参数过滤具体记录")]
+    public async Task<SessionListDto> ListSessions(
+        [Description("返回条数(默认50, 上限500)")] int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var sessions = await _auditLogService.GetSessionsAsync(Math.Clamp(limit, 1, 500));
+            return new SessionListDto { Success = true, Count = sessions.Length, Sessions = sessions.ToList() };
+        }
+        catch (Exception ex)
+        {
+            return SessionListDto.Fail(ex.Message);
+        }
     }
 }

@@ -58,6 +58,15 @@ public class ApplicationConfig
 
     /// <summary>Docker 容器名（type=docker 时用于把应用关联到容器，便于 AI 运维；拓扑发现据此匹配并自动建立 runsOn 关系）。</summary>
     public string? ContainerName { get; set; }
+
+    /// <summary>应用路径（可选）：部署目录 / jar / 可执行文件路径，便于定位日志与排查。自动发现时会尝试推断并预填。</summary>
+    public string? Path { get; set; }
+
+    /// <summary>
+    /// 该应用的日志文件路径（可多条）。供 log_tail/log_grep 在只传 appId 时解析路径；
+    /// 仍受 security.logs.allowedPaths 白名单约束。
+    /// </summary>
+    public string[] LogPaths { get; set; } = Array.Empty<string>();
 }
 
 public class RelationConfig
@@ -73,8 +82,10 @@ public static class AssetNode
     public const string SshPrefix = "ssh:";
     public const string DsPrefix = "ds:";
     public const string AppPrefix = "app:";
+    public const string MqPrefix = "mq:";
 
     public static string Ssh(string serverId) => SshPrefix + serverId;
     public static string Ds(string datasourceId) => DsPrefix + datasourceId;
     public static string App(string applicationId) => AppPrefix + applicationId;
+    public static string Mq(string endpoint) => MqPrefix + endpoint;
 }

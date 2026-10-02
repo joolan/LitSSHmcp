@@ -21,4 +21,10 @@ public class SqlAuditLog
     public long? RowsAffected { get; set; }
     public double? DurationMs { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+
+    /// <summary>产生该记录的 MCP 会话 ID（每次启动 MCP 服务生成，用于按会话区分/筛选审计）。</summary>
+    public string? SessionId { get; set; }
+
+    /// <summary>产生该记录的 MCP 工具名（如 mysql_query / redis_execute），由请求过滤器自动填充。</summary>
+    public string? Tool { get; set; }
 }

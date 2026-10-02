@@ -50,6 +50,18 @@ public static class ConfigMigrator
             changed = true;
         }
 
+        if (config.Security.Logs == null)
+        {
+            config.Security.Logs = new LogConfig();
+            changed = true;
+        }
+
+        if (config.Security.Masking == null)
+        {
+            config.Security.Masking = new MaskingConfig();
+            changed = true;
+        }
+
         if (config.Security.Limits == null)
         {
             config.Security.Limits = new LimitsConfig();

@@ -49,7 +49,11 @@
                     <TextBlock Text="(Tofu=首连记录, Strict=仅信任已记录, Off=不校验)" VerticalAlignment="Center" Foreground="Gray" FontSize="10" Margin="8,0,0,0"/>
                 </StackPanel>
                 <TextBlock Text="拓扑发现允许路径 (每行一条):" Margin="0,0,0,2"/>
-                <TextBox Text="{Binding DiscoveryPaths, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="40" FontFamily="Consolas" Margin="0,0,0,8"/>
+                <TextBox Text="{Binding DiscoveryPaths, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="40" FontFamily="Consolas" Margin="0,0,0,4"/>
+                <CheckBox Content="自动发现使用提权 (sudo, 以便识别 root 服务的监听端口)" IsChecked="{Binding DiscoveryUseSudo}" Margin="0,0,0,8"
+                          ToolTip="仅当该服务器配置了 SudoType 时生效；只读探测，提权密码由服务端注入、不会暴露给 AI"/>
+                <TextBlock Text="日志读取允许路径 (每行一条, 供 log_tail/log_grep):" Margin="0,0,0,2"/>
+                <TextBox Text="{Binding LogAllowedPaths, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="40" FontFamily="Consolas" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                     <TextBlock Text="每目标并发上限:" VerticalAlignment="Center"/>
                     <TextBox Text="{Binding MaxConcurrent, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,16,0"/>

@@ -16,7 +16,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
 │ LitSSHmcp.McpServer │  │   LitSSHmcp.App     │  │   LitSSHmcp.Cli     │
 │ MCP服务器(stdio)     │  │ WPF管理界面(MVVM)    │  │ 终端SSH工具          │
- │ 29个MCP Tools        │  │ 服务器/数据源/拓扑配置 │  │ list/connect/run    │
+ │ 49个MCP Tools        │  │ 服务器/数据源/拓扑配置 │  │ list/connect/run    │
 └──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
            │                        │                        │
            └────────────────────────┼────────────────────────┘
@@ -38,7 +38,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 | 项目 | 目标框架 | 职责 | 关键依赖 |
 |------|---------|------|---------|
 | `LitSSHmcp.Core` | net8.0 | 数据模型 + 全部业务服务（不含任何入口逻辑） | SSH.NET 2026.0.0、MySqlConnector 2.4.0、Npgsql 8.0.5、Microsoft.Data.Sqlite、System.Security.Cryptography.ProtectedData |
-| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、29 个工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
+| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、49 个工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理界面（服务器/数据源/应用/资产拓扑可视化编辑/安全设置/审计/工具说明/工具分组） | WPF、Core |
 | `LitSSHmcp.Cli` | net10.0 | 终端 SSH 工具（`litssh list/connect/run`） | Core |
 | `LitSSHmcp.Tests` | net8.0 | Core 单元测试（安全过滤/路径策略/配置迁移/加密/驱动协议等） | Core、xunit |
@@ -64,7 +64,7 @@ LitSSHmcp/
 │   └── config.example.json       # 配置文件示例
 ├── src/
 │   ├── LitSSHmcp.Core/           # 模型 + 业务服务（SSH/Datasource/Topology/Security/Storage）
-│   ├── LitSSHmcp.McpServer/      # MCP 服务器（Program.cs + Tools/ 11 个工具类）
+│   ├── LitSSHmcp.McpServer/      # MCP 服务器（Program.cs + Tools/ 16 个工具类）
 │   ├── LitSSHmcp.App/            # WPF 管理界面（Views/ + ViewModels/）
 │   └── LitSSHmcp.Cli/            # CLI
 └── tests/
@@ -77,9 +77,9 @@ LitSSHmcp/
 
 - `Program.cs` 用 `Host.CreateApplicationBuilder` 组装依赖注入，然后：
   - `.WithStdioServerTransport()` —— JSON-RPC 走 stdin/stdout；
-  - `.WithTools<T>()` 注册 11 个工具类，共 29 个工具（详见 [TOOLS.md](TOOLS.md)）；每个工具带 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` 注解；
+  - `.WithTools<T>()` 注册 16 个工具类，共 49 个工具（详见 [TOOLS.md](TOOLS.md)）；每个工具带 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` 注解；
   - **工具分组**：启动时读取 `config.json` 的 `tools.enabledGroups`（`AppConfig.Tools` + `ToolGroups.ResolveEnabled`，留空=全部），按分组**条件注册** `WithTools<T>()`，可只暴露部分工具以降低 AI 上下文占用与误选；未知分组忽略并启动告警（见 [TOOLS.md](TOOLS.md)「工具分组」）；
-  - **工具清单单一来源**：`get_usage_guide` 的工具清单由 `[McpServerTool]`/`[Description]` 反射生成（不手写）；`tests/LitSSHmcp.McpServer.Tests` 校验"已注册工具 ↔ `docs/TOOLS.md` ↔ 指南"一致；
+  - **工具清单单一来源**：`mcp_usage_guide` 的工具清单由 `[McpServerTool]`/`[Description]` 反射生成（不手写）；`tests/LitSSHmcp.McpServer.Tests` 校验"已注册工具 ↔ `docs/TOOLS.md` ↔ 指南"一致；
   - **MCP 协议增强**：`initialize` 返回 **Server Instructions**（会话级行为约定，见 `Services/McpServerInstructions.cs`）；文件上传/下载通过注入的 `IProgress<ProgressNotificationValue>` 向前端推送 `notifications/progress`；
   - 日志通过 `LogToStandardErrorThreshold` 全部导向 **stderr**，同时经 `FileLoggerProvider` 写入 `%APPDATA%\LitSSH\logs\mcp-YYYYMMDD.log`（保留 7 天），stdout 严格保留给 MCP 协议（否则会污染协议流）。
 - 启动时执行：配置加载（触发 `schemaVersion` 迁移）→ 拓扑库初始化 → 审计库初始化。
@@ -132,10 +132,11 @@ LitSSHmcp/
   - `CheckReadOnly`：只允许 `SELECT/SHOW/EXPLAIN/DESC/WITH`，多语句/命中黑名单 → `Blocked`；
   - 写语句分类：`DROP DATABASE/TABLE`、无 WHERE 的 `DELETE/UPDATE`、`TRUNCATE`、`GRANT` 等 → `Blocked`；`INSERT/UPDATE/DELETE/DDL` → `Sensitive`（需桌面确认）。
 - `RedisCommandPolicy`（`RedisCommandPolicy.cs`）：Redis 命令三档分类 —— 只读白名单（GET/INFO/SLOWLOG GET/CONFIG GET 等）→ `redis_read` 直接执行；危险与阻塞类（`SHUTDOWN`/`FLUSHALL`/`FLUSHDB`/`DEBUG`/`SWAPDB`/`REPLICAOF`/`SUBSCRIBE`/`BLPOP`/`MODULE LOAD` 等）→ 硬拒绝；其余写命令 → `redis_execute` **一律桌面审批**（第一期不分级）。
-- `AuditLogService`：SQLite `%APPDATA%\LitSSH\audit.db`（WAL 模式 + `busy_timeout`，按时间/服务器/数据源建索引），三张表：
-  - `CommandAuditLogs`：SSH 命令执行（含被拒绝的）；
-  - `SqlAuditLogs`：SQL 操作（query/execute/explain，含 blocked/rejected）；Redis 命令审计也写入本表（`operation` 同 query/execute/diagnostics，SQL 列记录命令原文）；
-  - `TopologyEdges`：`topology_discover` 自动发现的关系缓存。
+- `AuditLogService`：SQLite `%APPDATA%\LitSSH\audit.db`（WAL 模式 + `busy_timeout`，按时间/服务器/数据源建索引）：
+  - `AuditLogs`：SSH 命令执行（含被拒绝的）；每条带 `SessionId`（MCP 会话，每次启动服务生成）与 `Tool`（产生记录的工具名）；
+  - `SqlAuditLogs`：SQL 操作（query/execute/explain，含 blocked/rejected）；Redis 命令审计也写入本表（`operation` 同 query/execute/diagnostics，SQL 列记录命令原文）；同样带 `SessionId`/`Tool`；
+  - `Sessions`：MCP 会话表（会话ID → 客户端名称/版本、首末活动），由 `McpSessionFilter` 从 `initialize` 后的客户端信息回填；
+  - `TopologyEdges` / `TopologyNodes`：`topology_discover` 自动发现的关系缓存与节点信息（端口/类型/路径）。
 - **审计防篡改与永久归档**：`AuditChain`（HMAC-SHA256 哈希链，密钥 DPAPI 保护于 `audit.db.key`；无密钥时退化为 SHA-256）+ 历史归档表 `AuditLogsHistory`/`SqlAuditLogsHistory`——超过 `security.audit.retentionDays` 的活动记录**移动**到历史表（永久保留，链不删除、Id 不变）；`IAuditLogService.VerifyChainAsync()` 校验整链完整性，App「审计日志」提供“校验完整性/含归档”。
 - **带外审批**：`ApprovalService` 按 `security.approval.channels` 启用 `desktop`（`DesktopApprovalService` 弹窗）与 `cli`（写 `%APPDATA%\LitSSH\approvals\pending-<id>.json` 等待决策文件，操作员用 `litssh approve/deny <id>` 决定）；共享 `ApprovalFileStore` 文件格式。
 - `PathPolicy`：文件传输路径白名单校验（本地 `GetFullPath` 规范化 + 前缀匹配；远程 POSIX 规范化并拒绝 `..` 穿越）。
@@ -146,7 +147,7 @@ LitSSHmcp/
 - 关系类型（`RelationConfig`）：`runsOn`（应用**或数据库**运行在服务器）、`connectsTo`（应用连接数据库）、`canAccess`（服务器可访问数据库，同时充当隧道跳板推导依据）；另有通用占位 `relatedTo`（无特定语义，仅作待确认关联，仍按方向参与依赖查询；`type` 留空时默认归为 `relatedTo`）。
 - **双轨来源**：
   1. 人工声明：`config.json` 的 `relations` 数组；
-  2. 自动发现：`TopologyService.DiscoverAsync` 扫描服务器上的 java 进程 / ESTAB 网络连接 / 配置文件 JDBC 地址 / `docker ps` 容器，并用 MySQL `SHOW PROCESSLIST` 反查客户端 IP，写入 `TopologyEdges`；Docker 容器按 `ApplicationConfig.ContainerName`（或应用名）匹配已登记应用，自动建立 `app --runsOn--> ssh` 关系。
+  2. 自动发现：`TopologyService.DiscoverAsync`（**节流**：同时只跑一个）扫描服务器上的 java 进程 / 通用服务进程（nginx/mysql/redis 等，按进程名精准匹配，带监听端口）/ ESTAB 网络连接 / 配置文件 JDBC(`mysql`/`postgresql`)/Redis/RabbitMQ/Kafka/Nginx(`upstream`/`proxy_pass`) / `docker ps` 容器，并用 MySQL `SHOW PROCESSLIST` 反查客户端 IP，写入 `TopologyEdges`（+ 节点信息 `TopologyNodes`）；匹配到已登记资产则连真实节点，未匹配的以 `*:disc:*` "待确认"节点出现，可在拓扑页右键确认（登记为资产）/删除；本地客户端(localhost)归属到所属服务器。
   3. 关系校验与清理：`RelationRules.TryValidate` 保证关系类型与节点类型匹配（拒绝 `ssh --runsOn--> ssh` 等）；删除服务器/数据源/应用时级联删除手动关系并调用 `ITopologyStore.RemoveEdgesByNodeAsync` 清理自动发现边。
 - `TopologyService` 合并两轨生成 `TopologyGraph`，提供 `GetDependencies(assetId)` 上下游查询。
 
@@ -170,7 +171,7 @@ LitSSHmcp/
   - `AuditWindow` / `AuditViewModel`：命令/SQL 审计查看、CSV 导出、**含归档**（永久保留的历史表）、**校验完整性**（哈希链）；
   - `SecuritySettingsWindow` / `SecuritySettingsViewModel`：**MCP 全局开关**、命令/SQL 过滤、文件传输、主机密钥、发现路径、限流、审计策略、**审批通道**、**查询结果脱敏** 的可视化编辑；
   - `TopologyWindow` / `TopologyViewModel`：资产拓扑可视化 + 自动发现入口。`runsOn` 的应用**与数据库**都内嵌在所属服务器区块内（一眼看出服务器上运行了哪些服务/库），节点标题附带端口（如 `订单库 :3306`），`connectsTo`/`canAccess` 以带类型标注的连线绘制，数据库运行在所连服务器上时省略冗余 `canAccess`，自动发现的关系用虚线区分；鼠标悬浮任一节点显示详情（主机/端口/账号/类型/描述/标签，密码等敏感信息不展示）。连线绘制在**服务器区块之上、叶子节点之下**，采用**避障正交路由**（Hanan 栅格 + A*，不直穿其它节点；端点从四边中点择优；源/目标所在服务器区块对其子节点透明，可进入 `runsOn` 嵌套区块；回退 Z 形），拐角圆角化，起点圆点、终点箭头；交叉处过桥。**可交互编辑**：拖动/缩放节点（拖服务器带动子节点；位置按「起点 + 总位移」绝对推导、往返不漂移；**四角手柄 + 四边内侧直接拉伸**，最小尺寸 80×36）、选中节点从边中点端口**拖拽建边**（自动推断类型并做逻辑校验，含 `runsOn` 每节点唯一）、**点选连线删除**（手动关系删 `config.Relations`；自动发现边清理 `TopologyEdges`）、拖动连线**端点锚点**指定接边位置、**网格吸附**、**Ctrl+Z/Y 撤销重做**、「重新自动布局」；手动布局存 `%APPDATA%\LitSSH\topology-layout.json`。画布支持**无限平移/缩放**（滚轮缩放、适应窗口、`Ctrl+0` 重置；右上角**「更多操作 ▾」**下拉含 ＋/－/适应/100%/刷新/**导出图片…**）；关系属性面板可拖动；拖动节点进出服务器时按**几何落点**自动增删 `runsOn`（完全落入=建立、拖出=弹窗确认删除、部分重叠=禁止回退），落点判定见 `TopologyViewModel.EndNodeDragAsync`。`runsOn` 托管的子节点用**点线边框**渲染；画布有**网格背景**且移动/缩放吸附 10px；调整大小与其它节点接触时就地停住、被挡后以当前几何**重锚**（反向拖动无死区），服务器缩小时托管子节点自动收紧、**不参与** `ServerOverlapInvalid` 校验；手动锚点通过 `FixedFromSide/ToSide` 固定侧向、移动/拖动过程（快路由）也不漂移；拖动过程跳过过桥计算并跳过吸附后未位移的重算以降低卡顿。画布网格用独立 `GridLayer`（`DrawingBrush.Transform` 跟随缩放/平移，任何缩放/平移后边缘都有网格）；空白处**左键按住即可平移**（不再用中/右键）；指针悬停节点四边/四角切换缩放光标（**四边按下即可拉伸该侧**）、节点上切换移动光标；节点**右键菜单**打开 `NodeRelationsWindow` 列出该节点相关关系并可编辑（`RelationRules` 校验）/删除（列表用节点名、当前节点红色加粗、悬浮显示 ID）。解除 `runsOn` 后由 `RelocateOrphanedStandalone` 将残留的独立节点移到就近空白处；同走廊连线不再分道错位（`LaneGap=0`，连接点可重叠）。
-  - `McpToolsWindow`：菜单"配置后"的 **MCP工具说明**，展示 MCP 接入配置 + 意图路由表 + 全部工具的参数/用法。内容来自 `docs/TOOLS.md`（以 `EmbeddedResource` 嵌入 `LitSSHmcp.App.csproj`），因此**与 MCP 服务器端工具注解共享唯一事实来源**：工具变动时须同步 ① `src/LitSSHmcp.McpServer/Tools/*.cs` 的 `[McpServerTool]`/`[Description]` 注解（`get_usage_guide` 清单由其反射生成，无需手改）② `docs/TOOLS.md` ③ `Program.cs` 的 `WithTools<T>()`；三者一致性由 `tests/LitSSHmcp.McpServer.Tests` 守门。窗口左侧按 **`概览与接入` + 9 个工具分组**展示，分组标题为 `## <中文名>（<分组键>）`，分组键与「工具分组设置」的 `tools.enabledGroups`（`ToolGroups.All`）保持一致；`### \`工具名\`` 计为工具，其它 `###` 子标题并入章节内容。
+  - `McpToolsWindow`：菜单"配置后"的 **MCP工具说明**，展示 MCP 接入配置 + 意图路由表 + 全部工具的参数/用法。内容来自 `docs/TOOLS.md`（以 `EmbeddedResource` 嵌入 `LitSSHmcp.App.csproj`），因此**与 MCP 服务器端工具注解共享唯一事实来源**：工具变动时须同步 ① `src/LitSSHmcp.McpServer/Tools/*.cs` 的 `[McpServerTool]`/`[Description]` 注解（`mcp_usage_guide` 清单由其反射生成，无需手改）② `docs/TOOLS.md` ③ `Program.cs` 的 `WithTools<T>()`；三者一致性由 `tests/LitSSHmcp.McpServer.Tests` 守门。窗口左侧按 **`概览与接入` + 14 个工具分组**展示，分组标题为 `## <中文名>（<分组键>）`，分组键与「工具分组设置」的 `tools.enabledGroups`（`ToolGroups.All`）保持一致；`### \`工具名\`` 计为工具，其它 `###` 子标题并入章节内容。
   - `ToolGroupsWindow` / `ToolGroupsViewModel`：菜单 **配置 → 工具分组设置**，可视化勾选要暴露的工具分组（含 启用全部/全部停用/重新加载/保存），写入 `config.json` 的 `tools.enabledGroups`；启用 mysql/redis 却停用 datasource 时给出提示。
 - 主界面 `MainWindow` 采用顶部菜单分类（资产 / 安全 / 审计 / 配置 / MCP工具说明）+ 轻量客户端布局：左侧服务器列表（两行紧凑项，顶部仅 添加/刷新，连接/编辑/删除走条目右键菜单，双击连接），右侧按会话打开**标签页**（每标签含命令输出、命令输入、最近活动）。
 - 配置导入/导出：菜单"配置"支持导出（可选脱敏，不含任何密码）与导入；同菜单下 **工具分组设置** 用于裁剪暴露给 AI 的工具分组。
@@ -252,9 +253,9 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 |----|------|---------|
 | 全局开关 | `security.enabled=false` 时拒绝所有工具调用（call-tool 请求中间件，热生效） | `McpGlobalSwitch` + `McpServerOptions.Filters` |
 | 命令执行 | 黑名单直接拒绝 / 敏感命令确认 | `CommandFilterService` + `ApprovalService` |
-| 授权确认 | 多通道（`security.approval.channels`）+ 无操作超时自动拒绝（fail-closed）；desktop 通道支持 `style=process`（独立子进程弹窗，规避宿主隐藏窗口）/`dialog`/`native`，cli 通道写待决文件由 `litssh approve/deny` 决定 | `ApprovalService` + `ApprovalDialog` / `ApprovalRequestHost` / `CliApprovalChannel` |
-| 文件传输 | 开关 + 本地/远程路径白名单（`..` 穿越拦截）+ 大小上限 + 桌面确认 | `FileTransferTools` + `PathPolicy` + `SshService` |
-| SQL | 只读工具只放行只读语句；写工具拦截危险语句、敏感语句用户确认 | `SqlFilterService` |
+| 授权确认 | 多通道（`security.approval.channels`，默认 `["desktop","cli"]`）任一通道给出结论即生效；超时返回 `approval_timeout`、全体弃权返回 `approval_unavailable`、任一通道拒绝即 `rejected`（fail-closed）；desktop 通道支持 `style=process`（独立子进程弹窗，规避宿主隐藏窗口，原生带超时的消息框）/`dialog`/`native`，cli 通道写待决文件由 `litssh approve/deny` 决定 | `ApprovalService` + `ApprovalDialog` / `ApprovalRequestHost` / `CliApprovalChannel` |
+| 文件传输 | 开关 + 本地/远程路径白名单（`..` 穿越拦截）+ 大小上限 + 人工确认 | `FileTransferTools` + `PathPolicy` + `SshService` |
+| SQL | 只读工具只放行真正只读的语句（数据修改型 CTE、`EXPLAIN ANALYZE <DML>` 会被判为写操作）；写工具拦截危险语句、敏感语句用户确认 | `SqlFilterService` |
 | Redis | 只读白名单放行；危险/阻塞命令硬拒绝；其余写命令一律用户确认（第一期） | `RedisCommandPolicy` + `RedisTools` |
 | 凭据 | DPAPI 加密落盘（`enc:`）；工具入参只用 `datasourceId`；出参永不含密码 | `ConfigService` + `DpapiSecretProtector` |
 | 隧道 | MySQL/PostgreSQL/Redis 密码只发给对应数据库，不经过跳板机配置 | `SshTunnel` |
@@ -264,7 +265,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 | 审计 | 命令、SQL（含被拒绝/被驳回）全部落 SQLite（WAL + 索引）；原文开关/字面量脱敏/超期清理见 `security.audit` | `AuditLogService` + `SqlRedactor` |
 | 配置热更新 | commandFilter/sqlFilter/fileTransfer 改动按文件 mtime 即时生效，无需重启 | `SecurityOptionsProvider` |
 | 日志 | MCP 日志走 stderr（不污染 stdout 协议流）+ 本机文件 | `Program.cs` + `FileLoggerProvider` |
-| 工具风险提示 | 29 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
+| 工具风险提示 | 49 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
 
 ## 9. 扩展点
 
@@ -307,7 +308,7 @@ dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publi
 2. **stdout 是协议流**：`initialize` → `notifications/initialized` → `tools/list` / `tools/call` 按 JSON-RPC 换行分帧；日志只应出现在 stderr；
 3. **中文请求体要以 UTF-8 字节写入 stdin**：PowerShell 字符串直接写管道可能按本地代码页编码，导致服务端解析失败。建议向 `$p.StandardInput.BaseStream.Write(UTF8 bytes)`。
 
-验收基线：`initialize` 成功、`tools/list` 返回 29 个工具、`mcp_usage_guide`/`datasource_list` 响应正常、`mysql_query`/`redis_read` 等错误路径返回结构化 `error`。上述 stdio 冒烟现已固化为 `tests/LitSSHmcp.McpServer.Tests` 的集成测试（真实启动服务器进程，用 `LITSSH_DATA_DIR` 指向临时目录隔离）。
+验收基线：`initialize` 成功、`tools/list` 返回 49 个工具、`mcp_usage_guide`/`datasource_list` 响应正常、`mysql_query`/`redis_read` 等错误路径返回结构化 `error`。上述 stdio 冒烟现已固化为 `tests/LitSSHmcp.McpServer.Tests` 的集成测试（真实启动服务器进程，用 `LITSSH_DATA_DIR` 指向临时目录隔离）。
 
 ### Windows 编码注意
 

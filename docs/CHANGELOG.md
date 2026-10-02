@@ -6,7 +6,103 @@
 
 尚未打版本标签（无 release/tag）。
 
+### 变更（工具命中率与调用成功率专项）
+
+#### 安全（S1）
+
+- **`topology_discover` 命令注入修复**：扫描路径不再硬编码回退到 `/opt /home /srv /app /data`，改为只读 `security.discovery.allowedSearchPaths`；拼进远端 shell 前统一用新增的 `ShellQuote.Single/Join` 单引号转义；远端探测命令统一过 `ICommandFilterService` 并写审计。
+- **SQL 只读通道补漏**：`SqlFilterService.CheckReadOnly` 增加敏感规则复检——数据修改型 CTE（`WITH ... INSERT/UPDATE/DELETE`）与 `EXPLAIN ANALYZE <DML>`（MySQL/PG 都会真的执行）不再被当作只读放行，返回 `not_readonly_statement` 并引导改用 `*_execute`。
+- **命令过滤器改为 fail-closed + 整词匹配**：内置屏蔽/敏感规则下沉到 `CommandFilterConfig` 类默认值（配置缺少 `commandFilter` 段时仍有防护，不再全部放行）；`BlockedCommands`/`SensitiveCommands` 由裸 `Contains` 改为 token 边界正则匹配，消除 `chmod` 命中 `xchmodz`、`rm` 命中 `format` 之类误报。
+
+#### 成功率（S2）
+
+- **审批链路重构**：`IApprovalChannel.RequestAsync` 返回 `ApprovalOutcome?`（null=弃权），新增 `ApprovalOutcome { Approved, Rejected, Timeout, Unavailable }`；工具侧统一 `status`：`rejected`/`approval_timeout`/`approval_unavailable`，文案由 `ApprovalOutcomeText.Describe` 生成。默认通道改为 `["desktop","cli"]`、超时 120s→45s（无桌面环境不再必然失败）。CLI 通道按 `CancellationToken` 取消；桌面子进程排空 stdout/stderr 防污染 MCP 协议流。
+- **连接失败分类**：新增 `ISshService.ProbeConnectionAsync` → `ConnectionProbeResult`（`auth`/`host_key`/`timeout`/`network`/`unknown`），`ssh_test_connection`/`ssh_get_server_status`/`mcp_self_check` 返回对应 `status`（`auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`）与处置建议。
+- **命令退出码与输出**：sudo 提权路径补 `; echo LITSSH_EXIT:$?` 标记并按真实退出码判定成功（修复此前恒为 `-1` 导致的假成功）；命令/SQL/历史输出按上限截断（`ToolSupport.MaxOutputChars=20000`、`MaxAuditResultChars=4000`）并给出 `truncated`/`outputChars`/`hasMore` 信号。
+- **列目录不再假成功**：`ListRemoteFilesAsync` 返回 `RemoteFileListResult`，区分"目录为空"与"列目录失败"（凭据错/权限/断网不再被读成空目录）；条目超过 500 截断。
+- **ID 宽松解析**：新增 `ToolSupport.FindServer/FindDatasource`（ID/名称/主机名忽略大小写），`*_not_found` 错误回显可用 ID，消除"只认精确 ID"这一最大失败来源。
+- **历史分页**：`ssh_get_command_history`/`datasource_get_sql_history` 增加 `offset`，`limit` 钳制到 1–200（此前 `limit=-1` 会拉全表）。
+- **审计兜底**：命令/文件传输的审计写入改为尽力而为（`ToolSupport.SafeLog*Async`），审计失败不再让"已执行"的操作报错导致模型重试重复执行。
+
+### 修复
+
+- `docker` 等内置安全规则在缺失配置段时不再静默失效。
+- `mysql_execute`/`postgres_execute`/`redis_execute` 的审批取消信号贯通到审批与数据库执行超时。
+- **配置保存改为原子写**：`ConfigService.SaveConfigAsync` 先写同目录临时文件再 `File.Move(overwrite)`，避免 MCP 按 mtime 热加载时读到"写了一半"的 JSON 而丢弃本次修改。
+- **热加载解析失败不再缓存 mtime**：`SecurityOptionsProvider.ReloadUnlocked` 解析失败时保留上一次有效值且不推进 `_lastWriteUtc`，下次访问重试，避免"在界面改了但 MCP 没生效"。
+- 安全设置窗口：未改动审批通道下拉时保留 config 中的原值（不再把自定义/未知通道静默覆盖为 `desktop`）；审批超时兜底默认值 120 → 45，与服务器默认一致。
+- **`ssh_execute_sudo` 提权执行修复**：
+  - **改用 stdin 注入密码（根治）**：审计显示 `SudoType=CurrentUser` 走交互式 shell(pty) 时命令根本没执行、`exit=-1`。现 `sudo` 改为经 exec 通道执行 `sudo -S -p '' bash -c '<cmd>'`，并在**执行期间**把密码写入 stdin（SSH.NET 2026 要求 `BeginExecute()` 之后再取输入流）。已对真实服务器验证 `id` 返回 `uid=0(root)`。
+  - 密码提示识别补全（`su` 路径保留 pty）：同时识别 `[sudo]` / `password for` / `password:` / `密码`，此前 `su - <user> -c` 的 `Password:` 不被识别导致密码从未发送。
+  - 整体等待上限 30s → 120s；已喂密码后的空闲断点 3s → 15s。
+  - 未回传 `LITSSH_EXIT` 标记时明确返回 `status=timeout`（不再把旧实现里"退出码 -1 也算成功"的假成功算作成功）。
+  - **处理 AI 自带 `sudo` 前缀**：`sudo cmd` 会被剥离，避免在"已是 root/目标用户"的直连路径下执行无 tty 的 `sudo` 而报 `a password is required`（`sudo -u/-S` 等带选项的保持不变）。
+  - **密码脱敏**：返回给 AI 的 `output`/`error` 一律把提权密码替换为 `******`，确保密码对智能体不可见。
+  - 失败时给出明确 `error`（识别到 `a password is required`/`a terminal is required` 时提示检查 `SudoType`/`SudoPassword`）。
+- **多服务器防呆（指错机器）**：
+  - `ToolSupport.ResolveServer` / `ResolveDatasource`：名称/主机名匹配到多个目标时返回 `server_ambiguous` / `datasource_ambiguous` 并拒绝执行（精确 ID 优先），不再 `FirstOrDefault` 静默取第一个；命令/文件/数据源等执行型工具及 `mcp_self_check` 全部改用。
+  - 结果回声目标：`ssh_execute_command`/sudo/文件传输/列目录、以及新增的 `docker_*`/`service_*`/`log_*`/`java_*` 结果统一带上 `serverId`/`serverName`/`host`，便于确认没有操作错机器。
+  - 审批显示主机：审批上下文传入 `名称(用户@主机:端口)`（数据源为 `类型 名称(主机:端口)`），桌面弹窗与 CLI 待决文件均可核对真实目标。
+
+### 新增（本轮）
+
+- `src/LitSSHmcp.Core/Services/Security/ShellQuote.cs`（远端命令单引号转义）。
+- `src/LitSSHmcp.McpServer/Services/ToolSupport.cs`（公共支撑：截断/钳制/ID 解析/失败分类/审计兜底）。
+
 ### 新增
+
+#### 运维领域工具组（Docker / systemd / 日志 / JVM / 应用体检，工具总数 29 → 48）
+
+面向中小公司 SSH + Java + Docker + RDS 运维，新增 5 个工具分组、18 个工具：
+
+- **Docker 组（`docker`）**：`docker_ps`（结构化容器列表）、`docker_logs`、`docker_inspect`、`docker_stats`、`docker_images`、`docker_restart`、`docker_exec`。容器名做字符校验 + 单引号转义；重启/exec 属敏感操作需审批。
+- **systemd 组（`service`）**：`service_status`、`service_list`、`service_restart`、`service_logs`（`systemctl` / `journalctl` 封装）。
+- **日志组（`log`）**：`log_tail`、`log_grep`、`log_find`，路径受新增的 `security.logs.allowedPaths` 白名单约束（防止读取 `/etc/shadow` 等），行数受 `security.logs.maxLines` 限制。
+  - `ApplicationConfig.LogPaths`：应用管理新增「日志路径」，`log_tail`/`log_grep` 支持用 `appId` 代替 `path`（多个可用路径时返回 `log_path_ambiguous`，不静默猜）。
+  - `log_find`：在白名单范围内按修改时间倒序发现最近写入的 `.log` 文件，用于"不知道日志路径"时先发现再读取。
+- **JVM 组（`java`）**：`java_processes`、`java_threads`、`java_heap`、`java_info`（`ps`/`jstack`/`jcmd`/`jstat` 封装，pid 校验）。`java_threads`/`java_heap`/`java_info` 支持传 `appId` 代替 `pid`，按应用名/容器名在目标机 Java 进程中解析（唯一命中；0 个 `pid_not_found`、多个 `pid_ambiguous`）。
+- **应用体检组（`app`）**：`app_health_snapshot`——按 `runsOn`/`connectsTo` 关系聚合某应用所在服务器的 Java 进程/容器/监听端口与依赖数据源连通性，一键拿到跨机画像；服务器探测**按应用过滤**（java 按应用名、docker 按 `containerName`、端口按应用 `port`），`notes` 说明过滤范围。
+- 新增共享服务 `IGuardedCommandService`：领域工具复用统一的「ID 宽松解析 → 命令过滤 → 敏感审批 → 审计兜底 → 输出截断」链路，避免各自拼装时漏步骤。
+- 配置：`SecurityConfig.Logs`（`allowedPaths` / `maxLines`）+ `ConfigMigrator` 回填 + `config.example.json` + 安全设置窗口新增「日志读取允许路径」。
+- `ToolGroups.All` 扩展为 14 组；`Program.cs` 注册 16 个工具类；`docs/TOOLS.md`/README/ARCHITECTURE/`UsageGuideTools`/`McpServerInstructions` 同步，一致性测试 `ExpectedToolCount` 29 → 47。
+
+#### 拓扑自动发现增强（更"有料"）
+
+- **未匹配资产也成节点**：发现到的**未登记应用/容器**（`app:disc:*`）、**未配置的数据库/Redis 端点**（`ds:disc:<host>-<port>`）、**未登记的 MySQL 客户端**（`ssh:disc:<host>`）现在也会以"待确认"节点 + 关系写入拓扑缓存（`TopologyEdges`），而不再仅在返回结果里报告（以前只有"已配置资产之间"才建边）。
+- **人工关系去重**：发现前收集 `relations` 的键，人工已声明的关系不再重复写入、也不再计入 `newEdges`（修此前把人工边算作"new"的偏差）。
+- **PostgreSQL 端点识别**：配置文件扫描新增 `jdbc:postgresql://`（默认端口 5432），与 mysql/redis 一样建立 `canAccess` / `connectsTo`。
+- **Nginx 与 MQ 端点**：扫描新增 `*.conf`（nginx）；`upstream <名>` 视为该服务器上的"待确认"应用（`app:disc:<名> runsOn ssh`），`proxy_pass http(s)://<目标>` 建立 `<应用> connectsTo <目标应用/待确认>`；RabbitMQ `amqp(s)://host:port` 与 Kafka `bootstrap.servers`/`bootstrap-servers` 建立 `<应用或服务器> connectsTo mq:disc:<host>-<port>`（新增 `mq:` 节点类型）。默认扫描路径新增 `/etc/nginx`。
+- 拓扑图里 `*:disc:*` 节点标签显示为 `<名称> (待确认)`；发现结果 `notes` 说明待确认节点的含义。
+- **服务进程发现**：新增按进程名扫描（`ps -eo pid,user,comm,args`），识别 `nginx/httpd/apache2/mysqld/mariadb/redis-server/postgres/haproxy/php-fpm/gunicorn/uwsgi/rabbitmq` 等并建立关系；**不依赖 systemd**（宝塔面板等直接拉起的 nginx/redis 也能发现）。
+  - **精准匹配 + 归一化去重**：按 `comm`（进程名）精确匹配（不再用 `grep` 按整行匹配，避免 `user=postgres` 的桌面进程、args 含 `nodev/nnginx.conf` 的进程被误报）；`mysqld/mysqld_safe→mysql`、`redis-server→redis` 等归一化，每类服务只建一个节点。
+  - **数据/应用分类**：`mysql/redis/postgres/mongod/memcached` 建**数据源**节点（已配置同类型数据源则直接连真实节点），其余建**应用**节点。
+  - **端口信息**：解析 `ss -ltnp`（端口→pid/进程名）获取监听端口，参数兜底（`redis ... :6379`/`mysqld --port=3306`）；**非 root 拿不到进程名时**用"该服务常见端口 ∩ 实际监听端口"兜底（如 nginx→80/443）；端口写入节点信息并显示在待确认节点标签上（`name :80,443 (待确认)`），服务器节点也带上全部监听端口。
+  - **确认弹窗预填**：一键确认时会读取节点信息，预填**类型**（如 nginx/redis）、**端口**与**应用路径**（进程可执行文件/配置文件路径），不再是默认的 java/无端口。
+- **应用路径**：`ApplicationConfig.Path`（应用管理新增可选字段「应用路径」，部署目录/jar/可执行文件路径）；自动发现的应用会把推断出的路径存入节点信息，确认登记时预填。
+  - **可选提权探测**：新增 `security.discovery.useSudo`（安全设置「自动发现使用提权」）。开启后监听端口/配置扫描走 `sudo`（仅当该服务器配置了 `SudoType`），`ss -ltnp` 能看到 root 服务（如宝塔 nginx）的进程名→**精确端口**；提权密码由服务端注入、不暴露给 AI；未配置 `SudoType` 时自动回退为普通执行。
+- **localhost 归属**：MySQL processlist 里的本机客户端（`127.0.0.1`/`localhost`/`::1`）归属到数据库所在服务器，不再生成单独的 `localhost` 服务器节点。
+- **App 确认/删除待确认节点**：资产拓扑页在**节点右键菜单**中，对待确认节点(`*:disc:*`)提供「确认节点（登记为资产）」与「删除节点（清理发现边）」——选中后弹对应「新增应用/数据源/服务器」窗口（预填名称/host/port），保存后自动把发现边重定向到新登记的资产；删除则清理该节点的发现边（MQ 端点提示手动管理）。
+- **发现前先清理待确认**：每次 `topology_discover` / App「自动发现」开始前，先删除上一轮所有 `*:disc:*` 待确认节点/边，再由本次证据重建（避免旧的待确认节点残留）。
+- **发现节流**：自动发现加入互斥——**同一时间只允许一个发现任务**，正在执行时新的发现直接返回 `status=discovery_in_progress`（App 里提示"已有自动发现在执行，请稍后再试"），避免并发扫描拖垮目标机与本机。
+- 单测新增 `TopologyDiscoveryTests` 用例（服务进程发现、本机客户端归属）。
+
+#### 运维排障 skill（`docs/litssh-mcp-ops-skill/SKILL.md`）
+
+- 在 `docs/litssh-mcp-ops-skill/` 下产出面向 AI 智能体的排障 skill（工具无关，随仓库分发）：工具路由速查、标准 triage 流程、按场景处方、日志路径发现（`log_find` + 启动命令/配置文件解析），以及 **MCP 未覆盖能力经 SSH 变通**的方案（在 `docker_*`/`service_*`/`java_*` 未启用或缺失时，用 `ssh_execute_command`/`ssh_execute_sudo` 实现日志定位、端口/资源、HTTP 健康检查、OOM 排查、远端配置变更等）。
+- 支持 skills 的智能体（opencode / Claude 等）会自动加载；README 增加指引。
+
+#### 审计按会话/工具区分（MCP 会话 ID + 客户端识别 + 工具名，工具数 48 → 49）
+
+- 每次启动 MCP 服务生成**会话 ID**（`yyyyMMdd-HHmmss-<8hex>`），`AuditLogs`/`SqlAuditLogs`（含历史归档表）新增 `SessionId` 列并自动填充（由 `AuditLogService.SessionId` 注入，工具无需改参）。
+- **客户端识别**：新增 `McpSessionTracker` + 工具调用过滤器 `McpSessionFilter`，在 `initialize` 握手后从 `context.Server.ClientInfo` 取客户端名称/版本并写入新增的 `Sessions` 表（`SessionId` 主键，`ON CONFLICT` 更新最近活动；客户端信息缺失时不覆盖已有值）。
+- **工具名**：同一过滤器把当前调用的 MCP 工具名放入 `AuditContext`（`AsyncLocal`），`AuditLogService` 写库时自动补到新增的 `Tool` 列（如 `ssh_execute_command`/`docker_logs`/`mysql_query`），无需各工具手动传参。
+- **纳入哈希链**：命令/SQL 审计的哈希链 payload 现在包含 `SessionId` 与 `Tool`，篡改会话 ID 或工具名都会导致链校验失败（`mcp_self_check`/审计窗口的“校验完整性”）。
+- **审计格式版本（`PRAGMA user_version`）**：`AuditFormatVersion = 3`；启动时若版本落后则**重建审计数据**（清空链/活动表/历史表/会话表）并写入新版本，避免旧链与新算法不一致导致校验失败（测试阶段无历史包袱）。
+- 会话表 `Sessions`（`SessionId` 主键/客户端名称与版本/首末活动）；旧库平滑升级：`InitializeAsync` 用 `PRAGMA table_info` + `ALTER TABLE ADD COLUMN` 自动补列。
+- 新工具 **`mcp_list_sessions`**（`guide` 组，默认暴露，可随分组关闭）：列出最近会话（会话ID/客户端/版本/首末活动），用于把审计记录映射到具体 AI 客户端。
+- `mcp_self_check` 返回当前 `sessionId`/`clientName`/`clientVersion`；`ssh_get_command_history` / `datasource_get_sql_history` 新增 `sessionId` 与 `tool` 过滤参数，记录也带 `sessionId`/`tool`。
+- 桌面 App「审计日志」窗口：命令/SQL 表格新增“会话”“工具”列与“会话ID”过滤框，并新增“会话”页签（会话ID/客户端/版本/首末活动），CSV 导出含会话与工具。
+- 单测新增 `AuditSessionTests`（自动填充/过滤、旧库迁移、会话 upsert 与客户端信息保留、工具名自动填充与过滤）。
 
 #### 工具分组开关（按部署裁剪，可选）
 

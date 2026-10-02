@@ -63,7 +63,31 @@ public class ConfigService : IConfigService
                     ?? new AppConfig();
         EncryptSecrets(clone);
         var json = JsonSerializer.Serialize(clone, AppConfigJson.Options);
-        await File.WriteAllTextAsync(_configPath, json);
+
+        // 原子写：先写同目录临时文件，再整体替换目标文件。
+        // 若不原子，MCP 侧按 mtime 热加载时可能读到"写了一半"的 JSON（截断/空文件），
+        // 导致这一次修改被当成损坏而丢弃，表现为"在界面改了但 MCP 没生效"。
+        await WriteAtomicAsync(json);
+    }
+
+    private async Task WriteAtomicAsync(string json)
+    {
+        var dir = Path.GetDirectoryName(_configPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        var tmp = _configPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(tmp, json);
+            // 同卷替换在 Windows 上近似原子，读者要么看到旧文件、要么看到新文件。
+            File.Move(tmp, _configPath, overwrite: true);
+        }
+        catch
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* 清理临时文件失败不影响主流程 */ }
+            throw;
+        }
     }
 
     private void EncryptSecrets(AppConfig config)
@@ -117,62 +141,8 @@ public class ConfigService : IConfigService
             Relations = Array.Empty<RelationConfig>(),
             Security = new SecurityConfig
             {
-                CommandFilter = new CommandFilterConfig
-                {
-                    BlockedCommands = new[]
-                    {
-                        "rm -rf /",
-                        "mkfs",
-                        "dd if=/dev/zero",
-                        ":(){ :|:& };:",
-                        "chmod -R 777 /",
-                        "wget | sh",
-                        "curl | sh",
-                        // Docker 高危：清库/清卷/清网络/删服务/退出集群/特权或挂根目录运行
-                        "docker system prune",
-                        "docker volume prune",
-                        "docker network prune",
-                        "docker volume rm",
-                        "docker service rm",
-                        "docker swarm leave",
-                        "docker run --privileged",
-                        "docker run -v /"
-                    },
-                    SensitiveCommands = new[]
-                    {
-                        "rm ",
-                        "chmod",
-                        "chown",
-                        "systemctl stop",
-                        "systemctl restart",
-                        "reboot",
-                        "shutdown",
-                        "kill",
-                        "pkill",
-                        "apt remove",
-                        "yum remove",
-                        // Docker 写/运维操作（需桌面确认；只读的 docker ps/logs/inspect/stats 不受限）
-                        "docker rm",
-                        "docker rmi",
-                        "docker kill",
-                        "docker stop",
-                        "docker restart",
-                        "docker run",
-                        "docker exec",
-                        "docker cp",
-                        "docker compose down",
-                        "docker compose rm"
-                    },
-                    SensitivePatterns = new[]
-                    {
-                        "\\brm\\b",
-                        "\\bchmod\\b",
-                        "\\bchown\\b",
-                        "\\breboot\\b",
-                        "\\bshutdown\\b",
-                        "\\bkill\\b"
-                    }
-                },
+                // 内置默认规则见 CommandFilterConfig 的类内默认值（含 Docker 高危/敏感规则）。
+                CommandFilter = new CommandFilterConfig(),
                 SqlFilter = new SqlFilterConfig(),
                 FileTransfer = new FileTransferConfig
                 {

@@ -17,11 +17,13 @@ public class ApplicationEditViewModel : INotifyPropertyChanged
     private string _portText = string.Empty;
     private string _description = string.Empty;
     private string _containerName = string.Empty;
+    private string _appPath = string.Empty;
+    private string _logPaths = string.Empty;
     private string _statusMessage = string.Empty;
 
     public event EventHandler<bool>? DialogClosed;
 
-    public ApplicationEditViewModel(IConfigService configService, ApplicationConfig? application = null)
+    public ApplicationEditViewModel(IConfigService configService, ApplicationConfig? application = null, ApplicationConfig? prefill = null)
     {
         _configService = configService;
         _editing = application;
@@ -37,6 +39,19 @@ public class ApplicationEditViewModel : INotifyPropertyChanged
             PortText = application.Port?.ToString() ?? string.Empty;
             Description = application.Description ?? string.Empty;
             ContainerName = application.ContainerName ?? string.Empty;
+            AppPath = application.Path ?? string.Empty;
+            LogPaths = application.LogPaths == null ? string.Empty : string.Join(Environment.NewLine, application.LogPaths);
+        }
+        else if (prefill != null)
+        {
+            // "待确认"节点确认时的新增预填（仍是新增模式，_editing 为 null）
+            Name = prefill.Name;
+            Type = string.IsNullOrWhiteSpace(prefill.Type) ? "java" : prefill.Type;
+            Host = prefill.Host ?? string.Empty;
+            PortText = prefill.Port?.ToString() ?? string.Empty;
+            ContainerName = prefill.ContainerName ?? string.Empty;
+            AppPath = prefill.Path ?? string.Empty;
+            Description = prefill.Description ?? string.Empty;
         }
     }
 
@@ -48,6 +63,8 @@ public class ApplicationEditViewModel : INotifyPropertyChanged
     public string PortText { get => _portText; set => Set(ref _portText, value); }
     public string Description { get => _description; set => Set(ref _description, value); }
     public string ContainerName { get => _containerName; set => Set(ref _containerName, value); }
+    public string AppPath { get => _appPath; set => Set(ref _appPath, value); }
+    public string LogPaths { get => _logPaths; set => Set(ref _logPaths, value); }
 
     public string StatusMessage
     {
@@ -94,7 +111,9 @@ public class ApplicationEditViewModel : INotifyPropertyChanged
                             Host = string.IsNullOrWhiteSpace(Host) ? null : Host.Trim(),
                             Port = port,
                             Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim(),
-                            ContainerName = string.IsNullOrWhiteSpace(ContainerName) ? null : ContainerName.Trim()
+                            ContainerName = string.IsNullOrWhiteSpace(ContainerName) ? null : ContainerName.Trim(),
+                            Path = string.IsNullOrWhiteSpace(AppPath) ? null : AppPath.Trim(),
+                            LogPaths = SplitPaths(LogPaths)
                         }
                     })
                     .ToArray();
@@ -114,6 +133,8 @@ public class ApplicationEditViewModel : INotifyPropertyChanged
                 target.Port = port;
                 target.Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim();
                 target.ContainerName = string.IsNullOrWhiteSpace(ContainerName) ? null : ContainerName.Trim();
+                target.Path = string.IsNullOrWhiteSpace(AppPath) ? null : AppPath.Trim();
+                target.LogPaths = SplitPaths(LogPaths);
             }
 
             await _configService.SaveConfigAsync(config);
@@ -124,6 +145,14 @@ public class ApplicationEditViewModel : INotifyPropertyChanged
             StatusMessage = $"保存失败: {ex.Message}";
         }
     }
+
+    private static string[] SplitPaths(string? text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? Array.Empty<string>()
+            : text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => x.TrimEnd('\r').Trim())
+                .Where(x => x.Length > 0)
+                .ToArray();
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

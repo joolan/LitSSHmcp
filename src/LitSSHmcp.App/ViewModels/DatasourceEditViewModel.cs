@@ -38,7 +38,8 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
         IConfigService configService,
         DatasourceEditWindow editWindow,
         SshServerConfig[] servers,
-        DataSourceConfig? datasource = null)
+        DataSourceConfig? datasource = null,
+        DataSourceConfig? prefill = null)
     {
         _configService = configService;
         _editWindow = editWindow;
@@ -68,6 +69,13 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             MaxRowsText = datasource.MaxRows?.ToString() ?? string.Empty;
             TimeoutText = datasource.TimeoutSeconds?.ToString() ?? string.Empty;
             WriteApprovalIndex = datasource.WriteApproval == WriteApprovalMode.AutoApprove ? 1 : 0;
+        }
+        else if (prefill != null)
+        {
+            Name = string.IsNullOrWhiteSpace(prefill.Name) ? prefill.Host : prefill.Name;
+            TypeIndex = prefill.Type.ToLowerInvariant() switch { "redis" => 1, "postgres" => 2, _ => 0 };
+            Host = prefill.Host;
+            PortText = prefill.Port.ToString();
         }
     }
 

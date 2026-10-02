@@ -139,30 +139,38 @@ public sealed class SecurityOptionsProvider : ISecurityOptionsProvider
 
     private void ReloadUnlocked(DateTime lastWriteUtc)
     {
+        if (!File.Exists(_configPath))
+        {
+            // 文件尚不存在(全新安装/首次读取): 使用类内默认值，并记录当前时间戳避免反复尝试。
+            _lastWriteUtc = lastWriteUtc;
+            return;
+        }
+
+        AppConfig? config;
         try
         {
-            if (File.Exists(_configPath))
-            {
-                var json = File.ReadAllText(_configPath);
-                var config = JsonSerializer.Deserialize<AppConfig>(json, AppConfigJson.Options);
-                if (config != null)
-                {
-                    _enabled = config.Security?.Enabled ?? true;
-                    _commandFilter = config.Security?.CommandFilter ?? new CommandFilterConfig();
-                    _sqlFilter = config.Security?.SqlFilter ?? new SqlFilterConfig();
-                    _fileTransfer = config.Security?.FileTransfer ?? new FileTransferConfig();
-                    _sshHostKey = config.Security?.SshHostKey ?? new SshHostKeyConfig();
-                    _discovery = config.Security?.Discovery ?? new DiscoveryConfig();
-                    _limits = config.Security?.Limits ?? new LimitsConfig();
-                    _audit = config.Security?.Audit ?? new AuditConfig();
-                    _approval = config.Security?.Approval ?? new ApprovalConfig();
-                }
-            }
+            var json = File.ReadAllText(_configPath);
+            config = JsonSerializer.Deserialize<AppConfig>(json, AppConfigJson.Options);
         }
         catch
         {
-            // 配置暂时不可读/损坏时保留上一次的有效值
+            // 读取/解析失败(文件损坏，或恰好读到写入中的临时状态): 保留上一次有效值，
+            // 且**不更新 _lastWriteUtc** —— 下次访问会重试，避免把"暂时读不到"误当成"已生效"。
+            return;
         }
+
+        if (config is null)
+            return;
+
+        _enabled = config.Security?.Enabled ?? true;
+        _commandFilter = config.Security?.CommandFilter ?? new CommandFilterConfig();
+        _sqlFilter = config.Security?.SqlFilter ?? new SqlFilterConfig();
+        _fileTransfer = config.Security?.FileTransfer ?? new FileTransferConfig();
+        _sshHostKey = config.Security?.SshHostKey ?? new SshHostKeyConfig();
+        _discovery = config.Security?.Discovery ?? new DiscoveryConfig();
+        _limits = config.Security?.Limits ?? new LimitsConfig();
+        _audit = config.Security?.Audit ?? new AuditConfig();
+        _approval = config.Security?.Approval ?? new ApprovalConfig();
 
         _lastWriteUtc = lastWriteUtc;
     }

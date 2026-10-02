@@ -4,7 +4,6 @@
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
-using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.McpServer.Services;
@@ -17,17 +16,15 @@ public class ServerTools
 {
     private readonly IConfigService _configService;
     private readonly ISshService _sshService;
-    private readonly IAuditLogService _auditLogService;
 
-    public ServerTools(IConfigService configService, ISshService sshService, IAuditLogService auditLogService)
+    public ServerTools(IConfigService configService, ISshService sshService)
     {
         _configService = configService;
         _sshService = sshService;
-        _auditLogService = auditLogService;
     }
 
     [McpServerTool(Name = "ssh_list_servers", UseStructuredContent = true, OutputSchemaType = typeof(SshServerListDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("列出已配置的SSH服务器。数据源列表用datasource_list")]
+    [Description("列出已配置的SSH服务器(返回id/name/host, 后续工具传这些值即可)。数据源列表用datasource_list")]
     public async Task<SshServerListDto> ListServers()
     {
         var config = await _configService.LoadConfigAsync();
@@ -47,38 +44,75 @@ public class ServerTools
         return new SshServerListDto { Success = true, Count = servers.Count, Servers = servers };
     }
 
-    [McpServerTool(Name = "ssh_get_server_status", UseStructuredContent = true, OutputSchemaType = typeof(ServerStatusDto), ReadOnly = true, OpenWorld = true)]
-    [Description("获取SSH服务器连接状态(是否在线)")]
+    [McpServerTool(Name = "ssh_get_server_status", UseStructuredContent = true, OutputSchemaType = typeof(ServerStatusDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
+    [Description("探测SSH服务器是否在线, 失败时给出固定分类(auth_failed/host_key_mismatch/timeout/connection_error)。全面连通性诊断用ssh_test_connection")]
     public async Task<ServerStatusDto> GetServerStatus(
-        [Description("服务器ID, 可用ssh_list_servers列出")] string serverId)
+        [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
+        CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
-        var server = config.Servers.FirstOrDefault(s => s.Id == serverId);
+        var (server, _, resolveError) = ToolSupport.ResolveServer(config, serverId);
         if (server == null)
-            return ServerStatusDto.Fail($"Server not found: {serverId}");
+            return ServerStatusDto.Fail(resolveError!);
 
-        var isConnected = await _sshService.TestConnectionAsync(server);
+        var probe = await _sshService.ProbeConnectionAsync(server, cancellationToken);
         return new ServerStatusDto
         {
-            Success = true,
+            Success = probe.Success,
+            Status = probe.Success ? "connected" : ToolSupport.ConnectionFailureStatus(probe.ErrorKind),
+            Error = probe.Success ? null : probe.Error,
+            ErrorKind = probe.Success ? null : probe.ErrorKind,
             Id = server.Id,
             Name = server.Name,
             Host = server.Host,
-            Status = isConnected ? "Connected" : "Disconnected"
+            DurationMs = probe.Duration.TotalMilliseconds
         };
     }
 
     [McpServerTool(Name = "ssh_test_connection", UseStructuredContent = true, OutputSchemaType = typeof(SshTestConnectionDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("测试SSH服务器连通性。数据源连通性用datasource_test_connection")]
+    [Description("测试SSH连通性并区分失败原因: auth_failed(账号密码/密钥错)/host_key_mismatch(主机密钥变化, 可能是中间人, 需先核对指纹)/timeout/connection_error。连不上服务器时先用它")]
     public async Task<SshTestConnectionDto> TestConnection(
-        [Description("服务器ID, 可用ssh_list_servers列出")] string serverId)
+        [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
+        CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
-        var server = config.Servers.FirstOrDefault(s => s.Id == serverId);
+        var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverId);
         if (server == null)
-            return SshTestConnectionDto.Fail($"Server not found: {serverId}");
+            return SshTestConnectionDto.Fail(resolveStatus!, resolveError!);
 
-        var success = await _sshService.TestConnectionAsync(server);
-        return new SshTestConnectionDto { Success = success, ServerId = serverId, Name = server.Name };
+        var probe = await _sshService.ProbeConnectionAsync(server, cancellationToken);
+        if (probe.Success)
+        {
+            return new SshTestConnectionDto
+            {
+                Success = true,
+                Status = "connected",
+                ServerId = server.Id,
+                Name = server.Name,
+                Host = server.Host,
+                DurationMs = probe.Duration.TotalMilliseconds
+            };
+        }
+
+        return new SshTestConnectionDto
+        {
+            Success = false,
+            Status = ToolSupport.ConnectionFailureStatus(probe.ErrorKind),
+            ErrorKind = probe.ErrorKind,
+            Error = $"{probe.Error}（{ExplainFailure(probe.ErrorKind)}）",
+            ServerId = server.Id,
+            Name = server.Name,
+            Host = server.Host,
+            DurationMs = probe.Duration.TotalMilliseconds
+        };
     }
+
+    private static string ExplainFailure(string errorKind) => errorKind switch
+    {
+        "auth" => "认证失败: 检查用户名/密码/私钥口令",
+        "host_key" => "主机密钥不匹配: 可能是服务器重装或中间人攻击, 请先人工核对 SSH 指纹再更新 known_hosts",
+        "timeout" => "连接超时: 检查网络、防火墙或服务器负载",
+        "network" => "网络不可达: 检查主机地址、端口与网络连通性",
+        _ => "未知错误"
+    };
 }

@@ -43,4 +43,50 @@ public class CommandFilterServiceTests
     {
         Assert.Equal(CommandFilterResult.Allowed, Create().CheckCommand("ls -la"));
     }
+
+    [Fact]
+    public void Builtin_defaults_apply_when_config_is_default_constructed()
+    {
+        // 反序列化时若缺少 commandFilter 段会得到 new CommandFilterConfig()，此时必须仍有内置防护（fail-closed）。
+        var filter = new CommandFilterService(new FakeSecurityOptions { CommandFilter = new CommandFilterConfig() });
+
+        Assert.Equal(CommandFilterResult.Blocked, filter.CheckCommand("docker system prune -af"));
+        Assert.Equal(CommandFilterResult.Sensitive, filter.CheckCommand("chmod 777 /tmp/x"));
+    }
+
+    [Theory]
+    [InlineData("xchmodz --foo")]
+    [InlineData("format the disk")]
+    [InlineData("echo alarm")]
+    public void Substring_match_does_not_cause_false_positives(string command)
+    {
+        var options = new FakeSecurityOptions
+        {
+            CommandFilter = new CommandFilterConfig
+            {
+                BlockedCommands = Array.Empty<string>(),
+                SensitiveCommands = new[] { "chmod", "rm" },
+                SensitivePatterns = Array.Empty<string>()
+            }
+        };
+
+        Assert.Equal(CommandFilterResult.Allowed, new CommandFilterService(options).CheckCommand(command));
+    }
+
+    [Fact]
+    public void Multi_token_entry_matches_ignoring_extra_whitespace()
+    {
+        var options = new FakeSecurityOptions
+        {
+            CommandFilter = new CommandFilterConfig
+            {
+                BlockedCommands = new[] { "rm -rf /" },
+                SensitiveCommands = Array.Empty<string>(),
+                SensitivePatterns = Array.Empty<string>()
+            }
+        };
+
+        Assert.Equal(CommandFilterResult.Blocked,
+            new CommandFilterService(options).CheckCommand("sudo   rm    -rf   /var"));
+    }
 }

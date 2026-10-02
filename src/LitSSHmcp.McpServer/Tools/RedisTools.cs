@@ -47,7 +47,8 @@ public class RedisTools
     [McpServerTool(Name = "redis_diagnostics", UseStructuredContent = true, OutputSchemaType = typeof(DiagnosticsResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
     [Description("Redis整体诊断: 内存/客户端/命中率/键空间/慢日志/主从/持久化。问'缓存慢/内存涨/命中率低'时优先用; 看具体key用redis_read")]
     public async Task<DiagnosticsResultDto> RedisDiagnostics(
-        [Description("数据源ID, 可用datasource_list列出(type=redis)")] string datasourceId)
+        [Description("数据源标识: ID/名称, 可用datasource_list列出(type=redis)")] string datasourceId,
+        CancellationToken cancellationToken = default)
     {
         var (ds, status, error) = await ResolveAsync(datasourceId);
         if (ds == null) return DiagnosticsResultDto.Fail(status!, error!);
@@ -55,7 +56,7 @@ public class RedisTools
         try
         {
             var driver = new RedisDriver(_connectionProvider);
-            var result = await driver.DiagnoseAsync(ds);
+            var result = await driver.DiagnoseAsync(ds, cancellationToken);
 
             await AuditAsync(ds, SqlOperation.Diagnostics, "-- redis diagnostics",
                 result.Success ? CommandStatus.Executed : CommandStatus.Failed,
@@ -84,9 +85,10 @@ public class RedisTools
     [McpServerTool(Name = "redis_read", UseStructuredContent = true, OutputSchemaType = typeof(RedisCommandResultDto), ReadOnly = true, OpenWorld = true)]
     [Description("在Redis数据源执行只读命令(GET/HGETALL/INFO/SLOWLOG等白名单)。写命令用redis_execute, 整体体检用redis_diagnostics; 含空格的值用引号, 如 HGETALL user:1")]
     public async Task<RedisCommandResultDto> RedisRead(
-        [Description("数据源ID, 可用datasource_list列出")] string datasourceId,
+        [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
         [Description("Redis命令, 如 GET key / HGETALL user:1 / SLOWLOG GET 10")] string command,
-        [Description("数组返回的最大元素数(默认200, 上限1000), 超出截断")] int maxItems = 200)
+        [Description("数组返回的最大元素数(默认200, 上限1000), 超出截断")] int maxItems = 200,
+        CancellationToken cancellationToken = default)
     {
         var (ds, status, error) = await ResolveAsync(datasourceId);
         if (ds == null) return RedisCommandResultDto.Fail(status!, error!);
@@ -124,7 +126,7 @@ public class RedisTools
         try
         {
             using var _ = session;
-            using var timeout = CreateTimeout(ds);
+            using var timeout = CreateTimeout(ds, cancellationToken);
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             var reply = await session.Client.ExecuteAsync(args, timeout.Token);
             stopwatch.Stop();
@@ -166,8 +168,9 @@ public class RedisTools
     [McpServerTool(Name = "redis_execute", UseStructuredContent = true, OutputSchemaType = typeof(RedisCommandResultDto), Destructive = true, OpenWorld = true)]
     [Description("在Redis数据源执行写/管理命令(SET/DEL/EXPIRE/CONFIG SET等)。危险命令拒绝、其余一律桌面确认; 只读用redis_read")]
     public async Task<RedisCommandResultDto> RedisExecute(
-        [Description("数据源ID, 可用datasource_list列出")] string datasourceId,
-        [Description("要执行的Redis写命令, 含空格的值用引号包裹, 如 SET session:1 'abc' EX 60")] string command)
+        [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
+        [Description("要执行的Redis写命令, 含空格的值用引号包裹, 如 SET session:1 'abc' EX 60")] string command,
+        CancellationToken cancellationToken = default)
     {
         var (ds, status, error) = await ResolveAsync(datasourceId);
         if (ds == null) return RedisCommandResultDto.Fail(status!, error!);
@@ -202,13 +205,14 @@ public class RedisTools
         else
         {
             // 默认策略: 所有 Redis 写操作一律需要用户桌面确认
-            var approved = await _approvalService.RequestApprovalAsync(
-                $"数据源 {ds.Name}", command, CommandFilterResult.Sensitive, null, "Redis写操作");
+            var outcome = await _approvalService.RequestApprovalAsync(
+                ToolSupport.DatasourceLabel(ds), command, CommandFilterResult.Sensitive, null, "Redis写操作", cancellationToken);
 
-            if (!approved)
+            if (outcome != ApprovalOutcome.Approved)
             {
-                await AuditAsync(ds, SqlOperation.Execute, command, CommandStatus.Rejected, "用户拒绝");
-                return RedisCommandResultDto.Fail("rejected", "Redis写操作被用户拒绝执行。");
+                var (failStatus, failError) = ApprovalOutcomeText.Describe(outcome, _securityOptions.Approval.TimeoutSeconds);
+                await AuditAsync(ds, SqlOperation.Execute, command, CommandStatus.Rejected, failStatus);
+                return RedisCommandResultDto.Fail(failStatus, failError);
             }
 
             await AuditAsync(ds, SqlOperation.Execute, command, CommandStatus.Approved, "用户批准");
@@ -224,7 +228,7 @@ public class RedisTools
         try
         {
             using var _ = session;
-            using var timeout = CreateTimeout(ds);
+            using var timeout = CreateTimeout(ds, cancellationToken);
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             var reply = await session.Client.ExecuteAsync(args, timeout.Token);
             stopwatch.Stop();
@@ -261,9 +265,9 @@ public class RedisTools
     private async Task<(DataSourceConfig? Ds, string? Status, string? Error)> ResolveAsync(string datasourceId)
     {
         var config = await _configService.LoadConfigAsync();
-        var ds = config.DataSources.FirstOrDefault(d => d.Id == datasourceId);
+        var (ds, notFoundStatus, notFoundError) = ToolSupport.ResolveDatasource(config, datasourceId);
         if (ds == null)
-            return (null, "datasource_not_found", $"数据源未找到: {datasourceId}。可用ID见 datasource_list。");
+            return (null, notFoundStatus, notFoundError);
 
         if (!ds.Type.Equals("redis", StringComparison.OrdinalIgnoreCase))
             return (null, "unsupported_type",
@@ -299,10 +303,14 @@ public class RedisTools
         }
     }
 
-    private static CancellationTokenSource CreateTimeout(DataSourceConfig ds) =>
-        ds.TimeoutSeconds is int s && s > 0
-            ? new CancellationTokenSource(TimeSpan.FromSeconds(s))
-            : new CancellationTokenSource(CommandTimeout);
+    private static CancellationTokenSource CreateTimeout(DataSourceConfig ds, CancellationToken ct = default)
+    {
+        var cts = ct.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : new CancellationTokenSource();
+        cts.CancelAfter(ds.TimeoutSeconds is int s && s > 0 ? TimeSpan.FromSeconds(s) : CommandTimeout);
+        return cts;
+    }
 
     private async Task AuditAsync(
         DataSourceConfig ds,

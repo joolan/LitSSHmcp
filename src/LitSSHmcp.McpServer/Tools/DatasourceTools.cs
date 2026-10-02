@@ -62,23 +62,24 @@ public class DatasourceTools
         return new DatasourceListDto { Success = true, Count = items.Count, DataSources = items };
     }
 
-    [McpServerTool(Name = "datasource_test_connection", UseStructuredContent = true, OutputSchemaType = typeof(TestConnectionResultDto), ReadOnly = true, OpenWorld = true)]
-    [Description("测试数据源(MySQL/PostgreSQL/Redis)连通性, 自动直连或建SSH隧道。测SSH通信用ssh_test_connection")]
+    [McpServerTool(Name = "datasource_test_connection", UseStructuredContent = true, OutputSchemaType = typeof(TestConnectionResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
+    [Description("测试数据源(MySQL/PostgreSQL/Redis)连通性, 自动直连或建SSH隧道, 返回AccessMode与ViaTunnelServer。测SSH通信用ssh_test_connection")]
     public async Task<TestConnectionResultDto> GetDatasourceStatus(
-        [Description("数据源ID, 可用datasource_list列出")] string datasourceId)
+        [Description("数据源标识: ID或名称均可, 可用datasource_list列出")] string datasourceId,
+        CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
-        var ds = config.DataSources.FirstOrDefault(d => d.Id == datasourceId);
+        var (ds, resolveStatus, resolveError) = ToolSupport.ResolveDatasource(config, datasourceId);
         if (ds == null)
-            return TestConnectionResultDto.Fail("datasource_not_found", $"数据源未找到: {datasourceId}");
-
+            return TestConnectionResultDto.Fail(resolveStatus!, resolveError!);
         var driver = _driverRegistry.Get(ds.Type);
         if (driver == null)
-            return TestConnectionResultDto.Fail("unsupported_type", $"暂不支持的数据源类型: {ds.Type}");
+            return TestConnectionResultDto.Fail("unsupported_type",
+                $"暂不支持的数据源类型: {ds.Type}。当前支持: {string.Join(", ", _driverRegistry.SupportedTypes)}");
 
-        var result = await driver.TestAsync(ds);
+        var result = await driver.TestAsync(ds, cancellationToken);
 
-        await _auditLogService.LogSqlAsync(new SqlAuditLog
+        await ToolSupport.SafeLogSqlAsync(_auditLogService, new SqlAuditLog
         {
             DataSourceId = ds.Id,
             DataSourceName = ds.Name,
@@ -93,7 +94,7 @@ public class DatasourceTools
         {
             Success = result.Success,
             Status = result.Success ? null : "connection_error",
-            Error = result.Error,
+            Error = result.Success ? null : $"{result.Error}（请检查主机/端口/账号密码, 或该数据源绑定的 SSH 隧道服务器是否可用）",
             DatasourceId = ds.Id,
             Name = ds.Name,
             Host = ds.Host,
@@ -106,13 +107,43 @@ public class DatasourceTools
     }
 
     [McpServerTool(Name = "datasource_get_sql_history", UseStructuredContent = true, OutputSchemaType = typeof(SqlHistoryDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("查看SQL与Redis命令审计历史。SSH命令历史用ssh_get_command_history")]
+    [Description("查看SQL与Redis命令审计历史, 返回的result已截断到4000字符。支持limit/offset翻页; SSH命令历史用ssh_get_command_history")]
     public async Task<SqlHistoryDto> GetSqlHistory(
-        [Description("数据源ID(可选, 留空查全部, 可用datasource_list列出)")] string? datasourceId = null,
-        [Description("返回条数(默认50)")] int limit = 50)
+        [Description("数据源标识(可选, 留空查全部, 可用datasource_list列出)")] string? datasourceId = null,
+        [Description(ToolSupport.HistoryLimitDescription)] int limit = ToolSupport.DefaultHistoryLimit,
+        [Description("跳过的条数, 与limit配合翻页(默认0)")] int offset = 0,
+        [Description("会话ID(可选): 只查某个 MCP 会话产生的记录; 当前会话ID见 mcp_self_check")] string? sessionId = null,
+        [Description("工具名(可选): 只查由某个 MCP 工具产生的记录, 如 mysql_query / redis_execute")] string? tool = null,
+        CancellationToken cancellationToken = default)
     {
-        var records = (await _auditLogService.GetSqlLogsAsync(datasourceId, limit)).ToList();
-        return new SqlHistoryDto { Success = true, Count = records.Count, Records = records };
+        var config = await _configService.LoadConfigAsync();
+        string? filterId = null;
+        if (!string.IsNullOrWhiteSpace(datasourceId))
+        {
+            var (ds, resolveStatus, resolveError) = ToolSupport.ResolveDatasource(config, datasourceId!);
+            if (ds == null)
+                return SqlHistoryDto.Fail(resolveStatus!, resolveError!);
+            filterId = ds.Id;
+        }
+
+        var effectiveLimit = ToolSupport.ClampLimit(limit);
+        var records = (await _auditLogService.GetSqlLogsAsync(
+                filterId, effectiveLimit, null, false, Math.Max(0, offset), sessionId, tool))
+            .ToList();
+
+        foreach (var record in records)
+        {
+            if (record.Result != null && record.Result.Length > ToolSupport.MaxAuditResultChars)
+                record.Result = record.Result[..ToolSupport.MaxAuditResultChars] + "...[已截断]";
+        }
+
+        return new SqlHistoryDto
+        {
+            Success = true,
+            Count = records.Count,
+            HasMore = records.Count >= effectiveLimit,
+            Records = records
+        };
     }
 
     private static string ResolveTunnelServerName(AppConfig config, DataSourceConfig ds)

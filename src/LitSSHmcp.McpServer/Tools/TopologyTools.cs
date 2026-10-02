@@ -18,11 +18,25 @@ public class TopologyTools
 {
     private readonly ITopologyService _topologyService;
     private readonly IConfigService _configService;
+    private readonly ICommandFilterService _commandFilter;
+    private readonly IApprovalService _approvalService;
+    private readonly IAuditLogService _auditLogService;
+    private readonly ISecurityOptionsProvider _securityOptions;
 
-    public TopologyTools(ITopologyService topologyService, IConfigService configService)
+    public TopologyTools(
+        ITopologyService topologyService,
+        IConfigService configService,
+        ICommandFilterService commandFilter,
+        IApprovalService approvalService,
+        IAuditLogService auditLogService,
+        ISecurityOptionsProvider securityOptions)
     {
         _topologyService = topologyService;
         _configService = configService;
+        _commandFilter = commandFilter;
+        _approvalService = approvalService;
+        _auditLogService = auditLogService;
+        _securityOptions = securityOptions;
     }
 
     [McpServerTool(Name = "topology_get_overview", UseStructuredContent = true, OutputSchemaType = typeof(TopologyGraph), ReadOnly = true, Idempotent = true, OpenWorld = false)]
@@ -35,11 +49,12 @@ public class TopologyTools
         [Description("资产ID, 如 ds:mysql-order-01 / ssh:web-server-01 / app:order-service 或纯ID/名称")] string assetId)
         => await _topologyService.GetDependenciesAsync(assetId);
 
-    [McpServerTool(Name = "topology_discover", UseStructuredContent = true, OutputSchemaType = typeof(DiscoverResultDto), OpenWorld = true)]
-    [Description("自动发现并补全拓扑(java进程/网络连接/JDBC配置/processlist)。拓扑缺失或过期时用")]
+    [McpServerTool(Name = "topology_discover", UseStructuredContent = true, OutputSchemaType = typeof(DiscoverResultDto), Destructive = false, ReadOnly = false, Idempotent = false, OpenWorld = true)]
+    [Description("自动发现并补全拓扑(java进程/网络连接/JDBC配置/processlist), 会执行远端只读探测命令并写入拓扑缓存。拓扑缺失或过期时用; 通常需10-60秒/台, 扫描期间可用取消中断")]
     public async Task<DiscoverResultDto> DiscoverTopology(
         [Description("限定扫描的服务器ID或名称, 逗号分隔; 留空扫描全部")] string? serverIds = null,
-        [Description("配置文件搜索路径, 空格分隔; 留空使用配置中允许的路径")] string? searchPaths = null)
+        [Description("配置文件搜索路径, 空格分隔; 留空使用配置中允许的路径(security.discovery.allowedSearchPaths)")] string? searchPaths = null,
+        CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
         var allowedPaths = config.Security.Discovery.AllowedSearchPaths ?? Array.Empty<string>();
@@ -64,9 +79,54 @@ public class TopologyTools
             paths = requestedPaths;
         }
 
-        var result = await _topologyService.DiscoverAsync(servers, paths);
-        return new DiscoverResultDto { Success = true, Result = result };
+        // 扫描路径会被拼进远端 shell 命令：先过命令过滤（阻断/敏感），敏感时需人工确认。
+        // 路径本身在 TopologyService 内统一做单引号转义，这里负责策略与审批门禁。
+        if (paths is { Length: > 0 })
+        {
+            var probeCommand = TopologyService.BuildConfigScanCommand(paths);
+            var verdict = _commandFilter.CheckCommand(probeCommand);
+
+            if (verdict == CommandFilterResult.Blocked)
+            {
+                await AuditAsync(probeCommand, CommandStatus.Blocked);
+                return DiscoverResultDto.Fail("blocked",
+                    "扫描路径被安全策略拦截(路径中含被禁止的命令片段)。请改用不带特殊字符的目录路径。");
+            }
+
+            if (verdict == CommandFilterResult.Sensitive)
+            {
+                var outcome = await _approvalService.RequestApprovalAsync(
+                    "topology_discover", probeCommand, verdict, null, "拓扑扫描", cancellationToken);
+                if (outcome != ApprovalOutcome.Approved)
+                {
+                    await AuditAsync(probeCommand, CommandStatus.Rejected);
+                    var (status, error) = ApprovalOutcomeText.Describe(outcome, _securityOptions.Approval.TimeoutSeconds);
+                    return DiscoverResultDto.Fail(status, error);
+                }
+                await AuditAsync(probeCommand, CommandStatus.Approved);
+            }
+        }
+
+        try
+        {
+            var result = await _topologyService.DiscoverAsync(servers, paths, cancellationToken);
+            return new DiscoverResultDto { Success = true, Result = result };
+        }
+        catch (DiscoveryInProgressException)
+        {
+            return DiscoverResultDto.Fail("discovery_in_progress",
+                "已有自动发现在执行，请稍后重试（本次已跳过，避免并发扫描；可先用 topology_get_overview 查看已有结果）。");
+        }
     }
+
+    private Task AuditAsync(string command, CommandStatus status) =>
+        ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+        {
+            ServerId = "topology_discover",
+            ServerName = "topology_discover",
+            Command = command,
+            Status = status
+        });
 
     private static string[]? Split(string? value, char separator = ',')
     {

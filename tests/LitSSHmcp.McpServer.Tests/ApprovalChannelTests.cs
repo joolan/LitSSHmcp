@@ -21,16 +21,16 @@ public class ApprovalChannelTests : IDisposable
         var id = await WaitForPendingIdAsync();
         ApprovalFileStore.WriteDecision(_dir, new ApprovalDecisionFile { Id = id, Approved = true, DecidedAt = DateTimeOffset.Now, Channel = "cli" });
 
-        Assert.True(await task);
+        Assert.Equal(ApprovalOutcome.Approved, await task);
     }
 
     [Fact]
-    public async Task Cli_channel_denies_on_timeout()
+    public async Task Cli_channel_reports_timeout_when_no_decision()
     {
         var channel = new CliApprovalChannel(_dir);
         var context = new ApprovalRequestContext { ServerName = "s", Operation = "op", Command = "rm x", TimeoutSeconds = 1 };
 
-        Assert.False(await channel.RequestAsync(context, CancellationToken.None));
+        Assert.Equal(ApprovalOutcome.Timeout, await channel.RequestAsync(context, CancellationToken.None));
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class ApprovalChannelTests : IDisposable
         var id = await WaitForPendingIdAsync();
         ApprovalFileStore.WriteDecision(_dir, new ApprovalDecisionFile { Id = id, Approved = false, DecidedAt = DateTimeOffset.Now, Channel = "cli" });
 
-        Assert.False(await task);
+        Assert.Equal(ApprovalOutcome.Rejected, await task);
     }
 
     private async Task<string> WaitForPendingIdAsync()

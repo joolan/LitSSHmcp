@@ -96,12 +96,18 @@ public sealed class ServerStatusDto
 {
     public bool Success { get; set; }
     public string? Error { get; set; }
+
+    /// <summary>连接状态：connected / disconnected / auth_failed / host_key_mismatch / timeout / connection_error。</summary>
+    public string? Status { get; set; }
+
     public string? Id { get; set; }
     public string? Name { get; set; }
     public string? Host { get; set; }
 
-    /// <summary>连接状态：Connected / Disconnected。</summary>
-    public string? Status { get; set; }
+    /// <summary>失败分类: auth / host_key / timeout / network。</summary>
+    public string? ErrorKind { get; set; }
+
+    public double DurationMs { get; set; }
 
     public static ServerStatusDto Fail(string error) => new() { Success = false, Error = error };
 }
@@ -110,10 +116,15 @@ public sealed class SshTestConnectionDto
 {
     public bool Success { get; set; }
     public string? Error { get; set; }
+    public string? Status { get; set; }
+    public string? ErrorKind { get; set; }
     public string? ServerId { get; set; }
     public string? Name { get; set; }
+    public string? Host { get; set; }
+    public double DurationMs { get; set; }
 
-    public static SshTestConnectionDto Fail(string error) => new() { Success = false, Error = error };
+    public static SshTestConnectionDto Fail(string status, string error, string? errorKind = null) =>
+        new() { Success = false, Status = status, Error = error, ErrorKind = errorKind };
 }
 
 public sealed class DiscoverResultDto
@@ -133,13 +144,34 @@ public sealed class CommandResultDto
     public string? Status { get; set; }
     public string? Reason { get; set; }
     public string? Error { get; set; }
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
     public string? Command { get; set; }
     public string? Output { get; set; }
     public int ExitCode { get; set; }
+
+    /// <summary>输出是否被截断（SSH 命令输出没有行数上限，必须给模型一个"还有更多"的信号）。</summary>
+    public bool Truncated { get; set; }
+
+    /// <summary>截断前的原始输出字符数。</summary>
+    public long OutputChars { get; set; }
+
     public double DurationMs { get; set; }
 
-    public static CommandResultDto Fail(string status, string error, string? reason = null, string? command = null) =>
-        new() { Success = false, Status = status, Error = error, Reason = reason, Command = command };
+    public static CommandResultDto Fail(string status, string error, string? reason = null, string? command = null,
+        string? serverId = null, string? serverName = null, string? host = null) =>
+        new()
+        {
+            Success = false,
+            Status = status,
+            Error = error,
+            Reason = reason,
+            Command = command,
+            ServerId = serverId,
+            ServerName = serverName,
+            Host = host
+        };
 }
 
 public sealed class SudoStatusDto
@@ -148,6 +180,7 @@ public sealed class SudoStatusDto
     public string? Error { get; set; }
     public string? ServerId { get; set; }
     public string? ServerName { get; set; }
+    public string? Host { get; set; }
     public string? SudoType { get; set; }
     public string? SudoUsername { get; set; }
     public bool IsConfigured { get; set; }
@@ -162,6 +195,9 @@ public sealed class FileTransferResultDto
     public string? Status { get; set; }
     public string? Reason { get; set; }
     public string? Error { get; set; }
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
     public string? Message { get; set; }
     public long BytesTransferred { get; set; }
     public double DurationMs { get; set; }
@@ -169,7 +205,8 @@ public sealed class FileTransferResultDto
     public string[]? AllowedRemotePaths { get; set; }
 
     public static FileTransferResultDto Fail(string status, string error, string? reason = null,
-        string[]? allowedLocalPaths = null, string[]? allowedRemotePaths = null) =>
+        string[]? allowedLocalPaths = null, string[]? allowedRemotePaths = null,
+        string? serverId = null, string? serverName = null, string? host = null) =>
         new()
         {
             Success = false,
@@ -177,7 +214,10 @@ public sealed class FileTransferResultDto
             Error = error,
             Reason = reason,
             AllowedLocalPaths = allowedLocalPaths,
-            AllowedRemotePaths = allowedRemotePaths
+            AllowedRemotePaths = allowedRemotePaths,
+            ServerId = serverId,
+            ServerName = serverName,
+            Host = host
         };
 }
 
@@ -196,25 +236,52 @@ public sealed class RemoteFileListDto
     public bool Success { get; set; }
     public string? Status { get; set; }
     public string? Error { get; set; }
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
     public string? Path { get; set; }
+    public int Count { get; set; }
+
+    /// <summary>true=目录条目过多已截断，需要更精确的路径再查。</summary>
+    public bool Truncated { get; set; }
+
     public List<RemoteFileDto> Files { get; set; } = new();
 
-    public static RemoteFileListDto Fail(string status, string error) =>
-        new() { Success = false, Status = status, Error = error };
+    public static RemoteFileListDto Fail(string status, string error,
+        string? serverId = null, string? serverName = null, string? host = null) =>
+        new() { Success = false, Status = status, Error = error, ServerId = serverId, ServerName = serverName, Host = host };
 }
 
 public sealed class CommandHistoryDto
 {
     public bool Success { get; set; } = true;
+    public string? Status { get; set; }
+    public string? Error { get; set; }
     public int Count { get; set; }
+
+    /// <summary>true=已达到 limit 上限，还有更早的记录（配合 offset 翻页）。</summary>
+    public bool HasMore { get; set; }
+
     public List<CommandAuditLog> Records { get; set; } = new();
+
+    public static CommandHistoryDto Fail(string status, string error) =>
+        new() { Success = false, Status = status, Error = error };
 }
 
 public sealed class SqlHistoryDto
 {
     public bool Success { get; set; } = true;
+    public string? Status { get; set; }
+    public string? Error { get; set; }
     public int Count { get; set; }
+
+    /// <summary>true=已达到 limit 上限，还有更早的记录（配合 offset 翻页）。</summary>
+    public bool HasMore { get; set; }
+
     public List<SqlAuditLog> Records { get; set; } = new();
+
+    public static SqlHistoryDto Fail(string status, string error) =>
+        new() { Success = false, Status = status, Error = error };
 }
 
 public sealed class DatasourceSummaryDto
@@ -252,7 +319,26 @@ public sealed class HealthCheckItemDto
 public sealed class HealthCheckDto
 {
     public bool Success { get; set; }
+
+    /// <summary>当前 MCP 会话 ID（每次启动服务生成；审计记录据此区分会话）。</summary>
+    public string? SessionId { get; set; }
+
+    /// <summary>当前会话的客户端名称（initialize 握手后由服务端获取，首次工具调用前可能为空）。</summary>
+    public string? ClientName { get; set; }
+
+    public string? ClientVersion { get; set; }
+
     public List<HealthCheckItemDto> Checks { get; set; } = new();
+}
+
+public sealed class SessionListDto
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public int Count { get; set; }
+    public List<AuditSession> Sessions { get; set; } = new();
+
+    public static SessionListDto Fail(string error) => new() { Success = false, Error = error };
 }
 
 public sealed class RedisCommandResultDto
@@ -275,3 +361,182 @@ public sealed class RedisCommandResultDto
     public static RedisCommandResultDto Fail(string status, string error) =>
         new() { Success = false, Status = status, Error = error };
 }
+
+/// <summary>
+/// 领域工具（docker_* / service_* / log_* / java_*）的通用文本结果。
+/// 统一承载安全链路返回的 status/error 与截断信号。
+/// </summary>
+public sealed class RemoteCommandResultDto
+{
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>结果来源目标（回声，便于确认没有操作错机器）。</summary>
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
+
+    public string? Output { get; set; }
+    public bool Truncated { get; set; }
+    public long OutputChars { get; set; }
+    public int ExitCode { get; set; }
+    public double DurationMs { get; set; }
+
+    public static RemoteCommandResultDto From(GuardedCommandOutcome outcome) => new()
+    {
+        Success = outcome.Success,
+        Status = outcome.Status,
+        Error = outcome.Error,
+        ServerId = outcome.ServerId,
+        ServerName = outcome.ServerName,
+        Host = outcome.ServerHost,
+        Output = outcome.Output,
+        Truncated = outcome.Truncated,
+        OutputChars = outcome.OutputChars,
+        ExitCode = outcome.ExitCode,
+        DurationMs = outcome.DurationMs
+    };
+}
+
+public sealed class DockerContainerDto
+{
+    public string? Id { get; set; }
+    public string? Names { get; set; }
+    public string? Image { get; set; }
+    public string? Status { get; set; }
+    public string? State { get; set; }
+    public string? Ports { get; set; }
+}
+
+public sealed class DockerPsDto
+{
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
+    public int Count { get; set; }
+    public bool Truncated { get; set; }
+    public List<DockerContainerDto> Containers { get; set; } = new();
+
+    public static DockerPsDto Fail(string status, string error) =>
+        new() { Success = false, Status = status, Error = error };
+}
+
+public sealed class JavaProcessDto
+{
+    public int Pid { get; set; }
+    public string? Elapsed { get; set; }
+    public string? Cpu { get; set; }
+    public string? Mem { get; set; }
+    public string? Command { get; set; }
+}
+
+public sealed class JavaProcessListDto
+{
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
+    public int Count { get; set; }
+    public List<JavaProcessDto> Processes { get; set; } = new();
+
+    public static JavaProcessListDto Fail(string status, string error) =>
+        new() { Success = false, Status = status, Error = error };
+}
+
+public sealed class LogResultDto
+{
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
+    public string? Path { get; set; }
+    public string? Pattern { get; set; }
+    public int Count { get; set; }
+    public bool Truncated { get; set; }
+    public List<string> Lines { get; set; } = new();
+
+    public static LogResultDto Fail(string status, string error,
+        string? serverId = null, string? serverName = null, string? host = null) =>
+        new() { Success = false, Status = status, Error = error, ServerId = serverId, ServerName = serverName, Host = host };
+}
+
+public sealed class LogFileDto
+{
+    public string Path { get; set; } = string.Empty;
+    public DateTimeOffset? ModifiedAt { get; set; }
+}
+
+public sealed class LogFileListDto
+{
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
+    public int Count { get; set; }
+    public bool Truncated { get; set; }
+    public List<LogFileDto> Files { get; set; } = new();
+
+    public static LogFileListDto Fail(string status, string error,
+        string? serverId = null, string? serverName = null, string? host = null) =>
+        new() { Success = false, Status = status, Error = error, ServerId = serverId, ServerName = serverName, Host = host };
+}
+
+public sealed class AppInfoDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string? Type { get; set; }
+    public string? ContainerName { get; set; }
+    public int? Port { get; set; }
+}
+
+public sealed class AppServerHealthDto
+{
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
+    public bool Reachable { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public string? Output { get; set; }
+    public bool Truncated { get; set; }
+}
+
+public sealed class AppDatasourceHealthDto
+{
+    public string? DatasourceId { get; set; }
+    public string? Name { get; set; }
+    public string? Type { get; set; }
+    public bool Reachable { get; set; }
+    public string? Status { get; set; }
+    public string? Version { get; set; }
+    public string? AccessMode { get; set; }
+    public string? ViaTunnelServer { get; set; }
+    public string? Summary { get; set; }
+    public string? Error { get; set; }
+}
+
+public sealed class AppHealthSnapshotDto
+{
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public AppInfoDto? Application { get; set; }
+    public List<AppServerHealthDto> Servers { get; set; } = new();
+    public List<AppDatasourceHealthDto> Datasources { get; set; } = new();
+    public List<string> Notes { get; set; } = new();
+
+    public static AppHealthSnapshotDto Fail(string status, string error) =>
+        new() { Success = false, Status = status, Error = error };
+}
+

@@ -24,8 +24,13 @@ public class ToolGroupsViewModel : INotifyPropertyChanged
         Add(ToolGroups.Mysql, "MySQL", "mysql_query / mysql_execute / mysql_explain / mysql_diagnostics");
         Add(ToolGroups.Postgres, "PostgreSQL", "postgres_query / postgres_execute / postgres_explain / postgres_diagnostics");
         Add(ToolGroups.Redis, "Redis", "redis_read / redis_execute / redis_diagnostics");
+        Add(ToolGroups.Docker, "Docker 容器", "docker_ps / docker_logs / docker_inspect / docker_stats / docker_images / docker_restart / docker_exec");
+        Add(ToolGroups.Service, "systemd 服务", "service_status / service_list / service_restart / service_logs");
+        Add(ToolGroups.Log, "日志文件", "log_tail / log_grep / log_find");
+        Add(ToolGroups.Java, "JVM 诊断", "java_processes / java_threads / java_heap / java_info");
         Add(ToolGroups.Topology, "拓扑", "topology_get_overview / topology_get_dependencies / topology_discover");
-        Add(ToolGroups.Guide, "指南 / 自检", "mcp_usage_guide / mcp_self_check");
+        Add(ToolGroups.App, "应用体检", "app_health_snapshot");
+        Add(ToolGroups.Guide, "指南 / 自检", "mcp_usage_guide / mcp_self_check / mcp_list_sessions");
 
         foreach (var group in Groups)
             group.PropertyChanged += (_, _) => OnPropertyChanged(nameof(Warning));

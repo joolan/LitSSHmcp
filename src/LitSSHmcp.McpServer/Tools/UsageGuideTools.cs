@@ -37,7 +37,13 @@ public class UsageGuideTools
                     "用户问'这台机器能不能sudo/有没有配置提权'时,使用 ssh_get_sudo_status",
                     "用户问'执行过哪些命令/命令历史/操作记录'时,使用 ssh_get_command_history",
                     "用户要求上传或下载文件时,使用 ssh_upload_file / ssh_download_file",
-                    "用户想看服务器上的目录或文件时,使用 ssh_list_files"
+                    "用户想看服务器上的目录或文件时,使用 ssh_list_files",
+                    "用户问容器(有哪些容器/容器状态/端口/日志/资源/镜像)时,使用 docker_ps / docker_logs / docker_inspect / docker_stats / docker_images; 重启容器用 docker_restart, 进入容器执行用 docker_exec(均需确认)",
+                    "用户问systemd服务状态或要重启服务/看服务日志时,使用 service_status / service_restart / service_logs; 不确定服务名先用 service_list",
+                    "用户要看日志文件尾部或在日志里搜错误/关键字时,使用 log_tail / log_grep(可传 path, 也可传 appId 用应用管理里配置的日志路径); 不知道路径时先用 log_find 发现最近修改的 .log 文件(路径受 security.logs.allowedPaths 约束)",
+                    "用户问Java进程/线程/死锁/CPU飙高/内存/GC时,先用 java_processes 拿pid(可传appId过滤), 再用 java_threads / java_heap / java_info(也可直接传appId自动解析pid)",
+                    "用户要对某个应用做整体体检(跨服务器+依赖数据库)时,优先用 app_health_snapshot, 再按需下钻",
+                    "用户问'审计记录是哪个AI客户端/哪次会话产生的'时,用 mcp_list_sessions 看会话(客户端名称/版本), 再用 ssh_get_command_history / datasource_get_sql_history 的 sessionId 过滤具体记录; 当前会话ID见 mcp_self_check"
                 },
                 server_info_includes = "服务器名称、主机地址、端口、用户名、描述、标签、提权方式"
             },
@@ -61,7 +67,7 @@ public class UsageGuideTools
                     "用户问'谁执行了什么SQL/Redis命令/审计记录'时,使用 datasource_get_sql_history",
                     "注意区分: SSH服务器列表=ssh_list_servers, SSH连通性=ssh_test_connection; 数据库列表=datasource_list, 数据库连通性=datasource_test_connection; SSH命令=ssh_execute_command, SQL=mysql_query/mysql_execute, Redis只读=redis_read, Redis写=redis_execute"
                 },
-                how_to_get_id = "所有数据库/Redis工具的 datasourceId 用 datasource_list 获取(type=redis 的数据源用 Redis 工具); 服务器 serverId 用 ssh_list_servers 获取"
+                how_to_get_id = "服务器 serverId 用 ssh_list_servers 获取, 且 ID/名称/主机名三种写法都能被工具识别; 数据源 datasourceId 用 datasource_list 获取(ID 或名称均可, type=redis 的数据源用 Redis 工具)。传错时错误信息会回显可用 ID, 照抄即可",
             },
             important_notes = new[]
             {
@@ -95,20 +101,21 @@ public class UsageGuideTools
                 points = new[]
                 {
                     "上传=ssh_upload_file, 下载=ssh_download_file, 列远程目录=ssh_list_files(是远程服务器目录, 不是本机文件)",
-                    "三者都受 fileTransfer 开关与本地/远程路径白名单约束, 越界返回 path_not_allowed",
-                    "上传/下载需用户在桌面确认"
+                    "三者都受 fileTransfer 开关与本地/远程路径白名单约束, 越界返回 path_not_allowed(错误里会列出允许的路径)",
+                    "上传/下载需审批(默认桌面+CLI双通道), 拒绝/超时分别返回 rejected / approval_timeout",
+                    "列目录失败(路径不存在/无权限)会明确返回失败状态, 不会用空列表冒充'目录为空'; 条目过多会置 truncated=true"
                 }
             },
             datasource_guide = new
             {
-                description = "数据源(MySQL/Redis)使用说明",
+                description = "数据源(MySQL/PostgreSQL/Redis)使用说明",
                 points = new[]
                 {
                     "'看有哪些数据库'→datasource_list, '测数据库能否连上'→datasource_test_connection, '查数据'→mysql_query, '改数据'→mysql_execute",
                     "'PG查数据'→postgres_query, 'PG改数据'→postgres_execute, 'PG体检'→postgres_diagnostics",
                     "'查缓存/读key'→redis_read, '写缓存/删key/设过期'→redis_execute, 'Redis体检'→redis_diagnostics",
                     "datasource_list 返回 host/port/username 可以直接用于与应用日志中的连接串比对; type=redis 的数据源只能用 Redis 工具",
-                    "mysql_query 只允许只读语句(SELECT/SHOW/EXPLAIN/DESC/WITH), 单条语句, 结果最多1000行",
+                    "mysql_query 只允许只读语句(SELECT/SHOW/EXPLAIN/DESC/WITH), 单条语句, 结果最多1000行; 数据修改型CTE(WITH ... DELETE/UPDATE)与 EXPLAIN ANALYZE <DML> 会被识别为写操作并拒绝(请改用 mysql_execute)",
                     "mysql_execute 用于 INSERT/UPDATE/DELETE/DDL, 会触发安全策略与用户审批",
                     "redis_read 只允许只读白名单命令, 结果已JSON化并截断超长字符串/超大数组; 非白名单命令会提示改用 redis_execute",
                     "redis_execute 的写命令一律弹桌面确认, 危险命令(清库/关服/换主从/加载模块/阻塞连接类)直接拒绝",
@@ -136,16 +143,16 @@ public class UsageGuideTools
                 },
                 how_to_use = new[]
                 {
-                    "1. 先用 ssh_get_sudo_status 检查服务器是否配置了提权",
-                    "2. 如果已配置,直接使用 ssh_execute_sudo 执行命令",
-                    "3. 如果未配置,使用 ssh_execute_command 尝试,失败后再提示用户需要提权"
+                    "判断需要root权限时, 直接使用 ssh_execute_sudo, 不必先用 ssh_get_sudo_status 或普通命令试探",
+                    "ssh_execute_sudo 总是需要用户确认; 未配置提权会明确返回 sudo_not_configured",
+                    "ssh_get_sudo_status 只在需要向用户解释'为什么不能提权'时使用"
                 },
-                example = "用户说'重启nginx'时,应该直接用 ssh_execute_sudo 执行 systemctl restart nginx,而不是先用 ssh_execute_command 失败后再提权"
+                example = "用户说'重启nginx'时, 直接用 ssh_execute_sudo 执行 systemctl restart nginx, 而不是先 ssh_execute_command 失败后再提权"
             },
-            error_handling = "执行命令时关注 success 和 error 字段。success=false 时检查 status 字段: blocked=被禁止, rejected=用户拒绝, not_readonly/readonly_statement=命令与工具不匹配(只读用mysql_query/redis_read, 写用mysql_execute/redis_execute), server_not_found=服务器不存在, sudo_not_configured=未配置提权",
+            error_handling = "看 success 与 status 字段判断失败类型并决定是否重试: blocked=被安全策略禁止(不要重试); rejected=用户拒绝(不要重试); approval_timeout/approval_unavailable=审批超时或不可用(可提示用户后用同一命令重试); server_not_found/datasource_not_found=标识不存在(改用列表工具拿正确ID, 错误信息里已回显可用ID); readonly_statement=只读语句用错了写工具(改用mysql_query/postgres_query/redis_read); not_readonly_statement=写语句用错了只读工具(改用*_execute); sudo_not_configured=未配置提权; auth_failed=账号/密钥错; host_key_mismatch=主机密钥变化(可能是安全事件, 先人工核对指纹, 不要重试); timeout/rate_limited/connection_error=可稍后重试",
             sudo_types = "CurrentUser=使用SSH用户密码sudo(常用), RootUser=切换root(需root密码), CustomUser=切换指定用户(需该用户密码)",
-            sensitive_commands = "rm, chmod, chown, reboot, shutdown, systemctl, kill, pkill, mount, umount",
-            blocked_commands = "rm -rf /, mkfs, dd if=/dev/zero"
+            sensitive_commands = "rm, chmod, chown, reboot, shutdown, systemctl stop/restart, kill, pkill, mount, umount, 以及 docker rm/rmi/run/exec/stop/restart/compose down 等写操作",
+            blocked_commands = "rm -rf /, mkfs, dd if=/dev/zero, docker system prune, docker volume rm, docker run --privileged 等"
         };
 
         return Task.FromResult(JsonSerializer.Serialize(guide, new JsonSerializerOptions { WriteIndented = true }));

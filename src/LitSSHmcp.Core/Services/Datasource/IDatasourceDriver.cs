@@ -58,6 +58,9 @@ public interface IDatasourceDriverRegistry
 {
     IDatasourceDriver? Get(string type);
     IDatasourceDriver GetRequired(string type);
+
+    /// <summary>已注册的数据源类型，用于在"不支持的类型"错误里给出可用取值。</summary>
+    IReadOnlyCollection<string> SupportedTypes { get; }
 }
 
 public class DatasourceDriverRegistry : IDatasourceDriverRegistry
@@ -79,4 +82,6 @@ public class DatasourceDriverRegistry : IDatasourceDriverRegistry
     public IDatasourceDriver GetRequired(string type) =>
         Get(type) ?? throw new NotSupportedException(
             $"数据源类型 '{type}' 暂不支持。当前支持: {string.Join(", ", _drivers.Keys)}");
+
+    public IReadOnlyCollection<string> SupportedTypes => _drivers.Keys;
 }

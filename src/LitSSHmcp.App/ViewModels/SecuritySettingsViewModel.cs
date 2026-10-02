@@ -22,15 +22,18 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     private string _allowedRemotePaths = string.Empty;
     private string _sshHostKeyMode = "Tofu";
     private string _discoveryPaths = string.Empty;
+    private bool _discoveryUseSudo;
+    private string _logAllowedPaths = string.Empty;
     private string _maxConcurrent = "3";
     private string _maxPerMinute = "60";
     private bool _auditStoreSqlText = true;
     private bool _auditMaskLiterals;
     private string _auditRetentionDays = "90";
-    private string _approvalTimeout = "120";
+    private string _approvalTimeout = "45";
     private bool _approvalTopMost = true;
     private string _approvalStyle = "dialog";
     private int _approvalChannelIndex;
+    private string[]? _loadedChannels;
     private string _maskingRules = string.Empty;
     private string _statusMessage = string.Empty;
 
@@ -52,6 +55,8 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     public string AllowedRemotePaths { get => _allowedRemotePaths; set => Set(ref _allowedRemotePaths, value); }
     public string SshHostKeyMode { get => _sshHostKeyMode; set => Set(ref _sshHostKeyMode, value); }
     public string DiscoveryPaths { get => _discoveryPaths; set => Set(ref _discoveryPaths, value); }
+    public bool DiscoveryUseSudo { get => _discoveryUseSudo; set => Set(ref _discoveryUseSudo, value); }
+    public string LogAllowedPaths { get => _logAllowedPaths; set => Set(ref _logAllowedPaths, value); }
     public string MaxConcurrent { get => _maxConcurrent; set => Set(ref _maxConcurrent, value); }
     public string MaxPerMinute { get => _maxPerMinute; set => Set(ref _maxPerMinute, value); }
     public bool AuditStoreSqlText { get => _auditStoreSqlText; set => Set(ref _auditStoreSqlText, value); }
@@ -92,6 +97,8 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
 
             SshHostKeyMode = s.SshHostKey.Mode.ToString();
             DiscoveryPaths = Join(s.Discovery.AllowedSearchPaths);
+            DiscoveryUseSudo = s.Discovery.UseSudo;
+            LogAllowedPaths = Join(s.Logs.AllowedPaths);
             MaxConcurrent = s.Limits.MaxConcurrentPerTarget.ToString();
             MaxPerMinute = s.Limits.MaxCallsPerMinutePerTarget.ToString();
 
@@ -101,6 +108,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             ApprovalTimeout = s.Approval.TimeoutSeconds.ToString();
             ApprovalTopMost = s.Approval.TopMost;
             ApprovalStyle = s.Approval.Style;
+            _loadedChannels = s.Approval.Channels;
             ApprovalChannelIndex = ResolveChannelIndex(s.Approval.Channels);
             MaskingRules = Join(s.Masking.Rules.Select(r => $"{r.Column}={r.Mode}").ToArray());
 
@@ -136,13 +144,15 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
                 ? mode
                 : LitSSHmcp.Core.Models.SshHostKeyMode.Tofu;
             s.Discovery.AllowedSearchPaths = Split(DiscoveryPaths);
+            s.Discovery.UseSudo = DiscoveryUseSudo;
+            s.Logs.AllowedPaths = Split(LogAllowedPaths);
             s.Limits.MaxConcurrentPerTarget = (int)Math.Max(1, ParseLong(MaxConcurrent, 3));
             s.Limits.MaxCallsPerMinutePerTarget = (int)Math.Max(0, ParseLong(MaxPerMinute, 60));
 
             s.Audit.StoreSqlText = AuditStoreSqlText;
             s.Audit.MaskLiterals = AuditMaskLiterals;
             s.Audit.RetentionDays = (int)Math.Max(0, ParseLong(AuditRetentionDays, 90));
-            s.Approval.TimeoutSeconds = (int)Math.Max(0, ParseLong(ApprovalTimeout, 120));
+            s.Approval.TimeoutSeconds = (int)Math.Max(0, ParseLong(ApprovalTimeout, 45));
             s.Approval.TopMost = ApprovalTopMost;
             s.Approval.Style = ApprovalStyle?.Trim().ToLowerInvariant() switch
             {
@@ -150,12 +160,17 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
                 "native" => "native",
                 _ => "dialog"
             };
-            s.Approval.Channels = ApprovalChannelIndex switch
+            // 未改动通道下拉时保留原值(这样 config 里自定义/未知的通道不会被静默覆盖)；
+            // 改动了才按下拉索引重写。
+            var mappedChannels = ApprovalChannelIndex switch
             {
                 1 => new[] { "cli" },
                 2 => new[] { "desktop", "cli" },
                 _ => new[] { "desktop" }
             };
+            s.Approval.Channels = _loadedChannels is not null && ApprovalChannelIndex == ResolveChannelIndex(_loadedChannels)
+                ? _loadedChannels
+                : mappedChannels;
             s.Masking.Rules = ParseMaskRules(MaskingRules);
 
             await _configService.SaveConfigAsync(config);

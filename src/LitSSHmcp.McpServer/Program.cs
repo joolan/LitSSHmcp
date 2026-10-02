@@ -25,10 +25,26 @@ if (OperatingSystem.IsWindows() &&
     return LitSSHmcp.McpServer.Services.ApprovalRequestHost.Run(args[1]);
 }
 
+// 每次启动 MCP 服务生成一个会话 ID：不同 AI 客户端 / 重连（各自新起进程）会得到不同 ID，
+// 审计记录据此区分"是哪个会话产生的"。格式便于按时间排序：yyyyMMdd-HHmmss-<8hex>。
+var sessionId = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..8]}";
+
 // 读取工具分组配置(留空=全部)。在注册 MCP 工具前先算好, 以便只暴露启用的分组。
-var startupConfig = await new ConfigService().LoadConfigAsync();
-var enabledToolGroups = ToolGroups.ResolveEnabled(startupConfig.Tools);
-var unknownToolGroups = ToolGroups.UnknownGroups(startupConfig.Tools);
+// 配置损坏/权限问题时不能让进程直接崩溃退出(客户端会收到一个无法解释的断连), 记下错误、按"全部启用"继续,
+// 具体的配置错误会在 mcp_self_check / 各工具调用时以结构化错误返回。
+AppConfig? startupConfig = null;
+string? startupConfigError = null;
+try
+{
+    startupConfig = await new ConfigService().LoadConfigAsync();
+}
+catch (Exception ex)
+{
+    startupConfigError = ex.Message;
+}
+
+var enabledToolGroups = ToolGroups.ResolveEnabled(startupConfig?.Tools);
+var unknownToolGroups = ToolGroups.UnknownGroups(startupConfig?.Tools);
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -42,6 +58,8 @@ builder.Services.AddSingleton<ITopologyStore, TopologyStore>();
 builder.Services.AddSingleton<ISecurityOptionsProvider, SecurityOptionsProvider>();
 builder.Services.AddSingleton<ICommandFilterService, CommandFilterService>();
 builder.Services.AddSingleton<ISqlFilterService, SqlFilterService>();
+builder.Services.AddSingleton<IGuardedCommandService, GuardedCommandService>();
+builder.Services.AddSingleton(new McpSessionTracker(sessionId));
 builder.Services.AddSingleton<ISshKnownHostsStore, FileSshKnownHostsStore>();
 builder.Services.AddSingleton<ITargetLimiter, TargetLimiter>();
 
@@ -69,6 +87,8 @@ var mcp = builder.Services
         options.ServerInstructions = McpServerInstructions.Text;
         // 全局开关：security.enabled=false 时拒绝所有工具调用（热生效）
         options.Filters.Request.CallToolFilters.Add(McpGlobalSwitch.CreateFilter());
+        // 会话跟踪：从 initialize 后的请求上下文取客户端信息写入会话表
+        options.Filters.Request.CallToolFilters.Add(McpSessionFilter.CreateFilter());
     })
     .WithStdioServerTransport();
 
@@ -79,7 +99,12 @@ if (enabledToolGroups.Contains(ToolGroups.Datasource)) mcp = mcp.WithTools<Datas
 if (enabledToolGroups.Contains(ToolGroups.Mysql)) mcp = mcp.WithTools<MysqlTools>();
 if (enabledToolGroups.Contains(ToolGroups.Postgres)) mcp = mcp.WithTools<PostgresTools>();
 if (enabledToolGroups.Contains(ToolGroups.Redis)) mcp = mcp.WithTools<RedisTools>();
+if (enabledToolGroups.Contains(ToolGroups.Docker)) mcp = mcp.WithTools<DockerTools>();
+if (enabledToolGroups.Contains(ToolGroups.Service)) mcp = mcp.WithTools<ServiceTools>();
+if (enabledToolGroups.Contains(ToolGroups.Log)) mcp = mcp.WithTools<LogTools>();
+if (enabledToolGroups.Contains(ToolGroups.Java)) mcp = mcp.WithTools<JavaTools>();
 if (enabledToolGroups.Contains(ToolGroups.Topology)) mcp = mcp.WithTools<TopologyTools>();
+if (enabledToolGroups.Contains(ToolGroups.App)) mcp = mcp.WithTools<AppTools>();
 if (enabledToolGroups.Contains(ToolGroups.Guide)) mcp = mcp.WithTools<UsageGuideTools>().WithTools<HealthTools>();
 
 builder.Logging.AddConsole(consoleLog =>
@@ -92,6 +117,9 @@ builder.Logging.AddProvider(new FileLoggerProvider(ConfigPaths.LogsDir, retentio
 var host = builder.Build();
 
 var startupLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LitSSHmcp.Startup");
+startupLogger.LogInformation("MCP 会话 ID: {SessionId}（审计记录按此区分；可用 mcp_self_check 查看）", sessionId);
+if (startupConfigError is not null)
+    startupLogger.LogError("启动时读取配置失败, 暂按全部工具分组启动, 工具调用会返回具体错误: {Error}", startupConfigError);
 startupLogger.LogInformation("MCP 工具分组: 启用 [{Enabled}]{Disabled}",
     string.Join(", ", ToolGroups.All.Where(enabledToolGroups.Contains)),
     enabledToolGroups.Count == ToolGroups.All.Length
@@ -104,15 +132,29 @@ if (!enabledToolGroups.Contains(ToolGroups.Datasource) &&
     (enabledToolGroups.Contains(ToolGroups.Mysql) || enabledToolGroups.Contains(ToolGroups.Redis)))
     startupLogger.LogWarning("已停用 datasource 分组(datasource_list 等), 但启用了 mysql/redis 分组; AI 将无法列出数据源ID");
 
-// 触发配置加载（含 schemaVersion 迁移）
-var configService = host.Services.GetRequiredService<IConfigService>();
-await configService.LoadConfigAsync();
+// 触发配置加载（含 schemaVersion 迁移）与各存储初始化。
+// 单点失败不能让 MCP 进程在握手前退出：记录清晰错误后继续启动，
+// 后续工具调用会通过 mcp_self_check / 结构化 status 暴露根因。
+try
+{
+    var configService = host.Services.GetRequiredService<IConfigService>();
+    await configService.LoadConfigAsync();
 
-var topologyStore = host.Services.GetRequiredService<ITopologyStore>();
-await topologyStore.InitializeAsync();
+    var topologyStore = host.Services.GetRequiredService<ITopologyStore>();
+    await topologyStore.InitializeAsync();
 
-var auditLog = host.Services.GetRequiredService<IAuditLogService>();
-await auditLog.InitializeAsync();
+    var auditLog = host.Services.GetRequiredService<IAuditLogService>();
+    await auditLog.InitializeAsync();
+    auditLog.SessionId = sessionId;
+
+    // 启动即登记本次会话（客户端名称/版本会在首个工具调用时由过滤器回填）
+    var sessionTracker = host.Services.GetRequiredService<McpSessionTracker>();
+    await auditLog.RecordSessionAsync(sessionTracker.Snapshot());
+}
+catch (Exception ex)
+{
+    startupLogger.LogError(ex, "启动初始化失败, MCP 仍会启动; 请调用 mcp_self_check 查看各组件状态");
+}
 
 await host.RunAsync();
 return 0;

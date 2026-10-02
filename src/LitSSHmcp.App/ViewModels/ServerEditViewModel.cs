@@ -30,7 +30,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
 
     public event EventHandler<bool>? DialogClosed;
 
-    public ServerEditViewModel(IConfigService configService, ISshService sshService, ServerEditWindow editWindow, SshServerConfig? server = null)
+    public ServerEditViewModel(IConfigService configService, ISshService sshService, ServerEditWindow editWindow, SshServerConfig? server = null, SshServerConfig? prefill = null)
     {
         _configService = configService;
         _sshService = sshService;
@@ -54,6 +54,12 @@ public class ServerEditViewModel : INotifyPropertyChanged
             TagsText = string.Join(", ", server.Tags);
             SudoTypeIndex = (int)server.SudoType;
             SudoUsername = server.SudoUsername ?? string.Empty;
+        }
+        else if (prefill != null)
+        {
+            Host = prefill.Host;
+            Name = string.IsNullOrWhiteSpace(prefill.Name) ? prefill.Host : prefill.Name;
+            Port = prefill.Port > 0 ? prefill.Port : 22;
         }
     }
 

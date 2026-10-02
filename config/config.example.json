@@ -185,7 +185,12 @@
       "mode": "tofu"
     },
     "discovery": {
-      "allowedSearchPaths": ["/opt", "/home", "/srv", "/app", "/data"]
+      "allowedSearchPaths": ["/opt", "/home", "/srv", "/app", "/data", "/etc/nginx"],
+      "useSudo": false
+    },
+    "logs": {
+      "allowedPaths": ["/var/log", "/opt", "/srv", "/app", "/data", "/home"],
+      "maxLines": 2000
     },
     "limits": {
       "maxConcurrentPerTarget": 3,
@@ -204,8 +209,8 @@
     },
     "approval": {
       "style": "process",
-      "channels": ["desktop"],
-      "timeoutSeconds": 120,
+      "channels": ["desktop", "cli"],
+      "timeoutSeconds": 45,
       "topMost": true
     }
   }

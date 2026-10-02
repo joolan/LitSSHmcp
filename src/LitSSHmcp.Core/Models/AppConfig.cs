@@ -26,6 +26,10 @@ public class SecurityConfig
     public FileTransferConfig FileTransfer { get; set; } = new();
     public SshHostKeyConfig SshHostKey { get; set; } = new();
     public DiscoveryConfig Discovery { get; set; } = new();
+
+    /// <summary>日志读取工具(log_tail / log_grep)的允许路径与行数上限。</summary>
+    public LogConfig Logs { get; set; } = new();
+
     public LimitsConfig Limits { get; set; } = new();
     public AuditConfig Audit { get; set; } = new();
     public ApprovalConfig Approval { get; set; } = new();
@@ -55,14 +59,18 @@ public class ApprovalConfig
     public string Style { get; set; } = "dialog";
 
     /// <summary>
-    /// 审批通道(按顺序同时启用, 首个给出决定者生效):
+    /// 审批通道(按顺序同时启用, 首个给出结论者生效):
     /// desktop=本机桌面弹窗; cli=带外 CLI/IPC(操作员用 litssh approve/deny 决定, 适配无桌面/headless)。
-    /// 默认仅 desktop。
+    /// 默认 desktop+cli：无桌面环境下 desktop 必然失败，只配 desktop 会导致这类环境 100% 拒绝。
     /// </summary>
-    public string[] Channels { get; set; } = { "desktop" };
+    public string[] Channels { get; set; } = { "desktop", "cli" };
 
-    /// <summary>授权确认弹窗无操作超时（秒），超时自动拒绝；0 表示不超时（仅 dialog 样式生效）。</summary>
-    public int TimeoutSeconds { get; set; } = 120;
+    /// <summary>
+    /// 授权确认无操作超时（秒），超时自动拒绝并返回 <c>status=approval_timeout</c>；
+    /// 0 表示不超时（按 300 秒兜底）。默认 45s：要短于多数 MCP 客户端的工具超时，
+    /// 否则"等满 120s 再失败"会让整次调用被客户端判为超时。
+    /// </summary>
+    public int TimeoutSeconds { get; set; } = 45;
 
     /// <summary>弹窗是否强制置顶，避免被其它窗口遮挡。</summary>
     public bool TopMost { get; set; } = true;
@@ -97,7 +105,26 @@ public class SshHostKeyConfig
 
 public class DiscoveryConfig
 {
-    public string[] AllowedSearchPaths { get; set; } = { "/opt", "/home", "/srv", "/app", "/data" };
+    public string[] AllowedSearchPaths { get; set; } = { "/opt", "/home", "/srv", "/app", "/data", "/etc/nginx" };
+
+    /// <summary>
+    /// 自动发现是否用提权(sudo)执行只读探测命令。开启后 <c>ss -ltnp</c> 能看到 root 服务的进程名，
+    /// 从而拿到精确监听端口（如宝塔启动的 nginx）；仅当该服务器配置了 SudoType 时才生效。
+    /// 探测命令均为只读；提权密码由服务端注入、不会暴露给 AI。
+    /// </summary>
+    public bool UseSudo { get; set; }
+}
+
+/// <summary>
+/// 日志读取工具(log_tail / log_grep)的约束：只允许读取白名单根目录下的日志文件，
+/// 避免模型读取 /etc/shadow 等敏感文件；单次返回行数也有上限。
+/// </summary>
+public class LogConfig
+{
+    public string[] AllowedPaths { get; set; } = { "/var/log", "/opt", "/srv", "/app", "/data", "/home" };
+
+    /// <summary>单次最多返回的行数（tool 参数上限的兜底）。</summary>
+    public int MaxLines { get; set; } = 2000;
 }
 
 public class LimitsConfig

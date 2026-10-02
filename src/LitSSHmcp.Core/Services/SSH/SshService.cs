@@ -252,10 +252,29 @@ public class SshService : ISshService
     private CommandResult ExecuteWithCurrentUserSudo(SshClient client, SshServerConfig server, string command, Stopwatch sw)
     {
         var password = server.SudoPassword ?? server.Password ?? string.Empty;
-        // sudo -S 从 stdin 读取密码（不依赖 tty）；-p '' 关闭提示语。
-        // 交互式 shell(pty) 的提示检测在真实环境里并不可靠（审计中该路径 exit=-1），这里改用更稳的 stdin 注入。
-        var sudoCmd = $"sudo -S -p '' bash -c '{command.Replace("'", "'\\''")}'";
-        return ExecuteWithStdinPassword(client, sudoCmd, password, sw);
+        // sudo -S 从 stdin 读取密码（不依赖 tty）；/bin/sh -c 兼容各发行版(不依赖 bash)；-p '' 关闭提示语。
+        var sudoCmd = $"sudo -S -p '' /bin/sh -c '{command.Replace("'", "'\\''")}'";
+
+        var result = ExecuteWithStdinPassword(client, sudoCmd, password, sw);
+
+        // 部分发行版(RHEL/CentOS 的 Defaults requiretty 等)要求 sudo 必须有 tty，exec 通道无 tty 会被拒；
+        // 此时回退到交互式 shell(pty) 重新执行。
+        if (!result.Success && RequiresTty(result))
+            return ExecuteWithPasswordViaShell(client, sudoCmd, password, sw);
+
+        return result;
+    }
+
+    /// <summary>判断失败是否因"需要 tty"（requiretty / 无终端）。</summary>
+    public static bool RequiresTty(CommandResult result)
+    {
+        var text = ((result.Error ?? string.Empty) + "\n" + (result.Output ?? string.Empty)).ToLowerInvariant();
+        return text.Contains("must have a tty")
+            || text.Contains("you must have a tty")
+            || text.Contains("a tty is required")
+            || text.Contains("a terminal is required")
+            || text.Contains("no tty present")
+            || text.Contains("is not a terminal");
     }
 
     /// <summary>
@@ -442,7 +461,11 @@ public class SshService : ISshService
         return t.Contains("[sudo]")
             || t.Contains("password for")
             || t.Contains("password:")
-            || t.Contains("密码");
+            || t.Contains("密码")
+            || t.Contains("passwort")          // 德语
+            || t.Contains("mot de passe")      // 法语
+            || t.Contains("contraseña")        // 西语
+            || t.Contains("kennwort");         // 德语(密码的另一种写法)
     }
 
     /// <summary>去掉 AI 命令里自带的 `sudo` 前缀（`sudo cmd` 形式），避免与外层提权叠加、以及无 tty 时报错。</summary>

@@ -146,9 +146,10 @@ public class ServerEditViewModel : INotifyPropertyChanged
         try
         {
             var server = BuildServerConfig();
-            server.Password = _editWindow.GetPassword();
-            server.KeyFilePassphrase = _editWindow.GetKeyPassword();
-            server.SudoPassword = _editWindow.GetSudoPassword();
+            // 密码框在编辑时不回填；留空表示"未修改"，保留原值（否则编辑任意字段都会清空密码/密钥口令/提权密码）
+            server.Password = Coalesce(_editWindow.GetPassword(), _editingServer?.Password);
+            server.KeyFilePassphrase = Coalesce(_editWindow.GetKeyPassword(), _editingServer?.KeyFilePassphrase);
+            server.SudoPassword = Coalesce(_editWindow.GetSudoPassword(), _editingServer?.SudoPassword);
 
             var result = await _sshService.TestConnectionAsync(server);
             StatusMessage = result ? "连接成功" : "连接失败";
@@ -167,8 +168,8 @@ public class ServerEditViewModel : INotifyPropertyChanged
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Filter = "密钥文件|*.pem;*.key;*.ppk;*.*",
-            Title = "选择SSH密钥文件"
+            Filter = "OpenSSH/PEM 密钥|*.pem;*.key;*.*|所有文件|*.*",
+            Title = "选择SSH密钥文件（OpenSSH 或 PEM 格式；不支持 PuTTY .ppk）"
         };
 
         if (dialog.ShowDialog() == true)
@@ -183,9 +184,10 @@ public class ServerEditViewModel : INotifyPropertyChanged
         {
             var config = await _configService.LoadConfigAsync();
             var server = BuildServerConfig();
-            server.Password = _editWindow.GetPassword();
-            server.KeyFilePassphrase = _editWindow.GetKeyPassword();
-            server.SudoPassword = _editWindow.GetSudoPassword();
+            // 留空=未修改，保留原密码/密钥口令/提权密码（编辑任意字段不应清空它们）
+            server.Password = Coalesce(_editWindow.GetPassword(), _editingServer?.Password);
+            server.KeyFilePassphrase = Coalesce(_editWindow.GetKeyPassword(), _editingServer?.KeyFilePassphrase);
+            server.SudoPassword = Coalesce(_editWindow.GetSudoPassword(), _editingServer?.SudoPassword);
 
             if (_editingServer != null)
             {
@@ -215,6 +217,9 @@ public class ServerEditViewModel : INotifyPropertyChanged
     {
         DialogClosed?.Invoke(this, false);
     }
+
+    private static string? Coalesce(string? input, string? existing) =>
+        string.IsNullOrEmpty(input) ? existing : input;
 
     private SshServerConfig BuildServerConfig()
     {

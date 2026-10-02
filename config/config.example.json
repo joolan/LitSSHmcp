@@ -83,6 +83,7 @@
     ]
   },
   "security": {
+    "enabled": true,
     "commandFilter": {
       "blockedCommands": [
         "rm -rf /",

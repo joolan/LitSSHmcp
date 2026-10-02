@@ -11,6 +11,9 @@ public interface ITopologyStore
 
     /// <summary>删除引用指定节点(作为起点或终点)的所有自动发现边(用于删除资产后清理)。</summary>
     Task RemoveEdgesByNodeAsync(string nodeId);
+
+    /// <summary>删除一条指定的自动发现边。</summary>
+    Task RemoveEdgeAsync(string from, string to, string type);
 }
 
 public class TopologyStore : ITopologyStore
@@ -99,6 +102,19 @@ public class TopologyStore : ITopologyStore
         var cmd = connection.CreateCommand();
         cmd.CommandText = "DELETE FROM TopologyEdges WHERE FromNode = @Node OR ToNode = @Node";
         cmd.Parameters.AddWithValue("@Node", nodeId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task RemoveEdgeAsync(string from, string to, string type)
+    {
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        var cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM TopologyEdges WHERE FromNode = @From AND ToNode = @To AND RelationType = @Type";
+        cmd.Parameters.AddWithValue("@From", from);
+        cmd.Parameters.AddWithValue("@To", to);
+        cmd.Parameters.AddWithValue("@Type", type);
         await cmd.ExecuteNonQueryAsync();
     }
 }

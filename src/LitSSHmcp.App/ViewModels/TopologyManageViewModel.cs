@@ -154,13 +154,13 @@ public class TopologyManageViewModel : INotifyPropertyChanged
             }
 
             var type = string.IsNullOrWhiteSpace(RelationTypeText) ? "relatedTo" : RelationTypeText.Trim();
-            if (!RelationRules.TryValidate(from, to, type, out var ruleError))
+            var config = await _configService.LoadConfigAsync();
+            if (!RelationRules.TryValidate(from, to, type, config.Relations, out var ruleError))
             {
                 ShowRejection($"关系不合法: {ruleError}");
                 return;
             }
 
-            var config = await _configService.LoadConfigAsync();
             if (config.Relations.Any(r => r.From == from && r.To == to && r.Type == type))
             {
                 ShowRejection("关系已存在");
@@ -201,12 +201,6 @@ public class TopologyManageViewModel : INotifyPropertyChanged
             }
 
             var type = string.IsNullOrWhiteSpace(RelationTypeText) ? "relatedTo" : RelationTypeText.Trim();
-            if (!RelationRules.TryValidate(from, to, type, out var ruleError))
-            {
-                ShowRejection($"关系不合法: {ruleError}");
-                return;
-            }
-
             var config = await _configService.LoadConfigAsync();
             var index = Array.FindIndex(config.Relations, r =>
                 r.From == SelectedRelation.From && r.To == SelectedRelation.To && r.Type == SelectedRelation.Type);
@@ -214,6 +208,13 @@ public class TopologyManageViewModel : INotifyPropertyChanged
             if (index < 0)
             {
                 ShowRejection("原关系不存在, 请刷新");
+                return;
+            }
+
+            var others = config.Relations.Where((_, i) => i != index).ToArray();
+            if (!RelationRules.TryValidate(from, to, type, others, out var ruleError))
+            {
+                ShowRejection($"关系不合法: {ruleError}");
                 return;
             }
 

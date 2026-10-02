@@ -8,9 +8,8 @@
             <MenuItem Header="资产(_A)">
                 <MenuItem Header="数据源管理" Command="{Binding OpenDatasourceManagerCommand}"/>
                 <MenuItem Header="应用管理" Command="{Binding OpenApplicationManagerCommand}"/>
-                <MenuItem Header="拓扑关系管理" Command="{Binding OpenTopologyManagerCommand}"/>
                 <Separator/>
-                <MenuItem Header="资产拓扑图" Command="{Binding OpenTopologyCommand}"/>
+                <MenuItem Header="资产拓扑(可视化编辑)" Command="{Binding OpenTopologyCommand}"/>
             </MenuItem>
             <MenuItem Header="安全(_S)">
                 <MenuItem Header="安全设置" Command="{Binding OpenSecuritySettingsCommand}"/>

@@ -11,6 +11,10 @@
 
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
             <StackPanel>
+                <CheckBox Content="启用 MCP 服务（关闭后拒绝所有工具调用）" IsChecked="{Binding McpEnabled}"
+                          FontWeight="SemiBold" Margin="0,4,0,10"
+                          ToolTip="全局开关：关闭后 MCP 将拒绝所有工具调用；按配置文件热生效，无需重启"/>
+
                 <TextBlock Text="命令过滤 (每行一条)" FontWeight="Bold" Margin="0,4,0,4"/>
                 <TextBlock Text="禁止命令 (直接拒绝):" Margin="0,0,0,2"/>
                 <TextBox Text="{Binding BlockedCommands, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="60" FontFamily="Consolas" Margin="0,0,0,8"/>

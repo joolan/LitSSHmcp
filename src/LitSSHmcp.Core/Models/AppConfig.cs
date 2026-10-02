@@ -18,6 +18,9 @@ public class AppConfig
 
 public class SecurityConfig
 {
+    /// <summary>全局 MCP 开关：false 时拒绝所有工具调用（安全设置中可切换，热生效、无需重启）。</summary>
+    public bool Enabled { get; set; } = true;
+
     public CommandFilterConfig CommandFilter { get; set; } = new();
     public SqlFilterConfig SqlFilter { get; set; } = new();
     public FileTransferConfig FileTransfer { get; set; } = new();

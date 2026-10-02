@@ -9,6 +9,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
 {
     private readonly IConfigService _configService = new ConfigService();
 
+    private bool _mcpEnabled = true;
     private string _blockedCommands = string.Empty;
     private string _sensitiveCommands = string.Empty;
     private string _sensitivePatterns = string.Empty;
@@ -38,6 +39,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
         Load();
     }
 
+    public bool McpEnabled { get => _mcpEnabled; set => Set(ref _mcpEnabled, value); }
     public string BlockedCommands { get => _blockedCommands; set => Set(ref _blockedCommands, value); }
     public string SensitiveCommands { get => _sensitiveCommands; set => Set(ref _sensitiveCommands, value); }
     public string SensitivePatterns { get => _sensitivePatterns; set => Set(ref _sensitivePatterns, value); }
@@ -75,6 +77,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             var config = await _configService.LoadConfigAsync();
             var s = config.Security;
 
+            McpEnabled = s.Enabled;
             BlockedCommands = Join(s.CommandFilter.BlockedCommands);
             SensitiveCommands = Join(s.CommandFilter.SensitiveCommands);
             SensitivePatterns = Join(s.CommandFilter.SensitivePatterns);
@@ -116,6 +119,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             var config = await _configService.LoadConfigAsync();
             var s = config.Security;
 
+            s.Enabled = McpEnabled;
             s.CommandFilter.BlockedCommands = Split(BlockedCommands);
             s.CommandFilter.SensitiveCommands = Split(SensitiveCommands);
             s.CommandFilter.SensitivePatterns = Split(SensitivePatterns);

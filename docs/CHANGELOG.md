@@ -4,7 +4,7 @@
 
 ## [未发布]
 
-当前工作区状态，尚未提交/打标签。
+尚未打版本标签（无 release/tag）。
 
 ### 新增
 
@@ -106,7 +106,75 @@
 
 ### 变更
 
-- **拓扑关系逻辑校验**：新增 `RelationRules.TryValidate`（Core）——`runsOn` 只能 应用/数据库→服务器、`connectsTo` 只能 应用→数据库、`canAccess` 只能 服务器→数据库、`relatedTo` 通用但禁止自环、未知类型拒绝；「拓扑关系管理」添加/更新关系时校验并提示原因（如 `ssh:A --runsOn--> ssh:B` 会被拒绝）。
+- **资产拓扑可视化编辑器（合并「拓扑关系管理」+「资产拓扑图」）**：两者合并为一个可交互窗口（菜单 **资产 → 资产拓扑(可视化编辑)**）。
+  - **无限画布**：滚轮**缩放**、按住**中键/右键拖动平移**、工具栏 `＋/－/适应/100%`、`Ctrl+0` 重置；**关系属性面板可拖动**标题栏移动；
+  - **拖动落点判定容器归属**：节点完全落入服务器 → 自动建立 `runsOn`（经 `RelationRules` 校验，含 runsOn 唯一性，不合法则禁止并回退）；从服务器内拖出 → **弹窗确认**删除 `runsOn`；服务器间直接拖动 → 确认后删除旧关系并新建；**禁止任何节点与服务器部分重叠**（必须完全在内或完全在外）。
+  - **调整大小同样做重叠校验**：缩放到触碰服务器区域时即时停止（`ResizeSelected` 中 `ServerOverlapInvalid` 守卫），松开鼠标再 `ValidateResize` 复核，非法则还原；托管子节点仅在所属服务器内允许缩放。
+  - **修正**：托管子节点在加载时统一 `ClampChild` 限制在所属服务器内（消除"框外却仍提示移出"的错觉）；拖出删除 `runsOn` 时同时清理自动发现缓存；仅当拖动前确实在服务器内才提示移除。
+  - **服务器调整不得接触任何节点**：`ServerOverlapInvalid` 对服务器检查与所有其它节点的相交（仅允许完全包含自己的托管子节点）；普通节点仍禁止与服务器重叠。
+  - **runsOn 托管节点用点线边框**渲染（应用橙/库绿，`1 3` 点线），与选中框的蓝色长虚线明显区分。
+  - **画布网格背景**（20px `DrawingBrush`，随缩放平移）；**节点移动与调整大小自动吸附 10px 网格**。
+  - **手动锚点不漂移**：`ComputeRoute` 对已设置端点的边按固定侧取中点，快/慢路由一致（拖节点时端点固定在该侧）。
+  - **拖动性能**：拖动过程中跳过过桥（hops）计算，且网格吸附后位置未变化时跳过重算，缓解卡顿。
+  - **画布网格铺满视口**：网格改用独立 `GridLayer`（`DrawingBrush.Transform` 随缩放/平移同步），修掉"缩放/平移后边缘无网格"。
+  - **平移改为空白处左键拖动**（取消中键/右键平移）。
+  - **悬停光标反馈**：指针在节点四边/四角显示对应缩放光标、在节点上显示移动光标。
+  - **节点右键 → 查看/编辑关系**：新增 `NodeRelationsWindow`，列出该节点相关的全部关系（手动/自动发现），可编辑类型与备注（经 `RelationRules` 校验）或删除；关闭后主拓扑刷新。
+  - `NodeRelationsWindow` 列表以**节点名称**显示（悬浮显示完整 ID），**当前节点红色加粗**区分；关系图节点名带端口。
+  - **解除 `runsOn` 后节点归位**：`RelocateOrphanedStandalone` 将仍落在服务器区块内的独立节点移动到**就近空白处**并持久化布局。
+  - **连接点可重叠**：同走廊连线不再分道错位（`LaneGap=0`），多条边在同一连接点重合，观感更整洁。
+  - **连线不再标注 canAccess/connectsTo**（仅 `relatedTo` 等保留类型文字）。
+  - **服务器内节点移动/缩放更顺手**：托管子节点在所属容器内允许部分重叠、松开夹回容器（`ServerOverlapInvalid` 跳过自身父容器）；命中顺序改为 **叶子节点 → 连线 → 服务器区块**（`HitLeaf/HitEdge/HitBox`），解决连线盖住节点导致拖不动。
+  - **方向键移动选中节点**：`NudgeSelected`（10px 吸附 + 容器/重叠校验，可撤销）。
+  - **修复服务器内节点缩放无反应**：连接端口此前与四边中点的缩放手柄**重合**且优先命中，导致抓住边中点变成"建边"而非缩放；现把端口移到节点**外侧**（不再重叠），并按 **叶子节点(2px 容差) → 连线 → 服务器区块**顺序命中。
+  - **修复回退后选中框错位**：`RejectDrag` 先刷新选中框再重建连线；鼠标松开后统一 `RefreshSelection()`，落点回退时选中框回到真实位置。
+  - **缩放/建边交互拆分**：缩放只在**四角**手柄；每边中点只保留**连接圆点**（建边），两者不再重叠，鼠标形状分别为对角线缩放/十字。
+  - **拓扑拖动卡顿优化**：`topology-layout.json` 改为**内存缓存**（此前 `RebuildEdges` 每次鼠标移动都读盘+反序列化，是主要卡顿源）；拖动过程连线重算做**节流 + 尾部补算**（约 25ms）。
+  - **可选性能日志**：设置环境变量 `LITSSH_PERF=1` 后，`CommitLayout` / `RebuildEdges(fast|full)` 耗时写入 `%APPDATA%\LitSSH\topology-perf.log`（`PerfLog`，未启用零开销）。
+  - **拖动/缩放一致性修复**：缩放也走节流（`RequestFastRebuild`）并跳过吸附后未变化；`CommitLayout`/`RejectDrag` 取消残留的"尾部补算"定时器，避免松手后用快速 Z 形路由覆盖最终避障路由；完整路由在 Z 形无障碍时直接采用（`PathClear`），使拖动预览与松手后的连线路径**不再跳变**。
+  - **拖动连线原地更新（性能）**：`GraphEdgeVm` 实现 `INotifyPropertyChanged`；拖动过程改为 `RebuildIncidentEdges` **只重算并原地更新与拖动节点相连的少数连线**，不再每帧 `Edges.Clear()` 全量重建，消除 WPF 容器抖动。
+  - **真正无限画布**：解除节点移动的 `>=0` 限制，可越过左/上边界（网格随平移/缩放铺满视口）。
+  - **拓扑路由引擎重构（性能 + 抽象）**：抽出无状态 `TopologyRouteEngine`，集中路由/避障/过桥/渲染几何，`TopologyViewModel` 委托调用：
+    - **P3** 避障 A* 由 4×4 次降为**多源多目标一次**；
+    - **P1** 障碍**空间索引**（均匀网格）加速线段穿障查询；
+    - **P2** 过桥检测加**包围盒剪枝**；
+    - **P0** 每条边/过桥各用一个 `ItemsControl` + 每项一个 `<Canvas>` 内叠加 `Path`（折线/圆点/箭头、白盘/补段/拱线），`Edges`/`Hops` 由 7 个 `ItemsControl` 降为 2 个（保持绝对坐标，端点正确落在节点上）。
+  - **性能优化 P0+P1+P2（测量基线 → 消除交互浪费 → 路由共享上下文）**：
+    - **P0 测量**：`PerfLog` 扩点（拖动会话 `DragSession` 汇总、`Zoom`/`Load` Scope）；引擎基准测试 `TopologyRouteEngineBenchmarkTests`（200 障碍 × 300 路由）；DEBUG 下工具栏「压测」按钮 + `LoadSynthetic` 合成图（约 208 节点/340 边，`stress:` 前缀 id、不落盘布局）。
+    - **P1 消除每次鼠标移动的隐性浪费**：手柄/端口改为 **INPC 就地更新**（`UpdateSelectionRect` 每帧集合变更 10 次 → 0，不再重建容器）；`StrokeFor` 加静态 `ConcurrentDictionary` 画笔缓存（同引用使 WPF 跳过描边失效）；`GraphEdgeVm`/`SelX..SelH` 全部加**等值守卫**，`RebuildIncidentEdges` 中路径未变时跳过几何重建（`SamePoints`）；连线标签拆出独立 `Labels` 集合（无标签的边不再产生空容器）。
+    - **P2 路由共享上下文**：新增 `TopologyRouteEngine.RouteContext`——障碍网格索引与排序坐标**一次构建、多条边共享**，端点盒容器排除改为查询期按候选应用（`ObstacleIndex.SegmentClear(..., fromRect, toRect)`），消除每边的过滤分配与索引重建；`BuildRoute` 提供共享上下文重载，旧签名封装为便捷入口（既有测试不受影响）。基准：**共享上下文 0.9 ms / 300 路由**（逐边旧路径 93.6 ms，逐边等价性断言保证输出一致），clear 300/300。
+    - **压测图防污染**：`CommitLayout`/`RelocateOrphanedStandalone`/`EndAnchorDrag` 在合成图模式下不写 `topology-layout.json` 也不改布局缓存。
+    - **新增测试** `TopologyRouteContextTests`（网格探针逐段等价、容器透明 vs 未过滤阻挡、共享上下文 = 逐边构建、端点锚定不回归），用例 166 → **170**。
+  - **缩放/拖动卡顿优化（帧率 + 语义修正）**：
+    - **服务器缩小不再被子节点挡住**：`ResizeSelected` 改为先按候选矩形用新纯函数 `ClampChildTo` 预计算子节点收紧位置（容器过小时按 `Clamp` 的 (min+max)/2 居中，不产生反向钳制），`ServerOverlapInvalid` 服务器分支跳过自身托管子节点——缩放全程顺滑、子节点自动跟随收紧（原语义：子节点部分越界 → 整个缩放被拒绝、原地停住，表现为"卡住/一顿一顿"）；与其它节点相交"碰到即停"的规则不变。
+    - **每个鼠标移动零分配**：`ResizeSelected` 无变化早退提到 overlap 校验之前（网格吸附后多数微移动直接返回）；`ServerOverlapInvalid` 不再每次 `ToArray()`（`_allItems` 缓存于 `ApplyGraph`）；`FindItem` 三次 `FirstOrDefault` → `_itemsById` 字典；`_parentOf` 每帧反查 → `_childrenOf` 索引（`MoveNode`/`ResizeSelected`/`RebuildIncidentEdges` 的 `Where/Select/ToArray/HashSet` 全部移除）；`GraphEdgeVm.Key` 建边时算一次，拖动热路径不再做 `$"{from}|{type}|{to}"` 字符串插值。
+    - **帧率探针**（`LITSSH_PERF=1` 时才启用）：拖动/缩放期间挂 `CompositionTarget.Rendering`，松手写 `FrameProbe(kind): frames= avg= max= events= tier=`（`tier=0` 为软件渲染/RDP）；与既有 `DragSession`（VM 每帧耗时）对照即可区分瓶颈在 VM 还是渲染层。
+    - 单测新增 `TopologyLayoutGeometryTests`（`ClampChildTo` 内夹/不动/贴边/容器过小居中），用例 170 → **174**。
+  - **修复拖动/缩放累积漂移（绝对锚定模型）**：移动/缩放曾用「上次位置 + 事件增量 + 10px 吸附」迭代推进，未跨吸附边界的增量被舍入**永久丢失**，来回移动鼠标后节点与鼠标的相对位置逐渐变化（跟不上鼠标）。现改为**绝对锚定**：
+    - `BeginNodeDrag(id, anchor)` 记录鼠标锚点；`MoveNode(id, Point)` 每次从「拖动快照起点 + 相对锚点总位移」直接推导新位置（含子节点同步），`ResizeSelected(handle, Point)` 同理从 `_dragStartRect` 用新纯函数 `ComputeResize`（对边固定、最小尺寸钳制、10px 吸附）计算——结果只取决于总位移，**与事件路径无关，往返不漂移**；
+    - 缩放被其它节点挡住时**以当前几何重锚**（吸收被挡位移），反向拖动无死区；方向键 `NudgeSelected` 改走增量路径 `MoveByDelta`（±10px 整数，吸附无损）；
+    - 拖动状态统一 `ClearDragState()`（快照/缩放基准/锚点），`ValidateResize` 等路径补齐清理；
+    - 新增单测 `TopologyLayoutGeometryTests.ComputeResize_*`（起点+总位移、振荡无漂移回归、对角锚定对边不动、最小尺寸钳制），用例 174 → **179**。
+  - **选中节点四边可直接拉伸缩放**：
+    - 四边内侧 6px 新增缩放带（两端各避开角手柄 8px，角手柄仍优先用于对角缩放）：悬停显示 `SizeNS/SizeWE` 光标，按住拖动即按 `ResizeSelected` 的 `n/e/s/w` 手柄调整该侧（对边固定、子节点自动收紧，复用绝对锚定模型）；中心区域仍是移动、未选中节点行为不变；
+    - **建边端口移到节点外侧**（圆心距边界 `PortRadius+Gap=8px`，与边带互不重叠；`PortCenterFor` 统一计算，建边预览线也从外侧圆心出发）——原来端口圆心压在边界中点上，与拉边交互在同一位置冲突；
+    - 新增单测 `EdgeHandleAt`（四边命中/角与中心排除/过小节点无边带）与 `PortCenterFor`（外侧间隙、命中盒不越界），用例 179 → **183**。
+  - **工具栏精简**：移除顶部「删除选中关系」按钮（画布点选连线 + Delete 键 / 关系属性面板「删除」均可删除，`OnDeleteEdge` 仍服务于面板与快捷键）；「＋、－、适应、100%、刷新、压测」6 个按钮合并为最右侧「更多操作 ▾」下拉菜单（`ContextMenu`，100% 标注 Ctrl+0，压测项仅 DEBUG 显示），工具栏只保留「重新自动布局 / 自动发现」两个平铺按钮。
+  - **导出图片（更多操作 → 导出图片…）**：把画布有效区域（`ContentBounds()` 全部内容 + 24px 边距，忽略当前缩放/平移）渲染为 PNG 保存——`RenderTargetBitmap` 临时以 `TranslateTransform` 对齐区域原点（2x 分辨率、超大图退化 1x），导出前隐藏选中框/手柄/端口/连线高亮并用 `#FAFAFA` 打底，导出后恢复选中状态与画布变换。新增 `RenderTargetExportTests`（STA 线程验证根级 RenderTransform 生效 + 世界坐标渲染，即导出平移截取的核心前提），用例 183 → **184**。
+  - **新增测试工程** `tests/LitSSHmcp.App.Tests`（net8.0-windows）对 `TopologyRouteEngine` 做单元测试（Z 形、避障、快/慢一致性、过桥、简化）。
+  - 节点**拖动/缩放**（拖服务器带动其内子节点；子节点限制在容器内；8 手柄缩放 + 最小尺寸）；**10px 网格吸附**；
+  - 选中节点后从**边中点端口拖拽到目标节点建边**（按节点类型自动推断 `runsOn`/`connectsTo`/`canAccess`/`relatedTo`，并经 `RelationRules` 逻辑校验，**含 `runsOn` 每节点只指向一台服务器**）；
+  - **点选连线**后弹出**关系属性面板**（右上角）：可改**关系类型**、编辑**备注**（`RelationConfig.Note`）并保存（经逻辑校验）；自动发现边仅可删除；
+  - **点选连线删除**：手动关系删 `config.Relations`；自动发现边清理 `TopologyEdges` 缓存（新增 `ITopologyStore.RemoveEdgeAsync`）；**连线在服务器节点内也可直接点选**（选线优先于选节点，4px 容差）；
+  - 选中连线后可拖动**两端锚点**指定接边位置（`AnchorSpec`，路由按固定侧走）；
+  - **Ctrl+Z 撤销 / Ctrl+Y 重做**；**「重新自动布局」**清除手动布局；
+  - 手动布局（节点位置/尺寸、端点锚点）持久化到 `%APPDATA%\LitSSH\topology-layout.json`（`TopologyLayout` + `ITopologyLayoutStore`），与语义配置 `config.Relations` 分离。
+  - **修复**：拖动时边被简化为直线导致 `LabelPoint` 越界崩溃（折线点 <3 时改用首尾中点）；A* 索引与单条边计算加了防御，鼠标回调异常改为弹窗提示不崩溃。
+- **runsOn 唯一性校验**：`RelationRules.TryValidate(from,to,type, existing, out error)` —— 一个应用/数据库只能运行在一台服务器上，已 runsOn 别的服务器时拒绝并提示（接线到编辑器与「拓扑关系管理」旧逻辑）。
+
+- **拓扑可视化连线优化（阶段1~4）**：连线采用**避障正交路由**——在障碍(所有节点盒,Hanan 栅格)上跑 **A\***，**不直穿其它节点**；**源/目标端点从四边中点候选里择优选**（任意边/点皆可作端点），且**源/目标所在的外层服务器区块对其子节点透明**（不作为障碍，从而能进入嵌套区块到达被 `runsOn` 的数据库/应用）；找不到路径回退 Z 形。拐角**圆角化**；起点圆点、终点箭头（随类型更明显，自动发现略小且虚线）；同一走廊多条边分道错位（含对向）减少并线；交叉处**过桥**（白遮罩 + 下层补段 + 上层拱线）；层级为「服务器区块背景之上、叶子节点之下」。
+- **MCP 全局开关**：`security.enabled`（安全设置窗口顶部「启用 MCP 服务」勾选框）——关闭后通过请求中间件（`McpGlobalSwitch` 注册到 `McpServerOptions.Filters.Request.CallToolFilters`）**拒绝所有工具调用**（返回 `isError=true` 与提示文本；工具仍会列出）。读取 `ISecurityOptionsProvider`（按配置文件 mtime 热更新），**无需重启** MCP。
+- **拓扑关系逻辑校验**：新增 `RelationRules.TryValidate`（Core）——`runsOn` 只能 应用/数据库→服务器、`connectsTo` 只能 应用→数据库、`canAccess` 只能 服务器→数据库、`relatedTo` 通用但禁止自环、未知类型拒绝；「拓扑关系管理」添加/更新关系时校验并**弹窗**提示原因（如 `ssh:A --runsOn--> ssh:B` 会被拒绝）。
 - **删除资产的关系清理与校验**：删除 SSH 服务器 / 数据源 / 应用时，先统计引用它的**手动关系记录**并在确认框列出数量与明细（存在则一并删除；不存在也会提示），同时清理引用该节点的**自动发现拓扑边**（`ITopologyStore.RemoveEdgesByNodeAsync`），避免残留孤立关系/节点。
 - **Docker 应用管理（A：登记 + 安全规则）**：应用管理新增 **Docker 容器名** 字段（`ApplicationConfig.ContainerName`，类型填 `docker`），并登记 `runsOn` 关系后，AI 即可用 `ssh_execute_command`（必要时 `ssh_execute_sudo`）走 `docker ps/logs/restart/exec` 管理容器——**无需新增 MCP 工具**。默认安全规则补充：拒绝 `docker system prune`/`docker volume prune`/`docker network prune`/`docker volume rm`/`docker service rm`/`docker swarm leave`/`docker run --privileged`/`docker run -v /`；敏感（需桌面确认）`docker rm/rmi/kill/stop/restart/run/exec/cp/compose down/compose rm`。
 - **Docker 拓扑发现（B）**：`topology_discover` 增加 `docker ps` 容器扫描（`DiscoveryResult.DockerContainers`），按 `ContainerName`/应用名匹配已登记应用，**自动建立 `app --runsOn--> ssh` 关系**。

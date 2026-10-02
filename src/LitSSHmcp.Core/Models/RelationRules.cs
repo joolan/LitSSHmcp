@@ -69,6 +69,34 @@ public static class RelationRules
         }
     }
 
+    /// <summary>
+    /// 在基础校验之上，结合**已有关系**做语义校验：
+    /// 一个应用/数据库（runsOn 的起点）**只能运行在一台服务器**上，不得再 runsOn 另一台。
+    /// </summary>
+    public static bool TryValidate(string? from, string? to, string? type, IReadOnlyList<RelationConfig> existing, out string? error)
+    {
+        if (!TryValidate(from, to, type, out error))
+            return false;
+
+        if (string.Equals(type?.Trim(), "runsOn", StringComparison.OrdinalIgnoreCase))
+        {
+            var source = from?.Trim();
+            var target = to?.Trim();
+            var conflict = existing.FirstOrDefault(r =>
+                string.Equals(r.Type, "runsOn", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(r.From, source, StringComparison.Ordinal) &&
+                !string.Equals(r.To, target, StringComparison.Ordinal));
+
+            if (conflict != null)
+            {
+                error = $"该节点已 runsOn {conflict.To}；一个数据源/应用只能运行在一台服务器上（请先删除旧关系）";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /// <summary>返回节点前缀（ssh/ds/app），非已知格式返回 null。</summary>
     public static string? PrefixOf(string? nodeId)
     {

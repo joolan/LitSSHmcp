@@ -10,6 +10,9 @@ namespace LitSSHmcp.Core.Services.Security;
 /// </summary>
 public interface ISecurityOptionsProvider
 {
+    /// <summary>全局 MCP 开关：false 时拒绝所有工具调用。</summary>
+    bool Enabled { get; }
+
     CommandFilterConfig CommandFilter { get; }
     SqlFilterConfig SqlFilter { get; }
     FileTransferConfig FileTransfer { get; }
@@ -27,6 +30,7 @@ public sealed class SecurityOptionsProvider : ISecurityOptionsProvider
     private readonly object _gate = new();
 
     private DateTime _lastWriteUtc = DateTime.MinValue;
+    private bool _enabled = true;
     private CommandFilterConfig _commandFilter = new();
     private SqlFilterConfig _sqlFilter = new();
     private FileTransferConfig _fileTransfer = new();
@@ -49,6 +53,11 @@ public sealed class SecurityOptionsProvider : ISecurityOptionsProvider
     public CommandFilterConfig CommandFilter
     {
         get { EnsureFresh(); return _commandFilter; }
+    }
+
+    public bool Enabled
+    {
+        get { EnsureFresh(); return _enabled; }
     }
 
     public SqlFilterConfig SqlFilter
@@ -138,6 +147,7 @@ public sealed class SecurityOptionsProvider : ISecurityOptionsProvider
                 var config = JsonSerializer.Deserialize<AppConfig>(json, AppConfigJson.Options);
                 if (config != null)
                 {
+                    _enabled = config.Security?.Enabled ?? true;
                     _commandFilter = config.Security?.CommandFilter ?? new CommandFilterConfig();
                     _sqlFilter = config.Security?.SqlFilter ?? new SqlFilterConfig();
                     _fileTransfer = config.Security?.FileTransfer ?? new FileTransferConfig();

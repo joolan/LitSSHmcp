@@ -72,6 +72,7 @@ public class ApprovalChannelTests : IDisposable
 
     private sealed class StubSecurityOptions : ISecurityOptionsProvider
     {
+        public bool Enabled { get; set; } = true;
         public CommandFilterConfig CommandFilter { get; set; } = new();
         public SqlFilterConfig SqlFilter { get; set; } = new();
         public FileTransferConfig FileTransfer { get; set; } = new();

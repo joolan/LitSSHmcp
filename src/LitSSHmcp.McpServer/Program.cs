@@ -64,7 +64,12 @@ builder.Services.AddSingleton<ITopologyService, TopologyService>();
 //   ③ 桌面 App 菜单"配置 → MCP工具说明"(src/LitSSHmcp.App/Views/McpToolsWindow, 内容由 docs/TOOLS.md 嵌入)。
 // 工具分组开关见 config.json 的 tools.enabledGroups(留空=全部), 分组与工具类映射见 docs/TOOLS.md「工具分组」。
 var mcp = builder.Services
-    .AddMcpServer(options => options.ServerInstructions = McpServerInstructions.Text)
+    .AddMcpServer(options =>
+    {
+        options.ServerInstructions = McpServerInstructions.Text;
+        // 全局开关：security.enabled=false 时拒绝所有工具调用（热生效）
+        options.Filters.Request.CallToolFilters.Add(McpGlobalSwitch.CreateFilter());
+    })
     .WithStdioServerTransport();
 
 if (enabledToolGroups.Contains(ToolGroups.Ssh)) mcp = mcp.WithTools<ServerTools>();

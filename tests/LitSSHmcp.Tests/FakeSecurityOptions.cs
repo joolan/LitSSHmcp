@@ -6,6 +6,7 @@ namespace LitSSHmcp.Tests;
 /// <summary>用于过滤器单测的固定安全配置提供者。</summary>
 internal sealed class FakeSecurityOptions : ISecurityOptionsProvider
 {
+    public bool Enabled { get; set; } = true;
     public CommandFilterConfig CommandFilter { get; set; } = new();
     public SqlFilterConfig SqlFilter { get; set; } = new();
     public FileTransferConfig FileTransfer { get; set; } = new();

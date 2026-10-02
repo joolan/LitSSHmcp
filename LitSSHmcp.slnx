@@ -8,5 +8,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/LitSSHmcp.Tests/LitSSHmcp.Tests.csproj" />
     <Project Path="tests/LitSSHmcp.McpServer.Tests/LitSSHmcp.McpServer.Tests.csproj" />
+    <Project Path="tests/LitSSHmcp.App.Tests/LitSSHmcp.App.Tests.csproj" />
   </Folder>
 </Solution>

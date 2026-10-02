@@ -82,6 +82,48 @@ public class McpProtocolIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task Global_switch_disabled_rejects_all_tool_calls()
+    {
+        var exe = LocateServerExecutable();
+        var dataDir = Path.Combine(Path.GetTempPath(), "litssh-mcp-off-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dataDir);
+
+        // 预置配置：全局 MCP 开关关闭
+        await File.WriteAllTextAsync(
+            Path.Combine(dataDir, "config.json"),
+            "{\"schemaVersion\":1,\"security\":{\"enabled\":false}}",
+            Encoding.UTF8);
+
+        try
+        {
+            using var client = new McpStdioClient(exe, dataDir);
+
+            await client.RequestAsync("initialize", new
+            {
+                protocolVersion = "2024-11-05",
+                capabilities = new { },
+                clientInfo = new { name = "it", version = "1.0" }
+            });
+            await client.NotifyAsync("notifications/initialized");
+
+            // 工具仍会列出
+            var list = await client.RequestAsync("tools/list", new { });
+            Assert.Equal(29, list.GetProperty("result").GetProperty("tools").GetArrayLength());
+
+            // 但任何调用都被拒绝
+            var call = await client.RequestAsync("tools/call", new { name = "mcp_self_check", arguments = new { } });
+            var result = call.GetProperty("result");
+            Assert.True(result.GetProperty("isError").GetBoolean());
+            var text = result.GetProperty("content")[0].GetProperty("text").GetString();
+            Assert.Contains("禁用", text);
+        }
+        finally
+        {
+            try { Directory.Delete(dataDir, recursive: true); } catch { /* 忽略清理失败 */ }
+        }
+    }
+
     private static JsonElement FindTool(List<JsonElement> tools, string name) =>
         tools.First(t => t.GetProperty("name").GetString() == name);
 

@@ -34,6 +34,7 @@ public class DockerCommandDefaultsTests
         private readonly Core.Models.AppConfig _config;
         public StaticOptions(Core.Models.AppConfig config) => _config = config;
 
+        public bool Enabled => _config.Security.Enabled;
         public Core.Models.CommandFilterConfig CommandFilter => _config.Security.CommandFilter;
         public Core.Models.SqlFilterConfig SqlFilter => _config.Security.SqlFilter;
         public Core.Models.FileTransferConfig FileTransfer => _config.Security.FileTransfer;

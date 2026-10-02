@@ -17,6 +17,9 @@ public static class ConfigPaths
     /// <summary>带外审批（CLI/IPC）待决/决策文件目录。</summary>
     public static string ApprovalsDir => Path.Combine(AppDataDir, "approvals");
 
+    /// <summary>资产拓扑可视化编辑器的布局（节点位置/尺寸、端点锚点）。</summary>
+    public static string TopologyLayoutFile => Path.Combine(AppDataDir, "topology-layout.json");
+
     public static string KnownHostsFile => Path.Combine(AppDataDir, "known_hosts.json");
 
     public static string LogsDir => Path.Combine(AppDataDir, "logs");

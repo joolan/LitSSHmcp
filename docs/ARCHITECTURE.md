@@ -43,8 +43,9 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 | `LitSSHmcp.Cli` | net10.0 | 终端 SSH 工具（`litssh list/connect/run`） | Core |
 | `LitSSHmcp.Tests` | net8.0 | Core 单元测试（安全过滤/路径策略/配置迁移/加密/驱动协议等） | Core、xunit |
 | `LitSSHmcp.McpServer.Tests` | net8.0-windows | MCP 服务器层测试：工具清单一致性（注册 ↔ `docs/TOOLS.md` ↔ 指南）+ **stdio 全链路集成测试**（initialize/tools/list/tools/call） | McpServer、xunit |
+| `LitSSHmcp.App.Tests` | net8.0-windows | App 画布测试：拓扑路由引擎（Z 形/避障/快慢一致/过桥/简化）、布局几何与四边缩放、导出渲染（STA） | App、xunit |
 
-- 依赖方向：三个入口项目都只依赖 `Core`，`Core` 不反向依赖任何入口项目；`tests` 项目依赖 `Core`。
+- 依赖方向：三个入口项目都只依赖 `Core`，`Core` 不反向依赖任何入口项目；`tests` 项目依赖 `Core`（`LitSSHmcp.App.Tests` 另依赖 `App`）。
 - 构建环境：`.NET SDK 10.0.x` 可构建全部项目（入口运行时目标仍为 .NET 8，CLI 为 .NET 10）。
 - 代码约定：**接口与实现放在同一文件**（如 `IConfigService.cs` 内含 `ConfigService`），接口以 `I` 前缀命名。
 
@@ -57,7 +58,8 @@ LitSSHmcp/
 ├── docs/                         # 文档（本目录）
 │   ├── ARCHITECTURE.md           # 架构设计
 │   ├── TOOLS.md                  # 工具参考与意图路由
-│   └── CHANGELOG.md              # 迭代历史
+│   ├── CHANGELOG.md              # 迭代历史
+│   └── UPGRADE_PLAN.md           # 升级方案（Roadmap）
 ├── config/
 │   └── config.example.json       # 配置文件示例
 ├── src/
@@ -66,8 +68,9 @@ LitSSHmcp/
 │   ├── LitSSHmcp.App/            # WPF 管理界面（Views/ + ViewModels/）
 │   └── LitSSHmcp.Cli/            # CLI
 └── tests/
-    ├── LitSSHmcp.Tests/          # Core xUnit 单元测试
-    └── LitSSHmcp.McpServer.Tests/ # MCP 服务器层一致性测试
+    ├── LitSSHmcp.Tests/           # Core xUnit 单元测试
+    ├── LitSSHmcp.McpServer.Tests/ # MCP 服务器层一致性测试
+    └── LitSSHmcp.App.Tests/       # App 画布/路由引擎/几何测试
 ```
 
 ## 3. MCP 服务器层（LitSSHmcp.McpServer）
@@ -98,6 +101,7 @@ LitSSHmcp/
 | `IRedisConnectionProvider` | `RedisConnectionProvider` | Redis 直连/隧道会话（RESP2 + AUTH/SELECT），返回 `IRedisSession` |
 | `IDatasourceDriverRegistry` | `DatasourceDriverRegistry` | 按 `datasource.type` 分发驱动（当前登记 mysql、postgres、redis） |
 | `ITopologyStore` / `ITopologyService` | `TopologyStore` / `TopologyService` | 拓扑边 SQLite 存储 / 拓扑图合并与依赖查询 |
+| `ITopologyLayoutStore` | `TopologyLayoutStore` | 手动布局（节点位置/尺寸、端点锚点）JSON 持久化（`%APPDATA%\LitSSH\topology-layout.json`，与语义配置 `config.Relations` 分离） |
 
 ## 4. 核心服务（LitSSHmcp.Core）
 
@@ -165,7 +169,7 @@ LitSSHmcp/
   - `ApplicationManageWindow` / `ApplicationManageViewModel`：应用(`app:`)节点维护（含 Docker 容器名 `ContainerName`）；
   - `AuditWindow` / `AuditViewModel`：命令/SQL 审计查看、CSV 导出、**含归档**（永久保留的历史表）、**校验完整性**（哈希链）；
   - `SecuritySettingsWindow` / `SecuritySettingsViewModel`：**MCP 全局开关**、命令/SQL 过滤、文件传输、主机密钥、发现路径、限流、审计策略、**审批通道**、**查询结果脱敏** 的可视化编辑；
-  - `TopologyWindow` / `TopologyViewModel`：资产拓扑可视化 + 自动发现入口。`runsOn` 的应用**与数据库**都内嵌在所属服务器区块内（一眼看出服务器上运行了哪些服务/库），节点标题附带端口（如 `订单库 :3306`），`connectsTo`/`canAccess` 以带类型标注的连线绘制，数据库运行在所连服务器上时省略冗余 `canAccess`，自动发现的关系用虚线区分；鼠标悬浮任一节点显示详情（主机/端口/账号/类型/描述/标签，密码等敏感信息不展示）。连线绘制在**服务器区块之上、叶子节点之下**，采用**避障正交路由**（Hanan 栅格 + A*，不直穿其它节点；端点从四边中点择优；源/目标所在服务器区块对其子节点透明，可进入 `runsOn` 嵌套区块；回退 Z 形），拐角圆角化，起点圆点、终点箭头；同一走廊多条边分道错位、交叉处过桥。**可交互编辑**：拖动/缩放节点（拖服务器带动子节点）、选中节点从边中点端口**拖拽建边**（自动推断类型并做逻辑校验，含 `runsOn` 每节点唯一）、**点选连线删除**（手动关系删 `config.Relations`；自动发现边清理 `TopologyEdges`）、拖动连线**端点锚点**指定接边位置、**网格吸附**、**Ctrl+Z/Y 撤销重做**、「重新自动布局」；手动布局存 `%APPDATA%\LitSSH\topology-layout.json`。画布支持**无限平移/缩放**（滚轮缩放、中/右键拖动平移、适应窗口、`Ctrl+0` 重置）；关系属性面板可拖动；拖动节点进出服务器时按**几何落点**自动增删 `runsOn`（完全落入=建立、拖出=弹窗确认删除、部分重叠=禁止回退），落点判定见 `TopologyViewModel.EndNodeDragAsync`。`runsOn` 托管的子节点用**点线边框**渲染；画布有**网格背景**且移动/缩放吸附 10px；调整大小时服务器不得与任何节点接触（`ServerOverlapInvalid`），手动锚点通过 `FixedFromSide/ToSide` 固定侧向、移动/拖动过程（快路由）也不漂移；拖动过程跳过过桥计算并跳过吸附后未位移的重算以降低卡顿。画布网格用独立 `GridLayer`（`DrawingBrush.Transform` 跟随缩放/平移，任何缩放/平移后边缘都有网格）；空白处**左键按住即可平移**（不再用中/右键）；指针悬停节点四边/四角切换缩放光标、节点上切换移动光标；节点**右键菜单**打开 `NodeRelationsWindow` 列出该节点相关关系并可编辑（`RelationRules` 校验）/删除（列表用节点名、当前节点红色加粗、悬浮显示 ID）。解除 `runsOn` 后由 `RelocateOrphanedStandalone` 将残留的独立节点移到就近空白处；同走廊连线不再分道错位（`LaneGap=0`，连接点可重叠）。
+  - `TopologyWindow` / `TopologyViewModel`：资产拓扑可视化 + 自动发现入口。`runsOn` 的应用**与数据库**都内嵌在所属服务器区块内（一眼看出服务器上运行了哪些服务/库），节点标题附带端口（如 `订单库 :3306`），`connectsTo`/`canAccess` 以带类型标注的连线绘制，数据库运行在所连服务器上时省略冗余 `canAccess`，自动发现的关系用虚线区分；鼠标悬浮任一节点显示详情（主机/端口/账号/类型/描述/标签，密码等敏感信息不展示）。连线绘制在**服务器区块之上、叶子节点之下**，采用**避障正交路由**（Hanan 栅格 + A*，不直穿其它节点；端点从四边中点择优；源/目标所在服务器区块对其子节点透明，可进入 `runsOn` 嵌套区块；回退 Z 形），拐角圆角化，起点圆点、终点箭头；交叉处过桥。**可交互编辑**：拖动/缩放节点（拖服务器带动子节点；位置按「起点 + 总位移」绝对推导、往返不漂移；**四角手柄 + 四边内侧直接拉伸**，最小尺寸 80×36）、选中节点从边中点端口**拖拽建边**（自动推断类型并做逻辑校验，含 `runsOn` 每节点唯一）、**点选连线删除**（手动关系删 `config.Relations`；自动发现边清理 `TopologyEdges`）、拖动连线**端点锚点**指定接边位置、**网格吸附**、**Ctrl+Z/Y 撤销重做**、「重新自动布局」；手动布局存 `%APPDATA%\LitSSH\topology-layout.json`。画布支持**无限平移/缩放**（滚轮缩放、适应窗口、`Ctrl+0` 重置；右上角**「更多操作 ▾」**下拉含 ＋/－/适应/100%/刷新/**导出图片…**）；关系属性面板可拖动；拖动节点进出服务器时按**几何落点**自动增删 `runsOn`（完全落入=建立、拖出=弹窗确认删除、部分重叠=禁止回退），落点判定见 `TopologyViewModel.EndNodeDragAsync`。`runsOn` 托管的子节点用**点线边框**渲染；画布有**网格背景**且移动/缩放吸附 10px；调整大小与其它节点接触时就地停住、被挡后以当前几何**重锚**（反向拖动无死区），服务器缩小时托管子节点自动收紧、**不参与** `ServerOverlapInvalid` 校验；手动锚点通过 `FixedFromSide/ToSide` 固定侧向、移动/拖动过程（快路由）也不漂移；拖动过程跳过过桥计算并跳过吸附后未位移的重算以降低卡顿。画布网格用独立 `GridLayer`（`DrawingBrush.Transform` 跟随缩放/平移，任何缩放/平移后边缘都有网格）；空白处**左键按住即可平移**（不再用中/右键）；指针悬停节点四边/四角切换缩放光标（**四边按下即可拉伸该侧**）、节点上切换移动光标；节点**右键菜单**打开 `NodeRelationsWindow` 列出该节点相关关系并可编辑（`RelationRules` 校验）/删除（列表用节点名、当前节点红色加粗、悬浮显示 ID）。解除 `runsOn` 后由 `RelocateOrphanedStandalone` 将残留的独立节点移到就近空白处；同走廊连线不再分道错位（`LaneGap=0`，连接点可重叠）。
   - `McpToolsWindow`：菜单"配置后"的 **MCP工具说明**，展示 MCP 接入配置 + 意图路由表 + 全部工具的参数/用法。内容来自 `docs/TOOLS.md`（以 `EmbeddedResource` 嵌入 `LitSSHmcp.App.csproj`），因此**与 MCP 服务器端工具注解共享唯一事实来源**：工具变动时须同步 ① `src/LitSSHmcp.McpServer/Tools/*.cs` 的 `[McpServerTool]`/`[Description]` 注解（`get_usage_guide` 清单由其反射生成，无需手改）② `docs/TOOLS.md` ③ `Program.cs` 的 `WithTools<T>()`；三者一致性由 `tests/LitSSHmcp.McpServer.Tests` 守门。窗口左侧按 **`概览与接入` + 9 个工具分组**展示，分组标题为 `## <中文名>（<分组键>）`，分组键与「工具分组设置」的 `tools.enabledGroups`（`ToolGroups.All`）保持一致；`### \`工具名\`` 计为工具，其它 `###` 子标题并入章节内容。
   - `ToolGroupsWindow` / `ToolGroupsViewModel`：菜单 **配置 → 工具分组设置**，可视化勾选要暴露的工具分组（含 启用全部/全部停用/重新加载/保存），写入 `config.json` 的 `tools.enabledGroups`；启用 mysql/redis 却停用 datasource 时给出提示。
 - 主界面 `MainWindow` 采用顶部菜单分类（资产 / 安全 / 审计 / 配置 / MCP工具说明）+ 轻量客户端布局：左侧服务器列表（两行紧凑项，顶部仅 添加/刷新，连接/编辑/删除走条目右键菜单，双击连接），右侧按会话打开**标签页**（每标签含命令输出、命令输入、最近活动）。
@@ -286,10 +290,14 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 
 ```bash
 dotnet build LitSSHmcp.slnx                      # 全量构建（应 0 警告 0 错误）
-dotnet test LitSSHmcp.slnx                      # 全部测试(Core + McpServer 层一致性)
+dotnet test LitSSHmcp.slnx                      # 全部测试(Core + McpServer + App，184 用例)
 dotnet publish src/LitSSHmcp.McpServer -c Release -r win-x64 --self-contained -o publish
 dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publish
 ```
+
+### 拓扑画布性能诊断
+
+设置环境变量 `LITSSH_PERF=1` 后启动 App，拓扑画布会把 `CommitLayout` / `RebuildEdges(fast|full)` 耗时、拖动会话汇总（`DragSession`，VM 每帧耗时）、`Zoom`/`Load` Scope 与帧率探针（`FrameProbe`，拖动/缩放期间挂 `CompositionTarget.Rendering`，含 `tier=0` 软件渲染/RDP 标记）写入 `%APPDATA%\LitSSH\topology-perf.log`——`DragSession` 与 `FrameProbe` 对照即可区分瓶颈在 VM 还是渲染层。默认关闭、零开销（代码内 `PerfLog.Enabled` 判断）。
 
 ### MCP stdio 冒烟测试要点
 

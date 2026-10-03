@@ -11,7 +11,7 @@ namespace LitSSHmcp.Tests;
 public class TopologyDiscoveryTests
 {
     [Fact]
-    public async Task Discovery_creates_pending_nodes_for_unmatched_container_and_db_endpoint()
+    public async Task Discovery_creates_pending_container_node_but_reports_unmanaged_db_endpoint()
     {
         var config = new AppConfig
         {
@@ -35,9 +35,11 @@ public class TopologyDiscoveryTests
         var result = await topology.DiscoverAsync(null, null);
 
         Assert.Contains(result.NewEdges, e => e.From == "app:disc:order-svc" && e.To == "ssh:s1" && e.Type == "runsOn");
-        Assert.Contains(result.NewEdges, e => e.From == "ssh:s1" && e.To == "ds:disc:10.9.9.9-3306" && e.Type == "canAccess");
+        // 远程且未匹配到已配置服务器/数据源的 DB 端点: 只登记为未匹配端点, 不建待确认节点
+        Assert.DoesNotContain(result.NewEdges, e => e.To.StartsWith("ds:disc:", StringComparison.Ordinal));
         Assert.Contains(result.UnmatchedEndpoints, d => (d["url"]?.ToString() ?? "").Contains("jdbc:mysql"));
-        Assert.True(store.Edges.Count >= 2);
+        Assert.Contains(result.Notes, n => n.Contains("已跳过"));
+        Assert.True(store.Edges.Count >= 1);
     }
 
     [Fact]

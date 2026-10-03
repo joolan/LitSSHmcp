@@ -123,6 +123,51 @@ public partial class TopologyWindow : Window
 
     private void OnRefresh(object sender, RoutedEventArgs e) => _viewModel.Load();
 
+    private void OnDiscoveryReport(object sender, RoutedEventArgs e)
+    {
+        var window = new Window
+        {
+            Title = "自动发现报告",
+            Width = 760,
+            Height = 580,
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+
+        var grid = new Grid { Margin = new Thickness(12) };
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var box = new TextBox
+        {
+            Text = _viewModel.DiscoveryReport,
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.NoWrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            FontFamily = new FontFamily("Consolas, Microsoft YaHei UI")
+        };
+        Grid.SetRow(box, 0);
+        grid.Children.Add(box);
+
+        var close = new Button
+        {
+            Content = "关闭",
+            Width = 80,
+            Margin = new Thickness(0, 8, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            IsDefault = true,
+            IsCancel = true
+        };
+        close.Click += (_, _) => window.Close();
+        Grid.SetRow(close, 1);
+        grid.Children.Add(close);
+
+        window.Content = grid;
+        window.ShowDialog();
+    }
+
     private void OnMoreActions(object sender, RoutedEventArgs e)
     {
         if (MoreActionsButton.ContextMenu is not { } menu)

@@ -2022,6 +2022,15 @@ public class TopologyViewModel : INotifyPropertyChanged
         return (p - (a + ab * t)).Length;
     }
 
+    private string _discoveryReport = "尚未运行自动发现。\r\n点击「自动发现」后，这里会显示：扫描的服务器、说明(notes)、未匹配端点(含来源文件/URL/跳过原因)、错误。";
+
+    /// <summary>最近一次自动发现的详细报告（说明/未匹配端点/错误），供「发现报告」窗口展示。</summary>
+    public string DiscoveryReport
+    {
+        get => _discoveryReport;
+        private set { _discoveryReport = value; OnPropertyChanged(); }
+    }
+
     public async void Discover(string serverIds)
     {
         try
@@ -2032,7 +2041,11 @@ public class TopologyViewModel : INotifyPropertyChanged
                 : serverIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             var result = await _topology.DiscoverAsync(servers, null);
-            StatusMessage = $"发现完成: 新增 {result.NewEdges.Length} 条, 更新 {result.UpdatedEdges.Length} 条, 错误 {result.Errors.Length} 个";
+            DiscoveryReport = BuildDiscoveryReport(result);
+            var extra = result.Notes.Length + result.UnmatchedEndpoints.Count > 0
+                ? $"（说明 {result.Notes.Length} 条 / 未匹配端点 {result.UnmatchedEndpoints.Count} 条，详见「更多操作 → 发现报告」）"
+                : string.Empty;
+            StatusMessage = $"发现完成: 新增 {result.NewEdges.Length} 条, 更新 {result.UpdatedEdges.Length} 条, 错误 {result.Errors.Length} 个{extra}";
             Load();
         }
         catch (DiscoveryInProgressException)
@@ -2043,6 +2056,47 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"自动发现失败: {ex.Message}";
         }
+    }
+
+    private static string BuildDiscoveryReport(DiscoveryResult r)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"自动发现报告  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"新增边 {r.NewEdges.Length} / 更新边 {r.UpdatedEdges.Length} / 错误 {r.Errors.Length}");
+        if (r.ScannedServers.Length > 0)
+            sb.AppendLine($"扫描服务器: {string.Join(", ", r.ScannedServers)}");
+        sb.AppendLine();
+
+        AppendReportSection(sb, "错误", r.Errors);
+        AppendReportSection(sb, "说明 (notes)", r.Notes);
+
+        if (r.UnmatchedEndpoints.Count > 0)
+        {
+            sb.AppendLine($"未匹配端点 / 已跳过端点 ({r.UnmatchedEndpoints.Count}):");
+            foreach (var d in r.UnmatchedEndpoints)
+            {
+                var server = d.GetValueOrDefault("server");
+                var url = d.GetValueOrDefault("url");
+                var file = d.GetValueOrDefault("file");
+                var note = d.GetValueOrDefault("note");
+                sb.AppendLine($"  - [{server}] {url}");
+                if (file != null) sb.AppendLine($"      文件: {file}");
+                if (note != null) sb.AppendLine($"      原因: {note}");
+            }
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    private static void AppendReportSection(StringBuilder sb, string title, string[] items)
+    {
+        if (items.Length == 0)
+            return;
+        sb.AppendLine($"{title} ({items.Length}):");
+        foreach (var item in items)
+            sb.AppendLine("  - " + item);
+        sb.AppendLine();
     }
 
     /// <summary>把选中的"待确认"节点确认为已登记资产（弹出对应新增窗口并预填），再把发现边重定向到新资产。</summary>

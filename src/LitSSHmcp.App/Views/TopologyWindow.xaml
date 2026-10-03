@@ -21,6 +21,8 @@
                         <MenuItem Header="100%" Click="OnZoomReset" InputGestureText="Ctrl+0" ToolTip="重置缩放"/>
                         <Separator/>
                         <MenuItem Header="刷新" Click="OnRefresh"/>
+                        <MenuItem Header="发现报告" Click="OnDiscoveryReport"
+                                  ToolTip="查看最近一次自动发现的说明/未匹配端点(含来源文件)/错误"/>
                         <MenuItem Header="导出图片…" Click="OnExportImage"
                                   ToolTip="把画布有效区域(全部内容+边距)导出为 PNG 图片"/>
                         <Separator Tag="stress" Visibility="Collapsed"/>

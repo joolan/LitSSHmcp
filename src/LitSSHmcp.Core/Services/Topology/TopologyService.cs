@@ -501,20 +501,22 @@ public class TopologyService : ITopologyService
 
             if (grepResult != null && grepResult.Success)
             {
-                // 把配置里发现的数据库/缓存端点归为边：匹配到已配置数据源则连真实节点，
-                // 否则建一个"待确认"节点(ds:disc:...)，让发现结果有料（而不是只报告未匹配）。
-                // 配置里的端点是否有“落地证据”: 远程主机直接保留; 本机(localhost/本机地址/指向本服务器的域名)
-                // 必须确有端口在监听, 否则视为示例/过期配置, 不建“待确认”节点
-                // —— 避免“服务器上没有 5672/6379 监听, 却冒出 amqps/redis 待确认节点”这种误报。
-                bool LocalEndpointConfirmed(string host, int port)
+                // 把配置里发现的数据库/缓存/MQ 端点归为边：匹配到已配置数据源则连真实节点；
+                // 否则按下面的准入规则决定是否建"待确认"节点，不满足的只登记为未匹配端点。
+                // 配置扫描到的端点是否可信(DB/MQ 待确认节点的准入):
+                //  - 主机是占位符/协议名 → 跳过;
+                //  - 本机(localhost/本机地址/指向本服务器) → 必须确有端口在监听;
+                //  - 远程 → 必须能对应到一台已配置的服务器, 否则视为外部/示例配置, 只登记不建节点。
+                // 返回 null 表示可建节点; 否则返回跳过原因。
+                string? EndpointSkipReason(string host, int port)
                 {
-                    if (IsPlaceholderHost(host)) return false;
+                    if (IsPlaceholderHost(host)) return "主机是占位符/协议名";
                     var isLocal = IsLocalHost(host)
                         || HostMatches(server.Host, host, dnsCache)
                         || HostMatches(host, server.Host, dnsCache);
-                    if (!isLocal) return true;
-                    if (!listenResult.Success) return true; // 端口扫描不可用, 宁可不误杀
-                    return allListenPorts.Contains(port);
+                    if (isLocal)
+                        return listenResult.Success && !allListenPorts.Contains(port) ? "本机未监听该端口" : null;
+                    return MatchesManagedServer(host) ? null : "未匹配到已配置的服务器(疑似外部/示例配置)";
                 }
 
                 // 目标主机能否对应到一台已配置的服务器(按主机/名称/IP/DNS)。
@@ -533,9 +535,17 @@ public class TopologyService : ITopologyService
 
                     if (matched == null)
                     {
-                        if (!LocalEndpointConfirmed(host, port))
+                        var skipReason = EndpointSkipReason(host, port);
+                        if (skipReason != null)
                         {
-                            notes.Add($"{server.Name}: 配置发现 {kind} 端点 {host}:{port} 但本机未监听该端口, 已跳过({Truncate(filePath, 120)})");
+                            result.UnmatchedEndpoints.Add(new Dictionary<string, object?>
+                            {
+                                ["server"] = server.Name,
+                                ["file"] = filePath,
+                                ["url"] = Truncate(url, 200),
+                                ["note"] = $"{kind} 端点 {host}:{port}: {skipReason}"
+                            });
+                            notes.Add($"{server.Name}: 配置发现 {kind} 端点 {host}:{port} 已跳过({skipReason})({Truncate(filePath, 120)})");
                             return;
                         }
 
@@ -592,36 +602,17 @@ public class TopologyService : ITopologyService
                 // MQ 端点(RabbitMQ/Kafka) → 推断的应用 connectsTo mq:disc:<host>-<port>
                 void AddMqEndpoint(string host, int port, string url, string filePath, string kind)
                 {
-                    if (IsPlaceholderHost(host))
+                    var skipReason = EndpointSkipReason(host, port);
+                    if (skipReason != null)
                     {
-                        notes.Add($"{server.Name}: 配置发现 {kind} 端点主机 '{host}' 是占位符/协议名, 已跳过({Truncate(filePath, 120)})");
-                        return;
-                    }
-
-                    var isLocal = IsLocalHost(host)
-                        || HostMatches(server.Host, host, dnsCache)
-                        || HostMatches(host, server.Host, dnsCache);
-
-                    if (isLocal)
-                    {
-                        // 本机: 必须确有端口在监听, 否则视为示例/过期配置
-                        if (listenResult.Success && !allListenPorts.Contains(port))
-                        {
-                            notes.Add($"{server.Name}: 配置发现 {kind} 端点 {host}:{port} 但本机未监听该端口, 已跳过({Truncate(filePath, 120)})");
-                            return;
-                        }
-                    }
-                    else if (!MatchesManagedServer(host))
-                    {
-                        // 远程: 只有能对应到已配置的服务器才认为可信, 否则仅记入未匹配端点(不建节点)
                         result.UnmatchedEndpoints.Add(new Dictionary<string, object?>
                         {
                             ["server"] = server.Name,
                             ["file"] = filePath,
                             ["url"] = Truncate(url, 200),
-                            ["note"] = $"MQ 端点 {host}:{port} 未匹配到已配置服务器且非本机监听; 可能是外部/示例配置, 未生成节点"
+                            ["note"] = $"{kind} 端点 {host}:{port}: {skipReason}"
                         });
-                        notes.Add($"{server.Name}: 配置发现 {kind} 端点 {host}:{port} 未匹配到已配置服务器, 已跳过({Truncate(filePath, 120)})");
+                        notes.Add($"{server.Name}: 配置发现 {kind} 端点 {host}:{port} 已跳过({skipReason})({Truncate(filePath, 120)})");
                         return;
                     }
 

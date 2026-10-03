@@ -104,7 +104,12 @@ public class TopologyDiscoveryTests
     {
         var config = new AppConfig
         {
-            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
+            Servers = new[]
+            {
+                new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" },
+                new SshServerConfig { Id = "s2", Name = "mq1", Host = "10.0.0.7" },
+                new SshServerConfig { Id = "s3", Name = "mq2", Host = "10.0.0.8" }
+            },
             Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt", "/etc/nginx" } } }
         };
 
@@ -133,6 +138,66 @@ public class TopologyDiscoveryTests
         Assert.Contains(result.NewEdges, e => e.From == "app:disc:foo" && e.To == "app:disc:10.0.0.9-8080" && e.Type == "connectsTo");
         Assert.Contains(result.NewEdges, e => e.From == "app:disc:order" && e.To == "mq:disc:10.0.0.7-9092" && e.Type == "connectsTo");
         Assert.Contains(result.NewEdges, e => e.From == "app:disc:order" && e.To == "mq:disc:10.0.0.8-5672" && e.Type == "connectsTo");
+    }
+
+    [Fact]
+    public async Task Discovery_skips_unmanaged_remote_mq_endpoint()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh
+        {
+            JavaOutput = string.Empty,
+            DockerOutput = string.Empty,
+            SsOutput = string.Empty,
+            ConfigScanOutput = "/opt/order/application.yml:    spring.rabbitmq.addresses: amqp://guest:guest@rabbit.internal:5672/\n"
+        };
+
+        var store = new MemoryTopologyStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        // 远程但不对应任何已配置的服务器 → 只登记为未匹配端点, 不建 mq 节点
+        Assert.DoesNotContain(result.NewEdges, e => e.To.StartsWith("mq:disc:", StringComparison.Ordinal));
+        Assert.Contains(result.UnmatchedEndpoints, d => (d["url"]?.ToString() ?? "").Contains("rabbit.internal"));
+        Assert.Contains(result.Notes, n => n.Contains("已跳过"));
+    }
+
+    [Fact]
+    public async Task Discovery_skips_placeholder_scheme_as_host()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh
+        {
+            JavaOutput = string.Empty,
+            DockerOutput = string.Empty,
+            SsOutput = string.Empty,
+            ConfigScanOutput =
+                "/opt/order/application.yml:    spring.rabbitmq.addresses: amqps://guest:guest@amqps:5672/\n" +
+                "/opt/order/application.yml:    spring.rabbitmq.addresses: amqp://guest:guest@amqp:6379/\n"
+        };
+
+        var store = new MemoryTopologyStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        // 主机名就是协议名 amqp/amqps(占位符) → 不建节点
+        Assert.DoesNotContain(result.NewEdges, e => e.To.StartsWith("mq:disc:", StringComparison.Ordinal));
     }
 
     [Fact]

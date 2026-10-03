@@ -517,6 +517,13 @@ public class TopologyService : ITopologyService
                     return allListenPorts.Contains(port);
                 }
 
+                // 目标主机能否对应到一台已配置的服务器(按主机/名称/IP/DNS)。
+                bool MatchesManagedServer(string host) =>
+                    config.Servers.Any(s =>
+                        (!string.IsNullOrEmpty(s.Name) && s.Name.Equals(host, StringComparison.OrdinalIgnoreCase)) ||
+                        HostMatches(s.Host, host, dnsCache) ||
+                        HostMatches(host, s.Host, dnsCache));
+
                 void AddDbEndpoint(string host, int port, string url, string filePath, string kind)
                 {
                     var matched = config.DataSources.FirstOrDefault(d =>
@@ -585,9 +592,36 @@ public class TopologyService : ITopologyService
                 // MQ 端点(RabbitMQ/Kafka) → 推断的应用 connectsTo mq:disc:<host>-<port>
                 void AddMqEndpoint(string host, int port, string url, string filePath, string kind)
                 {
-                    if (!LocalEndpointConfirmed(host, port))
+                    if (IsPlaceholderHost(host))
                     {
-                        notes.Add($"{server.Name}: 配置发现 {kind} 端点 {host}:{port} 但本机未监听该端口, 已跳过({Truncate(filePath, 120)})");
+                        notes.Add($"{server.Name}: 配置发现 {kind} 端点主机 '{host}' 是占位符/协议名, 已跳过({Truncate(filePath, 120)})");
+                        return;
+                    }
+
+                    var isLocal = IsLocalHost(host)
+                        || HostMatches(server.Host, host, dnsCache)
+                        || HostMatches(host, server.Host, dnsCache);
+
+                    if (isLocal)
+                    {
+                        // 本机: 必须确有端口在监听, 否则视为示例/过期配置
+                        if (listenResult.Success && !allListenPorts.Contains(port))
+                        {
+                            notes.Add($"{server.Name}: 配置发现 {kind} 端点 {host}:{port} 但本机未监听该端口, 已跳过({Truncate(filePath, 120)})");
+                            return;
+                        }
+                    }
+                    else if (!MatchesManagedServer(host))
+                    {
+                        // 远程: 只有能对应到已配置的服务器才认为可信, 否则仅记入未匹配端点(不建节点)
+                        result.UnmatchedEndpoints.Add(new Dictionary<string, object?>
+                        {
+                            ["server"] = server.Name,
+                            ["file"] = filePath,
+                            ["url"] = Truncate(url, 200),
+                            ["note"] = $"MQ 端点 {host}:{port} 未匹配到已配置服务器且非本机监听; 可能是外部/示例配置, 未生成节点"
+                        });
+                        notes.Add($"{server.Name}: 配置发现 {kind} 端点 {host}:{port} 未匹配到已配置服务器, 已跳过({Truncate(filePath, 120)})");
                         return;
                     }
 
@@ -1000,10 +1034,16 @@ public class TopologyService : ITopologyService
             || h.StartsWith("127.", StringComparison.Ordinal);
     }
 
-    /// <summary>配置里的主机名是否为占位符/变量(如 ${RABBIT_HOST}、&lt;host&gt;)，这类不应生成发现节点。</summary>
+    /// <summary>配置里的主机名是否为占位符/变量(如 ${RABBIT_HOST}、&lt;host&gt;)，或误把协议名当主机(amqp/amqps)，这类不应生成发现节点。</summary>
+    private static readonly HashSet<string> PlaceholderHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "host", "hostname", "your-host", "example", "example.com", "amqp", "amqps"
+    };
+
     private static bool IsPlaceholderHost(string host) =>
         string.IsNullOrWhiteSpace(host)
-        || host.IndexOfAny(new[] { '$', '{', '}', '%', '<', '>' }) >= 0;
+        || host.IndexOfAny(new[] { '$', '{', '}', '%', '<', '>' }) >= 0
+        || PlaceholderHosts.Contains(host.Trim());
 
     // 只识别明确的服务守护进程名(comm)，避免按 user/args 子串匹配造成的海量误报
     private static readonly Dictionary<string, string> ServiceAliases = new(StringComparer.OrdinalIgnoreCase)

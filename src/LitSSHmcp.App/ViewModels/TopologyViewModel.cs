@@ -90,6 +90,9 @@ public class GraphEdgeVm : INotifyPropertyChanged
     public string From { get; set; } = string.Empty;
     public string To { get; set; } = string.Empty;
 
+    /// <summary>关系证据（自动发现时说明来源：ESTAB 连接 / mysql processlist 客户端 / 配置扫描文件等）。</summary>
+    public string Evidence { get; set; } = string.Empty;
+
     /// <summary>布局锚点键（From|Type|To，建边时算一次；拖动热路径免字符串分配）。</summary>
     public string Key { get; set; } = string.Empty;
     public List<Point> Points { get; set; } = new();
@@ -598,6 +601,10 @@ public class TopologyViewModel : INotifyPropertyChanged
             .ToDictionary(g => g.Key, g => g.First().To);
 
         var layout = GetLayout();
+        var evidenceByKey = _graph.Edges
+            .Where(e => !string.IsNullOrEmpty(e.Evidence))
+            .GroupBy(e => $"{e.From}|{e.Type}|{e.To}")
+            .ToDictionary(g => g.Key, g => g.First().Evidence!);
         var drawable = _graph.Edges
             .Where(e => e.Type != "runsOn")
             .Where(e => !(e.Type == "canAccess" && hostedBy.TryGetValue(e.To, out var host) && host == e.From))
@@ -652,6 +659,7 @@ public class TopologyViewModel : INotifyPropertyChanged
                     Label = route.Type is "canAccess" or "connectsTo" ? string.Empty : route.Type,
                     From = route.From,
                     To = route.To,
+                    Evidence = evidenceByKey.GetValueOrDefault($"{route.From}|{route.Type}|{route.To}") ?? string.Empty,
                     Points = points,
                     LabelX = labelX,
                     LabelY = labelY,
@@ -1813,7 +1821,10 @@ public class TopologyViewModel : INotifyPropertyChanged
         _selEdgeOldType = edge.Type;
         SelectedEdgeType = edge.Type;
         SelectedEdgeNote = string.Empty;
-        SelectedEdgeHint = edge.IsDiscovered ? "自动发现的关系可直接删除，不可编辑类型/备注。" : string.Empty;
+        SelectedEdgeHint = edge.IsDiscovered
+            ? "自动发现的关系可直接删除，不可编辑类型/备注。" +
+              (string.IsNullOrWhiteSpace(edge.Evidence) ? string.Empty : $"\n证据: {edge.Evidence}")
+            : string.Empty;
         SelectedEdgeLine = edge.Line;
         OnPropertyChanged(nameof(HasSelectedEdge));
         OnPropertyChanged(nameof(SelectedEdgeSummary));

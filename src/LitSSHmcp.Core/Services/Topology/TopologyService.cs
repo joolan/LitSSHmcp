@@ -427,7 +427,7 @@ public class TopologyService : ITopologyService
                         var dsType = DataServiceDsType(service);
                         var candidate = dsType == null ? null : config.DataSources.FirstOrDefault(d =>
                             d.Type.Equals(dsType, StringComparison.OrdinalIgnoreCase) &&
-                            (HostMatches(d.Host, server.Host, dnsCache) || IsLocalHost(d.Host)));
+                            DatasourceHostedOnServer(config, d, server, dnsCache));
 
                         var dsNode = candidate != null ? AssetNode.Ds(candidate.Id) : $"ds:disc:{service}";
                         drafts.Add(NewEdge(sshNode, dsNode, "canAccess",
@@ -467,6 +467,11 @@ public class TopologyService : ITopologyService
                     foreach (var ds in config.DataSources)
                     {
                         if (peerInfo.Value.Port != ds.Port || !HostMatches(ds.Host, peerInfo.Value.Host, dnsCache))
+                            continue;
+
+                        // 本机/隧道数据源: 仅当当前服务器正是它的隧道服务器时, 本机 ESTAB 才算它的连接,
+                        // 否则会把某台服务器自己的本地 mysql 连接错配到另一台服务器上的同名隧道数据源。
+                        if (IsLocalHost(ds.Host) && !DatasourceHostedOnServer(config, ds, server, dnsCache))
                             continue;
 
                         var processInfo = parts.Length > 5
@@ -1023,6 +1028,19 @@ public class TopologyService : ITopologyService
         var h = host.Trim().Trim('[', ']').ToLowerInvariant();
         return h is "localhost" or "127.0.0.1" or "::1" or "0.0.0.0" or "localhost.localdomain"
             || h.StartsWith("127.", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 数据源是否“属于”该服务器：主机名/IP 直接匹配，或它是本机/隧道数据源且其隧道服务器正是该服务器。
+    /// 用于避免把某台服务器上的本地 mysqld/redis 错配到另一台服务器上 Host=localhost 的隧道数据源。
+    /// </summary>
+    private static bool DatasourceHostedOnServer(AppConfig config, DataSourceConfig ds, SshServerConfig server, Dictionary<string, string[]> dnsCache)
+    {
+        if (HostMatches(ds.Host, server.Host, dnsCache)) return true;
+        if (!IsLocalHost(ds.Host)) return false;
+        if (!string.IsNullOrEmpty(ds.TunnelServerId) &&
+            string.Equals(ds.TunnelServerId, server.Id, StringComparison.OrdinalIgnoreCase)) return true;
+        return string.Equals(TunnelServerResolver.Resolve(config, ds)?.Id, server.Id, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>配置里的主机名是否为占位符/变量(如 ${RABBIT_HOST}、&lt;host&gt;)，或误把协议名当主机(amqp/amqps)，这类不应生成发现节点。</summary>

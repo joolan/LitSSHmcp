@@ -330,6 +330,46 @@ public class TopologyDiscoveryTests
     }
 
     [Fact]
+    public async Task Discovery_does_not_cross_attribute_local_tunnel_datasource()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig { Id = "s1", Name = "a", Host = "10.0.0.1" },
+                new SshServerConfig { Id = "s2", Name = "b", Host = "10.0.0.2" }
+            },
+            DataSources = new[]
+            {
+                new DataSourceConfig { Id = "dsA", Name = "a-mysql", Type = "mysql", Host = "127.0.0.1", Port = 3306, AccessMode = AccessMode.SshTunnel, TunnelServerId = "s1" },
+                new DataSourceConfig { Id = "dsB", Name = "b-mysql", Type = "mysql", Host = "127.0.0.1", Port = 3306, AccessMode = AccessMode.SshTunnel, TunnelServerId = "s2" }
+            },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh
+        {
+            JavaOutput = string.Empty,
+            DockerOutput = string.Empty,
+            SsOutput = string.Empty,
+            ServiceOutput = "  1234 mysql mysqld /usr/sbin/mysqld\n"
+        };
+
+        var store = new MemoryTopologyStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        // 两台服务器各自运行本地 mysql，各自的 Host=127.0.0.1 隧道数据源只能归属各自的隧道服务器，不能交叉
+        Assert.Contains(result.NewEdges, e => e.From == "ssh:s1" && e.To == "ds:dsA" && e.Type == "canAccess");
+        Assert.Contains(result.NewEdges, e => e.From == "ssh:s2" && e.To == "ds:dsB" && e.Type == "canAccess");
+        Assert.DoesNotContain(result.NewEdges, e => e.From == "ssh:s1" && e.To == "ds:dsB");
+        Assert.DoesNotContain(result.NewEdges, e => e.From == "ssh:s2" && e.To == "ds:dsA");
+    }
+
+    [Fact]
     public async Task Discovery_attributes_localhost_db_client_to_the_server()
     {
         var config = new AppConfig

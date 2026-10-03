@@ -96,6 +96,19 @@ public static class ToolSupport
         $"服务器 {ServerLabel(server)} 已被禁用, 已拒绝执行。" +
         "如需使用, 请在桌面 App 的「服务器编辑」里取消勾选\"禁用\"并保存, 或改用其它服务器。";
 
+    /// <summary>把该服务器所有非空口令/密钥替换为 ******（返回给模型前的最终兜底，确保任何路径/异常都不外泄密码）。</summary>
+    public static string RedactSecrets(string? text, SshServerConfig server)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text ?? string.Empty;
+
+        var result = text;
+        foreach (var secret in new[] { server.Password, server.KeyFilePassphrase, server.SudoPassword })
+            if (!string.IsNullOrEmpty(secret))
+                result = result.Replace(secret, "******");
+        return result;
+    }
+
     /// <summary>服务器展示标签：名称(用户@主机:端口)，供审批确认时核对真实目标。</summary>
     public static string ServerLabel(SshServerConfig server) =>
         $"{server.Name} ({server.Username}@{server.Host}:{server.Port})";

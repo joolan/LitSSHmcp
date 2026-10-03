@@ -163,6 +163,9 @@ public sealed class CommandResultDto
 
     public double DurationMs { get; set; }
 
+    /// <summary>本次提权实际使用的机制（仅 ssh_execute_sudo 会填充）：direct / sudo / su / auto:sudo / auto:su / auto:failed。</summary>
+    public string? Escalation { get; set; }
+
     public static CommandResultDto Fail(string status, string error, string? reason = null, string? command = null,
         string? serverId = null, string? serverName = null, string? host = null) =>
         new()

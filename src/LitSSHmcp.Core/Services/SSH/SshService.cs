@@ -138,27 +138,27 @@ public class SshService : ISshService
                 if (!string.IsNullOrEmpty(result))
                     Log($"Command output: {result.Substring(0, Math.Min(result.Length, 500))}");
 
-                return new CommandResult
+                return RedactResult(new CommandResult
                 {
                     Success = cmd.ExitStatus == 0,
                     Output = result,
                     Error = cmd.Error,
                     ExitCode = cmd.ExitStatus ?? -1,
                     Duration = sw.Elapsed
-                };
+                }, server);
             }
             catch (Exception ex)
             {
                 sw.Stop();
                 Log($"Command execution failed: {ex.Message}", "ERROR");
-                return new CommandResult
+                return RedactResult(new CommandResult
                 {
                     Success = false,
                     Error = ex.Message,
                     ErrorKind = ClassifySshException(ex),
                     ExitCode = -1,
                     Duration = sw.Elapsed
-                };
+                }, server);
             }
             finally
             {
@@ -187,44 +187,41 @@ public class SshService : ISshService
                 using var client = CreateSshClient(server);
                 client.Connect();
 
-                switch (server.SudoType)
+                CommandResult Execute() => server.SudoType switch
                 {
-                    case SudoType.None:
-                        return ExecuteCommandDirect(client, effectiveCommand, sw);
+                    SudoType.None => ExecuteCommandDirect(client, effectiveCommand, sw),
+                    SudoType.CurrentUser => ExecuteWithCurrentUserSudo(client, server, effectiveCommand, sw),
+                    SudoType.RootUser => server.Username == "root"
+                        ? ExecuteCommandDirect(client, effectiveCommand, sw)
+                        : ExecuteWithSuUser(client, server, "root", effectiveCommand, sw),
+                    SudoType.CustomUser => string.IsNullOrEmpty(server.SudoUsername) || server.Username == server.SudoUsername
+                        ? ExecuteCommandDirect(client, effectiveCommand, sw)
+                        : ExecuteWithSuUser(client, server, server.SudoUsername, effectiveCommand, sw),
+                    SudoType.Auto => ExecuteAutoSudo(client, server, effectiveCommand, sw),
+                    _ => ExecuteCommandDirect(client, effectiveCommand, sw)
+                };
 
-                    case SudoType.CurrentUser:
-                        return ExecuteWithCurrentUserSudo(client, server, effectiveCommand, sw);
-
-                    case SudoType.RootUser:
-                        if (server.Username == "root")
-                            return ExecuteCommandDirect(client, effectiveCommand, sw);
-                        return ExecuteWithSuUser(client, server, "root", effectiveCommand, sw);
-
-                    case SudoType.CustomUser:
-                        if (string.IsNullOrEmpty(server.SudoUsername))
-                            return ExecuteCommandDirect(client, effectiveCommand, sw);
-                        if (server.Username == server.SudoUsername)
-                            return ExecuteCommandDirect(client, effectiveCommand, sw);
-                        return ExecuteWithSuUser(client, server, server.SudoUsername, effectiveCommand, sw);
-
-                    case SudoType.Auto:
-                        return ExecuteAutoSudo(client, server, effectiveCommand, sw);
-
-                    default:
-                        return ExecuteCommandDirect(client, effectiveCommand, sw);
-                }
+                // 最终结果统一脱敏（即使内层已脱敏，这里再兜底，确保任何路径/异常都不外泄密码）
+                var result = Execute();
+                result.Escalation ??= server.SudoType switch
+                {
+                    SudoType.CurrentUser => "sudo",
+                    SudoType.RootUser or SudoType.CustomUser => "su",
+                    _ => "direct"
+                };
+                return RedactResult(result, server);
             }
             catch (Exception ex)
             {
                 sw.Stop();
                 Log($"Sudo command execution failed: {ex.Message}", "ERROR");
-                return new CommandResult
+                return RedactResult(new CommandResult
                 {
                     Success = false,
                     Error = ex.Message,
                     ExitCode = -1,
                     Duration = sw.Elapsed
-                };
+                }, server);
             }
             finally
             {
@@ -248,7 +245,8 @@ public class SshService : ISshService
             Output = result,
             Error = cmd.Error,
             ExitCode = cmd.ExitStatus ?? -1,
-            Duration = sw.Elapsed
+            Duration = sw.Elapsed,
+            Escalation = "direct"
         };
     }
 
@@ -263,8 +261,9 @@ public class SshService : ISshService
         // 部分发行版(RHEL/CentOS 的 Defaults requiretty 等)要求 sudo 必须有 tty，exec 通道无 tty 会被拒；
         // 此时回退到交互式 shell(pty) 重新执行（不兜底下发密码，避免误写到已运行命令的 stdin）。
         if (!result.Success && RequiresTty(result))
-            return ExecuteWithPasswordViaShell(client, sudoCmd, password, sw, fallbackSendPassword: false);
+            result = ExecuteWithPasswordViaShell(client, sudoCmd, password, sw, fallbackSendPassword: false);
 
+        result.Escalation = "sudo";
         return result;
     }
 
@@ -345,7 +344,9 @@ public class SshService : ISshService
         var password = server.SudoPassword ?? string.Empty;
         var escapedCmd = command.Replace("'", "'\\''");
         var shellCmd = $"su - {targetUser} -c '{escapedCmd}'";
-        return ExecuteWithPasswordViaShell(client, shellCmd, password, sw);
+        var result = ExecuteWithPasswordViaShell(client, shellCmd, password, sw);
+        result.Escalation = "su";
+        return result;
     }
 
     /// <summary>
@@ -359,11 +360,17 @@ public class SshService : ISshService
 
         var viaSudo = ExecuteWithCurrentUserSudo(client, server, command, sw);
         if (viaSudo.Success)
+        {
+            viaSudo.Escalation = "auto:sudo";
             return viaSudo;
+        }
 
         var viaSu = ExecuteWithSuUser(client, server, "root", command, sw);
         if (viaSu.Success)
+        {
+            viaSu.Escalation = "auto:su";
             return viaSu;
+        }
 
         var sudoErr = string.IsNullOrWhiteSpace(viaSudo.Error) ? "(无)" : viaSudo.Error.Trim();
         var suErr = string.IsNullOrWhiteSpace(viaSu.Error) ? "(无)" : viaSu.Error.Trim();
@@ -371,6 +378,7 @@ public class SshService : ISshService
         {
             Success = false,
             Output = viaSu.Output.Length >= viaSudo.Output.Length ? viaSu.Output : viaSudo.Output,
+            Escalation = "auto:failed",
             Error = $"自动提权失败。sudo: {sudoErr}；su: {suErr}",
             ErrorKind = viaSudo.ErrorKind ?? viaSu.ErrorKind,
             ExitCode = viaSu.ExitCode,
@@ -528,6 +536,27 @@ public class SshService : ISshService
 
     private static string Redact(string text, string? password) =>
         string.IsNullOrEmpty(password) ? text : text.Replace(password, "******");
+
+    /// <summary>对一段文本脱敏：替换该服务器所有非空口令/密钥（SSH 密码、密钥口令、提权密码）。</summary>
+    private static string RedactSecrets(string? text, SshServerConfig server)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text ?? string.Empty;
+
+        var result = text;
+        foreach (var secret in new[] { server.Password, server.KeyFilePassphrase, server.SudoPassword })
+            if (!string.IsNullOrEmpty(secret))
+                result = result.Replace(secret, "******");
+        return result;
+    }
+
+    /// <summary>对返回结果做最终脱敏（Output/Error），保证任何路径（含异常）都不把密码带给调用方/AI 客户端。</summary>
+    private static CommandResult RedactResult(CommandResult result, SshServerConfig server)
+    {
+        result.Output = RedactSecrets(result.Output, server);
+        result.Error = RedactSecrets(result.Error, server);
+        return result;
+    }
 
     private const string ExitMarkerPrefix = "LITSSH_EXIT:";
 

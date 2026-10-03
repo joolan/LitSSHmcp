@@ -42,10 +42,16 @@ public class CommandResult
     public TimeSpan Duration { get; set; }
 
     /// <summary>
-    /// 失败分类（决定工具返回的 status，让模型能区分"可重试"与"不可重试"）：
+    /// 失败分类（会被工具层映射为 status，让模型区分“可重试”与“不可重试”）。
     /// rate_limited / timeout / auth / host_key / network / unknown；null 表示命令本身执行失败（exit != 0）。
     /// </summary>
     public string? ErrorKind { get; set; }
+
+    /// <summary>
+    /// 本次提权实际使用的机制（不敏感）：<c>direct</c>(未提权/已是目标用户) / <c>sudo</c> / <c>su</c>
+    /// / <c>auto:sudo</c> / <c>auto:su</c> / <c>auto:failed</c>。仅提权工具会透出给客户端，便于排障与透明说明。
+    /// </summary>
+    public string? Escalation { get; set; }
 
     /// <summary>是否因被限流而未执行（模型据此应退避重试，而非判定命令失败）。</summary>
     public bool RateLimited => ErrorKind == "rate_limited";

@@ -174,4 +174,32 @@ public class ToolSupportTests
         Assert.Null(ds);
         Assert.Equal("datasource_ambiguous", status);
     }
+
+    [Fact]
+    public void RedactSecrets_masks_all_server_secrets()
+    {
+        var server = new SshServerConfig
+        {
+            Password = "sshPass",
+            KeyFilePassphrase = "keyPass",
+            SudoPassword = "sudoPass"
+        };
+
+        var text = "stdout sshPass stderr keyPass prompt sudoPass done";
+        var red = ToolSupport.RedactSecrets(text, server);
+
+        Assert.DoesNotContain("sshPass", red);
+        Assert.DoesNotContain("keyPass", red);
+        Assert.DoesNotContain("sudoPass", red);
+        Assert.Contains("******", red);
+    }
+
+    [Fact]
+    public void RedactSecrets_handles_null_and_empty()
+    {
+        var server = new SshServerConfig();
+        Assert.Equal(string.Empty, ToolSupport.RedactSecrets(null, server));
+        Assert.Equal(string.Empty, ToolSupport.RedactSecrets(string.Empty, server));
+        Assert.Equal("plain", ToolSupport.RedactSecrets("plain", server));
+    }
 }

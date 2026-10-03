@@ -204,8 +204,9 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 
 ### `ssh_execute_sudo`
 - **参数**：`serverId`、`command`
-- **返回**：同 `ssh_execute_command`；未配置提权时返回 `status: "sudo_not_configured"`
-- **说明**：判断需要 root 权限时**直接用本工具**（无需预检），不要先 `ssh_execute_command` 失败再提权；总是需要人工确认
+- **返回**：同 `ssh_execute_command`，并额外带 `escalation` —— 本次实际提权机制：`direct`（未提权/已是目标用户）、`sudo`、`su`、`auto:sudo`、`auto:su`、`auto:failed`（用于排障与向用户说明“到底用了 sudo 还是 su”）；未配置提权时返回 `status: "sudo_not_configured"`
+- **说明**：判断需要 root 权限时**直接用本工具**（无需预检），不要先 `ssh_execute_command` 失败再提权；总是需要人工确认。具体走 `sudo` 还是 `su` 由服务器配置（`SudoType`）决定，工具会自动选择（含 `Auto` 先 sudo 失败回退 su），客户端无需也不应预先判断。
+- **安全**：返回给客户端的 `output`/`error` 一律把服务器口令（SSH 密码 / 密钥口令 / 提权密码）脱敏为 `******`；任何路径（含异常）都不会把密码暴露给 AI。
 
 ### `ssh_get_sudo_status`
 - **参数**：`serverId`

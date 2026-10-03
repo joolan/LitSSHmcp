@@ -40,7 +40,7 @@ public class SudoTools
     }
 
     [McpServerTool(Name = "ssh_execute_sudo", UseStructuredContent = true, OutputSchemaType = typeof(CommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("以sudo提权执行命令(启停服务/装软件/改系统配置或权限等)。总是需要人工确认, 可能返回status=rejected/approval_timeout/approval_unavailable; 未配置提权返回sudo_not_configured。判断是否需要提权: 无需预检, 直接用它, 失败会明确告诉你原因")]
+    [Description("提权执行命令(sudo/su)(启停服务/装软件/改系统配置或权限等)。总是需要人工确认, 可能返回status=rejected/approval_timeout/approval_unavailable; 未配置提权返回sudo_not_configured。判断是否需要提权: 无需预检, 直接用它, 失败会明确告诉你原因")]
     public async Task<CommandResultDto> ExecuteWithSudo(
         [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
         [Description("要以sudo执行的命令(单条)")] string command,
@@ -124,15 +124,16 @@ public class SudoTools
         {
             Success = result.Success,
             Status = result.Success ? null : ToolSupport.CommandFailureStatus(result),
-            Error = result.Error,
+            Error = ToolSupport.RedactSecrets(result.Error, server),
             ServerId = server.Id,
             ServerName = server.Name,
             Host = server.Host,
-            Output = output,
+            Output = ToolSupport.RedactSecrets(output, server),
             Truncated = truncated,
             OutputChars = originalLength,
             ExitCode = result.ExitCode,
-            DurationMs = result.Duration.TotalMilliseconds
+            DurationMs = result.Duration.TotalMilliseconds,
+            Escalation = result.Escalation
         };
     }
 

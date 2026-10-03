@@ -118,11 +118,11 @@ public class CommandTools
         {
             Success = result.Success,
             Status = result.Success ? null : ToolSupport.CommandFailureStatus(result),
-            Error = result.Error,
+            Error = ToolSupport.RedactSecrets(result.Error, server),
             ServerId = server.Id,
             ServerName = server.Name,
             Host = server.Host,
-            Output = output,
+            Output = ToolSupport.RedactSecrets(output, server),
             Truncated = truncated,
             OutputChars = originalLength,
             ExitCode = result.ExitCode,

@@ -40,16 +40,34 @@ public class CommandTools
     }
 
     [McpServerTool(Name = "ssh_execute_command", UseStructuredContent = true, OutputSchemaType = typeof(CommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("在SSH服务器执行Shell命令(查日志/进程/磁盘/网络等)。危险命令返回status=blocked, 敏感命令需人工确认(可能返回rejected/approval_timeout/approval_unavailable); SQL用mysql_*/postgres_*, Redis用redis_*; 输出最多2万字符, 超出置truncated=true")]
+    [Description("在SSH服务器执行Shell命令(查日志/进程/磁盘/网络等)。危险命令返回status=blocked, 敏感命令需人工确认(可能返回rejected/approval_timeout/approval_unavailable); SQL用mysql_*/postgres_*, Redis用redis_*; 输出最多2万字符, 超出置truncated=true; 超时可用timeoutSeconds调整(默认60s, 超时返回status=timeout); 会挂起/需交互的命令(如 tail -f、docker logs -f、journalctl -f、vi/top/less、sudo、ping不带-c)会直接返回status=blocking_command并给出替代写法——不要用前台方式启动常驻进程, 请用 nohup ... & / setsid / systemctl / docker -d")]
     public async Task<CommandResultDto> ExecuteCommand(
         [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
         [Description("要执行的Shell命令(单条), 如 'df -h'、'tail -n 100 /var/log/app.log'")] string command,
+        [Description("命令超时秒数(1-3600, 默认60); 超时返回 status=timeout")] int timeoutSeconds = 60,
         CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
         var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverId);
         if (server == null)
             return CommandResultDto.Fail(resolveStatus!, resolveError!, "server_not_found", command);
+
+        // 必然挂起/需交互的命令：直接给出替代建议，不执行(避免等超时、丢结果)
+        var blockingHint = ToolSupport.BlockingCommandHint(command);
+        if (blockingHint != null)
+        {
+            await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+            {
+                ServerId = server.Id,
+                ServerName = server.Name,
+                Command = command,
+                Result = blockingHint,
+                Status = CommandStatus.Blocked,
+                Category = AuditCategory.Gate,
+                Decision = "blocked"
+            });
+            return CommandResultDto.Fail("blocking_command", blockingHint, "blocking_command", command, server.Id, server.Name, server.Host);
+        }
 
         var filterResult = _commandFilter.CheckCommand(command);
 
@@ -60,7 +78,9 @@ public class CommandTools
                 ServerId = server.Id,
                 ServerName = server.Name,
                 Command = command,
-                Status = CommandStatus.Blocked
+                Status = CommandStatus.Blocked,
+                Category = AuditCategory.Gate,
+                Decision = "blocked"
             });
 
             return CommandResultDto.Fail("blocked",
@@ -77,11 +97,13 @@ public class CommandTools
             {
                 await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
                 {
-                    ServerId = server.Id,
-                    ServerName = server.Name,
-                    Command = command,
-                    Status = CommandStatus.Rejected
-                });
+                ServerId = server.Id,
+                ServerName = server.Name,
+                Command = command,
+                Status = CommandStatus.Rejected,
+                Category = AuditCategory.Gate,
+                Decision = ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode)
+            });
 
                 var (status, error) = ApprovalOutcomeText.Describe(outcome, _securityOptions.Approval.TimeoutSeconds);
                 return CommandResultDto.Fail(status, error, "approval", command, server.Id, server.Name, server.Host);
@@ -92,11 +114,13 @@ public class CommandTools
                 ServerId = server.Id,
                 ServerName = server.Name,
                 Command = command,
-                Status = CommandStatus.Approved
+                Status = CommandStatus.Approved,
+                Category = AuditCategory.Gate,
+                Decision = ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode)
             });
         }
 
-        var result = await _sshService.ExecuteCommandAsync(server, command, cancellationToken);
+        var result = await _sshService.ExecuteCommandAsync(server, command, cancellationToken, Math.Clamp(timeoutSeconds, 1, 3600));
 
         // 命令已在远端执行, 审计失败不能让工具报错(否则模型重试会重复执行)
         await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
@@ -110,7 +134,8 @@ public class CommandTools
                     : result.Output)
                 : result.Error,
             Status = result.Success ? CommandStatus.Executed : CommandStatus.Failed,
-            ExitCode = result.ExitCode
+            ExitCode = result.ExitCode,
+            Category = AuditCategory.Exec
         });
 
         var (output, truncated, originalLength) = ToolSupport.Truncate(result.Output, ToolSupport.MaxOutputChars);
@@ -137,7 +162,8 @@ public class CommandTools
         [Description(ToolSupport.HistoryLimitDescription)] int limit = ToolSupport.DefaultHistoryLimit,
         [Description("跳过的条数, 与limit配合翻页(默认0)")] int offset = 0,
         [Description("会话ID(可选): 只查某个 MCP 会话产生的记录; 当前会话ID见 mcp_self_check")] string? sessionId = null,
-        [Description("工具名(可选): 只查由某个 MCP 工具产生的记录, 如 ssh_execute_command / docker_logs")] string? tool = null)
+        [Description("工具名(可选): 只查由某个 MCP 工具产生的记录, 如 ssh_execute_command / docker_logs")] string? tool = null,
+        [Description("事件类型(可选): exec=执行 / gate=审批拦截 / probe=只读探测 / meta=列表元数据 / transfer=文件传输")] string? category = null)
     {
         var config = await _configService.LoadConfigAsync();
         string? filterId = null;
@@ -151,7 +177,8 @@ public class CommandTools
 
         var effectiveLimit = ToolSupport.ClampLimit(limit);
         var records = (await _auditLogService.GetLogsAsync(
-                filterId, effectiveLimit, null, false, Math.Max(0, offset), sessionId, tool))
+                filterId, effectiveLimit, null, false, Math.Max(0, offset), sessionId, tool,
+                Enum.TryParse<AuditCategory>(category, ignoreCase: true, out var cat) ? cat : null))
             .ToList();
 
         foreach (var record in records)

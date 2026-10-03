@@ -13,10 +13,12 @@
 - **资产拓扑新增「发现报告」入口**：右键「更多操作 → 发现报告」可查看最近一次自动发现的扫描服务器、说明(notes)、未匹配端点（含来源文件、URL、跳过原因）与错误；发现完成后状态栏会提示说明/未匹配条目数。
 - **修复本机/隧道数据源被交叉归属**：进程扫描与 ESTAB 连接扫描此前用 `IsLocalHost(ds.Host)` 匹配数据源，会把某台服务器上的本地 `mysqld`/`redis`（或本地 3306 连接）错配到**另一台**服务器上 `Host=localhost` 的隧道数据源（表现为“A 服务器 → B 服务器 mysql”的假关系）。现改为“同机”判定：① 数据源主机名/IP **双向**匹配本服务器；② 或数据源**跳板服务器就是本服务器**且其地址是本机地址（`127.0.0.1`/`localhost`/`::1`）或**本服务器局域网 IP**（`hostname -I`/`ip -4 addr` 采集）。否则不归属。
 - **连线证据可见**：在资产拓扑中选中一条「自动发现」的连线，右侧面板会显示其**证据**（来自配置扫描的文件/URL、ESTAB 连接对端、或 mysql processlist 客户端），方便核对关系成因。
-- **重新发现清空旧结果**：此前发现前只清理含 `:disc:` 的“待确认”边，导致指向**已登记资产**的旧假边（如 `ssh:A → ds:虚拟机mysql`）永远残留、重跑也不消失。现每次发现前**清空全部自动发现边与节点信息**再重建（拓扑库只存自动发现结果，人工关系在 `config.Relations` 不受影响）。
+- **重新发现清空旧结果**：此前发现前只清理含 `:disc:` 的“待确认”边，导致指向**已登记资产**的旧假边（如 `ssh:A → ds:某数据源`）永远残留、重跑也不消失。现每次发现前**清空全部自动发现边与节点信息**再重建（拓扑库只存自动发现结果，人工关系在 `config.Relations` 不受影响）。
 - **`ssh_execute_sudo` 结果新增 `escalation`**：标明本次实际提权机制（`direct` / `sudo` / `su` / `auto:sudo` / `auto:su` / `auto:failed`），便于排障与向用户说明“到底用了 sudo 还是 su”；工具描述改为“提权(sudo/su 由配置决定)”，客户端无需预判机制。
 - **全路径密码脱敏**：SSH 密码、密钥口令、提权密码在返回给 AI 的 `output` / `error` 中一律替换为 `******`；覆盖 sudo/su/pty 与**异常**路径（Core 结果统一脱敏 + 工具层兜底），确保任何场景都不外泄密码。
 - **审批模式（`security.approval.mode`）**：新增三态——`manual`（默认，所有触发审批的操作都需人工处理）、`auto-approve`（危险：所有触发审批的操作自动放行）、`auto-reject`（触发审批时直接拒绝）；桌面 App「安全设置 → 审批模式」可切换。仅影响“需人工确认”的敏感操作，命令过滤器硬拒绝（`blocked`）不受影响；自动拒绝返回 `status=rejected`（`ApprovalOutcome.AutoRejected`）。
+- **审计 = 操作日志 + 审计日志（统一一张表）**：所有操作都会记录——命令/SQL 执行、审批与拦截、只读探测（连接测试、列目录）、列表元数据（列服务器/数据源/拓扑）、文件传输；新增 `Category`（`exec`/`gate`/`probe`/`meta`/`transfer`）与 `Decision`（`manual-approved`/`manual-rejected`/`auto-approve`/`auto-reject`/`timeout`/`unavailable`/`blocked`）字段并**纳入哈希链**（格式版本 v4，测试期直接重置旧库）；`ssh_get_command_history` 与桌面 App 审计窗口支持按 `category` 过滤；桌面 App 的打印式手工会话也会写入审计（`tool=desktop`）。SQL/Redis 审计同样新增 `Category`/`Decision`（`datasource_get_sql_history` 支持 `category` 过滤；格式版本 v5）。
+- **`ssh_execute_command` 防挂起 + 可调超时**：新增 `timeoutSeconds`（1-3600，默认 60）；对会持续输出/需交互的命令（`tail -f`、`docker logs -f`、`journalctl -f`、`kubectl logs -f`，`vi/less/top/watch`，普通通道的 `sudo/su`，`ping` 无 `-c`，`nc/telnet`，`docker exec -it`，`docker attach`）**前置拦截**返回 `status=blocking_command` 并给出替代写法（`tail -n`/`--tail`/`--no-pager`/用 `ssh_execute_sudo`），避免无 TTY 挂起、拿不到结果；技能补充「避免挂起/丢结果」避坑章节。
 
 ## [1.1.0] - 2026-10-03
 

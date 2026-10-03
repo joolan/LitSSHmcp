@@ -90,7 +90,7 @@ Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管�
 - **授权确认弹窗**: 置顶确认框，默认 **45 秒无操作自动拒绝**；可选独立子进程/原生弹窗样式（`security.approval`）
 - **审批通道**: `security.approval.channels` 默认 `["desktop","cli"]` —— 无桌面/headless 时操作员用 `litssh approvals` 查看、`litssh approve <id>` / `litssh deny <id>` 决定（首个决定者生效；超时→`approval_timeout`，无可用通道→`approval_unavailable`）
 - **审批模式**: `security.approval.mode` —— `manual`（默认，需人工处理）/ `auto-approve`（危险：所有触发审批的操作自动放行）/ `auto-reject`（触发审批时直接拒绝）；桌面 App「安全设置 → 审批模式」可切换。只影响“需人工确认”的敏感操作，命令过滤器硬拒绝（`blocked`）不受影响
-- **审计会话/工具区分**: 每次启动 MCP 服务生成会话 ID，命令/SQL 审计带 `sessionId` 与 `tool`（哪个工具产生），并参与哈希链防篡改；可用 `mcp_list_sessions` / `*_history` 过滤
+- **审计（操作日志 + 审计日志）**: 所有操作都入审计——命令/SQL 执行、审批拦截、只读探测、列表元数据、文件传输；每条带 `sessionId`（哪次会话）与 `tool`（哪个工具）、`category`（`exec`/`gate`/`probe`/`meta`/`transfer`）、`decision`（审批决策），并参与哈希链防篡改；可用 `mcp_list_sessions` / `*_history`（支持 `sessionId`/`tool`/`category` 过滤）查看
 - **文件传输审批**: 上传/下载需用户确认，并受**本地/远程路径白名单**与大小上限约束（`allowedLocalPaths` / `allowedRemotePaths` / `maxFileSizeBytes`）
 - **主机密钥校验(TOFU)**: 首次连接记录 SSH 主机指纹，之后指纹变化即拒绝（`security.sshHostKey.mode = tofu|strict|off`）
 - **按目标限流**: 单服务器/数据源的并发数与每分钟调用上限（`security.limits`）

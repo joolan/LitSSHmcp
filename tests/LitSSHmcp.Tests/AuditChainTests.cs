@@ -90,6 +90,44 @@ public class AuditChainTests : IDisposable
         Assert.Equal(2, result.Checked);
     }
 
+    [Fact]
+    public async Task Category_and_decision_round_trip_and_filter()
+    {
+        var service = NewService();
+        await service.InitializeAsync();
+
+        await service.LogCommandAsync(new CommandAuditLog
+        {
+            ServerId = "s1",
+            ServerName = "server-1",
+            Command = "rm -rf x",
+            Status = CommandStatus.Approved,
+            Category = AuditCategory.Gate,
+            Decision = "auto-approve"
+        });
+        await service.LogCommandAsync(new CommandAuditLog
+        {
+            ServerId = "s1",
+            ServerName = "server-1",
+            Command = "df -h",
+            Status = CommandStatus.Executed,
+            Category = AuditCategory.Exec
+        });
+
+        var gates = await service.GetLogsAsync(category: AuditCategory.Gate);
+        Assert.Single(gates);
+        Assert.Equal(AuditCategory.Gate, gates[0].Category);
+        Assert.Equal("auto-approve", gates[0].Decision);
+
+        var execs = await service.GetLogsAsync(category: AuditCategory.Exec);
+        Assert.Single(execs);
+        Assert.Equal(AuditCategory.Exec, execs[0].Category);
+
+        // 分类/决策纳入哈希链，写入后链仍应完整
+        var result = await service.VerifyChainAsync();
+        Assert.True(result.Ok, result.Message);
+    }
+
     public void Dispose()
     {
         try { File.Delete(_dbPath); } catch { /* ignore */ }

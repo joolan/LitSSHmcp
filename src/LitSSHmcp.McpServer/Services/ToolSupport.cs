@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
@@ -107,6 +108,91 @@ public static class ToolSupport
             if (!string.IsNullOrEmpty(secret))
                 result = result.Replace(secret, "******");
         return result;
+    }
+
+    /// <summary>把审批结果 + 当前审批模式映射为审计里的“决策说明”（Gate 类）。</summary>
+    public static string? DecisionFor(ApprovalOutcome outcome, string? mode)
+    {
+        var m = (mode ?? string.Empty).Trim().ToLowerInvariant();
+        var autoApprove = m is "auto-approve" or "auto_approve" or "autoapprove" or "allow" or "approve";
+        var autoReject = m is "auto-reject" or "auto_reject" or "autoreject" or "deny" or "reject";
+        return outcome switch
+        {
+            ApprovalOutcome.Approved => autoApprove ? "auto-approve" : "manual-approved",
+            ApprovalOutcome.Rejected => autoReject ? "auto-reject" : "manual-rejected",
+            ApprovalOutcome.AutoRejected => "auto-reject",
+            ApprovalOutcome.Timeout => "timeout",
+            ApprovalOutcome.Unavailable => "unavailable",
+            _ => null
+        };
+    }
+
+    /// <summary>SQL/Redis 审计事件类型：Gate=写审批/拦截；Probe=测试/诊断/EXPLAIN；其余=Exec。</summary>
+    public static AuditCategory SqlCategory(SqlOperation operation, CommandStatus status) =>
+        status is CommandStatus.Blocked or CommandStatus.Approved or CommandStatus.Rejected
+            ? AuditCategory.Gate
+            : operation is SqlOperation.Explain or SqlOperation.Diagnostics or SqlOperation.Test
+                ? AuditCategory.Probe
+                : AuditCategory.Exec;
+
+    /// <summary>SQL/Redis 审计决策说明（Gate 类）。</summary>
+    public static string? SqlDecision(CommandStatus status, string? note) => status switch
+    {
+        CommandStatus.Blocked => "blocked",
+        CommandStatus.Approved => (note?.Contains("自动") == true ||
+                                   (note?.Contains("AutoApprove", StringComparison.OrdinalIgnoreCase) ?? false))
+            ? "auto-approve" : "manual-approved",
+        CommandStatus.Rejected => "manual-rejected",
+        _ => null
+    };
+
+    /// <summary>
+    /// 识别“必然挂起 / 需要交互”的命令，返回替代建议；无风险返回 null。
+    /// 这些命令在无 TTY 的 exec 通道里会一直等待或持续输出，导致连接不返回、拿不到结果；
+    /// 与其等 60 秒超时，不如直接给模型明确的替代写法。仅对用户直传的命令生效（工具内部构造的命令不经过此检查）。
+    /// </summary>
+    public static string? BlockingCommandHint(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return null;
+
+        // 跟随日志（-f/--follow）：会持续输出、不返回
+        if (Regex.IsMatch(command, @"(?i)\btail\b[^\r\n|;&]*(\s-f\b|\s-F\b|--follow)"))
+            return "检测到 `tail -f/-F/--follow`：会一直跟随文件、连接不返回。请改用一次性查看 `tail -n 200 <file>`，或直接用 log_tail/log_grep 工具。";
+        if (Regex.IsMatch(command, @"(?i)\bdocker\s+(compose\s+)?logs\b[^\r\n|;&]*(--follow|\s-f\b)"))
+            return "检测到 `docker logs -f/--follow`：会持续跟随。请用 `docker logs --tail 200 <container>`，或直接用 docker_logs 工具。";
+        if (Regex.IsMatch(command, @"(?i)\bjournalctl\b[^\r\n|;&]*(--follow|\s-f\b)"))
+            return "检测到 `journalctl -f/--follow`。请用 `journalctl -n 200 --no-pager`，或直接用 service_logs 工具。";
+        if (Regex.IsMatch(command, @"(?i)\bkubectl\s+logs\b[^\r\n|;&]*(--follow|\s-f\b)"))
+            return "检测到 `kubectl logs -f/--follow`。请用 `kubectl logs --tail=200 <pod> -n <ns>`。";
+
+        // 交互式分页/编辑器/监视器：等待按键、不返回
+        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*|\bsudo\s+|\bnohup\s+)(vi|vim|nano|emacs|less|more|top|htop|watch)\b"))
+            return "检测到交互式命令(编辑器/分页/监视器)：无 TTY 会挂起。请改用非交互方式，如 `ps`/`ss`/`free`/`df`，日志用 `head`/`tail -n`/`--no-pager`。";
+
+        // 交互式 shell / 需要 stdin
+        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*)(read|bash\s+-i|sh\s+-i|python\s+-i|bc|sqlplus|mysql)\b"))
+            return "检测到需要交互输入的命令：MCP 无 TTY、无法输入。请改为非交互方式(参数化/管道输入)。";
+
+        // 普通通道里的 sudo/su：无 TTY 会等密码
+        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*|\bnohup\s+)sudo\b"))
+            return "普通命令通道里的 `sudo` 会因无 TTY 等待密码而挂起。请改用 ssh_execute_sudo(方式由服务器配置的 SudoType 决定)。";
+        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*|\bnohup\s+)su\b"))
+            return "`su` 需要 TTY/密码，会挂起。请改用 ssh_execute_sudo。";
+
+        // ping 未限定次数 / nc/telnet 交互连接
+        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*)ping\b") && !Regex.IsMatch(command, @"(?i)\s-[a-z]*c\s*\d"))
+            return "`ping` 未限定次数会一直运行。请用 `ping -c 4 <host>`。";
+        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*)(nc|netcat|telnet)\b"))
+            return "`nc/telnet` 交互连接会挂起。探活请用 `timeout 5 bash -c '</dev/tcp/<host>/<port>' && echo open || echo closed`。";
+
+        // docker 交互
+        if (Regex.IsMatch(command, @"(?i)\bdocker\s+exec\b[^\r\n|;&]*\s(?:-it|-ti|-i\s+-t|-t\s+-i)\b"))
+            return "检测到 `docker exec -it`：交互式会挂起。请去掉 `-it`，用 `docker exec <container> <cmd>`。";
+        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*)docker\s+attach\b"))
+            return "`docker attach` 会附着到容器前台并可能阻塞。请改用 `docker logs --tail 200 <container>`。";
+
+        return null;
     }
 
     /// <summary>服务器展示标签：名称(用户@主机:端口)，供审批确认时核对真实目标。</summary>

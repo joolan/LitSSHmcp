@@ -59,6 +59,16 @@ public class DatasourceTools
                 .ToArray()
         }).ToList();
 
+        await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+        {
+            ServerId = string.Empty,
+            ServerName = string.Empty,
+            Command = "LIST_DATASOURCES",
+            Result = $"{items.Count} datasources",
+            Status = CommandStatus.Executed,
+            Category = AuditCategory.Meta
+        });
+
         return new DatasourceListDto { Success = true, Count = items.Count, DataSources = items };
     }
 
@@ -87,7 +97,8 @@ public class DatasourceTools
             Sql = "-- connectivity test",
             Status = result.Success ? CommandStatus.Executed : CommandStatus.Failed,
             Result = result.Success ? result.Version : Truncate(result.Error, 500),
-            DurationMs = result.DurationMs
+            DurationMs = result.DurationMs,
+            Category = AuditCategory.Probe
         });
 
         return new TestConnectionResultDto
@@ -114,6 +125,7 @@ public class DatasourceTools
         [Description("跳过的条数, 与limit配合翻页(默认0)")] int offset = 0,
         [Description("会话ID(可选): 只查某个 MCP 会话产生的记录; 当前会话ID见 mcp_self_check")] string? sessionId = null,
         [Description("工具名(可选): 只查由某个 MCP 工具产生的记录, 如 mysql_query / redis_execute")] string? tool = null,
+        [Description("事件类型(可选): exec=执行 / gate=审批拦截 / probe=只读探测(测试/诊断/EXPLAIN)")] string? category = null,
         CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
@@ -128,7 +140,8 @@ public class DatasourceTools
 
         var effectiveLimit = ToolSupport.ClampLimit(limit);
         var records = (await _auditLogService.GetSqlLogsAsync(
-                filterId, effectiveLimit, null, false, Math.Max(0, offset), sessionId, tool))
+                filterId, effectiveLimit, null, false, Math.Max(0, offset), sessionId, tool,
+                Enum.TryParse<AuditCategory>(category, ignoreCase: true, out var scat) ? scat : null))
             .ToList();
 
         foreach (var record in records)

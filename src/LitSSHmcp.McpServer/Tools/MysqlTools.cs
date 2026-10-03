@@ -298,7 +298,9 @@ public class MysqlTools
             Status = status,
             Result = result,
             RowsAffected = rows,
-            DurationMs = durationMs
+            DurationMs = durationMs,
+            Category = ToolSupport.SqlCategory(operation, status),
+            Decision = ToolSupport.SqlDecision(status, result)
         });
     }
 

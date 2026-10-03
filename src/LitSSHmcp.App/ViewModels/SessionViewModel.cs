@@ -121,16 +121,25 @@ public class SessionViewModel : INotifyPropertyChanged
 
             StatusMessage = result.Success ? "命令执行完成" : "命令执行失败";
 
-            RecentActivity.Insert(0, new CommandAuditLog
+            var auditLog = new CommandAuditLog
             {
                 ServerId = Server.Id,
                 ServerName = Server.Name,
                 Command = CommandText,
-                Result = result.Output,
+                Result = Redact(result.Success ? result.Output : result.Error),
                 Status = result.Success ? CommandStatus.Executed : CommandStatus.Failed,
                 ExitCode = result.ExitCode,
+                Category = AuditCategory.Exec,
+                Tool = "desktop",
                 Timestamp = DateTime.UtcNow
-            });
+            };
+            RecentActivity.Insert(0, auditLog);
+
+            if (_audit != null)
+            {
+                try { await _audit.LogCommandAsync(auditLog); }
+                catch { /* 审计失败不影响会话 */ }
+            }
         }
         catch (Exception ex)
         {
@@ -141,6 +150,16 @@ public class SessionViewModel : INotifyPropertyChanged
         {
             IsBusy = false;
         }
+    }
+
+    private string Redact(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return text ?? string.Empty;
+        var result = text;
+        foreach (var secret in new[] { Server.Password, Server.SudoPassword, Server.KeyFilePassphrase })
+            if (!string.IsNullOrEmpty(secret))
+                result = result.Replace(secret, "******");
+        return result;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

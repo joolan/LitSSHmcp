@@ -17,9 +17,10 @@ public interface IAuditLogService
     /// <param name="offset">翻页偏移（配合 limit 一起用），此前缺失导致只能靠 limit 硬翻。</param>
     /// <param name="sessionId">按 MCP 会话 ID 过滤（可选）。</param>
     /// <param name="tool">按产生记录的 MCP 工具名过滤（可选）。</param>
-    Task<CommandAuditLog[]> GetLogsAsync(string? serverId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null);
+    /// <param name="category">按事件类型过滤（可选）：Exec/Gate/Probe/Meta/Transfer。</param>
+    Task<CommandAuditLog[]> GetLogsAsync(string? serverId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null);
     Task LogSqlAsync(SqlAuditLog log);
-    Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null);
+    Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null);
 
     /// <summary>记录/更新一次 MCP 会话（含客户端名称/版本），用于把 SessionId 映射到具体客户端。</summary>
     Task RecordSessionAsync(AuditSession session);

@@ -177,7 +177,7 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 - 每个工具带 MCP 注解 `ReadOnly` / `Destructive` / `Idempotent` / `OpenWorld`，只读工具与破坏性工具易于在客户端区分；
 - 工具名遵循「工具命名约定」（`<域>_<动作>[_<对象>]`）；
 - 任何工具的入参、出参都**不包含密码**；
-- 所有命令与 SQL（含被拒绝的）都会写入本机审计库 `%APPDATA%\LitSSH\audit.db`；**每次启动 MCP 服务会生成一个会话 ID**，每条审计记录都带 `sessionId`（哪个客户端/哪次连接）和 `tool`（由哪个 MCP 工具产生），二者都**参与哈希链防篡改**（改动会导致完整性校验失败）；当前会话 ID 可用 `mcp_self_check` 查看，历史工具支持 `sessionId` / `tool` 过滤；MCP 运行日志在 `%APPDATA%\LitSSH\logs`。
+- 所有操作都会写入本机审计库 `%APPDATA%\LitSSH\audit.db`（既是**操作日志**也是**审计日志**）：命令/SQL 执行、审批与拦截、只读探测（连接测试/列目录）、列表元数据（列服务器/数据源/拓扑）、文件传输。每条记录带 `sessionId`（哪个客户端/哪次连接）、`tool`（哪个 MCP 工具产生）、`category`（`exec`/`gate`/`probe`/`meta`/`transfer`）与 `decision`（Gate 类的审批决策：`manual-approved`/`manual-rejected`/`auto-approve`/`auto-reject`/`timeout`/`unavailable`/`blocked`），这些字段都**参与哈希链防篡改**（改动会导致完整性校验失败）；当前会话 ID 可用 `mcp_self_check` 查看，历史工具支持 `sessionId` / `tool` / `category` 过滤；MCP 运行日志在 `%APPDATA%\LitSSH\logs`。
 
 ## SSH 服务器组（ssh）
 
@@ -198,9 +198,10 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 ## 命令执行组（command）
 
 ### `ssh_execute_command`
-- **参数**：`serverId`（服务器标识）、`command`（Shell命令）
+- **参数**：`serverId`（服务器标识）、`command`（Shell命令）、`timeoutSeconds`（可选，命令超时秒数，1-3600，默认 60；超时返回 `status=timeout`）
 - **返回**：`{ success, status, reason, error, command, output, truncated, outputChars, exitCode, durationMs }`（`output` 为命令输出，超 2 万字符截断并置 `truncated: true`；被拒绝/禁止时 `status` 为 `rejected`/`blocked`/`approval_timeout`/`approval_unavailable`）
-- **安全链路**：黑名单直接拒绝 → 敏感命令人工确认 → 执行 → 写审计（sudo 提权命令用 `ssh_execute_sudo`）
+- **防挂起**：会持续输出/需交互的命令（`tail -f`、`docker logs -f`、`journalctl -f`、`vi/vim/less/top/watch`、普通通道的 `sudo/su`、`ping` 不带 `-c`、`nc/telnet`、`docker exec -it`、`docker attach` 等）**不会执行**，直接返回 `status=blocking_command` 并给出替代写法（如 `tail -n`/`--tail`/`--no-pager`/用 `ssh_execute_sudo`）。启动常驻进程请用 `nohup ... &`/`setsid`/`systemctl`/`docker -d`，不要前台跑。
+- **安全链路**：挂起/交互拦截 → 黑名单直接拒绝 → 敏感命令人工确认 → 执行 → 写审计（sudo 提权命令用 `ssh_execute_sudo`）
 
 ### `ssh_execute_sudo`
 - **参数**：`serverId`、`command`
@@ -214,10 +215,10 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 - **说明**：仅在需要向用户解释"为什么不能提权"时使用
 
 ### `ssh_get_command_history`
-- **参数**：`serverId`（可选，不传查全部）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `docker_logs`）
-- **返回**：`{ success, status, error, count, hasMore, records: [...] }`（每条记录含 `sessionId`/`tool`；`result` 已截断到 4000 字符；`hasMore: true` 表示还有更早记录，配合 `offset` 翻页）
+- **参数**：`serverId`（可选，不传查全部）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `docker_logs`）、`category`（可选，事件类型：`exec`=执行 / `gate`=审批拦截 / `probe`=只读探测 / `meta`=列表元数据 / `transfer`=文件传输）
+- **返回**：`{ success, status, error, count, hasMore, records: [...] }`（每条记录含 `sessionId`/`tool`/`category`/`decision`；`result` 已截断到 4000 字符；`hasMore: true` 表示还有更早记录，配合 `offset` 翻页）
 
-**命令类错误约定**：`{ success: false, error, status, errorKind }`，`status` 可能值：`blocked`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`sudo_not_configured`、`file_not_found`、`auth_failed`、`host_key_mismatch`、`timeout`、`rate_limited`、`connection_error`、`failed`。
+**命令类错误约定**：`{ success: false, error, status, errorKind }`，`status` 可能值：`blocked`、`blocking_command`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`sudo_not_configured`、`file_not_found`、`auth_failed`、`host_key_mismatch`、`timeout`、`rate_limited`、`connection_error`、`failed`。
 
 ## 文件传输组（fileTransfer）
 
@@ -248,9 +249,9 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 - **返回**：`{ success, status, datasourceId, name, host, port, accessMode, viaTunnelServer, version, durationMs, error }` —— 自动选择直连或建 SSH 隧道
 
 ### `datasource_get_sql_history`
-- **参数**：`datasourceId`（可选，ID/名称）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `mysql_query`）
-- **返回**：`{ success, status, error, count, hasMore, records: [...] }`（含被拒绝/被驳回的操作；每条记录含 `sessionId`/`tool`；`result` 已截断到 4000 字符）
-- **说明**：Redis 命令审计也写在同一张表，`operation` 为 `Query`/`Execute`/`Diagnostics`，SQL 列是命令原文
+- **参数**：`datasourceId`（可选，ID/名称）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `mysql_query`）、`category`（可选，事件类型：`exec`=查询/写入执行 / `gate`=写审批拦截 / `probe`=测试/诊断/EXPLAIN）
+- **返回**：`{ success, status, error, count, hasMore, records: [...] }`（含被拒绝/被驳回的操作；每条记录含 `sessionId`/`tool`/`category`/`decision`；`result` 已截断到 4000 字符）
+- **说明**：Redis 命令审计也写在同一张表，`operation` 为 `Query`/`Execute`/`Diagnostics`，SQL 列是命令原文；写操作的审批决策记在 `decision`（`manual-approved`/`auto-approve`/`manual-rejected`/`blocked`）
 
 ## MySQL 执行组（mysql）
 

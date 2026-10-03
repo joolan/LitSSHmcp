@@ -116,7 +116,7 @@ public class SshService : ISshService
     private static bool ContainsAny(string haystack, params string[] needles) =>
         needles.Any(n => haystack.Contains(n, StringComparison.OrdinalIgnoreCase));
 
-    public async Task<CommandResult> ExecuteCommandAsync(SshServerConfig server, string command, CancellationToken ct = default)
+    public async Task<CommandResult> ExecuteCommandAsync(SshServerConfig server, string command, CancellationToken ct = default, int timeoutSeconds = 60)
     {
         return await Task.Run(() =>
         {
@@ -130,7 +130,7 @@ public class SshService : ISshService
                 using var client = CreateSshClient(server);
                 client.Connect();
                 using var cmd = client.CreateCommand(command);
-                cmd.CommandTimeout = TimeSpan.FromSeconds(60);
+                cmd.CommandTimeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 3600));
                 var result = cmd.Execute();
                 sw.Stop();
 

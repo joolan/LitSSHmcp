@@ -71,7 +71,7 @@ public sealed class GuardedCommandService : IGuardedCommandService
 
         if (verdict == CommandFilterResult.Blocked)
         {
-            await AuditAsync(server, command, CommandStatus.Blocked, null, null);
+            await AuditAsync(server, command, CommandStatus.Blocked, null, null, AuditCategory.Gate, "blocked");
             return Blocked(server, "命令被安全策略禁止执行（命中危险命令规则）。");
         }
 
@@ -80,7 +80,7 @@ public sealed class GuardedCommandService : IGuardedCommandService
             var outcome = await _approvalService.RequestApprovalAsync(ToolSupport.ServerLabel(server), command, verdict, null, null, ct);
             if (outcome != ApprovalOutcome.Approved)
             {
-                await AuditAsync(server, command, CommandStatus.Rejected, null, null);
+                await AuditAsync(server, command, CommandStatus.Rejected, null, null, AuditCategory.Gate, ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode));
                 var (status, error) = ApprovalOutcomeText.Describe(outcome, _securityOptions.Approval.TimeoutSeconds);
                 return new GuardedCommandOutcome
                 {
@@ -93,7 +93,7 @@ public sealed class GuardedCommandService : IGuardedCommandService
                 };
             }
 
-            await AuditAsync(server, command, CommandStatus.Approved, null, null);
+            await AuditAsync(server, command, CommandStatus.Approved, null, null, AuditCategory.Gate, ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode));
         }
 
         var result = await _sshService.ExecuteCommandAsync(server, command, ct);
@@ -103,7 +103,7 @@ public sealed class GuardedCommandService : IGuardedCommandService
             result.Output.Length > 0
                 ? (result.Output.Length > ToolSupport.MaxAuditResultChars ? result.Output[..ToolSupport.MaxAuditResultChars] : result.Output)
                 : result.Error,
-            result.ExitCode);
+            result.ExitCode, AuditCategory.Exec);
 
         var (output, truncated, originalLength) = ToolSupport.Truncate(result.Output, ToolSupport.MaxOutputChars);
         return new GuardedCommandOutcome
@@ -133,7 +133,7 @@ public sealed class GuardedCommandService : IGuardedCommandService
         Error = error
     };
 
-    private Task AuditAsync(SshServerConfig server, string command, CommandStatus status, string? result, int? exitCode) =>
+    private Task AuditAsync(SshServerConfig server, string command, CommandStatus status, string? result, int? exitCode, AuditCategory category, string? decision = null) =>
         ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
         {
             ServerId = server.Id,
@@ -141,6 +141,8 @@ public sealed class GuardedCommandService : IGuardedCommandService
             Command = command,
             Result = result,
             Status = status,
-            ExitCode = exitCode
+            ExitCode = exitCode,
+            Category = category,
+            Decision = decision
         });
 }

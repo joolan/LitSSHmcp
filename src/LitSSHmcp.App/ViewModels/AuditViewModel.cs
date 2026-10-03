@@ -27,6 +27,11 @@ public class AuditViewModel : INotifyPropertyChanged
     /// <summary>是否包含超期已归档的历史记录（永久保留）。</summary>
     public bool IncludeHistory { get; set; }
 
+    /// <summary>事件类型过滤：0=全部, 1=Exec, 2=Gate, 3=Probe, 4=Meta, 5=Transfer。</summary>
+    public int CategoryIndex { get; set; }
+
+    public string[] CategoryOptions { get; } = { "全部", "执行 (Exec)", "审批拦截 (Gate)", "只读探测 (Probe)", "列表元数据 (Meta)", "文件传输 (Transfer)" };
+
     public string StatusMessage
     {
         get => _statusMessage;
@@ -48,12 +53,22 @@ public class AuditViewModel : INotifyPropertyChanged
             var session = string.IsNullOrWhiteSpace(SessionFilter) ? null : SessionFilter.Trim();
             var limit = int.TryParse(LimitText, out var parsed) && parsed > 0 ? parsed : 200;
 
-            var commands = await _audit.GetLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session);
+            var category = CategoryIndex switch
+            {
+                1 => AuditCategory.Exec,
+                2 => AuditCategory.Gate,
+                3 => AuditCategory.Probe,
+                4 => AuditCategory.Meta,
+                5 => AuditCategory.Transfer,
+                _ => (AuditCategory?)null
+            };
+
+            var commands = await _audit.GetLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category);
             CommandLogs.Clear();
             foreach (var item in commands)
                 CommandLogs.Add(item);
 
-            var sqls = await _audit.GetSqlLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session);
+            var sqls = await _audit.GetSqlLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category);
             SqlLogs.Clear();
             foreach (var item in sqls)
                 SqlLogs.Add(item);
@@ -95,16 +110,18 @@ public class AuditViewModel : INotifyPropertyChanged
     public string BuildCommandsCsv()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("时间,会话,工具,服务器,命令,状态,退出码,是否文件传输,文件,结果");
+        sb.AppendLine("时间,会话,工具,类型,服务器,命令,状态,决策,退出码,是否文件传输,文件,结果");
         foreach (var log in CommandLogs)
         {
             sb.AppendLine(string.Join(',',
                 Escape(log.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")),
                 Escape(log.SessionId ?? string.Empty),
                 Escape(log.Tool ?? string.Empty),
+                Escape(log.Category.ToString()),
                 Escape(log.ServerName),
                 Escape(log.Command),
                 Escape(log.Status.ToString()),
+                Escape(log.Decision ?? string.Empty),
                 Escape(log.ExitCode?.ToString() ?? string.Empty),
                 Escape(log.IsFileTransfer ? "是" : "否"),
                 Escape(log.FilePath ?? string.Empty),
@@ -117,7 +134,7 @@ public class AuditViewModel : INotifyPropertyChanged
     public string BuildSqlCsv()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("时间,会话,工具,数据源,操作,SQL,状态,影响行数,耗时ms,结果");
+        sb.AppendLine("时间,会话,工具,数据源,类型,操作,SQL,状态,决策,影响行数,耗时ms,结果");
         foreach (var log in SqlLogs)
         {
             sb.AppendLine(string.Join(',',
@@ -125,9 +142,11 @@ public class AuditViewModel : INotifyPropertyChanged
                 Escape(log.SessionId ?? string.Empty),
                 Escape(log.Tool ?? string.Empty),
                 Escape(log.DataSourceName),
+                Escape(log.Category.ToString()),
                 Escape(log.Operation.ToString()),
                 Escape(log.Sql),
                 Escape(log.Status.ToString()),
+                Escape(log.Decision ?? string.Empty),
                 Escape(log.RowsAffected?.ToString() ?? string.Empty),
                 Escape(log.DurationMs?.ToString("0") ?? string.Empty),
                 Escape(log.Result ?? string.Empty)));

@@ -51,6 +51,23 @@ public class SudoTools
         if (server == null)
             return CommandResultDto.Fail(resolveStatus!, resolveError!, "server_not_found", command);
 
+        // 必然挂起/需交互的命令：直接给出替代建议，不执行
+        var blockingHint = ToolSupport.BlockingCommandHint(command);
+        if (blockingHint != null)
+        {
+            await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+            {
+                ServerId = server.Id,
+                ServerName = server.Name,
+                Command = $"SUDO: {command}",
+                Result = blockingHint,
+                Status = CommandStatus.Blocked,
+                Category = AuditCategory.Gate,
+                Decision = "blocked"
+            });
+            return CommandResultDto.Fail("blocking_command", blockingHint, "blocking_command", command, server.Id, server.Name, server.Host);
+        }
+
         if (server.SudoType == SudoType.None)
             return CommandResultDto.Fail("sudo_not_configured",
                 $"服务器 {server.Name} 未配置提权(SudoType=None)。请在桌面 App 的服务器配置中设置 SudoType 与密码, " +
@@ -65,7 +82,9 @@ public class SudoTools
                 ServerId = server.Id,
                 ServerName = server.Name,
                 Command = $"SUDO: {command}",
-                Status = CommandStatus.Blocked
+                Status = CommandStatus.Blocked,
+                Category = AuditCategory.Gate,
+                Decision = "blocked"
             });
 
             return CommandResultDto.Fail("blocked",
@@ -88,7 +107,9 @@ public class SudoTools
                 ServerId = server.Id,
                 ServerName = server.Name,
                 Command = $"SUDO: {command}",
-                Status = CommandStatus.Rejected
+                Status = CommandStatus.Rejected,
+                Category = AuditCategory.Gate,
+                Decision = ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode)
             });
 
             var (status, error) = ApprovalOutcomeText.Describe(outcome, _securityOptions.Approval.TimeoutSeconds);
@@ -99,9 +120,11 @@ public class SudoTools
         {
             ServerId = server.Id,
             ServerName = server.Name,
-            Command = $"SUDO: {command}",
-            Status = CommandStatus.Approved
-        });
+                Command = $"SUDO: {command}",
+                Status = CommandStatus.Approved,
+                Category = AuditCategory.Gate,
+                Decision = ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode)
+            });
 
         var result = await _sshService.ExecuteWithSudoAsync(server, command, cancellationToken);
 
@@ -116,7 +139,8 @@ public class SudoTools
                     : result.Output)
                 : result.Error,
             Status = result.Success ? CommandStatus.Executed : CommandStatus.Failed,
-            ExitCode = result.ExitCode
+            ExitCode = result.ExitCode,
+            Category = AuditCategory.Exec
         });
 
         var (output, truncated, originalLength) = ToolSupport.Truncate(result.Output, ToolSupport.MaxOutputChars);

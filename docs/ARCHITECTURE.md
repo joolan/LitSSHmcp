@@ -90,7 +90,7 @@ LitSSHmcp/
 | `IConfigService` | `ConfigService` | 配置读写 + DPAPI 加密迁移 |
 | `ISshService` | `SshService` | 命令执行/文件传输/连接测试 |
 | `IAuditLogService` | `AuditLogService` | SQLite 审计（命令 + SQL） |
-| `IApprovalService` | `ApprovalService`（桌面通道 `DesktopApprovalService`） | 多通道审批分发（`security.approval.channels`：`desktop`/`cli`），并发等待、首个决定者生效、超时/弃权→拒绝（fail-closed） |
+| `IApprovalService` | `ApprovalService`（桌面通道 `DesktopApprovalService`） | 多通道审批分发（`security.approval.channels`：`desktop`/`cli`），并发等待、首个决定者生效、超时/弃权→拒绝（fail-closed）；`security.approval.mode`：`manual`(默认)/`auto-approve`(危险,全放行)/`auto-reject`(全拒绝) |
 | `ICommandFilterService` | `CommandFilterService` | 命令黑名单/敏感规则（经 `ISecurityOptionsProvider` 按文件 mtime 热更新） |
 | `ISqlFilterService` | `SqlFilterService` | SQL 只读/危险/敏感过滤（同上，热更新） |
 | `ISecurityOptionsProvider` | `SecurityOptionsProvider` | 按 `config.json` 最后写入时间缓存安全配置，改规则无需重启 |
@@ -108,8 +108,8 @@ LitSSHmcp/
 ### 4.1 SSH（`Services/SSH`）
 
 - `SshClientFactory`：按 `SshServerConfig` 构造 SSH.NET `SshClient`/`SftpClient`（密码认证）。
-- `SshService`：执行命令（含超时、sudo 包装）、文件上传/下载（进度回调）、目录列举、连接测试。
-- 所有命令执行前先过 `ICommandFilterService`：`Blocked` 直接拒绝、`Sensitive` 交 `IApprovalService` 弹窗确认，结果无论成败写入审计。
+- `SshService`：执行命令（含超时[`ExecuteCommandAsync` 支持 `timeoutSeconds`]、sudo 包装）、文件上传/下载（进度回调）、目录列举、连接测试。
+- 所有命令执行前先过 `ICommandFilterService`：`Blocked` 直接拒绝、`Sensitive` 交 `IApprovalService` 弹窗确认，结果无论成败写入审计。用户直传命令还会先过“防挂起”检查（`tail -f`/交互式/`sudo` 等直接返回 `blocking_command`）。
 
 ### 4.2 数据源（`Services/Datasource`）
 
@@ -133,12 +133,12 @@ LitSSHmcp/
   - 写语句分类：`DROP DATABASE/TABLE`、无 WHERE 的 `DELETE/UPDATE`、`TRUNCATE`、`GRANT` 等 → `Blocked`；`INSERT/UPDATE/DELETE/DDL` → `Sensitive`（需桌面确认）。
 - `RedisCommandPolicy`（`RedisCommandPolicy.cs`）：Redis 命令三档分类 —— 只读白名单（GET/INFO/SLOWLOG GET/CONFIG GET 等）→ `redis_read` 直接执行；危险与阻塞类（`SHUTDOWN`/`FLUSHALL`/`FLUSHDB`/`DEBUG`/`SWAPDB`/`REPLICAOF`/`SUBSCRIBE`/`BLPOP`/`MODULE LOAD` 等）→ 硬拒绝；其余写命令 → `redis_execute` **一律桌面审批**（第一期不分级）。
 - `AuditLogService`：SQLite `%APPDATA%\LitSSH\audit.db`（WAL 模式 + `busy_timeout`，按时间/服务器/数据源建索引）：
-  - `AuditLogs`：SSH 命令执行（含被拒绝的）；每条带 `SessionId`（MCP 会话，每次启动服务生成）与 `Tool`（产生记录的工具名）；
-  - `SqlAuditLogs`：SQL 操作（query/execute/explain，含 blocked/rejected）；Redis 命令审计也写入本表（`operation` 同 query/execute/diagnostics，SQL 列记录命令原文）；同样带 `SessionId`/`Tool`；
+  - `AuditLogs`：SSH 命令/操作审计（既是操作日志也是审计日志）：命令执行、审批拦截、只读探测、列表元数据、文件传输；每条带 `SessionId`（每次启动服务生成）、`Tool`、`Category`（`exec`/`gate`/`probe`/`meta`/`transfer`）与 `Decision`（Gate 类审批决策）；
+  - `SqlAuditLogs`：SQL 操作（query/execute/explain，含 blocked/rejected）；Redis 命令审计也写入本表（`operation` 同 query/execute/diagnostics，SQL 列记录命令原文）；同样带 `SessionId`/`Tool`/`Category`/`Decision`；
   - `Sessions`：MCP 会话表（会话ID → 客户端名称/版本、首末活动），由 `McpSessionFilter` 从 `initialize` 后的客户端信息回填；
   - `TopologyEdges` / `TopologyNodes`：`topology_discover` 自动发现的关系缓存与节点信息（端口/类型/路径）。
-- **审计防篡改与永久归档**：`AuditChain`（HMAC-SHA256 哈希链，密钥 DPAPI 保护于 `audit.db.key`；无密钥时退化为 SHA-256）+ 历史归档表 `AuditLogsHistory`/`SqlAuditLogsHistory`——超过 `security.audit.retentionDays` 的活动记录**移动**到历史表（永久保留，链不删除、Id 不变）；`IAuditLogService.VerifyChainAsync()` 校验整链完整性，App「审计日志」提供“校验完整性/含归档”。
-- **带外审批**：`ApprovalService` 按 `security.approval.channels` 启用 `desktop`（`DesktopApprovalService` 弹窗）与 `cli`（写 `%APPDATA%\LitSSH\approvals\pending-<id>.json` 等待决策文件，操作员用 `litssh approve/deny <id>` 决定）；共享 `ApprovalFileStore` 文件格式。
+- **审计防篡改与永久归档**：`AuditChain`（HMAC-SHA256 哈希链，密钥 DPAPI 保护于 `audit.db.key`；无密钥时退化为 SHA-256）+ 历史归档表 `AuditLogsHistory`/`SqlAuditLogsHistory`——超过 `security.audit.retentionDays` 的活动记录**移动**到历史表（永久保留，链不删除、Id 不变）；`IAuditLogService.VerifyChainAsync()` 校验整链完整性，App「审计日志」提供“校验完整性/含归档”。`Category`/`Decision` 一并纳入哈希链（审计格式版本 v5；版本落后时启动重建）。
+- **带外审批**：`ApprovalService` 按 `security.approval.channels` 启用 `desktop`（`DesktopApprovalService` 弹窗）与 `cli`（写 `%APPDATA%\LitSSH\approvals\pending-<id>.json` 等待决策文件，操作员用 `litssh approve/deny <id>` 决定）；共享 `ApprovalFileStore` 文件格式。审批前先看 `security.approval.mode`：`auto-approve`/`auto-reject` 直接放行/拒绝（不弹窗、不等 CLI）。
 - `PathPolicy`：文件传输路径白名单校验（本地 `GetFullPath` 规范化 + 前缀匹配；远程 POSIX 规范化并拒绝 `..` 穿越）。
 
 ### 4.4 拓扑（`Services/Topology` + `Models/TopologyModels.cs`）
@@ -169,7 +169,7 @@ LitSSHmcp/
   - （原「拓扑关系管理」窗口已并入下方「资产拓扑」可视化编辑器，不再单独提供）
   - `ApplicationManageWindow` / `ApplicationManageViewModel`：应用(`app:`)节点维护（含 Docker 容器名 `ContainerName`）；
   - `AuditWindow` / `AuditViewModel`：命令/SQL 审计查看、CSV 导出、**含归档**（永久保留的历史表）、**校验完整性**（哈希链）；
-  - `SecuritySettingsWindow` / `SecuritySettingsViewModel`：**MCP 全局开关**、命令/SQL 过滤、文件传输、主机密钥、发现路径、限流、审计策略、**审批通道**、**查询结果脱敏** 的可视化编辑；
+  - `SecuritySettingsWindow` / `SecuritySettingsViewModel`：**MCP 全局开关**、命令/SQL 过滤、文件传输、主机密钥、发现路径、限流、审计策略、**审批通道**、**审批模式**、**查询结果脱敏** 的可视化编辑；
   - `TopologyWindow` / `TopologyViewModel`：资产拓扑可视化 + 自动发现入口。`runsOn` 的应用**与数据库**都内嵌在所属服务器区块内（一眼看出服务器上运行了哪些服务/库），节点标题附带端口（如 `订单库 :3306`），`connectsTo`/`canAccess` 以带类型标注的连线绘制，数据库运行在所连服务器上时省略冗余 `canAccess`，自动发现的关系用虚线区分；鼠标悬浮任一节点显示详情（主机/端口/账号/类型/描述/标签，密码等敏感信息不展示）。连线绘制在**服务器区块之上、叶子节点之下**，采用**避障正交路由**（Hanan 栅格 + A*，不直穿其它节点；端点从四边中点择优；源/目标所在服务器区块对其子节点透明，可进入 `runsOn` 嵌套区块；回退 Z 形），拐角圆角化，起点圆点、终点箭头；交叉处过桥。**可交互编辑**：拖动/缩放节点（拖服务器带动子节点；位置按「起点 + 总位移」绝对推导、往返不漂移；**四角手柄 + 四边内侧直接拉伸**，最小尺寸 80×36）、选中节点从边中点端口**拖拽建边**（自动推断类型并做逻辑校验，含 `runsOn` 每节点唯一）、**点选连线删除**（手动关系删 `config.Relations`；自动发现边清理 `TopologyEdges`）、拖动连线**端点锚点**指定接边位置、**网格吸附**、**Ctrl+Z/Y 撤销重做**、「重新自动布局」；手动布局存 `%APPDATA%\LitSSH\topology-layout.json`。画布支持**无限平移/缩放**（滚轮缩放、适应窗口、`Ctrl+0` 重置；右上角**「更多操作 ▾」**下拉含 ＋/－/适应/100%/刷新/**导出图片…**）；关系属性面板可拖动；拖动节点进出服务器时按**几何落点**自动增删 `runsOn`（完全落入=建立、拖出=弹窗确认删除、部分重叠=禁止回退），落点判定见 `TopologyViewModel.EndNodeDragAsync`。`runsOn` 托管的子节点用**点线边框**渲染；画布有**网格背景**且移动/缩放吸附 10px；调整大小与其它节点接触时就地停住、被挡后以当前几何**重锚**（反向拖动无死区），服务器缩小时托管子节点自动收紧、**不参与** `ServerOverlapInvalid` 校验；手动锚点通过 `FixedFromSide/ToSide` 固定侧向、移动/拖动过程（快路由）也不漂移；拖动过程跳过过桥计算并跳过吸附后未位移的重算以降低卡顿。画布网格用独立 `GridLayer`（`DrawingBrush.Transform` 跟随缩放/平移，任何缩放/平移后边缘都有网格）；空白处**左键按住即可平移**（不再用中/右键）；指针悬停节点四边/四角切换缩放光标（**四边按下即可拉伸该侧**）、节点上切换移动光标；节点**右键菜单**打开 `NodeRelationsWindow` 列出该节点相关关系并可编辑（`RelationRules` 校验）/删除（列表用节点名、当前节点红色加粗、悬浮显示 ID）。解除 `runsOn` 后由 `RelocateOrphanedStandalone` 将残留的独立节点移到就近空白处；同走廊连线不再分道错位（`LaneGap=0`，连接点可重叠）。
   - `McpToolsWindow`：菜单"配置后"的 **MCP工具说明**，展示 MCP 接入配置 + 意图路由表 + 全部工具的参数/用法。内容来自 `docs/TOOLS.md`（以 `EmbeddedResource` 嵌入 `LitSSHmcp.App.csproj`），因此**与 MCP 服务器端工具注解共享唯一事实来源**：工具变动时须同步 ① `src/LitSSHmcp.McpServer/Tools/*.cs` 的 `[McpServerTool]`/`[Description]` 注解（`mcp_usage_guide` 清单由其反射生成，无需手改）② `docs/TOOLS.md` ③ `Program.cs` 的 `WithTools<T>()`；三者一致性由 `tests/LitSSHmcp.McpServer.Tests` 守门。窗口左侧按 **`概览与接入` + 14 个工具分组**展示，分组标题为 `## <中文名>（<分组键>）`，分组键与「工具分组设置」的 `tools.enabledGroups`（`ToolGroups.All`）保持一致；`### \`工具名\`` 计为工具，其它 `###` 子标题并入章节内容。
   - `ToolGroupsWindow` / `ToolGroupsViewModel`：菜单 **配置 → 工具分组设置**，可视化勾选要暴露的工具分组（含 启用全部/全部停用/重新加载/保存），写入 `config.json` 的 `tools.enabledGroups`；启用 mysql/redis 却停用 datasource 时给出提示。
@@ -253,6 +253,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 |----|------|---------|
 | 全局开关 | `security.enabled=false` 时拒绝所有工具调用（call-tool 请求中间件，热生效） | `McpGlobalSwitch` + `McpServerOptions.Filters` |
 | 命令执行 | 黑名单直接拒绝 / 敏感命令确认 | `CommandFilterService` + `ApprovalService` |
+| 防挂起 | `ssh_execute_command` 先拦“会挂起/需交互”的命令（`tail -f`/`docker logs -f`/`journalctl -f`/`vi`/`top`/`sudo`/`ping`无`-c` 等）返回 `blocking_command` 并给替代写法；`timeoutSeconds` 可调(默认60) | `ToolSupport.BlockingCommandHint` + `CommandTools`/`SudoTools` |
 | 授权确认 | 多通道（`security.approval.channels`，默认 `["desktop","cli"]`）任一通道给出结论即生效；超时返回 `approval_timeout`、全体弃权返回 `approval_unavailable`、任一通道拒绝即 `rejected`（fail-closed）；desktop 通道支持 `style=process`（独立子进程弹窗，规避宿主隐藏窗口，原生带超时的消息框）/`dialog`/`native`，cli 通道写待决文件由 `litssh approve/deny` 决定 | `ApprovalService` + `ApprovalDialog` / `ApprovalRequestHost` / `CliApprovalChannel` |
 | 文件传输 | 开关 + 本地/远程路径白名单（`..` 穿越拦截）+ 大小上限 + 人工确认 | `FileTransferTools` + `PathPolicy` + `SshService` |
 | SQL | 只读工具只放行真正只读的语句（数据修改型 CTE、`EXPLAIN ANALYZE <DML>` 会被判为写操作）；写工具拦截危险语句、敏感语句用户确认 | `SqlFilterService` |

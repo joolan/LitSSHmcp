@@ -91,6 +91,8 @@ public class FileTransferTools
                     ServerName = server.Name,
                     Command = $"UPLOAD: {localPath} -> {remotePath}",
                     Status = CommandStatus.Rejected,
+                    Category = AuditCategory.Gate,
+                    Decision = ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode),
                     IsFileTransfer = true,
                     FilePath = remotePath,
                     FileSize = fileInfo.Length
@@ -110,6 +112,7 @@ public class FileTransferTools
             Command = $"UPLOAD: {localPath} -> {remotePath}",
             Result = result.Message,
             Status = result.Success ? CommandStatus.Executed : CommandStatus.Failed,
+            Category = AuditCategory.Transfer,
             IsFileTransfer = true,
             FilePath = remotePath,
             FileSize = fileInfo.Length
@@ -174,6 +177,8 @@ public class FileTransferTools
                     ServerName = server.Name,
                     Command = $"DOWNLOAD: {remotePath} -> {localPath}",
                     Status = CommandStatus.Rejected,
+                    Category = AuditCategory.Gate,
+                    Decision = ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode),
                     IsFileTransfer = true,
                     FilePath = remotePath
                 });
@@ -192,6 +197,7 @@ public class FileTransferTools
             Command = $"DOWNLOAD: {remotePath} -> {localPath}",
             Result = result.Message,
             Status = result.Success ? CommandStatus.Executed : CommandStatus.Failed,
+            Category = AuditCategory.Transfer,
             IsFileTransfer = true,
             FilePath = remotePath,
             FileSize = result.BytesTransferred
@@ -240,6 +246,17 @@ public class FileTransferTools
             return RemoteFileListDto.Fail(resolveStatus!, resolveError!);
 
         var listing = await _sshService.ListRemoteFilesAsync(server, remotePath, cancellationToken);
+
+        await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+        {
+            ServerId = server.Id,
+            ServerName = server.Name,
+            Command = $"LIST: {remotePath}",
+            Result = listing.Success ? $"{listing.Files.Length} 项" : listing.Error,
+            Status = listing.Success ? CommandStatus.Executed : CommandStatus.Failed,
+            Category = AuditCategory.Probe
+        });
+
         if (!listing.Success)
         {
             var status = listing.ErrorKind switch

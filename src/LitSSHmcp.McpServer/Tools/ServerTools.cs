@@ -4,6 +4,7 @@
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
+using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.McpServer.Services;
@@ -16,11 +17,13 @@ public class ServerTools
 {
     private readonly IConfigService _configService;
     private readonly ISshService _sshService;
+    private readonly IAuditLogService _auditLogService;
 
-    public ServerTools(IConfigService configService, ISshService sshService)
+    public ServerTools(IConfigService configService, ISshService sshService, IAuditLogService auditLogService)
     {
         _configService = configService;
         _sshService = sshService;
+        _auditLogService = auditLogService;
     }
 
     [McpServerTool(Name = "ssh_list_servers", UseStructuredContent = true, OutputSchemaType = typeof(SshServerListDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
@@ -41,6 +44,7 @@ public class ServerTools
             LastConnectedAt = s.LastConnectedAt
         }).ToList();
 
+        await LogAuditAsync(string.Empty, string.Empty, "LIST_SERVERS", $"{servers.Count} servers", CommandStatus.Executed, AuditCategory.Meta);
         return new SshServerListDto { Success = true, Count = servers.Count, Servers = servers };
     }
 
@@ -56,6 +60,8 @@ public class ServerTools
             return ServerStatusDto.Fail(resolveStatus ?? "server_not_found", resolveError!);
 
         var probe = await _sshService.ProbeConnectionAsync(server, cancellationToken);
+        await LogAuditAsync(server.Id, server.Name, "GET_STATUS",
+            probe.Success ? "connected" : probe.ErrorKind, probe.Success ? CommandStatus.Executed : CommandStatus.Failed, AuditCategory.Probe);
         return new ServerStatusDto
         {
             Success = probe.Success,
@@ -81,6 +87,8 @@ public class ServerTools
             return SshTestConnectionDto.Fail(resolveStatus!, resolveError!);
 
         var probe = await _sshService.ProbeConnectionAsync(server, cancellationToken);
+        await LogAuditAsync(server.Id, server.Name, "TEST_CONNECTION",
+            probe.Success ? "connected" : probe.ErrorKind, probe.Success ? CommandStatus.Executed : CommandStatus.Failed, AuditCategory.Probe);
         if (probe.Success)
         {
             return new SshTestConnectionDto
@@ -115,4 +123,15 @@ public class ServerTools
         "network" => "网络不可达: 检查主机地址、端口与网络连通性",
         _ => "未知错误"
     };
+
+    private Task LogAuditAsync(string serverId, string serverName, string command, string? result, CommandStatus status, AuditCategory category) =>
+        ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+        {
+            ServerId = serverId,
+            ServerName = serverName,
+            Command = command,
+            Result = result,
+            Status = status,
+            Category = category
+        });
 }

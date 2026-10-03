@@ -41,13 +41,22 @@ public class TopologyTools
 
     [McpServerTool(Name = "topology_get_overview", UseStructuredContent = true, OutputSchemaType = typeof(TopologyGraph), ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("获取资产拓扑图(服务器/应用/数据库及关系)。跨机排查前先看它")]
-    public async Task<TopologyGraph> GetTopology() => await _topologyService.GetGraphAsync();
+    public async Task<TopologyGraph> GetTopology()
+    {
+        var graph = await _topologyService.GetGraphAsync();
+        await LogAuditAsync("TOPOLOGY_OVERVIEW", $"{graph.Nodes.Length} nodes / {graph.Edges.Length} edges", CommandStatus.Executed, AuditCategory.Meta);
+        return graph;
+    }
 
     [McpServerTool(Name = "topology_get_dependencies", UseStructuredContent = true, OutputSchemaType = typeof(DependencyGraph), ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("查询某资产的上下游依赖(跑在哪/连了谁)。assetId支持 ssh:xx/ds:xx/app:xx 或纯ID/名称")]
     public async Task<DependencyGraph> GetAssetDependencies(
         [Description("资产ID, 如 ds:mysql-order-01 / ssh:web-server-01 / app:order-service 或纯ID/名称")] string assetId)
-        => await _topologyService.GetDependenciesAsync(assetId);
+    {
+        var dep = await _topologyService.GetDependenciesAsync(assetId);
+        await LogAuditAsync($"TOPOLOGY_DEPENDENCIES: {assetId}", dep.Error, dep.Error == null ? CommandStatus.Executed : CommandStatus.Failed, AuditCategory.Meta);
+        return dep;
+    }
 
     [McpServerTool(Name = "topology_discover", UseStructuredContent = true, OutputSchemaType = typeof(DiscoverResultDto), Destructive = false, ReadOnly = false, Idempotent = false, OpenWorld = true)]
     [Description("自动发现并补全拓扑(java进程/网络连接/JDBC配置/processlist), 会执行远端只读探测命令并写入拓扑缓存。拓扑缺失或过期时用; 通常需10-60秒/台, 扫描期间可用取消中断")]
@@ -88,7 +97,7 @@ public class TopologyTools
 
             if (verdict == CommandFilterResult.Blocked)
             {
-                await AuditAsync(probeCommand, CommandStatus.Blocked);
+                await LogAuditAsync(probeCommand, "blocked", CommandStatus.Blocked, AuditCategory.Gate, "blocked");
                 return DiscoverResultDto.Fail("blocked",
                     "扫描路径被安全策略拦截(路径中含被禁止的命令片段)。请改用不带特殊字符的目录路径。");
             }
@@ -99,17 +108,18 @@ public class TopologyTools
                     "topology_discover", probeCommand, verdict, null, "拓扑扫描", cancellationToken);
                 if (outcome != ApprovalOutcome.Approved)
                 {
-                    await AuditAsync(probeCommand, CommandStatus.Rejected);
+                    await LogAuditAsync(probeCommand, null, CommandStatus.Rejected, AuditCategory.Gate, ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode));
                     var (status, error) = ApprovalOutcomeText.Describe(outcome, _securityOptions.Approval.TimeoutSeconds);
                     return DiscoverResultDto.Fail(status, error);
                 }
-                await AuditAsync(probeCommand, CommandStatus.Approved);
+                await LogAuditAsync(probeCommand, null, CommandStatus.Approved, AuditCategory.Gate, ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode));
             }
         }
 
         try
         {
             var result = await _topologyService.DiscoverAsync(servers, paths, cancellationToken);
+            await LogAuditAsync("TOPOLOGY_DISCOVER", $"新增 {result.NewEdges.Length} / 更新 {result.UpdatedEdges.Length} / 错误 {result.Errors.Length}", CommandStatus.Executed, AuditCategory.Probe);
             return new DiscoverResultDto { Success = true, Result = result };
         }
         catch (DiscoveryInProgressException)
@@ -119,13 +129,16 @@ public class TopologyTools
         }
     }
 
-    private Task AuditAsync(string command, CommandStatus status) =>
+    private Task LogAuditAsync(string command, string? result, CommandStatus status, AuditCategory category, string? decision = null) =>
         ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
         {
-            ServerId = "topology_discover",
-            ServerName = "topology_discover",
+            ServerId = "topology",
+            ServerName = "topology",
             Command = command,
-            Status = status
+            Result = result,
+            Status = status,
+            Category = category,
+            Decision = decision
         });
 
     private static string[]? Split(string? value, char separator = ',')

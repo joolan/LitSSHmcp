@@ -203,4 +203,42 @@ public class ToolSupportTests
         Assert.Equal(string.Empty, ToolSupport.RedactSecrets(string.Empty, server));
         Assert.Equal("plain", ToolSupport.RedactSecrets("plain", server));
     }
+
+    [Theory]
+    [InlineData("tail -f /var/log/app.log")]
+    [InlineData("tail -F /x")]
+    [InlineData("docker logs -f web")]
+    [InlineData("docker logs --follow web")]
+    [InlineData("journalctl -f")]
+    [InlineData("kubectl logs -f pod")]
+    [InlineData("vi /etc/hosts")]
+    [InlineData("top")]
+    [InlineData("watch -n1 date")]
+    [InlineData("sudo rm -rf /tmp/x")]
+    [InlineData("su - root")]
+    [InlineData("ping 10.0.0.1")]
+    [InlineData("nc 10.0.0.1 80")]
+    [InlineData("read x")]
+    [InlineData("docker exec -it web bash")]
+    [InlineData("docker attach web")]
+    public void BlockingCommandHint_flags_hanging_or_interactive(string command)
+    {
+        Assert.NotNull(ToolSupport.BlockingCommandHint(command));
+    }
+
+    [Theory]
+    [InlineData("df -h")]
+    [InlineData("tail -n 200 /var/log/app.log")]
+    [InlineData("docker logs --tail 200 web")]
+    [InlineData("journalctl -n 200 --no-pager")]
+    [InlineData("ping -c 4 10.0.0.1")]
+    [InlineData("ps -eo pid,args | grep -i java")]
+    [InlineData("grep -n error /var/log/app.log")]
+    [InlineData("docker exec web ps -ef")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void BlockingCommandHint_allows_normal_commands(string? command)
+    {
+        Assert.Null(ToolSupport.BlockingCommandHint(command!));
+    }
 }

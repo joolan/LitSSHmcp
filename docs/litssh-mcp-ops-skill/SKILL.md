@@ -1,6 +1,6 @@
 ---
 name: litssh-mcp-ops-skill
-description: Use when operating or troubleshooting servers and applications through the LitSSH MCP server (LitSSHmcp) — SSH command execution, Docker containers, systemd services, Java/JVM diagnostics, log files, MySQL/PostgreSQL/Redis, topology and app health. Triggers on tools like ssh_execute_command, docker_ps, service_status, java_threads, log_tail/log_grep/log_find, app_health_snapshot, mysql_diagnostics, and on requests such as 服务器排查, 应用日志, 容器起不来, JVM/CPU 飙高, 数据库连不上. Also gives SSH-based workarounds for capabilities the MCP does not expose directly.
+description: Use when operating or troubleshooting servers and applications through the LitSSH MCP server (LitSSHmcp) — SSH command execution, Docker containers, systemd services, Java/JVM diagnostics, log files, MySQL/PostgreSQL/Redis, topology and app health. Triggers on tools like ssh_execute_command, docker_ps, service_status, java_threads, log_tail/log_grep/log_find, app_health_snapshot, mysql_diagnostics, and on requests such as 服务器排查, 应用日志, 容器起不来, JVM/CPU 飙高, 数据库连不上. Also gives SSH-based workarounds for capabilities the MCP does not expose directly. Maintains an ops asset/app-topology ledger (OPS_ASSETS.md) in the workspace — creating and correcting it while operating so servers/apps/log paths/dependencies stay accurate.
 ---
 
 # LitSSH MCP 服务器运维排障
@@ -13,6 +13,7 @@ description: Use when operating or troubleshooting servers and applications thro
 
 ## 0. 开始前
 
+0. **先读资产档案**：工作区若已有 `OPS_ASSETS.md`（运维资产档案，见第 9 节），**先读它**——里面有准确的服务器/应用/日志路径与拓扑；没有则按第 9 节**创建**并在本次任务中持续维护。
 1. 不确定有哪些工具 / 怎么用 → 调 `mcp_usage_guide`；MCP 自身异常 → `mcp_self_check`。
 2. 拿到准确的标识：
    - 服务器：`ssh_list_servers` → 取 `id`（用 `id` 最稳，也可传名称/主机名）。
@@ -22,16 +23,14 @@ description: Use when operating or troubleshooting servers and applications thro
 
 ## 1. 安全与返回约定（必读）
 
-- 敏感命令（`rm/chmod/systemctl restart/docker run|exec|restart` 等）会触发**人工审批**，可能返回：
-  - `rejected`（人工拒绝，**不要重试**）
-  - `approval_timeout`（超时，提示用户后可用同一操作重试）
-  - `approval_unavailable`（无可用审批通道）
-- 危险命令返回 `blocked`（不会执行，**不要改写绕过**）。
-- 结果统一含 `success` + `status` + `error`，并回显 `serverId/serverName/host`。常见 `status`：
-  `blocked` / `rejected` / `approval_timeout` / `server_not_found` / `server_ambiguous` / `datasource_not_found` / `datasource_ambiguous` / `app_not_found` / `path_not_allowed` / `readonly_statement` / `not_readonly_statement` / `auth_failed` / `host_key_mismatch` / `timeout` / `rate_limited` / `connection_error` / `pid_not_found` / `pid_ambiguous` / `log_path_ambiguous`。
+- 敏感命令（`rm/chmod/systemctl restart/docker run|exec|restart` 等）会触发**人工审批**，可能返回：`rejected`（人工拒绝，**不要重试**）、`approval_timeout`（超时，提示用户后可重试）、`approval_unavailable`（无可用审批通道）。
+- 危险命令返回 `blocked`（**不会执行，不要改写绕过**）。
+- 审批模式（`security.approval.mode`）可被设为 `auto-approve` / `auto-reject`：若返回 `rejected` 且提示“审批模式(自动拒绝)”，说明是服务器配置，**本次会话不要反复重试**。
+- 结果统一含 `success` + `status` + `error`，并回显 `serverId/serverName/host`。常见 `status`：`blocked` / `rejected` / `approval_timeout` / `approval_unavailable` / `server_not_found` / `server_ambiguous` / `server_disabled` / `datasource_not_found` / `datasource_ambiguous` / `app_not_found` / `path_not_allowed` / `readonly_statement` / `not_readonly_statement` / `auth_failed` / `host_key_mismatch` / `timeout` / `rate_limited` / `connection_error` / `pid_not_found` / `pid_ambiguous` / `log_path_ambiguous`。
 - `host_key_mismatch` 可能是安全事件：先人工核对 SSH 指纹，**不要**自动忽略。
 - 命令输出超过 2 万字符会截断（`truncated: true`）；用更精确的条件重查。
-- **审计按会话/工具区分**：每次启动 MCP 服务会生成一个 `sessionId`，所有命令/SQL 审计记录都带它，并带 `tool`（产生记录的 MCP 工具名，如 `docker_logs`/`mysql_query`）；`sessionId` 与 `tool` 都参与哈希链防篡改。`mcp_self_check` 返回当前 `sessionId` 与 `clientName`/`clientVersion`；`mcp_list_sessions` 列出最近会话（哪个客户端/哪次连接）及首末活动时间。排查"某次会话/某个客户端/某个工具做了什么"时，用 `ssh_get_command_history` / `datasource_get_sql_history` 的 `sessionId=` / `tool=` 过滤。
+- **审计按会话/工具区分**：`mcp_self_check` 返回当前 `sessionId` 与客户端信息；`mcp_list_sessions` 列出最近会话；`ssh_get_command_history` / `datasource_get_sql_history` 支持 `sessionId=` / `tool=` 过滤。
+- 任何工具的入参/出参都**不含密码**；提权命令的 `output`/`error` 中口令一律脱敏为 `******`。
 
 ## 2. 工具分组速查
 
@@ -87,61 +86,10 @@ description: Use when operating or troubleshooting servers and applications thro
 
 当对应领域工具未启用、或 MCP 没有该能力时，用 `ssh_execute_command`（只读排查）或 `ssh_execute_sudo`（需提权，触发审批）实现。**先只读、后写入；写入前先拿到证据并征得确认。**
 
-**6.1 定位/读取日志（MCP 没覆盖的路径）**
-```
-# 看启动参数找日志配置
-ssh_execute_command(serverId, "ps -eo pid,args --no-headers | grep '[j]ava' | head")
-# 找配置文件
-ssh_execute_command(serverId, "find /opt/order -maxdepth 3 \\( -name 'application*.yml' -o -name 'application*.properties' -o -name 'logback*.xml' -o -name 'log4j2*.xml' \\) 2>/dev/null")
-# 读配置里的日志路径
-ssh_execute_command(serverId, "grep -nE 'logging\\.(file|path)|log\\.path|LOG_PATH' /opt/order/config/application.yml 2>/dev/null")
-# 直接读日志（若 log_tail 白名单不包含该路径，可用 tail 变通；仍受命令过滤）
-ssh_execute_command(serverId, "tail -n 200 /opt/order/logs/app.log")
-# 按关键字检索
-ssh_execute_command(serverId, "grep -n -i -- 'OutOfMemory\\|Exception' /opt/order/logs/app.log | tail -n 100")
-```
-> 若路径应长期使用，建议把该目录加入 `security.logs.allowedPaths`（安全设置窗口），或在该应用填「日志路径」，之后就能用 `log_tail`/`log_grep`。
-
-**6.2 端口/进程/资源**
-```
-ssh_execute_command(serverId, "ss -ltnp 2>/dev/null | grep -E ':8080|:80' || netstat -ltnp")
-ssh_execute_command(serverId, "ps -eo pid,ppid,pcpu,pmem,etime,args --sort=-pcpu | head -20")
-ssh_execute_command(serverId, "free -m; echo ---; df -h; echo ---; df -i")
-ssh_execute_command(serverId, "du -sh /var/log/* 2>/dev/null | sort -h | tail -20")
-```
-
-**6.3 HTTP/健康检查/依赖探测**
-```
-ssh_execute_command(serverId, "curl -s -m 5 http://127.0.0.1:8080/actuator/health")
-ssh_execute_command(serverId, "curl -s -m 5 -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8080/")
-ssh_execute_command(serverId, "timeout 3 bash -c 'cat < /dev/null > /dev/tcp/10.0.0.9/3306' && echo open || echo closed")
-```
-
-**6.4 OOM / 内核 / 重启痕迹（可能需要 sudo）**
-```
-ssh_execute_sudo(serverId, "dmesg -T | grep -iE 'oom|killed process' | tail -30")
-ssh_execute_sudo(serverId, "journalctl -k --since '2 hours ago' | grep -i oom")
-ssh_execute_sudo(serverId, "last reboot | head")
-```
-
-**6.5 领域工具未启用时的替代**
-- 无 `docker_*`：`ssh_execute_command(serverId, "docker ps -a")` / `"docker logs --tail 200 <c>"` / `"docker stats --no-stream"`。
-- 无 `service_*`：`"systemctl status <s> --no-pager"` / `"journalctl -u <s> -n 200 --no-pager"`；重启用 `ssh_execute_sudo(serverId, "systemctl restart <s>")`。
-- 无 `java_*`：`"jstack -l <pid>"` / `"jcmd <pid> GC.heap_info"` / `"jstat -gcutil <pid> 1000 1"`。
-
-**6.6 远端配置修改（高风险，务必谨慎）**
-MCP 没有“编辑远端文件”工具。稳妥做法：
-1. `ssh_download_file` 拉取配置到本地 → 本地修改；
-2. `ssh_upload_file` 回传（需审批）；
-3. `service_restart` / `ssh_execute_sudo systemctl reload`（需审批）；
-4. 校验：`curl /actuator/health` 或看日志。
-避免用 `sed -i` 之类直接改生产配置，除非别无选择且已有备份。
-
-**6.7 其它环境/编排**（MCP 未内置）
-- Kubernetes：`ssh_execute_command(serverId, "kubectl get pods -A -o wide")`、`"kubectl describe pod <p> -n <ns>"`、`"kubectl logs <p> -n <ns> --tail=200"`。
-- Nginx：`"nginx -t"`、`"tail -n 200 /var/log/nginx/error.log"`。
-- 消息队列/中间件：优先用其自带 CLI（`kafka-*`、`rabbitmqctl`）经 `ssh_execute_command`。
-- 需要长期指标/追踪（Prometheus/APM）时，MCP 未覆盖，改用对应系统或经 ssh 拉取。
+> 完整片段（日志/进程/端口/HTTP/OOM/k8s/nginx/MQ、**避免挂起/丢结果**等）见 **`references/ssh-workarounds.md`**。最常用的三条：
+> - 进程/资源：`ssh_execute_command(serverId, "ps -eo pid,ppid,pcpu,pmem,etime,args --sort=-pcpu | head -20")`
+> - 端口监听：`ssh_execute_command(serverId, "ss -ltnp 2>/dev/null | grep -E ':8080|:80'")`
+> - HTTP 健康：`ssh_execute_command(serverId, "curl -s -m 5 http://127.0.0.1:8080/actuator/health")`
 
 ## 7. 输出与协作规范
 
@@ -149,8 +97,21 @@ MCP 没有“编辑远端文件”工具。稳妥做法：
 - 只读优先；任何“重启/删除/改配置”都先说明影响面并等待确认（会触发审批）。
 - 遇 `blocked`/`rejected` 不要重试轰炸；遇 `approval_timeout` 提示用户后重试；遇 `server_ambiguous`/`pid_ambiguous`/`log_path_ambiguous` 用精确标识重试。
 - 不要自行编造路径、端口、ID；拿不到就用列表/发现工具（`ssh_list_servers`、`log_find`、`java_processes`）。
+- 任务收尾时**更新资产档案**（`OPS_ASSETS.md`，见第 9 节）：把本次确认/纠正的服务器、应用、日志路径、依赖记进去，并追加一条变更记录。
 
 ## 8. 参考
 
 - 工具权威说明：仓库 `docs/TOOLS.md`（如已挂载为 reference 可直接读取；也可调 `mcp_usage_guide`）。
 - MCP 自身配置问题：`mcp_self_check`；主机密钥/连通性：`ssh_test_connection`。
+- `references/ssh-workarounds.md`：MCP 未覆盖能力的 SSH 变通手册（第 6 节展开）。
+- `references/asset-ledger.md`：运维资产档案维护细则（第 9 节展开）；起手模板 `OPS_ASSETS.template.md`。
+
+## 9. 运维资产档案（在工作区创建并持续维护）
+
+**目标**：让资产/拓扑知识“自动进化”。在工作空间（或用户项目根目录）维护一份**独立的资产 + 应用拓扑关系文档**，每次用 MCP 排障/运维时先读它、再用最新事实更新纠正它，从而越来越准地定位**服务器、应用、日志**。它是 AI 的“长期记忆”，**不是** MCP 的一部分。
+
+- **位置**：默认工作区根目录 `OPS_ASSETS.md`（也可放 `docs/` 或用户指定）；只维护一份；用你自己的文件读写能力维护（MCP 无写文件工具）。起手模板：`OPS_ASSETS.template.md`。
+- **何时做**：任务开始先读；过程中/结束发现新事实或纠正旧事实就**立即更新并记变更**；拓扑变动时用 `topology_discover` 对账。
+- **内容结构**：服务器 / 数据源 / 应用（含端口、部署路径、**日志路径**）/ 拓扑关系 / 待确认存疑 / 更新日志（表格）；**结构可按实际环境扩展/精简**（如域名证书、Cron、MQ、备份、K8s 等）。
+- **核心规则**（细则见 `references/asset-ledger.md`）：① 以 MCP 实时数据为准纠正；② 存稳定的 `id`；③ 只记事实带证据；④ **绝不存密钥**；⑤ 合并去重；⑥ 冲突不硬猜（放“待确认”并问用户）；⑦ 不覆盖用户手写内容；⑧ **可按实际调整文档结构/内容，但必须注明调整原因**（在更新日志以 `类型=结构` 记录：改了什么 + 为什么 + 影响）。
+- **文档过大可拆分**：条目/日志很多时，拆成“主索引 `OPS_ASSETS.md` + 子文件”（如 `ops/asset-changelog.md` 单独放更新日志、`ops/asset-apps.md` 等）；主文档保留摘要与相对链接，同一事实只存一处，拆分同样要注明原因。

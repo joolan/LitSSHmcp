@@ -22,6 +22,12 @@ public class SqlAuditLog
     public double? DurationMs { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
+    /// <summary>事件类型：Exec=查询/写入执行, Gate=写审批/拦截, Probe=测试/诊断/EXPLAIN。</summary>
+    public AuditCategory Category { get; set; } = AuditCategory.Exec;
+
+    /// <summary>审批决策说明（Gate 类）：manual-approved / auto-approve / manual-rejected / blocked。</summary>
+    public string? Decision { get; set; }
+
     /// <summary>产生该记录的 MCP 会话 ID（每次启动 MCP 服务生成，用于按会话区分/筛选审计）。</summary>
     public string? SessionId { get; set; }
 

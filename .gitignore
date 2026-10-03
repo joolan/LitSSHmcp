@@ -63,6 +63,7 @@ publish_new/
 
 # Publish output
 publish/
+release/
 
 # Test results
 [Tt]est[Rr]esult*/

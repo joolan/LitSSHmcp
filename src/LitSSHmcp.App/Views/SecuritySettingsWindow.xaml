@@ -76,6 +76,13 @@
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="审批模式:" VerticalAlignment="Center"/>
+                    <ComboBox ItemsSource="{Binding ApprovalModeOptions}" SelectedIndex="{Binding ApprovalModeIndex}"
+                              Width="200" Margin="4,0,10,0"
+                              ToolTip="手动处理(默认)=敏感操作需人工确认; 自动允许授权(危险)=敏感操作自动放行; 自动拒绝授权=敏感操作直接拒绝。仅影响需人工确认的敏感操作，被命令过滤器硬拒绝(blocked)的不受影响"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                     <TextBlock Text="审批通道:" VerticalAlignment="Center"/>
                     <ComboBox ItemsSource="{Binding ApprovalChannelOptions}" SelectedIndex="{Binding ApprovalChannelIndex}"
                               Width="200" Margin="4,0,10,0"

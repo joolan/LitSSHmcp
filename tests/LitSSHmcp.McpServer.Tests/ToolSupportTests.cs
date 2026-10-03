@@ -51,6 +51,7 @@ public class ToolSupportTests
 
     [Theory]
     [InlineData(ApprovalOutcome.Rejected, "rejected")]
+    [InlineData(ApprovalOutcome.AutoRejected, "rejected")]
     [InlineData(ApprovalOutcome.Timeout, "approval_timeout")]
     [InlineData(ApprovalOutcome.Unavailable, "approval_unavailable")]
     public void ApprovalOutcomeText_maps_outcome(ApprovalOutcome outcome, string expectedStatus)

@@ -59,6 +59,15 @@ public class ApprovalConfig
     public string Style { get; set; } = "dialog";
 
     /// <summary>
+    /// 审批模式：
+    ///  - <c>manual</c>(默认)：所有触发审批的敏感操作都需要人工处理（弹窗或带外 CLI）；
+    ///  - <c>auto-approve</c>(危险)：所有触发审批的操作**自动放行**（不弹窗/不等带外），仅建议在受控/演示/自助环境使用；
+    ///  - <c>auto-reject</c>：所有触发审批的操作**直接拒绝**（无人值守时默认拒绝的收敛策略）。
+    /// 注意：仅影响"需人工确认"的敏感操作；被命令过滤器判为 <c>Blocked</c> 的仍然是硬拒绝，不受此开关影响。
+    /// </summary>
+    public string Mode { get; set; } = "manual";
+
+    /// <summary>
     /// 审批通道(按顺序同时启用, 首个给出结论者生效):
     /// desktop=本机桌面弹窗; cli=带外 CLI/IPC(操作员用 litssh approve/deny 决定, 适配无桌面/headless)。
     /// 默认 desktop+cli：无桌面环境下 desktop 必然失败，只配 desktop 会导致这类环境 100% 拒绝。

@@ -16,6 +16,7 @@
 - **重新发现清空旧结果**：此前发现前只清理含 `:disc:` 的“待确认”边，导致指向**已登记资产**的旧假边（如 `ssh:A → ds:虚拟机mysql`）永远残留、重跑也不消失。现每次发现前**清空全部自动发现边与节点信息**再重建（拓扑库只存自动发现结果，人工关系在 `config.Relations` 不受影响）。
 - **`ssh_execute_sudo` 结果新增 `escalation`**：标明本次实际提权机制（`direct` / `sudo` / `su` / `auto:sudo` / `auto:su` / `auto:failed`），便于排障与向用户说明“到底用了 sudo 还是 su”；工具描述改为“提权(sudo/su 由配置决定)”，客户端无需预判机制。
 - **全路径密码脱敏**：SSH 密码、密钥口令、提权密码在返回给 AI 的 `output` / `error` 中一律替换为 `******`；覆盖 sudo/su/pty 与**异常**路径（Core 结果统一脱敏 + 工具层兜底），确保任何场景都不外泄密码。
+- **审批模式（`security.approval.mode`）**：新增三态——`manual`（默认，所有触发审批的操作都需人工处理）、`auto-approve`（危险：所有触发审批的操作自动放行）、`auto-reject`（触发审批时直接拒绝）；桌面 App「安全设置 → 审批模式」可切换。仅影响“需人工确认”的敏感操作，命令过滤器硬拒绝（`blocked`）不受影响；自动拒绝返回 `status=rejected`（`ApprovalOutcome.AutoRejected`）。
 
 ## [1.1.0] - 2026-10-03
 

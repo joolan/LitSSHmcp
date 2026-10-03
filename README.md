@@ -89,6 +89,7 @@ Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管�
 - **敏感命令列表**: 弹出桌面窗口提示用户确认后执行
 - **授权确认弹窗**: 置顶确认框，默认 **45 秒无操作自动拒绝**；可选独立子进程/原生弹窗样式（`security.approval`）
 - **审批通道**: `security.approval.channels` 默认 `["desktop","cli"]` —— 无桌面/headless 时操作员用 `litssh approvals` 查看、`litssh approve <id>` / `litssh deny <id>` 决定（首个决定者生效；超时→`approval_timeout`，无可用通道→`approval_unavailable`）
+- **审批模式**: `security.approval.mode` —— `manual`（默认，需人工处理）/ `auto-approve`（危险：所有触发审批的操作自动放行）/ `auto-reject`（触发审批时直接拒绝）；桌面 App「安全设置 → 审批模式」可切换。只影响“需人工确认”的敏感操作，命令过滤器硬拒绝（`blocked`）不受影响
 - **审计会话/工具区分**: 每次启动 MCP 服务生成会话 ID，命令/SQL 审计带 `sessionId` 与 `tool`（哪个工具产生），并参与哈希链防篡改；可用 `mcp_list_sessions` / `*_history` 过滤
 - **文件传输审批**: 上传/下载需用户确认，并受**本地/远程路径白名单**与大小上限约束（`allowedLocalPaths` / `allowedRemotePaths` / `maxFileSizeBytes`）
 - **主机密钥校验(TOFU)**: 首次连接记录 SSH 主机指纹，之后指纹变化即拒绝（`security.sshHostKey.mode = tofu|strict|off`）
@@ -243,7 +244,7 @@ dotnet run --project src/LitSSHmcp.App
     "limits": { "maxConcurrentPerTarget": 3, "maxCallsPerMinutePerTarget": 60 },
     "audit": { "storeSqlText": true, "maskLiterals": false, "retentionDays": 90 },
     "masking": { "rules": [ { "column": "phone|mobile", "mode": "phone" } ] },
-    "approval": { "style": "process", "channels": ["desktop", "cli"], "timeoutSeconds": 45, "topMost": true }
+    "approval": { "style": "process", "mode": "manual", "channels": ["desktop", "cli"], "timeoutSeconds": 45, "topMost": true }
   }
 }
 ```

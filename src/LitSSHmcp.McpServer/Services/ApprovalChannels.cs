@@ -6,6 +6,28 @@ using Microsoft.Extensions.Logging;
 
 namespace LitSSHmcp.McpServer.Services;
 
+/// <summary>审批模式（<c>security.approval.mode</c>）。</summary>
+public enum ApprovalMode
+{
+    /// <summary>默认：敏感操作需人工确认（桌面弹窗 / 带外 CLI）。</summary>
+    Manual,
+    /// <summary>危险：敏感操作自动放行，不弹窗。</summary>
+    AutoApprove,
+    /// <summary>敏感操作直接拒绝。</summary>
+    AutoReject
+}
+
+public static class ApprovalModeParser
+{
+    /// <summary>解析审批模式字符串（不区分大小写，容忍常见写法）；未知值按 manual 处理（fail-safe）。</summary>
+    public static ApprovalMode Parse(string? mode) => (mode ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        "auto-approve" or "auto_approve" or "autoapprove" or "allow" or "approve" => ApprovalMode.AutoApprove,
+        "auto-reject" or "auto_reject" or "autoreject" or "deny" or "reject" => ApprovalMode.AutoReject,
+        _ => ApprovalMode.Manual
+    };
+}
+
 /// <summary>一次审批请求的上下文（跨通道共享）。</summary>
 public sealed class ApprovalRequestContext
 {
@@ -145,6 +167,19 @@ public class ApprovalService : IApprovalService
     {
         var options = _securityOptions.Approval;
         var operation = operationLabel ?? (filterResult == CommandFilterResult.Sensitive ? "敏感命令" : "文件传输");
+
+        // 审批模式：manual(默认) / auto-approve(危险) / auto-reject。
+        // 仅影响“需人工确认”的敏感操作；被命令过滤器判为 Blocked 的仍是硬拒绝（在调用本服务前已拦截）。
+        switch (ApprovalModeParser.Parse(options.Mode))
+        {
+            case ApprovalMode.AutoApprove:
+                _logger?.LogWarning("审批模式=自动允许(危险)：已自动放行敏感操作 server={Server} op={Operation} cmd={Command}",
+                    serverName, operation, command);
+                return ApprovalOutcome.Approved;
+            case ApprovalMode.AutoReject:
+                _logger?.LogInformation("审批模式=自动拒绝：已自动拒绝敏感操作 server={Server} op={Operation}", serverName, operation);
+                return ApprovalOutcome.AutoRejected;
+        }
         // 默认同时开 desktop + cli：无桌面(服务会话/CI/headless)时 desktop 必然失败,
         // 若只配 desktop, 这类环境 100% 走到"拒绝", 是成功率的最大杀手。
         var channels = options.Channels is { Length: > 0 } ? options.Channels : new[] { "desktop", "cli" };

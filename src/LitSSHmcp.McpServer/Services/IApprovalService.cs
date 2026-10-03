@@ -20,7 +20,9 @@ public enum ApprovalOutcome
     /// <summary>超时窗口内无人响应，已自动拒绝。</summary>
     Timeout,
     /// <summary>本机没有可用的确认界面（非 Windows / 无桌面 / 通道未配置 / 子进程启动失败）。</summary>
-    Unavailable
+    Unavailable,
+    /// <summary>审批模式设为“自动拒绝”，敏感操作被直接拒绝（非人工决定）。</summary>
+    AutoRejected
 }
 
 public interface IApprovalService
@@ -48,6 +50,8 @@ public static class ApprovalOutcomeText
             ApprovalOutcome.Unavailable => ("approval_unavailable",
                 "本机没有可用的确认界面(非Windows/无桌面/审批通道未启用)。" +
                 "请在 config.json 设置 security.approval.channels=[\"cli\"], 再用 'litssh approvals' 查看、'litssh approve <id>' 批准。"),
+            ApprovalOutcome.AutoRejected => ("rejected",
+                "该敏感操作已被安全设置中的审批模式(自动拒绝)拦截。如需执行, 请在桌面 App 的「安全设置」把审批模式改回\"手动处理\"或\"自动允许授权\"。"),
             _ => ("failed", "审批失败")
         };
 }

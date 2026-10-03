@@ -50,6 +50,47 @@ public class ApprovalChannelTests : IDisposable
         Assert.Equal(ApprovalOutcome.Rejected, await task);
     }
 
+    [Fact]
+    public async Task Dispatcher_auto_approves_when_mode_enabled_without_waiting_channels()
+    {
+        var options = new StubSecurityOptions();
+        options.Approval.Mode = "auto-approve";
+        options.Approval.Channels = new[] { "cli" };
+        options.Approval.TimeoutSeconds = 30;
+
+        var service = new ApprovalService(options, new DesktopApprovalService(options), new CliApprovalChannel(_dir));
+
+        // 若未短路就会去等 CLI 通道（无人决策→超时），这里应立即返回 Approved
+        var outcome = await service.RequestApprovalAsync("server-1", "rm -rf x", CommandFilterResult.Sensitive);
+
+        Assert.Equal(ApprovalOutcome.Approved, outcome);
+    }
+
+    [Fact]
+    public async Task Dispatcher_auto_rejects_when_mode_enabled()
+    {
+        var options = new StubSecurityOptions();
+        options.Approval.Mode = "auto-reject";
+        options.Approval.Channels = new[] { "cli" };
+
+        var service = new ApprovalService(options, new DesktopApprovalService(options), new CliApprovalChannel(_dir));
+
+        var outcome = await service.RequestApprovalAsync("server-1", "rm -rf x", CommandFilterResult.Sensitive);
+
+        Assert.Equal(ApprovalOutcome.AutoRejected, outcome);
+    }
+
+    [Theory]
+    [InlineData("manual", ApprovalMode.Manual)]
+    [InlineData("auto-approve", ApprovalMode.AutoApprove)]
+    [InlineData("auto_approve", ApprovalMode.AutoApprove)]
+    [InlineData("auto-reject", ApprovalMode.AutoReject)]
+    [InlineData("REJECT", ApprovalMode.AutoReject)]
+    [InlineData("bogus", ApprovalMode.Manual)]
+    [InlineData("", ApprovalMode.Manual)]
+    public void ApprovalModeParser_parses_and_defaults_to_manual(string input, ApprovalMode expected)
+        => Assert.Equal(expected, ApprovalModeParser.Parse(input));
+
     private async Task<string> WaitForPendingIdAsync()
     {
         var deadline = DateTime.UtcNow.AddSeconds(10);

@@ -32,6 +32,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     private string _approvalTimeout = "45";
     private bool _approvalTopMost = true;
     private string _approvalStyle = "dialog";
+    private int _approvalModeIndex;
     private int _approvalChannelIndex;
     private string[]? _loadedChannels;
     private string _maskingRules = string.Empty;
@@ -65,6 +66,8 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     public string ApprovalTimeout { get => _approvalTimeout; set => Set(ref _approvalTimeout, value); }
     public bool ApprovalTopMost { get => _approvalTopMost; set => Set(ref _approvalTopMost, value); }
     public string ApprovalStyle { get => _approvalStyle; set => Set(ref _approvalStyle, value); }
+    public int ApprovalModeIndex { get => _approvalModeIndex; set => Set(ref _approvalModeIndex, value); }
+    public string[] ApprovalModeOptions { get; } = { "手动处理 (默认)", "自动允许授权 (危险)", "自动拒绝授权" };
     public int ApprovalChannelIndex { get => _approvalChannelIndex; set => Set(ref _approvalChannelIndex, value); }
     public string[] ApprovalChannelOptions { get; } = { "桌面弹窗 (desktop)", "命令行带外 (cli)", "桌面 + 命令行" };
     public string MaskingRules { get => _maskingRules; set => Set(ref _maskingRules, value); }
@@ -108,6 +111,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             ApprovalTimeout = s.Approval.TimeoutSeconds.ToString();
             ApprovalTopMost = s.Approval.TopMost;
             ApprovalStyle = s.Approval.Style;
+            ApprovalModeIndex = ResolveApprovalModeIndex(s.Approval.Mode);
             _loadedChannels = s.Approval.Channels;
             ApprovalChannelIndex = ResolveChannelIndex(s.Approval.Channels);
             MaskingRules = Join(s.Masking.Rules.Select(r => $"{r.Column}={r.Mode}").ToArray());
@@ -160,6 +164,12 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
                 "native" => "native",
                 _ => "dialog"
             };
+            s.Approval.Mode = ApprovalModeIndex switch
+            {
+                1 => "auto-approve",
+                2 => "auto-reject",
+                _ => "manual"
+            };
             // 未改动通道下拉时保留原值(这样 config 里自定义/未知的通道不会被静默覆盖)；
             // 改动了才按下拉索引重写。
             var mappedChannels = ApprovalChannelIndex switch
@@ -194,6 +204,13 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             _ => 0
         };
     }
+
+    private static int ResolveApprovalModeIndex(string? mode) => (mode ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        "auto-approve" or "auto_approve" or "autoapprove" or "allow" or "approve" => 1,
+        "auto-reject" or "auto_reject" or "autoreject" or "deny" or "reject" => 2,
+        _ => 0
+    };
 
     private static string Join(string[]? values) => values == null ? string.Empty : string.Join(Environment.NewLine, values);
 

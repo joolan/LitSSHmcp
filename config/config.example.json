@@ -209,6 +209,7 @@
     },
     "approval": {
       "style": "process",
+      "mode": "manual",
       "channels": ["desktop", "cli"],
       "timeoutSeconds": 45,
       "topMost": true

@@ -173,7 +173,7 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 - 成功/失败统一以 `success` 字段为主，配合 `status` 细分错误类型。常见 `status`：`blocked`（命中禁止规则，**不要重试**）、`rejected`（用户拒绝）、`approval_timeout`（审批超时）、`approval_unavailable`（审批通道不可用，如无桌面且未启用 CLI）、`path_not_allowed`、`file_transfer_disabled`、`file_not_found`、`file_too_large`、`*_not_found`（ID 不存在，错误里会回显可用 ID）、`readonly_statement`（只读语句用错写工具）、`not_readonly_statement`（写语句用错只读工具）、`not_readonly`（Redis 非只读命令用错 `redis_read`）、`sudo_not_configured`、`auth_failed`、`host_key_mismatch`（主机密钥变化，可能是安全事件，先人工核对指纹）、`timeout`、`rate_limited`（被限流，应退避重试）、`connection_error`；
 - `serverId` / `datasourceId` 支持 **ID / 名称 / 主机名**（忽略大小写）三种写法；传错时错误信息回显可用 ID；
 - 命令输出超过 2 万字符会被截断并置 `truncated: true`、`outputChars` 记录原始长度；审计库中单条结果截断到 4000 字符；
-- 敏感操作（敏感命令、敏感 SQL、Redis 写命令、文件传输）需人工确认，默认同时启用**桌面弹窗 + CLI 带外审批**两条通道（`security.approval.channels`，默认 `["desktop","cli"]`，超时默认 45 秒）；AI 侧表现为 `status: "rejected"` / `"approval_timeout"` / `"approval_unavailable"`；第一期 Redis 写命令**一律**确认（不按敏感度分级）；
+- 敏感操作（敏感命令、敏感 SQL、Redis 写命令、文件传输）需人工确认，默认同时启用**桌面弹窗 + CLI 带外审批**两条通道（`security.approval.channels`，默认 `["desktop","cli"]`，超时默认 45 秒）；AI 侧表现为 `status: "rejected"` / `"approval_timeout"` / `"approval_unavailable"`；第一期 Redis 写命令**一律**确认（不按敏感度分级）；**审批模式**（`security.approval.mode`）：`manual`（默认，所有触发审批的操作都需人工确认）、`auto-approve`（危险：所有触发审批的操作自动放行）、`auto-reject`（触发审批时直接拒绝），可在桌面 App「安全设置 → 审批模式」切换；三种模式都**不影响**被命令过滤器硬拒绝（`blocked`）的操作；
 - 每个工具带 MCP 注解 `ReadOnly` / `Destructive` / `Idempotent` / `OpenWorld`，只读工具与破坏性工具易于在客户端区分；
 - 工具名遵循「工具命名约定」（`<域>_<动作>[_<对象>]`）；
 - 任何工具的入参、出参都**不包含密码**；

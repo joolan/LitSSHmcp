@@ -64,6 +64,14 @@ publish_new/
 # Publish output
 publish/
 release/
+release_new/
+publish_new/
+dist/
+artifacts/
+staging/
+out/
+*.zip
+*.7z
 
 # Test results
 [Tt]est[Rr]esult*/

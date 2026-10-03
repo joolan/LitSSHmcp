@@ -136,6 +136,97 @@ public class TopologyDiscoveryTests
     }
 
     [Fact]
+    public async Task Discovery_skips_local_amqp_endpoint_when_port_not_listening()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh
+        {
+            JavaOutput = string.Empty,
+            DockerOutput = string.Empty,
+            SsOutput = string.Empty,
+            // 只监听 80, 没有 5672/6379
+            ListenOutput = "LISTEN 0 511 0.0.0.0:80 0.0.0.0:* users:((\"nginx\",pid=1,fd=6))\n",
+            ConfigScanOutput =
+                "/opt/order/application.yml:    spring.rabbitmq.addresses: amqp://guest:guest@127.0.0.1:5672/\n" +
+                "/opt/order/application.yml:    spring.redis.host: 127.0.0.1\n" +
+                "/opt/order/application.yml:    spring.redis.port: 6379\n"
+        };
+
+        var store = new MemoryTopologyStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        // 本机地址但端口未监听 → 不生成 mq/ds “待确认”节点
+        Assert.DoesNotContain(result.NewEdges, e => e.To.StartsWith("mq:disc:", StringComparison.Ordinal));
+        Assert.Contains(result.Notes, n => n.Contains("已跳过") && n.Contains("5672"));
+    }
+
+    [Fact]
+    public async Task Discovery_keeps_local_amqp_endpoint_when_port_listening()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh
+        {
+            JavaOutput = string.Empty,
+            DockerOutput = string.Empty,
+            SsOutput = string.Empty,
+            ListenOutput = "LISTEN 0 128 127.0.0.1:5672 0.0.0.0:* users:((\"beam.smp\",pid=7,fd=6))\n",
+            ConfigScanOutput = "/opt/order/application.yml:    spring.rabbitmq.addresses: amqp://guest:guest@127.0.0.1:5672/\n"
+        };
+
+        var store = new MemoryTopologyStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        Assert.Contains(result.NewEdges, e => e.To == "mq:disc:127.0.0.1-5672" && e.Type == "connectsTo");
+    }
+
+    [Fact]
+    public async Task Discovery_defaults_amqps_to_5671()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh
+        {
+            JavaOutput = string.Empty,
+            DockerOutput = string.Empty,
+            SsOutput = string.Empty,
+            ListenOutput = "LISTEN 0 128 127.0.0.1:5671 0.0.0.0:* users:((\"beam.smp\",pid=7,fd=6))\n",
+            ConfigScanOutput = "/opt/order/application.yml:    spring.rabbitmq.addresses: amqps://guest:guest@localhost/\n"
+        };
+
+        var store = new MemoryTopologyStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        // amqps 默认端口是 5671（不是 5672）
+        Assert.Contains(result.NewEdges, e => e.To == "mq:disc:localhost-5671" && e.Type == "connectsTo");
+    }
+
+    [Fact]
     public async Task Discovery_detects_service_processes_like_nginx()
     {
         var config = new AppConfig

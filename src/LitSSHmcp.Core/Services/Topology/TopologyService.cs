@@ -503,6 +503,20 @@ public class TopologyService : ITopologyService
             {
                 // 把配置里发现的数据库/缓存端点归为边：匹配到已配置数据源则连真实节点，
                 // 否则建一个"待确认"节点(ds:disc:...)，让发现结果有料（而不是只报告未匹配）。
+                // 配置里的端点是否有“落地证据”: 远程主机直接保留; 本机(localhost/本机地址/指向本服务器的域名)
+                // 必须确有端口在监听, 否则视为示例/过期配置, 不建“待确认”节点
+                // —— 避免“服务器上没有 5672/6379 监听, 却冒出 amqps/redis 待确认节点”这种误报。
+                bool LocalEndpointConfirmed(string host, int port)
+                {
+                    if (IsPlaceholderHost(host)) return false;
+                    var isLocal = IsLocalHost(host)
+                        || HostMatches(server.Host, host, dnsCache)
+                        || HostMatches(host, server.Host, dnsCache);
+                    if (!isLocal) return true;
+                    if (!listenResult.Success) return true; // 端口扫描不可用, 宁可不误杀
+                    return allListenPorts.Contains(port);
+                }
+
                 void AddDbEndpoint(string host, int port, string url, string filePath, string kind)
                 {
                     var matched = config.DataSources.FirstOrDefault(d =>
@@ -512,6 +526,12 @@ public class TopologyService : ITopologyService
 
                     if (matched == null)
                     {
+                        if (!LocalEndpointConfirmed(host, port))
+                        {
+                            notes.Add($"{server.Name}: 配置发现 {kind} 端点 {host}:{port} 但本机未监听该端口, 已跳过({Truncate(filePath, 120)})");
+                            return;
+                        }
+
                         result.UnmatchedEndpoints.Add(new Dictionary<string, object?>
                         {
                             ["server"] = server.Name,
@@ -565,6 +585,12 @@ public class TopologyService : ITopologyService
                 // MQ 端点(RabbitMQ/Kafka) → 推断的应用 connectsTo mq:disc:<host>-<port>
                 void AddMqEndpoint(string host, int port, string url, string filePath, string kind)
                 {
+                    if (!LocalEndpointConfirmed(host, port))
+                    {
+                        notes.Add($"{server.Name}: 配置发现 {kind} 端点 {host}:{port} 但本机未监听该端口, 已跳过({Truncate(filePath, 120)})");
+                        return;
+                    }
+
                     var sourceApp = InferAppName(filePath, config.Applications);
                     var sourceNode = sourceApp != null ? AppNodeForName(sourceApp, config) : sshNode;
                     drafts.Add(NewEdge(sourceNode, $"mq:disc:{SanitizeId(host)}-{port}", "connectsTo",
@@ -611,11 +637,13 @@ public class TopologyService : ITopologyService
                     foreach (Match m in Regex.Matches(content, @"proxy_pass\s+https?://(?<target>[^\s;/'""]+)"))
                         AddAppEndpoint(m.Groups["target"].Value, filePath, "nginx");
 
-                    // RabbitMQ: amqp(s)://[user:pass@]host[:port]
-                    foreach (Match m in Regex.Matches(content, @"amqps?://(?:[^@/\s]*@)?(?<host>[^:/?'\s]+)(?::(?<port>\d+))?"))
+                    // RabbitMQ: amqp(s)://[user:pass@]host[:port]（amqps 默认 5671, amqp 默认 5672）
+                    foreach (Match m in Regex.Matches(content, @"(?<![A-Za-z0-9_])(?<scheme>amqps?)://(?:[^@/\s]*@)?(?<host>[^:/?'\s]+)(?::(?<port>\d+))?"))
                     {
                         var host = m.Groups["host"].Value;
-                        var port = m.Groups["port"].Success ? int.Parse(m.Groups["port"].Value) : 5672;
+                        var scheme = m.Groups["scheme"].Value;
+                        var defaultPort = string.Equals(scheme, "amqps", StringComparison.OrdinalIgnoreCase) ? 5671 : 5672;
+                        var port = m.Groups["port"].Success ? int.Parse(m.Groups["port"].Value) : defaultPort;
                         AddMqEndpoint(host, port, m.Value, filePath, "rabbitmq");
                     }
 
@@ -971,6 +999,11 @@ public class TopologyService : ITopologyService
         return h is "localhost" or "127.0.0.1" or "::1" or "0.0.0.0" or "localhost.localdomain"
             || h.StartsWith("127.", StringComparison.Ordinal);
     }
+
+    /// <summary>配置里的主机名是否为占位符/变量(如 ${RABBIT_HOST}、&lt;host&gt;)，这类不应生成发现节点。</summary>
+    private static bool IsPlaceholderHost(string host) =>
+        string.IsNullOrWhiteSpace(host)
+        || host.IndexOfAny(new[] { '$', '{', '}', '%', '<', '>' }) >= 0;
 
     // 只识别明确的服务守护进程名(comm)，避免按 user/args 子串匹配造成的海量误报
     private static readonly Dictionary<string, string> ServiceAliases = new(StringComparer.OrdinalIgnoreCase)

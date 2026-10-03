@@ -425,9 +425,15 @@ public class TopologyService : ITopologyService
                     {
                         // 数据服务(mysql/redis/postgres...) → 数据源节点；已配置同类型数据源则直接连真实节点
                         var dsType = DataServiceDsType(service);
-                        var candidate = dsType == null ? null : config.DataSources.FirstOrDefault(d =>
-                            d.Type.Equals(dsType, StringComparison.OrdinalIgnoreCase) &&
-                            DatasourceHostedOnServer(config, d, server, dnsCache));
+                        var candidates = dsType == null
+                            ? Array.Empty<DataSourceConfig>()
+                            : config.DataSources
+                                .Where(d => d.Type.Equals(dsType, StringComparison.OrdinalIgnoreCase) &&
+                                            DatasourceHostedOnServer(config, d, server, dnsCache))
+                                .ToArray();
+                        // 优先取"主机名/IP 直接指向本服务器"的数据源；其次才是"本机/隧道(跳板=本服务器)"归属的
+                        var candidate = candidates.FirstOrDefault(d => HostMatches(d.Host, server.Host, dnsCache))
+                            ?? candidates.FirstOrDefault();
 
                         var dsNode = candidate != null ? AssetNode.Ds(candidate.Id) : $"ds:disc:{service}";
                         drafts.Add(NewEdge(sshNode, dsNode, "canAccess",

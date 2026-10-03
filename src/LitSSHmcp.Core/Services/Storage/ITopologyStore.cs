@@ -19,9 +19,9 @@ public interface ITopologyStore
     /// （用于把"待确认"节点确认为已登记资产后，重定向其关系）。</summary>
     Task ReplaceNodeAsync(string oldNodeId, string newNodeId);
 
-    /// <summary>删除所有引用"待确认"节点(含 <c>:disc:</c>)的自动发现边。
-    /// 每次重新发现前调用，清掉上一轮残留，保证发现结果是"本次"的快照。</summary>
-    Task ClearPendingAsync();
+    /// <summary>清空全部“自动发现”边与节点信息。每次重新发现前调用，保证发现结果是“本次”的完整快照
+    /// （拓扑库只存自动发现结果，人工关系在 config.Relations，不受影响）。</summary>
+    Task ClearDiscoveredAsync();
 
     /// <summary>写入/更新自动发现节点的附加信息（JSON，如监听端口）。</summary>
     Task UpsertNodeInfoAsync(string nodeId, string infoJson);
@@ -172,7 +172,7 @@ public class TopologyStore : ITopologyStore
         tx.Commit();
     }
 
-    public async Task ClearPendingAsync()
+    public async Task ClearDiscoveredAsync()
     {
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync();
@@ -181,13 +181,13 @@ public class TopologyStore : ITopologyStore
         using (var edges = connection.CreateCommand())
         {
             edges.Transaction = tx;
-            edges.CommandText = "DELETE FROM TopologyEdges WHERE FromNode LIKE '%:disc:%' OR ToNode LIKE '%:disc:%'";
+            edges.CommandText = "DELETE FROM TopologyEdges";
             await edges.ExecuteNonQueryAsync();
         }
         using (var nodes = connection.CreateCommand())
         {
             nodes.Transaction = tx;
-            nodes.CommandText = "DELETE FROM TopologyNodes WHERE NodeId LIKE '%:disc:%'";
+            nodes.CommandText = "DELETE FROM TopologyNodes";
             await nodes.ExecuteNonQueryAsync();
         }
         tx.Commit();

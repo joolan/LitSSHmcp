@@ -414,6 +414,41 @@ public class TopologyDiscoveryTests
     }
 
     [Fact]
+    public async Task Discovery_clears_stale_discovered_edges_on_rerun()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
+            DataSources = new[]
+            {
+                // Host=localhost、跳板指向不存在/别的服务器 → 不应归属 s1
+                new DataSourceConfig { Id = "dsX", Name = "x", Type = "mysql", Host = "127.0.0.1", Port = 3306, AccessMode = AccessMode.SshTunnel, TunnelServerId = "s2" }
+            },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh
+        {
+            JavaOutput = string.Empty,
+            DockerOutput = string.Empty,
+            SsOutput = string.Empty,
+            ServiceOutput = "  1 mysql mysqld /usr/sbin/mysqld\n"
+        };
+
+        var store = new MemoryTopologyStore();
+        // 预置一条上一轮的错误残留（指向真实数据源、不含 :disc:）
+        store.Edges.Add(new TopologyEdge { From = "ssh:s1", To = "ds:dsX", Type = "canAccess", Source = "discovered", Evidence = "stale" });
+
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        await topology.DiscoverAsync(null, null);
+
+        Assert.DoesNotContain(store.Edges, e => e.From == "ssh:s1" && e.To == "ds:dsX");
+    }
+
+    [Fact]
     public async Task Discovery_attributes_localhost_db_client_to_the_server()
     {
         var config = new AppConfig
@@ -551,11 +586,10 @@ public class TopologyDiscoveryTests
             if (NodeInfos.Remove(oldNodeId, out var info)) NodeInfos[newNodeId] = info;
             return Task.CompletedTask;
         }
-        public Task ClearPendingAsync()
+        public Task ClearDiscoveredAsync()
         {
-            Edges.RemoveAll(e => e.From.Contains(":disc:") || e.To.Contains(":disc:"));
-            foreach (var key in NodeInfos.Keys.Where(k => k.Contains(":disc:")).ToArray())
-                NodeInfos.Remove(key);
+            Edges.Clear();
+            NodeInfos.Clear();
             return Task.CompletedTask;
         }
         public Task UpsertNodeInfoAsync(string nodeId, string infoJson) { NodeInfos[nodeId] = infoJson; return Task.CompletedTask; }

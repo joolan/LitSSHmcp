@@ -237,7 +237,7 @@ public class TopologyService : ITopologyService
 
         // 每次重新发现是"本次扫描的快照"：先清掉上一轮所有"待确认"节点/边，再由本次证据重建。
         await _store.InitializeAsync();
-        await _store.ClearPendingAsync();
+        await _store.ClearDiscoveredAsync();
 
         // 是否用提权跑部分只读探测（监听端口/配置扫描）——仅对该服务器配置了 SudoType 时生效
         var useSudo = config.Security?.Discovery?.UseSudo ?? false;

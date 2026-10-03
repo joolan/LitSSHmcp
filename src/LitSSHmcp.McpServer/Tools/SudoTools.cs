@@ -110,9 +110,11 @@ public class SudoTools
             ServerId = server.Id,
             ServerName = server.Name,
             Command = $"SUDO: {command}",
-            Result = result.Output.Length > ToolSupport.MaxAuditResultChars
-                ? result.Output[..ToolSupport.MaxAuditResultChars]
-                : result.Output,
+            Result = result.Output.Length > 0
+                ? (result.Output.Length > ToolSupport.MaxAuditResultChars
+                    ? result.Output[..ToolSupport.MaxAuditResultChars]
+                    : result.Output)
+                : result.Error,
             Status = result.Success ? CommandStatus.Executed : CommandStatus.Failed,
             ExitCode = result.ExitCode
         });
@@ -165,6 +167,7 @@ public class SudoTools
             SudoType.CurrentUser => "使用当前SSH用户密码进行sudo",
             SudoType.RootUser => "切换到root用户（需要root密码）",
             SudoType.CustomUser => "切换到指定用户（需要该用户密码）",
+            SudoType.Auto => "自动: 先 sudo(当前用户密码), 失败再 su - root(同一密码)",
             _ => "未知"
         };
     }

@@ -82,10 +82,40 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Width="{Binding Width}" Height="{Binding Height}" ToolTip="{Binding Tooltip}"
-                                        Background="#EEF3FB" BorderBrush="#9BB7E0" BorderThickness="1" CornerRadius="6">
+                                        BorderThickness="1" CornerRadius="6">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="#EEF3FB"/>
+                                            <Setter Property="BorderBrush" Value="#9BB7E0"/>
+                                            <Style.Triggers>
+                                                <!-- 已禁用的服务器: 灰化 + 角标, 且不可拖线建链 -->
+                                                <DataTrigger Binding="{Binding IsDisabled}" Value="True">
+                                                    <Setter Property="Background" Value="#F0F0F0"/>
+                                                    <Setter Property="BorderBrush" Value="#C0C0C0"/>
+                                                    <Setter Property="Opacity" Value="0.8"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
                                     <StackPanel>
-                                        <TextBlock Text="{Binding Label}" FontWeight="Bold" Margin="10,6,0,0"
-                                                   TextTrimming="CharacterEllipsis"/>
+                                        <DockPanel LastChildFill="True">
+                                            <TextBlock DockPanel.Dock="Right" Text="已禁用" Foreground="#C0392B"
+                                                       FontSize="10" FontWeight="SemiBold" Margin="0,7,10,0"
+                                                       ToolTip="该服务器已禁用: 不可建链/连接, 不出现在 MCP 的 ssh_list_servers, 拓扑发现跳过">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsDisabled}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding Label}" FontWeight="Bold" Margin="10,6,0,0"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </DockPanel>
                                         <TextBlock Text="{Binding SubLabel}" FontSize="10" Foreground="#5A6B85" Margin="10,1,0,0"/>
                                     </StackPanel>
                                 </Border>

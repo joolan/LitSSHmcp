@@ -28,7 +28,7 @@ public class ServerTools
     public async Task<SshServerListDto> ListServers()
     {
         var config = await _configService.LoadConfigAsync();
-        var servers = config.Servers.Select(s => new SshServerSummaryDto
+        var servers = config.Servers.Where(s => !s.Disabled).Select(s => new SshServerSummaryDto
         {
             Id = s.Id,
             Name = s.Name,
@@ -51,9 +51,9 @@ public class ServerTools
         CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
-        var (server, _, resolveError) = ToolSupport.ResolveServer(config, serverId);
+        var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverId);
         if (server == null)
-            return ServerStatusDto.Fail(resolveError!);
+            return ServerStatusDto.Fail(resolveStatus ?? "server_not_found", resolveError!);
 
         var probe = await _sshService.ProbeConnectionAsync(server, cancellationToken);
         return new ServerStatusDto

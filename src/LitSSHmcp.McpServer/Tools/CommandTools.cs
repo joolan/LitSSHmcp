@@ -104,9 +104,11 @@ public class CommandTools
             ServerId = server.Id,
             ServerName = server.Name,
             Command = command,
-            Result = result.Output.Length > ToolSupport.MaxAuditResultChars
-                ? result.Output[..ToolSupport.MaxAuditResultChars]
-                : result.Output,
+            Result = result.Output.Length > 0
+                ? (result.Output.Length > ToolSupport.MaxAuditResultChars
+                    ? result.Output[..ToolSupport.MaxAuditResultChars]
+                    : result.Output)
+                : result.Error,
             Status = result.Success ? CommandStatus.Executed : CommandStatus.Failed,
             ExitCode = result.ExitCode
         });

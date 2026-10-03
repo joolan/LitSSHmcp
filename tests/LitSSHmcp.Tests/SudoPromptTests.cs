@@ -42,4 +42,26 @@ public class SudoPromptTests
         var result = new CommandResult { Output = text };
         Assert.Equal(expected, SshService.RequiresTty(result));
     }
+
+    [Fact]
+    public void Exit_marker_is_not_confused_by_pty_echo_of_the_command()
+    {
+        // pty 会回显我们输入的命令行，里面含字面量 LITSSH_EXIT:$?；不能被当成真正的标记
+        var echoed = "Last login: ...\n$ su - root -c 'id'; echo LITSSH_EXIT:$?\n";
+        Assert.False(SshService.TryParseExitMarker(echoed, out _));
+
+        // 真正回传的标记（行首 + 数字）才认
+        var real = echoed + "uid=0(root) gid=0(root)\nLITSSH_EXIT:0\n";
+        Assert.True(SshService.TryParseExitMarker(real, out var code));
+        Assert.Equal(0, code);
+    }
+
+    [Fact]
+    public void Strip_exit_marker_keeps_command_output_and_ignores_echo_line()
+    {
+        var text = "banner\n$ echo 'LITSSH_EXIT:$?'\nhello\nLITSSH_EXIT:0\n";
+        var stripped = SshService.StripExitMarker(text);
+        Assert.Contains("hello", stripped);
+        Assert.DoesNotContain("LITSSH_EXIT:0", stripped);
+    }
 }

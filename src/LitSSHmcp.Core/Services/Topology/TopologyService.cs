@@ -70,7 +70,8 @@ public class TopologyService : ITopologyService
                     ["port"] = server.Port,
                     ["username"] = server.Username,
                     ["description"] = server.Description,
-                    ["tags"] = server.Tags
+                    ["tags"] = server.Tags,
+                    ["disabled"] = server.Disabled
                 }
             };
         }
@@ -246,8 +247,20 @@ public class TopologyService : ITopologyService
                         serverIds.Contains(s.Id) || serverIds.Contains(s.Name))
             .ToArray();
 
+        // 禁用的服务器一律不连接（与 MCP 工具层的 server_disabled 闸门一致：发现同样不能"放行"）
+        var disabled = servers.Where(s => s.Disabled).ToArray();
+        if (disabled.Length > 0)
+        {
+            notes.Add($"已跳过 {disabled.Length} 台已禁用的服务器: {string.Join(", ", disabled.Select(s => s.Name))}" +
+                      "（如需扫描请先在桌面 App 启用）");
+            servers = servers.Where(s => !s.Disabled).ToArray();
+        }
+
         if (servers.Length == 0)
-            result.Errors = result.Errors.Append("未匹配到任何SSH服务器(检查 serverIds 参数)").ToArray();
+            result.Errors = result.Errors.Append(
+                disabled.Length > 0
+                    ? $"匹配到的 SSH 服务器全部处于禁用状态({string.Join(", ", disabled.Select(s => s.Name))}), 已拒绝扫描"
+                    : "未匹配到任何SSH服务器(检查 serverIds 参数)").ToArray();
 
         result.ScannedServers = servers.Select(s => $"{s.Name}({s.Host})").ToArray();
 

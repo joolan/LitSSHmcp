@@ -27,6 +27,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
     private bool _isTestRunning;
     private int _sudoTypeIndex;
     private string _sudoUsername = string.Empty;
+    private bool _disabled;
 
     public event EventHandler<bool>? DialogClosed;
 
@@ -54,6 +55,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
             TagsText = string.Join(", ", server.Tags);
             SudoTypeIndex = (int)server.SudoType;
             SudoUsername = server.SudoUsername ?? string.Empty;
+            Disabled = server.Disabled;
         }
         else if (prefill != null)
         {
@@ -111,6 +113,13 @@ public class ServerEditViewModel : INotifyPropertyChanged
     {
         get => _tagsText;
         set { _tagsText = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>禁用后：不出现在 MCP 的 ssh_list_servers、拓扑不可建链/连接、发现跳过、工具调用一律 server_disabled。</summary>
+    public bool Disabled
+    {
+        get => _disabled;
+        set { _disabled = value; OnPropertyChanged(); }
     }
 
     public string StatusMessage
@@ -240,7 +249,8 @@ public class ServerEditViewModel : INotifyPropertyChanged
             Description = Description,
             Tags = tags,
             SudoType = (SudoType)SudoTypeIndex,
-            SudoUsername = IsCustomSudoUser ? SudoUsername : null
+            SudoUsername = IsCustomSudoUser ? SudoUsername : null,
+            Disabled = Disabled
         };
     }
 

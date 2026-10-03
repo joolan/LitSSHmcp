@@ -80,7 +80,7 @@ public class AppTools
             var (byHost, hostStatus, hostError) = ToolSupport.ResolveServer(config, app.Host);
             if (byHost != null)
                 serverIds.Add(byHost.Id);
-            else if (hostStatus == "server_ambiguous")
+            else if (hostStatus == "server_ambiguous" || hostStatus == "server_disabled")
                 notes.Add(hostError!);
         }
 
@@ -94,6 +94,20 @@ public class AppTools
             if (server == null)
             {
                 servers.Add(new AppServerHealthDto { ServerId = sid, Reachable = false, Status = "server_not_found", Error = $"服务器 {sid} 不在配置中" });
+                continue;
+            }
+
+            if (server.Disabled)
+            {
+                servers.Add(new AppServerHealthDto
+                {
+                    ServerId = server.Id,
+                    ServerName = server.Name,
+                    Host = server.Host,
+                    Reachable = false,
+                    Status = "server_disabled",
+                    Error = ToolSupport.ServerDisabled(server)
+                });
                 continue;
             }
 

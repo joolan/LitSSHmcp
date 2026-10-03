@@ -32,20 +32,25 @@
 - **热加载解析失败不再缓存 mtime**：`SecurityOptionsProvider.ReloadUnlocked` 解析失败时保留上一次有效值且不推进 `_lastWriteUtc`，下次访问重试，避免"在界面改了但 MCP 没生效"。
 - 安全设置窗口：未改动审批通道下拉时保留 config 中的原值（不再把自定义/未知通道静默覆盖为 `desktop`）；审批超时兜底默认值 120 → 45，与服务器默认一致。
 - **`ssh_execute_sudo` 提权执行修复**：
-  - **改用 stdin 注入密码（根治）**：审计显示 `SudoType=CurrentUser` 走交互式 shell(pty) 时命令根本没执行、`exit=-1`。现 `sudo` 改为经 exec 通道执行 `sudo -S -p '' bash -c '<cmd>'`，并在**执行期间**把密码写入 stdin（SSH.NET 2026 要求 `BeginExecute()` 之后再取输入流）。已对真实服务器验证 `id` 返回 `uid=0(root)`。
+  - **改用 stdin 注入密码（根治）**：审计显示 `SudoType=CurrentUser` 走交互式 shell(pty) 时命令根本没执行、`exit=-1`。现 `sudo` 改为经 exec 通道执行 `sudo -S -p '' /bin/sh -c '<cmd>'`（`/bin/sh` 兼容各发行版，不依赖 bash），并在**执行期间**把密码写入 stdin（SSH.NET 2026 要求 `BeginExecute()` 之后再取输入流）。已对真实服务器验证 `id` 返回 `uid=0(root)`。
   - 密码提示识别补全（`su` 路径保留 pty）：同时识别 `[sudo]` / `password for` / `password:` / `密码`，此前 `su - <user> -c` 的 `Password:` 不被识别导致密码从未发送。
   - 整体等待上限 30s → 120s；已喂密码后的空闲断点 3s → 15s。
   - 未回传 `LITSSH_EXIT` 标记时明确返回 `status=timeout`（不再把旧实现里"退出码 -1 也算成功"的假成功算作成功）。
   - **处理 AI 自带 `sudo` 前缀**：`sudo cmd` 会被剥离，避免在"已是 root/目标用户"的直连路径下执行无 tty 的 `sudo` 而报 `a password is required`（`sudo -u/-S` 等带选项的保持不变）。
   - **密码脱敏**：返回给 AI 的 `output`/`error` 一律把提权密码替换为 `******`，确保密码对智能体不可见。
   - 失败时给出明确 `error`（识别到 `a password is required`/`a terminal is required` 时提示检查 `SudoType`/`SudoPassword`）。
+  - **新增提权方式「自动(Auto)」**：先试「当前用户 sudo」，失败（未授权/密码不通过）再回退 `su - root`，两者用同一提权密码；适配"登录账号不在 sudoers、但可以 su 到 root"或反之，无需事先判断。UI/`ssh_get_sudo_status`/指南同步。
+  - **修复 pty 回显导致的退出码误判**：交互式 shell 会回显命令行（含字面量 `LITSSH_EXIT:$?`），旧逻辑一看到 `LITSSH_EXIT:` 即判结束；现只在"行首 + 标记后为数字"时才认（`StripExitMarker` 同理），修复 `su` 路径在 CentOS/RHEL 等上的假超时；空闲判定改为"仅在有新输出时刷新"、空闲 30s 退出；`su` 提示识别失败时兜底下发一次密码；无配置密码 5s 快速失败并提示。
 - **多服务器防呆（指错机器）**：
   - `ToolSupport.ResolveServer` / `ResolveDatasource`：名称/主机名匹配到多个目标时返回 `server_ambiguous` / `datasource_ambiguous` 并拒绝执行（精确 ID 优先），不再 `FirstOrDefault` 静默取第一个；命令/文件/数据源等执行型工具及 `mcp_self_check` 全部改用。
   - 结果回声目标：`ssh_execute_command`/sudo/文件传输/列目录、以及新增的 `docker_*`/`service_*`/`log_*`/`java_*` 结果统一带上 `serverId`/`serverName`/`host`，便于确认没有操作错机器。
   - 审批显示主机：审批上下文传入 `名称(用户@主机:端口)`（数据源为 `类型 名称(主机:端口)`），桌面弹窗与 CLI 待决文件均可核对真实目标。
+- **资产拓扑：新增节点自动避让**：手动布局(`topology-layout.json`)下，**没有保存位置**的节点（典型：新增的 SSH 服务器）会沿用默认堆叠坐标、压到用户拖过的节点上；现首次加载时为这类节点在空白处重算位置（服务器连同其托管子节点一起移动）并持久化，不再与已有节点重叠。
+- **资产拓扑：打开即"适应"**：此前窗口 `Loaded` 时就 `FitView`，早于异步数据加载完成 → 实际没适应。现由 `TopologyViewModel.GraphLoaded` 事件在**图谱加载完成后**触发一次「适应窗口」（仅首次；刷新/拖动不打扰用户缩放）。
 
 ### 新增（本轮）
 
+- **SSH 服务器「禁用」开关**：`SshServerConfig.Disabled`。禁用后 ① 不出现在 MCP 的 `ssh_list_servers`；② 所有按服务器标识解析的工具（`ssh_*` / `docker_*` / `service_*` / `log_*` / `java_*` / 应用体检等）统一返回 `server_disabled` 并拒绝执行（`ToolSupport.ResolveServer` 闸门，含 `app_health_snapshot`、`GuardedCommandService`）；③ 数据源走被禁用服务器作跳板时拒绝建立 SSH 隧道（MySQL/PostgreSQL/Redis provider）；④ 资产拓扑中不可拖线建链/改关系，服务器区块灰化并标注「已禁用」，主列表连接按钮拦截；⑤ 拓扑自动发现跳过该服务器。桌面 App 服务器编辑窗口新增「禁用此服务器」勾选框。默认关闭，兼容旧 `config.json`。
 - `src/LitSSHmcp.Core/Services/Security/ShellQuote.cs`（远端命令单引号转义）。
 - `src/LitSSHmcp.McpServer/Services/ToolSupport.cs`（公共支撑：截断/钳制/ID 解析/失败分类/审计兜底）。
 

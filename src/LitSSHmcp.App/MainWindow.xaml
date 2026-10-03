@@ -63,7 +63,23 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <StackPanel>
-                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                <DockPanel LastChildFill="True">
+                                    <TextBlock DockPanel.Dock="Right" Text="已禁用" Foreground="#C0392B"
+                                               FontWeight="SemiBold" FontSize="11" Margin="6,0,0,0"
+                                               ToolTip="该服务器已禁用: 不出现在 MCP 的 ssh_list_servers, 不可连接/建链, 拓扑发现跳过">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Disabled}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                </DockPanel>
                                 <TextBlock Foreground="Gray" FontSize="11" TextTrimming="CharacterEllipsis">
                                     <Run Text="{Binding Host, Mode=OneWay}"/>
                                     <Run Text=":"/>

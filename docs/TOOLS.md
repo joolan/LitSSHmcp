@@ -184,10 +184,11 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 ### `ssh_list_servers`
 - **参数**：无
 - **返回**：`{ success, count, servers: [...] }`，每项含 `id/name/host/port/username/authType/description/tags/lastConnectedAt`（**无密码**）
+- **说明**：**已禁用的服务器不会出现在本列表中**。服务器一旦禁用：① 不出现在 `ssh_list_servers`；② 任何按服务器标识解析的工具（`ssh_*` / `docker_*` / `service_*` / `log_*` / `java_*` / 应用与文件等）都返回 `server_disabled` 并拒绝执行；③ 资产拓扑中该服务器不可建链/连接；④ 拓扑自动发现跳过它。需在桌面 App 的「服务器编辑」里取消勾选“禁用”并保存后恢复。
 
 ### `ssh_get_server_status`
 - **参数**：`serverId` — 服务器标识（ID/名称/主机名，可用 `ssh_list_servers` 列出）
-- **返回**：`{ success, id, name, host, status, errorKind, durationMs }`（`status` 为 `connected`，失败时取 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`）
+- **返回**：`{ success, id, name, host, status, errorKind, durationMs }`（`status` 为 `connected`，失败时取 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`；服务器被禁用时为 `server_disabled`）
 
 ### `ssh_test_connection`
 - **参数**：`serverId` — 服务器标识（ID/名称/主机名）
@@ -215,7 +216,7 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 - **参数**：`serverId`（可选，不传查全部）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `docker_logs`）
 - **返回**：`{ success, status, error, count, hasMore, records: [...] }`（每条记录含 `sessionId`/`tool`；`result` 已截断到 4000 字符；`hasMore: true` 表示还有更早记录，配合 `offset` 翻页）
 
-**命令类错误约定**：`{ success: false, error, status, errorKind }`，`status` 可能值：`blocked`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`sudo_not_configured`、`file_not_found`、`auth_failed`、`host_key_mismatch`、`timeout`、`rate_limited`、`connection_error`、`failed`。
+**命令类错误约定**：`{ success: false, error, status, errorKind }`，`status` 可能值：`blocked`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`sudo_not_configured`、`file_not_found`、`auth_failed`、`host_key_mismatch`、`timeout`、`rate_limited`、`connection_error`、`failed`。
 
 ## 文件传输组（fileTransfer）
 
@@ -358,7 +359,7 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 ### `docker_exec`
 - **参数**：`serverId`、`container`、`command`（容器内命令，如 `ps -ef`）
 - **返回**：同上；**需人工确认**
-- **错误约定**：`{ success: false, status, error }`，`status` 可能值：`invalid_container`、`blocked`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`connection_error`、`failed`
+- **错误约定**：`{ success: false, status, error }`，`status` 可能值：`invalid_container`、`blocked`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`connection_error`、`failed`
 
 ## systemd 服务组（service）
 

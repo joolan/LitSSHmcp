@@ -21,5 +21,10 @@ public static class TunnelServerResolver
 
     public const string MissingServerMessage =
         "数据源配置为 SSH 隧道模式，但未找到可用的跳板服务器。" +
-        "请在配置中设置 tunnelServerId，或添加 'ssh:<服务器ID> -> ds:<数据源ID>' 的 canAccess 关系。";
+        "请在配置中设?tunnelServerId，或添加 'ssh:<服务器ID> -> ds:<数据源ID>' ?canAccess 关系。";
+
+    /// <summary>跳板 SSH 服务器被禁用时的拒绝文案（不放行连接）。</summary>
+    public static string DisabledMessage(SshServerConfig server) =>
+        $"跳板 SSH 服务器 {server.Name} ({server.Username}@{server.Host}:{server.Port}) 已被禁用, 已拒绝建立隧道。" +
+        "请在桌面 App 的「服务器编辑」里取消\"禁用\"并保存, 或改用其它跳板。";
 }

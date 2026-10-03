@@ -87,6 +87,12 @@ public class SessionViewModel : INotifyPropertyChanged
 
     public async Task TestAsync()
     {
+        if (Server.Disabled)
+        {
+            StatusMessage = "服务器已禁用, 已拒绝测试连接。";
+            return;
+        }
+
         StatusMessage = "测试连接中...";
         var ok = await _ssh.TestConnectionAsync(Server);
         StatusMessage = ok ? "连接成功" : "连接失败";
@@ -95,6 +101,12 @@ public class SessionViewModel : INotifyPropertyChanged
     public async Task ExecuteAsync()
     {
         if (string.IsNullOrWhiteSpace(CommandText)) return;
+
+        if (Server.Disabled)
+        {
+            StatusMessage = "服务器已禁用, 已拒绝执行命令。";
+            return;
+        }
 
         IsBusy = true;
         StatusMessage = "执行中...";

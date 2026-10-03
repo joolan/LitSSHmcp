@@ -26,7 +26,7 @@ Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管�
 
 | Tool | 描述 |
 |------|------|
-| `ssh_list_servers` | 列出所有已配置的SSH服务器 |
+| `ssh_list_servers` | 列出所有已配置的SSH服务器（已禁用的服务器不会出现） |
 | `ssh_execute_command` | 在指定服务器执行Shell命令 |
 | `ssh_execute_sudo` | 使用提权执行命令（权限不足时使用） |
 | `ssh_get_sudo_status` | 获取服务器提权配置状态 |
@@ -412,6 +412,7 @@ ssh:web-server-01  --canAccess-->  ds:mysql-order-01    # 服务器可访问数�
 | 当前用户sudo | 使用SSH用户密码执行sudo | CentOS/Ubuntu/Debian常用 |
 | root用户 | 切换到root用户 | 需要root密码 |
 | 指定用户 | 切换到指定用户 | 需要该用户密码 |
+| 自动 | 先试「当前用户sudo」，失败再试「su - root」（同一提权密码） | 不确定账号是否在 sudoers / 是否配了root密码时；推荐 
 
 ### Linux系统sudo机制
 

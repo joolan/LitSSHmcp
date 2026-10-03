@@ -106,6 +106,12 @@ public class MainViewModel : INotifyPropertyChanged
     {
         if (server == null) return;
 
+        if (server.Disabled)
+        {
+            StatusMessage = $"服务器 {server.Name} 已禁用, 不允许连接。请先「编辑」并取消勾选\"禁用\"。";
+            return;
+        }
+
         var existing = Sessions.FirstOrDefault(s => s.Server.Id == server.Id);
         if (existing == null)
         {

@@ -101,6 +101,63 @@ public class ToolSupportTests
     }
 
     [Fact]
+    public void ResolveServer_refuses_disabled_server_by_id()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web", Host = "10.0.0.1", Disabled = true } }
+        };
+
+        var (server, status, error) = ToolSupport.ResolveServer(config, "s1");
+
+        Assert.Null(server);
+        Assert.Equal("server_disabled", status);
+        Assert.Contains("禁用", error);
+    }
+
+    [Fact]
+    public void ResolveServer_refuses_disabled_server_by_name()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web", Host = "10.0.0.1", Disabled = true } }
+        };
+
+        var (server, status, _) = ToolSupport.ResolveServer(config, "web");
+
+        Assert.Null(server);
+        Assert.Equal("server_disabled", status);
+    }
+
+    [Fact]
+    public void ResolveServer_allows_enabled_server()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web", Host = "10.0.0.1" } }
+        };
+
+        var (server, status, _) = ToolSupport.ResolveServer(config, "s1");
+
+        Assert.NotNull(server);
+        Assert.Null(status);
+    }
+
+    [Fact]
+    public void ServerNotFound_hints_about_disabled_servers()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web", Host = "10.0.0.1", Disabled = true } }
+        };
+
+        var (status, error) = ToolSupport.ServerNotFound(config, "missing");
+
+        Assert.Equal("server_not_found", status);
+        Assert.Contains("禁用", error);
+    }
+
+    [Fact]
     public void ResolveDatasource_refuses_ambiguous_name()
     {
         var config = new AppConfig

@@ -71,21 +71,30 @@ public static class ToolSupport
     {
         var byId = config.Servers.Where(s => string.Equals(s.Id, reference, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (byId.Length == 1)
-            return (byId[0], null, null);
+            return AllowIfEnabled(byId[0]);
 
         var matches = config.Servers.Where(s =>
             (!string.IsNullOrEmpty(s.Name) && string.Equals(s.Name, reference, StringComparison.OrdinalIgnoreCase)) ||
             (!string.IsNullOrEmpty(s.Host) && string.Equals(s.Host, reference, StringComparison.OrdinalIgnoreCase))).ToArray();
 
         if (matches.Length == 1)
-            return (matches[0], null, null);
+            return AllowIfEnabled(matches[0]);
 
         if (matches.Length > 1)
-            return (null, "server_ambiguous", AmbiguousMessage("服务器", reference, matches.Select(ServerLabel)));
+            return (null, "server_ambiguous", AmbiguousMessage("服务", reference, matches.Select(ServerLabel)));
 
         var (status, error) = ServerNotFound(config, reference);
         return (null, status, error);
     }
+
+    /// <summary>命中唯一一台后仍要过"禁用"闸门：禁用的服务器一律不放行。</summary>
+    private static (SshServerConfig? Server, string? Status, string? Error) AllowIfEnabled(SshServerConfig server) =>
+        server.Disabled ? (null, "server_disabled", ServerDisabled(server)) : (server, null, null);
+
+    /// <summary>禁用服务器被调用时的拒绝文案（status=<c>server_disabled</c>）。</summary>
+    public static string ServerDisabled(SshServerConfig server) =>
+        $"服务器 {ServerLabel(server)} 已被禁用, 已拒绝执行。" +
+        "如需使用, 请在桌面 App 的「服务器编辑」里取消勾选\"禁用\"并保存, 或改用其它服务器。";
 
     /// <summary>服务器展示标签：名称(用户@主机:端口)，供审批确认时核对真实目标。</summary>
     public static string ServerLabel(SshServerConfig server) =>
@@ -98,6 +107,9 @@ public static class ToolSupport
         var hint = ids.Length == 0
             ? "配置中没有任何 SSH 服务器, 请先在桌面 App 里添加, 或直接编辑 config.json"
             : $"可用 ID: {string.Join(", ", ids.Take(10))}{(ids.Length > 10 ? " ..." : "")}（也可传服务器名称或主机名）";
+        var disabledCount = config.Servers.Count(s => s.Disabled);
+        if (disabledCount > 0)
+            hint += $"。另有 {disabledCount} 台已禁用的服务器不会出现在 ssh_list_servers 中, 需先在桌面 App 启用";
         return ("server_not_found", $"服务器未找到: {reference}。{hint}");
     }
 

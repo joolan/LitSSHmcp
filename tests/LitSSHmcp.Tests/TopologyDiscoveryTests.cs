@@ -41,6 +41,32 @@ public class TopologyDiscoveryTests
     }
 
     [Fact]
+    public async Task Discovery_skips_disabled_servers()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" },
+                new SshServerConfig { Id = "s2", Name = "db1", Host = "10.0.0.2", Disabled = true }
+            },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh { JavaOutput = string.Empty, DockerOutput = string.Empty, SsOutput = string.Empty };
+        var store = new MemoryTopologyStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        Assert.Contains(result.ScannedServers, s => s.StartsWith("web1"));
+        Assert.DoesNotContain(result.ScannedServers, s => s.StartsWith("db1"));
+        Assert.Contains(result.Notes, n => n.Contains("禁用") && n.Contains("db1"));
+    }
+
+    [Fact]
     public async Task Discovery_does_not_duplicate_manual_relation()
     {
         var config = new AppConfig

@@ -142,6 +142,14 @@ public partial class NodeRelationsWindow : Window
         try
         {
             var config = await _config.LoadConfigAsync();
+            var disabled = DisabledServerOf(config, row.From) ?? DisabledServerOf(config, row.To);
+            if (disabled != null)
+            {
+                MessageBox.Show(this, $"该关系的一端是已禁用的服务器 {disabled.Name}, 已拒绝修改关系。" +
+                    "请先在服务器编辑里取消\"禁用\"。", "节点关系", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             var index = Array.FindIndex(config.Relations, r => r.From == row.From && r.To == row.To && r.Type == row.Type);
             if (index < 0)
             {
@@ -205,6 +213,12 @@ public partial class NodeRelationsWindow : Window
             MessageBox.Show(this, $"删除失败：{ex.Message}", "节点关系", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
+
+    /// <summary>节点 id 指向的服务器若处于禁用状态则返回该服务器（禁用的服务器不允许在可视化窗口里建链/改链）。</summary>
+    private static SshServerConfig? DisabledServerOf(AppConfig config, string nodeId) =>
+        nodeId.StartsWith("ssh:", StringComparison.Ordinal)
+            ? config.Servers.FirstOrDefault(s => s.Id == nodeId[4..] && s.Disabled)
+            : null;
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
 }

@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using Microsoft.Win32;
@@ -26,6 +27,7 @@ public partial class TopologyWindow : Window
     private string? _anchorDrag;
     private Point _last;
     private bool _errorShown;
+    private bool _initialFitDone;
 
     // 无限画布: 缩放 + 平移
     private readonly ScaleTransform _zoom = new(1, 1);
@@ -84,6 +86,7 @@ public partial class TopologyWindow : Window
         GridLayer.Fill = _gridBrush;
 
         _viewModel.Confirm = Confirm;
+        _viewModel.GraphLoaded += OnGraphLoaded;
         DataContext = _viewModel;
 
         Loaded += OnWindowLoaded;
@@ -96,7 +99,26 @@ public partial class TopologyWindow : Window
     {
         Canvas.SetLeft(EdgePanel, Math.Max(8, CanvasHost.ActualWidth - EdgePanel.Width - 16));
         Canvas.SetTop(EdgePanel, 8);
-        FitView();
+        // 数据可能在窗口显示前/后加载完成，两条路径都尝试"适应"（仅首次）
+        TryInitialFit();
+    }
+
+    /// <summary>图谱加载完成后回调（数据加载可能晚于窗口 Loaded）。</summary>
+    private void OnGraphLoaded() => TryInitialFit();
+
+    /// <summary>首次打开时"适应窗口"：等布局就绪后在后台优先级执行，只做一次（刷新/拖动不打扰用户缩放）。</summary>
+    private void TryInitialFit()
+    {
+        if (_initialFitDone || !_viewModel.HasContent)
+            return;
+
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            if (_initialFitDone)
+                return;
+            FitView();
+            _initialFitDone = true;
+        }));
     }
 
     private void OnRefresh(object sender, RoutedEventArgs e) => _viewModel.Load();

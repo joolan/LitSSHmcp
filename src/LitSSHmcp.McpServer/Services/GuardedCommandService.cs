@@ -100,7 +100,9 @@ public sealed class GuardedCommandService : IGuardedCommandService
 
         await AuditAsync(server, command,
             result.Success ? CommandStatus.Executed : CommandStatus.Failed,
-            result.Output.Length > ToolSupport.MaxAuditResultChars ? result.Output[..ToolSupport.MaxAuditResultChars] : result.Output,
+            result.Output.Length > 0
+                ? (result.Output.Length > ToolSupport.MaxAuditResultChars ? result.Output[..ToolSupport.MaxAuditResultChars] : result.Output)
+                : result.Error,
             result.ExitCode);
 
         var (output, truncated, originalLength) = ToolSupport.Truncate(result.Output, ToolSupport.MaxOutputChars);

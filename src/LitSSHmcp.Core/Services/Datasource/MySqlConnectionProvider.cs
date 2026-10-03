@@ -57,6 +57,9 @@ public class MySqlConnectionProvider : IMySqlConnectionProvider
                     ?? throw new InvalidOperationException(
                         $"数据源 '{ds.Name}' {TunnelServerResolver.MissingServerMessage}");
 
+                if (server.Disabled)
+                    throw new InvalidOperationException($"数据源 '{ds.Name}' {TunnelServerResolver.DisabledMessage(server)}");
+
                 tunnel = await SshTunnel.StartAsync(server, ds.Host, ds.Port, ct, _knownHosts, _securityOptions.SshHostKey.Mode);
                 connectHost = IPAddress.Loopback.ToString();
                 connectPort = (int)tunnel.LocalPort;

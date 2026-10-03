@@ -45,6 +45,9 @@ public class GraphBoxVm : GraphItemVm
 {
     public string Label { get; set; } = string.Empty;
     public string SubLabel { get; set; } = string.Empty;
+
+    /// <summary>服务器已禁用：不可建链、不可连接，图上以灰化 + "已禁用"角标提示。</summary>
+    public bool IsDisabled { get; set; }
 }
 
 public class GraphChipVm : GraphItemVm
@@ -205,6 +208,12 @@ public class TopologyViewModel : INotifyPropertyChanged
         Load();
     }
 
+    /// <summary>一次图谱加载/重算完成（ApplyGraph 结束）后触发，供视图做"适应窗口"等操作。</summary>
+    public event Action? GraphLoaded;
+
+    /// <summary>当前是否已有可显示的内容（用于判断"适应"是否该执行）。</summary>
+    public bool HasContent => Boxes.Count + Chips.Count + Nodes.Count > 0;
+
     public ObservableCollection<GraphBoxVm> Boxes { get; } = new();
     public ObservableCollection<GraphChipVm> Chips { get; } = new();
     public ObservableCollection<GraphNodeVm> Nodes { get; } = new();
@@ -321,6 +330,7 @@ public class TopologyViewModel : INotifyPropertyChanged
                     Label = labelById[server.Id],
                     SubLabel = sub,
                     Tooltip = tooltipById[server.Id],
+                    IsDisabled = IsNodeDisabled(server),
                     X = ServerX,
                     Y = serverY,
                     Width = ServerWidth,
@@ -411,6 +421,8 @@ public class TopologyViewModel : INotifyPropertyChanged
             // 托管子节点必须完全位于所属服务器内（修正历史/异常布局）
             foreach (var childId in _parentOf.Keys.ToArray())
                 ClampChild(childId);
+            // 新增(无保存位置)的节点在手动布局下会沿用默认堆叠坐标，可能压到已拖动的节点上 → 自动避让
+            RelocateUnsavedItems();
             // 解除 runsOn 后残留的独立节点若仍落在服务器内，移到就近空白处
             RelocateOrphanedStandalone();
             RebuildEdges(false);
@@ -418,6 +430,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             CanvasHeight = Math.Max(Math.Max(Math.Max(serverY, appY), dsY) + 40, 1400);
             CanvasWidth = Math.Max(Math.Max(DsX + DsWidth, MaxRight()) + 40, 2000);
             StatusMessage = $"服务器 {servers.Length} 台, 应用 {apps.Length} 个, 数据库 {datasources.Length} 个, 连线 {Edges.Count} 条 (runsOn 以嵌套展示)";
+            GraphLoaded?.Invoke();
         }
         catch (Exception ex)
         {
@@ -1476,6 +1489,78 @@ public class TopologyViewModel : INotifyPropertyChanged
         SaveLayout(layout);
     }
 
+    /// <summary>
+    /// 手动布局下，**没有保存位置**的节点(典型: 新增的 SSH 服务器)会沿用默认堆叠坐标，
+    /// 可能压到用户拖过的节点上。这里为这类节点在空白处重新找位置(服务器连同其托管子节点一起移动)并持久化，
+    /// 使新增服务器在首次加载时即被放到不与任何节点重叠的位置。
+    /// </summary>
+    private void RelocateUnsavedItems()
+    {
+        if (_synthetic)
+            return;
+
+        var layout = GetLayout();
+        if (!layout.IsManual)
+            return; // 全自动布局按列堆叠，不会重叠
+
+        var all = Boxes.Concat<GraphItemVm>(Chips).Concat(Nodes).ToArray();
+        var changed = false;
+
+        foreach (var item in all)
+        {
+            if (layout.Nodes.ContainsKey(item.Id))
+                continue; // 有保存位置：尊重用户摆放
+
+            var rect = new Rect(item.X, item.Y, item.Width, item.Height);
+            if (!OverlapsAny(item.Id, rect, all))
+                continue;
+
+            var obstacles = all.Where(o => o.Id != item.Id)
+                .ToDictionary(o => o.Id, o => new Rect(o.X, o.Y, o.Width, o.Height));
+            var serverRects = Boxes.Where(b => b.Id != item.Id)
+                .Select(b => new Rect(b.X, b.Y, b.Width, b.Height)).ToList();
+
+            var spot = FindFreeSpot(rect, item.Id, obstacles, serverRects);
+            var dx = spot.X - item.X;
+            var dy = spot.Y - item.Y;
+            ApplyGeometry(item.Id, spot.X, spot.Y, item.Width, item.Height);
+
+            // 服务器连同其托管子节点一起移动，保持嵌套
+            if (item is GraphBoxVm && _childrenOf.TryGetValue(item.Id, out var children))
+            {
+                foreach (var childId in children)
+                    if (_geometry.TryGetValue(childId, out var cg))
+                        ApplyGeometry(childId, cg.X + dx, cg.Y + dy, cg.W, cg.H);
+            }
+
+            changed = true;
+        }
+
+        if (!changed)
+            return;
+
+        layout.IsManual = true;
+        foreach (var i in all)
+            layout.Nodes[i.Id] = new NodeLayout { X = i.X, Y = i.Y, Width = i.Width, Height = i.Height };
+        SaveLayout(layout);
+    }
+
+    /// <summary>是否与其它节点重叠（排除自身、父容器、以及自己的托管子节点）。</summary>
+    private bool OverlapsAny(string id, Rect rect, IReadOnlyList<GraphItemVm> all)
+    {
+        _parentOf.TryGetValue(id, out var parentId);
+        foreach (var o in all)
+        {
+            if (o.Id == id || o.Id == parentId)
+                continue;
+            if (_parentOf.TryGetValue(o.Id, out var op) && op == id)
+                continue; // 自己的托管子节点（本就在容器内）
+            if (rect.IntersectsWith(new Rect(o.X, o.Y, o.Width, o.Height)))
+                return true;
+        }
+        return false;
+    }
+
     /// <summary>在服务器区块之外寻找最近的空白位置。</summary>
     private static Point FindFreeSpot(Rect rect, string selfId, IReadOnlyDictionary<string, Rect> obstacles, IReadOnlyList<Rect> serverRects)
     {
@@ -1596,6 +1681,12 @@ public class TopologyViewModel : INotifyPropertyChanged
 
     public void StartLink(string id, string side)
     {
+        if (IsDisabledNode(id))
+        {
+            StatusMessage = $"节点 {id} 所属服务器已禁用, 不允许建立连线。请先在服务器编辑里取消\"禁用\"。";
+            return;
+        }
+
         _linkFrom = (id, side);
         OnPropertyChanged(nameof(IsLinking));
         LinkGeometry = Freeze(new LineGeometry(PortPoint(id, side), PortPoint(id, side)));
@@ -1633,6 +1724,15 @@ public class TopologyViewModel : INotifyPropertyChanged
         try
         {
             var config = await _configService.LoadConfigAsync();
+
+            // 禁用的服务器不允许建链（拖线两端各查一次，用最新配置避免状态过期）
+            var disabled = DisabledServerName(config, source.Id) ?? DisabledServerName(config, targetId);
+            if (disabled != null)
+            {
+                StatusMessage = $"服务器 {disabled} 已禁用, 不允许建立连线。请先在服务器编辑里取消\"禁用\"并保存。";
+                return;
+            }
+
             if (!RelationRules.TryValidate(source.Id, targetId, type, config.Relations, out var error))
             {
                 StatusMessage = $"不能建立该关系: {error}";
@@ -1666,6 +1766,29 @@ public class TopologyViewModel : INotifyPropertyChanged
         if (f == "app" && t == "ds") return "connectsTo";
         if (f == "ssh" && t == "ds") return "canAccess";
         return "relatedTo";
+    }
+
+    /// <summary>从拓扑节点 Info 里读"已禁用"标记（兼容内存 bool 与经序列化后的字符串）。</summary>
+    private static bool IsNodeDisabled(TopologyNode node) =>
+        node.Info.TryGetValue("disabled", out var v) &&
+        (v is bool b ? b : v is string s && bool.TryParse(s, out var parsed) && parsed);
+
+    /// <summary>节点(服务器本身或其托管子节点)是否落在一台已禁用的服务器上。</summary>
+    private bool IsDisabledNode(string id)
+    {
+        var sshId = RelationRules.PrefixOf(id) == "ssh"
+            ? id
+            : _parentOf.TryGetValue(id, out var parent) ? parent : null;
+        return sshId != null && Boxes.Any(b => b.Id == sshId && b.IsDisabled);
+    }
+
+    /// <summary>按最新配置取节点所属服务器的名称，若该服务器已禁用；否则 null。</summary>
+    private static string? DisabledServerName(AppConfig config, string nodeId)
+    {
+        if (RelationRules.PrefixOf(nodeId) != "ssh")
+            return null;
+        var server = config.Servers.FirstOrDefault(s => s.Id == nodeId["ssh:".Length..]);
+        return server is { Disabled: true } ? server.Name : null;
     }
 
     // ---- 选边/删边 ----

@@ -207,6 +207,9 @@ public class SshService : ISshService
                             return ExecuteCommandDirect(client, effectiveCommand, sw);
                         return ExecuteWithSuUser(client, server, server.SudoUsername, effectiveCommand, sw);
 
+                    case SudoType.Auto:
+                        return ExecuteAutoSudo(client, server, effectiveCommand, sw);
+
                     default:
                         return ExecuteCommandDirect(client, effectiveCommand, sw);
                 }
@@ -258,9 +261,9 @@ public class SshService : ISshService
         var result = ExecuteWithStdinPassword(client, sudoCmd, password, sw);
 
         // 部分发行版(RHEL/CentOS 的 Defaults requiretty 等)要求 sudo 必须有 tty，exec 通道无 tty 会被拒；
-        // 此时回退到交互式 shell(pty) 重新执行。
+        // 此时回退到交互式 shell(pty) 重新执行（不兜底下发密码，避免误写到已运行命令的 stdin）。
         if (!result.Success && RequiresTty(result))
-            return ExecuteWithPasswordViaShell(client, sudoCmd, password, sw);
+            return ExecuteWithPasswordViaShell(client, sudoCmd, password, sw, fallbackSendPassword: false);
 
         return result;
     }
@@ -345,11 +348,41 @@ public class SshService : ISshService
         return ExecuteWithPasswordViaShell(client, shellCmd, password, sw);
     }
 
+    /// <summary>
+    /// 自动提权：先试"当前用户 sudo"(用配置的提权密码)，失败(未授权/密码不通过)再回退 <c>su - root</c>。
+    /// 适配"登录账号不在 sudoers、但可以 su 到 root"或反之的环境，无需用户事先判断。
+    /// </summary>
+    private CommandResult ExecuteAutoSudo(SshClient client, SshServerConfig server, string command, Stopwatch sw)
+    {
+        if (server.Username == "root")
+            return ExecuteCommandDirect(client, command, sw);
+
+        var viaSudo = ExecuteWithCurrentUserSudo(client, server, command, sw);
+        if (viaSudo.Success)
+            return viaSudo;
+
+        var viaSu = ExecuteWithSuUser(client, server, "root", command, sw);
+        if (viaSu.Success)
+            return viaSu;
+
+        var sudoErr = string.IsNullOrWhiteSpace(viaSudo.Error) ? "(无)" : viaSudo.Error.Trim();
+        var suErr = string.IsNullOrWhiteSpace(viaSu.Error) ? "(无)" : viaSu.Error.Trim();
+        return new CommandResult
+        {
+            Success = false,
+            Output = viaSu.Output.Length >= viaSudo.Output.Length ? viaSu.Output : viaSudo.Output,
+            Error = $"自动提权失败。sudo: {sudoErr}；su: {suErr}",
+            ErrorKind = viaSudo.ErrorKind ?? viaSu.ErrorKind,
+            ExitCode = viaSu.ExitCode,
+            Duration = sw.Elapsed
+        };
+    }
+
     // sudo/su 交互式提权的整体等待上限（秒）。提权命令可能较慢（装包/重启服务），必须给足时间；
     // 旧实现把"未取到退出码(-1)"也当作成功，导致失败被吞掉，这里改为明确超时。
     private const int SudoShellTimeoutSeconds = 120;
 
-    private CommandResult ExecuteWithPasswordViaShell(SshClient client, string command, string password, Stopwatch sw)
+    private CommandResult ExecuteWithPasswordViaShell(SshClient client, string command, string password, Stopwatch sw, bool fallbackSendPassword = true)
     {
         try
         {
@@ -369,10 +402,12 @@ public class SshService : ISshService
             {
                 if (shell.DataAvailable)
                 {
+                    var before = output.Length;
                     output.Append(shell.Read());
-                    lastOutputTime = DateTime.UtcNow;
+                    if (output.Length > before)
+                        lastOutputTime = DateTime.UtcNow;
 
-                    if (output.ToString().Contains("LITSSH_EXIT:", StringComparison.Ordinal))
+                    if (TryParseExitMarker(output.ToString(), out _))
                         break;
 
                     if (!passwordSent && LooksLikePasswordPrompt(output.ToString()))
@@ -382,34 +417,36 @@ public class SshService : ISshService
                         Thread.Sleep(200);
                     }
                 }
-                else if (passwordSent &&
-                         (DateTime.UtcNow - lastOutputTime).TotalSeconds > 15)
+
+                var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
+                var idle = (DateTime.UtcNow - lastOutputTime).TotalSeconds;
+
+                // 兜底 1：等待 3 秒仍没识别到密码提示（提示被吞/本地化/自定义）且配置了密码 → 主动下发一次，
+                // 避免 su/sudo 一直等密码把整个调用拖到超时。
+                if (!passwordSent && !string.IsNullOrEmpty(password) && elapsed > 3 && fallbackSendPassword)
                 {
-                    // 已喂过密码且长时间无输出：远端 shell 大概率已结束但标记丢失，按超时退出
+                    shell.Write(password + "\n");
+                    passwordSent = true;
+                    Thread.Sleep(200);
+                }
+                // 兜底 2：没配置提权密码，无法交互式提权 → 5 秒后不再空等
+                else if (!passwordSent && string.IsNullOrEmpty(password) && elapsed > 5)
+                {
                     break;
                 }
+                // 已喂过密码且 30 秒无新输出：远端大概率已结束(标记丢失)或卡住，按超时退出
+                else if (passwordSent && idle > 30)
+                {
+                    break;
+                }
+
                 Thread.Sleep(50);
             }
 
             var fullOutput = output.ToString();
             // 返回给 AI 的输出必须脱敏：即使远端回显了密码，也绝不外泄
             var safeOutput = Redact(fullOutput, password);
-            var lines = fullOutput.Split('\n');
-            var exitCode = -1;
-
-            for (int i = lines.Length - 1; i >= 0; i--)
-            {
-                var line = lines[i].Trim();
-                if (line.StartsWith("LITSSH_EXIT:"))
-                {
-                    var parts = line.Split(':');
-                    if (parts.Length > 1 && int.TryParse(parts[1].Trim(), out var code))
-                    {
-                        exitCode = code;
-                        break;
-                    }
-                }
-            }
+            var exitCode = TryParseExitMarker(fullOutput, out var parsedCode) ? parsedCode : -1;
 
             sw.Stop();
             Log($"Sudo command executed via shell, exit code: {exitCode}, duration: {sw.ElapsedMilliseconds}ms");
@@ -419,8 +456,11 @@ public class SshService : ISshService
             string? errorKind = null;
             if (timedOut)
             {
-                error = $"sudo 执行超时或未取得退出码({SudoShellTimeoutSeconds}秒内未回传 LITSSH_EXIT)";
                 errorKind = "timeout";
+                error = string.IsNullOrEmpty(password)
+                    ? "未配置提权密码(su/sudo 需要密码), 无法提权; 请在服务器配置里填写提权密码(SudoPassword)。"
+                    : $"sudo/su 执行超时或未取得退出码({SudoShellTimeoutSeconds}秒内未回传 LITSSH_EXIT); " +
+                      "若因 requiretty/提示未识别导致, 请检查该服务器的提权方式, 或改用 ssh_execute_command。";
             }
             else if (exitCode != 0)
             {
@@ -488,6 +528,33 @@ public class SshService : ISshService
 
     private static string Redact(string text, string? password) =>
         string.IsNullOrEmpty(password) ? text : text.Replace(password, "******");
+
+    private const string ExitMarkerPrefix = "LITSSH_EXIT:";
+
+    /// <summary>
+    /// 解析退出码标记。必须"行首 + 紧跟数字"，以排除交互式 shell**回显命令行**里
+    /// 出现的字面量 <c>LITSSH_EXIT:$?</c>（否则 shell 一收到回显就误判为已结束）。
+    /// </summary>
+    public static bool TryParseExitMarker(string output, out int code)
+    {
+        code = -1;
+        foreach (var raw in output.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (!line.StartsWith(ExitMarkerPrefix, StringComparison.Ordinal))
+                continue;
+
+            var rest = line[ExitMarkerPrefix.Length..].Trim();
+            if (rest.Length == 0 || !char.IsDigit(rest[0]))
+                continue;
+
+            var digits = new string(rest.TakeWhile(char.IsDigit).ToArray());
+            if (int.TryParse(digits, out code))
+                return true;
+        }
+
+        return false;
+    }
 
     private static string DescribeSudoFailure(string output)
     {
@@ -922,12 +989,21 @@ public class SshService : ISshService
     };
 
     /// <summary>去掉远端回传的退出码标记行，避免污染给模型的输出。</summary>
-    private static string StripExitMarker(string output)
+    public static string StripExitMarker(string output)
     {
-        var idx = output.IndexOf("LITSSH_EXIT:", StringComparison.Ordinal);
-        if (idx < 0) return output;
-        var lineStart = output.LastIndexOf('\n', idx);
-        return lineStart >= 0 ? output[..(lineStart + 1)] : string.Empty;
+        var lines = output.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var t = lines[i].Trim();
+            if (!t.StartsWith(ExitMarkerPrefix, StringComparison.Ordinal))
+                continue;
+
+            var rest = t[ExitMarkerPrefix.Length..].Trim();
+            if (rest.Length > 0 && char.IsDigit(rest[0]))
+                return string.Join('\n', lines.Take(i));
+        }
+
+        return output;
     }
 
     private SshClient CreateSshClient(SshServerConfig server) =>        SshClientFactory.Create(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);

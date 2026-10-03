@@ -37,7 +37,7 @@ description: Use when operating or troubleshooting servers and applications thro
 
 | 意图 | 工具 |
 |---|---|
-| 服务器列表/状态/连通性 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection` |
+| 服务器列表/状态/连通性 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection`（已禁用的服务器不在列表中，相关工具会返回 `server_disabled`） |
 | 执行命令 / 提权 / 历史 | `ssh_execute_command`、`ssh_execute_sudo`、`ssh_get_command_history`、`ssh_get_sudo_status` |
 | 文件 | `ssh_list_files`、`ssh_upload_file`、`ssh_download_file` |
 | Docker | `docker_ps`、`docker_logs`、`docker_inspect`、`docker_stats`、`docker_images`、`docker_restart`、`docker_exec` |

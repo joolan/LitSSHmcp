@@ -110,6 +110,10 @@ public sealed class ServerStatusDto
     public double DurationMs { get; set; }
 
     public static ServerStatusDto Fail(string error) => new() { Success = false, Error = error };
+
+    /// <summary>带 status 的失败：如 server_not_found / server_disabled，模型可据此判断能否重试。</summary>
+    public static ServerStatusDto Fail(string status, string error) =>
+        new() { Success = false, Status = status, Error = error };
 }
 
 public sealed class SshTestConnectionDto

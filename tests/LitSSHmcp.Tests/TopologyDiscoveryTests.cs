@@ -370,6 +370,50 @@ public class TopologyDiscoveryTests
     }
 
     [Fact]
+    public async Task Discovery_attributes_local_mysql_only_to_its_tunnel_server()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig { Id = "s1", Name = "A", Host = "10.0.0.1" },
+                new SshServerConfig { Id = "s2", Name = "B", Host = "10.0.0.2" }
+            },
+            DataSources = new[]
+            {
+                // 运行在 B(10.0.0.2) 上, 但跳板选了 A
+                new DataSourceConfig { Id = "dsB", Name = "vm-mysql", Type = "mysql", Host = "10.0.0.2", Port = 3306, AccessMode = AccessMode.SshTunnel, TunnelServerId = "s1" },
+                // 运行在 A 本机(Host=localhost), 跳板=A
+                new DataSourceConfig { Id = "dsA", Name = "a-mysql", Type = "mysql", Host = "127.0.0.1", Port = 3306, AccessMode = AccessMode.SshTunnel, TunnelServerId = "s1" }
+            },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh
+        {
+            JavaOutput = string.Empty,
+            DockerOutput = string.Empty,
+            SsOutput = string.Empty,
+            ServiceOutput = "  1 mysql mysqld /usr/sbin/mysqld\n"
+        };
+
+        var store = new MemoryTopologyStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        // B 跑 mysqld → 命中主机直配的 dsB（即使它的跳板是 A）
+        Assert.Contains(result.NewEdges, e => e.From == "ssh:s2" && e.To == "ds:dsB" && e.Type == "canAccess");
+        // A 跑 mysqld → 命中 Host=localhost 且跳板=A 的 dsA
+        Assert.Contains(result.NewEdges, e => e.From == "ssh:s1" && e.To == "ds:dsA" && e.Type == "canAccess");
+        // 不得交叉：B 不命中跳板为 A 的 dsA；A 不命中主机为 B 的 dsB
+        Assert.DoesNotContain(result.NewEdges, e => e.From == "ssh:s2" && e.To == "ds:dsA");
+        Assert.DoesNotContain(result.NewEdges, e => e.From == "ssh:s1" && e.To == "ds:dsB");
+    }
+
+    [Fact]
     public async Task Discovery_attributes_localhost_db_client_to_the_server()
     {
         var config = new AppConfig
@@ -439,6 +483,7 @@ public class TopologyDiscoveryTests
         public string ListenOutput = "";
         public string SsOutput = "";
         public string ConfigScanOutput = "";
+        public string HostnameIOutput = "";
 
         public bool SudoUsed { get; private set; }
         public TaskCompletionSource Started { get; } = new();
@@ -456,7 +501,8 @@ public class TopologyDiscoveryTests
                 command.Contains("grep -E") && command.Contains("java") ? JavaOutput :
                 command.Contains("docker ps") ? DockerOutput :
                 command.Contains("state established") ? SsOutput :
-                command.Contains("grep -rE") ? ConfigScanOutput : "";
+                command.Contains("grep -rE") ? ConfigScanOutput :
+                command.Contains("hostname -I") ? HostnameIOutput : "";
             return new CommandResult { Success = true, Output = output, ExitCode = 0 };
         }
 

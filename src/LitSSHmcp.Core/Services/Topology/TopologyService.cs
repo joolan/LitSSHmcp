@@ -400,6 +400,35 @@ public class TopologyService : ITopologyService
             if (listenResult.Success)
                 ParseListeningPorts(listenResult.Output, portsByPid, portsByComm, allListenPorts);
 
+            // 本服务器的地址集合（用于把数据源 Host 指向本机局域网 IP 的情况识别为“同机”）
+            var serverLocalIps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (IPAddress.TryParse(server.Host, out _))
+                serverLocalIps.Add(server.Host);
+            try
+            {
+                foreach (var a in Dns.GetHostAddresses(server.Host))
+                    serverLocalIps.Add(a.ToString());
+            }
+            catch { /* DNS 不可用则忽略 */ }
+            var ipResult = await ProbeAsync(server,
+                "hostname -I 2>/dev/null || ip -4 -o addr show scope global 2>/dev/null", ct);
+            if (ipResult.Success)
+                foreach (Match m in Regex.Matches(ipResult.Output, @"\b\d{1,3}(?:\.\d{1,3}){3}\b"))
+                    serverLocalIps.Add(m.Value);
+
+            // 数据源是否“运行在”本服务器上：
+            //  1) 主机名/IP 双向匹配本服务器(名称/IP/DNS)；
+            //  2) 或它的跳板服务器正是本服务器，且地址是本机地址(127.0.0.1/localhost/::1)或本服务器局域网 IP。
+            bool DatasourceRunsOnServer(DataSourceConfig d)
+            {
+                if (HostMatches(d.Host, server.Host, dnsCache) || HostMatches(server.Host, d.Host, dnsCache))
+                    return true;
+                var h = (d.Host ?? string.Empty).Trim().Trim('[', ']');
+                if (!IsLocalHost(h) && !serverLocalIps.Contains(h))
+                    return false;
+                return string.Equals(TunnelServerResolver.Resolve(config, d)?.Id, server.Id, StringComparison.OrdinalIgnoreCase);
+            }
+
             // 通用服务进程扫描：按 comm(进程名) 精准匹配（不做 grep 子串匹配，避免 user/args 里的关键字造成大量误报）；
             // 归一化后每类服务只建一个节点（mysqld/mysqld_safe→mysql, redis-server→redis 等）。
             var svcResult = await ProbeAsync(server,
@@ -429,10 +458,11 @@ public class TopologyService : ITopologyService
                             ? Array.Empty<DataSourceConfig>()
                             : config.DataSources
                                 .Where(d => d.Type.Equals(dsType, StringComparison.OrdinalIgnoreCase) &&
-                                            DatasourceHostedOnServer(config, d, server, dnsCache))
+                                            DatasourceRunsOnServer(d))
                                 .ToArray();
                         // 优先取"主机名/IP 直接指向本服务器"的数据源；其次才是"本机/隧道(跳板=本服务器)"归属的
-                        var candidate = candidates.FirstOrDefault(d => HostMatches(d.Host, server.Host, dnsCache))
+                        var candidate = candidates.FirstOrDefault(d =>
+                                HostMatches(d.Host, server.Host, dnsCache) || HostMatches(server.Host, d.Host, dnsCache))
                             ?? candidates.FirstOrDefault();
 
                         var dsNode = candidate != null ? AssetNode.Ds(candidate.Id) : $"ds:disc:{service}";
@@ -477,7 +507,7 @@ public class TopologyService : ITopologyService
 
                         // 本机/隧道数据源: 仅当当前服务器正是它的隧道服务器时, 本机 ESTAB 才算它的连接,
                         // 否则会把某台服务器自己的本地 mysql 连接错配到另一台服务器上的同名隧道数据源。
-                        if (IsLocalHost(ds.Host) && !DatasourceHostedOnServer(config, ds, server, dnsCache))
+                        if (IsLocalHost(ds.Host) && !DatasourceRunsOnServer(ds))
                             continue;
 
                         var processInfo = parts.Length > 5
@@ -542,7 +572,8 @@ public class TopologyService : ITopologyService
                     var matched = config.DataSources.FirstOrDefault(d =>
                         d.Port == port &&
                         d.Type.Equals(kind, StringComparison.OrdinalIgnoreCase) &&
-                        HostMatches(d.Host, host, dnsCache));
+                        HostMatches(d.Host, host, dnsCache) &&
+                        (!IsLocalHost(host) || DatasourceRunsOnServer(d)));
 
                     if (matched == null)
                     {
@@ -1034,19 +1065,6 @@ public class TopologyService : ITopologyService
         var h = host.Trim().Trim('[', ']').ToLowerInvariant();
         return h is "localhost" or "127.0.0.1" or "::1" or "0.0.0.0" or "localhost.localdomain"
             || h.StartsWith("127.", StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// 数据源是否“属于”该服务器：主机名/IP 直接匹配，或它是本机/隧道数据源且其隧道服务器正是该服务器。
-    /// 用于避免把某台服务器上的本地 mysqld/redis 错配到另一台服务器上 Host=localhost 的隧道数据源。
-    /// </summary>
-    private static bool DatasourceHostedOnServer(AppConfig config, DataSourceConfig ds, SshServerConfig server, Dictionary<string, string[]> dnsCache)
-    {
-        if (HostMatches(ds.Host, server.Host, dnsCache)) return true;
-        if (!IsLocalHost(ds.Host)) return false;
-        if (!string.IsNullOrEmpty(ds.TunnelServerId) &&
-            string.Equals(ds.TunnelServerId, server.Id, StringComparison.OrdinalIgnoreCase)) return true;
-        return string.Equals(TunnelServerResolver.Resolve(config, ds)?.Id, server.Id, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>配置里的主机名是否为占位符/变量(如 ${RABBIT_HOST}、&lt;host&gt;)，或误把协议名当主机(amqp/amqps)，这类不应生成发现节点。</summary>

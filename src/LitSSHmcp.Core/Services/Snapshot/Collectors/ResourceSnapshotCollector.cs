@@ -23,7 +23,10 @@ public sealed class ResourceSnapshotCollector : ISnapshotCollector
         "echo '##cores'; nproc 2>/dev/null; " +
         "echo '##os'; cat /etc/os-release 2>/dev/null | head -6; " +
         "echo '##kernel'; uname -r; echo '##arch'; uname -m; " +
-        "echo '##host'; hostname; echo '##ip'; hostname -I 2>/dev/null";
+        "echo '##host'; hostname; echo '##ip'; hostname -I 2>/dev/null; " +
+        // top 进程: 分开写 -o 以兼容 CentOS7 procps 3.3.10(逗号列首带 = 会解析异常)
+        "echo '##topcpu'; ps -e -o pid= -o user= -o pcpu= -o pmem= -o rss= -o args= --sort=-pcpu 2>/dev/null; " +
+        "echo '##topmem'; ps -e -o pid= -o user= -o pcpu= -o pmem= -o rss= -o args= --sort=-pmem 2>/dev/null";
 
     public async Task<CollectorResult> CollectAsync(SnapshotContext context, CancellationToken ct)
     {
@@ -70,9 +73,110 @@ public sealed class ResourceSnapshotCollector : ISnapshotCollector
             ["arch"] = TrimOrNull(sections.GetValueOrDefault("arch")),
             ["hostname"] = TrimOrNull(sections.GetValueOrDefault("host")),
             ["ips"] = (sections.GetValueOrDefault("ip") ?? string.Empty)
-                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            ["topByCpu"] = ParseTopProcesses(sections.GetValueOrDefault("topcpu") ?? string.Empty, "cpu"),
+            ["topByMemory"] = ParseTopProcesses(sections.GetValueOrDefault("topmem") ?? string.Empty, "mem")
         };
+        data["warnings"] = BuildWarnings(data);
+        data["riskLevel"] = data["warnings"] is List<Dictionary<string, object?>> ws && ws.Count > 0
+            ? ws.Any(w => (string?)w["severity"] == "critical") ? "critical" : "warning"
+            : "ok";
         return data;
+    }
+
+    /// <summary>解析 top 进程段（pid user pcpu pmem rss args...）；跳过非数字首列(表头/回显)与内核线程，
+    /// 按 <paramref name="sortBy"/>（cpu/mem）降序、RSS 次序取前 5。</summary>
+    public static List<Dictionary<string, object?>> ParseTopProcesses(string output, string sortBy = "cpu")
+    {
+        var list = new List<Dictionary<string, object?>>();
+        foreach (var rawLine in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var tokens = rawLine.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (tokens.Length < 6 || !long.TryParse(tokens[0], out var pid))
+                continue;
+            if (tokens[5].StartsWith('['))
+                continue;   // 跳过内核线程([kworker] 等)与统计噪声
+
+            list.Add(new Dictionary<string, object?>
+            {
+                ["pid"] = pid,
+                ["user"] = tokens[1],
+                ["cpuPercent"] = ToDouble(tokens[2]),
+                ["memPercent"] = ToDouble(tokens[3]),
+                ["rssMb"] = Math.Round(ToDouble(tokens[4]) / 1024.0, 1),
+                ["command"] = string.Join(' ', tokens[5..])
+            });
+        }
+
+        var ordered = sortBy == "mem"
+            ? list.OrderByDescending(p => ToDouble(p["memPercent"])).ThenByDescending(p => ToDouble(p["rssMb"]))
+            : list.OrderByDescending(p => ToDouble(p["cpuPercent"])).ThenByDescending(p => ToDouble(p["rssMb"]));
+        return ordered.Take(5).ToList();
+    }
+
+    // 资源阈值（可按需调整；集中在此便于运维对照）
+    public const double MemWarnPercent = 80, MemCritPercent = 90;
+    public const double SwapWarnPercent = 50, SwapCritPercent = 80;
+    public const double DiskWarnPercent = 80, DiskCritPercent = 90;
+    public const double LoadWarnFactor = 2.0, LoadCritFactor = 4.0;
+
+    /// <summary>按阈值生成告警列表（memory/swap/disk/load），供运维一眼看出异常。</summary>
+    public static List<Dictionary<string, object?>> BuildWarnings(Dictionary<string, object?> data)
+    {
+        var warnings = new List<Dictionary<string, object?>>();
+        void Add(string severity, string metric, string message, double value) =>
+            warnings.Add(new Dictionary<string, object?>
+            {
+                ["severity"] = severity,
+                ["metric"] = metric,
+                ["message"] = message,
+                ["value"] = value
+            });
+
+        if (data.GetValueOrDefault("memory") is Dictionary<string, object?> memory)
+        {
+            var used = ToDouble(memory.GetValueOrDefault("usedPercent"));
+            if (used >= MemCritPercent)
+                Add("critical", "memory", $"内存使用率 {used:F1}% (≥{MemCritPercent}%)", used);
+            else if (used >= MemWarnPercent)
+                Add("warning", "memory", $"内存使用率 {used:F1}% (≥{MemWarnPercent}%)", used);
+
+            var swapTotal = ToDouble(memory.GetValueOrDefault("swapTotalMb"));
+            var swap = ToDouble(memory.GetValueOrDefault("swapUsedPercent"));
+            if (swapTotal > 0)
+            {
+                if (swap >= SwapCritPercent)
+                    Add("critical", "swap", $"Swap 使用率 {swap:F1}% (≥{SwapCritPercent}%)", swap);
+                else if (swap >= SwapWarnPercent)
+                    Add("warning", "swap", $"Swap 使用率 {swap:F1}% (≥{SwapWarnPercent}%)", swap);
+            }
+        }
+
+        if (data.GetValueOrDefault("disks") is List<Dictionary<string, object?>> disks)
+        {
+            foreach (var disk in disks)
+            {
+                var used = ToDouble(disk.GetValueOrDefault("usedPercent"));
+                var mount = disk.GetValueOrDefault("mount") as string ?? disk.GetValueOrDefault("filesystem") as string ?? "?";
+                if (used >= DiskCritPercent)
+                    Add("critical", "disk", $"磁盘 {mount} 使用率 {used:F0}% (≥{DiskCritPercent}%)", used);
+                else if (used >= DiskWarnPercent)
+                    Add("warning", "disk", $"磁盘 {mount} 使用率 {used:F0}% (≥{DiskWarnPercent}%)", used);
+            }
+        }
+
+        var cores = data.GetValueOrDefault("cpu") is Dictionary<string, object?> cpu ? ToDouble(cpu.GetValueOrDefault("cores")) : 0;
+        if (cores > 0 && data.GetValueOrDefault("load") is Dictionary<string, object?> load)
+        {
+            var load1 = ToDouble(load.GetValueOrDefault("1m"));
+            var ratio = load1 / cores;
+            if (ratio >= LoadCritFactor)
+                Add("critical", "load", $"1 分钟负载 {load1:F2} 达 {cores:F0} 核的 {ratio:F1} 倍", load1);
+            else if (ratio >= LoadWarnFactor)
+                Add("warning", "load", $"1 分钟负载 {load1:F2} 达 {cores:F0} 核的 {ratio:F1} 倍", load1);
+        }
+
+        return warnings;
     }
 
     /// <summary>分段标记必须"整行精确"匹配（仅 ## + 字母数字下划线），避免交互式 PTY 回显/换行
@@ -327,4 +431,16 @@ public sealed class ResourceSnapshotCollector : ISnapshotCollector
 
     private static string? TrimOrNull(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static double ToDouble(object? value) => value switch
+    {
+        null => 0,
+        double d => d,
+        float f => f,
+        int i => i,
+        long l => l,
+        decimal m => (double)m,
+        string s => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0,
+        _ => 0
+    };
 }

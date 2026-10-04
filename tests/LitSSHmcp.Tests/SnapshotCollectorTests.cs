@@ -659,4 +659,81 @@ public class SnapshotCollectorTests
         Assert.Equal("failed", units[1].Active);
         Assert.Equal("Foo service", units[1].Description);
     }
+
+    // ---------- resource 阈值/告警 ----------
+
+    [Fact]
+    public void Resource_builds_threshold_warnings()
+    {
+        var data = new Dictionary<string, object?>
+        {
+            ["memory"] = new Dictionary<string, object?> { ["usedPercent"] = 74.7, ["swapTotalMb"] = 2048L, ["swapUsedPercent"] = 53.0 },
+            ["disks"] = new List<Dictionary<string, object?>> { new() { ["mount"] = "/", ["usedPercent"] = 91 } },
+            ["cpu"] = new Dictionary<string, object?> { ["cores"] = 2 },
+            ["load"] = new Dictionary<string, object?> { ["1m"] = 5.0 }
+        };
+
+        var warnings = ResourceSnapshotCollector.BuildWarnings(data);
+
+        Assert.Contains(warnings, w => (string?)w["metric"] == "swap" && (string?)w["severity"] == "warning");
+        Assert.Contains(warnings, w => (string?)w["metric"] == "disk" && (string?)w["severity"] == "critical");
+        Assert.Contains(warnings, w => (string?)w["metric"] == "load");                       // 5/2=2.5 倍 → warning
+        Assert.DoesNotContain(warnings, w => (string?)w["metric"] == "memory");               // 74.7 < 80
+    }
+
+    [Fact]
+    public void Resource_parses_top_processes()
+    {
+        var psOut = "  1234 root     12.5  3.2  102400 /usr/bin/java -jar app.jar\n" +
+                    "9999 appuser   8.0 20.0  512000 /opt/app/bin/node server.js\n" +
+                    "some echoed header line";
+
+        var top = ResourceSnapshotCollector.ParseTopProcesses(psOut);
+
+        Assert.Equal(2, top.Count);
+        Assert.Equal(1234L, top[0]["pid"]);
+        Assert.Equal(12.5, top[0]["cpuPercent"]);
+        Assert.Equal(100.0, top[0]["rssMb"]);      // 102400 KB → 100 MB
+        Assert.Equal("appuser", top[1]["user"]);
+        Assert.Contains("server.js", (string)top[1]["command"]!);
+    }
+
+    // ---------- nginx PTY 噪声清洗 ----------
+
+    [Fact]
+    public void Nginx_sanitizes_pty_login_noise()
+    {
+        var raw = "\x1b]0;joolan@192\x07\x1b[?1034hLast login: Sat Oct  4 10:00:00 2026 from 10.0.0.1\r\n" +
+                  "[joolan@192 ~]$ su - root -c 'NGX=...; \"$NGX\" -T 2>&1 | head -2000'\r\n" +
+                  "Password: \r\n" +
+                  "# configuration file /etc/nginx/nginx.conf:\r\n" +
+                  "user nginx;\r\nhttp {\r\n    server {\r\n        listen 80;\r\n        server_name a.com;\r\n    }\r\n}\r\n" +
+                  "LITSSH_EXIT:0\r\n";
+
+        var clean = NginxTlsSnapshotCollector.SanitizeNginxConfig(raw);
+
+        Assert.StartsWith("# configuration file", clean);
+        Assert.DoesNotContain("Last login", clean);
+        Assert.DoesNotContain("su - root", clean);
+        Assert.DoesNotContain("Password:", clean);
+        Assert.False(clean.Contains('\u001b'), "clean 仍含 ESC: " + clean);
+        var (sites, _) = NginxTlsSnapshotCollector.ParseNginxConfig(clean);
+        Assert.Contains(sites, s => s.ServerNames.Contains("a.com"));
+    }
+
+    // ---------- portmap 桌面 socket 折叠 ----------
+
+    [Theory]
+    [InlineData("/run/user/1000/bus", "dbus-daemon", true)]
+    [InlineData("@/tmp/dbus-abc", "gnome-shell", true)]
+    [InlineData("/tmp/.X11-unix/X0", "X", true)]
+    [InlineData("/home/u/.cache/ibus/dbus-x", "ibus-daemon", true)]
+    [InlineData("/run/systemd/private", "systemd", false)]
+    [InlineData("/var/run/docker.sock", "dockerd", false)]
+    [InlineData("/var/run/mysqld/mysqlx.sock", "mysqld", false)]
+    public void Portmap_classifies_desktop_vs_system_sockets(string path, string process, bool desktop)
+    {
+        var row = new Dictionary<string, object?> { ["path"] = path, ["process"] = process };
+        Assert.Equal(desktop ? "desktop" : "system", PortMapSnapshotCollector.ClassifyUnixSocket(row));
+    }
 }

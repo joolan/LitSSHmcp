@@ -53,8 +53,8 @@ description: Use when operating or troubleshooting servers and applications thro
 
 `ssh_snapshot_get(serverId)` 一次拿到该服务器**整机态势**（本机持久化，默认只读本地、不连服务器；无快照或要最新数据用 `ssh_snapshot_refresh`，较慢、同机单飞）：
 
-- `resource`：CPU/内存/磁盘/负载/系统信息。
-- `portmap`：端口↔进程名/PID/用户↔systemd 服务三元组，含**程序路径 `exe`** 与**完整启动命令 `cmdline`**（凭据参数已脱敏），区分 TCP/UDP、双栈、Unix socket。
+- `resource`：CPU/内存/磁盘/负载/系统信息；含**阈值告警 `warnings`/`riskLevel`**（内存/swap/磁盘/负载）与 **top5 进程 `topByCpu`/`topByMemory`**（谁在吃 CPU/内存）。
+- `portmap`：端口↔进程名/PID/用户↔systemd 服务三元组，含**程序路径 `exe`** 与**完整启动命令 `cmdline`**（凭据参数已脱敏），区分 TCP/UDP、双栈；Unix socket 分系统级(`unixSockets`)与**桌面/用户会话(`unixSocketsDesktop`，默认折叠**，如 gnome/pipewire/dbus/X11)。
 - `docker`：Docker 守护进程概览（版本/容器与镜像数/存储驱动）+ 容器清单（名称/镜像/状态/端口）+ 运行容器资源（CPU/内存/网络/块IO/PIDs）；未装 docker 该维度 `skipped`。
 - `nginx_tls`：**完整有效配置 `effectiveConfig`**（`nginx -T` 展开 include）+ **域名列表 `domains`**（每个域名是否 `ssl`、端口、关联证书到期/SAN）；未装 nginx 该维度 `skipped`。
 - `systemd`：单元健康聚合与失败清单。

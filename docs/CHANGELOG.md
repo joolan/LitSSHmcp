@@ -13,6 +13,7 @@
   - `systemd` 健康聚合：service 单元按 active 状态计数、失败单元清单与 `is-system-running` 总态；非 systemd 系统 `skipped`。
   - `docker` 容器：`docker info` 守护进程概览（版本/容器与镜像计数/存储驱动/CPU/内存）+ `docker ps -a` 容器清单（名称/镜像/状态/端口/创建时间）+ `docker stats --no-stream` 运行容器资源（CPU/内存/网络/块IO/PIDs）；未装 docker 该维度 `skipped`，装了但守护进程不可用则 `available=true/daemonRunning=false`（降级）。
   - `security` 安全巡检（只读）：SSH 有效配置（`PermitRootLogin`/`PasswordAuthentication`/`PermitEmptyPasswords`/端口等）、防火墙暴露面（`ufw`/`firewalld`/iptables 规则数）、`fail2ban` 是否安装/运行、MySQL 匿名账户与远程 root、**可远程登录的高权账户**、系统空口令账户、sudoers `NOPASSWD`，并结合监听端口识别**公网暴露的高危端口**（3306/5432/6379/2375/9200/21/23…）；统一输出 `findings[]`（severity/id/title/detail/evidence）与 `summary` 计数。**MySQL 账户核查优先用"与该服务器匹配的已配置 MySQL 数据源凭据"查询 `mysql.user`**（回环 host + 同隧道服务器，或数据源 host == 本服务器 host/IP）；账号不必是 root，但需有 `mysql.*` 的 SELECT 权限，否则 `checked=false` 并说明原因；无匹配数据源时回退免密 best-effort（`auth_socket`/`~/.my.cnf`/`debian.cnf`）。
+  - `resource` 增强：**阈值告警**（`warnings` 列表 + `riskLevel`：内存/swap/磁盘/负载按阈值判定，如 swap ≥50% 告警）与 **top5 进程**（`topByCpu`/`topByMemory`，含 pid/用户/CPU%/内存%/RSS/命令行，已过滤内核线程）；`portmap` 将 Unix socket 分为系统级（`unixSockets`）与**桌面/用户会话（`unixSocketsDesktop`，默认折叠**：gnome/pipewire/dbus/X11/ibus 等），主列表只突出网络监听 + 系统级 socket。
   - **默认只读本地快照不连服务器**；`ssh_snapshot_refresh` 为**同步阻塞**采集，描述已提示"耗时较长（典型 10~30 秒，弱网更久）"；**单飞限流**——同一服务器同时只允许一个快照，重复调用立即返回 `status=snapshot_in_progress`（含进行中的 `snapshotId`），不排队。**失败也落库**（`state=failed`，保留已采集到的部分 section 与失败事件；连接失败/超时/取消都会正确收尾，不留 `running` 孤儿）。
   - **提权可配置**：`config.json` 新增 `snapshot.useSudo`（默认 `true`）——开启且服务器配置了 `SudoType` 时自动以 sudo/su 执行**内置固定只读命令**（root 视图更完整），**不逐次弹审批**；关闭或未配置时自动降级（相关字段缺失并标注 `degraded`）。采集命令仍受命令过滤器 `Blocked` 规则约束。
   - **可扩展 + 可保留**：采集维度实现 `ISnapshotCollector` 并在 `Program.cs` 注册即可扩展（为后续趋势图/定时任务预留统一历史 `data`）；`snapshot.retentionPerServer`（默认 30，`0`=不限）按服务器保留最近 N 份并级联清理事件。
@@ -26,6 +27,7 @@
 
 ### 修复
 
+- **`nginx_tls` 有效配置被 su 交互式 PTY 的登录噪声污染**：`su` 通道机的 `effectiveConfig` 会混入登录 banner（`Last login…`）、命令行回显（`su - root -c '…'`）、`Password:` 提示与 ANSI 转义码（`sudo` 非 PTY 通道本就干净）。现按首个 `# configuration file` 头截断并剥离 ANSI/控制字符，得到干净的有效配置。
 - **`mysql_diagnostics` 报"格式错"**：`SHOW FULL PROCESSLIST` 解析用了错误列序（把 `Host` 当 `db`、把 `Command`（`Query`/`Daemon`/`Sleep`…）当 `Time`），`Convert.ToInt64("Daemon")` 抛 `FormatException` 导致整个诊断失败、只能绕道 `mysql_query`。现按正确列序（`Id,User,Host,db,Command,Time,State,Info`）取值，并以不抛异常的数值转换兜底；`byDatabase` 与"最长运行查询"统计同步修正。
 
 ## [1.1.1] - 2026-10-04

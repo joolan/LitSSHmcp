@@ -48,7 +48,7 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
         if (!configResult.Success && configResult.ErrorKind is not null)
             return CollectorResult.FromCommandFailure(configResult) with { DurationMs = sw.Elapsed.TotalMilliseconds };
 
-        var configOutput = configResult.Output;
+        var configOutput = SanitizeNginxConfig(configResult.Output);
         // 整行精确匹配哨兵: 交互式 PTY 会回显命令行(其中含 '##nginx_missing' 字面量),
         // 用 Contains 会在 su 提权时把"其实已采集到配置"误判为"未安装"。
         if (configOutput.Replace("\r\n", "\n").Split('\n').Any(l => l.Trim() == "##nginx_missing"))
@@ -196,6 +196,34 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
         }).ToList(),
         ["certificatePaths"] = site.CertPaths
     };
+
+    private static readonly Regex AnsiPattern = new(
+        @"\x1B\[[0-9;?]*[ -/]*[@-~]|\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)|\x1B[@-Z\\-_]",
+        RegexOptions.Compiled);
+
+    // 兜底：剥离残留控制字符（ESC/BEL/其它 C0），保留 \n 与 \t
+    private static readonly Regex ControlChars = new(
+        @"[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// 清洗 `nginx -T` 输出：去 ANSI 转义与 CR，并丢弃首个 <c># configuration file</c> 之前的内容。
+    /// su 走交互式 PTY 时会混入登录 banner（Last login…）、命令行回显（su - root -c '…'）、Password: 提示与提示符；
+    /// 这些都出现在首个 `# configuration file` 头之前，按头截断即可得到干净的有效配置。找不到头(如 nginx 缺失)时原样返回。
+    /// </summary>
+    public static string SanitizeNginxConfig(string raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+            return raw;
+
+        var text = ControlChars.Replace(AnsiPattern.Replace(raw, string.Empty), string.Empty).Replace("\r", string.Empty);
+        var lines = text.Split('\n');
+        var start = Array.FindIndex(lines, l => l.TrimStart().StartsWith("# configuration file", StringComparison.Ordinal));
+        if (start > 0)
+            return string.Join('\n', lines[start..]);
+
+        return text;
+    }
 
     /// <summary>
     /// 解析 nginx -T 全量输出为 server 块（含 include 展开后的内容）。

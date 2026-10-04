@@ -35,12 +35,12 @@ public sealed class PortMapSnapshotCollector : ISnapshotCollector
 
         // 一次输出里按行特征分类（proto 传 null 表示由状态推断）：
         var listeners = ParseSsListeners(ssResult.Output, proto: null);
-        var unixSockets = ParseSsUnix(ssResult.Output);
+        var unixAll = ParseSsUnix(ssResult.Output);
 
         // phase2: 批量取属主与 cgroup 服务名（一次往返；pid 上限防超长命令行）。
         // cgroup 只取 systemd 控制器行（v2: 0::/...；v1: N:name=systemd:/...），避免 v1 每 pid 多行被 head 截断。
         var pids = listeners.Select(l => l.TryGetValue("pid", out var p) ? p as long? : null)
-            .Concat(unixSockets.Select(u => u.TryGetValue("pid", out var p) ? p as long? : null))
+            .Concat(unixAll.Select(u => u.TryGetValue("pid", out var p) ? p as long? : null))
             .Where(p => p is > 0)
             .Select(p => p!.Value)
             .Distinct()
@@ -70,7 +70,7 @@ public sealed class PortMapSnapshotCollector : ISnapshotCollector
                 var cgroups = ParseCgroup(infoResult.Output);
                 var exePaths = ParseExePaths(infoResult.Output);
                 var cmdlines = ParseCmdlines(infoResult.Output);
-                foreach (var row in listeners.Concat(unixSockets))
+                foreach (var row in listeners.Concat(unixAll))
                 {
                     if (row.TryGetValue("pid", out var pidObj) && pidObj is long pid)
                     {
@@ -94,9 +94,15 @@ public sealed class PortMapSnapshotCollector : ISnapshotCollector
             }
         }
 
-        var truncated = listeners.Count > 200 || unixSockets.Count > 200;
+        // 桌面/用户会话 socket(gnome/pipewire/dbus/X11/ibus 等)默认折叠: 主列表只给系统级 socket + 网络监听,
+        // 桌面态放 unixSocketsDesktop 供需要时查看。
+        var unixSystem = unixAll.Where(r => ClassifyUnixSocket(r) == "system").ToList();
+        var unixDesktop = unixAll.Where(r => ClassifyUnixSocket(r) == "desktop").ToList();
+
+        var truncated = listeners.Count > 200 || unixAll.Count > 200;
         listeners = listeners.Take(200).ToList();
-        unixSockets = unixSockets.Take(200).ToList();
+        unixSystem = unixSystem.Take(200).ToList();
+        unixDesktop = unixDesktop.Take(200).ToList();
 
         var data = new Dictionary<string, object?>
         {
@@ -104,16 +110,42 @@ public sealed class PortMapSnapshotCollector : ISnapshotCollector
             {
                 ["tcp"] = listeners.Count(l => Equals(l["proto"], "tcp")),
                 ["udp"] = listeners.Count(l => Equals(l["proto"], "udp")),
-                ["unix"] = unixSockets.Count
+                ["unix"] = unixSystem.Count,
+                ["unixDesktop"] = unixDesktop.Count
             },
             ["listeners"] = listeners,
-            ["unixSockets"] = unixSockets,
+            ["unixSockets"] = unixSystem,
+            ["unixSocketsDesktop"] = unixDesktop,
             ["elevated"] = context.Elevate,
             ["truncated"] = truncated
         };
 
         sw.Stop();
         return CollectorResult.Ok(data, degraded, degradeNote) with { DurationMs = sw.Elapsed.TotalMilliseconds };
+    }
+
+    private static readonly string[] DesktopProcessMarkers =
+    {
+        "gnome", "gdm", "ibus", "gvfs", "pipewire", "pulseaudio", "wireplumber",
+        "tracker", "evolution", "at-spi", "colord", "dconf", "xdg-desktop", "gsd-", "gjs"
+    };
+
+    /// <summary>
+    /// 判定 Unix socket 是"桌面/用户会话"还是"系统级"。系统级才进主列表。
+    /// 判据：路径在 /run/user、含 /user-、抽象(@开头)或 /tmp/ 下；或进程属于常见桌面组件。
+    /// </summary>
+    public static string ClassifyUnixSocket(Dictionary<string, object?> socket)
+    {
+        var path = socket.GetValueOrDefault("path") as string ?? string.Empty;
+        var process = (socket.GetValueOrDefault("process") as string ?? string.Empty).ToLowerInvariant();
+
+        var desktop = path.StartsWith("/run/user/", StringComparison.Ordinal) ||
+                      path.Contains("/user-", StringComparison.Ordinal) ||
+                      path.StartsWith("@", StringComparison.Ordinal) ||
+                      path.Contains("/tmp/", StringComparison.Ordinal) ||
+                      process is "x" or "xorg" ||
+                      DesktopProcessMarkers.Any(process.Contains);
+        return desktop ? "desktop" : "system";
     }
 
     /// <summary>

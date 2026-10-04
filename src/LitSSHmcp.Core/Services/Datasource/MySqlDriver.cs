@@ -297,9 +297,11 @@ public class MySqlDriver : IDatasourceDriver
         while (await reader.ReadAsync(ct))
         {
             total++;
-            var user = reader.GetString(1);
-            var db = reader.IsDBNull(2) ? "" : reader.GetString(2);
-            var time = reader.IsDBNull(4) ? 0L : Convert.ToInt64(reader.GetValue(4));
+            // SHOW FULL PROCESSLIST 列序: Id, User, Host, db, Command, Time, State, Info
+            // (此前把 Host 当 db、把 Command[Query/Daemon/Sleep...] 当 Time 解析 → Convert.ToInt64("Daemon") 抛格式错)
+            var user = reader.IsDBNull(1) ? "" : reader.GetString(1);
+            var db = reader.IsDBNull(3) ? "" : reader.GetString(3);
+            var time = reader.IsDBNull(5) ? 0L : ToLong(reader.GetValue(5));
             var state = reader.IsDBNull(6) ? "" : reader.GetString(6);
             var info = reader.IsDBNull(7) ? "" : reader.GetString(7);
 
@@ -342,4 +344,20 @@ public class MySqlDriver : IDatasourceDriver
 
     private static long ParseLong(string? value) =>
         long.TryParse(value, out var result) ? result : 0;
+
+    /// <summary>把任意数值/可解析对象安全转为 long（非数值返回 0，绝不抛异常）。</summary>
+    private static long ToLong(object? value) => value switch
+    {
+        null => 0L,
+        long l => l,
+        int i => i,
+        short s => s,
+        byte b => b,
+        ulong ul => (long)ul,
+        uint ui => ui,
+        decimal d => (long)d,
+        double db => (long)db,
+        float f => (long)f,
+        _ => long.TryParse(value.ToString(), out var parsed) ? parsed : 0L
+    };
 }

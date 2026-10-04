@@ -30,6 +30,7 @@ public class UsageGuideTools
                 {
                     "用户问'连接了哪些服务器'或'有哪些服务器'时,使用 ssh_list_servers",
                     "用户问'某台服务器的状态'时,使用 ssh_get_server_status",
+                    "用户要看服务器整体态势(资源占用/端口进程服务三元组/nginx证书到期/systemd健康)时, 先 ssh_snapshot_get 查已存快照; 需要最新数据用 ssh_snapshot_refresh(较慢,同一服务器同时只允许一个快照)",
                     "用户问'服务器配置'或'服务器信息'时,使用 ssh_list_servers",
                     "用户想测试服务器连接时,使用 ssh_test_connection",
                     "用户要求在服务器上执行命令/查日志/看进程/查磁盘网络时,使用 ssh_execute_command",
@@ -149,7 +150,7 @@ public class UsageGuideTools
                 },
                 example = "用户说'重启nginx'时, 直接用 ssh_execute_sudo 执行 systemctl restart nginx, 而不是先 ssh_execute_command 失败后再提权"
             },
-            error_handling = "看 success 与 status 字段判断失败类型并决定是否重试: blocked=被安全策略禁止(不要重试); rejected=用户拒绝(不要重试); approval_timeout/approval_unavailable=审批超时或不可用(可提示用户后用同一命令重试); server_not_found/datasource_not_found=标识不存在(改用列表工具拿正确ID, 错误信息里已回显可用ID); readonly_statement=只读语句用错了写工具(改用mysql_query/postgres_query/redis_read); not_readonly_statement=写语句用错了只读工具(改用*_execute); sudo_not_configured=未配置提权; auth_failed=账号/密钥错; host_key_mismatch=主机密钥变化(可能是安全事件, 先人工核对指纹, 不要重试); timeout/rate_limited/connection_error=可稍后重试",
+            error_handling = "看 success 与 status 字段判断失败类型并决定是否重试: blocked=被安全策略禁止(不要重试); rejected=用户拒绝(不要重试); approval_timeout/approval_unavailable=审批超时或不可用(可提示用户后用同一命令重试); server_not_found/datasource_not_found=标识不存在(改用列表工具拿正确ID, 错误信息里已回显可用ID); readonly_statement=只读语句用错了写工具(改用mysql_query/postgres_query/redis_read); not_readonly_statement=写语句用错了只读工具(改用*_execute); sudo_not_configured=未配置提权; snapshot_not_found=该服务器还没快照(用ssh_snapshot_refresh生成); snapshot_in_progress=该服务器已有快照在采集(不要重复刷新,稍后用ssh_snapshot_get查); auth_failed=账号/密钥错; host_key_mismatch=主机密钥变化(可能是安全事件, 先人工核对指纹, 不要重试); timeout/rate_limited/connection_error=可稍后重试",
             sudo_types = "Auto=自动(先sudo,失败再su - root,推荐), CurrentUser=使用SSH用户密码sudo(常用), RootUser=切换root(需root密码), CustomUser=切换指定用户(需该用户密码)",
             sensitive_commands = "rm, chmod, chown, reboot, shutdown, systemctl stop/restart, kill, pkill, mount, umount, 以及 docker rm/rmi/run/exec/stop/restart/compose down 等写操作",
             blocked_commands = "rm -rf /, mkfs, dd if=/dev/zero, docker system prune, docker volume rm, docker run --privileged 等"

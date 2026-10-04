@@ -2,6 +2,32 @@
 
 本项目的所有重要变更都记录在此文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 新增
+
+- **服务器快照工具 `ssh_snapshot_get` / `ssh_snapshot_refresh`**（归入 `ssh` 分组，工具总数 49 → 51）：把服务器整机态势**采集并持久化到独立库** `%APPDATA%\LitSSH\snapshots.db`（快照记录 + 快照事件流水两张表，与审计库分离，便于独立备份/清理），随时按 `serverId` 查询。默认采集四个维度：
+  - `resource` 态势：负载/内存/磁盘（含使用率）/CPU 核数与型号/发行版/内核/主机名/IP/运行时长；
+  - `portmap` 端口↔进程名/PID/用户↔systemd 服务**三元组 + 程序路径 `exe` + 完整启动命令行 `cmdline`**（`ss` 提取，区分 TCP/UDP、双栈 `0.0.0.0`/`::`/`*` 与 Unix socket；pid 经 `ps -o user/comm` + `readlink /proc/<pid>/exe` + `/proc/<pid>/cmdline` + `/proc/<pid>/cgroup` 补齐属主、可执行文件路径、启动命令与服务归属；`cmdline` 中常见凭据参数 password/secret/token 等自动脱敏）；
+  - `nginx_tls` 站点 TLS：优先用**正在运行的 nginx 的可执行路径**执行 `nginx -T`（兼容宝塔等与 PATH 不同的 nginx），保存**完整有效配置 `effectiveConfig`**（含 include 展开），解析 `server_name`/`listen`/证书路径（支持 `{` 换行写法），并汇总**域名列表 `domains`**（每个域名是否 `ssl`、监听端口、关联证书）；`openssl` 取到期日与 SAN（DNS/IP），标出 N 天内即将过期/已过期；未检测到 nginx 时该维度 `skipped`；
+  - `systemd` 健康聚合：service 单元按 active 状态计数、失败单元清单与 `is-system-running` 总态；非 systemd 系统 `skipped`。
+  - `docker` 容器：`docker info` 守护进程概览（版本/容器与镜像计数/存储驱动/CPU/内存）+ `docker ps -a` 容器清单（名称/镜像/状态/端口/创建时间）+ `docker stats --no-stream` 运行容器资源（CPU/内存/网络/块IO/PIDs）；未装 docker 该维度 `skipped`，装了但守护进程不可用则 `available=true/daemonRunning=false`（降级）。
+  - `security` 安全巡检（只读）：SSH 有效配置（`PermitRootLogin`/`PasswordAuthentication`/`PermitEmptyPasswords`/端口等）、防火墙暴露面（`ufw`/`firewalld`/iptables 规则数）、`fail2ban` 是否安装/运行、MySQL 匿名账户与远程 root、**可远程登录的高权账户**、系统空口令账户、sudoers `NOPASSWD`，并结合监听端口识别**公网暴露的高危端口**（3306/5432/6379/2375/9200/21/23…）；统一输出 `findings[]`（severity/id/title/detail/evidence）与 `summary` 计数。**MySQL 账户核查优先用"与该服务器匹配的已配置 MySQL 数据源凭据"查询 `mysql.user`**（回环 host + 同隧道服务器，或数据源 host == 本服务器 host/IP）；账号不必是 root，但需有 `mysql.*` 的 SELECT 权限，否则 `checked=false` 并说明原因；无匹配数据源时回退免密 best-effort（`auth_socket`/`~/.my.cnf`/`debian.cnf`）。
+  - **默认只读本地快照不连服务器**；`ssh_snapshot_refresh` 为**同步阻塞**采集，描述已提示"耗时较长（典型 10~30 秒，弱网更久）"；**单飞限流**——同一服务器同时只允许一个快照，重复调用立即返回 `status=snapshot_in_progress`（含进行中的 `snapshotId`），不排队。**失败也落库**（`state=failed`，保留已采集到的部分 section 与失败事件；连接失败/超时/取消都会正确收尾，不留 `running` 孤儿）。
+  - **提权可配置**：`config.json` 新增 `snapshot.useSudo`（默认 `true`）——开启且服务器配置了 `SudoType` 时自动以 sudo/su 执行**内置固定只读命令**（root 视图更完整），**不逐次弹审批**；关闭或未配置时自动降级（相关字段缺失并标注 `degraded`）。采集命令仍受命令过滤器 `Blocked` 规则约束。
+  - **可扩展 + 可保留**：采集维度实现 `ISnapshotCollector` 并在 `Program.cs` 注册即可扩展（为后续趋势图/定时任务预留统一历史 `data`）；`snapshot.retentionPerServer`（默认 30，`0`=不限）按服务器保留最近 N 份并级联清理事件。
+  - 每次刷新写一条审计记录（`category=probe`）；快照详情与事件在快照库内独立留存。测试期快照库格式版本为 **v2**：版本不一致时直接重建（不做历史迁移，旧快照自动清空）。
+
+### 桌面 App
+
+- **服务器列表右键新增「采集快照」与「快照历史」**：采集为同步操作（典型 10~30 秒），完成/失败后自动打开历史窗口并定位本次快照；**单飞限流**——同一服务器同时只允许一个采集（App 内全局忙标志 + 服务内存锁 + 库内 `Running` 唯一部分索引，**跨 App / MCP 进程**也生效），重复触发返回进行中提示。
+- **新增「服务器快照历史」窗口**：通用查看页，顶部可**切换服务器**；左列历史快照列表（时间/状态/耗时/提权/错误），选中后右侧展示该次快照的**采集维度概览**（维度/状态/耗时/说明）、**采集事件**流水与**原始数据 JSON**。
+- **安全设置新增「服务器快照」区**：采集是否提权（`snapshot.useSudo`）、每服务器保留份数（`snapshot.retentionPerServer`，0=不限）、采集超时秒数（`snapshot.timeoutSeconds`），读写 `config.json` 的顶层 `snapshot` 段。
+
+### 修复
+
+- **`mysql_diagnostics` 报"格式错"**：`SHOW FULL PROCESSLIST` 解析用了错误列序（把 `Host` 当 `db`、把 `Command`（`Query`/`Daemon`/`Sleep`…）当 `Time`），`Convert.ToInt64("Daemon")` 抛 `FormatException` 导致整个诊断失败、只能绕道 `mysql_query`。现按正确列序（`Id,User,Host,db,Command,Time,State,Info`）取值，并以不抛异常的数值转换兜底；`byDatabase` 与"最长运行查询"统计同步修正。
+
 ## [1.1.1] - 2026-10-04
 
 ### 修复

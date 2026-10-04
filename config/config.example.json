@@ -82,6 +82,11 @@
       "guide"
     ]
   },
+  "snapshot": {
+    "useSudo": true,
+    "retentionPerServer": 30,
+    "timeoutSeconds": 180
+  },
   "security": {
     "enabled": true,
     "commandFilter": {

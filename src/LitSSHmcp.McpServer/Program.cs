@@ -1,6 +1,8 @@
 ﻿using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Datasource;
 using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.Core.Services.Snapshot;
+using LitSSHmcp.Core.Services.Snapshot.Collectors;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Topology;
@@ -55,6 +57,15 @@ builder.Services.AddSingleton<DesktopApprovalService>();
 builder.Services.AddSingleton<CliApprovalChannel>();
 builder.Services.AddSingleton<IApprovalService, ApprovalService>();
 builder.Services.AddSingleton<ITopologyStore, TopologyStore>();
+builder.Services.AddSingleton<ISnapshotStore, SnapshotStore>();
+builder.Services.AddSingleton<ISnapshotService, SnapshotService>();
+// 快照采集维度(可插拔): 新增维度 = 实现 ISnapshotCollector 并在此多注册一行, 无需改快照主流程。
+builder.Services.AddSingleton<ISnapshotCollector, ResourceSnapshotCollector>();
+builder.Services.AddSingleton<ISnapshotCollector, PortMapSnapshotCollector>();
+builder.Services.AddSingleton<ISnapshotCollector, DockerSnapshotCollector>();
+builder.Services.AddSingleton<ISnapshotCollector, NginxTlsSnapshotCollector>();
+builder.Services.AddSingleton<ISnapshotCollector, SystemdHealthSnapshotCollector>();
+builder.Services.AddSingleton<ISnapshotCollector, SecurityAuditSnapshotCollector>();
 builder.Services.AddSingleton<ISecurityOptionsProvider, SecurityOptionsProvider>();
 builder.Services.AddSingleton<ICommandFilterService, CommandFilterService>();
 builder.Services.AddSingleton<ISqlFilterService, SqlFilterService>();
@@ -92,7 +103,7 @@ var mcp = builder.Services
     })
     .WithStdioServerTransport();
 
-if (enabledToolGroups.Contains(ToolGroups.Ssh)) mcp = mcp.WithTools<ServerTools>();
+if (enabledToolGroups.Contains(ToolGroups.Ssh)) mcp = mcp.WithTools<ServerTools>().WithTools<SnapshotTools>();
 if (enabledToolGroups.Contains(ToolGroups.Command)) mcp = mcp.WithTools<CommandTools>().WithTools<SudoTools>();
 if (enabledToolGroups.Contains(ToolGroups.FileTransfer)) mcp = mcp.WithTools<FileTransferTools>();
 if (enabledToolGroups.Contains(ToolGroups.Datasource)) mcp = mcp.WithTools<DatasourceTools>();
@@ -142,6 +153,9 @@ try
 
     var topologyStore = host.Services.GetRequiredService<ITopologyStore>();
     await topologyStore.InitializeAsync();
+
+    var snapshotStore = host.Services.GetRequiredService<ISnapshotStore>();
+    await snapshotStore.InitializeAsync();
 
     var auditLog = host.Services.GetRequiredService<IAuditLogService>();
     await auditLog.InitializeAsync();

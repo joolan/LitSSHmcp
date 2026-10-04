@@ -14,7 +14,7 @@ Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管�
 | 文档 | 内容 |
 |------|------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计：分层结构、核心模块、安全模型、拓扑模型、线程模型、扩展点 |
-| [docs/TOOLS.md](docs/TOOLS.md) | 49个MCP工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
+| [docs/TOOLS.md](docs/TOOLS.md) | 51个MCP工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 迭代历史：每个版本的新增/修复/变更记录 |
 | [docs/UPGRADE_PLAN.md](docs/UPGRADE_PLAN.md) | 升级方案（Roadmap）：安全、可视化配置、运维、质量的分期计划 |
 
@@ -32,6 +32,8 @@ Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管�
 | `ssh_get_sudo_status` | 获取服务器提权配置状态 |
 | `ssh_get_server_status` | 获取服务器连接状态 |
 | `ssh_test_connection` | 测试SSH连接 |
+| `ssh_snapshot_get` | 查询服务器整机快照（资源/端口进程服务/Docker/nginx证书/systemd/**安全巡检**；默认最新一份，可查历史） |
+| `ssh_snapshot_refresh` | 重新采集服务器整机快照（耗时较长、同机单飞；失败也落库） |
 | `ssh_get_command_history` | 查看命令执行历史 |
 | `ssh_upload_file` | 上传本地文件到服务器 |
 | `ssh_download_file` | 从服务器下载文件到本地 |
@@ -78,7 +80,7 @@ Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管�
 
 各工具的适用场景与参数详见 [docs/TOOLS.md](docs/TOOLS.md)。
 
-**工具分组（可选，按部署裁剪）**：默认暴露全部 49 个工具；可在 App 菜单 **配置 → 工具分组设置** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `docker` / `service` / `log` / `java` / `topology` / `app` / `guide`），降低 AI 上下文占用与误选。留空/不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。分组与工具对应表见 [docs/TOOLS.md](docs/TOOLS.md)。
+**工具分组（可选，按部署裁剪）**：默认暴露全部 51 个工具；可在 App 菜单 **配置 → 工具分组设置** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `docker` / `service` / `log` / `java` / `topology` / `app` / `guide`），降低 AI 上下文占用与误选。留空/不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。分组与工具对应表见 [docs/TOOLS.md](docs/TOOLS.md)。
 
 **AI 排障 skill**：仓库内置 [`docs/litssh-mcp-ops-skill/SKILL.md`](docs/litssh-mcp-ops-skill/SKILL.md)（工具无关，随仓库分发），供支持 skills 的 AI 智能体（opencode / Claude 等）使用。内容包含工具路由、标准排障流程、日志路径发现，以及 **MCP 未覆盖能力经 SSH 变通**的方案（如按 Java 启动命令/配置文件定位日志后再用 `log_tail`）。可复制到对应智能体的 skill 目录，或在 opencode 中用 `skills.paths` 指向该目录。
 
@@ -126,9 +128,9 @@ dotnet publish src/LitSSHmcp.McpServer -c Release -r win-x64 --self-contained -o
 dotnet run --project src/LitSSHmcp.App
 ```
 
-打开管理界面后：顶部菜单分为 **资产**（数据源管理 / 应用管理 / 资产拓扑(可视化编辑)）、**安全**（安全设置）、**审计**（审计日志）、**配置**（工具分组设置 / 导出配置 / 导入配置）、**MCP工具说明**（MCP 介绍 + 49 个工具的用途/参数/用法与意图路由）。
+打开管理界面后：顶部菜单分为 **资产**（数据源管理 / 应用管理 / 资产拓扑(可视化编辑)）、**安全**（安全设置）、**审计**（审计日志）、**配置**（工具分组设置 / 导出配置 / 导入配置）、**MCP工具说明**（MCP 介绍 + 51 个工具的用途/参数/用法与意图路由）。
 
-主界面为轻量客户端布局：**左侧**是 SSH 服务器列表（每项两行显示 名称 + `主机:端口`），顶部仅 **添加 / 刷新**，条目**右键菜单**为 连接 / 编辑 / 删除，**双击**即连接。连接后在右侧打开一个**会话标签页**：可执行命令、查看输出与最近活动、测试连接，标签顶部 `✕` 可关闭会话。
+主界面为轻量客户端布局：**左侧**是 SSH 服务器列表（每项两行显示 名称 + `主机:端口`），顶部仅 **添加 / 刷新**，条目**右键菜单**为 连接 / 编辑 / **采集快照** / **快照历史** / 删除，**双击**即连接。连接后在右侧打开一个**会话标签页**：可执行命令、查看输出与最近活动、测试连接，标签顶部 `✕` 可关闭会话。**采集快照**会连服务器采集整机态势（资源/端口进程服务/证书/systemd 健康，同步、典型 10~30 秒，同一服务器同时只允许一个），完成后打开**快照历史窗口**：可切换服务器，左列历史列表 → 右侧查看该次快照的采集维度概览 / 采集事件 / 原始数据。
 
 - **数据源管理**：维护 MySQL / PostgreSQL / Redis 等数据源；顶部仅 **添加 / 刷新**，条目标**右键菜单**为 测试连接 / 编辑 / 删除，双击也可编辑（类型切换时自动带出对应默认端口 3306/5432/6379）；可设置**治理**项（只读、最大行数、超时、写审批策略）。密码仅本机 DPAPI 加密保存、不对 AI 开放。删除时会提示并级联清理引用它的关系。
 - **应用管理**：维护 `app:` 应用节点（名称/类型/端口/主机/描述）；Docker 应用把类型填 `docker` 并填**容器名**（与 `docker ps` 的 NAMES 一致），AI 即可用 SSH 工具管理；顶部 **添加 / 刷新**，条目**右键菜单**为 编辑 / 删除，双击也可编辑。
@@ -143,9 +145,9 @@ dotnet run --project src/LitSSHmcp.App
   - 手动布局（节点位置/尺寸、端点锚点）保存在 `%APPDATA%\LitSSH\topology-layout.json`，与应用/数据源配置分离。
   - 关系逻辑校验（`runsOn` 只能 应用/数据库→服务器且**每节点只 runsOn 一台**、`connectsTo` 只能 应用→数据库、`canAccess` 只能 服务器→数据库、禁止自环）在创建时即时生效。
   - **性能诊断**：设置环境变量 `LITSSH_PERF=1` 后再操作画布，会把 `CommitLayout` / `RebuildEdges` 耗时、拖动会话汇总（`DragSession`，VM 每帧耗时）与帧率探针（`FrameProbe`，含 `tier=0` 软件渲染/RDP 标记）写入 `%APPDATA%\LitSSH\topology-perf.log`，二者对照即可区分瓶颈在 VM 还是渲染层（默认关闭、零开销）。
-- **安全设置**：可视化编辑命令/SQL 过滤、文件传输、主机密钥、限流、审计策略、**授权弹窗样式与审批通道**、**查询结果列级脱敏**。
+- **安全设置**：可视化编辑命令/SQL 过滤、文件传输、主机密钥、限流、审计策略、**授权弹窗样式与审批通道**、**查询结果列级脱敏**、**服务器快照**（提权开关 / 每服务器保留份数 / 采集超时）。
 - **审计日志**：查看命令/SQL 审计；支持按 服务器/数据源ID 筛选 + **命令关键字模糊查询** + **按会话ID 筛选**、复制、导出 CSV、**含归档**（超期记录永久保留）与 **校验完整性**（哈希链防篡改）。
-- **MCP工具说明**：在 AI 智能体里更准确地使用 MCP —— 展示 MCP 接入配置（stdio + 客户端配置样例）、意图 → 工具路由表，以及 49 个工具的参数/返回/使用要点；左侧按分组浏览、可搜索，支持**复制本节 / 复制全部说明**粘贴到提示词。内容与 `docs/TOOLS.md`、MCP 服务器端工具注解**双向同步**（工具变动时三处一起改，代码内有同步约定注释）。
+- **MCP工具说明**：在 AI 智能体里更准确地使用 MCP —— 展示 MCP 接入配置（stdio + 客户端配置样例）、意图 → 工具路由表，以及 51 个工具的参数/返回/使用要点；左侧按分组浏览、可搜索，支持**复制本节 / 复制全部说明**粘贴到提示词。内容与 `docs/TOOLS.md`、MCP 服务器端工具注解**双向同步**（工具变动时三处一起改，代码内有同步约定注释）。
 
 **方式二：手动编辑配置文件**
 

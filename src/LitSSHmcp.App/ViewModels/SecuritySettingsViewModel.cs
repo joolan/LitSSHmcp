@@ -36,6 +36,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     private int _approvalChannelIndex;
     private string[]? _loadedChannels;
     private string _maskingRules = string.Empty;
+    private bool _snapshotUseSudo = true;
+    private string _snapshotRetention = "30";
+    private string _snapshotTimeout = "180";
     private string _statusMessage = string.Empty;
 
     public SecuritySettingsViewModel()
@@ -71,6 +74,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     public int ApprovalChannelIndex { get => _approvalChannelIndex; set => Set(ref _approvalChannelIndex, value); }
     public string[] ApprovalChannelOptions { get; } = { "桌面弹窗 (desktop)", "命令行带外 (cli)", "桌面 + 命令行" };
     public string MaskingRules { get => _maskingRules; set => Set(ref _maskingRules, value); }
+    public bool SnapshotUseSudo { get => _snapshotUseSudo; set => Set(ref _snapshotUseSudo, value); }
+    public string SnapshotRetention { get => _snapshotRetention; set => Set(ref _snapshotRetention, value); }
+    public string SnapshotTimeout { get => _snapshotTimeout; set => Set(ref _snapshotTimeout, value); }
 
     public string StatusMessage
     {
@@ -115,6 +121,10 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             _loadedChannels = s.Approval.Channels;
             ApprovalChannelIndex = ResolveChannelIndex(s.Approval.Channels);
             MaskingRules = Join(s.Masking.Rules.Select(r => $"{r.Column}={r.Mode}").ToArray());
+
+            SnapshotUseSudo = config.Snapshot.UseSudo;
+            SnapshotRetention = config.Snapshot.RetentionPerServer.ToString();
+            SnapshotTimeout = config.Snapshot.TimeoutSeconds.ToString();
 
             StatusMessage = "已加载当前安全配置";
         }
@@ -182,6 +192,11 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
                 ? _loadedChannels
                 : mappedChannels;
             s.Masking.Rules = ParseMaskRules(MaskingRules);
+
+            config.Snapshot ??= new SnapshotConfig();
+            config.Snapshot.UseSudo = SnapshotUseSudo;
+            config.Snapshot.RetentionPerServer = (int)Math.Max(0, ParseLong(SnapshotRetention, 30));
+            config.Snapshot.TimeoutSeconds = (int)Math.Max(1, ParseLong(SnapshotTimeout, 180));
 
             await _configService.SaveConfigAsync(config);
             StatusMessage = "已保存 (过滤器/限流规则无需重启即刻生效)";

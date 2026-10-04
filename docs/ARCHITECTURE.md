@@ -16,7 +16,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
 │ LitSSHmcp.McpServer │  │   LitSSHmcp.App     │  │   LitSSHmcp.Cli     │
 │ MCP服务器(stdio)     │  │ WPF管理界面(MVVM)    │  │ 终端SSH工具          │
- │ 49个MCP Tools        │  │ 服务器/数据源/拓扑配置 │  │ list/connect/run    │
+ │ 51个MCP Tools        │  │ 服务器/数据源/拓扑配置 │  │ list/connect/run    │
 └──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
            │                        │                        │
            └────────────────────────┼────────────────────────┘
@@ -30,7 +30,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
                     ┌───────────────┼───────────────┐
                     ▼               ▼               ▼
              %APPDATA%\LitSSH   SQLite(audit.db)  远程资产
-             config.json        审计/拓扑缓存      SSH服务器/MySQL/PostgreSQL/Redis
+             config.json        审计/拓扑/快照       SSH服务器/MySQL/PostgreSQL/Redis
 ```
 
 ## 2. 解决方案结构
@@ -38,7 +38,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 | 项目 | 目标框架 | 职责 | 关键依赖 |
 |------|---------|------|---------|
 | `LitSSHmcp.Core` | net8.0 | 数据模型 + 全部业务服务（不含任何入口逻辑） | SSH.NET 2026.0.0、MySqlConnector 2.4.0、Npgsql 8.0.5、Microsoft.Data.Sqlite、System.Security.Cryptography.ProtectedData |
-| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、49 个工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
+| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、51 个工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理界面（服务器/数据源/应用/资产拓扑可视化编辑/安全设置/审计/工具说明/工具分组） | WPF、Core |
 | `LitSSHmcp.Cli` | net10.0 | 终端 SSH 工具（`litssh list/connect/run`） | Core |
 | `LitSSHmcp.Tests` | net8.0 | Core 单元测试（安全过滤/路径策略/配置迁移/加密/驱动协议等） | Core、xunit |
@@ -64,7 +64,7 @@ LitSSHmcp/
 │   └── config.example.json       # 配置文件示例
 ├── src/
 │   ├── LitSSHmcp.Core/           # 模型 + 业务服务（SSH/Datasource/Topology/Security/Storage）
-│   ├── LitSSHmcp.McpServer/      # MCP 服务器（Program.cs + Tools/ 16 个工具类）
+│   ├── LitSSHmcp.McpServer/      # MCP 服务器（Program.cs + Tools/ 17 个工具类）
 │   ├── LitSSHmcp.App/            # WPF 管理界面（Views/ + ViewModels/）
 │   └── LitSSHmcp.Cli/            # CLI
 └── tests/
@@ -77,7 +77,7 @@ LitSSHmcp/
 
 - `Program.cs` 用 `Host.CreateApplicationBuilder` 组装依赖注入，然后：
   - `.WithStdioServerTransport()` —— JSON-RPC 走 stdin/stdout；
-  - `.WithTools<T>()` 注册 16 个工具类，共 49 个工具（详见 [TOOLS.md](TOOLS.md)）；每个工具带 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` 注解；
+  - `.WithTools<T>()` 注册 17 个工具类，共 51 个工具（详见 [TOOLS.md](TOOLS.md)）；每个工具带 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` 注解；
   - **工具分组**：启动时读取 `config.json` 的 `tools.enabledGroups`（`AppConfig.Tools` + `ToolGroups.ResolveEnabled`，留空=全部），按分组**条件注册** `WithTools<T>()`，可只暴露部分工具以降低 AI 上下文占用与误选；未知分组忽略并启动告警（见 [TOOLS.md](TOOLS.md)「工具分组」）；
   - **工具清单单一来源**：`mcp_usage_guide` 的工具清单由 `[McpServerTool]`/`[Description]` 反射生成（不手写）；`tests/LitSSHmcp.McpServer.Tests` 校验"已注册工具 ↔ `docs/TOOLS.md` ↔ 指南"一致；
   - **MCP 协议增强**：`initialize` 返回 **Server Instructions**（会话级行为约定，见 `Services/McpServerInstructions.cs`）；文件上传/下载通过注入的 `IProgress<ProgressNotificationValue>` 向前端推送 `notifications/progress`；
@@ -155,9 +155,17 @@ LitSSHmcp/
 
 - `ConfigService`：读写 `%APPDATA%\LitSSH\config.json`；**读写双向迁移**——发现明文密码即加密为 `enc:` 形式，保证磁盘无明文。
 - `ConfigMigrator`：按 `AppConfig.schemaVersion` 迁移旧结构（当前版本 1）；缺失版本号的旧文件自动补写。
-- `ConfigPaths` / `AppConfigJson`：统一 `%APPDATA%\LitSSH` 下的路径（`config.json`/`audit.db`/`known_hosts.json`/`logs`）与 JSON 序列化选项。
+- `ConfigPaths` / `AppConfigJson`：统一 `%APPDATA%\LitSSH` 下的路径（`config.json`/`audit.db`/`snapshots.db`/`known_hosts.json`/`logs`）与 JSON 序列化选项。
 - `DpapiSecretProtector`（`ISecretProtector.cs`）：`ProtectedData`，`LocalMachine`/`CurrentUser` 范围，前缀 `enc:` 标识。
 - 配置结构：`schemaVersion`、`servers[]`、`dataSources[]`、`applications[]`、`relations[]`、`security{commandFilter, sqlFilter, fileTransfer}`（完整示例见 README 快速开始）。
+
+### 4.6 服务器快照（`Services/Snapshot`）
+
+- **工具**：`ssh_snapshot_get`（读本地最新/历史快照）、`ssh_snapshot_refresh`（同步采集；同机单飞 + 库内 `Running` 唯一部分索引跨进程互斥；失败也落库并保留部分数据）。归 `ssh` 分组。
+- **存储**：独立 SQLite `%APPDATA%\LitSSH\snapshots.db`（`Snapshots` 记录 + `SnapshotEvents` 事件流水；格式版本 v4，版本不一致直接重建）。`SnapshotStore` **惰性建表**（各进程安全），启动 `InitializeAsync` 重置遗留 `running` 孤儿。
+- **可插拔采集维度**（`ISnapshotCollector`，DI 注册、按 `Order` 顺序执行）：`resource`（资源态势）、`portmap`（端口↔进程↔用户↔服务三元组 + 程序路径 `exe`/完整启动命令 `cmdline`；无标记解析，兼容 su 交互式 PTY 回显）、`docker`（容器与资源）、`nginx_tls`（用"运行中 nginx 的可执行路径"执行 `-T` 取全量有效配置 + 域名/证书）、`systemd`（单元健康）、`security`（安全巡检：SSH/防火墙/fail2ban/MySQL 账户/高危端口；`mysql.user` 优先用"匹配该服务器的已配置数据源凭据"核查）。
+- **提权**：`snapshot.useSudo`（默认 `true`）+ 服务器 `SudoType` 决定是否以 sudo/su 执行**内置固定只读命令**；未配置/关闭则降级（section `degraded`），命令仍受命令过滤器约束。
+- **扩展**：新增维度 = 实现 `ISnapshotCollector` 并在 `Program.cs` 注册；`snapshot.retentionPerServer` 控制每机保留份数（级联清理事件）。
 
 ## 5. WPF 管理界面（LitSSHmcp.App）
 
@@ -266,7 +274,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 | 审计 | 命令、SQL（含被拒绝/被驳回）全部落 SQLite（WAL + 索引）；原文开关/字面量脱敏/超期清理见 `security.audit` | `AuditLogService` + `SqlRedactor` |
 | 配置热更新 | commandFilter/sqlFilter/fileTransfer 改动按文件 mtime 即时生效，无需重启 | `SecurityOptionsProvider` |
 | 日志 | MCP 日志走 stderr（不污染 stdout 协议流）+ 本机文件 | `Program.cs` + `FileLoggerProvider` |
-| 工具风险提示 | 49 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
+| 工具风险提示 | 51 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
 
 ## 9. 扩展点
 
@@ -309,7 +317,7 @@ dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publi
 2. **stdout 是协议流**：`initialize` → `notifications/initialized` → `tools/list` / `tools/call` 按 JSON-RPC 换行分帧；日志只应出现在 stderr；
 3. **中文请求体要以 UTF-8 字节写入 stdin**：PowerShell 字符串直接写管道可能按本地代码页编码，导致服务端解析失败。建议向 `$p.StandardInput.BaseStream.Write(UTF8 bytes)`。
 
-验收基线：`initialize` 成功、`tools/list` 返回 49 个工具、`mcp_usage_guide`/`datasource_list` 响应正常、`mysql_query`/`redis_read` 等错误路径返回结构化 `error`。上述 stdio 冒烟现已固化为 `tests/LitSSHmcp.McpServer.Tests` 的集成测试（真实启动服务器进程，用 `LITSSH_DATA_DIR` 指向临时目录隔离）。
+验收基线：`initialize` 成功、`tools/list` 返回 51 个工具、`mcp_usage_guide`/`datasource_list` 响应正常、`mysql_query`/`redis_read` 等错误路径返回结构化 `error`。上述 stdio 冒烟现已固化为 `tests/LitSSHmcp.McpServer.Tests` 的集成测试（真实启动服务器进程，用 `LITSSH_DATA_DIR` 指向临时目录隔离）。
 
 ### Windows 编码注意
 

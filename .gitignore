@@ -55,6 +55,10 @@ id_ed25519
 config/config.json
 **/known_hosts.json
 **/audit.db
+# 本地运行时数据库(WAL/SHM)与快照库: 绝不入库
+*.db
+*.db-wal
+*.db-shm
 publish_new/
 *.pfx
 *.p12

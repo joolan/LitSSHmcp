@@ -1,6 +1,6 @@
 ---
 name: litssh-mcp-ops-skill
-description: Use when operating or troubleshooting servers and applications through the LitSSH MCP server (LitSSHmcp) — SSH command execution, Docker containers, systemd services, Java/JVM diagnostics, log files, MySQL/PostgreSQL/Redis, topology and app health. Triggers on tools like ssh_execute_command, docker_ps, service_status, java_threads, log_tail/log_grep/log_find, app_health_snapshot, mysql_diagnostics, and on requests such as 服务器排查, 应用日志, 容器起不来, JVM/CPU 飙高, 数据库连不上. Also gives SSH-based workarounds for capabilities the MCP does not expose directly. Maintains an ops asset/app-topology ledger (OPS_ASSETS.md) in the workspace — creating and correcting it while operating so servers/apps/log paths/dependencies stay accurate.
+description: Use when operating or troubleshooting servers and applications through the LitSSH MCP server (LitSSHmcp) — SSH command execution, server snapshots, Docker containers, systemd services, Java/JVM diagnostics, log files, MySQL/PostgreSQL/Redis, topology and app health. Triggers on tools like ssh_execute_command, ssh_snapshot_get/ssh_snapshot_refresh, docker_ps, service_status, java_threads, log_tail/log_grep/log_find, app_health_snapshot, mysql_diagnostics, and on requests such as 服务器排查, 整机态势/快照, 应用日志, 容器起不来, JVM/CPU 飙高, 数据库连不上. Also gives SSH-based workarounds for capabilities the MCP does not expose directly. Maintains an ops asset/app-topology ledger (OPS_ASSETS.md) in the workspace — creating and correcting it while operating so servers/apps/log paths/dependencies stay accurate.
 ---
 
 # LitSSH MCP 服务器运维排障
@@ -37,6 +37,7 @@ description: Use when operating or troubleshooting servers and applications thro
 | 意图 | 工具 |
 |---|---|
 | 服务器列表/状态/连通性 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection`（已禁用的服务器不在列表中，相关工具会返回 `server_disabled`） |
+| 服务器整机快照 | `ssh_snapshot_get`（默认读本地最新快照）、`ssh_snapshot_refresh`（重新采集，较慢） |
 | 执行命令 / 提权 / 历史 | `ssh_execute_command`、`ssh_execute_sudo`、`ssh_get_command_history`、`ssh_get_sudo_status` |
 | 文件 | `ssh_list_files`、`ssh_upload_file`、`ssh_download_file` |
 | Docker | `docker_ps`、`docker_logs`、`docker_inspect`、`docker_stats`、`docker_images`、`docker_restart`、`docker_exec` |
@@ -48,8 +49,22 @@ description: Use when operating or troubleshooting servers and applications thro
 | 数据源 | `datasource_list`、`datasource_test_connection`、`datasource_get_sql_history` |
 | MySQL/PG/Redis | `mysql_*` / `postgres_*` / `redis_*`（query/execute/explain/diagnostics；Redis 为 read/execute/diagnostics） |
 
+### 服务器快照（整机态势，优先用）
+
+`ssh_snapshot_get(serverId)` 一次拿到该服务器**整机态势**（本机持久化，默认只读本地、不连服务器；无快照或要最新数据用 `ssh_snapshot_refresh`，较慢、同机单飞）：
+
+- `resource`：CPU/内存/磁盘/负载/系统信息。
+- `portmap`：端口↔进程名/PID/用户↔systemd 服务三元组，含**程序路径 `exe`** 与**完整启动命令 `cmdline`**（凭据参数已脱敏），区分 TCP/UDP、双栈、Unix socket。
+- `docker`：Docker 守护进程概览（版本/容器与镜像数/存储驱动）+ 容器清单（名称/镜像/状态/端口）+ 运行容器资源（CPU/内存/网络/块IO/PIDs）；未装 docker 该维度 `skipped`。
+- `nginx_tls`：**完整有效配置 `effectiveConfig`**（`nginx -T` 展开 include）+ **域名列表 `domains`**（每个域名是否 `ssl`、端口、关联证书到期/SAN）；未装 nginx 该维度 `skipped`。
+- `systemd`：单元健康聚合与失败清单。
+- `security`：安全巡检——SSH 有效配置（`PermitRootLogin`/`PasswordAuthentication`/端口）、防火墙（`ufw`/`firewalld`/iptables）、`fail2ban`、MySQL 匿名账户/远程 root/可远程登录的高权账户（`SHOW GRANTS` 判定；**优先用"匹配该服务器的已配置 MySQL 数据源凭据"核查，账号需有 `mysql.*` SELECT 权限；否则标注未检查**）、系统空口令账户、sudoers `NOPASSWD`，以及**公网暴露的高危端口**（3306/5432/6379/2375/9200/21/23…）；统一输出 `findings[]`（`severity`/`id`/`title`/`detail`/`evidence`）与 `summary` 计数。
+
+维度状态：`ok`/`degraded`（如未提权或缺权限）/`skipped`（环境不具备）/`failed`；返回还含 `events`（采集事件流水）与 `recent`（最近若干份摘要）。**整机盘点优先用快照**，比逐条拼 `ssh_execute_command` 全面且稳定。
+
 ## 3. 标准排障流程（Triage）
 
+0. **整机态势**：`ssh_snapshot_get(serverId)` 一次拿到 资源/端口↔进程↔服务(含 `exe`/启动命令)/Docker/nginx 配置与证书/systemd；无快照或要最新数据 → `ssh_snapshot_refresh(serverId)`（较慢、同机单飞）。
 1. **定位**：`app_health_snapshot(appId)` 一步拿到该应用所在服务器的 Java 进程/容器/监听端口 + 依赖库连通性；或 `topology_get_overview` / `topology_get_dependencies` 看依赖。
 2. **分侧取证**：
    - 服务器：`ssh_get_server_status` / `ssh_test_connection`（失败会给 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`）。
@@ -62,7 +77,9 @@ description: Use when operating or troubleshooting servers and applications thro
 
 ## 4. 常见场景处方
 
-- **容器起不来/异常退出**：`docker_ps(all=true)` → `docker_logs(container, tail=300)` → `docker_inspect`（看退出码/挂载/健康检查）→ `docker_stats`。
+- **整机盘点 / 无明显方向**：先 `ssh_snapshot_get(serverId)` 看 资源/端口进程服务/Docker/nginx 证书/systemd 全貌，再按异常下钻（比逐条 `ssh_execute_command` 全面稳定）。
+- **安全巡检 / 合规核查**：`ssh_snapshot_get(serverId)` 的 `security` 维度一键给出：SSH 配置（root 登录/密码登录/端口）、防火墙（ufw/firewalld）、fail2ban、MySQL 匿名账户/远程 root、系统空口令账户、sudoers `NOPASSWD`、**公网暴露的高危端口**；按 `findings[].severity`（high/medium/low/info）汇报并可给出整改建议；需最新数据用 `ssh_snapshot_refresh`。
+- **容器起不来/异常退出**：`docker_ps(all=true)` → `docker_logs(container, tail=300)` → `docker_inspect`（看退出码/挂载/健康检查）→ `docker_stats`；不知哪些容器先 `ssh_snapshot_get` 看 `docker.containers`。
 - **Java CPU 飙高/卡死**：`java_processes` 找 pid → `java_threads`（找 `RUNNABLE`/死锁）→ `java_heap`（GC/堆）→ `java_info`。
 - **服务没起来**：`service_status`（看退出码/最近日志）→ `service_logs`；需要时 `service_restart`（审批）。
 - **数据库慢/连接暴涨**：先 `mysql_diagnostics` / `postgres_diagnostics`（整体），再 `mysql_query` 查 `processlist`/慢日志，`mysql_explain` 分析 SQL；缓存问题用 `redis_diagnostics` + `redis_read`。

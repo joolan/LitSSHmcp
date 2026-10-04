@@ -14,6 +14,30 @@ public class AppConfig
 
     /// <summary>MCP 工具分组开关（留空 = 全部启用）。</summary>
     public ToolsConfig Tools { get; set; } = new();
+
+    /// <summary>服务器快照（ssh_snapshot_get / ssh_snapshot_refresh）的行为配置。</summary>
+    public SnapshotConfig Snapshot { get; set; } = new();
+}
+
+/// <summary>
+/// 服务器快照配置。快照是"整机态势的可持久化采集结果"：
+/// 资源使用/端口↔进程↔服务三元组/nginx证书/systemd健康，按服务器落库存历史。
+/// </summary>
+public class SnapshotConfig
+{
+    /// <summary>
+    /// 采集是否自动提权(sudo)执行只读探测命令。开启后"端口↔进程↔服务"三元组能看到
+    /// root 进程的属主与 cgroup 服务名；仅当该服务器配置了 SudoType 时才生效，
+    /// 否则自动降级（相关字段缺失并标注 degraded）。逐次采集命令均为内置固定只读命令，
+    /// 不要求逐次审批；把此项设为 false 可完全禁止快照提权。
+    /// </summary>
+    public bool UseSudo { get; set; } = true;
+
+    /// <summary>每台服务器保留的最近快照份数（含其事件级联清理）；0 = 不限制。</summary>
+    public int RetentionPerServer { get; set; } = 30;
+
+    /// <summary>单次快照整体超时（秒），超时后剩余采集器标记为跳过并落库为失败。</summary>
+    public int TimeoutSeconds { get; set; } = 180;
 }
 
 public class SecurityConfig

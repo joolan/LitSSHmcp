@@ -36,6 +36,10 @@ public partial class MainWindow : Window
 
     private void OnDeleteServerClick(object sender, RoutedEventArgs e) => ViewModel.DeleteServerCommand.Execute(null);
 
+    private void OnSnapshotRefreshClick(object sender, RoutedEventArgs e) => ViewModel.SnapshotRefreshCommand.Execute(null);
+
+    private void OnSnapshotHistoryClick(object sender, RoutedEventArgs e) => ViewModel.OpenSnapshotHistoryCommand.Execute(null);
+
     private void OnCommandKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter)

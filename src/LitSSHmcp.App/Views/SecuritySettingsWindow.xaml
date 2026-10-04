@@ -89,6 +89,17 @@
                               ToolTip="desktop=本机弹窗; cli=带外(操作员用 litssh approve/deny 决定, 适配无桌面); 首个决定者生效"/>
                 </StackPanel>
 
+                <TextBlock Text="服务器快照 (ssh_snapshot_get / ssh_snapshot_refresh)" FontWeight="Bold" Margin="0,8,0,4"/>
+                <CheckBox Content="采集快照时使用提权 (sudo, 以便拿到 root 端口/进程/证书视图)" IsChecked="{Binding SnapshotUseSudo}" Margin="0,0,0,6"
+                          ToolTip="仅当该服务器配置了 SudoType 时生效；采集命令均为内置固定只读命令、不逐次弹审批；关闭则自动降级采集(端口进程属主等字段缺失)"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="每服务器保留份数:" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding SnapshotRetention, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,4,0"/>
+                    <TextBlock Text="(0=不限)" VerticalAlignment="Center" Foreground="Gray" Margin="0,0,16,0"/>
+                    <TextBlock Text="采集超时(秒):" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding SnapshotTimeout, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,0,0"/>
+                </StackPanel>
+
                 <TextBlock Text="查询结果脱敏 (列名正则=模式, 每行一条; 模式: full/email/phone/last4)" FontWeight="Bold" Margin="0,8,0,4"/>
                 <TextBox Text="{Binding MaskingRules, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True"
                          Height="50" FontFamily="Consolas" Margin="0,0,0,8"

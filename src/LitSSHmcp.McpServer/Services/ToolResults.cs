@@ -547,3 +547,58 @@ public sealed class AppHealthSnapshotDto
         new() { Success = false, Status = status, Error = error };
 }
 
+public sealed class SnapshotEventDto
+{
+    public string? Timestamp { get; set; }
+    public string? Kind { get; set; }
+    public string? Collector { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class SnapshotSummaryDto
+{
+    public long Id { get; set; }
+    public string? State { get; set; }
+    public string? CreatedAt { get; set; }
+    public string? CompletedAt { get; set; }
+    public double DurationMs { get; set; }
+    public string? Error { get; set; }
+}
+
+public sealed class SnapshotDto
+{
+    public bool Success { get; set; }
+
+    /// <summary>ok / succeeded / failed / snapshot_in_progress / snapshot_not_found / server_not_found / server_ambiguous / server_disabled。</summary>
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>给调用方的下一步提示（如"进行中请稍后查询"、"从未生成请刷新"）。</summary>
+    public string? Hint { get; set; }
+
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
+
+    public long? SnapshotId { get; set; }
+
+    /// <summary>running / succeeded / failed。</summary>
+    public string? State { get; set; }
+    public string? CreatedAt { get; set; }
+    public string? CompletedAt { get; set; }
+    public double? DurationMs { get; set; }
+    public string? Escalation { get; set; }
+    public int? CollectorVersion { get; set; }
+
+    /// <summary>采集数据: { collectorVersion, elevated, sections: { resource/portmap/nginx_tls/systemd: { status, durationMs, error, note, data } } }。</summary>
+    public Dictionary<string, object?>? Data { get; set; }
+
+    public List<SnapshotEventDto>? Events { get; set; }
+
+    /// <summary>最近若干份快照的轻量摘要（含本次），用于一眼看历史/后续趋势。</summary>
+    public List<SnapshotSummaryDto>? Recent { get; set; }
+
+    public static SnapshotDto Fail(string status, string error) =>
+        new() { Success = false, Status = status, Error = error };
+}
+

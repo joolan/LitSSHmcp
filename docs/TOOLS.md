@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
+MCP 服务器当前注册 **51 个工具**，按用途分为 14 组。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
 
 > **⚠ 同步约定（唯一事实来源）**：本文件是 MCP 工具说明的**唯一事实来源**。以下三处必须与本文件**双向同步**，工具发生任何变动（新增/改名/删除、参数变化、描述与路由变化）时缺一不可：
 > 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`get_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
@@ -64,7 +64,7 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 
 | 分组键 | 中文名 | 包含的工具 |
 |--------|--------|-----------|
-| `ssh` | SSH 服务器 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection` |
+| `ssh` | SSH 服务器 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection`、`ssh_snapshot_get`、`ssh_snapshot_refresh` |
 | `command` | 命令执行 | `ssh_execute_command`、`ssh_get_command_history`、`ssh_execute_sudo`、`ssh_get_sudo_status` |
 | `fileTransfer` | 文件传输 | `ssh_upload_file`、`ssh_download_file`、`ssh_list_files` |
 | `datasource` | 数据源 | `datasource_list`、`datasource_test_connection`、`datasource_get_sql_history` |
@@ -87,7 +87,7 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 
 | 域 | 前缀 | 覆盖范围 |
 |----|------|---------|
-| SSH 服务器 | `ssh_` | 服务器列表 / 状态 / 连通性 / 命令执行（含 sudo）/ 文件传输 / 命令历史 |
+| SSH 服务器 | `ssh_` | 服务器列表 / 状态 / 连通性 / 整机快照 / 命令执行（含 sudo）/ 文件传输 / 命令历史 |
 | 数据源 | `datasource_` | 数据源列表 / 连通性 / SQL 与 Redis 审计历史 |
 | MySQL | `mysql_` | 只读查询 / 写执行 / 执行计划 / 整体诊断 |
 | PostgreSQL | `postgres_` | 只读查询 / 写执行 / 执行计划 / 整体诊断 |
@@ -113,6 +113,7 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 | 有哪些服务器 / SSH服务器列表 / 连了哪些机器 | `ssh_list_servers` | ~~datasource_list~~（那是数据库） |
 | 某台服务器的状态 | `ssh_get_server_status` | |
 | SSH能不能连上 / 测试服务器连接 | `ssh_test_connection` | ~~datasource_test_connection~~（那是数据库） |
+| 服务器整体态势 / 资源占用(CPU/内存/磁盘/负载) / 端口进程服务 / Docker 容器 / 证书到期 / systemd健康 / 安全巡检 | `ssh_snapshot_get`（先查已存快照）; 需最新数据用 `ssh_snapshot_refresh` | 不要为看态势反复拼 `ssh_execute_command` |
 | 在服务器上执行命令 | `ssh_execute_command` | |
 | 权限不足 / 需要root执行 | `ssh_execute_sudo` | 不要等失败再提权，主动判断 |
 | 服务器上有哪些文件 / 看目录 | `ssh_list_files` | |
@@ -194,6 +195,21 @@ MCP 服务器当前注册 **49 个工具**，按用途分为 14 组。本文档�
 - **参数**：`serverId` — 服务器标识（ID/名称/主机名）
 - **返回**：`{ success, status, errorKind, serverId, name, durationMs, error }`
 - **说明**：只测 SSH 连通性并区分失败根因（`auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`）；测数据库请用 `datasource_test_connection`
+
+### `ssh_snapshot_get`
+- **参数**：`serverId`（服务器标识）、`snapshotId`（可选，取某一份历史快照；不传取该服务器**最新一份**）
+- **返回**：`{ success, status, hint, serverId, serverName, host, snapshotId, state, createdAt, completedAt, durationMs, escalation, collectorVersion, data, events, recent }`
+  - `data`：`{ collectorVersion, elevated, sections }`，`sections` 按采集维度分组：`resource`（资源态势：负载/内存/磁盘/CPU/OS/内核/主机名/IP）、`portmap`（端口↔进程↔用户↔服务三元组 + **程序路径 `exe`** + **完整启动命令行 `cmdline`**，含 TCP/UDP、双栈、Unix socket）、`docker`（守护进程概览：版本/容器与镜像数/存储驱动 + 容器清单 名称/镜像/状态/端口 + 运行容器资源 CPU/内存/网络/块IO/PIDs；未装 docker 为 `skipped`）、`nginx_tls`（**完整有效配置 `effectiveConfig`（`nginx -T` 展开 include）+ 域名列表 `domains`（每个域名是否 `ssl`、监听端口、关联证书到期/SAN）+ 站点/证书明细**）、`systemd`（单元健康聚合/失败清单）、`security`（安全巡检：`ssh` 有效配置、`firewall`（ufw/firewalld/iptables）、`fail2ban`、`mysql` 匿名账户/远程 root/**可远程登录的高权账户（`SHOW GRANTS` 判定）**、`exposedHighRiskPorts`、系统空口令账户、sudoers NOPASSWD，并汇总为 `findings[]`（severity/id/title/detail/evidence）与 `summary` 计数。**MySQL 账户核查优先用"与该服务器匹配的已配置 MySQL 数据源凭据"查询 `mysql.user`**（匹配规则：数据源 Host 为回环且其 SSH 隧道服务器 == 本服务器，或数据源 Host == 本服务器 host/本机 IP）；该账号需拥有 `mysql.*` 的 SELECT 权限（不要求是 root），否则 `mysql.checked=false` 并在 `reason` 说明（不会误判为安全）；无匹配数据源时回退到免密 best-effort）；每个 section 含 `status`（`ok`/`degraded`/`skipped`/`failed`）、`durationMs`、`error`、`note`、`data`
+  - `events`：该份快照的采集事件流水（`started`/`collector_started`/`collector_completed`/`collector_failed`/`collector_skipped`/`completed`/`failed`，含每步耗时与失败原因）
+  - `recent`：该服务器最近 10 份快照的轻量摘要（`id`/`state`/`createdAt`/`durationMs`/`error`），用于一眼看历史与后续趋势
+- **说明**：快照持久化在本机独立库 `%APPDATA%\LitSSH\snapshots.db`（与审计库分离，便于独立备份/清理）。**默认只读本地已存快照，不连服务器**；从未生成过返回 `status=snapshot_not_found` 并提示用 `ssh_snapshot_refresh` 生成首份。**降级采集**（section `status=degraded` 并给 `note`）：未提权或缺权限时 `portmap` 的属主/服务归属、`security` 的系统空口令/MySQL 账户可能缺失；`docker`/`nginx_tls`/`systemd` 环境不具备时对应 section `status=skipped`。**排查服务器问题优先用本工具**（一次拿全整机态势，比逐条拼命令全面稳定）。
+
+### `ssh_snapshot_refresh`
+- **参数**：`serverId` — 服务器标识
+- **返回**：同 `ssh_snapshot_get` 的结构；成功 `status=succeeded`，失败 `status=failed`（并保留已采集到的部分 section 与失败事件，便于排障）
+- **说明**：**重新采集**整机快照（与 `ssh_snapshot_get` 同一套 data 结构）。**耗时较长**（典型 10~30 秒，弱网更久），工具描述已明确提示。**单飞限流**：同一服务器同时只允许一个快照在采集中，重复调用立即返回 `status=snapshot_in_progress`（含进行中的 `snapshotId`），不会排队或重复采集——此时应改用 `ssh_snapshot_get` 稍后查询。**失败也落库**：连接失败/超时/取消都会把该份快照记为 `failed` 并写入 `error` 与事件；`security` 兼容性上，采集命令均为**内置固定只读命令**，但仍受命令过滤器 `Blocked` 规则约束。
+- **提权**：由 `config.json` 的 `snapshot.useSudo`（默认 `true`）与该服务器 `SudoType` 共同决定；开启且已配置提权时自动以 sudo/su 执行（`portmap` 可见 root 进程属主与 systemd 服务名、`nginx_tls` 可读 root-only 证书目录），**不逐次弹审批**；未配置/关闭时自动降级，不报错。设置 `snapshot.useSudo=false` 可完全禁止快照提权。
+- **保留**：每台服务器保留最近 `snapshot.retentionPerServer` 份（默认 30，`0`=不限），超出时按时间裁剪并级联清理其事件。
 
 ## 命令执行组（command）
 

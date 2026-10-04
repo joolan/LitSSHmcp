@@ -51,6 +51,10 @@
                         <ContextMenu>
                             <MenuItem Header="连接" Click="OnConnectClick"/>
                             <MenuItem Header="编辑" Click="OnEditServerClick"/>
+                            <Separator/>
+                            <MenuItem Header="采集快照" Click="OnSnapshotRefreshClick"/>
+                            <MenuItem Header="快照历史" Click="OnSnapshotHistoryClick"/>
+                            <Separator/>
                             <MenuItem Header="删除" Click="OnDeleteServerClick"/>
                         </ContextMenu>
                     </ListBox.ContextMenu>

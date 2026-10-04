@@ -62,6 +62,7 @@
 
 ## 与 MCP 工具配合
 - 刷新清单：`ssh_list_servers`、`datasource_list`、`topology_get_overview`、`topology_get_dependencies`。
+- **整机盘点**：`ssh_snapshot_get(serverId)` 一次拿到 资源/端口↔进程↔服务（含程序路径 `exe` 与启动命令 `cmdline`）/Docker 容器/nginx 域名与证书/systemd/**安全巡检（security）**，快速补全“端口/进程/容器/证书/服务归属”，并作为安全基线证据；需要最新数据用 `ssh_snapshot_refresh`。
 - 补全应用细节：`java_processes`（启动命令/jar/工作目录）、`docker_ps`/`docker_inspect`（端口/挂载）、`log_find`（日志路径）、`service_status`（systemd 单元）。
 - 对账发现：`topology_discover`；把 `UnmatchedEndpoints`/notes 里的“未匹配端点、占位符主机、疑似外部依赖”写进“待确认”。
 - 提速回顾：档案里存好每个应用的**日志路径**后，后续直接 `log_tail(serverId, appId=...)` / `log_grep`，无需再 `log_find`。

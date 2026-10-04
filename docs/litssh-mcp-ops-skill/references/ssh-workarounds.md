@@ -20,6 +20,7 @@ ssh_execute_command(serverId, "grep -n -i -- 'OutOfMemory\\|Exception' /opt/orde
 > 若路径应长期使用，建议把该目录加入 `security.logs.allowedPaths`（安全设置窗口），或在该应用填「日志路径」，之后就能用 `log_tail`/`log_grep`。
 
 ## 6.2 端口/进程/资源
+> 更全的整机视角（端口↔进程↔用户↔服务三元组 + 程序路径 `exe`/启动命令 `cmdline`、Docker 容器、nginx 配置与证书、systemd）**优先用 `ssh_snapshot_get(serverId)`**；需要最新数据再 `ssh_snapshot_refresh`。下列命令用于快照未启用或需更细粒度时。
 ```
 ssh_execute_command(serverId, "ss -ltnp 2>/dev/null | grep -E ':8080|:80' || netstat -ltnp")
 ssh_execute_command(serverId, "ps -eo pid,ppid,pcpu,pmem,etime,args --sort=-pcpu | head -20")
@@ -42,7 +43,7 @@ ssh_execute_sudo(serverId, "last reboot | head")
 ```
 
 ## 6.5 领域工具未启用时的替代
-- 无 `docker_*`：`ssh_execute_command(serverId, "docker ps -a")` / `"docker logs --tail 200 <c>"` / `"docker stats --no-stream"`。
+- 无 `docker_*`：`ssh_execute_command(serverId, "docker ps -a")` / `"docker logs --tail 200 <c>"` / `"docker stats --no-stream"`；或直接 `ssh_snapshot_get(serverId)` 看 `docker.containers`/`docker.stats`（含状态/端口/资源）。
 - 无 `service_*`：`"systemctl status <s> --no-pager"` / `"journalctl -u <s> -n 200 --no-pager"`；重启用 `ssh_execute_sudo(serverId, "systemctl restart <s>")`。
 - 无 `java_*`：`"jstack -l <pid>"` / `"jcmd <pid> GC.heap_info"` / `"jstat -gcutil <pid> 1000 1"`。
 
@@ -56,7 +57,7 @@ MCP 没有“编辑远端文件”工具。稳妥做法：
 
 ## 6.7 其它环境/编排（MCP 未内置）
 - Kubernetes：`ssh_execute_command(serverId, "kubectl get pods -A -o wide")`、`"kubectl describe pod <p> -n <ns>"`、`"kubectl logs <p> -n <ns> --tail=200"`。
-- Nginx：`"nginx -t"`、`"tail -n 200 /var/log/nginx/error.log"`。
+- Nginx：`"nginx -t"`、`"tail -n 200 /var/log/nginx/error.log"`；整机 nginx 站点/域名/证书到期用 `ssh_snapshot_get` 的 `nginx_tls`（含完整有效配置 `effectiveConfig` 与 `domains`）。
 - 消息队列/中间件：优先用其自带 CLI（`kafka-*`、`rabbitmqctl`）经 `ssh_execute_command`。
 - 需要长期指标/追踪（Prometheus/APM）时，MCP 未覆盖，改用对应系统或经 ssh 拉取。
 

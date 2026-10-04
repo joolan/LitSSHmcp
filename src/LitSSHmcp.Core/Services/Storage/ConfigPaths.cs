@@ -14,6 +14,9 @@ public static class ConfigPaths
     /// <summary>审计哈希链的本地签名密钥（DPAPI 保护）。</summary>
     public static string AuditKeyFile => AuditDb + ".key";
 
+    /// <summary>服务器快照库（快照记录 + 快照事件，与审计库分离，便于独立备份/清理）。</summary>
+    public static string SnapshotDb => Path.Combine(AppDataDir, "snapshots.db");
+
     /// <summary>带外审批（CLI/IPC）待决/决策文件目录。</summary>
     public static string ApprovalsDir => Path.Combine(AppDataDir, "approvals");
 

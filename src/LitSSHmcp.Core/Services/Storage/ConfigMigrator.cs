@@ -80,6 +80,12 @@ public static class ConfigMigrator
             changed = true;
         }
 
+        if (config.Snapshot == null)
+        {
+            config.Snapshot = new SnapshotConfig();
+            changed = true;
+        }
+
         // 旧版本（无 schemaVersion）视为 0，补写为当前版本
         if (config.SchemaVersion < AppConfig.CurrentSchemaVersion)
         {

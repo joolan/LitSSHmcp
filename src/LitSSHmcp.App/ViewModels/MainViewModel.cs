@@ -9,6 +9,7 @@ using System.Windows.Input;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Snapshot;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Win32;
@@ -21,6 +22,11 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ISshService _sshService;
     private readonly IAuditLogService _auditLogService;
     private readonly ITopologyStore _topologyStore = new TopologyStore();
+
+    // 快照: 采集服务实例须长期复用(内存单飞锁绑定实例); 库供历史窗口读取。
+    private readonly ISnapshotService _snapshotService = AppServiceFactory.CreateSnapshotService();
+    private readonly ISnapshotStore _snapshotStore = AppServiceFactory.CreateSnapshotStore();
+    private bool _snapshotBusy;
 
     private SshServerConfig? _selectedServer;
     private SessionViewModel? _selectedSession;
@@ -45,6 +51,8 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand ImportConfigCommand { get; }
     public ICommand OpenMcpToolsCommand { get; }
     public ICommand OpenToolGroupsCommand { get; }
+    public ICommand SnapshotRefreshCommand { get; }
+    public ICommand OpenSnapshotHistoryCommand { get; }
 
     public MainViewModel()
     {
@@ -68,10 +76,27 @@ public class MainViewModel : INotifyPropertyChanged
         ImportConfigCommand = new RelayCommand(_ => ImportConfig());
         OpenMcpToolsCommand = new RelayCommand(_ => OpenMcpTools());
         OpenToolGroupsCommand = new RelayCommand(_ => OpenToolGroups());
+        SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
+        OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
 
         Sessions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSessions));
 
+        // 启动时建表并回收上次崩溃遗留的 Running 快照；失败不阻断（首次读写还会惰性建表兜底）
+        _ = InitializeSnapshotStoreAsync();
+
         LoadServers();
+    }
+
+    private async Task InitializeSnapshotStoreAsync()
+    {
+        try
+        {
+            await _snapshotStore.InitializeAsync();
+        }
+        catch
+        {
+            // 忽略: 具体错误会在使用快照功能时以界面状态呈现
+        }
     }
 
     public SshServerConfig? SelectedServer
@@ -85,6 +110,8 @@ public class MainViewModel : INotifyPropertyChanged
             (EditServerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DeleteServerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ConnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenSnapshotHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
     }
 
@@ -246,6 +273,61 @@ public class MainViewModel : INotifyPropertyChanged
 
     // 工具分组设置(写入 config.json 的 tools.enabledGroups)
     private void OpenToolGroups() => new ToolGroupsWindow { Owner = Application.Current.MainWindow }.ShowDialog();
+
+    // 采集服务器快照(同步阻塞, 典型 10~30 秒)。单飞: 服务内 per-server 锁 + 库内 Running 唯一约束跨进程生效;
+    // UI 再加一道全局忙标志避免同一窗口重复点击。完成后打开历史窗口并定位到本次快照。
+    private async void RefreshSnapshot(SshServerConfig? server)
+    {
+        if (server == null) return;
+        if (server.Disabled)
+        {
+            StatusMessage = $"服务器 {server.Name} 已禁用, 不允许采集快照。";
+            return;
+        }
+        if (_snapshotBusy)
+        {
+            StatusMessage = "已有快照采集任务在进行中, 请稍候。";
+            return;
+        }
+
+        _snapshotBusy = true;
+        (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        StatusMessage = $"正在采集 {server.Name} 的快照…(典型 10~30 秒, 弱网更久)";
+        long? snapshotId = null;
+        try
+        {
+            var config = await _configService.LoadConfigAsync();
+            var result = await _snapshotService.RefreshAsync(server, config.Snapshot ?? new SnapshotConfig(), CancellationToken.None);
+            snapshotId = result.SnapshotId;
+            StatusMessage = result.Status switch
+            {
+                "succeeded" => $"快照采集完成: {server.Name} (#{result.SnapshotId}, {result.Snapshot?.DurationMs:F0}ms)",
+                "snapshot_in_progress" => result.Error ?? "该服务器已有快照在采集中",
+                _ => $"快照采集失败: {result.Error}"
+            };
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"快照采集异常: {ex.Message}";
+        }
+        finally
+        {
+            _snapshotBusy = false;
+            (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        OpenSnapshotHistory(server, snapshotId);
+    }
+
+    // 历史快照窗口: 可切换服务器, 列表→点详情; 直接复用同一查看页面。
+    private void OpenSnapshotHistory(SshServerConfig? server, long? initialSnapshotId = null)
+    {
+        var window = new SnapshotHistoryWindow(_snapshotStore, _configService, server?.Id, initialSnapshotId)
+        {
+            Owner = Application.Current.MainWindow
+        };
+        window.ShowDialog();
+    }
 
     private async void ExportConfig()
     {

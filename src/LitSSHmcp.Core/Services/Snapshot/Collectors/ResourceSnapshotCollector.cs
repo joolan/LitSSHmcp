@@ -115,7 +115,7 @@ public sealed class ResourceSnapshotCollector : ISnapshotCollector
     }
 
     // 资源阈值（可按需调整；集中在此便于运维对照）
-    public const double MemWarnPercent = 80, MemCritPercent = 90;
+    public const double MemWarnPercent = 70, MemCritPercent = 85;
     public const double SwapWarnPercent = 50, SwapCritPercent = 80;
     public const double DiskWarnPercent = 80, DiskCritPercent = 90;
     public const double LoadWarnFactor = 2.0, LoadCritFactor = 4.0;

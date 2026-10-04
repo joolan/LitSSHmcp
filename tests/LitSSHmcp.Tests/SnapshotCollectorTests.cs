@@ -678,7 +678,25 @@ public class SnapshotCollectorTests
         Assert.Contains(warnings, w => (string?)w["metric"] == "swap" && (string?)w["severity"] == "warning");
         Assert.Contains(warnings, w => (string?)w["metric"] == "disk" && (string?)w["severity"] == "critical");
         Assert.Contains(warnings, w => (string?)w["metric"] == "load");                       // 5/2=2.5 倍 → warning
-        Assert.DoesNotContain(warnings, w => (string?)w["metric"] == "memory");               // 74.7 < 80
+        Assert.Contains(warnings, w => (string?)w["metric"] == "memory" && (string?)w["severity"] == "warning");   // 74.7 ≥ 70
+    }
+
+    [Theory]
+    [InlineData(60.0, null)]
+    [InlineData(69.9, null)]
+    [InlineData(70.0, "warning")]
+    [InlineData(74.7, "warning")]
+    [InlineData(85.0, "critical")]
+    public void Resource_memory_thresholds(double used, string? expected)
+    {
+        var data = new Dictionary<string, object?>
+        {
+            ["memory"] = new Dictionary<string, object?> { ["usedPercent"] = used, ["swapTotalMb"] = 0L, ["swapUsedPercent"] = 0.0 }
+        };
+
+        var memory = ResourceSnapshotCollector.BuildWarnings(data).FirstOrDefault(w => (string?)w["metric"] == "memory");
+
+        Assert.Equal(expected, (string?)memory?["severity"]);
     }
 
     [Fact]

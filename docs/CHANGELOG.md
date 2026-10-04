@@ -2,7 +2,7 @@
 
 本项目的所有重要变更都记录在此文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [1.1.1] - 2026-10-04
 
 ### 修复
 
@@ -338,5 +338,6 @@
 - **CLI**：`litssh list` / `litssh connect` / `litssh run`。
 - **存储**：`%APPDATA%\LitSSH\config.json` 配置 + `audit.db` SQLite 审计。
 
-[未发布]: https://github.com/joolan/LitSSHmcp/compare/v1.0.0...HEAD
+[1.1.1]: https://github.com/joolan/LitSSHmcp/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/joolan/LitSSHmcp/releases/tag/v1.1.0
 [1.0.0]: https://github.com/joolan/LitSSHmcp/releases/tag/v1.0.0

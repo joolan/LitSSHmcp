@@ -1,0 +1,35 @@
+<UserControl x:Class="LitSSHmcp.App.Views.ConfigTransferView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,12" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   Text="导出/导入整份配置（服务器、数据源、应用、关系、安全设置等）。"/>
+
+        <DockPanel Grid.Row="1" Margin="0,0,0,12">
+            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                <ui:Button Content="导出配置…" Icon="{ui:SymbolIcon Document24}" Padding="14,5" Margin="0,0,10,0"
+                           Command="{Binding ExportCommand}"/>
+                <ui:Button Content="导入配置…" Icon="{ui:SymbolIcon ArrowSync24}" Padding="14,5"
+                           Command="{Binding ImportCommand}"/>
+            </StackPanel>
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" HorizontalAlignment="Right"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis" Margin="8,0,0,0"/>
+        </DockPanel>
+
+        <Border Grid.Row="2" Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="{DynamicResource AppRadiusS}" Padding="10"
+                VerticalAlignment="Top">
+            <StackPanel>
+                <TextBlock Text="说明" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           Text="· 导出可选「包含密钥（DPAPI 密文，仅本机当前用户可用）」或「脱敏导出（不含任何密码）」。&#x0a;&#x0a;· 导入将覆盖当前全部配置，操作前请确认已有备份。&#x0a;&#x0a;· 密钥为 DPAPI 密文，导入到其他计算机/用户后需重新填写密码。"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

@@ -41,17 +41,15 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand DeleteServerCommand { get; }
     public ICommand ConnectCommand { get; }
     public ICommand CloseSessionCommand { get; }
-    public ICommand OpenDatasourceManagerCommand { get; }
-    public ICommand OpenTopologyManagerCommand { get; }
-    public ICommand OpenApplicationManagerCommand { get; }
     public ICommand OpenAuditCommand { get; }
-    public ICommand OpenSecuritySettingsCommand { get; }
     public ICommand OpenTopologyCommand { get; }
-    public ICommand ExportConfigCommand { get; }
-    public ICommand ImportConfigCommand { get; }
     public ICommand OpenMcpToolsCommand { get; }
-    public ICommand OpenToolGroupsCommand { get; }
     public ICommand OpenAgentCommand { get; }
+    public ICommand NavigateHomeCommand { get; }
+    public ICommand NavigateServersCommand { get; }
+    public ICommand NavigateDataSourcesCommand { get; }
+    public ICommand NavigateApplicationsCommand { get; }
+    public ICommand OpenSettingsCommand { get; }
     public ICommand SnapshotRefreshCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
 
@@ -67,17 +65,15 @@ public class MainViewModel : INotifyPropertyChanged
         DeleteServerCommand = new RelayCommand(_ => DeleteServer(), _ => SelectedServer != null);
         ConnectCommand = new RelayCommand(_ => Connect(SelectedServer), _ => SelectedServer != null);
         CloseSessionCommand = new RelayCommand(p => CloseSession(p as SessionViewModel));
-        OpenDatasourceManagerCommand = new RelayCommand(_ => OpenDatasourceManager());
-        OpenTopologyManagerCommand = new RelayCommand(_ => OpenTopologyManager());
-        OpenApplicationManagerCommand = new RelayCommand(_ => OpenApplicationManager());
         OpenAuditCommand = new RelayCommand(_ => OpenAudit());
-        OpenSecuritySettingsCommand = new RelayCommand(_ => OpenSecuritySettings());
         OpenTopologyCommand = new RelayCommand(_ => OpenTopology());
-        ExportConfigCommand = new RelayCommand(_ => ExportConfig());
-        ImportConfigCommand = new RelayCommand(_ => ImportConfig());
         OpenMcpToolsCommand = new RelayCommand(_ => OpenMcpTools());
-        OpenToolGroupsCommand = new RelayCommand(_ => OpenToolGroups());
         OpenAgentCommand = new RelayCommand(_ => OpenAgent());
+        NavigateHomeCommand = new RelayCommand(_ => CurrentPage = MainPage.Home);
+        NavigateServersCommand = new RelayCommand(_ => CurrentPage = MainPage.Servers);
+        NavigateDataSourcesCommand = new RelayCommand(_ => NavigateDataSources());
+        NavigateApplicationsCommand = new RelayCommand(_ => NavigateApplications());
+        OpenSettingsCommand = new RelayCommand(_ => OpenSettings());
         SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
 
@@ -124,6 +120,20 @@ public class MainViewModel : INotifyPropertyChanged
     }
 
     public bool HasSessions => Sessions.Count > 0;
+
+    private MainPage _currentPage = MainPage.Home;
+
+    /// <summary>右侧主区域当前展示的页面。</summary>
+    public MainPage CurrentPage
+    {
+        get => _currentPage;
+        set
+        {
+            if (_currentPage == value) return;
+            _currentPage = value;
+            OnPropertyChanged();
+        }
+    }
 
     public string StatusMessage
     {
@@ -258,23 +268,90 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    private void OpenSecuritySettings() => new SecuritySettingsWindow { Owner = Application.Current.MainWindow }.ShowDialog();
+    // 资产拓扑：非模态独立窗口（不强制置顶，可与主界面同时操作）
+    private TopologyWindow? _topologyWindow;
 
-    private void OpenTopology() => new TopologyWindow { Owner = Application.Current.MainWindow }.ShowDialog();
+    private void OpenTopology()
+    {
+        if (_topologyWindow is { IsLoaded: true })
+        {
+            _topologyWindow.Activate();
+            return;
+        }
 
-    private void OpenDatasourceManager() => new DatasourceManageWindow { Owner = Application.Current.MainWindow }.ShowDialog();
+        _topologyWindow = new TopologyWindow { Owner = Application.Current.MainWindow };
+        _topologyWindow.Closed += (_, _) => _topologyWindow = null;
+        _topologyWindow.Show();
+    }
 
-    private void OpenApplicationManager() => new ApplicationManageWindow { Owner = Application.Current.MainWindow }.ShowDialog();
+    // 审计日志：非模态独立窗口（不强制置顶，可与主界面同时操作）
+    private AuditWindow? _auditWindow;
 
-    private void OpenTopologyManager() => new TopologyManageWindow { Owner = Application.Current.MainWindow }.ShowDialog();
+    private void OpenAudit()
+    {
+        if (_auditWindow is { IsLoaded: true })
+        {
+            _auditWindow.Activate();
+            return;
+        }
 
-    private void OpenAudit() => new AuditWindow { Owner = Application.Current.MainWindow }.ShowDialog();
+        _auditWindow = new AuditWindow { Owner = Application.Current.MainWindow };
+        _auditWindow.Closed += (_, _) => _auditWindow = null;
+        _auditWindow.Show();
+    }
 
     // MCP 工具说明(内容来自 docs/TOOLS.md 嵌入资源, 与 MCP 服务器端工具注解双向同步 — 见 McpToolsWindow 文件头注释)
     private void OpenMcpTools() => new McpToolsWindow { Owner = Application.Current.MainWindow }.ShowDialog();
 
-    // 工具分组设置(写入 config.json 的 tools.enabledGroups)
-    private void OpenToolGroups() => new ToolGroupsWindow { Owner = Application.Current.MainWindow }.ShowDialog();
+    // 设置：整合「工具分组 / 安全设置 / 配置导入导出」为多 Tab 独立窗口
+    private AppSettingsWindow? _settingsWindow;
+
+    private void OpenSettings()
+    {
+        if (_settingsWindow is { IsLoaded: true })
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        _settingsWindow = new AppSettingsWindow(_configService);
+        _settingsWindow.Closed += (_, _) =>
+        {
+            _settingsWindow = null;
+            LoadServers();
+        };
+        _settingsWindow.Show();
+    }
+
+    // 数据源管理：主区域页面
+    private DatasourceManageViewModel? _datasourcePage;
+    public DatasourceManageViewModel? DatasourcePage
+    {
+        get => _datasourcePage;
+        private set { _datasourcePage = value; OnPropertyChanged(); }
+    }
+
+    private void NavigateDataSources()
+    {
+        DatasourcePage ??= new DatasourceManageViewModel(_configService);
+        DatasourcePage.RefreshCommand.Execute(null);
+        CurrentPage = MainPage.DataSources;
+    }
+
+    // 应用管理：主区域页面
+    private ApplicationManageViewModel? _applicationPage;
+    public ApplicationManageViewModel? ApplicationPage
+    {
+        get => _applicationPage;
+        private set { _applicationPage = value; OnPropertyChanged(); }
+    }
+
+    private void NavigateApplications()
+    {
+        ApplicationPage ??= new ApplicationManageViewModel(_configService, Application.Current.MainWindow);
+        ApplicationPage.RefreshCommand.Execute(null);
+        CurrentPage = MainPage.Applications;
+    }
 
     // AI 运维助手(内嵌 MCP 客户端 + OpenAI 兼容大模型; 需先在「AI 助手设置」配置模型)
     // 非模态独立窗口: 可与主界面同时操作
@@ -348,90 +425,21 @@ public class MainViewModel : INotifyPropertyChanged
         window.ShowDialog();
     }
 
-    private async void ExportConfig()
-    {
-        var dialog = new SaveFileDialog
-        {
-            FileName = $"litssh-config-{DateTime.Now:yyyyMMdd-HHmmss}.json",
-            Filter = "JSON 文件|*.json|所有文件|*.*"
-        };
-
-        if (dialog.ShowDialog() != true)
-            return;
-
-        var choice = MessageBox.Show(
-            "导出内容:\n\n[是] 包含密钥（DPAPI 密文，仅本机当前用户可用）\n[否] 脱敏导出（不含任何密码）",
-            "导出配置", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-
-        if (choice == MessageBoxResult.Cancel)
-            return;
-
-        try
-        {
-            if (choice == MessageBoxResult.Yes)
-            {
-                File.Copy(_configService.GetConfigPath(), dialog.FileName, overwrite: true);
-            }
-            else
-            {
-                var config = await _configService.LoadConfigAsync();
-                foreach (var server in config.Servers)
-                {
-                    server.Password = null;
-                    server.KeyFilePassphrase = null;
-                    server.SudoPassword = null;
-                }
-                foreach (var ds in config.DataSources)
-                    ds.Password = null;
-
-                var json = JsonSerializer.Serialize(config, AppConfigJson.Options);
-                await File.WriteAllTextAsync(dialog.FileName, json);
-            }
-
-            StatusMessage = $"已导出配置: {dialog.FileName}";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"导出失败: {ex.Message}";
-        }
-    }
-
-    private async void ImportConfig()
-    {
-        var dialog = new OpenFileDialog { Filter = "JSON 文件|*.json|所有文件|*.*" };
-        if (dialog.ShowDialog() != true)
-            return;
-
-        if (MessageBox.Show("导入将覆盖当前配置（含服务器/数据源/应用/关系/安全设置），确定继续？",
-                "导入配置", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
-            return;
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(dialog.FileName, Encoding.UTF8);
-            var config = JsonSerializer.Deserialize<AppConfig>(json, AppConfigJson.Options);
-            if (config == null)
-            {
-                StatusMessage = "导入失败: 文件内容不是有效的配置";
-                return;
-            }
-
-            await _configService.SaveConfigAsync(config);
-            StatusMessage = $"已导入配置: {dialog.FileName}";
-            LoadServers();
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"导入失败: {ex.Message}";
-        }
-    }
-
     public event PropertyChangedEventHandler? PropertyChanged;
 
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+}
+
+/// <summary>主窗口右侧主区域可切换的功能页面。</summary>
+public enum MainPage
+{
+    Home,
+    Servers,
+    DataSources,
+    Applications
 }
 
 public class RelayCommand : ICommand

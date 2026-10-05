@@ -1,0 +1,28 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.AppSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:views="clr-namespace:LitSSHmcp.App.Views"
+        Title="设置" Height="720" Width="820" MinWidth="700" MinHeight="560"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="设置"/>
+
+        <TabControl Grid.Row="1" Margin="10,0,10,10">
+            <TabItem Header="安全设置">
+                <views:SecuritySettingsView/>
+            </TabItem>
+            <TabItem Header="工具分组">
+                <views:ToolGroupsView/>
+            </TabItem>
+            <TabItem Header="导入 / 导出">
+                <views:ConfigTransferView x:Name="TransferView"/>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</ui:FluentWindow>

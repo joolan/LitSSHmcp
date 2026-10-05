@@ -1,13 +1,14 @@
 using System.Windows;
+using System.Windows.Controls;
 using LitSSHmcp.App.ViewModels;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class SecuritySettingsWindow : Wpf.Ui.Controls.FluentWindow
+public partial class SecuritySettingsView : UserControl
 {
     private readonly SecuritySettingsViewModel _viewModel = new();
 
-    public SecuritySettingsWindow()
+    public SecuritySettingsView()
     {
         InitializeComponent();
         DataContext = _viewModel;

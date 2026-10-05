@@ -13,12 +13,12 @@ namespace LitSSHmcp.App.ViewModels;
 public class ApplicationManageViewModel : INotifyPropertyChanged
 {
     private readonly IConfigService _configService;
-    private readonly Window _owner;
+    private readonly Window? _owner;
     private readonly ITopologyStore _topologyStore;
     private ApplicationConfig? _selectedApplication;
     private string _statusMessage = string.Empty;
 
-    public ApplicationManageViewModel(IConfigService configService, Window owner, ITopologyStore? topologyStore = null)
+    public ApplicationManageViewModel(IConfigService configService, Window? owner, ITopologyStore? topologyStore = null)
     {
         _configService = configService;
         _owner = owner;

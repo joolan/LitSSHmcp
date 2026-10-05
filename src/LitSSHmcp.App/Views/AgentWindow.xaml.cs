@@ -125,8 +125,19 @@ public partial class AgentWindow : FluentWindow
 
     private void OnEditTurn(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is AgentTurn turn)
-            _viewModel.BeginEdit(turn);
+        if ((sender as FrameworkElement)?.DataContext is not AgentTurn turn)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(_viewModel.Input) || _viewModel.HasAttachments)
+        {
+            var result = System.Windows.MessageBox.Show(
+                "输入区已有内容，编辑该消息将覆盖当前输入与附件，是否继续？",
+                "AI 运维助手", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
+            if (result != System.Windows.MessageBoxResult.Yes)
+                return;
+        }
+
+        _viewModel.BeginEdit(turn);
     }
 
     private void OnInputKeyDown(object sender, KeyEventArgs e)
@@ -308,19 +319,11 @@ public partial class AgentWindow : FluentWindow
         }
     }
 
-    private void CopyText(string text)
-    {
-        try
-        {
-            Clipboard.SetText(text);
-            _viewModel.StatusMessage = "已复制文字";
-        }
-        catch { /* ignore */ }
-    }
+    private void CopyText(string text) =>
+        CopyToClipboard(() => Clipboard.SetText(text), "已复制文字");
 
-    private void CopyAttachments(IReadOnlyList<string> paths)
-    {
-        try
+    private void CopyAttachments(IReadOnlyList<string> paths) =>
+        CopyToClipboard(() =>
         {
             if (paths.Count == 1 && IsImageFile(paths[0]))
             {
@@ -338,9 +341,22 @@ public partial class AgentWindow : FluentWindow
                     files.Add(path);
                 Clipboard.SetFileDropList(files);
             }
-            _viewModel.StatusMessage = "已复制附件";
-        }
-        catch { /* ignore */ }
+        }, "已复制附件");
+
+    // 剪贴板 API 需要 STA 且可能较慢：放到后台 STA 线程，避免阻塞 UI
+    private void CopyToClipboard(Action clipboardAction, string doneMessage)
+    {
+        _viewModel.StatusMessage = "正在复制…";
+        var dispatcher = Dispatcher;
+        var thread = new System.Threading.Thread(() =>
+        {
+            var ok = false;
+            try { clipboardAction(); ok = true; } catch { /* ignore */ }
+            dispatcher.BeginInvoke(new Action(() => _viewModel.StatusMessage = ok ? doneMessage : "复制失败"));
+        });
+        thread.SetApartmentState(System.Threading.ApartmentState.STA);
+        thread.IsBackground = true;
+        thread.Start();
     }
 
     private static bool IsImageFile(string path) =>

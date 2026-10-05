@@ -622,6 +622,54 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         StatusMessage = "已清除全部附件";
     }
 
+    /// <summary>把某一轮用户消息的附件载入输入区（供“编辑并重发”）。</summary>
+    public void LoadAttachmentsFromTurn(AgentTurn turn)
+    {
+        Attachments.Clear();
+
+        var (images, files) = ExtractTurnAttachments(turn.StorageText);
+        if (images.Count == 0 && files.Count == 0 && turn.Images.Count > 0)
+            foreach (var abs in turn.Images)
+                images.Add((System.IO.Path.GetFileName(abs), abs));
+
+        foreach (var (name, abs) in images)
+        {
+            if (!File.Exists(abs))
+                continue;
+            try
+            {
+                Attachments.Add(new AgentAttachment
+                {
+                    Name = name,
+                    Path = abs,
+                    Kind = AttachmentKind.Image,
+                    MediaType = MediaTypeFromExt(abs),
+                    ImageBytes = File.ReadAllBytes(abs)
+                });
+            }
+            catch { /* 忽略无法读取的附件 */ }
+        }
+
+        foreach (var (name, abs) in files)
+        {
+            if (!File.Exists(abs))
+                continue;
+            try
+            {
+                Attachments.Add(new AgentAttachment
+                {
+                    Name = name,
+                    Path = abs,
+                    Kind = AttachmentKind.Document,
+                    Text = File.ReadAllText(abs)
+                });
+            }
+            catch { /* 忽略无法读取的附件 */ }
+        }
+
+        OnPropertyChanged(nameof(HasAttachments));
+    }
+
     private const int InlineAttachmentChars = 8000;
 
     private sealed record AttachmentBuild(string Display, string Persisted, string ModelText, List<AIContent> Images, List<string> ImagePaths);
@@ -727,25 +775,52 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (_runtime is null)
             return;
 
-        // 编辑模式下：截断该轮之后的所有轮次与会话上下文
+        // 编辑模式下：截断该轮之后的所有轮次与会话上下文，并用当前输入+附件替换该轮
         if (_editingTurn is not null)
         {
-            var idx = Turns.IndexOf(_editingTurn);
+            var editTurn = _editingTurn;
+            var idx = Turns.IndexOf(editTurn);
+            _editingTurn = null;
+            OnPropertyChanged(nameof(IsEditing));
+            (CancelEditCommand as RelayCommand)?.RaiseCanExecuteChanged();
+
             if (idx >= 0)
             {
                 for (var i = Turns.Count - 1; i > idx; i--)
                     Turns.RemoveAt(i);
                 RebuildSessionHistoryUpTo(idx);
-                _editingTurn.ResetForRerun(fixedText ?? GetUserPlainText(_editingTurn));
-                var editTurn = _editingTurn;
-                _editingTurn = null;
-                OnPropertyChanged(nameof(IsEditing));
-                var editContents = await BuildContentsForTurnAsync(editTurn.UserText, editTurn.StorageText);
-                await RunTurnAsync(editTurn, editContents);
-                return;
+
+                var editText = (fixedText ?? Input)?.Trim();
+                var editPending = Attachments.ToList();
+                if (!string.IsNullOrEmpty(editText) || editPending.Count > 0)
+                {
+                    Input = string.Empty;
+                    var editDisplay = editText ?? string.Empty;
+                    string? editPersisted = null;
+                    var editImagePaths = new List<string>();
+                    IReadOnlyList<AIContent>? editContents = null;
+                    if (editPending.Count > 0)
+                    {
+                        var build = BuildAttachmentPrompt(editDisplay, editPending);
+                        editDisplay = build.Display;
+                        editPersisted = build.Persisted;
+                        editImagePaths = build.ImagePaths;
+                        var list = new List<AIContent> { new TextContent(build.ModelText) };
+                        list.AddRange(build.Images);
+                        editContents = list;
+                        Attachments.Clear();
+                        OnPropertyChanged(nameof(HasAttachments));
+                    }
+
+                    editTurn.ResetForRerun(editDisplay);
+                    editTurn.StorageText = editPersisted;
+                    editTurn.Images.Clear();
+                    foreach (var imagePath in editImagePaths)
+                        editTurn.Images.Add(imagePath);
+                    await RunTurnAsync(editTurn, editContents);
+                    return;
+                }
             }
-            _editingTurn = null;
-            OnPropertyChanged(nameof(IsEditing));
         }
 
         var text = (fixedText ?? Input)?.Trim();
@@ -876,6 +951,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         _editingTurn = turn;
         Input = GetUserPlainText(turn);
+        LoadAttachmentsFromTurn(turn);
         OnPropertyChanged(nameof(IsEditing));
         (CancelEditCommand as RelayCommand)?.RaiseCanExecuteChanged();
         StatusMessage = "编辑中：按「发送」将替换该指令及其后的对话；按「取消编辑」放弃。";

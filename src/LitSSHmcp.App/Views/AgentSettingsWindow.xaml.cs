@@ -3,10 +3,11 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Services.Storage;
+using Wpf.Ui.Controls;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class AgentSettingsWindow : Window
+public partial class AgentSettingsWindow : FluentWindow
 {
     private readonly AgentSettingsViewModel _viewModel = new();
 
@@ -48,10 +49,10 @@ public partial class AgentSettingsWindow : Window
         var provider = _viewModel.SelectedProvider;
         if (provider is null)
             return;
-        var result = MessageBox.Show(
+        var result = System.Windows.MessageBox.Show(
             $"确定删除模型「{provider.Name}」？删除后立即生效。",
-            "删除模型", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (result == MessageBoxResult.Yes)
+            "删除模型", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (result == System.Windows.MessageBoxResult.Yes)
             _ = _viewModel.RemoveSelectedProviderAsync();
     }
 

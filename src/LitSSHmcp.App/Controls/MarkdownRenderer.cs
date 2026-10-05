@@ -39,7 +39,7 @@ public static class MarkdownRenderer
                 PagePadding = new Thickness(0),
                 FontFamily = new FontFamily("Microsoft YaHei"),
                 FontSize = 13,
-                Foreground = Brushes.Black
+                Foreground = ThemeBrushes.TextPrimary
             };
 
             var lines = (markdown ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
@@ -81,7 +81,7 @@ public static class MarkdownRenderer
                 {
                     doc.Blocks.Add(new Paragraph(new Run(new string('─', 40)))
                     {
-                        Foreground = Brushes.LightGray,
+                        Foreground = ThemeBrushes.TextSecondary,
                         Margin = new Thickness(0, 4, 0, 4)
                     });
                     i++;
@@ -107,9 +107,9 @@ public static class MarkdownRenderer
                 {
                     var p = new Paragraph
                     {
-                        Foreground = Brushes.Gray,
+                        Foreground = ThemeBrushes.TextSecondary,
                         FontStyle = FontStyles.Italic,
-                        BorderBrush = Brushes.LightGray,
+                        BorderBrush = ThemeBrushes.Border,
                         BorderThickness = new Thickness(3, 0, 0, 0),
                         Padding = new Thickness(8, 0, 0, 0),
                         Margin = new Thickness(0, 2, 0, 2)
@@ -159,8 +159,8 @@ public static class MarkdownRenderer
                 FontFamily = new FontFamily("Consolas"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
-                Background = new SolidColorBrush(Color.FromRgb(0xF6, 0xF6, 0xF6)),
-                Padding = new Thickness(8, 6, 8, 6)
+                Foreground = ThemeBrushes.CodeText,
+                Background = Brushes.Transparent
             };
             foreach (var token in SyntaxHighlighter.Highlight(code, language))
                 text.Inlines.Add(new Run(token.Text) { Foreground = token.Brush, FontWeight = token.Bold ? FontWeights.Bold : FontWeights.Normal });
@@ -185,7 +185,7 @@ public static class MarkdownRenderer
             header.Children.Add(new TextBlock
             {
                 Text = string.IsNullOrWhiteSpace(language) ? "code" : language,
-                Foreground = Brushes.Gray,
+                Foreground = ThemeBrushes.TextSecondary,
                 FontSize = 11,
                 VerticalAlignment = VerticalAlignment.Center
             });
@@ -196,11 +196,14 @@ public static class MarkdownRenderer
 
             return new BlockUIContainer(new Border
             {
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0xDD, 0xDD, 0xDD)),
+                Background = ThemeBrushes.CodeBg,
+                BorderBrush = ThemeBrushes.Border,
                 BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10, 8, 10, 8),
                 Child = panel
             })
-            { Margin = new Thickness(0, 4, 0, 4) };
+            { Margin = new Thickness(0, 6, 0, 6) };
         }
 
         // ---------- 列表（含嵌套 + 任务清单） ----------
@@ -243,7 +246,7 @@ public static class MarkdownRenderer
                 {
                     paragraph.Inlines.Add(new Run(task.Groups[1].Value.Trim().Length > 0 ? "☑ " : "☐ ")
                     {
-                        Foreground = task.Groups[1].Value.Trim().Length > 0 ? Brushes.Green : Brushes.Gray
+                        Foreground = task.Groups[1].Value.Trim().Length > 0 ? ThemeBrushes.Success : ThemeBrushes.TextSecondary
                     });
                     AppendInline(paragraph, task.Groups[2].Value);
                 }
@@ -310,7 +313,7 @@ public static class MarkdownRenderer
             var group = new TableRowGroup();
             table.RowGroups.Add(group);
 
-            var headerRow = new TableRow { Background = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0)) };
+            var headerRow = new TableRow { Background = ThemeBrushes.Surface };
             for (var c = 0; c < columns; c++)
                 headerRow.Cells.Add(MakeCell(c < headers.Count ? headers[c] : string.Empty, bold: true));
             group.Rows.Add(headerRow);
@@ -337,7 +340,7 @@ public static class MarkdownRenderer
             return new TableCell(paragraph)
             {
                 Padding = new Thickness(7, 3, 7, 3),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0xDD, 0xDD, 0xDD)),
+                BorderBrush = ThemeBrushes.Border,
                 BorderThickness = new Thickness(0.5)
             };
         }
@@ -413,13 +416,13 @@ public static class MarkdownRenderer
             {
                 FontWeight = FontWeights.Bold,
                 FontSize = 12,
-                Foreground = Brushes.Gray,
+                Foreground = ThemeBrushes.TextSecondary,
                 Margin = new Thickness(0, 8, 0, 2)
             });
 
             foreach (var (number, text) in _footnoteTexts.OrderBy(f => f.Number))
             {
-                var p = new Paragraph { FontSize = 11, Foreground = Brushes.Gray, Margin = new Thickness(12, 0, 0, 0) };
+                var p = new Paragraph { FontSize = 11, Foreground = ThemeBrushes.TextSecondary, Margin = new Thickness(12, 0, 0, 0) };
                 p.Inlines.Add(new Run($"[{number}] "));
                 AppendInline(p, text);
                 doc.Blocks.Add(p);
@@ -450,7 +453,8 @@ public static class MarkdownRenderer
                     paragraph.Inlines.Add(new Run(token[1..^1])
                     {
                         FontFamily = new FontFamily("Consolas"),
-                        Background = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0))
+                        Foreground = ThemeBrushes.CodeText,
+                        Background = ThemeBrushes.CodeBg
                     });
                 else if (token.StartsWith("~~", StringComparison.Ordinal))
                     paragraph.Inlines.Add(new Span(new Run(token[2..^2])) { TextDecorations = TextDecorations.Strikethrough });
@@ -479,7 +483,7 @@ public static class MarkdownRenderer
                 {
                     FontSize = 10,
                     BaselineAlignment = BaselineAlignment.Superscript,
-                    Foreground = Brushes.Gray
+                    Foreground = ThemeBrushes.TextSecondary
                 });
             }
             else

@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using LitSSHmcp.App.Services;
 
 namespace LitSSHmcp.App.Controls;
 
@@ -27,6 +28,20 @@ public sealed class MarkdownBox : FlowDocumentScrollViewer
         Background = Brushes.Transparent;
         Padding = new Thickness(0);
         Document = MarkdownRenderer.Render(string.Empty);
+
+        ThemeService.ThemeChanged += OnThemeChanged;
+        Unloaded += (_, _) => ThemeService.ThemeChanged -= OnThemeChanged;
+    }
+
+    // 主题切换后按新 token 重渲染（FlowDocument 用的是具体画刷，不会自动跟随动态资源）。
+    private void OnThemeChanged()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(OnThemeChanged);
+            return;
+        }
+        Document = MarkdownRenderer.Render(Markdown);
     }
 
     // 本控件不自行滚动（内容随外层聊天区滚动），把滚轮事件转发给父级，避免鼠标停在 Markdown 上时外层无法滚动。

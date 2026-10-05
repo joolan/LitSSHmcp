@@ -7,9 +7,7 @@
 
   <!-- AI 运维助手内置技能(运维技能 markdown): 随 App 输出到 skills/litssh-mcp-ops-skill -->
   <ItemGroup>
-    <None Include="..\..\docs\litssh-mcp-ops-skill\**\*"
-          Link="skills\litssh-mcp-ops-skill\%(RecursiveDir)%(Filename)%(Extension)"
-          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\litssh-mcp-ops-skill\**\*" Link="skills\litssh-mcp-ops-skill\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- 【同步约定】MCP 工具说明的唯一事实来源是 docs/TOOLS.md。
@@ -18,6 +16,9 @@
        ② docs/TOOLS.md ③ 本文件嵌入内容(无需改代码, 刷新文档即可) — 详见 docs/TOOLS.md 顶部"同步约定"。 -->
   <ItemGroup>
     <EmbeddedResource Include="..\..\docs\TOOLS.md" Link="docs\TOOLS.md" LogicalName="LitSSHmcp.App.docs.TOOLS.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -3,10 +3,12 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.ViewModels;
+using Wpf.Ui.Controls;
+using TextBox = System.Windows.Controls.TextBox;
 
 namespace LitSSHmcp.App;
 
-public partial class MainWindow : Window
+public partial class MainWindow : FluentWindow
 {
     private MainViewModel ViewModel => (MainViewModel)DataContext;
 

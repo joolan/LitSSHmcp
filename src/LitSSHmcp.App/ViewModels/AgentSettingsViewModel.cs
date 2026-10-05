@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using LitSSHmcp.Agent;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
@@ -100,6 +101,22 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
 
     private string _statusMessage = string.Empty;
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
+
+    /// <summary>界面主题（全局）：system / light / dark；切换即时生效。</summary>
+    public IReadOnlyList<string> Themes { get; } = new[] { "system", "light", "dark" };
+
+    private string _theme = "system";
+    public string Theme
+    {
+        get => _theme;
+        set
+        {
+            if (string.Equals(_theme, value, StringComparison.Ordinal))
+                return;
+            Set(ref _theme, value);
+            ThemeService.Apply(value);
+        }
+    }
 
     public RelayCommand AddProviderCommand => _addProviderCommand ??= new RelayCommand(_ =>
     {
@@ -207,6 +224,8 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             RetentionMaxMessages = agent.RetentionMaxMessages.ToString();
             RetentionDays = agent.RetentionDays.ToString();
 
+            Theme = string.IsNullOrWhiteSpace(config.Ui?.Theme) ? "system" : config.Ui!.Theme;
+
             StatusMessage = "已加载";
         }
         catch (Exception ex)
@@ -255,6 +274,9 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent.RetentionMaxSessions = (int)Math.Max(0, ParseLong(RetentionMaxSessions, 50));
             config.Agent.RetentionMaxMessages = (int)Math.Max(0, ParseLong(RetentionMaxMessages, 200));
             config.Agent.RetentionDays = (int)Math.Max(0, ParseLong(RetentionDays, 90));
+
+            config.Ui ??= new UiConfig();
+            config.Ui.Theme = string.IsNullOrWhiteSpace(Theme) ? "system" : Theme;
 
             await _configService.SaveConfigAsync(config);
             StatusMessage = "已保存（重新打开「AI 运维助手」生效）";

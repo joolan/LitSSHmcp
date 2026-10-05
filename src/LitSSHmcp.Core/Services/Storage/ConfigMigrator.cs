@@ -92,6 +92,12 @@ public static class ConfigMigrator
             changed = true;
         }
 
+        if (config.Ui == null)
+        {
+            config.Ui = new UiConfig();
+            changed = true;
+        }
+
         if (config.Agent.Memory == null)
         {
             config.Agent.Memory = new AgentMemoryConfig();

@@ -21,6 +21,9 @@ public class AppConfig
     /// <summary>SSH 连接复用池（每服务器复用一条连接、空闲自动断开，避免密集工具调用反复连断）。</summary>
     public ConnectionPoolConfig ConnectionPool { get; set; } = new();
 
+    /// <summary>界面外观（主题）。</summary>
+    public UiConfig Ui { get; set; } = new();
+
     /// <summary>内置 AI 运维助手（LitSSHmcp.App 的 Agent）配置。</summary>
     public AgentConfig Agent { get; set; } = new();
 }
@@ -170,6 +173,12 @@ public class SnapshotConfig
 
     /// <summary>刷新最短间隔（秒）：距上次成功快照小于该值时，非 force 的刷新直接返回已有快照（0=不节流）。</summary>
     public int MinRefreshIntervalSeconds { get; set; } = 60;
+}
+
+public class UiConfig
+{
+    /// <summary>主题：system(默认, 跟随系统) / light / dark。</summary>
+    public string Theme { get; set; } = "system";
 }
 
 public class ConnectionPoolConfig

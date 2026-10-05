@@ -98,6 +98,7 @@ Windows平台下的SSH MCP服务器，让AI智能体可以安全地通过SSH管�
 - **文件传输审批**: 上传/下载需用户确认，并受**本地/远程路径白名单**与大小上限约束（`allowedLocalPaths` / `allowedRemotePaths` / `maxFileSizeBytes`）；文件夹/多文件用 `ssh_upload_files` / `ssh_download_files`（**一条 SFTP 连接、整批一次确认、保留子目录层级**）
 - **主机密钥校验(TOFU)**: 首次连接记录 SSH 主机指纹，之后指纹变化即拒绝（`security.sshHostKey.mode = tofu|strict|off`）
 - **按目标限流**: 单服务器/数据源的并发数与每分钟调用上限（`security.limits`）
+- **界面主题**: 基于 WPF-UI(Fluent) 的现代化外观，支持 **深色 / 浅色 / 跟随系统**（`ui.theme`，可在「AI 助手设置 → 助手设置」切换）
 - **SSH 连接复用池**: 每服务器复用一条 SSH 连接、执行完不断开、空闲自动断开（`connectionPool.{enabled,idleTimeoutSeconds,keepAliveSeconds,connectTimeoutSeconds,maxPerServer}`；默认开、空闲 300s、每服务器 1 条，可在「安全设置」调整），避免 AI/密集调用反复"连-断"触发目标机登录告警
 - **审计日志**: 记录所有命令与 SQL（含被拒绝的），支持 SQL 原文开关、字面量脱敏、**超期记录归档到历史表永久保留**；审计写入 **HMAC-SHA256 哈希链**，可在「审计日志」中**校验完整性**检测篡改（`security.audit`）；每条记录带 **MCP 会话 ID**（每次启动 MCP 服务生成），便于按会话区分
 - **提权执行**: 权限不足时可使用sudo提权

@@ -55,6 +55,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             OnPropertyChanged(nameof(PlanHeader));
             OnPropertyChanged(nameof(PlanVisibility));
         };
+
+        Turns.CollectionChanged += (_, _) => OnPropertyChanged(nameof(EmptyStateVisibility));
     }
 
     public ObservableCollection<AgentProviderConfig> Providers { get; } = new();
@@ -62,11 +64,21 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ObservableCollection<AgentSessionRow> FilteredSessions { get; } = new();
     public ObservableCollection<AgentTurn> Turns { get; } = new();
 
+    /// <summary>挑选可用模型：优先指定 id 且模型名非空 → 任一模型名非空 → 指定 id → 第一个。</summary>
+    private AgentProviderConfig? PickProvider(string? preferredId) =>
+        Providers.FirstOrDefault(p => p.Id == preferredId && !string.IsNullOrWhiteSpace(p.Model))
+        ?? Providers.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.Model))
+        ?? Providers.FirstOrDefault(p => p.Id == preferredId)
+        ?? Providers.FirstOrDefault();
+
     /// <summary>当前任务计划（update_plan 工具驱动的进度清单）。</summary>
     public ObservableCollection<PlanItemVM> Plan { get; } = new();
 
     public string PlanHeader => $"任务计划 ({Plan.Count(p => p.Done)}/{Plan.Count})";
     public Visibility PlanVisibility => Plan.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>无对话轮次时显示空态引导。</summary>
+    public Visibility EmptyStateVisibility => Turns.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public ICommand SendCommand { get; }
     public ICommand StopCommand { get; }
@@ -181,9 +193,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             _suppressSelection = true;
             Providers.Clear();
-            foreach (var p in _agentConfig.Providers.Where(p => p.Enabled))
+            foreach (var p in _agentConfig.Providers.Where(p => p.Enabled && !string.IsNullOrWhiteSpace(p.Model) && !string.IsNullOrWhiteSpace(p.Endpoint)))
                 Providers.Add(p);
-            SelectedProvider = Providers.FirstOrDefault(p => p.Id == _agentConfig.ActiveProviderId) ?? Providers.FirstOrDefault();
+            SelectedProvider = PickProvider(_agentConfig.ActiveProviderId);
 
             await ReloadSessionsAsync();
             var target = Sessions.FirstOrDefault();
@@ -235,9 +247,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         // 切换会话：优先用该会话最后使用的模型；已删除/停用则回退全局默认 → 第一个启用模型
         var session = Sessions.FirstOrDefault(s => s.Id == id);
         _suppressSelection = true;
-        SelectedProvider = Providers.FirstOrDefault(p => p.Id == session?.ProviderId)
-            ?? Providers.FirstOrDefault(p => p.Id == _agentConfig.ActiveProviderId)
-            ?? Providers.FirstOrDefault();
+        SelectedProvider = PickProvider(session?.ProviderId ?? _agentConfig.ActiveProviderId);
         _suppressSelection = false;
         if (SelectedProvider is not null && !string.Equals(session?.ProviderId, SelectedProvider.Id, StringComparison.Ordinal))
             _ = PersistProviderSelectionAsync(SelectedProvider.Id);
@@ -382,12 +392,10 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             _agentConfig = config.Agent ?? new AgentConfig();
             _suppressSelection = true;
             Providers.Clear();
-            foreach (var p in _agentConfig.Providers.Where(p => p.Enabled))
+            foreach (var p in _agentConfig.Providers.Where(p => p.Enabled && !string.IsNullOrWhiteSpace(p.Model) && !string.IsNullOrWhiteSpace(p.Endpoint)))
                 Providers.Add(p);
             var session = Sessions.FirstOrDefault(s => s.Id == _sessionId);
-            SelectedProvider = Providers.FirstOrDefault(p => p.Id == session?.ProviderId)
-                ?? Providers.FirstOrDefault(p => p.Id == _agentConfig.ActiveProviderId)
-                ?? Providers.FirstOrDefault();
+            SelectedProvider = PickProvider(session?.ProviderId ?? _agentConfig.ActiveProviderId);
             _suppressSelection = false;
 
             if (SelectedProvider is null)

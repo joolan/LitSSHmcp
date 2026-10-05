@@ -34,6 +34,20 @@ public class AgentWindowXamlTests
     }
 
     [Fact]
+    public void Theme_dictionaries_load()
+    {
+        var ex = RunSta(() =>
+        {
+            foreach (var dict in new[] { "Tokens.Dark", "Tokens.Light", "Controls" })
+            {
+                var uri = new Uri($"pack://application:,,,/LitSSHmcp.App;component/Themes/{dict}.xaml", UriKind.Absolute);
+                _ = new System.Windows.ResourceDictionary { Source = uri };
+            }
+        });
+        Assert.Null(ex);
+    }
+
+    [Fact]
     public void Agent_window_parses_xaml()
     {
         var db = Path.Combine(Path.GetTempPath(), "litssh-xaml-" + Guid.NewGuid().ToString("N") + ".db");

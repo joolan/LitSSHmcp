@@ -95,6 +95,9 @@
     "connectTimeoutSeconds": 20,
     "maxPerServer": 1
   },
+  "ui": {
+    "theme": "system"
+  },
   "agent": {
     "enabled": true,
     "activeProviderId": "",

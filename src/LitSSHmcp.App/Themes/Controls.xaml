@@ -1,0 +1,57 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 应用自研样式：引用语义 token（DynamicResource，随主题切换） -->
+
+    <!-- 全局窗口底色/前景（WPF-UI 不样式化普通 Window；隐式样式会沿类型层级命中所有窗口） -->
+    <Style TargetType="Window">
+        <Setter Property="Background" Value="{DynamicResource AppBgBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="Microsoft YaHei"/>
+    </Style>
+
+    <Style x:Key="CardBorderStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppCardBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppRadiusM}"/>
+        <Setter Property="Padding" Value="10"/>
+    </Style>
+
+    <Style x:Key="UserBubbleStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppUserBubbleBrush}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppRadiusM}"/>
+        <Setter Property="Padding" Value="10,8"/>
+        <Setter Property="HorizontalAlignment" Value="Right"/>
+        <Setter Property="MaxWidth" Value="720"/>
+    </Style>
+
+    <Style x:Key="AssistantCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppAssistantBubbleBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppRadiusM}"/>
+        <Setter Property="Padding" Value="12,10"/>
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="MaxWidth" Value="1040"/>
+    </Style>
+
+    <Style x:Key="StepCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppRadiusS}"/>
+        <Setter Property="Padding" Value="8"/>
+    </Style>
+
+    <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="Margin" Value="0,0,0,6"/>
+    </Style>
+
+    <Style x:Key="MutedTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+        <Setter Property="FontSize" Value="11"/>
+    </Style>
+</ResourceDictionary>

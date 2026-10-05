@@ -53,6 +53,12 @@ public static class SyntaxHighlighter
     /// <summary>把代码高亮为若干 (文本, 颜色) 片段；<paramref name="language"/> 大小写不敏感。</summary>
     public static List<Token> Highlight(string code, string? language)
     {
+        var keyword = ThemeBrushes.Pick("AppCodeKeywordBrush", KeywordBrush);
+        var stringBrush = ThemeBrushes.Pick("AppCodeStringBrush", StringBrush);
+        var number = ThemeBrushes.Pick("AppCodeNumberBrush", NumberBrush);
+        var comment = ThemeBrushes.Pick("AppCodeCommentBrush", CommentBrush);
+        var fallback = ThemeBrushes.Pick("AppCodeTextBrush", DefaultBrush);
+
         var lang = Normalize(language);
         var tokens = new List<Token>();
 
@@ -62,11 +68,11 @@ public static class SyntaxHighlighter
             var codePart = commentIndex >= 0 ? rawLine[..commentIndex] : rawLine;
             var commentPart = commentIndex >= 0 ? rawLine[commentIndex..] : null;
 
-            HighlightCodePart(codePart, lang, tokens);
+            HighlightCodePart(codePart, lang, tokens, keyword, stringBrush, number, fallback);
             if (commentPart is not null)
-                tokens.Add(new Token(commentPart, CommentBrush));
+                tokens.Add(new Token(commentPart, comment));
 
-            tokens.Add(new Token("\n", DefaultBrush));
+            tokens.Add(new Token("\n", fallback));
         }
 
         if (tokens.Count > 0 && tokens[^1].Text == "\n")
@@ -74,29 +80,29 @@ public static class SyntaxHighlighter
         return tokens;
     }
 
-    private static void HighlightCodePart(string text, string lang, List<Token> tokens)
+    private static void HighlightCodePart(string text, string lang, List<Token> tokens, Brush keyword, Brush stringBrush, Brush number, Brush fallback)
     {
         var pos = 0;
         foreach (Match match in TokenPattern.Matches(text))
         {
             if (match.Index > pos)
-                tokens.Add(new Token(text[pos..match.Index], DefaultBrush));
+                tokens.Add(new Token(text[pos..match.Index], fallback));
 
             var value = match.Value;
             if (match.Groups["str"].Success)
-                tokens.Add(new Token(value, StringBrush));
+                tokens.Add(new Token(value, stringBrush));
             else if (match.Groups["num"].Success)
-                tokens.Add(new Token(value, NumberBrush));
+                tokens.Add(new Token(value, number));
             else if (IsKeyword(value, lang))
-                tokens.Add(new Token(value, KeywordBrush, Bold: true));
+                tokens.Add(new Token(value, keyword, Bold: true));
             else
-                tokens.Add(new Token(value, DefaultBrush));
+                tokens.Add(new Token(value, fallback));
 
             pos = match.Index + match.Length;
         }
 
         if (pos < text.Length)
-            tokens.Add(new Token(text[pos..], DefaultBrush));
+            tokens.Add(new Token(text[pos..], fallback));
     }
 
     private static bool IsKeyword(string word, string lang) => lang switch

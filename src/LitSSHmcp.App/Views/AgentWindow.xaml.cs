@@ -6,10 +6,11 @@ using LitSSHmcp.Agent;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Services.Storage;
+using Wpf.Ui.Controls;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class AgentWindow : Window
+public partial class AgentWindow : FluentWindow
 {
     private readonly AgentViewModel _viewModel;
     private readonly IConfigService _configService;
@@ -66,7 +67,7 @@ public partial class AgentWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show("打开工作区文件夹失败: " + ex.Message, "AI 运维助手");
+            System.Windows.MessageBox.Show("打开工作区文件夹失败: " + ex.Message, "AI 运维助手");
         }
     }
 

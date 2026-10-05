@@ -16,7 +16,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <TextBlock x:Name="PromptText" Text="请输入:" Margin="0,0,0,8" TextWrapping="Wrap"/>
-            <ui:TextBox x:Name="ValueBox" Grid.Row="1" MinHeight="30" VerticalContentAlignment="Center"/>
+            <ui:TextBox FontWeight="Normal" x:Name="ValueBox" Grid.Row="1" MinHeight="30" VerticalContentAlignment="Center"/>
             <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
                 <ui:Button Content="确定" Appearance="Primary" Width="86" Margin="0,0,8,0" Click="OnOk" IsDefault="True"/>
                 <ui:Button Content="取消" Width="86" Click="OnCancel" IsCancel="True"/>

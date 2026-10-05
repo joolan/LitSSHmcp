@@ -42,20 +42,20 @@
                                     <TextBlock Text="(影响主按钮/选中高亮)" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 </StackPanel>
 
-                                <TextBlock Text="系统附加提示（可选）:"/><ui:TextBox Text="{Binding SystemPrompt, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="60" FontFamily="Consolas" Margin="0,0,0,6"/>
-                                <TextBlock Text="技能目录（空=用内置 litssh-mcp-ops-skill）:"/><ui:TextBox Text="{Binding SkillsDir, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-                                <TextBlock Text="工作区目录（Agent 文档工具 ops_doc_* 只能在此读写；空=我的文档\LitSSH）:"/><ui:TextBox Text="{Binding WorkspaceDir, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-                                <TextBlock Text="MCP 服务器 exe 路径（空=自动探测 App 目录 mcp/）:"/><ui:TextBox Text="{Binding McpServerPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                <TextBlock Text="系统附加提示（可选）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SystemPrompt, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="60" FontFamily="Consolas" Margin="0,0,0,6"/>
+                                <TextBlock Text="技能目录（空=用内置 litssh-mcp-ops-skill）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SkillsDir, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                <TextBlock Text="工作区目录（Agent 文档工具 ops_doc_* 只能在此读写；空=我的文档\LitSSH）:"/><ui:TextBox FontWeight="Normal" Text="{Binding WorkspaceDir, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                <TextBlock Text="MCP 服务器 exe 路径（空=自动探测 App 目录 mcp/）:"/><ui:TextBox FontWeight="Normal" Text="{Binding McpServerPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
 
                                 <Separator Margin="0,8,0,8"/>
                                 <TextBlock Text="上下文与输出" FontWeight="SemiBold" Margin="0,0,0,8"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="上下文保留条数:" VerticalAlignment="Center"/>
-                                    <ui:TextBox Text="{Binding ContextLimit, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,16,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding ContextLimit, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,16,0"/>
                                     <TextBlock Text="上下文 token 上限:" VerticalAlignment="Center"/>
-                                    <ui:TextBox Text="{Binding ContextTokenLimit, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,16,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding ContextTokenLimit, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,16,0"/>
                                     <TextBlock Text="最大工具轮数:" VerticalAlignment="Center"/>
-                                    <ui:TextBox Text="{Binding MaxToolIterations, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding MaxToolIterations, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="回答风格:" VerticalAlignment="Center"/>
@@ -64,16 +64,16 @@
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="单个工具结果注入上限(字符):" VerticalAlignment="Center"/>
-                                    <ui:TextBox Text="{Binding ToolResultMaxChars, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,0,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding ToolResultMaxChars, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,0,0"/>
                                 </StackPanel>
                                 <CheckBox Content="自动摘要（裁剪旧轮次时压缩成摘要，按轮边界裁剪以保持工具配对）" IsChecked="{Binding AutoSummarize, Mode=TwoWay}" Margin="0,0,0,6"/>
                                 <CheckBox Content="精简工具描述（发送给模型时截短 MCP 工具描述以省 token，详见 mcp_usage_guide）" IsChecked="{Binding CompactToolDescriptions, Mode=TwoWay}" Margin="0,0,0,6"/>
                                 <CheckBox Content="大结果落盘（超出上限的工具结果存为 spill 句柄，模型按需分段读取）" IsChecked="{Binding SpillLargeToolResults, Mode=TwoWay}" Margin="0,0,0,6"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="落盘目录（空=默认）:" VerticalAlignment="Center"/>
-                                    <ui:TextBox Text="{Binding SpillDir, UpdateSourceTrigger=PropertyChanged}" Width="240" Margin="6,0,16,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding SpillDir, UpdateSourceTrigger=PropertyChanged}" Width="240" Margin="6,0,16,0"/>
                                     <TextBlock Text="保留天数:" VerticalAlignment="Center"/>
-                                    <ui:TextBox Text="{Binding SpillRetentionDays, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,0,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding SpillRetentionDays, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,0,0"/>
                                 </StackPanel>
                                 <CheckBox Content="启用子代理（run_subagent：独立上下文的只读取证，只回摘要）" IsChecked="{Binding EnableSubAgent, Mode=TwoWay}" Margin="0,0,0,6"/>
                                 <CheckBox Content="只读模式（仅向模型暴露只读工具）" IsChecked="{Binding ReadOnly, Mode=TwoWay}" Margin="0,0,0,6"/>
@@ -102,22 +102,22 @@
                                     </DockPanel>
                                 </Border>
                                 <CheckBox Content="启用长期记忆（历史会话 + 工作区文档向量检索）" IsChecked="{Binding MemoryEnabled}" Margin="0,0,0,4"/>
-                                <TextBlock Text="Embeddings Endpoint（如 https://api.openai.com/v1）:"/><ui:TextBox Text="{Binding MemoryEndpoint, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-                                <TextBlock Text="Embeddings 模型名（如 text-embedding-3-small / bge-m3）:"/><ui:TextBox Text="{Binding MemoryModel, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-                                <TextBlock Text="Embeddings API Key（留空复用对话模型 Key；本机加密存储）:"/><ui:TextBox Text="{Binding MemoryApiKey, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                <TextBlock Text="Embeddings Endpoint（如 https://api.openai.com/v1）:"/><ui:TextBox FontWeight="Normal" Text="{Binding MemoryEndpoint, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                <TextBlock Text="Embeddings 模型名（如 text-embedding-3-small / bge-m3）:"/><ui:TextBox FontWeight="Normal" Text="{Binding MemoryModel, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                <TextBlock Text="Embeddings API Key（留空复用对话模型 Key；本机加密存储）:"/><ui:TextBox FontWeight="Normal" Text="{Binding MemoryApiKey, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="召回条数 TopK:" VerticalAlignment="Center"/>
-                                    <ui:TextBox Text="{Binding MemoryTopK, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding MemoryTopK, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"/>
                                 </StackPanel>
 
                                 <TextBlock Text="会话保留策略（0 = 不限）" FontWeight="SemiBold" Margin="0,12,0,6"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="最多会话数:" VerticalAlignment="Center"/>
-                                    <ui:TextBox Text="{Binding RetentionMaxSessions, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,16,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding RetentionMaxSessions, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,16,0"/>
                                     <TextBlock Text="每会话消息上限:" VerticalAlignment="Center"/>
-                                    <ui:TextBox Text="{Binding RetentionMaxMessages, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,16,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding RetentionMaxMessages, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,16,0"/>
                                     <TextBlock Text="保留天数:" VerticalAlignment="Center"/>
-                                    <ui:TextBox Text="{Binding RetentionDays, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,0,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding RetentionDays, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,0,0"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -202,25 +202,25 @@
                                         <TextBlock Text="以下为『当前选中模型自身』的参数，每个模型独立保存。"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                     </DockPanel>
-                                    <TextBlock Text="名称:"/><ui:TextBox Text="{Binding SelectedProvider.Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-                                    <TextBlock Text="类型（openai=OpenAI 兼容端点）:"/><ui:TextBox Text="{Binding SelectedProvider.Type, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-                                    <TextBlock Text="Endpoint（如 https://api.deepseek.com/v1）:"/><ui:TextBox Text="{Binding SelectedProvider.Endpoint, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-                                    <TextBlock Text="模型名 model（如 deepseek-chat）:"/><ui:TextBox Text="{Binding SelectedProvider.Model, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="名称:"/><ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="类型（openai=OpenAI 兼容端点）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.Type, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="Endpoint（如 https://api.deepseek.com/v1）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.Endpoint, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="模型名 model（如 deepseek-chat）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.Model, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
                                     <TextBlock Text="API Key（本机加密存储）:"/>
-                                    <PasswordBox x:Name="ApiKeyBox" PasswordChar="●" Margin="0,0,0,6" PasswordChanged="OnApiKeyChanged"/>
+                                    <PasswordBox FontWeight="Normal" x:Name="ApiKeyBox" PasswordChar="●" Margin="0,0,0,6" PasswordChanged="OnApiKeyChanged"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                         <TextBlock Text="temperature:" VerticalAlignment="Center"/>
-                                        <ui:TextBox Text="{Binding SelectedProvider.Temperature, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,16,0"/>
+                                        <ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.Temperature, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,16,0"/>
                                         <TextBlock Text="maxTokens(0=默认):" VerticalAlignment="Center"/>
-                                        <ui:TextBox Text="{Binding SelectedProvider.MaxTokens, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,0,0"/>
+                                        <ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.MaxTokens, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,0,0"/>
                                     </StackPanel>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                                         <TextBlock Text="超时(秒):" VerticalAlignment="Center"/>
-                                        <ui:TextBox Text="{Binding SelectedProvider.TimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,16,0"/>
+                                        <ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.TimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,16,0"/>
                                         <TextBlock Text="重试次数:" VerticalAlignment="Center"/>
-                                        <ui:TextBox Text="{Binding SelectedProvider.MaxRetries, UpdateSourceTrigger=PropertyChanged}" Width="36" Margin="6,0,16,0"/>
+                                        <ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.MaxRetries, UpdateSourceTrigger=PropertyChanged}" Width="36" Margin="6,0,16,0"/>
                                         <TextBlock Text="并发上限:" VerticalAlignment="Center"/>
-                                        <ui:TextBox Text="{Binding SelectedProvider.MaxConcurrency, UpdateSourceTrigger=PropertyChanged}" Width="36" Margin="6,0,0,0"/>
+                                        <ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.MaxConcurrency, UpdateSourceTrigger=PropertyChanged}" Width="36" Margin="6,0,0,0"/>
                                     </StackPanel>
                                     <TextBlock Text="提示：切换启用/停用会立即保存；其余字段修改后点右下角「保存」。"
                                                Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" TextWrapping="Wrap"/>

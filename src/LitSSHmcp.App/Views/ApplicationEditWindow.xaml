@@ -18,31 +18,31 @@
             <Border Style="{DynamicResource CardBorderStyle}" MaxWidth="410" HorizontalAlignment="Left">
                 <StackPanel>
                     <TextBlock Text="名称 *" FontWeight="SemiBold" Margin="0,0,0,2"/>
-                    <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                    <ui:TextBox FontWeight="Normal" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
 
                     <TextBlock Text="类型 (java/nginx/docker/...)" Margin="0,0,0,2"/>
-                    <ui:TextBox Text="{Binding Type, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                    <ui:TextBox FontWeight="Normal" Text="{Binding Type, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
 
                     <TextBlock Text="Docker 容器名 (可选, type=docker 时填, 用于匹配容器)" Margin="0,0,0,2"/>
-                    <ui:TextBox Text="{Binding ContainerName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"
+                    <ui:TextBox FontWeight="Normal" Text="{Binding ContainerName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"
                                 ToolTip="与 'docker ps' 的 NAMES 一致；拓扑发现据此自动建立 应用→服务器 关系"/>
 
                     <TextBlock Text="应用路径 (可选, 部署目录/jar/可执行文件路径)" Margin="0,0,0,2"/>
-                    <ui:TextBox Text="{Binding AppPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"
+                    <ui:TextBox FontWeight="Normal" Text="{Binding AppPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"
                                 ToolTip="如 /opt/order/order.jar 或 /www/server/nginx；自动发现时会尝试推断并预填"/>
 
                     <TextBlock Text="主机 (可选)" Margin="0,0,0,2"/>
-                    <ui:TextBox Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                    <ui:TextBox FontWeight="Normal" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
 
                     <TextBlock Text="端口 (可选)" Margin="0,0,0,2"/>
-                    <ui:TextBox Text="{Binding PortText, UpdateSourceTrigger=PropertyChanged}" Width="100" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+                    <ui:TextBox FontWeight="Normal" Text="{Binding PortText, UpdateSourceTrigger=PropertyChanged}" Width="100" HorizontalAlignment="Left" Margin="0,0,0,10"/>
 
                     <TextBlock Text="日志路径 (每行一条, 可选; 供 log_tail/log_grep 按应用查日志)" Margin="0,0,0,2"/>
-                    <ui:TextBox Text="{Binding LogPaths, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="52" FontFamily="Consolas" Margin="0,0,0,10"
+                    <ui:TextBox FontWeight="Normal" Text="{Binding LogPaths, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="52" FontFamily="Consolas" Margin="0,0,0,10"
                                 ToolTip="如 /var/log/myapp/app.log 或 /opt/myapp/logs/；须在安全设置 security.logs.allowedPaths 白名单内"/>
 
                     <TextBlock Text="描述 (可选)" Margin="0,0,0,2"/>
-                    <ui:TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="56" TextWrapping="Wrap"/>
+                    <ui:TextBox FontWeight="Normal" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="56" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>
         </ScrollViewer>

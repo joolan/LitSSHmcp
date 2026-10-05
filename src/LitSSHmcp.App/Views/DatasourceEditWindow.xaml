@@ -30,7 +30,7 @@
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="名称:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
 
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="类型:" VerticalAlignment="Center" Margin="0,0,10,8"/>
                     <ComboBox Grid.Row="1" Grid.Column="1" SelectedIndex="{Binding TypeIndex}" Margin="0,0,0,8"
@@ -41,23 +41,23 @@
                     </ComboBox>
 
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="主机地址:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                    <ui:TextBox FontWeight="Normal" Grid.Row="2" Grid.Column="1" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
                                 ToolTip="数据库IP或主机名, 可与应用日志中的地址对应"/>
 
                     <TextBlock Grid.Row="3" Grid.Column="0" Text="端口:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox Grid.Row="3" Grid.Column="1" Text="{Binding PortText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                    <ui:TextBox FontWeight="Normal" Grid.Row="3" Grid.Column="1" Text="{Binding PortText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
                                 ToolTip="MySQL默认3306, Redis默认6379, PostgreSQL默认5432(切换类型时自动带出)"/>
 
                     <TextBlock Grid.Row="4" Grid.Column="0" Text="用户名:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                    <ui:TextBox FontWeight="Normal" Grid.Row="4" Grid.Column="1" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
                                 ToolTip="MySQL/PostgreSQL账号; Redis 6+ ACL用户名(无ACL留空, 只用密码AUTH)"/>
 
                     <TextBlock Grid.Row="5" Grid.Column="0" Text="密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <PasswordBox Grid.Row="5" Grid.Column="1" x:Name="PasswordBox" Margin="0,0,0,8"
+                    <PasswordBox FontWeight="Normal" Grid.Row="5" Grid.Column="1" x:Name="PasswordBox" Margin="0,0,0,8"
                                  ToolTip="仅保存在本机(DPAPI加密), 不会通过MCP暴露给AI"/>
 
                     <TextBlock Grid.Row="6" Grid.Column="0" Text="默认库:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox Grid.Row="6" Grid.Column="1" Text="{Binding DefaultDatabase, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                    <ui:TextBox FontWeight="Normal" Grid.Row="6" Grid.Column="1" Text="{Binding DefaultDatabase, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
                                 ToolTip="MySQL/PostgreSQL: 默认数据库名; Redis: DB索引(0..15), 留空=DB0"/>
 
                     <TextBlock Grid.Row="7" Grid.Column="0" Text="访问模式:" VerticalAlignment="Center" Margin="0,0,10,8"/>
@@ -73,10 +73,10 @@
                               ToolTip="仅隧道模式需要; 选'自动'时按 ssh->数据源 关系推导"/>
 
                     <TextBlock Grid.Row="9" Grid.Column="0" Text="描述:" VerticalAlignment="Top" Margin="0,0,10,8"/>
-                    <ui:TextBox Grid.Row="9" Grid.Column="1" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="9" Grid.Column="1" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
 
                     <TextBlock Grid.Row="10" Grid.Column="0" Text="标签:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox Grid.Row="10" Grid.Column="1" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"
+                    <ui:TextBox FontWeight="Normal" Grid.Row="10" Grid.Column="1" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"
                                 ToolTip="多个标签用逗号分隔" Margin="0,0,0,8"/>
 
                     <TextBlock Grid.Row="11" Grid.Column="0" Text="只读:" VerticalAlignment="Center" Margin="0,0,10,8"/>
@@ -86,10 +86,10 @@
                     <TextBlock Grid.Row="12" Grid.Column="0" Text="限额:" VerticalAlignment="Center" Margin="0,0,10,8"/>
                     <StackPanel Grid.Row="12" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
                         <TextBlock Text="最大行数:" VerticalAlignment="Center"/>
-                        <ui:TextBox Text="{Binding MaxRowsText, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,12,0"
+                        <ui:TextBox FontWeight="Normal" Text="{Binding MaxRowsText, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,12,0"
                                     ToolTip="留空 = 默认(工具默认/上限1000)"/>
                         <TextBlock Text="超时(秒):" VerticalAlignment="Center"/>
-                        <ui:TextBox Text="{Binding TimeoutText, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,0,0"
+                        <ui:TextBox FontWeight="Normal" Text="{Binding TimeoutText, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,0,0"
                                     ToolTip="留空 = 默认30秒"/>
                     </StackPanel>
 

@@ -62,10 +62,11 @@
 
                 <TextBlock DockPanel.Dock="Top" Text="{Binding Sessions.Count, StringFormat='会话 ({0})'}"
                            FontWeight="SemiBold" Margin="4,2,0,6"/>
-                <ui:TextBox DockPanel.Dock="Top" Margin="0,0,0,8" PlaceholderText="搜索会话…"
+                <ui:TextBox FontWeight="Normal" DockPanel.Dock="Top" Margin="0,0,0,8" PlaceholderText="搜索会话…"
                             Text="{Binding SessionFilter, UpdateSourceTrigger=PropertyChanged}"/>
                 <ListBox x:Name="SessionList" ItemsSource="{Binding FilteredSessions}" SelectedItem="{Binding SelectedSession}"
-                         Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch">
+                         Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -265,7 +266,7 @@
                             </Thumb.Template>
                         </Thumb>
 
-                        <ui:TextBox x:Name="InputBox" Grid.Row="1" Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}"
+                        <ui:TextBox FontWeight="Normal" x:Name="InputBox" Grid.Row="1" Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}"
                                     AcceptsReturn="True" MinHeight="64" MaxHeight="400" TextWrapping="Wrap"
                                     BorderThickness="0" Background="Transparent"
                                     VerticalScrollBarVisibility="Auto" FontFamily="Microsoft YaHei" FontSize="13"

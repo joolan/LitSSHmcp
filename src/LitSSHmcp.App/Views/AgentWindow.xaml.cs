@@ -138,33 +138,60 @@ public partial class AgentWindow : FluentWindow
         }
     }
 
-    // 整窗 Ctrl+V：剪贴板含图片则作为附件
+    // 整窗 Ctrl+V：剪贴板含图片/文件则作为附件；纯文本交给输入框正常粘贴
     private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) != 0 && Clipboard.ContainsImage())
-        {
-            TryPasteImage();
+        if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) != 0 && TryAttachFromClipboard())
             e.Handled = true;
-        }
     }
 
-    private void TryPasteImage()
+    private bool TryAttachFromClipboard()
     {
         try
         {
-            var image = Clipboard.GetImage();
-            if (image is null)
-                return;
-            var dir = Path.Combine(Path.GetTempPath(), "litssh-attach");
-            Directory.CreateDirectory(dir);
-            var file = Path.Combine(dir, $"paste-{DateTime.Now:yyyyMMdd-HHmmss}.png");
-            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
-            using (var fs = File.Create(file))
-                encoder.Save(fs);
-            _viewModel.AddAttachmentFiles(new[] { file });
+            // 1) 文件（资源管理器复制文件）
+            if (Clipboard.ContainsFileDropList())
+            {
+                var files = Clipboard.GetFileDropList().Cast<string>().ToArray();
+                if (files.Length > 0)
+                {
+                    _viewModel.AddAttachmentFiles(files);
+                    return true;
+                }
+            }
+
+            // 2) 图片（标准图片，或浏览器复制的 PNG 数据流）
+            if (Clipboard.ContainsImage())
+                return SaveClipboardImage(Clipboard.GetImage());
+
+            var data = Clipboard.GetDataObject();
+            if (data is not null && data.GetDataPresent("PNG") && data.GetData("PNG") is Stream stream)
+            {
+                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bmp.StreamSource = stream;
+                bmp.EndInit();
+                return SaveClipboardImage(bmp);
+            }
         }
-        catch { /* 剪贴板异常忽略 */ }
+        catch { /* 剪贴板占用/格式异常忽略 */ }
+        return false;
+    }
+
+    private bool SaveClipboardImage(System.Windows.Media.Imaging.BitmapSource? image)
+    {
+        if (image is null)
+            return false;
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-attach");
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, $"paste-{DateTime.Now:yyyyMMdd-HHmmss-fff}.png");
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
+        using (var fs = File.Create(file))
+            encoder.Save(fs);
+        _viewModel.AddAttachmentFiles(new[] { file });
+        return true;
     }
 
     private void OnAddImage(object sender, RoutedEventArgs e)

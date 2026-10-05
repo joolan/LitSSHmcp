@@ -153,7 +153,7 @@
                                                             <DataTemplate>
                                                                 <Border CornerRadius="6" Margin="0,0,6,6" Cursor="Hand" MouseLeftButtonUp="OnPreviewImage"
                                                                         ToolTip="点击查看大图" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
-                                                                    <Image Source="{Binding}" Width="150" Height="100" Stretch="UniformToFill"/>
+                                                                    <controls:ImageThumb SourcePath="{Binding}" Width="150" Height="100"/>
                                                                 </Border>
                                                             </DataTemplate>
                                                         </ItemsControl.ItemTemplate>
@@ -294,9 +294,9 @@
                                             BorderThickness="1" CornerRadius="{DynamicResource AppRadiusS}" Padding="6,4" Margin="0,0,6,6"
                                             Cursor="Hand" MouseLeftButtonUp="OnPreviewAttachment" ToolTip="{Binding Name}">
                                         <StackPanel Orientation="Horizontal">
-                                            <Image Source="{Binding Path}" Width="24" Height="24" Stretch="UniformToFill" Margin="0,0,6,0">
-                                                <Image.Style>
-                                                    <Style TargetType="Image">
+                                            <controls:ImageThumb SourcePath="{Binding Path}" Width="24" Height="24" Margin="0,0,6,0">
+                                                <controls:ImageThumb.Style>
+                                                    <Style TargetType="controls:ImageThumb">
                                                         <Setter Property="Visibility" Value="Collapsed"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsImage}" Value="True">
@@ -304,8 +304,8 @@
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </Image.Style>
-                                            </Image>
+                                                </controls:ImageThumb.Style>
+                                            </controls:ImageThumb>
                                             <ui:SymbolIcon Symbol="Document24" FontSize="14" Margin="0,0,6,0"
                                                            Foreground="{DynamicResource AppTextSecondaryBrush}">
                                                 <ui:SymbolIcon.Style>

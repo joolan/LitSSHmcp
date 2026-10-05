@@ -296,9 +296,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             if (row.Role == "user")
             {
-                current = new AgentTurn(row.Content, ParseUtc(row.Timestamp));
+                var (cleanText, images) = ParseStoredUser(row.Content);
+                current = new AgentTurn(cleanText, ParseUtc(row.Timestamp)) { StorageText = row.Content };
+                foreach (var image in images)
+                    current.Images.Add(image);
                 Turns.Add(current);
-                history.Add(new ChatMessage(ChatRole.User, row.Content));
+                history.Add(new ChatMessage(ChatRole.User, cleanText));
             }
             else if (row.Role == "assistant")
             {
@@ -565,23 +568,31 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private const int InlineAttachmentChars = 8000;
 
-    /// <summary>把附件拼进本轮输入：返回(展示文本, 模型文本, 图片内容块)。</summary>
-    private (string Display, string ModelText, List<AIContent> Images) BuildAttachmentPrompt(string text, IReadOnlyList<AgentAttachment> attachments)
+    private sealed record AttachmentBuild(string Display, string Persisted, string ModelText, List<AIContent> Images, List<string> ImagePaths);
+
+    /// <summary>把附件落盘持久化并拼进本轮输入：返回(展示文本, 持久化文本, 模型文本, 图片内容块, 图片绝对路径)。</summary>
+    private AttachmentBuild BuildAttachmentPrompt(string text, IReadOnlyList<AgentAttachment> attachments)
     {
         var vision = SelectedProvider?.SupportsVision == true;
         var workspaceRoot = WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir);
         var display = new StringBuilder(text);
+        var persisted = new StringBuilder(text);
         var model = new StringBuilder(text);
         var images = new List<AIContent>();
+        var imagePaths = new List<string>();
 
         foreach (var attachment in attachments)
         {
+            var relative = PersistAttachment(workspaceRoot, attachment);
+            var absolute = System.IO.Path.GetFullPath(System.IO.Path.Combine(workspaceRoot, relative));
+
             if (attachment.IsImage)
             {
+                persisted.Append($"\n🖼 图片: {attachment.Name} [{relative}]");
                 if (vision && attachment.ImageBytes is not null)
                 {
                     images.Add(new DataContent(attachment.ImageBytes, attachment.MediaType ?? "image/png"));
-                    display.Append($"\n🖼 图片: {attachment.Name}");
+                    imagePaths.Add(absolute);
                 }
                 else
                 {
@@ -591,26 +602,24 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
 
             display.Append($"\n📎 文件: {attachment.Name}");
+            persisted.Append($"\n📎 文件: {attachment.Name} [{relative}]");
             if (attachment.Text.Length <= InlineAttachmentChars)
             {
                 model.Append($"\n\n【附件 {attachment.Name}】\n{attachment.Text}");
             }
             else
             {
-                var relative = SaveAttachmentToWorkspace(workspaceRoot, attachment.Name, attachment.Text);
                 var preview = attachment.Text[..1200];
                 model.Append($"\n\n【附件 {attachment.Name}】内容较大（{attachment.Text.Length} 字符），已保存到工作区: {relative}；"
                              + $"请用 ops_doc_read(path=\"{relative}\") 读取完整内容。开头预览:\n{preview}");
             }
         }
 
-        return (display.ToString(), model.ToString(), images);
+        return new AttachmentBuild(display.ToString(), persisted.ToString(), model.ToString(), images, imagePaths);
     }
 
-    private static string BuildSessionTitle(string userText)
+    private static string BuildSessionTitle(string userText, bool hasImage, bool hasFile)
     {
-        var hasImage = userText.Contains("🖼");
-        var hasFile = userText.Contains("📎");
         var text = string.Join(" ", userText
             .Split('\n')
             .Select(l => l.Trim())
@@ -622,14 +631,36 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         return text.Length <= 20 ? text : text[..20];
     }
 
-    private static string SaveAttachmentToWorkspace(string workspaceRoot, string name, string content)
+    /// <summary>附件落盘到工作区 attachments/：图片复制原文件；文档写解析文本。返回相对路径。</summary>
+    private static string PersistAttachment(string workspaceRoot, AgentAttachment attachment)
     {
         var dir = System.IO.Path.Combine(workspaceRoot, "attachments");
         Directory.CreateDirectory(dir);
-        var safe = string.Concat(name.Where(ch => !System.IO.Path.GetInvalidFileNameChars().Contains(ch)));
-        var file = System.IO.Path.Combine(dir, $"{DateTime.Now:yyyyMMdd-HHmmss}-{safe}.txt");
-        File.WriteAllText(file, content);
-        return "attachments/" + System.IO.Path.GetFileName(file);
+        var safe = string.Concat(attachment.Name.Where(ch => !System.IO.Path.GetInvalidFileNameChars().Contains(ch)));
+        if (string.IsNullOrWhiteSpace(safe))
+            safe = "attachment";
+        var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff");
+
+        try
+        {
+            if (attachment.IsImage && File.Exists(attachment.Path))
+            {
+                var ext = System.IO.Path.GetExtension(attachment.Name);
+                if (string.IsNullOrEmpty(ext))
+                    ext = ".png";
+                var fileName = $"{stamp}-{safe}{ext}";
+                File.Copy(attachment.Path, System.IO.Path.Combine(dir, fileName), overwrite: true);
+                return "attachments/" + fileName;
+            }
+
+            var textName = $"{stamp}-{System.IO.Path.GetFileNameWithoutExtension(safe)}.txt";
+            File.WriteAllText(System.IO.Path.Combine(dir, textName), attachment.Text);
+            return "attachments/" + textName;
+        }
+        catch
+        {
+            return "attachments/" + safe;
+        }
     }
 
     /// <summary>发送一轮对话；<paramref name="fixedText"/> 非空时使用该文本（用于"继续"）。</summary>
@@ -672,21 +703,25 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         var displayText = text ?? string.Empty;
+        string? persistedText = null;
+        List<string> imagePaths = new();
         IReadOnlyList<AIContent>? contents = null;
         if (fixedText is null && pending.Count > 0)
         {
-            var (display, modelText, images) = BuildAttachmentPrompt(displayText, pending);
-            displayText = display;
-            var list = new List<AIContent> { new TextContent(modelText) };
-            list.AddRange(images);
+            var build = BuildAttachmentPrompt(displayText, pending);
+            displayText = build.Display;
+            persistedText = build.Persisted;
+            imagePaths = build.ImagePaths;
+            var list = new List<AIContent> { new TextContent(build.ModelText) };
+            list.AddRange(build.Images);
             contents = list;
             Attachments.Clear();
             OnPropertyChanged(nameof(HasAttachments));
         }
 
-        var turn = new AgentTurn(displayText, DateTime.UtcNow);
-        foreach (var image in pending.Where(a => a.IsImage))
-            turn.Images.Add(image.Path);
+        var turn = new AgentTurn(displayText, DateTime.UtcNow) { StorageText = persistedText };
+        foreach (var imagePath in imagePaths)
+            turn.Images.Add(imagePath);
         Turns.Add(turn);
         await RunTurnAsync(turn, contents);
     }
@@ -699,7 +734,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         // 首次用户消息自动命名
         if (_sessionTitled is false)
         {
-            await _store.RenameSessionAsync(_sessionId, BuildSessionTitle(turn.UserText));
+            await _store.RenameSessionAsync(_sessionId, BuildSessionTitle(turn.UserText, turn.Images.Count > 0, turn.UserText.Contains("📎")));
             _sessionTitled = true;
         }
 
@@ -924,8 +959,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         var messages = new List<(string Role, string Content)>();
         foreach (var turn in Turns)
         {
-            if (!string.IsNullOrEmpty(turn.UserText))
-                messages.Add(("user", turn.UserText));
+            if (!string.IsNullOrEmpty(turn.UserText) || string.IsNullOrEmpty(turn.StorageText) is false)
+                messages.Add(("user", turn.StorageText ?? turn.UserText));
             if (!string.IsNullOrEmpty(turn.AssistantText))
                 messages.Add(("assistant", turn.AssistantText));
         }
@@ -942,8 +977,52 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         ContextInfo = $"轮次 {Turns.Count} · 上下文 ~{tokens} tokens{pct} · 上限 {_agentConfig.ContextLimit} 条 / {limit} tokens{( _agentConfig.AutoSummarize ? " · 自动摘要" : "")} · {tools} 工具";
     }
 
-    private static DateTime ParseUtc(string timestamp) =>
-        DateTime.TryParse(timestamp, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? dt.ToUniversalTime() : DateTime.UtcNow;
+    /// <summary>解析持久化的用户消息：剥离附件标记行，收集图片绝对路径，文件以名字回显。</summary>
+    private (string Text, List<string> Images) ParseStoredUser(string content)
+    {
+        var workspaceRoot = WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir);
+        var clean = new List<string>();
+        var images = new List<string>();
+        var fileNames = new List<string>();
+
+        foreach (var raw in content.Replace("\r\n", "\n").Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.StartsWith("🖼"))
+            {
+                var rel = ExtractBracket(line);
+                if (!string.IsNullOrEmpty(rel))
+                    images.Add(Path.GetFullPath(Path.Combine(workspaceRoot, rel)));
+            }
+            else if (line.StartsWith("📎"))
+            {
+                var name = line.Replace("📎 文件:", string.Empty).Trim();
+                var bracket = name.IndexOf('[');
+                if (bracket > 0)
+                    name = name[..bracket].Trim();
+                if (name.Length > 0)
+                    fileNames.Add(name);
+            }
+            else
+            {
+                clean.Add(raw);
+            }
+        }
+
+        var text = string.Join("\n", clean).Trim();
+        if (fileNames.Count > 0)
+            text += "\n📎 文件: " + string.Join(", ", fileNames);
+        return (text, images);
+    }
+
+    private static string? ExtractBracket(string line)
+    {
+        var open = line.LastIndexOf('[');
+        var close = line.LastIndexOf(']');
+        return open >= 0 && close > open ? line[(open + 1)..close] : null;
+    }
+
+    private static DateTime ParseUtc(string timestamp) =>        DateTime.TryParse(timestamp, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? dt.ToUniversalTime() : DateTime.UtcNow;
 
     private static string LocalHms(string timestamp) => ParseUtc(timestamp).ToLocalTime().ToString("HH:mm:ss");
 
@@ -997,6 +1076,9 @@ public class AgentTurn : INotifyPropertyChanged
 
     private string _userText;
     public string UserText { get => _userText; set => SetField(ref _userText, value); }
+
+    /// <summary>持久化用的原始文本（含附件标记与工作区相对路径）；无则用 UserText。</summary>
+    public string? StorageText { get; set; }
 
     private string _userTime;
     public string UserTime { get => _userTime; private set => SetField(ref _userTime, value); }

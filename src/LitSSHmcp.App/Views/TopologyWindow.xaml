@@ -54,14 +54,14 @@
 
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10,8,0,0">
                     <TextBlock Text="图例:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,0"/>
-                    <Border Background="#EEF3FB" BorderBrush="#9BB7E0" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
-                        <TextBlock Text="SSH服务器(内含 应用/数据库 = runsOn)" FontSize="11" Foreground="#222222"/>
+                    <Border Background="{DynamicResource NodeServerBgBrush}" BorderBrush="{DynamicResource NodeServerBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
+                        <TextBlock Text="SSH服务器(内含 应用/数据库 = runsOn)" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
-                    <Border Background="#FFF4E5" BorderBrush="#E08A00" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
-                        <TextBlock Text="应用" FontSize="11" Foreground="#222222"/>
+                    <Border Background="{DynamicResource NodeAppBgBrush}" BorderBrush="{DynamicResource NodeAppBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
+                        <TextBlock Text="应用" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
-                    <Border Background="#E6F4EA" BorderBrush="#1E8E3E" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
-                        <TextBlock Text="数据库" FontSize="11" Foreground="#222222"/>
+                    <Border Background="{DynamicResource NodeDbBgBrush}" BorderBrush="{DynamicResource NodeDbBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
+                        <TextBlock Text="数据库" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
                     <TextBlock Text="— connectsTo(应用→库) / canAccess(服务器→库)" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
                     <TextBlock Text="- - 自动发现" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,0"/>
@@ -94,13 +94,13 @@
                                         BorderThickness="1" CornerRadius="6">
                                     <Border.Style>
                                         <Style TargetType="Border">
-                                            <Setter Property="Background" Value="#EEF3FB"/>
-                                            <Setter Property="BorderBrush" Value="#9BB7E0"/>
+                                            <Setter Property="Background" Value="{DynamicResource NodeServerBgBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource NodeServerBorderBrush}"/>
                                             <Style.Triggers>
                                                 <!-- 已禁用的服务器: 灰化 + 角标, 且不可拖线建链 -->
                                                 <DataTrigger Binding="{Binding IsDisabled}" Value="True">
                                                     <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
-                                                    <Setter Property="BorderBrush" Value="#C0C0C0"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
                                                     <Setter Property="Opacity" Value="0.8"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
@@ -126,7 +126,7 @@
                                                        TextTrimming="CharacterEllipsis">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
-                                                        <Setter Property="Foreground" Value="#FF1F1F1F"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource NodeTextBrush}"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsDisabled}" Value="True">
                                                                 <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
@@ -139,7 +139,7 @@
                                         <TextBlock Text="{Binding SubLabel}" FontSize="10" Margin="10,1,0,0">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="#CC1F1F1F"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource NodeTextSubBrush}"/>
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding IsDisabled}" Value="True">
                                                             <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
@@ -209,8 +209,8 @@
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Label}" FontSize="10" Foreground="#FF1F1F1F"
-                                           Background="#F0F0F0" Padding="3,0">
+                                <TextBlock Text="{Binding Label}" FontSize="10" Foreground="{DynamicResource NodeTextBrush}"
+                                           Background="{DynamicResource AppCardBrush}" Padding="3,0">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Style.Triggers>
@@ -241,10 +241,10 @@
                                     <Border CornerRadius="4">
                                         <Border.Style>
                                             <Style TargetType="Border">
-                                                <Setter Property="Background" Value="#FFF4E5"/>
+                                                <Setter Property="Background" Value="{DynamicResource NodeAppBgBrush}"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Type}" Value="datasource">
-                                                        <Setter Property="Background" Value="#E6F4EA"/>
+                                                        <Setter Property="Background" Value="{DynamicResource NodeDbBgBrush}"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -254,17 +254,17 @@
                                     <Rectangle RadiusX="4" RadiusY="4" StrokeThickness="1" StrokeDashArray="1 3">
                                         <Rectangle.Style>
                                             <Style TargetType="Rectangle">
-                                                <Setter Property="Stroke" Value="#E08A00"/>
+                                                <Setter Property="Stroke" Value="{DynamicResource NodeAppBorderBrush}"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Type}" Value="datasource">
-                                                        <Setter Property="Stroke" Value="#1E8E3E"/>
+                                                        <Setter Property="Stroke" Value="{DynamicResource NodeDbBorderBrush}"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </Rectangle.Style>
                                     </Rectangle>
                                     <TextBlock Text="{Binding Label}" VerticalAlignment="Center"
-                                               Margin="8,0" TextTrimming="CharacterEllipsis" Foreground="#FF1F1F1F"/>
+                                               Margin="8,0" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource NodeTextBrush}"/>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -285,18 +285,18 @@
                                 <Border Width="{Binding Width}" Height="{Binding Height}" ToolTip="{Binding Tooltip}" BorderThickness="1" CornerRadius="5">
                                     <Border.Style>
                                         <Style TargetType="Border">
-                                            <Setter Property="Background" Value="#E6F4EA"/>
-                                            <Setter Property="BorderBrush" Value="#1E8E3E"/>
+                                            <Setter Property="Background" Value="{DynamicResource NodeDbBgBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource NodeDbBorderBrush}"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding Type}" Value="application">
-                                                    <Setter Property="Background" Value="#FFF4E5"/>
-                                                    <Setter Property="BorderBrush" Value="#E08A00"/>
+                                                    <Setter Property="Background" Value="{DynamicResource NodeAppBgBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeAppBorderBrush}"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </Border.Style>
                                     <TextBlock Text="{Binding Label}" VerticalAlignment="Center" HorizontalAlignment="Center"
-                                               Margin="8,0" TextTrimming="CharacterEllipsis" Foreground="#FF1F1F1F"/>
+                                               Margin="8,0" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource NodeTextBrush}"/>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

@@ -1,6 +1,7 @@
 <ui:FluentWindow xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" x:Class="LitSSHmcp.App.Views.AuditWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
         Title="审计日志" Height="640" Width="1500" MinWidth="1200"
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Grid>
@@ -58,7 +59,7 @@
         <TabControl Grid.Row="1">
             <TabItem Header="命令审计">
                 <ListView x:Name="CommandList" ItemsSource="{Binding CommandLogs}" Padding="3" FontFamily="Consolas" FontSize="11"
-                          PreviewMouseRightButtonDown="OnListPreviewRightClick">
+                          PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="复制整行" Click="OnCopyRow"/>
@@ -82,7 +83,7 @@
             </TabItem>
             <TabItem Header="SQL/Redis审计">
                 <ListView x:Name="SqlList" ItemsSource="{Binding SqlLogs}" Padding="3" FontFamily="Consolas" FontSize="11"
-                          PreviewMouseRightButtonDown="OnListPreviewRightClick">
+                          PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="复制整行" Click="OnCopyRow"/>
@@ -106,7 +107,7 @@
             </TabItem>
             <TabItem Header="会话">
                 <ListView x:Name="SessionsList" ItemsSource="{Binding Sessions}" Padding="3" FontFamily="Consolas" FontSize="11"
-                          PreviewMouseRightButtonDown="OnListPreviewRightClick">
+                          PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="复制整行" Click="OnCopyRow"/>

@@ -20,6 +20,14 @@
     <Color x:Key="AssistantBubbleColor">#FFFFFFFF</Color>
     <Color x:Key="HoverColor">#0F000000</Color>
     <Color x:Key="SelectionColor">#220067C0</Color>
+    <Color x:Key="NodeServerBgColor">#FFEEF3FB</Color>
+    <Color x:Key="NodeServerBorderColor">#FF9BB7E0</Color>
+    <Color x:Key="NodeAppBgColor">#FFFFF4E5</Color>
+    <Color x:Key="NodeAppBorderColor">#FFE08A00</Color>
+    <Color x:Key="NodeDbBgColor">#FFE6F4EA</Color>
+    <Color x:Key="NodeDbBorderColor">#FF1E8E3E</Color>
+    <Color x:Key="NodeTextColor">#FF1F1F1F</Color>
+    <Color x:Key="NodeTextSubColor">#CC1F1F1F</Color>
     <Color x:Key="CodeKeywordColor">#FF0000C0</Color>
     <Color x:Key="CodeStringColor">#FFA31515</Color>
     <Color x:Key="CodeNumberColor">#FF098658</Color>
@@ -43,6 +51,14 @@
     <SolidColorBrush x:Key="AppAssistantBubbleBrush" Color="{StaticResource AssistantBubbleColor}"/>
     <SolidColorBrush x:Key="AppHoverBrush" Color="{StaticResource HoverColor}"/>
     <SolidColorBrush x:Key="AppSelectionBrush" Color="{StaticResource SelectionColor}"/>
+    <SolidColorBrush x:Key="NodeServerBgBrush" Color="{StaticResource NodeServerBgColor}"/>
+    <SolidColorBrush x:Key="NodeServerBorderBrush" Color="{StaticResource NodeServerBorderColor}"/>
+    <SolidColorBrush x:Key="NodeAppBgBrush" Color="{StaticResource NodeAppBgColor}"/>
+    <SolidColorBrush x:Key="NodeAppBorderBrush" Color="{StaticResource NodeAppBorderColor}"/>
+    <SolidColorBrush x:Key="NodeDbBgBrush" Color="{StaticResource NodeDbBgColor}"/>
+    <SolidColorBrush x:Key="NodeDbBorderBrush" Color="{StaticResource NodeDbBorderColor}"/>
+    <SolidColorBrush x:Key="NodeTextBrush" Color="{StaticResource NodeTextColor}"/>
+    <SolidColorBrush x:Key="NodeTextSubBrush" Color="{StaticResource NodeTextSubColor}"/>
     <SolidColorBrush x:Key="AppCodeKeywordBrush" Color="{StaticResource CodeKeywordColor}"/>
     <SolidColorBrush x:Key="AppCodeStringBrush" Color="{StaticResource CodeStringColor}"/>
     <SolidColorBrush x:Key="AppCodeNumberBrush" Color="{StaticResource CodeNumberColor}"/>

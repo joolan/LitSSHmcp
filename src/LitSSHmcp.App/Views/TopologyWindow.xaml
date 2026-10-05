@@ -38,7 +38,7 @@
             <TextBox x:Name="ServerFilterBox" VerticalContentAlignment="Center"/>
         </DockPanel>
 
-        <Border Grid.Row="1" Background="#FAFAFA" BorderBrush="#DDDDDD" BorderThickness="1">
+        <Border Grid.Row="1" Background="{DynamicResource AppSurfaceAltBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -57,11 +57,11 @@
                         <TextBlock Text="数据库" FontSize="11"/>
                     </Border>
                     <TextBlock Text="— connectsTo(应用→库) / canAccess(服务器→库)" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBlock Text="- - 自动发现" FontSize="11" VerticalAlignment="Center" Foreground="#888" Margin="0,0,8,0"/>
-                    <TextBlock Text="(鼠标悬浮节点查看详情)" FontSize="11" VerticalAlignment="Center" Foreground="#888"/>
+                    <TextBlock Text="- - 自动发现" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,0"/>
+                    <TextBlock Text="(鼠标悬浮节点查看详情)" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                 </StackPanel>
 
-                <Grid x:Name="CanvasHost" Grid.Row="1" Margin="0,6,0,0" Background="#FAFAFA" ClipToBounds="True"
+                <Grid x:Name="CanvasHost" Grid.Row="1" Margin="0,6,0,0" Background="{DynamicResource AppSurfaceAltBrush}" ClipToBounds="True"
                       PreviewMouseLeftButtonDown="OnCanvasMouseDown"
                       PreviewMouseLeftButtonUp="OnCanvasMouseUp"
                       PreviewMouseRightButtonDown="OnCanvasRightDown"
@@ -92,7 +92,7 @@
                                             <Style.Triggers>
                                                 <!-- 已禁用的服务器: 灰化 + 角标, 且不可拖线建链 -->
                                                 <DataTrigger Binding="{Binding IsDisabled}" Value="True">
-                                                    <Setter Property="Background" Value="#F0F0F0"/>
+                                                    <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
                                                     <Setter Property="BorderBrush" Value="#C0C0C0"/>
                                                     <Setter Property="Opacity" Value="0.8"/>
                                                 </DataTrigger>
@@ -101,7 +101,7 @@
                                     </Border.Style>
                                     <StackPanel>
                                         <DockPanel LastChildFill="True">
-                                            <TextBlock DockPanel.Dock="Right" Text="已禁用" Foreground="#C0392B"
+                                            <TextBlock DockPanel.Dock="Right" Text="已禁用" Foreground="{DynamicResource AppDangerBrush}"
                                                        FontSize="10" FontWeight="SemiBold" Margin="0,7,10,0"
                                                        ToolTip="该服务器已禁用: 不可建链/连接, 不出现在 MCP 的 ssh_list_servers, 拓扑发现跳过">
                                                 <TextBlock.Style>
@@ -118,7 +118,7 @@
                                             <TextBlock Text="{Binding Label}" FontWeight="Bold" Margin="10,6,0,0"
                                                        TextTrimming="CharacterEllipsis"/>
                                         </DockPanel>
-                                        <TextBlock Text="{Binding SubLabel}" FontSize="10" Foreground="#5A6B85" Margin="10,1,0,0"/>
+                                        <TextBlock Text="{Binding SubLabel}" FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="10,1,0,0"/>
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -159,7 +159,7 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Canvas>
-                                    <Path Data="{Binding Disc}" Fill="#FAFAFA"/>
+                                    <Path Data="{Binding Disc}" Fill="{DynamicResource AppSurfaceBrush}"/>
                                     <Path Data="{Binding Bridge}" Stroke="{Binding BridgeStroke}" StrokeThickness="2"/>
                                     <Path Data="{Binding Arc}" Stroke="{Binding ArcStroke}" StrokeThickness="2"/>
                                 </Canvas>
@@ -180,7 +180,7 @@
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Label}" FontSize="10" Foreground="#555"
+                                <TextBlock Text="{Binding Label}" FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}"
                                            Background="#F0F0F0" Padding="3,0">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
@@ -374,11 +374,11 @@
                                         Cursor="SizeAll">
                                     <TextBlock Text="关系属性（可拖动）" FontWeight="Bold"/>
                                 </Border>
-                                <TextBlock Text="{Binding SelectedEdgeSummary}" TextWrapping="Wrap" Foreground="#555" FontSize="11" Margin="0,0,0,8"/>
-                                <TextBlock Text="关系类型" FontSize="11" Foreground="#555"/>
+                                <TextBlock Text="{Binding SelectedEdgeSummary}" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="0,0,0,8"/>
+                                <TextBlock Text="关系类型" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 <ComboBox ItemsSource="{Binding RelationTypes}" SelectedItem="{Binding SelectedEdgeType}"
                                           IsEnabled="{Binding SelectedEdgeEditable}" Margin="0,2,0,8"/>
-                                <TextBlock Text="备注" FontSize="11" Foreground="#555"/>
+                                <TextBlock Text="备注" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 <TextBox Text="{Binding SelectedEdgeNote, UpdateSourceTrigger=PropertyChanged}"
                                          AcceptsReturn="True" TextWrapping="Wrap" Height="64" VerticalScrollBarVisibility="Auto"
                                          IsEnabled="{Binding SelectedEdgeEditable}" Margin="0,2,0,8"/>

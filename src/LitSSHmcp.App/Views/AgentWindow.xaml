@@ -263,7 +263,8 @@
 
                 <!-- 集成式输入区（可拖高） -->
                 <Border Grid.Row="2" Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
-                        BorderThickness="1" CornerRadius="{DynamicResource AppRadiusL}" Padding="10" Margin="0,10,0,0">
+                        BorderThickness="1" CornerRadius="{DynamicResource AppRadiusL}" Padding="10" Margin="0,10,0,0"
+                        AllowDrop="True" PreviewDragOver="OnComposerDragOver" PreviewDrop="OnComposerDrop">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -335,6 +336,7 @@
                                     BorderThickness="0" Background="Transparent"
                                     VerticalScrollBarVisibility="Auto" FontFamily="Microsoft YaHei" FontSize="13"
                                     KeyDown="OnInputKeyDown"
+                                    AllowDrop="True" PreviewDragOver="OnComposerDragOver" PreviewDrop="OnComposerDrop"
                                     PlaceholderText="今天帮你做些什么？"
                                     ToolTip="Enter 发送；Shift+Enter 换行；可拖入图片/文档或 Ctrl+V 粘贴图片"/>
 

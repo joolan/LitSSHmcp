@@ -224,6 +224,8 @@ public partial class AgentWindow : FluentWindow
             _viewModel.RemoveAttachment(attachment);
     }
 
+    private void OnClearAttachments(object sender, RoutedEventArgs e) => _viewModel.ClearAttachments();
+
     // 点击附件芯片：图片则预览大图（点“移除”按钮时不触发）
     private void OnPreviewAttachment(object sender, MouseButtonEventArgs e)
     {

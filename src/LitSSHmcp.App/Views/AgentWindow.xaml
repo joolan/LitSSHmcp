@@ -284,11 +284,16 @@
                         </Thumb>
 
                         <!-- 附件芯片（有附件时显示） -->
-                        <ItemsControl Grid.Row="1" ItemsSource="{Binding Attachments}" Margin="0,6,0,0"
-                                      Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVis}}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
+                        <DockPanel Grid.Row="1" Margin="0,6,0,0" LastChildFill="True"
+                                   Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVis}}">
+                            <Button DockPanel.Dock="Right" Style="{DynamicResource ActionRowButton}" Padding="6,2" Margin="8,0,0,6"
+                                    VerticalAlignment="Top" Click="OnClearAttachments" ToolTip="清除全部附件">
+                                <TextBlock Text="清除全部" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            </Button>
+                            <ItemsControl ItemsSource="{Binding Attachments}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border Background="{DynamicResource AppSurfaceAltBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
@@ -329,7 +334,8 @@
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                            </ItemsControl>
+                        </DockPanel>
 
                         <ui:TextBox FontWeight="Normal" x:Name="InputBox" Grid.Row="2" Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}"
                                     AcceptsReturn="True" MinHeight="64" MaxHeight="400" TextWrapping="Wrap"
@@ -357,6 +363,7 @@
                                     <ContextMenu>
                                         <MenuItem Header="添加图片…" Click="OnAddImage"/>
                                         <MenuItem Header="添加文件…" Click="OnAddFile"/>
+                                        <MenuItem Header="清除全部附件" Click="OnClearAttachments"/>
                                         <Separator/>
                                         <MenuItem Header="清空显示" Click="OnClearDisplay"/>
                                         <MenuItem Header="导出 Markdown" Click="OnExport"/>

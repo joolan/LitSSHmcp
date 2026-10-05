@@ -612,6 +612,16 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         OnPropertyChanged(nameof(HasAttachments));
     }
 
+    /// <summary>清除全部待发送附件。</summary>
+    public void ClearAttachments()
+    {
+        if (Attachments.Count == 0)
+            return;
+        Attachments.Clear();
+        OnPropertyChanged(nameof(HasAttachments));
+        StatusMessage = "已清除全部附件";
+    }
+
     private const int InlineAttachmentChars = 8000;
 
     private sealed record AttachmentBuild(string Display, string Persisted, string ModelText, List<AIContent> Images, List<string> ImagePaths);

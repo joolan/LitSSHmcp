@@ -18,11 +18,11 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <TabControl Grid.Row="0">
+            <TabControl x:Name="Tabs" Grid.Row="0">
                 <!-- ===== Tab 1：助手设置（全局，所有模型/会话共用）===== -->
                 <TabItem Header="助手设置">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="12">
-                        <Border Style="{DynamicResource CardBorderStyle}" MaxWidth="700" HorizontalAlignment="Left">
+                        <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
                             <StackPanel>
                                 <DockPanel Margin="0,0,0,12">
                                     <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"
@@ -194,7 +194,7 @@
                         <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="Transparent"/>
 
                         <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
-                            <Border Style="{DynamicResource CardBorderStyle}" MaxWidth="560" HorizontalAlignment="Left">
+                            <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
                                 <StackPanel>
                                     <DockPanel Margin="0,0,0,10">
                                         <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"

@@ -76,7 +76,16 @@
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontFamily="Microsoft YaHei"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis"
+                                           FontFamily="Microsoft YaHei" Margin="0,0,8,0"/>
+                                <TextBlock Grid.Column="1" Text="{Binding UpdatedText}" FontSize="10"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
+                            </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                     <ListBox.ContextMenu>
@@ -317,7 +326,7 @@
                                 </Ellipse.Style>
                             </Ellipse>
 
-                            <ComboBox Grid.Column="5" ItemsSource="{Binding Providers}" SelectedItem="{Binding SelectedProvider}"
+                            <ComboBox Grid.Column="5" ItemsSource="{Binding ComboProviders}" SelectedItem="{Binding SelectedProvider}"
                                       DisplayMemberPath="Name" Width="180" Height="34" Margin="0,0,8,0" VerticalContentAlignment="Center"
                                       ToolTip="{Binding StatusMessage}"/>
 

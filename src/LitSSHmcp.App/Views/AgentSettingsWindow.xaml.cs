@@ -11,11 +11,14 @@ public partial class AgentSettingsWindow : FluentWindow
 {
     private readonly AgentSettingsViewModel _viewModel = new();
 
-    public AgentSettingsWindow(IConfigService configService)
+    public AgentSettingsWindow(IConfigService configService, string? initialTab = null)
     {
         InitializeComponent();
         DataContext = _viewModel;
         LitSSHmcp.App.Services.WindowLayout.Attach(this, "agent-settings");
+
+        if (string.Equals(initialTab, "model", StringComparison.OrdinalIgnoreCase) && Tabs.Items.Count > 1)
+            Tabs.SelectedIndex = 1;
 
         // API Key 用 PasswordBox 展示为圆点：随选中模型同步，输入时回写 VM
         _viewModel.PropertyChanged += (_, e) =>

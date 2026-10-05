@@ -55,6 +55,12 @@
         <Setter Property="FontSize" Value="11"/>
     </Style>
 
+    <!-- 默认文字：常规字重 + 主题前景（避免整体偏粗） -->
+    <Style TargetType="TextBlock">
+        <Setter Property="FontWeight" Value="Normal"/>
+        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+    </Style>
+
     <!-- 侧栏/标题栏动作按钮：透明、圆角、明确的悬停/按下反馈 -->
     <Style x:Key="ActionRowButton" TargetType="Button">
         <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>

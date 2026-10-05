@@ -27,7 +27,36 @@ public interface IContextStore
     Task<int> PruneAsync(int maxSessions, int maxMessagesPerSession, int retentionDays, CancellationToken ct = default);
 }
 
-public sealed record AgentSessionRow(long Id, string Title, string CreatedAt, string UpdatedAt, string? ProviderId = null);
+public sealed record AgentSessionRow(long Id, string Title, string CreatedAt, string UpdatedAt, string? ProviderId = null)
+{
+    /// <summary>会话最后活跃的相对时间（刚刚 / x分钟前 / x小时前 / x天前 / 日期）。</summary>
+    public string UpdatedText => RelativeTime.Format(UpdatedAt);
+}
+
+/// <summary>相对时间格式化（本地时区）。</summary>
+public static class RelativeTime
+{
+    public static string Format(string? iso)
+    {
+        if (string.IsNullOrWhiteSpace(iso) ||
+            !DateTime.TryParse(iso, null, System.Globalization.DateTimeStyles.RoundtripKind, out var when))
+            return string.Empty;
+
+        var local = when.ToLocalTime();
+        var delta = DateTime.Now - local;
+        if (delta.TotalSeconds < 0)
+            return "刚刚";
+        if (delta.TotalMinutes < 1)
+            return "刚刚";
+        if (delta.TotalMinutes < 60)
+            return $"{(int)delta.TotalMinutes}分钟前";
+        if (delta.TotalHours < 24)
+            return $"{(int)delta.TotalHours}小时前";
+        if (delta.TotalDays < 30)
+            return $"{(int)delta.TotalDays}天前";
+        return local.ToString("yyyy-MM-dd");
+    }
+}
 public sealed record AgentMessageRow(string Role, string Content, string Timestamp);
 
 public class ContextStore : IContextStore

@@ -60,6 +60,22 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public ObservableCollection<AgentProviderConfig> Providers { get; } = new();
+
+    /// <summary>模型下拉列表 = 可用模型 + 末尾固定的“模型设置”入口。</summary>
+    public ObservableCollection<AgentProviderConfig> ComboProviders { get; } = new();
+
+    private readonly AgentProviderConfig _modelSettingsEntry = new() { Id = "\u0001model-settings", Name = "模型设置" };
+
+    /// <summary>请求打开设置窗口（参数为初始 Tab：null=助手设置 / "model"=大模型设置）。</summary>
+    public event Action<string?>? SettingsRequested;
+
+    private void RebuildComboProviders()
+    {
+        ComboProviders.Clear();
+        foreach (var p in Providers)
+            ComboProviders.Add(p);
+        ComboProviders.Add(_modelSettingsEntry);
+    }
     public ObservableCollection<AgentSessionRow> Sessions { get; } = new();
     public ObservableCollection<AgentSessionRow> FilteredSessions { get; } = new();
     public ObservableCollection<AgentTurn> Turns { get; } = new();
@@ -108,6 +124,14 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => _selectedProvider;
         set
         {
+            // 下拉末尾的“模型设置”入口：打开设置窗口的大模型设置 Tab，并还原选择
+            if (ReferenceEquals(value, _modelSettingsEntry))
+            {
+                SettingsRequested?.Invoke("model");
+                OnPropertyChanged(nameof(SelectedProvider));
+                return;
+            }
+
             var changed = !ReferenceEquals(_selectedProvider, value);
             if (!Set(ref _selectedProvider, value)) return;
             (TestConnectionCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -203,6 +227,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             Providers.Clear();
             foreach (var p in _agentConfig.Providers.Where(p => p.Enabled && !string.IsNullOrWhiteSpace(p.Model) && !string.IsNullOrWhiteSpace(p.Endpoint)))
                 Providers.Add(p);
+            RebuildComboProviders();
             SelectedProvider = PickProvider(_agentConfig.ActiveProviderId);
 
             await ReloadSessionsAsync();
@@ -407,6 +432,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             Providers.Clear();
             foreach (var p in _agentConfig.Providers.Where(p => p.Enabled && !string.IsNullOrWhiteSpace(p.Model) && !string.IsNullOrWhiteSpace(p.Endpoint)))
                 Providers.Add(p);
+            RebuildComboProviders();
             var session = Sessions.FirstOrDefault(s => s.Id == _sessionId);
             SelectedProvider = PickProvider(session?.ProviderId ?? _agentConfig.ActiveProviderId);
             _suppressSelection = false;

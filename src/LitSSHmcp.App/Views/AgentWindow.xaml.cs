@@ -21,6 +21,7 @@ public partial class AgentWindow : FluentWindow
         _configService = configService;
 
         _viewModel = new AgentViewModel(configService, store, skillsDir, action => Dispatcher.Invoke(action));
+        _viewModel.SettingsRequested += tab => Dispatcher.Invoke(() => OpenSettings(tab));
         DataContext = _viewModel;
         WindowLayout.Attach(this, "agent");
         _viewModel.Turns.CollectionChanged += (_, _) => ChatScroll.ScrollToEnd();
@@ -35,9 +36,11 @@ public partial class AgentWindow : FluentWindow
             turn.ShowTools = !turn.ShowTools;
     }
 
-    private void OnOpenSettings(object sender, RoutedEventArgs e)
+    private void OnOpenSettings(object sender, RoutedEventArgs e) => OpenSettings(null);
+
+    private void OpenSettings(string? tab)
     {
-        new AgentSettingsWindow(_configService) { Owner = this }.ShowDialog();
+        new AgentSettingsWindow(_configService, tab) { Owner = this }.ShowDialog();
         _ = _viewModel.ReloadProvidersAsync();
     }
 

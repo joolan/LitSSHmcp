@@ -52,6 +52,15 @@ public partial class AgentWindow : FluentWindow
         }
     }
 
+    // 拖动输入区顶部把手调整高度
+    private void OnComposerResize(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        var height = InputBox.Height;
+        if (double.IsNaN(height) || height <= 0)
+            height = InputBox.ActualHeight;
+        InputBox.Height = Math.Clamp(height - e.VerticalChange, 64, 400);
+    }
+
     // 右键会话：选中该项（让右键菜单作用于该会话）
     private void OnSessionRightClick(object sender, MouseButtonEventArgs e)
     {

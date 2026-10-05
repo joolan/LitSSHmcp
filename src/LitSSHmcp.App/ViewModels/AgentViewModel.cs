@@ -173,6 +173,10 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string _contextInfo = string.Empty;
     public string ContextInfo { get => _contextInfo; set => Set(ref _contextInfo, value); }
 
+    /// <summary>当前模型连接状态：idle / connecting / ready / error（用于模型选择框的状态标识）。</summary>
+    private string _modelStatus = "idle";
+    public string ModelStatus { get => _modelStatus; set => Set(ref _modelStatus, value); }
+
     public bool IsEditing => _editingTurn != null;
 
     public async Task InitializeAsync()
@@ -346,14 +350,17 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         try
         {
+            ModelStatus = "connecting";
             StatusMessage = "正在连接 MCP 服务器…";
             _runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history, UpdatePlan);
             StatusMessage = $"已就绪 · {SelectedProvider.Name} / {SelectedProvider.Model} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
+            ModelStatus = "ready";
             RefreshContextInfo();
         }
         catch (Exception ex)
         {
+            ModelStatus = "error";
             StatusMessage = "连接失败: " + ChatErrorClassifier.Describe(ex);
         }
     }
@@ -375,11 +382,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             _runtime.ResetSession(SelectedProvider, history);
             StatusMessage = $"已就绪 · {SelectedProvider.Name} / {SelectedProvider.Model} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
+            ModelStatus = "ready";
             RefreshContextInfo();
             await Task.CompletedTask;
         }
         catch (Exception ex)
         {
+            ModelStatus = "error";
             StatusMessage = "切换失败: " + ChatErrorClassifier.Describe(ex);
         }
     }

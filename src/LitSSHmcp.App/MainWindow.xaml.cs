@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.ViewModels;
+using LitSSHmcp.App.Services;
 using Wpf.Ui.Controls;
 using TextBox = System.Windows.Controls.TextBox;
 
@@ -16,6 +17,7 @@ public partial class MainWindow : FluentWindow
     {
         InitializeComponent();
         DataContext = new MainViewModel();
+        WindowLayout.Attach(this, "main");
     }
 
     private void OnServerDoubleClick(object sender, MouseButtonEventArgs e)

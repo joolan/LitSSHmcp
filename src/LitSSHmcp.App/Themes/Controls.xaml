@@ -54,4 +54,29 @@
         <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
         <Setter Property="FontSize" Value="11"/>
     </Style>
+
+    <!-- 表格 / 分组：默认 WPF 模板在深色下仍为浅色，这里统一 token 化 -->
+    <Style TargetType="ListView">
+        <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
+    <Style TargetType="ListViewItem">
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+
+    <Style TargetType="GridViewColumnHeader">
+        <Setter Property="Background" Value="{DynamicResource AppSurfaceAltBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
+        <Setter Property="Padding" Value="8,5"/>
+    </Style>
+
+    <Style TargetType="GroupBox">
+        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
+    </Style>
 </ResourceDictionary>
+

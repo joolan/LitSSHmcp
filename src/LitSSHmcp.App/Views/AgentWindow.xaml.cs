@@ -22,6 +22,7 @@ public partial class AgentWindow : FluentWindow
 
         _viewModel = new AgentViewModel(configService, store, skillsDir, action => Dispatcher.Invoke(action));
         DataContext = _viewModel;
+        WindowLayout.Attach(this, "agent");
         _viewModel.Turns.CollectionChanged += (_, _) => ChatScroll.ScrollToEnd();
         Loaded += async (_, _) => await _viewModel.InitializeAsync();
         Closed += async (_, _) => await _viewModel.DisposeAsync();

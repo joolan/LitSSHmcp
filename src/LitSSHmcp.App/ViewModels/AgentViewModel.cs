@@ -334,10 +334,14 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         await ResetRuntimeAsync(null);
     }
 
-    private async Task DeleteSessionAsync()
+    private Task DeleteSessionAsync() => DeleteSessionAsync(SelectedSession);
+
+    /// <summary>删除指定会话；若删除的是当前会话才切换到其他会话，否则保持当前显示。</summary>
+    public async Task DeleteSessionAsync(AgentSessionRow? session)
     {
-        if (SelectedSession is null) return;
-        await _store.DeleteSessionAsync(SelectedSession.Id);
+        if (session is null) return;
+        var wasCurrent = session.Id == _sessionId;
+        await _store.DeleteSessionAsync(session.Id);
         await ReloadSessionsAsync();
 
         var next = Sessions.FirstOrDefault();
@@ -346,20 +350,24 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             _sessionId = await _store.CreateSessionAsync("运维会话");
             await ReloadSessionsAsync();
             next = Sessions.FirstOrDefault();
+            wasCurrent = true;
         }
 
         _suppressSelection = true;
-        SelectedSession = next;
+        SelectedSession = wasCurrent ? next : Sessions.FirstOrDefault(s => s.Id == _sessionId);
         _suppressSelection = false;
-        if (next is not null)
+        if (wasCurrent && next is not null)
             await LoadSessionAsync(next.Id);
     }
 
-    public async Task RenameSessionAsync(string newTitle)
+    public Task RenameSessionAsync(string newTitle) => RenameSessionAsync(SelectedSession, newTitle);
+
+    /// <summary>重命名指定会话（用于右键菜单，不影响当前选中）。</summary>
+    public async Task RenameSessionAsync(AgentSessionRow? session, string newTitle)
     {
-        if (SelectedSession is null || string.IsNullOrWhiteSpace(newTitle))
+        if (session is null || string.IsNullOrWhiteSpace(newTitle))
             return;
-        await _store.RenameSessionAsync(SelectedSession.Id, newTitle.Trim());
+        await _store.RenameSessionAsync(session.Id, newTitle.Trim());
         await ReloadSessionsAsync();
         _suppressSelection = true;
         SelectedSession = Sessions.FirstOrDefault(s => s.Id == _sessionId);

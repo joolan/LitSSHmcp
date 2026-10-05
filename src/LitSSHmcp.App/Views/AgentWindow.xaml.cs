@@ -64,15 +64,19 @@ public partial class AgentWindow : FluentWindow
         InputBox.Height = Math.Clamp(height - e.VerticalChange, 64, 400);
     }
 
-    // 右键会话：选中该项（让右键菜单作用于该会话）
+    // 右键会话：仅记录目标项（不选中/不切换会话），让右键菜单作用于该项
+    private AgentSessionRow? _contextSession;
+
     private void OnSessionRightClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is System.Windows.Controls.ListBoxItem item)
-            item.IsSelected = true;
+            _contextSession = item.DataContext as AgentSessionRow;
     }
 
-    private void OnDeleteSession(object sender, RoutedEventArgs e) =>
-        _viewModel.DeleteSessionCommand.Execute(null);
+    private void OnDeleteSession(object sender, RoutedEventArgs e)
+    {
+        _ = _viewModel.DeleteSessionAsync(_contextSession ?? _viewModel.SelectedSession);
+    }
 
     private void OnClearDisplay(object sender, RoutedEventArgs e) =>
         _viewModel.ClearCommand.Execute(null);
@@ -97,12 +101,12 @@ public partial class AgentWindow : FluentWindow
 
     private void OnRenameSession(object sender, RoutedEventArgs e)
     {
-        var session = _viewModel.SelectedSession;
+        var session = _contextSession ?? _viewModel.SelectedSession;
         if (session is null)
             return;
         var name = TextInputDialog.Prompt(this, "重命名会话", "会话名称:", session.Title);
         if (name is not null)
-            _ = _viewModel.RenameSessionAsync(name);
+            _ = _viewModel.RenameSessionAsync(session, name);
     }
 
     private void OnEditTurn(object sender, RoutedEventArgs e)

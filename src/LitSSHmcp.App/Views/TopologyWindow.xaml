@@ -123,9 +123,31 @@
                                                 </TextBlock.Style>
                                             </TextBlock>
                                             <TextBlock Text="{Binding Label}" FontWeight="Bold" Margin="10,6,0,0"
-                                                       TextTrimming="CharacterEllipsis"/>
+                                                       TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="#FF1F1F1F"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsDisabled}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                         </DockPanel>
-                                        <TextBlock Text="{Binding SubLabel}" FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="10,1,0,0"/>
+                                        <TextBlock Text="{Binding SubLabel}" FontSize="10" Margin="10,1,0,0">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#CC1F1F1F"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsDisabled}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -187,7 +209,7 @@
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Label}" FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                <TextBlock Text="{Binding Label}" FontSize="10" Foreground="#FF1F1F1F"
                                            Background="#F0F0F0" Padding="3,0">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
@@ -242,7 +264,7 @@
                                         </Rectangle.Style>
                                     </Rectangle>
                                     <TextBlock Text="{Binding Label}" VerticalAlignment="Center"
-                                               Margin="8,0" TextTrimming="CharacterEllipsis"/>
+                                               Margin="8,0" TextTrimming="CharacterEllipsis" Foreground="#FF1F1F1F"/>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -274,7 +296,7 @@
                                         </Style>
                                     </Border.Style>
                                     <TextBlock Text="{Binding Label}" VerticalAlignment="Center" HorizontalAlignment="Center"
-                                               Margin="8,0" TextTrimming="CharacterEllipsis"/>
+                                               Margin="8,0" TextTrimming="CharacterEllipsis" Foreground="#FF1F1F1F"/>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

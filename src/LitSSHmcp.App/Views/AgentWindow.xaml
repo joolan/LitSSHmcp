@@ -66,13 +66,13 @@
                             Text="{Binding SessionFilter, UpdateSourceTrigger=PropertyChanged}"/>
                 <ListBox x:Name="SessionList" ItemsSource="{Binding FilteredSessions}" SelectedItem="{Binding SelectedSession}"
                          Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         PreviewMouseRightButtonDown="OnSessionListRightClick">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                             <Setter Property="Padding" Value="10,7"/>
                             <Setter Property="Margin" Value="0,0,0,2"/>
-                            <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnSessionRightClick"/>
                         </Style>
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>

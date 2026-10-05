@@ -64,13 +64,25 @@ public partial class AgentWindow : FluentWindow
         InputBox.Height = Math.Clamp(height - e.VerticalChange, 64, 400);
     }
 
-    // 右键会话：仅记录目标项（不选中/不切换会话），让右键菜单作用于该项
+    // 右键会话：在 ListBox 层定位鼠标所在项并“吞掉”事件（不切换/不聚焦会话），让右键菜单作用于该项
     private AgentSessionRow? _contextSession;
 
-    private void OnSessionRightClick(object sender, MouseButtonEventArgs e)
+    private void OnSessionListRightClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is System.Windows.Controls.ListBoxItem item)
-            _contextSession = item.DataContext as AgentSessionRow;
+        _contextSession = FindSessionRow(e.OriginalSource as DependencyObject);
+        if (_contextSession is not null)
+            e.Handled = true;
+    }
+
+    private static AgentSessionRow? FindSessionRow(DependencyObject? node)
+    {
+        while (node is not null)
+        {
+            if (node is System.Windows.Controls.ListBoxItem item)
+                return item.DataContext as AgentSessionRow;
+            node = System.Windows.Media.VisualTreeHelper.GetParent(node);
+        }
+        return null;
     }
 
     private void OnDeleteSession(object sender, RoutedEventArgs e)
@@ -78,8 +90,10 @@ public partial class AgentWindow : FluentWindow
         _ = _viewModel.DeleteSessionAsync(_contextSession ?? _viewModel.SelectedSession);
     }
 
-    private void OnClearDisplay(object sender, RoutedEventArgs e) =>
-        _viewModel.ClearCommand.Execute(null);
+    private void OnClearDisplay(object sender, RoutedEventArgs e)
+    {
+        _ = _viewModel.ClearSessionMessagesAsync(_contextSession ?? _viewModel.SelectedSession);
+    }
 
     private void OnOpenWorkspace(object sender, RoutedEventArgs e)
     {
@@ -132,8 +146,12 @@ public partial class AgentWindow : FluentWindow
         }
     }
 
-    private void OnExport(object sender, RoutedEventArgs e)
+    private async void OnExport(object sender, RoutedEventArgs e)
     {
+        var session = _contextSession ?? _viewModel.SelectedSession;
+        if (session is null)
+            return;
+
         var dialog = new Microsoft.Win32.SaveFileDialog
         {
             FileName = $"litssh-agent-{DateTime.Now:yyyyMMdd-HHmmss}.md",
@@ -143,38 +161,51 @@ public partial class AgentWindow : FluentWindow
             return;
 
         var sb = new StringBuilder();
-        foreach (var turn in _viewModel.Turns)
+        if (session.Id == _viewModel.CurrentSessionId)
         {
-            sb.AppendLine($"## 🧑 用户 · {turn.UserTime}");
-            sb.AppendLine();
-            sb.AppendLine(turn.UserText);
-            sb.AppendLine();
-
-            if (turn.Steps.Count > 0)
+            foreach (var turn in _viewModel.Turns)
             {
-                sb.AppendLine($"<details><summary>工具过程 ({turn.Steps.Count})</summary>");
+                sb.AppendLine($"## 🧑 用户 · {turn.UserTime}");
                 sb.AppendLine();
-                foreach (var step in turn.Steps)
-                    sb.AppendLine($"- {step.Label}：{step.Detail.Replace("\n", " ")}");
+                sb.AppendLine(turn.UserText);
                 sb.AppendLine();
-                sb.AppendLine("</details>");
-                sb.AppendLine();
+
+                if (turn.Steps.Count > 0)
+                {
+                    sb.AppendLine($"<details><summary>工具过程 ({turn.Steps.Count})</summary>");
+                    sb.AppendLine();
+                    foreach (var step in turn.Steps)
+                        sb.AppendLine($"- {step.Label}：{step.Detail.Replace("\n", " ")}");
+                    sb.AppendLine();
+                    sb.AppendLine("</details>");
+                    sb.AppendLine();
+                }
+
+                if (!string.IsNullOrEmpty(turn.AssistantText) || !string.IsNullOrEmpty(turn.Note))
+                {
+                    sb.AppendLine($"## 🤖 助手 · {turn.Footer}");
+                    sb.AppendLine();
+                    if (!string.IsNullOrEmpty(turn.AssistantText))
+                    {
+                        sb.AppendLine(turn.AssistantText);
+                        sb.AppendLine();
+                    }
+                    if (!string.IsNullOrEmpty(turn.Note))
+                    {
+                        sb.AppendLine($"> {turn.Note}");
+                        sb.AppendLine();
+                    }
+                }
             }
-
-            if (!string.IsNullOrEmpty(turn.AssistantText) || !string.IsNullOrEmpty(turn.Note))
+        }
+        else
+        {
+            foreach (var row in await _viewModel.GetMessagesAsync(session.Id))
             {
-                sb.AppendLine($"## 🤖 助手 · {turn.Footer}");
+                sb.AppendLine(row.Role == "user" ? $"## 🧑 用户 · {row.Timestamp}" : "## 🤖 助手");
                 sb.AppendLine();
-                if (!string.IsNullOrEmpty(turn.AssistantText))
-                {
-                    sb.AppendLine(turn.AssistantText);
-                    sb.AppendLine();
-                }
-                if (!string.IsNullOrEmpty(turn.Note))
-                {
-                    sb.AppendLine($"> {turn.Note}");
-                    sb.AppendLine();
-                }
+                sb.AppendLine(row.Content);
+                sb.AppendLine();
             }
         }
 

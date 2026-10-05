@@ -374,6 +374,28 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         _suppressSelection = false;
     }
 
+    /// <summary>当前显示的会话 Id。</summary>
+    public long CurrentSessionId => _sessionId;
+
+    /// <summary>读取某会话的持久化消息（用于对非当前会话导出）。</summary>
+    public Task<List<AgentMessageRow>> GetMessagesAsync(long sessionId) => _store.GetMessagesAsync(sessionId);
+
+    /// <summary>清空指定会话的消息（保留会话）；若为当前会话则同步清空显示。</summary>
+    public async Task ClearSessionMessagesAsync(AgentSessionRow? session)
+    {
+        if (session is null)
+            return;
+        await _store.ReplaceMessagesAsync(session.Id, Array.Empty<(string Role, string Content)>());
+        if (session.Id == _sessionId)
+        {
+            Turns.Clear();
+            _editingTurn = null;
+            Plan.Clear();
+            OnPropertyChanged(nameof(IsEditing));
+            RefreshContextInfo();
+        }
+    }
+
     private async Task EnsureRuntimeAsync(IEnumerable<ChatMessage>? history)
     {
         if (SelectedProvider is null)

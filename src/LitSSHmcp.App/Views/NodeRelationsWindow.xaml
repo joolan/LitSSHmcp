@@ -29,10 +29,10 @@
                                 <TextBlock Text="{Binding FromLabel}" ToolTip="{Binding From}" TextTrimming="CharacterEllipsis">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground" Value="#222222"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding FromIsCurrent}" Value="True">
-                                                    <Setter Property="Foreground" Value="#B00020"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
                                                     <Setter Property="FontWeight" Value="Bold"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
@@ -49,10 +49,10 @@
                                 <TextBlock Text="{Binding ToLabel}" ToolTip="{Binding To}" TextTrimming="CharacterEllipsis">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground" Value="#222222"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding ToIsCurrent}" Value="True">
-                                                    <Setter Property="Foreground" Value="#B00020"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
                                                     <Setter Property="FontWeight" Value="Bold"/>
                                                 </DataTrigger>
                                             </Style.Triggers>

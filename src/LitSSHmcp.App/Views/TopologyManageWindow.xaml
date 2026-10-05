@@ -33,7 +33,7 @@
                                     <Run Text="  -->  "/>
                                     <Run Text="{Binding To, Mode=OneWay}" FontWeight="SemiBold"/>
                                     <Run Text="  "/>
-                                    <Run Text="{Binding Type, Mode=OneWay}" Foreground="#0A66C2"/>
+                                    <Run Text="{Binding Type, Mode=OneWay}" Foreground="{DynamicResource AppAccentBrush}"/>
                                     <Run Text="{Binding NoteDisplay, Mode=OneWay}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 </TextBlock>
                             </DataTemplate>

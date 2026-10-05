@@ -203,7 +203,7 @@
 
                 <!-- 输入区 -->
                 <DockPanel Grid.Row="2" Margin="0,8,0,0">
-                    <TextBlock DockPanel.Dock="Bottom" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="2,6,0,0">
+                    <TextBlock DockPanel.Dock="Bottom" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="2,6,0,0" TextWrapping="Wrap">
                         <Run Text="{Binding StatusMessage, Mode=OneWay}"/>
                     </TextBlock>
                     <TextBlock DockPanel.Dock="Bottom" Text="{Binding ContextInfo}" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>

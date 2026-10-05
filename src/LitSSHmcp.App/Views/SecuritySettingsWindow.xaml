@@ -141,7 +141,7 @@
                 <Button Content="重新加载" Width="90" Padding="6,4" Margin="0,0,6,0" Click="OnReload"/>
                 <Button Content="保存" Width="90" Padding="6,4" Click="OnSave"/>
             </StackPanel>
-            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,8,0"/>
         </DockPanel>
     </Grid>
 </Grid>

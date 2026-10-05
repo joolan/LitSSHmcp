@@ -236,7 +236,7 @@
                     <ui:Button Content="重新加载" Padding="12,4" Margin="0,0,6,0" Click="OnReload"/>
                     <ui:Button Content="保存" Padding="16,4" Appearance="Primary" Click="OnSave"/>
                 </StackPanel>
-                <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,8,0"/>
             </DockPanel>
         </Grid>
     </Grid>

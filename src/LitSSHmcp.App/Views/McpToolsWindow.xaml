@@ -45,9 +45,9 @@
                 <ListBox Grid.Row="1" x:Name="ToolList" SelectionChanged="OnSelectionChanged"
                          Padding="4" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                            <Setter Property="Padding" Value="3,3"/>
+                            <Setter Property="Padding" Value="6,5"/>
                         </Style>
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>

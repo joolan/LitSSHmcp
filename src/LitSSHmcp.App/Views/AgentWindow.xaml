@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="AI 运维助手" Height="840" Width="1280" MinWidth="980" MinHeight="640"
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Window.Resources>
@@ -28,9 +29,14 @@
 
         <Grid Grid.Row="0">
             <ui:TitleBar Title=""/>
-            <ui:Button HorizontalAlignment="Left" VerticalAlignment="Center" Margin="14,0,0,0" Panel.ZIndex="10"
-                       Appearance="Transparent" BorderThickness="0" Padding="8,4"
-                       Icon="{ui:SymbolIcon Settings24}" Content="设置" Click="OnOpenSettings"/>
+            <Button Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                    Margin="10,0,0,0" Padding="8,5" Panel.ZIndex="10" Click="OnOpenSettings"
+                    shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Settings24" FontSize="15" Margin="0,0,8,0"/>
+                    <TextBlock Text="设置" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
         </Grid>
 
         <Grid Grid.Row="1" Margin="10,0,10,10">
@@ -44,12 +50,20 @@
             <DockPanel Grid.Column="0">
                 <TextBlock DockPanel.Dock="Top" Text="AI 运维助手" FontWeight="SemiBold" FontSize="16" Margin="4,2,0,12"/>
 
-                <ui:Button DockPanel.Dock="Top" Content="新建任务" Icon="{ui:SymbolIcon Add24}" Appearance="Transparent"
-                           BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,7" Margin="0,0,0,2"
-                           Command="{Binding NewSessionCommand}"/>
-                <ui:Button DockPanel.Dock="Top" Content="打开工作区" Icon="{ui:SymbolIcon Folder24}" Appearance="Transparent"
-                           BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,7" Margin="0,0,0,14"
-                           Click="OnOpenWorkspace"/>
+                <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
+                        Margin="0,0,0,2" Command="{Binding NewSessionCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,10,0"/>
+                        <TextBlock Text="新建任务" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
+                        Margin="0,0,0,14" Click="OnOpenWorkspace">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Folder24" FontSize="16" Margin="0,0,10,0"/>
+                        <TextBlock Text="打开工作区" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
 
                 <TextBlock DockPanel.Dock="Top" Text="{Binding Sessions.Count, StringFormat='会话 ({0})'}"
                            FontWeight="SemiBold" Margin="4,2,0,6"/>

@@ -177,6 +177,10 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string _modelStatus = "idle";
     public string ModelStatus { get => _modelStatus; set => Set(ref _modelStatus, value); }
 
+    /// <summary>上下文占用比例 0..1（用于环形进度，图标展示）。</summary>
+    private double _contextPercent;
+    public double ContextPercent { get => _contextPercent; set => Set(ref _contextPercent, value); }
+
     public bool IsEditing => _editingTurn != null;
 
     public async Task InitializeAsync()
@@ -752,7 +756,10 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         var tokens = _runtime?.Session.EstimatedTokens ?? 0;
         var tools = _runtime?.ToolCount ?? 0;
-        ContextInfo = $"轮次 {Turns.Count} · 上下文 ~{tokens} tokens · 上限 {_agentConfig.ContextLimit} 条 / {_agentConfig.ContextTokenLimit} tokens{( _agentConfig.AutoSummarize ? " · 自动摘要" : "")} · {tools} 工具";
+        var limit = _agentConfig.ContextTokenLimit;
+        ContextPercent = limit > 0 ? Math.Min(1.0, (double)tokens / limit) : 0;
+        var pct = limit > 0 ? $" ({ContextPercent * 100:F0}%)" : string.Empty;
+        ContextInfo = $"轮次 {Turns.Count} · 上下文 ~{tokens} tokens{pct} · 上限 {_agentConfig.ContextLimit} 条 / {limit} tokens{( _agentConfig.AutoSummarize ? " · 自动摘要" : "")} · {tools} 工具";
     }
 
     private static DateTime ParseUtc(string timestamp) =>

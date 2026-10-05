@@ -14,7 +14,7 @@ using Microsoft.Win32;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class TopologyWindow : Window
+public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly TopologyViewModel _viewModel = new();
 

@@ -101,6 +101,59 @@ public class ContextStoreTests : IDisposable
         Assert.Contains(sessions, s => s.Id == c);
     }
 
+    [Fact]
+    public async Task Archive_hides_from_list_and_restore_brings_back()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("归档我");
+        await store.AppendMessageAsync(id, "user", "hi");
+
+        await store.ArchiveSessionAsync(id);
+        Assert.Empty(await store.ListSessionsAsync());
+        var archived = await store.ListArchivedSessionsAsync();
+        Assert.Single(archived);
+        Assert.Equal(id, archived[0].Id);
+
+        await store.RestoreSessionAsync(id);
+        Assert.Single(await store.ListSessionsAsync());
+        Assert.Empty(await store.ListArchivedSessionsAsync());
+        Assert.Single(await store.GetMessagesAsync(id));
+    }
+
+    [Fact]
+    public async Task Archived_sessions_survive_prune()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var kept = await store.CreateSessionAsync("归档保留");
+        await store.ArchiveSessionAsync(kept);
+
+        await Task.Delay(10);
+        await store.CreateSessionAsync("a");
+        await Task.Delay(10);
+        await store.CreateSessionAsync("b");
+
+        await store.PruneAsync(maxSessions: 1, maxMessagesPerSession: 0, retentionDays: 0);
+
+        Assert.Single(await store.ListArchivedSessionsAsync());
+        Assert.Equal(kept, (await store.ListArchivedSessionsAsync())[0].Id);
+        Assert.Single(await store.ListSessionsAsync());
+    }
+
+    [Fact]
+    public async Task Delete_archived_removes_it()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("s");
+        await store.ArchiveSessionAsync(id);
+
+        await store.DeleteSessionAsync(id);
+        Assert.Empty(await store.ListArchivedSessionsAsync());
+        Assert.Empty(await store.GetMessagesAsync(id));
+    }
+
     public void Dispose()
     {
         try { File.Delete(_dbPath); } catch { /* ignore */ }

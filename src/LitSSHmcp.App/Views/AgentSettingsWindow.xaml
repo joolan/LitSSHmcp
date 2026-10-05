@@ -230,6 +230,53 @@
                         </ScrollViewer>
                     </Grid>
                 </TabItem>
+
+                <!-- ===== Tab 3：归档记录 ===== -->
+                <TabItem Header="归档记录">
+                    <Grid Margin="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Margin="0,0,0,8">
+                            <ui:Button DockPanel.Dock="Right" Content="刷新" Padding="12,4" Click="OnRefreshArchived"/>
+                            <TextBlock Text="已归档的会话不会出现在会话列表中；可恢复到会话区或永久删除。"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"
+                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        </DockPanel>
+                        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}">
+                            <ListBox x:Name="ArchiveList" ItemsSource="{Binding ArchivedSessions}"
+                                     Background="Transparent" BorderThickness="0">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="Padding" Value="10,7"/>
+                                        <Setter Property="Margin" Value="0,0,0,2"/>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontFamily="Microsoft YaHei"/>
+                                                <TextBlock Text="{Binding UpdatedText}" FontSize="10"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <ui:Button Content="恢复到会话区" Padding="10,3" Margin="0,0,6,0" Click="OnRestoreArchived"/>
+                                                <ui:Button Content="删除" Padding="10,3" Click="OnDeleteArchived"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </Grid>
+                </TabItem>
             </TabControl>
 
             <DockPanel Grid.Row="1" Margin="0,10,0,0">

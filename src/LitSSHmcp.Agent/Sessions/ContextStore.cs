@@ -12,6 +12,15 @@ public interface IContextStore
     Task RenameSessionAsync(long id, string title, CancellationToken ct = default);
     Task DeleteSessionAsync(long id, CancellationToken ct = default);
 
+    /// <summary>归档指定会话（不再出现在会话列表，可在“归档记录”中恢复或删除）。</summary>
+    Task ArchiveSessionAsync(long id, CancellationToken ct = default);
+
+    /// <summary>列出已归档的会话（按更新时间倒序）。</summary>
+    Task<List<AgentSessionRow>> ListArchivedSessionsAsync(CancellationToken ct = default);
+
+    /// <summary>把已归档会话恢复到会话列表。</summary>
+    Task RestoreSessionAsync(long id, CancellationToken ct = default);
+
     /// <summary>记录该会话最近一次使用的模型 Id（切换会话时优先用它）。</summary>
     Task SetSessionProviderAsync(long id, string providerId, CancellationToken ct = default);
 
@@ -102,6 +111,18 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         {
             // 列已存在
         }
+
+        // 兼容旧库：补 Archived 列（0=正常，1=已归档）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN Archived INTEGER NOT NULL DEFAULT 0;";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
     }
 
     public async Task<long> CreateSessionAsync(string title, CancellationToken ct = default)
@@ -122,7 +143,21 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId FROM agent_sessions ORDER BY UpdatedAt DESC;";
+        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId FROM agent_sessions WHERE Archived=0 ORDER BY UpdatedAt DESC;";
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(new AgentSessionRow(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4)));
+        return list;
+    }
+
+    public async Task<List<AgentSessionRow>> ListArchivedSessionsAsync(CancellationToken ct = default)
+    {
+        var list = new List<AgentSessionRow>();
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId FROM agent_sessions WHERE Archived=1 ORDER BY UpdatedAt DESC;";
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             list.Add(new AgentSessionRow(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
@@ -141,6 +176,13 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     public Task DeleteSessionAsync(long id, CancellationToken ct = default) =>
         ExecAsync("DELETE FROM agent_messages WHERE SessionId=@id; DELETE FROM agent_sessions WHERE Id=@id;",
             new() { ["@id"] = id }, ct);
+
+    public Task ArchiveSessionAsync(long id, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET Archived=1 WHERE Id=@id;", new() { ["@id"] = id }, ct);
+
+    public Task RestoreSessionAsync(long id, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET Archived=0, UpdatedAt=@now WHERE Id=@id;",
+            new() { ["@now"] = DateTime.UtcNow.ToString("O"), ["@id"] = id }, ct);
 
     public Task TouchSessionAsync(long id, CancellationToken ct = default) =>
         ExecAsync("UPDATE agent_sessions SET UpdatedAt=@now WHERE Id=@id;",
@@ -219,23 +261,25 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
                 new() { ["@n"] = maxMessagesPerSession });
         }
 
-        // 2) 过期会话（按天数）及其消息
+        // 2) 过期会话（按天数）及其消息（已归档会话受保护，不参与裁剪）
         if (retentionDays > 0)
         {
             var cutoff = DateTime.UtcNow.AddDays(-retentionDays).ToString("O");
-            await RunAsync("DELETE FROM agent_messages WHERE SessionId IN (SELECT Id FROM agent_sessions WHERE UpdatedAt < @cutoff);",
+            await RunAsync("DELETE FROM agent_messages WHERE SessionId IN (SELECT Id FROM agent_sessions WHERE UpdatedAt < @cutoff AND Archived=0);",
                 new() { ["@cutoff"] = cutoff });
-            await RunAsync("DELETE FROM agent_sessions WHERE UpdatedAt < @cutoff;", new() { ["@cutoff"] = cutoff });
+            await RunAsync("DELETE FROM agent_sessions WHERE UpdatedAt < @cutoff AND Archived=0;", new() { ["@cutoff"] = cutoff });
         }
 
-        // 3) 会话数上限（保留最新 N 个）
+        // 3) 会话数上限（保留最新 N 个；已归档会话受保护）
         if (maxSessions > 0)
         {
             await RunAsync(
-                "DELETE FROM agent_messages WHERE SessionId NOT IN (SELECT Id FROM (SELECT Id FROM agent_sessions ORDER BY UpdatedAt DESC LIMIT @n));",
+                @"DELETE FROM agent_messages WHERE SessionId IN (SELECT Id FROM agent_sessions WHERE Archived=0)
+                    AND SessionId NOT IN (SELECT Id FROM (SELECT Id FROM agent_sessions WHERE Archived=0 ORDER BY UpdatedAt DESC LIMIT @n));",
                 new() { ["@n"] = maxSessions });
             await RunAsync(
-                "DELETE FROM agent_sessions WHERE Id NOT IN (SELECT Id FROM (SELECT Id FROM agent_sessions ORDER BY UpdatedAt DESC LIMIT @n));",
+                @"DELETE FROM agent_sessions WHERE Archived=0
+                    AND Id NOT IN (SELECT Id FROM (SELECT Id FROM agent_sessions WHERE Archived=0 ORDER BY UpdatedAt DESC LIMIT @n));",
                 new() { ["@n"] = maxSessions });
         }
 

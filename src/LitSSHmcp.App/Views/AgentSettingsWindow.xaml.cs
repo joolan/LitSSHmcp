@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using LitSSHmcp.Agent;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Services.Storage;
 using Wpf.Ui.Controls;
@@ -19,6 +20,15 @@ public partial class AgentSettingsWindow : FluentWindow
 
         if (string.Equals(initialTab, "model", StringComparison.OrdinalIgnoreCase) && Tabs.Items.Count > 1)
             Tabs.SelectedIndex = 1;
+        else if (string.Equals(initialTab, "archive", StringComparison.OrdinalIgnoreCase) && Tabs.Items.Count > 2)
+            Tabs.SelectedIndex = 2;
+
+        // 切到「归档记录」时刷新列表
+        Tabs.SelectionChanged += (_, _) =>
+        {
+            if (Tabs.SelectedIndex == 2)
+                _ = _viewModel.LoadArchivedAsync();
+        };
 
         // API Key 用 PasswordBox 展示为圆点：随选中模型同步，输入时回写 VM
         _viewModel.PropertyChanged += (_, e) =>
@@ -74,4 +84,23 @@ public partial class AgentSettingsWindow : FluentWindow
     private void OnToggleEnabled(object sender, RoutedEventArgs e) => _ = _viewModel.ToggleSelectedEnabledAsync();
 
     private void OnTestConnection(object sender, RoutedEventArgs e) => _ = _viewModel.TestSelectedProviderAsync();
+
+    private void OnRefreshArchived(object sender, RoutedEventArgs e) => _ = _viewModel.LoadArchivedAsync();
+
+    private void OnRestoreArchived(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is AgentSessionRow row)
+            _ = _viewModel.RestoreArchivedAsync(row);
+    }
+
+    private void OnDeleteArchived(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not AgentSessionRow row)
+            return;
+        var result = System.Windows.MessageBox.Show(
+            $"确定永久删除归档会话「{row.Title}」？此操作不可恢复。",
+            "删除归档会话", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (result == System.Windows.MessageBoxResult.Yes)
+            _ = _viewModel.DeleteArchivedAsync(row);
+    }
 }

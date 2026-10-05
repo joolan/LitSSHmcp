@@ -255,7 +255,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    private async Task ReloadSessionsAsync()
+    public async Task ReloadSessionsAsync()
     {
         var list = await _store.ListSessionsAsync();
         Sessions.Clear();
@@ -377,6 +377,31 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         _suppressSelection = true;
         SelectedSession = Sessions.FirstOrDefault(s => s.Id == _sessionId);
         _suppressSelection = false;
+    }
+
+    /// <summary>归档指定会话：移出会话列表，可在助手设置「归档记录」中恢复或删除。</summary>
+    public async Task ArchiveSessionAsync(AgentSessionRow? session)
+    {
+        if (session is null)
+            return;
+        var wasCurrent = session.Id == _sessionId;
+        await _store.ArchiveSessionAsync(session.Id);
+        await ReloadSessionsAsync();
+
+        var next = Sessions.FirstOrDefault();
+        if (next is null)
+        {
+            _sessionId = await _store.CreateSessionAsync("运维会话");
+            await ReloadSessionsAsync();
+            next = Sessions.FirstOrDefault();
+            wasCurrent = true;
+        }
+
+        _suppressSelection = true;
+        SelectedSession = wasCurrent ? next : Sessions.FirstOrDefault(s => s.Id == _sessionId);
+        _suppressSelection = false;
+        if (wasCurrent && next is not null)
+            await LoadSessionAsync(next.Id);
     }
 
     /// <summary>当前显示的会话 Id。</summary>

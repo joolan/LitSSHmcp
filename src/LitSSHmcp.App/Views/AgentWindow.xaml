@@ -92,6 +92,7 @@
                     <ListBox.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="重命名" Click="OnRenameSession"/>
+                            <MenuItem Header="归档" Click="OnArchiveSession"/>
                             <MenuItem Header="删除" Click="OnDeleteSession"/>
                             <Separator/>
                             <MenuItem Header="打开工作区文件夹" Click="OnOpenWorkspace"/>

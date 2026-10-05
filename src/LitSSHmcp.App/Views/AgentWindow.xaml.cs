@@ -42,6 +42,7 @@ public partial class AgentWindow : FluentWindow
     {
         new AgentSettingsWindow(_configService, tab) { Owner = this }.ShowDialog();
         _ = _viewModel.ReloadProvidersAsync();
+        _ = _viewModel.ReloadSessionsAsync();
     }
 
     // 输入区「＋」更多：左键打开其右键菜单
@@ -87,7 +88,21 @@ public partial class AgentWindow : FluentWindow
 
     private void OnDeleteSession(object sender, RoutedEventArgs e)
     {
-        _ = _viewModel.DeleteSessionAsync(_contextSession ?? _viewModel.SelectedSession);
+        var session = _contextSession ?? _viewModel.SelectedSession;
+        if (session is null)
+            return;
+        var result = System.Windows.MessageBox.Show(
+            $"确定删除会话「{session.Title}」？此操作不可恢复，会话及其消息将被永久删除。",
+            "删除会话", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (result == System.Windows.MessageBoxResult.Yes)
+            _ = _viewModel.DeleteSessionAsync(session);
+    }
+
+    private void OnArchiveSession(object sender, RoutedEventArgs e)
+    {
+        var session = _contextSession ?? _viewModel.SelectedSession;
+        if (session is not null)
+            _ = _viewModel.ArchiveSessionAsync(session);
     }
 
     private void OnClearDisplay(object sender, RoutedEventArgs e)

@@ -13,10 +13,52 @@ namespace LitSSHmcp.App.ViewModels;
 public class AgentSettingsViewModel : INotifyPropertyChanged
 {
     private readonly IConfigService _configService = new ConfigService();
+    private readonly IContextStore _contextStore = new ContextStore();
 
     public AgentSettingsViewModel() => Load();
 
     public ObservableCollection<AgentProviderEdit> Providers { get; } = new();
+
+    /// <summary>已归档的会话（“归档记录”标签页）。</summary>
+    public ObservableCollection<AgentSessionRow> ArchivedSessions { get; } = new();
+
+    /// <summary>加载已归档会话列表。</summary>
+    public async Task LoadArchivedAsync()
+    {
+        try
+        {
+            await _contextStore.InitializeAsync();
+            var list = await _contextStore.ListArchivedSessionsAsync();
+            ArchivedSessions.Clear();
+            foreach (var s in list)
+                ArchivedSessions.Add(s);
+            StatusMessage = list.Count == 0 ? "暂无归档会话" : $"已归档 {list.Count} 个会话";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "读取归档失败: " + ex.Message;
+        }
+    }
+
+    /// <summary>把归档会话恢复到会话区。</summary>
+    public async Task RestoreArchivedAsync(AgentSessionRow? session)
+    {
+        if (session is null)
+            return;
+        await _contextStore.RestoreSessionAsync(session.Id);
+        ArchivedSessions.Remove(session);
+        StatusMessage = $"已恢复到会话区: {session.Title}";
+    }
+
+    /// <summary>永久删除归档会话。</summary>
+    public async Task DeleteArchivedAsync(AgentSessionRow? session)
+    {
+        if (session is null)
+            return;
+        await _contextStore.DeleteSessionAsync(session.Id);
+        ArchivedSessions.Remove(session);
+        StatusMessage = $"已删除归档会话: {session.Title}";
+    }
 
     private AgentProviderEdit? _selectedProvider;
     public AgentProviderEdit? SelectedProvider { get => _selectedProvider; set => Set(ref _selectedProvider, value); }

@@ -13,7 +13,7 @@ description: Use when operating or troubleshooting servers and applications thro
 
 ## 0. 开始前
 
-0. **资产档案按需读取**：需要既有的服务器/应用/日志路径/拓扑信息时，才读工作区 `OPS_ASSETS.md`（见第 9 节）；本次确认/纠正了新事实再**增量更新**（优先 `ops_doc_append`/`ops_doc_patch`），**不必每轮都读写**。
+0. **资产档案按需读取**：需要既有的服务器/应用/日志路径/拓扑信息时，才读工作区 `OPS_ASSETS.md`（见第 9 节）；本次确认/纠正了新事实再**增量更新**，**不必每轮都读写**。
 1. 不确定有哪些工具 / 怎么用 → 调 `mcp_usage_guide`；MCP 自身异常 → `mcp_self_check`。
 2. 拿到准确的标识：
    - 服务器：`ssh_list_servers` → 取 `id`（用 `id` 最稳，也可传名称/主机名）。
@@ -115,7 +115,7 @@ description: Use when operating or troubleshooting servers and applications thro
 - 遇 `blocked`/`rejected` 不要重试轰炸；遇 `approval_timeout` 提示用户后重试；遇 `server_ambiguous`/`pid_ambiguous`/`log_path_ambiguous` 用精确标识重试。
 - **减少审批次数**：多个**只读**提权检查（读 sudoers/服务文件/端口属主等）尽量**合并成一条 `ssh_execute_sudo` 命令**一次执行，而不是逐条弹审批。
 - 不要自行编造路径、端口、ID；拿不到就用列表/发现工具（`ssh_list_servers`、`log_find`、`java_processes`）。
-- 本次如确认/纠正了新事实，收尾时**增量更新资产档案**（`OPS_ASSETS.md`，见第 9 节）：优先 `ops_doc_append`/`ops_doc_patch`，避免整份重写；无新事实则跳过。
+- 本次如确认/纠正了新事实，收尾时**增量更新资产档案**（`OPS_ASSETS.md`，见第 9 节）：**优先增量追加/定点修正，避免整份重写**；无新事实则跳过。
 
 ## 8. 参考
 
@@ -128,7 +128,7 @@ description: Use when operating or troubleshooting servers and applications thro
 
 **目标**：让资产/拓扑知识“自动进化”。在工作空间（或用户项目根目录）维护一份**独立的资产 + 应用拓扑关系文档**，需要时读取、再用最新事实**增量更新**纠正它，从而越来越准地定位**服务器、应用、日志**。它是 AI 的“长期记忆”，**不是** MCP 的一部分。
 
-- **位置**：默认工作区根目录 `OPS_ASSETS.md`（也可放 `docs/` 或用户指定）；只维护一份；用本地工具 `ops_doc_read`/`ops_doc_append`/`ops_doc_patch`/`ops_doc_write`/`ops_doc_list` 维护（**优先 append/patch 增量更新，省 token**）。起手模板：`OPS_ASSETS.template.md`。
+- **位置**：默认工作区根目录 `OPS_ASSETS.md`（也可放 `docs/` 或用户指定）；只维护一份；**通过工作区文档能力维护（优先增量更新，避免整份重写、省 token）**。起手模板：`OPS_ASSETS.template.md`。
 - **何时做**：需要历史信息时才读；发现新事实或纠正旧事实就**立即增量更新并记变更**；拓扑变动时用 `topology_discover` 对账。
 - **内容结构**：服务器 / 数据源 / 应用（含端口、部署路径、**日志路径**）/ 拓扑关系 / 待确认存疑 / 更新日志（表格）；**结构可按实际环境扩展/精简**（如域名证书、Cron、MQ、备份、K8s 等）。
 - **核心规则**（细则见 `references/asset-ledger.md`）：① 以 MCP 实时数据为准纠正；② 存稳定的 `id`；③ 只记事实带证据；④ **绝不存密钥**；⑤ 合并去重；⑥ 冲突不硬猜（放“待确认”并问用户）；⑦ 不覆盖用户手写内容；⑧ **可按实际调整文档结构/内容，但必须注明调整原因**（在更新日志以 `类型=结构` 记录：改了什么 + 为什么 + 影响）。

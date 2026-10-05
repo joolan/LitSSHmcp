@@ -167,8 +167,10 @@
                                                            Icon="{ui:SymbolIcon ArrowSync24}"
                                                            Command="{Binding DataContext.RegenerateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                            CommandParameter="{Binding}"/>
-                                                <ui:Button Appearance="Transparent" Padding="4" ToolTip="编辑并重发"
+                                                <ui:Button Appearance="Transparent" Padding="4" ToolTip="编辑（载入输入框）"
                                                            Icon="{ui:SymbolIcon Edit24}" Click="OnEditTurn"/>
+                                                <ui:Button Appearance="Transparent" Padding="4" ToolTip="复制"
+                                                           Icon="{ui:SymbolIcon Copy24}" Click="OnCopyUserMessage"/>
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>

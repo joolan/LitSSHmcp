@@ -736,11 +736,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 for (var i = Turns.Count - 1; i > idx; i--)
                     Turns.RemoveAt(i);
                 RebuildSessionHistoryUpTo(idx);
-                _editingTurn.ResetForRerun(fixedText ?? _editingTurn.UserText);
+                _editingTurn.ResetForRerun(fixedText ?? GetUserPlainText(_editingTurn));
                 var editTurn = _editingTurn;
                 _editingTurn = null;
                 OnPropertyChanged(nameof(IsEditing));
-                await RunTurnAsync(editTurn);
+                var editContents = await BuildContentsForTurnAsync(editTurn.UserText, editTurn.StorageText);
+                await RunTurnAsync(editTurn, editContents);
                 return;
             }
             _editingTurn = null;
@@ -864,7 +865,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         RebuildSessionHistoryUpTo(idx);
         turn.ResetForRerun(turn.UserText);
-        await RunTurnAsync(turn);
+        var contents = await BuildContentsForTurnAsync(turn.UserText, turn.StorageText);
+        await RunTurnAsync(turn, contents);
     }
 
     /// <summary>进入编辑：把该轮用户指令载入输入框，发送时将替换该指令及其后的对话。</summary>
@@ -873,7 +875,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (turn is null || IsBusy)
             return;
         _editingTurn = turn;
-        Input = turn.UserText;
+        Input = GetUserPlainText(turn);
         OnPropertyChanged(nameof(IsEditing));
         (CancelEditCommand as RelayCommand)?.RaiseCanExecuteChanged();
         StatusMessage = "编辑中：按「发送」将替换该指令及其后的对话；按「取消编辑」放弃。";
@@ -1076,6 +1078,123 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         var open = line.LastIndexOf('[');
         var close = line.LastIndexOf(']');
         return open >= 0 && close > open ? line[(open + 1)..close] : null;
+    }
+
+    private static string ExtractMarkerName(string line)
+    {
+        var text = line;
+        var colon = text.IndexOf(':');
+        if (colon >= 0)
+            text = text[(colon + 1)..].Trim();
+        var bracket = text.IndexOf('[');
+        if (bracket > 0)
+            text = text[..bracket].Trim();
+        return text;
+    }
+
+    /// <summary>从持久化文本还原附件（图片/文件）的绝对路径。</summary>
+    private (List<(string Name, string Abs)> Images, List<(string Name, string Abs)> Files) ExtractTurnAttachments(string? storageText)
+    {
+        var images = new List<(string, string)>();
+        var files = new List<(string, string)>();
+        if (string.IsNullOrWhiteSpace(storageText))
+            return (images, files);
+
+        var workspaceRoot = WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir);
+        foreach (var raw in storageText.Replace("\r\n", "\n").Split('\n'))
+        {
+            var line = raw.Trim();
+            string? rel = null;
+            if (line.StartsWith("🖼"))
+            {
+                rel = ExtractBracket(line);
+                if (rel is not null)
+                    images.Add((ExtractMarkerName(line), Path.GetFullPath(Path.Combine(workspaceRoot, rel))));
+            }
+            else if (line.StartsWith("📎"))
+            {
+                rel = ExtractBracket(line);
+                if (rel is not null)
+                    files.Add((ExtractMarkerName(line), Path.GetFullPath(Path.Combine(workspaceRoot, rel))));
+            }
+        }
+        return (images, files);
+    }
+
+    private static string MediaTypeFromExt(string path) => Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".png" => "image/png",
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".gif" => "image/gif",
+        ".bmp" => "image/bmp",
+        ".webp" => "image/webp",
+        _ => "application/octet-stream"
+    };
+
+    /// <summary>用给定文本 + 历史附件重建模型输入（供“重发/编辑并重发”）。</summary>
+    private async Task<IReadOnlyList<AIContent>> BuildContentsForTurnAsync(string text, string? storageText)
+    {
+        var (images, files) = ExtractTurnAttachments(storageText);
+        if (images.Count == 0 && files.Count == 0)
+            return new AIContent[] { new TextContent(text) };
+
+        var vision = SelectedProvider?.SupportsVision == true;
+        var model = new StringBuilder(text);
+        var dataParts = new List<AIContent>();
+
+        foreach (var (name, abs) in images)
+        {
+            if (vision && File.Exists(abs))
+            {
+                try { dataParts.Add(new DataContent(await File.ReadAllBytesAsync(abs), MediaTypeFromExt(abs))); }
+                catch { model.Append($"\n（图片 {name} 读取失败）"); }
+            }
+            else
+            {
+                model.Append($"\n（图片 {name} 未附带：文件缺失或模型未开启视觉）");
+            }
+        }
+
+        foreach (var (name, abs) in files)
+        {
+            if (File.Exists(abs))
+            {
+                try { model.Append($"\n\n【附件 {name}】\n{await File.ReadAllTextAsync(abs)}"); }
+                catch { model.Append($"\n📎 文件 {name}（读取失败）"); }
+            }
+            else
+            {
+                model.Append($"\n📎 文件 {name}（已删除）");
+            }
+        }
+
+        var list = new List<AIContent> { new TextContent(model.ToString()) };
+        list.AddRange(dataParts);
+        return list;
+    }
+
+    /// <summary>用户消息的纯文本（不含附件标记行），用于编辑/复制。</summary>
+    public string GetUserPlainText(AgentTurn turn)
+    {
+        var source = string.IsNullOrWhiteSpace(turn.StorageText) ? turn.UserText : turn.StorageText!;
+        return string.Join("\n", source.Replace("\r\n", "\n").Split('\n')
+            .Select(l => l.TrimEnd())
+            .Where(l => !l.TrimStart().StartsWith("🖼") && !l.TrimStart().StartsWith("📎")))
+            .Trim();
+    }
+
+    /// <summary>用户消息附件的绝对路径（图片 + 文件），用于复制。</summary>
+    public IReadOnlyList<string> GetAttachmentPaths(AgentTurn turn)
+    {
+        var result = new List<string>(turn.Images);
+        var (images, files) = ExtractTurnAttachments(turn.StorageText);
+        foreach (var (_, abs) in images)
+            if (!result.Contains(abs, StringComparer.OrdinalIgnoreCase))
+                result.Add(abs);
+        foreach (var (_, abs) in files)
+            if (!result.Contains(abs, StringComparer.OrdinalIgnoreCase))
+                result.Add(abs);
+        return result;
     }
 
     private static DateTime ParseUtc(string timestamp) =>        DateTime.TryParse(timestamp, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? dt.ToUniversalTime() : DateTime.UtcNow;

@@ -274,6 +274,78 @@ public partial class AgentWindow : FluentWindow
         }
     }
 
+    // 复制用户消息：纯文字→文字；纯附件→附件；两者都有→弹出选择
+    private void OnCopyUserMessage(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not AgentTurn turn)
+            return;
+
+        var text = _viewModel.GetUserPlainText(turn);
+        var paths = _viewModel.GetAttachmentPaths(turn);
+        var hasText = !string.IsNullOrWhiteSpace(text);
+        var hasAttachments = paths.Count > 0;
+
+        if (hasText && hasAttachments)
+        {
+            var menu = new System.Windows.Controls.ContextMenu();
+            var copyText = new System.Windows.Controls.MenuItem { Header = "复制文字" };
+            copyText.Click += (_, _) => CopyText(text);
+            var copyAttachments = new System.Windows.Controls.MenuItem { Header = "复制附件" };
+            copyAttachments.Click += (_, _) => CopyAttachments(paths);
+            menu.Items.Add(copyText);
+            menu.Items.Add(copyAttachments);
+            menu.PlacementTarget = sender as UIElement;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+        else if (hasAttachments)
+        {
+            CopyAttachments(paths);
+        }
+        else if (hasText)
+        {
+            CopyText(text);
+        }
+    }
+
+    private void CopyText(string text)
+    {
+        try
+        {
+            Clipboard.SetText(text);
+            _viewModel.StatusMessage = "已复制文字";
+        }
+        catch { /* ignore */ }
+    }
+
+    private void CopyAttachments(IReadOnlyList<string> paths)
+    {
+        try
+        {
+            if (paths.Count == 1 && IsImageFile(paths[0]))
+            {
+                var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bitmap.UriSource = new Uri(paths[0]);
+                bitmap.EndInit();
+                Clipboard.SetImage(bitmap);
+            }
+            else
+            {
+                var files = new System.Collections.Specialized.StringCollection();
+                foreach (var path in paths)
+                    files.Add(path);
+                Clipboard.SetFileDropList(files);
+            }
+            _viewModel.StatusMessage = "已复制附件";
+        }
+        catch { /* ignore */ }
+    }
+
+    private static bool IsImageFile(string path) =>
+        Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp";
+
     private async void OnExport(object sender, RoutedEventArgs e)
     {
         var session = _contextSession ?? _viewModel.SelectedSession;

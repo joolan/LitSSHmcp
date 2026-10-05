@@ -96,7 +96,8 @@
     "maxPerServer": 1
   },
   "ui": {
-    "theme": "system"
+    "theme": "system",
+    "accent": ""
   },
   "agent": {
     "enabled": true,

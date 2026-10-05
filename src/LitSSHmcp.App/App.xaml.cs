@@ -32,19 +32,22 @@ public partial class App : Application
     private static async Task ApplyThemeAsync()
     {
         string theme;
+        string? accent;
         try
         {
             var config = await new ConfigService().LoadConfigAsync();
             theme = config.Ui?.Theme ?? "system";
+            accent = config.Ui?.Accent;
         }
         catch
         {
             theme = "system";
+            accent = null;
         }
 
         try
         {
-            ThemeService.Apply(theme);
+            ThemeService.Apply(theme, accent);
         }
         catch
         {

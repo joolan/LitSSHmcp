@@ -179,6 +179,9 @@ public class UiConfig
 {
     /// <summary>主题：system(默认, 跟随系统) / light / dark。</summary>
     public string Theme { get; set; } = "system";
+
+    /// <summary>强调色（hex，如 #0078D4）；空=使用主题默认强调色。</summary>
+    public string Accent { get; set; } = string.Empty;
 }
 
 public class ConnectionPoolConfig

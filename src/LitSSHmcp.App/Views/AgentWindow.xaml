@@ -29,14 +29,16 @@
 
         <Grid Grid.Row="0">
             <ui:TitleBar Title=""/>
-            <Button Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Left" VerticalAlignment="Center"
-                    Margin="10,0,0,0" Padding="8,5" Panel.ZIndex="10" Click="OnOpenSettings"
-                    shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                <StackPanel Orientation="Horizontal">
-                    <ui:SymbolIcon Symbol="Settings24" FontSize="15" Margin="0,0,8,0"/>
-                    <TextBlock Text="设置" VerticalAlignment="Center"/>
-                </StackPanel>
-            </Button>
+            <Border HorizontalAlignment="Left" Panel.ZIndex="10" Background="Transparent" Padding="6,0"
+                    shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                    MouseLeftButtonDown="OnTitleBarMouseDown">
+                <Button Style="{DynamicResource ActionRowButton}" Padding="8,5" Click="OnOpenSettings">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Settings24" FontSize="15" Margin="0,0,8,0"/>
+                        <TextBlock Text="设置" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </Border>
         </Grid>
 
         <Grid Grid.Row="1" Margin="10,0,10,10">

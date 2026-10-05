@@ -61,6 +61,32 @@ public partial class AgentWindow : FluentWindow
         InputBox.Height = Math.Clamp(height - e.VerticalChange, 64, 400);
     }
 
+    // 自绘标题栏左侧可交互区：空白处拖动窗口，双击切换最大化（点在按钮上时交给按钮）
+    private void OnTitleBarMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<System.Windows.Controls.Button>(e.OriginalSource as DependencyObject) is not null)
+            return;
+
+        if (e.ClickCount == 2)
+        {
+            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            return;
+        }
+
+        try { DragMove(); } catch { /* 非左键按下等忽略 */ }
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? node) where T : DependencyObject
+    {
+        while (node is not null)
+        {
+            if (node is T match)
+                return match;
+            node = System.Windows.Media.VisualTreeHelper.GetParent(node);
+        }
+        return null;
+    }
+
     // 右键会话：选中该项（让右键菜单作用于该会话）
     private void OnSessionRightClick(object sender, MouseButtonEventArgs e)
     {

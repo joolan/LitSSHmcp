@@ -37,6 +37,7 @@
   - **表格行与分组框 Fluent 化**：自定义 `ListViewItem` 模板——**圆角行 + Fluent 悬停（半透明）/选中（半透明强调色）**，修正深色下默认浅蓝选中导致文字发白的问题；自定义 `GroupBox` 卡片模板（圆角边框替代默认"蚀刻线"，随主题）。
   - **表头与拓扑窗口**：`GridViewColumnHeader` 自定义模板（悬停/按下用主题半透明色，去除默认浅蓝高亮）；`TopologyWindow` 由普通 Window 改为 **FluentWindow**（深色标题栏），并修正图例文字对比度。
   - **拓扑节点文字对比度**：节点底色为浅色 pastel，深色主题下文字误用浅色前景导致看不清——服务器容器/应用/数据库节点/连线标签统一改为**深色文字**；禁用服务器节点（深色底）保留主题前景色。
+  - **拓扑连线属性面板**：由固定浅底（白字看不清）改为**主题卡片**（`AppCardBrush`/`AppBorderBrush`/`AppSurfaceAltBrush` 标题栏 + 主题文字）。
   - **输出与工具效率（基于历史会话/审计分析）**：新增 `agent.responseStyle`（`concise` 默认 / `standard` / `detailed`）——系统提示按**运维习惯**要求"结论先行、只讲重点、控制篇幅"以压低输出 token；`snapshot.minRefreshIntervalSeconds`（默认 60s）+ `ssh_snapshot_refresh` 的 `force` 参数——距上次成功快照小于间隔且未 `force` 时**直接返回已有快照**（`status=fresh`），消除同一任务内反复全量刷新（历史审计显示曾 **3.5 分钟刷 4 次**、单日 34 次）；技能/系统提示补充"**多个只读提权检查合并成一条命令**以减少审批次数"。
   - 配置项 `AppConfig.Agent`（`ConfigMigrator` 兜底、`config.example.json` 示例）；发布脚本 `scripts/build-release.ps1` 会把 MCP 服务器内置到 App 的 `mcp/` 子目录。
 - **服务器快照工具 `ssh_snapshot_get` / `ssh_snapshot_refresh`**（归入 `ssh` 分组，工具总数 49 → 51）：把服务器整机态势**采集并持久化到独立库** `%APPDATA%\LitSSH\snapshots.db`（快照记录 + 快照事件流水两张表，与审计库分离，便于独立备份/清理），随时按 `serverId` 查询。默认采集四个维度：

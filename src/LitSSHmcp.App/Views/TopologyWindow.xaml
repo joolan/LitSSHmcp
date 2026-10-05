@@ -385,7 +385,7 @@
                     <!-- 叠加层: 关系属性面板(可拖动) -->
                     <Canvas x:Name="OverlayCanvas" Background="{x:Null}">
                         <Border x:Name="EdgePanel" Width="264"
-                                Background="#F7FFFFFF" BorderBrush="#BBBBBB" BorderThickness="1" CornerRadius="4" Padding="10"
+                                Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10"
                                 Canvas.Left="700" Canvas.Top="8">
                             <Border.Style>
                                 <Style TargetType="Border">
@@ -398,10 +398,10 @@
                                 </Style>
                             </Border.Style>
                             <StackPanel>
-                                <Border x:Name="EdgePanelHeader" Background="#EEEEEE" Margin="-10,-10,-10,8" Padding="10,6"
+                                <Border x:Name="EdgePanelHeader" Background="{DynamicResource AppSurfaceAltBrush}" Margin="-10,-10,-10,8" Padding="10,6"
                                         MouseLeftButtonDown="OnPanelHeaderDown" MouseMove="OnPanelHeaderMove" MouseLeftButtonUp="OnPanelHeaderUp"
                                         Cursor="SizeAll">
-                                    <TextBlock Text="关系属性（可拖动）" FontWeight="Bold"/>
+                                    <TextBlock Text="关系属性（可拖动）" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                                 </Border>
                                 <TextBlock Text="{Binding SelectedEdgeSummary}" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="0,0,0,8"/>
                                 <TextBlock Text="关系类型" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>

@@ -18,6 +18,8 @@
     <Color x:Key="CodeTextColor">#FF1F1F1F</Color>
     <Color x:Key="UserBubbleColor">#FFD6E9FF</Color>
     <Color x:Key="AssistantBubbleColor">#FFFFFFFF</Color>
+    <Color x:Key="HoverColor">#0F000000</Color>
+    <Color x:Key="SelectionColor">#220067C0</Color>
     <Color x:Key="CodeKeywordColor">#FF0000C0</Color>
     <Color x:Key="CodeStringColor">#FFA31515</Color>
     <Color x:Key="CodeNumberColor">#FF098658</Color>
@@ -39,6 +41,8 @@
     <SolidColorBrush x:Key="AppCodeTextBrush" Color="{StaticResource CodeTextColor}"/>
     <SolidColorBrush x:Key="AppUserBubbleBrush" Color="{StaticResource UserBubbleColor}"/>
     <SolidColorBrush x:Key="AppAssistantBubbleBrush" Color="{StaticResource AssistantBubbleColor}"/>
+    <SolidColorBrush x:Key="AppHoverBrush" Color="{StaticResource HoverColor}"/>
+    <SolidColorBrush x:Key="AppSelectionBrush" Color="{StaticResource SelectionColor}"/>
     <SolidColorBrush x:Key="AppCodeKeywordBrush" Color="{StaticResource CodeKeywordColor}"/>
     <SolidColorBrush x:Key="AppCodeStringBrush" Color="{StaticResource CodeStringColor}"/>
     <SolidColorBrush x:Key="AppCodeNumberBrush" Color="{StaticResource CodeNumberColor}"/>

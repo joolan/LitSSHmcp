@@ -34,6 +34,7 @@
   - **Phase 3 起步**：主窗口改为**左侧图标导航栏**（数据源/应用/拓扑/安全/审计/配置/MCP说明/AI 助手，含导出/导入）替代顶部菜单；`TopologyWindow` 深色兼容（画布/节点/文字底色 token 化）；其余窗口统一走全局主题 + WPF-UI 控件样式（完整重设计后续）。
   - **Phase 3 完成**：其余窗口（数据源/应用管理、节点关系、审计、快照历史、工具分组、MCP 说明、拓扑管理、文本输入、安全设置）统一改为 **`FluentWindow` + 自定义标题栏**；编辑类窗口（SSH 服务器/数据源/应用）改为**卡片表单 + 主/次按钮**；灰色/告警文字统一 token 化。至此**全部窗口均为 Fluent 外观**。
   - **表格弹窗深色修复 + 窗口布局记忆**：为 `ListView` / `GridViewColumnHeader` / `GroupBox` 增加全局令牌样式，修复深色下**含表格的弹窗（数据源/应用管理、审计、快照历史、节点关系等）数据区与表头仍为浅色**的问题；新增 `%APPDATA%\LitSSH\ui-layout.json` **窗口尺寸/位置/最大化记忆**（主窗口、AI 助手、AI 助手设置）。
+  - **表格行与分组框 Fluent 化**：自定义 `ListViewItem` 模板——**圆角行 + Fluent 悬停（半透明）/选中（半透明强调色）**，修正深色下默认浅蓝选中导致文字发白的问题；自定义 `GroupBox` 卡片模板（圆角边框替代默认"蚀刻线"，随主题）。
   - **输出与工具效率（基于历史会话/审计分析）**：新增 `agent.responseStyle`（`concise` 默认 / `standard` / `detailed`）——系统提示按**运维习惯**要求"结论先行、只讲重点、控制篇幅"以压低输出 token；`snapshot.minRefreshIntervalSeconds`（默认 60s）+ `ssh_snapshot_refresh` 的 `force` 参数——距上次成功快照小于间隔且未 `force` 时**直接返回已有快照**（`status=fresh`），消除同一任务内反复全量刷新（历史审计显示曾 **3.5 分钟刷 4 次**、单日 34 次）；技能/系统提示补充"**多个只读提权检查合并成一条命令**以减少审批次数"。
   - 配置项 `AppConfig.Agent`（`ConfigMigrator` 兜底、`config.example.json` 示例）；发布脚本 `scripts/build-release.ps1` 会把 MCP 服务器内置到 App 的 `mcp/` 子目录。
 - **服务器快照工具 `ssh_snapshot_get` / `ssh_snapshot_refresh`**（归入 `ssh` 分组，工具总数 49 → 51）：把服务器整机态势**采集并持久化到独立库** `%APPDATA%\LitSSH\snapshots.db`（快照记录 + 快照事件流水两张表，与审计库分离，便于独立备份/清理），随时按 `serverId` 查询。默认采集四个维度：

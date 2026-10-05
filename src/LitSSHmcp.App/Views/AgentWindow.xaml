@@ -35,7 +35,7 @@
                 <ListBox x:Name="SessionList" ItemsSource="{Binding FilteredSessions}" SelectedItem="{Binding SelectedSession}"
                          Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch">
                     <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                             <Setter Property="Padding" Value="10,7"/>
                             <Setter Property="Margin" Value="0,0,0,4"/>

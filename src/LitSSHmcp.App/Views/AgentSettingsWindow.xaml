@@ -143,7 +143,7 @@
                                 <ListBox x:Name="ProviderList" ItemsSource="{Binding Providers}" SelectedItem="{Binding SelectedProvider}"
                                          Background="Transparent" BorderThickness="0">
                                     <ListBox.ItemContainerStyle>
-                                        <Style TargetType="ListBoxItem">
+                                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                                             <Setter Property="Padding" Value="8,6"/>
                                             <Setter Property="Margin" Value="0,0,0,2"/>
                                             <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnProviderRightClick"/>

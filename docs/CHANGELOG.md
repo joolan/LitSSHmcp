@@ -41,6 +41,7 @@
   - **强调色（accent）**：新增 `ui.accent`（预设 系统默认/蓝/紫/绿/橙/红），在「AI 助手设置 → 助手设置」选择；`ThemeService` 覆盖自研 `AppAccentBrush`/`AppSelectionBrush` 并同步 WPF-UI 控件强调色，主按钮/选中高亮随之变化。
   - **表格列排序**：新增 `GridViewSort` 附加行为（点击列头按该列排序，表头显示 ▲/▼，再点切换升降序），应用于**审计（命令/SQL/会话）、快照历史、数据源管理、应用管理**的列表。
   - **拓扑深色节点配色**：节点颜色改为**主题 token**（`NodeServer/App/Db` 背景与边框、`NodeText`）——深色主题下为**深底浅字**、浅色主题为浅底深字；图例、连线标签同步主题。
+  - **Tab 与列表观感**：`TabItem` 自定义模板——**选中用强调色下划线 + 加粗**（更醒目）；`ListBox/ListBoxItem` 自定义模板——**去掉边框线**、圆角、悬停/选中用主题半透明底色；会话/服务器/模型列表的容器样式改为继承隐式模板。
   - **输出与工具效率（基于历史会话/审计分析）**：新增 `agent.responseStyle`（`concise` 默认 / `standard` / `detailed`）——系统提示按**运维习惯**要求"结论先行、只讲重点、控制篇幅"以压低输出 token；`snapshot.minRefreshIntervalSeconds`（默认 60s）+ `ssh_snapshot_refresh` 的 `force` 参数——距上次成功快照小于间隔且未 `force` 时**直接返回已有快照**（`status=fresh`），消除同一任务内反复全量刷新（历史审计显示曾 **3.5 分钟刷 4 次**、单日 34 次）；技能/系统提示补充"**多个只读提权检查合并成一条命令**以减少审批次数"。
   - 配置项 `AppConfig.Agent`（`ConfigMigrator` 兜底、`config.example.json` 示例）；发布脚本 `scripts/build-release.ps1` 会把 MCP 服务器内置到 App 的 `mcp/` 子目录。
 - **服务器快照工具 `ssh_snapshot_get` / `ssh_snapshot_refresh`**（归入 `ssh` 分组，工具总数 49 → 51）：把服务器整机态势**采集并持久化到独立库** `%APPDATA%\LitSSH\snapshots.db`（快照记录 + 快照事件流水两张表，与审计库分离，便于独立备份/清理），随时按 `serverId` 查询。默认采集四个维度：

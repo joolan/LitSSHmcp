@@ -222,7 +222,8 @@
                                         <TextBlock Text="并发上限:" VerticalAlignment="Center"/>
                                         <ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.MaxConcurrency, UpdateSourceTrigger=PropertyChanged}" Width="36" Margin="6,0,0,0"/>
                                     </StackPanel>
-                                    <TextBlock Text="提示：切换启用/停用会立即保存；其余字段修改后点右下角「保存」。"
+                                    <CheckBox Content="支持视觉（可接收图片附件；如 GPT-4o / Qwen-VL / GLM-4V）" IsChecked="{Binding SelectedProvider.SupportsVision, Mode=TwoWay}" Margin="0,4,0,6"/>
+                                <TextBlock Text="提示：切换启用/停用会立即保存；其余字段修改后点右下角「保存」。"
                                                Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>

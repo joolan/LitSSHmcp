@@ -56,12 +56,18 @@ public sealed class AgentSession
     public int ToolCount => _tools.Count;
 
     /// <summary>发送一条用户消息并跑到本轮结束（含工具调用）；事件通过 <paramref name="progress"/> 推送。</summary>
-    public async Task SendAsync(string userText, IProgress<AgentEvent>? progress, CancellationToken ct = default)
+    public Task SendAsync(string userText, IProgress<AgentEvent>? progress, CancellationToken ct = default)
+        => SendAsync(new AIContent[] { new TextContent(userText) }, progress, ct);
+
+    /// <summary>发送多模态用户消息（文本 + 图片等 <see cref="AIContent"/>）并跑到本轮结束。</summary>
+    public async Task SendAsync(IReadOnlyList<AIContent> userContents, IProgress<AgentEvent>? progress, CancellationToken ct = default)
     {
+        var userText = string.Concat(userContents.OfType<TextContent>().Select(t => t.Text));
+
         // 上下文管理：在加入本轮用户消息之前，按轮边界裁剪历史（必要时滚动摘要），保证后续 tool 配对完整。
         await CompactIfNeededAsync(ct);
 
-        Messages.Add(new ChatMessage(ChatRole.User, userText));
+        Messages.Add(new ChatMessage(ChatRole.User, userContents.ToList()));
 
         // 长期记忆召回：作为一条临时系统上下文插在用户消息之前
         if (_recall is not null)

@@ -131,11 +131,67 @@ public partial class AgentWindow : FluentWindow
 
     private void OnInputKeyDown(object sender, KeyEventArgs e)
     {
+        // Ctrl+V 粘贴剪贴板图片为附件
+        if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) != 0 && Clipboard.ContainsImage())
+        {
+            try
+            {
+                var image = Clipboard.GetImage();
+                if (image is not null)
+                {
+                    var dir = Path.Combine(Path.GetTempPath(), "litssh-attach");
+                    Directory.CreateDirectory(dir);
+                    var file = Path.Combine(dir, $"paste-{DateTime.Now:yyyyMMdd-HHmmss}.png");
+                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
+                    using (var fs = File.Create(file))
+                        encoder.Save(fs);
+                    _viewModel.AddAttachmentFiles(new[] { file });
+                }
+            }
+            catch { /* 剪贴板异常忽略 */ }
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0 && !_viewModel.IsBusy)
         {
             _viewModel.SendCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    private void OnAddAttachment(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Multiselect = true,
+            Title = "添加图片 / 文件",
+            Filter = "图片|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp"
+                     + "|文档|*.txt;*.md;*.log;*.json;*.yaml;*.yml;*.xml;*.csv;*.docx;*.pdf;*.ini;*.conf;*.properties;*.sql;*.sh;*.ps1;*.cs;*.java;*.py;*.js;*.ts;*.go;*.html;*.css"
+                     + "|所有文件|*.*"
+        };
+        if (dialog.ShowDialog() == true)
+            _viewModel.AddAttachmentFiles(dialog.FileNames);
+    }
+
+    private void OnRemoveAttachment(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is AgentAttachment attachment)
+            _viewModel.RemoveAttachment(attachment);
+    }
+
+    private void OnComposerDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnComposerDrop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.FileDrop) is string[] files)
+            _viewModel.AddAttachmentFiles(files);
+        e.Handled = true;
     }
 
     private void OnCopyAnswer(object sender, RoutedEventArgs e)

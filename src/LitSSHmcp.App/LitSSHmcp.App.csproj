@@ -18,6 +18,7 @@
     <EmbeddedResource Include="..\..\docs\TOOLS.md" Link="docs\TOOLS.md" LogicalName="LitSSHmcp.App.docs.TOOLS.md" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="PdfPig" Version="0.1.16" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
 

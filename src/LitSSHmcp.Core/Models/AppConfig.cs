@@ -134,6 +134,9 @@ public class AgentProviderConfig
 
     /// <summary>同一模型允许的并发请求数上限。</summary>
     public int MaxConcurrency { get; set; } = 3;
+
+    /// <summary>模型是否支持视觉（可接收图片附件）。</summary>
+    public bool SupportsVision { get; set; }
 }
 
 /// <summary>长期记忆：用 OpenAI 兼容 embeddings 端点把历史会话/工作区文档向量化并本地检索。</summary>

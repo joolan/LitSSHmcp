@@ -143,7 +143,8 @@
         "maxTokens": 0,
         "timeoutSeconds": 120,
         "maxRetries": 1,
-        "maxConcurrency": 3
+        "maxConcurrency": 3,
+        "supportsVision": false
       },
       {
         "id": "ollama",
@@ -157,7 +158,8 @@
         "maxTokens": 0,
         "timeoutSeconds": 120,
         "maxRetries": 1,
-        "maxConcurrency": 3
+        "maxConcurrency": 3,
+        "supportsVision": false
       }
     ]
   },

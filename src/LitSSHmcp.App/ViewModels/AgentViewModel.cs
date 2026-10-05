@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -7,6 +8,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.Agent;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
@@ -523,6 +525,98 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public Task SendAsync() => SendTextAsync(null);
 
+    /// <summary>待发送附件（图片 / 文档）。</summary>
+    public ObservableCollection<AgentAttachment> Attachments { get; } = new();
+
+    public bool HasAttachments => Attachments.Count > 0;
+
+    public void AddAttachmentFiles(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
+        {
+            try
+            {
+                if (Attachments.Any(a => string.Equals(a.Path, path, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                var parsed = AttachmentService.Parse(path);
+                Attachments.Add(new AgentAttachment
+                {
+                    Name = parsed.Name,
+                    Path = path,
+                    Kind = parsed.Kind,
+                    MediaType = parsed.MediaType,
+                    ImageBytes = parsed.ImageBytes,
+                    Text = parsed.Text
+                });
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "附件读取失败: " + ex.Message;
+            }
+        }
+        OnPropertyChanged(nameof(HasAttachments));
+    }
+
+    public void RemoveAttachment(AgentAttachment attachment)
+    {
+        Attachments.Remove(attachment);
+        OnPropertyChanged(nameof(HasAttachments));
+    }
+
+    private const int InlineAttachmentChars = 8000;
+
+    /// <summary>把附件拼进本轮输入：返回(展示文本, 模型文本, 图片内容块)。</summary>
+    private (string Display, string ModelText, List<AIContent> Images) BuildAttachmentPrompt(string text, IReadOnlyList<AgentAttachment> attachments)
+    {
+        var vision = SelectedProvider?.SupportsVision == true;
+        var workspaceRoot = WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir);
+        var display = new StringBuilder(text);
+        var model = new StringBuilder(text);
+        var images = new List<AIContent>();
+
+        foreach (var attachment in attachments)
+        {
+            if (attachment.IsImage)
+            {
+                if (vision && attachment.ImageBytes is not null)
+                {
+                    images.Add(new DataContent(attachment.ImageBytes, attachment.MediaType ?? "image/png"));
+                    display.Append($"\n🖼 图片: {attachment.Name}");
+                }
+                else
+                {
+                    display.Append($"\n🖼 图片: {attachment.Name}（当前模型未开启视觉，已忽略）");
+                }
+                continue;
+            }
+
+            display.Append($"\n📎 文件: {attachment.Name}");
+            if (attachment.Text.Length <= InlineAttachmentChars)
+            {
+                model.Append($"\n\n【附件 {attachment.Name}】\n{attachment.Text}");
+            }
+            else
+            {
+                var relative = SaveAttachmentToWorkspace(workspaceRoot, attachment.Name, attachment.Text);
+                var preview = attachment.Text[..1200];
+                model.Append($"\n\n【附件 {attachment.Name}】内容较大（{attachment.Text.Length} 字符），已保存到工作区: {relative}；"
+                             + $"请用 ops_doc_read(path=\"{relative}\") 读取完整内容。开头预览:\n{preview}");
+            }
+        }
+
+        return (display.ToString(), model.ToString(), images);
+    }
+
+    private static string SaveAttachmentToWorkspace(string workspaceRoot, string name, string content)
+    {
+        var dir = System.IO.Path.Combine(workspaceRoot, "attachments");
+        Directory.CreateDirectory(dir);
+        var safe = string.Concat(name.Where(ch => !System.IO.Path.GetInvalidFileNameChars().Contains(ch)));
+        var file = System.IO.Path.Combine(dir, $"{DateTime.Now:yyyyMMdd-HHmmss}-{safe}.txt");
+        File.WriteAllText(file, content);
+        return "attachments/" + System.IO.Path.GetFileName(file);
+    }
+
     /// <summary>发送一轮对话；<paramref name="fixedText"/> 非空时使用该文本（用于"继续"）。</summary>
     private async Task SendTextAsync(string? fixedText)
     {
@@ -552,7 +646,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         var text = (fixedText ?? Input)?.Trim();
-        if (string.IsNullOrEmpty(text))
+        var pending = Attachments.ToList();
+        if (string.IsNullOrEmpty(text) && pending.Count == 0)
             return;
 
         if (fixedText is null)
@@ -561,12 +656,25 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             Plan.Clear();   // 新指令 = 新任务：清掉上一轮残留的计划(模型如需会重新 update_plan)
         }
 
-        var turn = new AgentTurn(text, DateTime.UtcNow);
+        var displayText = text ?? string.Empty;
+        IReadOnlyList<AIContent>? contents = null;
+        if (fixedText is null && pending.Count > 0)
+        {
+            var (display, modelText, images) = BuildAttachmentPrompt(displayText, pending);
+            displayText = display;
+            var list = new List<AIContent> { new TextContent(modelText) };
+            list.AddRange(images);
+            contents = list;
+            Attachments.Clear();
+            OnPropertyChanged(nameof(HasAttachments));
+        }
+
+        var turn = new AgentTurn(displayText, DateTime.UtcNow);
         Turns.Add(turn);
-        await RunTurnAsync(turn);
+        await RunTurnAsync(turn, contents);
     }
 
-    private async Task RunTurnAsync(AgentTurn turn)
+    private async Task RunTurnAsync(AgentTurn turn, IReadOnlyList<AIContent>? contents = null)
     {
         if (_runtime is null)
             return;
@@ -588,7 +696,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         try
         {
-            await _runtime.Session.SendAsync(turn.UserText, progress, _cts.Token);
+            await _runtime.Session.SendAsync(contents ?? new AIContent[] { new TextContent(turn.UserText) }, progress, _cts.Token);
             StatusMessage = "完成";
         }
         catch (OperationCanceledException)

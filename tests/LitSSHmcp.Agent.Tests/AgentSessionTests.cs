@@ -218,6 +218,46 @@ public class AgentSessionTests
         Assert.Equal(2, texts.Count(t => t == big));   // 最近两个保持完整
     }
 
+    [Fact]
+    public async Task Sends_multimodal_user_message_with_image()
+    {
+        var client = new CapturingChatClient();
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig());
+
+        var contents = new AIContent[]
+        {
+            new TextContent("看下这张图"),
+            new DataContent(new byte[] { 1, 2, 3 }, "image/png")
+        };
+        await session.SendAsync(contents, null);
+
+        var userMessage = Assert.Single(client.LastMessages!, m => m.Role == ChatRole.User);
+        Assert.Equal(2, userMessage.Contents.Count);
+        Assert.Contains(userMessage.Contents, c => c is DataContent);
+        Assert.Contains(userMessage.Contents, c => c is TextContent { Text: "看下这张图" });
+    }
+
+    private sealed class CapturingChatClient : IChatClient
+    {
+        public IEnumerable<ChatMessage>? LastMessages { get; private set; }
+
+        public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "ok") }));
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            LastMessages = messages.ToList();
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, new AIContent[] { new TextContent("ok") });
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public void Dispose() { }
+    }
+
     private sealed class SyncProgress : IProgress<AgentEvent>
     {
         private readonly Action<AgentEvent> _sink;

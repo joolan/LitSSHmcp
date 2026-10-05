@@ -394,6 +394,9 @@ public class AgentProviderEdit : INotifyPropertyChanged
     private string _maxConcurrency = "3";
     public string MaxConcurrency { get => _maxConcurrency; set => Set(ref _maxConcurrency, value); }
 
+    private bool _supportsVision;
+    public bool SupportsVision { get => _supportsVision; set => Set(ref _supportsVision, value); }
+
     public static AgentProviderEdit From(AgentProviderConfig p) => new()
     {
         Id = p.Id,
@@ -407,7 +410,8 @@ public class AgentProviderEdit : INotifyPropertyChanged
         MaxTokens = p.MaxTokens.ToString(),
         TimeoutSeconds = p.TimeoutSeconds.ToString(),
         MaxRetries = p.MaxRetries.ToString(),
-        MaxConcurrency = p.MaxConcurrency.ToString()
+        MaxConcurrency = p.MaxConcurrency.ToString(),
+        SupportsVision = p.SupportsVision
     };
 
     public AgentProviderConfig ToModel() => new()
@@ -423,7 +427,8 @@ public class AgentProviderEdit : INotifyPropertyChanged
         MaxTokens = int.TryParse(MaxTokens, out var m) && m > 0 ? m : 0,
         TimeoutSeconds = int.TryParse(TimeoutSeconds, out var to) && to > 0 ? to : 120,
         MaxRetries = int.TryParse(MaxRetries, out var mr) && mr >= 0 ? mr : 1,
-        MaxConcurrency = int.TryParse(MaxConcurrency, out var mc) && mc > 0 ? mc : 3
+        MaxConcurrency = int.TryParse(MaxConcurrency, out var mc) && mc > 0 ? mc : 3,
+        SupportsVision = SupportsVision
     };
 
     public event PropertyChangedEventHandler? PropertyChanged;

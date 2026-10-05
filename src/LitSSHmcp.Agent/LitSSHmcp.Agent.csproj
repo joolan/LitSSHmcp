@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LitSSHmcp.Core\LitSSHmcp.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Microsoft.Extensions.AI：统一 IChatClient 抽象 + 函数调用中间件 -->
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.10.0" />
+    <!-- OpenAI 兼容端点连接器（DeepSeek/Qwen/Kimi/GLM/SiliconFlow/Ollama 等一套通吃） -->
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.1" />
+    <!-- 官方 MCP C# SDK 客户端（与服务端同源） -->
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.2.0" />
+  </ItemGroup>
+
+</Project>

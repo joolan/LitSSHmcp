@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/LitSSHmcp.App/LitSSHmcp.App.csproj" />
+    <Project Path="src/LitSSHmcp.Agent/LitSSHmcp.Agent.csproj" />
     <Project Path="src/LitSSHmcp.Cli/LitSSHmcp.Cli.csproj" />
     <Project Path="src/LitSSHmcp.Core/LitSSHmcp.Core.csproj" />
     <Project Path="src/LitSSHmcp.McpServer/LitSSHmcp.McpServer.csproj" />
@@ -9,5 +10,6 @@
     <Project Path="tests/LitSSHmcp.Tests/LitSSHmcp.Tests.csproj" />
     <Project Path="tests/LitSSHmcp.McpServer.Tests/LitSSHmcp.McpServer.Tests.csproj" />
     <Project Path="tests/LitSSHmcp.App.Tests/LitSSHmcp.App.Tests.csproj" />
+    <Project Path="tests/LitSSHmcp.Agent.Tests/LitSSHmcp.Agent.Tests.csproj" />
   </Folder>
 </Solution>

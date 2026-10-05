@@ -2,6 +2,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LitSSHmcp.Core\LitSSHmcp.Core.csproj" />
+    <ProjectReference Include="..\LitSSHmcp.Agent\LitSSHmcp.Agent.csproj" />
+  </ItemGroup>
+
+  <!-- AI 运维助手内置技能(运维技能 markdown): 随 App 输出到 skills/litssh-mcp-ops-skill -->
+  <ItemGroup>
+    <None Include="..\..\docs\litssh-mcp-ops-skill\**\*"
+          Link="skills\litssh-mcp-ops-skill\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- 【同步约定】MCP 工具说明的唯一事实来源是 docs/TOOLS.md。

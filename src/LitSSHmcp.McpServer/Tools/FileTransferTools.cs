@@ -132,6 +132,123 @@ public class FileTransferTools
         };
     }
 
+    [McpServerTool(Name = "ssh_upload_files", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
+    [Description("批量/目录上传: 用**一条 SFTP 连接**上传多个本地文件或整个本地目录(可递归, 保持子目录结构)到服务器目录, 避免每个文件重复建连。localPaths 每行一个(文件或目录); **整批一次人工确认**; 受 allowedLocalPaths/allowedRemotePaths 白名单、单文件大小与 maxFiles 上限约束")]
+    public async Task<BatchTransferResultDto> UploadFiles(
+        [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
+        [Description("本地源路径, 每行一个(文件或目录); 目录会被展开")] string localPaths,
+        [Description("服务器上的目标目录(必须在security.fileTransfer.allowedRemotePaths内); 目录内文件按相对路径还原")] string remoteDirectory,
+        [Description("是否递归上传子目录, 默认 false")] bool recursive = false,
+        [Description("最多上传文件数(默认 200, 1~5000)")] int maxFiles = 200,
+        CancellationToken cancellationToken = default)
+    {
+        var config = await _configService.LoadConfigAsync();
+        var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverId);
+        if (server == null)
+            return BatchTransferResultDto.Fail(resolveStatus!, resolveError!, "server_not_found");
+
+        var ft = config.Security.FileTransfer;
+        if (!ft.Enabled)
+            return BatchTransferResultDto.Fail("file_transfer_disabled",
+                "文件传输功能已被禁用(security.fileTransfer.enabled=false)。", server.Id, server.Name, server.Host);
+
+        var paths = SplitPaths(localPaths);
+        if (paths.Count == 0)
+            return BatchTransferResultDto.Fail("bad_request", "localPaths 不能为空(每行一个文件或目录)", server.Id, server.Name, server.Host);
+
+        foreach (var path in paths)
+            if (!PathPolicy.IsLocalPathAllowed(path, ft.AllowedLocalPaths))
+                return BatchTransferResultDto.Fail("path_not_allowed",
+                    $"本地路径不在允许范围内: {path}", server.Id, server.Name, server.Host);
+
+        if (!PathPolicy.IsRemotePathAllowed(remoteDirectory, ft.AllowedRemotePaths))
+            return BatchTransferResultDto.Fail("path_not_allowed",
+                $"远程目录不在允许范围内: {remoteDirectory}", server.Id, server.Name, server.Host);
+
+        if (ft.RequireApproval)
+        {
+            var outcome = await _approvalService.RequestApprovalAsync(
+                ToolSupport.ServerLabel(server),
+                $"批量上传 {paths.Count} 个源路径 -> {remoteDirectory}{(recursive ? " (递归)" : "")}",
+                CommandFilterResult.Sensitive,
+                string.Join("; ", paths.Take(5)) + (paths.Count > 5 ? " ..." : ""),
+                "批量文件上传",
+                cancellationToken);
+
+            if (outcome != ApprovalOutcome.Approved)
+            {
+                await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+                {
+                    ServerId = server.Id,
+                    ServerName = server.Name,
+                    Command = $"UPLOAD_BATCH: {paths.Count} path(s) -> {remoteDirectory}",
+                    Status = CommandStatus.Rejected,
+                    Category = AuditCategory.Gate,
+                    Decision = ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode),
+                    IsFileTransfer = true,
+                    FilePath = remoteDirectory
+                });
+                var (status, error) = ApprovalOutcomeText.Describe(outcome, _securityOptions.Approval.TimeoutSeconds);
+                return BatchTransferResultDto.Fail(status, error, server.Id, server.Name, server.Host);
+            }
+        }
+
+        var result = await _sshService.UploadBatchAsync(server, paths, remoteDirectory, recursive,
+            Math.Clamp(maxFiles, 1, 5000), ft.MaxFileSizeBytes, 0, cancellationToken);
+
+        await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+        {
+            ServerId = server.Id,
+            ServerName = server.Name,
+            Command = $"UPLOAD_BATCH: {paths.Count} path(s) -> {remoteDirectory}",
+            Result = result.Success ? $"{result.Succeeded}/{result.Total} 文件, {result.TotalBytes} bytes" : result.Error,
+            Status = result.Success ? CommandStatus.Executed : CommandStatus.Failed,
+            Category = AuditCategory.Transfer,
+            IsFileTransfer = true,
+            FilePath = remoteDirectory,
+            FileSize = result.TotalBytes
+        });
+
+        if (!result.Success && result.Total == 0)
+        {
+            var status = result.ErrorKind switch
+            {
+                "auth" => "auth_failed",
+                "host_key" => "host_key_mismatch",
+                "timeout" => "timeout",
+                "network" => "connection_error",
+                "rate_limited" => "rate_limited",
+                "no_files" => "no_files",
+                _ => "transfer_error"
+            };
+            return BatchTransferResultDto.Fail(status, result.Error ?? "批量上传失败", server.Id, server.Name, server.Host);
+        }
+
+        return new BatchTransferResultDto
+        {
+            Success = result.Success,
+            Error = result.Success ? null : result.Error,
+            ServerId = server.Id,
+            ServerName = server.Name,
+            Host = server.Host,
+            RemoteDirectory = remoteDirectory,
+            Total = result.Total,
+            Succeeded = result.Succeeded,
+            Failed = result.Failed,
+            Truncated = result.Truncated,
+            TotalBytes = result.TotalBytes,
+            DurationMs = result.Duration.TotalMilliseconds,
+            Files = result.Files.Select(f => new BatchFileDto
+            {
+                RemotePath = f.RemotePath,
+                LocalPath = f.LocalPath,
+                Success = f.Success,
+                Size = FormatFileSize(f.Bytes),
+                Error = f.Error
+            }).ToList()
+        };
+    }
+
     [McpServerTool(Name = "ssh_download_file", UseStructuredContent = true, OutputSchemaType = typeof(FileTransferResultDto), Destructive = true, OpenWorld = true)]
     [Description("从SSH服务器下载文件到本地。需要人工确认(可返回status=rejected/approval_timeout/approval_unavailable); 路径必须在白名单内, 越界返回path_not_allowed并在错误里给出允许的路径")]
     public async Task<FileTransferResultDto> DownloadFile(
@@ -216,6 +333,128 @@ public class FileTransferTools
             DurationMs = result.Duration.TotalMilliseconds
         };
     }
+
+    [McpServerTool(Name = "ssh_download_files", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
+    [Description("批量/目录下载: 用**一条 SFTP 连接**下载多个文件或整个目录(可递归)到本地目录, 避免每个文件重复建连。remotePaths 每行一个(文件或目录); 目录会展开(recursive=true 递归子目录, 软链接跳过); **整批一次人工确认**; 受 allowedRemotePaths/allowedLocalPaths 白名单与 maxFiles 上限约束")]
+    public async Task<BatchTransferResultDto> DownloadFiles(
+        [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
+        [Description("服务器上的源路径, 每行一个(文件或目录); 目录会被展开")] string remotePaths,
+        [Description("本地目标目录(必须在security.fileTransfer.allowedLocalPaths内); 目录内文件按相对路径还原")] string localDirectory,
+        [Description("是否递归下载子目录, 默认 false")] bool recursive = false,
+        [Description("最多下载文件数(默认 200, 1~5000)")] int maxFiles = 200,
+        CancellationToken cancellationToken = default)
+    {
+        var config = await _configService.LoadConfigAsync();
+        var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverId);
+        if (server == null)
+            return BatchTransferResultDto.Fail(resolveStatus!, resolveError!, "server_not_found");
+
+        var ft = config.Security.FileTransfer;
+        if (!ft.Enabled)
+            return BatchTransferResultDto.Fail("file_transfer_disabled",
+                "文件传输功能已被禁用(security.fileTransfer.enabled=false)。", server.Id, server.Name, server.Host);
+
+        var paths = SplitPaths(remotePaths);
+        if (paths.Count == 0)
+            return BatchTransferResultDto.Fail("bad_request", "remotePaths 不能为空(每行一个文件或目录)", server.Id, server.Name, server.Host);
+
+        foreach (var path in paths)
+            if (!PathPolicy.IsRemotePathAllowed(path, ft.AllowedRemotePaths))
+                return BatchTransferResultDto.Fail("path_not_allowed",
+                    $"远程路径不在允许范围内: {path}", server.Id, server.Name, server.Host);
+
+        if (!PathPolicy.IsLocalPathAllowed(localDirectory, ft.AllowedLocalPaths))
+            return BatchTransferResultDto.Fail("path_not_allowed",
+                $"本地目录不在允许范围内: {localDirectory}", server.Id, server.Name, server.Host);
+
+        if (ft.RequireApproval)
+        {
+            var outcome = await _approvalService.RequestApprovalAsync(
+                ToolSupport.ServerLabel(server),
+                $"批量下载 {paths.Count} 个源路径 -> {localDirectory}{(recursive ? " (递归)" : "")}",
+                CommandFilterResult.Sensitive,
+                string.Join("; ", paths.Take(5)) + (paths.Count > 5 ? " ..." : ""),
+                "批量文件下载",
+                cancellationToken);
+
+            if (outcome != ApprovalOutcome.Approved)
+            {
+                await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+                {
+                    ServerId = server.Id,
+                    ServerName = server.Name,
+                    Command = $"DOWNLOAD_BATCH: {paths.Count} path(s) -> {localDirectory}",
+                    Status = CommandStatus.Rejected,
+                    Category = AuditCategory.Gate,
+                    Decision = ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode),
+                    IsFileTransfer = true,
+                    FilePath = localDirectory
+                });
+                var (status, error) = ApprovalOutcomeText.Describe(outcome, _securityOptions.Approval.TimeoutSeconds);
+                return BatchTransferResultDto.Fail(status, error, server.Id, server.Name, server.Host);
+            }
+        }
+
+        var result = await _sshService.DownloadBatchAsync(server, paths, localDirectory, recursive, Math.Clamp(maxFiles, 1, 5000), 0, cancellationToken);
+
+        await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+        {
+            ServerId = server.Id,
+            ServerName = server.Name,
+            Command = $"DOWNLOAD_BATCH: {paths.Count} path(s) -> {localDirectory}",
+            Result = result.Success ? $"{result.Succeeded}/{result.Total} 文件, {result.TotalBytes} bytes" : result.Error,
+            Status = result.Success ? CommandStatus.Executed : CommandStatus.Failed,
+            Category = AuditCategory.Transfer,
+            IsFileTransfer = true,
+            FilePath = localDirectory,
+            FileSize = result.TotalBytes
+        });
+
+        if (!result.Success && result.Total == 0)
+        {
+            var status = result.ErrorKind switch
+            {
+                "auth" => "auth_failed",
+                "host_key" => "host_key_mismatch",
+                "timeout" => "timeout",
+                "network" => "connection_error",
+                "rate_limited" => "rate_limited",
+                "no_files" => "no_files",
+                _ => "transfer_error"
+            };
+            return BatchTransferResultDto.Fail(status, result.Error ?? "批量下载失败", server.Id, server.Name, server.Host);
+        }
+
+        return new BatchTransferResultDto
+        {
+            Success = result.Success,
+            Error = result.Success ? null : result.Error,
+            ServerId = server.Id,
+            ServerName = server.Name,
+            Host = server.Host,
+            LocalDirectory = localDirectory,
+            Total = result.Total,
+            Succeeded = result.Succeeded,
+            Failed = result.Failed,
+            Truncated = result.Truncated,
+            TotalBytes = result.TotalBytes,
+            DurationMs = result.Duration.TotalMilliseconds,
+            Files = result.Files.Select(f => new BatchFileDto
+            {
+                RemotePath = f.RemotePath,
+                LocalPath = f.LocalPath,
+                Success = f.Success,
+                Size = FormatFileSize(f.Bytes),
+                Error = f.Error
+            }).ToList()
+        };
+    }
+
+    private static List<string> SplitPaths(string? text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? new List<string>()
+            : text.Split(new[] { '\n', '\r', ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.Ordinal).ToList();
 
     private static string TransferFailureStatus(FileTransferResult result) =>
         result.Message.Contains("限流", StringComparison.Ordinal) ? "rate_limited"

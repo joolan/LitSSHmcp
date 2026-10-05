@@ -238,6 +238,39 @@ public sealed class RemoteFileDto
     public bool IsSymbolicLink { get; set; }
 }
 
+public sealed class BatchFileDto
+{
+    public string? RemotePath { get; set; }
+    public string? LocalPath { get; set; }
+    public bool Success { get; set; }
+    public string Size { get; set; } = string.Empty;
+    public string? Error { get; set; }
+}
+
+/// <summary>批量/目录下载结果（一条 SFTP 连接下载多个文件）。</summary>
+public sealed class BatchTransferResultDto
+{
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
+    public string? LocalDirectory { get; set; }
+    public string? RemoteDirectory { get; set; }
+    public int Total { get; set; }
+    public int Succeeded { get; set; }
+    public int Failed { get; set; }
+    public bool Truncated { get; set; }
+    public long TotalBytes { get; set; }
+    public double DurationMs { get; set; }
+    public List<BatchFileDto> Files { get; set; } = new();
+
+    public static BatchTransferResultDto Fail(string status, string error,
+        string? serverId = null, string? serverName = null, string? host = null) =>
+        new() { Success = false, Status = status, Error = error, ServerId = serverId, ServerName = serverName, Host = host };
+}
+
 public sealed class RemoteFileListDto
 {
     public bool Success { get; set; }

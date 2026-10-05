@@ -86,6 +86,18 @@ public static class ConfigMigrator
             changed = true;
         }
 
+        if (config.Agent == null)
+        {
+            config.Agent = new AgentConfig();
+            changed = true;
+        }
+
+        if (config.Agent.Memory == null)
+        {
+            config.Agent.Memory = new AgentMemoryConfig();
+            changed = true;
+        }
+
         // 旧版本（无 schemaVersion）视为 0，补写为当前版本
         if (config.SchemaVersion < AppConfig.CurrentSchemaVersion)
         {

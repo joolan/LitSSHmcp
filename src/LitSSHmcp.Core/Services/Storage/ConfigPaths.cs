@@ -17,6 +17,9 @@ public static class ConfigPaths
     /// <summary>服务器快照库（快照记录 + 快照事件，与审计库分离，便于独立备份/清理）。</summary>
     public static string SnapshotDb => Path.Combine(AppDataDir, "snapshots.db");
 
+    /// <summary>AI 运维助手的会话/消息库（与审计库/快照库分离）。</summary>
+    public static string AgentDb => Path.Combine(AppDataDir, "agent.db");
+
     /// <summary>带外审批（CLI/IPC）待决/决策文件目录。</summary>
     public static string ApprovalsDir => Path.Combine(AppDataDir, "approvals");
 

@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器当前注册 **51 个工具**，按用途分为 14 组。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
+MCP 服务器当前注册 **53 个工具**，按用途分为 14 组。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
 
 > **⚠ 同步约定（唯一事实来源）**：本文件是 MCP 工具说明的**唯一事实来源**。以下三处必须与本文件**双向同步**，工具发生任何变动（新增/改名/删除、参数变化、描述与路由变化）时缺一不可：
 > 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`get_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
@@ -66,7 +66,7 @@ MCP 服务器当前注册 **51 个工具**，按用途分为 14 组。本文档�
 |--------|--------|-----------|
 | `ssh` | SSH 服务器 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection`、`ssh_snapshot_get`、`ssh_snapshot_refresh` |
 | `command` | 命令执行 | `ssh_execute_command`、`ssh_get_command_history`、`ssh_execute_sudo`、`ssh_get_sudo_status` |
-| `fileTransfer` | 文件传输 | `ssh_upload_file`、`ssh_download_file`、`ssh_list_files` |
+| `fileTransfer` | 文件传输 | `ssh_upload_file`、`ssh_upload_files`、`ssh_download_file`、`ssh_download_files`、`ssh_list_files` |
 | `datasource` | 数据源 | `datasource_list`、`datasource_test_connection`、`datasource_get_sql_history` |
 | `mysql` | MySQL 执行 | `mysql_query`、`mysql_execute`、`mysql_explain`、`mysql_diagnostics` |
 | `postgres` | PostgreSQL 执行 | `postgres_query`、`postgres_execute`、`postgres_explain`、`postgres_diagnostics` |
@@ -197,16 +197,17 @@ MCP 服务器当前注册 **51 个工具**，按用途分为 14 组。本文档�
 - **说明**：只测 SSH 连通性并区分失败根因（`auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`）；测数据库请用 `datasource_test_connection`
 
 ### `ssh_snapshot_get`
-- **参数**：`serverId`（服务器标识）、`snapshotId`（可选，取某一份历史快照；不传取该服务器**最新一份**）
+- **参数**：`serverId`（服务器标识）、`snapshotId`（可选，取某一份历史快照；不传取该服务器**最新一份**）、`section`（可选，只取某维度完整数据：`resource`/`portmap`/`docker`/`nginx_tls`/`systemd`/`security`；不传返回概览）、`detail`（可选，`summary` 默认 / `full` 取全部完整数据）
 - **返回**：`{ success, status, hint, serverId, serverName, host, snapshotId, state, createdAt, completedAt, durationMs, escalation, collectorVersion, data, events, recent }`
-  - `data`：`{ collectorVersion, elevated, sections }`，`sections` 按采集维度分组：`resource`（资源态势：负载/内存/磁盘/CPU/OS/内核/主机名/IP + **阈值告警 `warnings`/`riskLevel`**（内存/swap/磁盘/负载）+ **`topByCpu`/`topByMemory`** top 进程 含 pid/用户/CPU%/内存%/RSS/命令行）、`portmap`（端口↔进程↔用户↔服务三元组 + **程序路径 `exe`** + **完整启动命令行 `cmdline`**，含 TCP/UDP、双栈；Unix socket 分 `unixSockets`(系统级) 与 `unixSocketsDesktop`(桌面/用户会话，默认折叠)）、`docker`（守护进程概览：版本/容器与镜像数/存储驱动 + 容器清单 名称/镜像/状态/端口 + 运行容器资源 CPU/内存/网络/块IO/PIDs；未装 docker 为 `skipped`）、`nginx_tls`（**完整有效配置 `effectiveConfig`（`nginx -T` 展开 include）+ 域名列表 `domains`（每个域名是否 `ssl`、监听端口、关联证书到期/SAN）+ 站点/证书明细**）、`systemd`（单元健康聚合/失败清单）、`security`（安全巡检：`ssh` 有效配置、`firewall`（ufw/firewalld/iptables）、`fail2ban`、`mysql` 匿名账户/远程 root/**可远程登录的高权账户（`SHOW GRANTS` 判定）**、`exposedHighRiskPorts`、系统空口令账户、sudoers NOPASSWD，并汇总为 `findings[]`（severity/id/title/detail/evidence）与 `summary` 计数。**MySQL 账户核查优先用"与该服务器匹配的已配置 MySQL 数据源凭据"查询 `mysql.user`**（匹配规则：数据源 Host 为回环且其 SSH 隧道服务器 == 本服务器，或数据源 Host == 本服务器 host/本机 IP）；该账号需拥有 `mysql.*` 的 SELECT 权限（不要求是 root），否则 `mysql.checked=false` 并在 `reason` 说明（不会误判为安全）；无匹配数据源时回退到免密 best-effort）；每个 section 含 `status`（`ok`/`degraded`/`skipped`/`failed`）、`durationMs`、`error`、`note`、`data`
+  - **视图（重要）**：`data.view` = `summary`（默认）/`section`/`full`。**默认 `summary` 不返回各维度完整 `data`**，只给每个 section 的 `status`/`durationMs`/`error`/`note`/`dataChars` 与 `headline`（关键指标，如 resource 的负载/内存/磁盘/top 进程/告警、portmap 的计数、docker/nginx/systemd/security 的概要），并附 `hint` 提示按需拉取——这样避免把 >15 万字符一次性塞进上下文。**需要某维度完整数据用 `section="portmap"` 等**（含该维度完整 `data`，超长数组/字符串仍会压缩并提示）；**`detail="full"` 才返回全部完整数据**（较大）。
+  - `data`：`{ view, collectorVersion, elevated, sections }`，`sections` 按采集维度分组：`resource`（资源态势：负载/内存/磁盘/CPU/OS/内核/主机名/IP + **阈值告警 `warnings`/`riskLevel`**（内存/swap/磁盘/负载）+ **`topByCpu`/`topByMemory`** top 进程 含 pid/用户/CPU%/内存%/RSS/命令行）、`portmap`（端口↔进程↔用户↔服务三元组 + **程序路径 `exe`** + **完整启动命令行 `cmdline`**，含 TCP/UDP、双栈；Unix socket 分 `unixSockets`(系统级) 与 `unixSocketsDesktop`(桌面/用户会话，默认折叠)）、`docker`（守护进程概览：版本/容器与镜像数/存储驱动 + 容器清单 名称/镜像/状态/端口 + 运行容器资源 CPU/内存/网络/块IO/PIDs；未装 docker 为 `skipped`）、`nginx_tls`（**完整有效配置 `effectiveConfig`（`nginx -T` 展开 include）+ 域名列表 `domains`（每个域名是否 `ssl`、监听端口、关联证书到期/SAN）+ 站点/证书明细**）、`systemd`（单元健康聚合/失败清单）、`security`（安全巡检：`ssh` 有效配置、`firewall`（ufw/firewalld/iptables）、`fail2ban`、`mysql` 匿名账户/远程 root/**可远程登录的高权账户（`SHOW GRANTS` 判定）**、`exposedHighRiskPorts`、系统空口令账户、sudoers NOPASSWD，并汇总为 `findings[]`（severity/id/title/detail/evidence）与 `summary` 计数。**MySQL 账户核查优先用"与该服务器匹配的已配置 MySQL 数据源凭据"查询 `mysql.user`**（匹配规则：数据源 Host 为回环且其 SSH 隧道服务器 == 本服务器，或数据源 Host == 本服务器 host/本机 IP）；该账号需拥有 `mysql.*` 的 SELECT 权限（不要求是 root），否则 `mysql.checked=false` 并在 `reason` 说明（不会误判为安全）；无匹配数据源时回退到免密 best-effort）；每个 section 含 `status`（`ok`/`degraded`/`skipped`/`failed`）、`durationMs`、`error`、`note`、`data`
   - `events`：该份快照的采集事件流水（`started`/`collector_started`/`collector_completed`/`collector_failed`/`collector_skipped`/`completed`/`failed`，含每步耗时与失败原因）
   - `recent`：该服务器最近 10 份快照的轻量摘要（`id`/`state`/`createdAt`/`durationMs`/`error`），用于一眼看历史与后续趋势
 - **说明**：快照持久化在本机独立库 `%APPDATA%\LitSSH\snapshots.db`（与审计库分离，便于独立备份/清理）。**默认只读本地已存快照，不连服务器**；从未生成过返回 `status=snapshot_not_found` 并提示用 `ssh_snapshot_refresh` 生成首份。**降级采集**（section `status=degraded` 并给 `note`）：未提权或缺权限时 `portmap` 的属主/服务归属、`security` 的系统空口令/MySQL 账户可能缺失；`docker`/`nginx_tls`/`systemd` 环境不具备时对应 section `status=skipped`。**排查服务器问题优先用本工具**（一次拿全整机态势，比逐条拼命令全面稳定）。
 
 ### `ssh_snapshot_refresh`
-- **参数**：`serverId` — 服务器标识
-- **返回**：同 `ssh_snapshot_get` 的结构；成功 `status=succeeded`，失败 `status=failed`（并保留已采集到的部分 section 与失败事件，便于排障）
+- **参数**：`serverId` — 服务器标识；`section` / `detail`（可选，同 `ssh_snapshot_get`，默认返回概览）；`force`（可选，默认 false）
+- **返回**：同 `ssh_snapshot_get` 的结构（默认 `data.view=summary` 概览，可用 `section`/`detail="full"` 取完整）；成功 `status=succeeded`，失败 `status=failed`（并保留已采集到的部分 section 与失败事件，便于排障）；**节流**：距上次**成功**快照小于 `snapshot.minRefreshIntervalSeconds`（默认 60s）且未传 `force=true` 时，**直接返回已有快照**并置 `status=fresh`（`hint` 说明剩余间隔），不重新采集——避免同一任务内反复全量刷新。
 - **说明**：**重新采集**整机快照（与 `ssh_snapshot_get` 同一套 data 结构）。**耗时较长**（典型 10~30 秒，弱网更久），工具描述已明确提示。**单飞限流**：同一服务器同时只允许一个快照在采集中，重复调用立即返回 `status=snapshot_in_progress`（含进行中的 `snapshotId`），不会排队或重复采集——此时应改用 `ssh_snapshot_get` 稍后查询。**失败也落库**：连接失败/超时/取消都会把该份快照记为 `failed` 并写入 `error` 与事件；`security` 兼容性上，采集命令均为**内置固定只读命令**，但仍受命令过滤器 `Blocked` 规则约束。
 - **提权**：由 `config.json` 的 `snapshot.useSudo`（默认 `true`）与该服务器 `SudoType` 共同决定；开启且已配置提权时自动以 sudo/su 执行（`portmap` 可见 root 进程属主与 systemd 服务名、`nginx_tls` 可读 root-only 证书目录），**不逐次弹审批**；未配置/关闭时自动降级，不报错。设置 `snapshot.useSudo=false` 可完全禁止快照提权。
 - **保留**：每台服务器保留最近 `snapshot.retentionPerServer` 份（默认 30，`0`=不限），超出时按时间裁剪并级联清理其事件。
@@ -240,6 +241,11 @@ MCP 服务器当前注册 **51 个工具**，按用途分为 14 组。本文档�
 
 上传/下载受 `fileTransfer.enabled` 开关与 `allowedLocalPaths` / `allowedRemotePaths` 白名单约束（越界返回 `path_not_allowed`，禁用返回 `file_transfer_disabled`），路径会做规范化并拦截 `..` 穿越。上传/下载过程中会通过 MCP `notifications/progress` 推送进度（字节数/百分比）。
 
+### `ssh_upload_files`
+- **参数**：`serverId`、`localPaths`（每行一个：文件或目录）、`remoteDirectory`（远程目标目录，须在 `allowedRemotePaths` 内）、`recursive`（默认 false，目录递归子目录）、`maxFiles`（默认 200，1~5000）
+- **返回**：结构同 `ssh_download_files`（`remoteDirectory` 字段替换 `localDirectory`）
+- **说明**：**用一条 SFTP 连接**批量上传（避免"上传文件夹"时每个文件重复建连/认证）；`localPaths` 中的目录会被展开（`recursive=true` 递归），**按相对路径保留子目录结构**（远程自动逐级建目录）；**整批一次人工确认**；每个源路径须在 `allowedLocalPaths` 内；每文件受 `fileTransfer.maxFileSizeBytes` 约束、总数受 `maxFiles` 约束（超出置 `truncated=true`）。
+
 ### `ssh_upload_file`
 - **参数**：`serverId`、`localPath`（本地路径，须在 `allowedLocalPaths` 内）、`remotePath`（远程路径，须在 `allowedRemotePaths` 内）
 - **返回**：`{ success, message, bytesTransferred, durationMs, ... }`；越界返回 `path_not_allowed` 并附允许路径；超过 `fileTransfer.maxFileSizeBytes` 返回 `file_too_large`
@@ -247,6 +253,11 @@ MCP 服务器当前注册 **51 个工具**，按用途分为 14 组。本文档�
 ### `ssh_download_file`
 - **参数**：`serverId`、`remotePath`（须在 `allowedRemotePaths` 内）、`localPath`（须在 `allowedLocalPaths` 内）
 - **返回**：`{ success, message, bytesTransferred, durationMs, ... }`；同样受审批与白名单约束
+
+### `ssh_download_files`
+- **参数**：`serverId`、`remotePaths`（每行一个：文件或目录）、`localDirectory`（本地目标目录，须在 `allowedLocalPaths` 内）、`recursive`（默认 false，目录递归子目录，软链接跳过）、`maxFiles`（默认 200，1~5000）
+- **返回**：`{ success, status, error, localDirectory, total, succeeded, failed, truncated, totalBytes, durationMs, files: [{ remotePath, localPath, success, size, error }] }`
+- **说明**：**用一条 SFTP 连接**批量下载（避免"下载文件夹"时每个文件重复建连/认证）；`remotePaths` 中的目录会被展开（`recursive=true` 递归，跳过软链接防环，深度上限 16）；**整批一次人工确认**；每个源路径均须在 `allowedRemotePaths` 内；受 `maxFiles` 上限约束（超出置 `truncated=true`）；连接复用见 `connectionPool`（SFTP 也入池）。
 
 ### `ssh_list_files`
 - **参数**：`serverId`、`remotePath`（远程目录）

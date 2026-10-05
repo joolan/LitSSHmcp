@@ -51,6 +51,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand ImportConfigCommand { get; }
     public ICommand OpenMcpToolsCommand { get; }
     public ICommand OpenToolGroupsCommand { get; }
+    public ICommand OpenAgentCommand { get; }
     public ICommand SnapshotRefreshCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
 
@@ -76,6 +77,7 @@ public class MainViewModel : INotifyPropertyChanged
         ImportConfigCommand = new RelayCommand(_ => ImportConfig());
         OpenMcpToolsCommand = new RelayCommand(_ => OpenMcpTools());
         OpenToolGroupsCommand = new RelayCommand(_ => OpenToolGroups());
+        OpenAgentCommand = new RelayCommand(_ => OpenAgent());
         SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
 
@@ -273,6 +275,23 @@ public class MainViewModel : INotifyPropertyChanged
 
     // 工具分组设置(写入 config.json 的 tools.enabledGroups)
     private void OpenToolGroups() => new ToolGroupsWindow { Owner = Application.Current.MainWindow }.ShowDialog();
+
+    // AI 运维助手(内嵌 MCP 客户端 + OpenAI 兼容大模型; 需先在「AI 助手设置」配置模型)
+    // 非模态独立窗口: 可与主界面同时操作
+    private AgentWindow? _agentWindow;
+
+    private void OpenAgent()
+    {
+        if (_agentWindow is { IsLoaded: true })
+        {
+            _agentWindow.Activate();
+            return;
+        }
+
+        _agentWindow = new AgentWindow(_configService, AppServiceFactory.CreateAgentContextStore(), AppServiceFactory.BundledSkillsDir);
+        _agentWindow.Closed += (_, _) => _agentWindow = null;
+        _agentWindow.Show();
+    }
 
     // 采集服务器快照(同步阻塞, 典型 10~30 秒)。单飞: 服务内 per-server 锁 + 库内 Running 唯一约束跨进程生效;
     // UI 再加一道全局忙标志避免同一窗口重复点击。完成后打开历史窗口并定位到本次快照。

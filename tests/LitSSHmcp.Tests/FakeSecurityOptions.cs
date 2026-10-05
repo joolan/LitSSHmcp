@@ -15,5 +15,6 @@ internal sealed class FakeSecurityOptions : ISecurityOptionsProvider
     public LimitsConfig Limits { get; set; } = new();
     public AuditConfig Audit { get; set; } = new();
     public ApprovalConfig Approval { get; set; } = new();
+    public ConnectionPoolConfig ConnectionPool { get; set; } = new();
     public void Invalidate() { }
 }

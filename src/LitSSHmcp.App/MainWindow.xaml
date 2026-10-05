@@ -24,6 +24,7 @@
                 <MenuItem Header="导入配置..." Command="{Binding ImportConfigCommand}"/>
             </MenuItem>
             <MenuItem Header="MCP工具说明" Command="{Binding OpenMcpToolsCommand}"/>
+            <MenuItem Header="AI 运维助手" Command="{Binding OpenAgentCommand}"/>
         </Menu>
 
         <Grid Margin="10">

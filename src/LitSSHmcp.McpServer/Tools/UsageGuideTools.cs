@@ -37,7 +37,7 @@ public class UsageGuideTools
                     "用户要求重启或启停服务、改系统配置、安装软件、改权限、管理用户、看系统日志等需要root权限时,主动使用 ssh_execute_sudo",
                     "用户问'这台机器能不能sudo/有没有配置提权'时,使用 ssh_get_sudo_status",
                     "用户问'执行过哪些命令/命令历史/操作记录'时,使用 ssh_get_command_history",
-                    "用户要求上传或下载文件时,使用 ssh_upload_file / ssh_download_file",
+                    "用户要求上传或下载文件时,使用 ssh_upload_file / ssh_download_file; 上传/下载**整个文件夹或多个文件**时用 ssh_upload_files / ssh_download_files(一条 SFTP 连接、整批一次审批)",
                     "用户想看服务器上的目录或文件时,使用 ssh_list_files",
                     "用户问容器(有哪些容器/容器状态/端口/日志/资源/镜像)时,使用 docker_ps / docker_logs / docker_inspect / docker_stats / docker_images; 重启容器用 docker_restart, 进入容器执行用 docker_exec(均需确认)",
                     "用户问systemd服务状态或要重启服务/看服务日志时,使用 service_status / service_restart / service_logs; 不确定服务名先用 service_list",
@@ -101,7 +101,7 @@ public class UsageGuideTools
                 description = "文件传输(上传/下载/列目录)使用说明",
                 points = new[]
                 {
-                    "上传=ssh_upload_file, 下载=ssh_download_file, 列远程目录=ssh_list_files(是远程服务器目录, 不是本机文件)",
+                    "上传=ssh_upload_file, 下载=ssh_download_file, 列远程目录=ssh_list_files(是远程服务器目录, 不是本机文件); 文件夹/多文件批量用 ssh_upload_files / ssh_download_files(单连接、整批一次审批、保留子目录层级)",
                     "三者都受 fileTransfer 开关与本地/远程路径白名单约束, 越界返回 path_not_allowed(错误里会列出允许的路径)",
                     "上传/下载需审批(默认桌面+CLI双通道), 拒绝/超时分别返回 rejected / approval_timeout",
                     "列目录失败(路径不存在/无权限)会明确返回失败状态, 不会用空列表冒充'目录为空'; 条目过多会置 truncated=true"

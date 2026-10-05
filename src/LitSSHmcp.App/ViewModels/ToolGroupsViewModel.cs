@@ -19,7 +19,7 @@ public class ToolGroupsViewModel : INotifyPropertyChanged
     {
         Add(ToolGroups.Ssh, "SSH 服务器", "ssh_list_servers / ssh_get_server_status / ssh_test_connection");
         Add(ToolGroups.Command, "命令执行", "ssh_execute_command / ssh_get_command_history / ssh_execute_sudo / ssh_get_sudo_status");
-        Add(ToolGroups.FileTransfer, "文件传输", "ssh_upload_file / ssh_download_file / ssh_list_files");
+        Add(ToolGroups.FileTransfer, "文件传输", "ssh_upload_file / ssh_upload_files / ssh_download_file / ssh_download_files / ssh_list_files");
         Add(ToolGroups.Datasource, "数据源", "datasource_list / datasource_test_connection / datasource_get_sql_history");
         Add(ToolGroups.Mysql, "MySQL", "mysql_query / mysql_execute / mysql_explain / mysql_diagnostics");
         Add(ToolGroups.Postgres, "PostgreSQL", "postgres_query / postgres_execute / postgres_explain / postgres_diagnostics");

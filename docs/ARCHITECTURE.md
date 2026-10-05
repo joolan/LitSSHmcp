@@ -38,7 +38,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 | 项目 | 目标框架 | 职责 | 关键依赖 |
 |------|---------|------|---------|
 | `LitSSHmcp.Core` | net8.0 | 数据模型 + 全部业务服务（不含任何入口逻辑） | SSH.NET 2026.0.0、MySqlConnector 2.4.0、Npgsql 8.0.5、Microsoft.Data.Sqlite、System.Security.Cryptography.ProtectedData |
-| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、51 个工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
+| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、53 个工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理界面（服务器/数据源/应用/资产拓扑可视化编辑/安全设置/审计/工具说明/工具分组） | WPF、Core |
 | `LitSSHmcp.Cli` | net10.0 | 终端 SSH 工具（`litssh list/connect/run`） | Core |
 | `LitSSHmcp.Tests` | net8.0 | Core 单元测试（安全过滤/路径策略/配置迁移/加密/驱动协议等） | Core、xunit |
@@ -65,11 +65,13 @@ LitSSHmcp/
 ├── src/
 │   ├── LitSSHmcp.Core/           # 模型 + 业务服务（SSH/Datasource/Topology/Security/Storage）
 │   ├── LitSSHmcp.McpServer/      # MCP 服务器（Program.cs + Tools/ 17 个工具类）
+│   ├── LitSSHmcp.Agent/          # AI 运维助手（MCP 客户端 + 大模型对话循环 + 技能）
 │   ├── LitSSHmcp.App/            # WPF 管理界面（Views/ + ViewModels/）
 │   └── LitSSHmcp.Cli/            # CLI
 └── tests/
     ├── LitSSHmcp.Tests/           # Core xUnit 单元测试
     ├── LitSSHmcp.McpServer.Tests/ # MCP 服务器层一致性测试
+    ├── LitSSHmcp.Agent.Tests/     # Agent 会话/技能/上下文测试
     └── LitSSHmcp.App.Tests/       # App 画布/路由引擎/几何测试
 ```
 
@@ -77,7 +79,7 @@ LitSSHmcp/
 
 - `Program.cs` 用 `Host.CreateApplicationBuilder` 组装依赖注入，然后：
   - `.WithStdioServerTransport()` —— JSON-RPC 走 stdin/stdout；
-  - `.WithTools<T>()` 注册 17 个工具类，共 51 个工具（详见 [TOOLS.md](TOOLS.md)）；每个工具带 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` 注解；
+  - `.WithTools<T>()` 注册 17 个工具类，共 53 个工具（详见 [TOOLS.md](TOOLS.md)）；每个工具带 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` 注解；
   - **工具分组**：启动时读取 `config.json` 的 `tools.enabledGroups`（`AppConfig.Tools` + `ToolGroups.ResolveEnabled`，留空=全部），按分组**条件注册** `WithTools<T>()`，可只暴露部分工具以降低 AI 上下文占用与误选；未知分组忽略并启动告警（见 [TOOLS.md](TOOLS.md)「工具分组」）；
   - **工具清单单一来源**：`mcp_usage_guide` 的工具清单由 `[McpServerTool]`/`[Description]` 反射生成（不手写）；`tests/LitSSHmcp.McpServer.Tests` 校验"已注册工具 ↔ `docs/TOOLS.md` ↔ 指南"一致；
   - **MCP 协议增强**：`initialize` 返回 **Server Instructions**（会话级行为约定，见 `Services/McpServerInstructions.cs`）；文件上传/下载通过注入的 `IProgress<ProgressNotificationValue>` 向前端推送 `notifications/progress`；
@@ -88,7 +90,7 @@ LitSSHmcp/
 | 服务 | 实现 | 说明 |
 |------|------|------|
 | `IConfigService` | `ConfigService` | 配置读写 + DPAPI 加密迁移 |
-| `ISshService` | `SshService` | 命令执行/文件传输/连接测试 |
+| `ISshService` | `SshService` | 命令执行/文件传输/连接测试（经 `ISshConnectionPool` 复用连接） |
 | `IAuditLogService` | `AuditLogService` | SQLite 审计（命令 + SQL） |
 | `IApprovalService` | `ApprovalService`（桌面通道 `DesktopApprovalService`） | 多通道审批分发（`security.approval.channels`：`desktop`/`cli`），并发等待、首个决定者生效、超时/弃权→拒绝（fail-closed）；`security.approval.mode`：`manual`(默认)/`auto-approve`(危险,全放行)/`auto-reject`(全拒绝) |
 | `ICommandFilterService` | `CommandFilterService` | 命令黑名单/敏感规则（经 `ISecurityOptionsProvider` 按文件 mtime 热更新） |
@@ -96,6 +98,7 @@ LitSSHmcp/
 | `ISecurityOptionsProvider` | `SecurityOptionsProvider` | 按 `config.json` 最后写入时间缓存安全配置，改规则无需重启 |
 | `ISshKnownHostsStore` | `FileSshKnownHostsStore` | SSH 主机密钥指纹存储（TOFU） |
 | `ITargetLimiter` | `TargetLimiter` | 按目标（服务器/数据源）限制并发与每分钟调用数 |
+| `ISshConnectionPool` | `SshConnectionPool` | 每服务器复用最多 `maxPerServer` 条 SSH 连接、空闲自动断开（`connectionPool`，热读取） |
 | `IMySqlConnectionProvider` | `MySqlConnectionProvider` | 建立直连或隧道连接，返回 `IDatasourceSession` |
 | `IPostgresConnectionProvider` | `PostgresConnectionProvider` | 建立 PostgreSQL 直连或隧道连接，返回 `IPostgresSession` |
 | `IRedisConnectionProvider` | `RedisConnectionProvider` | Redis 直连/隧道会话（RESP2 + AUTH/SELECT），返回 `IRedisSession` |
@@ -108,7 +111,7 @@ LitSSHmcp/
 ### 4.1 SSH（`Services/SSH`）
 
 - `SshClientFactory`：按 `SshServerConfig` 构造 SSH.NET `SshClient`/`SftpClient`（密码认证）。
-- `SshService`：执行命令（含超时[`ExecuteCommandAsync` 支持 `timeoutSeconds`]、sudo 包装）、文件上传/下载（进度回调）、目录列举、连接测试。
+- `SshService`：执行命令（含超时[`ExecuteCommandAsync` 支持 `timeoutSeconds`]、sudo 包装）、文件上传/下载（进度回调）、目录列举、连接测试。命令/文件传输经 `ISshConnectionPool` 获取连接：**命令与 SFTP 通道各自**每服务器复用最多 `connectionPool.maxPerServer` 条（执行完不断开、放回池；每条连接各自串行化，并发调用分配到不同连接），空闲 `connectionPool.idleTimeoutSeconds` 自动断开，`keepAliveSeconds` 防静默掉线，`connectTimeoutSeconds` 设连接超时；连接池禁用时退回"每次新建→执行→断开"。`ssh_test_connection` 仍用独立新连接做真实探测。批量下载 `DownloadBatchAsync` 复用**同一条 SFTP 连接**下载多文件/目录（一次审批）。
 - 所有命令执行前先过 `ICommandFilterService`：`Blocked` 直接拒绝、`Sensitive` 交 `IApprovalService` 弹窗确认，结果无论成败写入审计。用户直传命令还会先过“防挂起”检查（`tail -f`/交互式/`sudo` 等直接返回 `blocking_command`）。
 
 ### 4.2 数据源（`Services/Datasource`）
@@ -161,11 +164,29 @@ LitSSHmcp/
 
 ### 4.6 服务器快照（`Services/Snapshot`）
 
-- **工具**：`ssh_snapshot_get`（读本地最新/历史快照）、`ssh_snapshot_refresh`（同步采集；同机单飞 + 库内 `Running` 唯一部分索引跨进程互斥；失败也落库并保留部分数据）。归 `ssh` 分组。
+- **工具**：`ssh_snapshot_get`（读本地最新/历史快照）、`ssh_snapshot_refresh`（同步采集；同机单飞 + 库内 `Running` 唯一部分索引跨进程互斥；失败也落库并保留部分数据）。归 `ssh` 分组。**默认返回各维度概览**（`status`/`dataChars`/`headline` 关键指标 + `hint`）而非全量 `data`，用 `section=` 取单维度完整数据、`detail="full"` 取全部；`SnapshotTools.BuildDataView` 负责视图与硬上限压缩（截断超长字符串/数组），避免一次性把 >15 万字符塞进模型上下文。**刷新节流**：`snapshot.minRefreshIntervalSeconds`（默认 60s）内未 `force` 的 `ssh_snapshot_refresh` 直接返回已有快照（`status=fresh`）。
 - **存储**：独立 SQLite `%APPDATA%\LitSSH\snapshots.db`（`Snapshots` 记录 + `SnapshotEvents` 事件流水；格式版本 v4，版本不一致直接重建）。`SnapshotStore` **惰性建表**（各进程安全），启动 `InitializeAsync` 重置遗留 `running` 孤儿。
 - **可插拔采集维度**（`ISnapshotCollector`，DI 注册、按 `Order` 顺序执行）：`resource`（资源态势）、`portmap`（端口↔进程↔用户↔服务三元组 + 程序路径 `exe`/完整启动命令 `cmdline`；无标记解析，兼容 su 交互式 PTY 回显）、`docker`（容器与资源）、`nginx_tls`（用"运行中 nginx 的可执行路径"执行 `-T` 取全量有效配置 + 域名/证书）、`systemd`（单元健康）、`security`（安全巡检：SSH/防火墙/fail2ban/MySQL 账户/高危端口；`mysql.user` 优先用"匹配该服务器的已配置数据源凭据"核查）。
 - **提权**：`snapshot.useSudo`（默认 `true`）+ 服务器 `SudoType` 决定是否以 sudo/su 执行**内置固定只读命令**；未配置/关闭则降级（section `degraded`），命令仍受命令过滤器约束。
 - **扩展**：新增维度 = 实现 `ISnapshotCollector` 并在 `Program.cs` 注册；`snapshot.retentionPerServer` 控制每机保留份数（级联清理事件）。
+
+### 4.7 AI 运维助手（`LitSSHmcp.Agent`）
+
+- **定位**：App 内置的大模型运维智能体，让用户"配置模型即可用自然语言运维"，无需依赖第三方 AI 客户端配置 MCP。
+- **技术栈**：`Microsoft.Extensions.AI`（`IChatClient` 抽象）+ 官方 `ModelContextProtocol`（**客户端**）+ OpenAI 兼容端点连接器（`Microsoft.Extensions.AI.OpenAI`，覆盖 DeepSeek/Qwen/Kimi/GLM/硅基流动/Ollama）。
+- **通道**：`McpToolHost` 以 **stdio 子进程**启动本机 `LitSSHmcp.McpServer`（发布包内置 `mcp/LitSSHmcp.McpServer.exe`，`AgentPaths` 自动探测/可配置），`McpClient.ListToolsAsync()` 得到工具（`McpClientTool : AIFunction`）。**所有操作经 MCP 工具**，故审批/过滤器/审计哈希链/工具分组开关原样生效。
+- **对话循环**：`AgentSession` 手动驱动"模型→工具调用→结果回灌"循环（`FunctionCallContent`/`FunctionResultContent`），可约束最大轮数、裁剪上下文、推送工具轨迹事件。
+- **技能**：`SkillRegistry` 加载 markdown 技能（默认内置 `litssh-mcp-ops-skill`，可配置目录；技能文档保持通用）——**默认只注入顶层 `SKILL.md`**，`references/` 与 `*.template.md` 不默认注入，改由本地工具 **`skill_list` / `skill_read`**（`SkillTools`，限定技能目录内）按需读取，降低每轮系统提示体积；`SystemPromptBuilder` 拼装"基础约定 + MCP `server instructions` + 技能 + 技能参考文件清单 + 用户附加提示 + 本地工具(工作区文档/计划)说明"注入系统提示。内置**工作区文档工具** `ops_doc_read/write/append/patch/list`（`WorkspaceTools`）与**计划工具** `update_plan`（`PlanTools`，单代理内规划器），均为本地非 MCP。发送模型前可用 `ToolDescriptions.Compact` 精简 MCP 工具描述（`agent.compactToolDescriptions`，默认开）。
+- **大结果落盘**：`SpillStore` 把超过 `toolResultMaxChars` 的工具结果写入 `spillDir`（默认 `%APPDATA%\LitSSH\spills`，按 `spillRetentionDays` 清理），上下文只保留预览 + `spill://<handle>`；`SpillTools` 提供 `spill_list`/`spill_read`(分页)/`spill_grep`。`AgentSession.BuildToolResultContextText` 负责落盘或退回截断。
+- **子代理隔离**：`SubAgents`（`run_subagent`）把独立只读取证任务交给一个**隔离的 `AgentSession`**（仅 MCP/技能/落盘只读工具，无工作区写与计划，防副作用与递归），只把结论摘要作为工具结果返回主上下文；受 `agent.enableSubAgent` 控制。
+- **Prompt Caching 指引**：系统提示（含技能）与工具定义为**每轮不变的稳定前缀**，可变内容（用户消息/工具结果/摘要）在后，利于 OpenAI/DeepSeek 等 **provider 端前缀缓存**（前缀 ≥1024 tokens 才生效）；保持系统提示、技能、工具分组稳定即可持续命中；修改后首轮会重建缓存。
+- **输出风格**：`SystemPromptBuilder.AppendResponseStyle` 按 `agent.responseStyle`（concise/standard/detailed）注入"结论先行、只讲重点、控制篇幅"的运维风格要求，配合各模型 `maxTokens` 控制输出 token。
+- **长期记忆 / RAG**：`EmbeddingClientFactory`（OpenAI 兼容 embeddings）+ `AgentMemoryStore`（`agent.db` 的 `agent_memory` 表存向量）+ `AgentMemoryService`（索引/召回）；`AgentRuntime` 索引工作区文档、每轮对话落库，`AgentSession` 在发送前**召回相关记忆**注入上下文。`ToolFilter` 按 `allowedToolGroups` + 只读模式裁剪工具。
+- **健壮性**：`ResilientChatClient`（`DelegatingChatClient`）为每模型提供**并发上限 + 单次超时 + 瞬时错误重试**（流式仅在首包前重试）；`ChatErrorClassifier` 把异常分类为 `auth/rate_limit/timeout/network/server/bad_request` 供 UI 提示；`ContextStore.PruneAsync` 按保留策略裁剪会话/消息；系统提示内置提示注入防护。
+- **上下文管理**：`AgentSession.ManageContextAsync` 每轮发送前按 **user 轮边界**丢弃最旧整轮（保证 `tool_calls↔tool` 配对），并同时受条数与 token 双阈值约束；被裁旧轮经 `SummarizeAsync` 压缩为**滚动摘要**（`autoSummarize`）后作为一条 System 消息注入。`ReplaceHistory`（编辑/重发）会清空摘要。工具结果注入上下文前按 `toolResultMaxChars` 截断；`CompactIfNeededAsync` 在每步工具后复查，超限时 `CompactToolResults` 将本轮较早的工具结果替换为占位符（保持 `CallId` 配对）。
+- **上下文**：独立 SQLite `%APPDATA%\LitSSH\agent.db`（`agent_sessions`/`agent_messages`/`agent_memory`）。
+- **配置**：`AppConfig.Agent`（多 provider、active、systemPrompt、skillsDir、workspaceDir、contextLimit、readOnly、allowedToolGroups、memory、mcpServerPath、maxToolIterations）；API Key 纳入 DPAPI `enc:` 加密。
+- **UI**：`Views/AgentWindow`（按"用户指令(时间)/工具过程/回答(时间与耗时)"的轮次展示 + `Controls/MarkdownBox` Markdown 渲染 + 工具过程可折叠 + 任务计划面板）+ `Views/AgentSettingsWindow`（模型/分组/记忆/参数），主菜单「AI 运维助手」打开（非模态独立窗口）。
 
 ## 5. WPF 管理界面（LitSSHmcp.App）
 
@@ -274,7 +295,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 | 审计 | 命令、SQL（含被拒绝/被驳回）全部落 SQLite（WAL + 索引）；原文开关/字面量脱敏/超期清理见 `security.audit` | `AuditLogService` + `SqlRedactor` |
 | 配置热更新 | commandFilter/sqlFilter/fileTransfer 改动按文件 mtime 即时生效，无需重启 | `SecurityOptionsProvider` |
 | 日志 | MCP 日志走 stderr（不污染 stdout 协议流）+ 本机文件 | `Program.cs` + `FileLoggerProvider` |
-| 工具风险提示 | 51 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
+| 工具风险提示 | 53 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
 
 ## 9. 扩展点
 
@@ -317,7 +338,7 @@ dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publi
 2. **stdout 是协议流**：`initialize` → `notifications/initialized` → `tools/list` / `tools/call` 按 JSON-RPC 换行分帧；日志只应出现在 stderr；
 3. **中文请求体要以 UTF-8 字节写入 stdin**：PowerShell 字符串直接写管道可能按本地代码页编码，导致服务端解析失败。建议向 `$p.StandardInput.BaseStream.Write(UTF8 bytes)`。
 
-验收基线：`initialize` 成功、`tools/list` 返回 51 个工具、`mcp_usage_guide`/`datasource_list` 响应正常、`mysql_query`/`redis_read` 等错误路径返回结构化 `error`。上述 stdio 冒烟现已固化为 `tests/LitSSHmcp.McpServer.Tests` 的集成测试（真实启动服务器进程，用 `LITSSH_DATA_DIR` 指向临时目录隔离）。
+验收基线：`initialize` 成功、`tools/list` 返回 53 个工具、`mcp_usage_guide`/`datasource_list` 响应正常、`mysql_query`/`redis_read` 等错误路径返回结构化 `error`。上述 stdio 冒烟现已固化为 `tests/LitSSHmcp.McpServer.Tests` 的集成测试（真实启动服务器进程，用 `LITSSH_DATA_DIR` 指向临时目录隔离）。
 
 ### Windows 编码注意
 

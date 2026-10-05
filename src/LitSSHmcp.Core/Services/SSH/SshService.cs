@@ -4,6 +4,7 @@ using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using Renci.SshNet;
+using Renci.SshNet.Sftp;
 
 namespace LitSSHmcp.Core.Services.SSH;
 
@@ -14,6 +15,7 @@ public class SshService : ISshService
     private readonly ISshKnownHostsStore? _knownHosts;
     private readonly ISecurityOptionsProvider? _securityOptions;
     private readonly ITargetLimiter? _targetLimiter;
+    private readonly ISshConnectionPool? _pool;
 
     public SshService()
     {
@@ -22,12 +24,83 @@ public class SshService : ISshService
             Directory.CreateDirectory(_logDir);
     }
 
-    public SshService(ISshKnownHostsStore knownHosts, ISecurityOptionsProvider securityOptions, ITargetLimiter targetLimiter)
+    public SshService(ISshKnownHostsStore knownHosts, ISecurityOptionsProvider securityOptions, ITargetLimiter targetLimiter, ISshConnectionPool? pool = null)
         : this()
     {
         _knownHosts = knownHosts;
         _securityOptions = securityOptions;
         _targetLimiter = targetLimiter;
+        _pool = pool;
+    }
+
+    /// <summary>获取一条（可能复用的）SSH 连接。启用连接池时命令执行完不断开、放回池；否则新建并在释放时断开。</summary>
+    private SshConnection OpenConnection(SshServerConfig server)
+    {
+        var options = _securityOptions?.ConnectionPool;
+        if (_pool is not null && options is { Enabled: true })
+        {
+            var lease = _pool.Rent(server);
+            return new SshConnection(lease.Client, lease.Dispose);
+        }
+
+        var client = CreateSshClient(server);
+        client.Connect();
+        return new SshConnection(client, () =>
+        {
+            try { client.Disconnect(); } catch { /* ignore */ }
+            client.Dispose();
+        });
+    }
+
+    private sealed class SshConnection : IDisposable
+    {
+        private readonly Action _release;
+        public SshConnection(SshClient client, Action release)
+        {
+            Client = client;
+            _release = release;
+        }
+
+        public SshClient Client { get; }
+        public void Dispose()
+        {
+            try { _release(); } catch { /* ignore */ }
+        }
+    }
+
+    /// <summary>获取一条（可能复用的）SFTP 连接；启用连接池时传输完不断开、放回池。</summary>
+    private SftpConnection OpenSftpConnection(SshServerConfig server)
+    {
+        var options = _securityOptions?.ConnectionPool;
+        if (_pool is not null && options is { Enabled: true })
+        {
+            var lease = _pool.RentSftp(server);
+            return new SftpConnection(lease.Client, lease.Dispose);
+        }
+
+        var client = CreateSftpClient(server);
+        client.Connect();
+        return new SftpConnection(client, () =>
+        {
+            try { client.Disconnect(); } catch { /* ignore */ }
+            client.Dispose();
+        });
+    }
+
+    private sealed class SftpConnection : IDisposable
+    {
+        private readonly Action _release;
+        public SftpConnection(SftpClient client, Action release)
+        {
+            Client = client;
+            _release = release;
+        }
+
+        public SftpClient Client { get; }
+        public void Dispose()
+        {
+            try { _release(); } catch { /* ignore */ }
+        }
     }
 
     private void Log(string message, string level = "INFO")
@@ -127,8 +200,8 @@ public class SshService : ISshService
             try
             {
                 Log($"Executing command on {server.Host}:{server.Port}: {command}");
-                using var client = CreateSshClient(server);
-                client.Connect();
+                using var conn = OpenConnection(server);
+                var client = conn.Client;
                 using var cmd = client.CreateCommand(command);
                 cmd.CommandTimeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 3600));
                 var result = cmd.Execute();
@@ -184,8 +257,8 @@ public class SshService : ISshService
                 // 只走 sudo/su 的交互式通道，管不到 AI 自带的那层 sudo。
                 var effectiveCommand = StripSudoPrefix(command);
 
-                using var client = CreateSshClient(server);
-                client.Connect();
+                using var conn = OpenConnection(server);
+                var client = conn.Client;
 
                 CommandResult Execute() => server.SudoType switch
                 {
@@ -617,8 +690,8 @@ public class SshService : ISshService
 
                 try
                 {
-                    using var sftp = CreateSftpClient(server);
-                    sftp.Connect();
+                    using var conn = OpenSftpConnection(server);
+                    var sftp = conn.Client;
                     Log("SFTP connection established");
 
                     var dir = Path.GetDirectoryName(remotePath)?.Replace('\\', '/');
@@ -694,8 +767,8 @@ public class SshService : ISshService
 
                 try
                 {
-                    using var sftp = CreateSftpClient(server);
-                    sftp.Connect();
+                    using var conn = OpenSftpConnection(server);
+                    var sftp = conn.Client;
                     Log("SFTP connection established");
 
                     if (!sftp.Exists(remotePath))
@@ -774,8 +847,8 @@ public class SshService : ISshService
     {
         try
         {
-            using var client = CreateSshClient(server);
-            client.Connect();
+            using var conn = OpenConnection(server);
+            var client = conn.Client;
 
             var dir = Path.GetDirectoryName(remotePath)?.Replace('\\', '/');
             if (!string.IsNullOrEmpty(dir))
@@ -832,8 +905,8 @@ public class SshService : ISshService
     {
         try
         {
-            using var client = CreateSshClient(server);
-            client.Connect();
+            using var conn = OpenConnection(server);
+            var client = conn.Client;
 
             var escapedPath = remotePath.Replace("'", "'\\''");
 
@@ -895,8 +968,8 @@ public class SshService : ISshService
             try
             {
                 Log($"Listing files in {server.Host}:{remotePath}");
-                using var sftp = CreateSftpClient(server);
-                sftp.Connect();
+                using var conn = OpenSftpConnection(server);
+                var sftp = conn.Client;
 
                 var files = sftp.ListDirectory(remotePath);
                 Log($"Listed {files.Count()} files via SFTP");
@@ -928,8 +1001,8 @@ public class SshService : ISshService
 
             try
             {
-                using var client = CreateSshClient(server);
-                client.Connect();
+                using var conn = OpenConnection(server);
+                var client = conn.Client;
 
                 var escapedPath = remotePath.Replace("'", "'\\''");
                 using var cmd = client.CreateCommand($"ls -la '{escapedPath}'");
@@ -991,6 +1064,300 @@ public class SshService : ISshService
                 };
             }
         }, ct);
+    }
+
+    public async Task<BatchTransferResult> DownloadBatchAsync(SshServerConfig server, IReadOnlyList<string> remotePaths,
+        string localDirectory, bool recursive, int maxFiles, long maxTotalBytes, CancellationToken ct = default)
+    {
+        return await Task.Run(() =>
+        {
+            if (!TryAcquireTarget($"ssh:{server.Id}", out var limitLease, out var limitReason))
+                return new BatchTransferResult { Success = false, Error = limitReason, ErrorKind = "rate_limited" };
+
+            var result = new BatchTransferResult();
+            var sw = Stopwatch.StartNew();
+            try
+            {
+                using var conn = OpenSftpConnection(server);
+                var sftp = conn.Client;
+
+                var cap = Math.Clamp(maxFiles, 1, 5000);
+                var items = new List<(string Remote, string Relative)>();
+                foreach (var path in remotePaths)
+                {
+                    if (ct.IsCancellationRequested || items.Count >= cap)
+                        break;
+                    TryCollect(sftp, path, recursive, 0, cap, items);
+                }
+
+                if (items.Count == 0)
+                    return new BatchTransferResult { Success = false, Error = "未找到可下载的文件(路径不存在/为空/均为软链接)", ErrorKind = "no_files" };
+
+                if (items.Count > cap)
+                {
+                    result.Truncated = true;
+                    items = items.Take(cap).ToList();
+                }
+
+                var localRoot = Path.GetFullPath(localDirectory);
+                Directory.CreateDirectory(localRoot);
+                var rootPrefix = localRoot.EndsWith(Path.DirectorySeparatorChar) ? localRoot : localRoot + Path.DirectorySeparatorChar;
+
+                foreach (var (remote, relative) in items)
+                {
+                    if (ct.IsCancellationRequested)
+                        break;
+
+                    var localPath = Path.GetFullPath(Path.Combine(localRoot, relative));
+                    if (!localPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = localPath, Success = false, Error = "本地路径越界" });
+                        continue;
+                    }
+
+                    try
+                    {
+                        var dir = Path.GetDirectoryName(localPath);
+                        if (!string.IsNullOrEmpty(dir))
+                            Directory.CreateDirectory(dir);
+
+                        if (maxTotalBytes > 0 && result.TotalBytes >= maxTotalBytes)
+                        {
+                            result.Truncated = true;
+                            result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = localPath, Success = false, Error = "达到批量下载总量上限" });
+                            continue;
+                        }
+
+                        using (var fs = File.Create(localPath))
+                            sftp.DownloadFile(remote, fs);
+
+                        var len = new FileInfo(localPath).Length;
+                        result.TotalBytes += len;
+                        result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = localPath, Success = true, Bytes = len });
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = localPath, Success = false, Error = ex.Message });
+                    }
+                }
+
+                result.Total = result.Files.Count;
+                result.Succeeded = result.Files.Count(f => f.Success);
+                result.Failed = result.Total - result.Succeeded;
+                result.Success = result.Succeeded > 0;
+                if (!result.Success && result.Error is null)
+                    result.Error = "全部文件下载失败";
+            }
+            catch (Exception ex)
+            {
+                result.Success = false;
+                result.Error = ex.Message;
+                result.ErrorKind = ClassifySshException(ex);
+            }
+            finally
+            {
+                sw.Stop();
+                result.Duration = sw.Elapsed;
+                limitLease?.Dispose();
+            }
+            return result;
+        }, ct);
+    }
+
+    /// <summary>把路径展开为待下载文件列表（目录按 recursive 递归；跳过软链接防环；限制深度与数量）。
+    /// 关键：相对路径始终相对**顶层下载根目录**计算，递归子目录不会丢层级。</summary>
+    public async Task<BatchTransferResult> UploadBatchAsync(SshServerConfig server, IReadOnlyList<string> localPaths,
+        string remoteDirectory, bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, CancellationToken ct = default)
+    {
+        return await Task.Run(() =>
+        {
+            if (!TryAcquireTarget($"ssh:{server.Id}", out var limitLease, out var limitReason))
+                return new BatchTransferResult { Success = false, Error = limitReason, ErrorKind = "rate_limited" };
+
+            var result = new BatchTransferResult();
+            var sw = Stopwatch.StartNew();
+            try
+            {
+                using var conn = OpenSftpConnection(server);
+                var sftp = conn.Client;
+
+                var cap = Math.Clamp(maxFiles, 1, 5000);
+                var items = new List<(string Local, string Relative)>();
+                foreach (var path in localPaths)
+                {
+                    if (ct.IsCancellationRequested || items.Count >= cap)
+                        break;
+                    TryCollectLocal(path, recursive, cap, items);
+                }
+
+                if (items.Count == 0)
+                    return new BatchTransferResult { Success = false, Error = "未找到可上传的文件(本地路径不存在/为空)", ErrorKind = "no_files" };
+
+                if (items.Count > cap)
+                {
+                    result.Truncated = true;
+                    items = items.Take(cap).ToList();
+                }
+
+                var remoteRoot = remoteDirectory.Replace('\\', '/').TrimEnd('/');
+
+                foreach (var (local, relative) in items)
+                {
+                    if (ct.IsCancellationRequested)
+                        break;
+
+                    var remote = $"{remoteRoot}/{relative}";
+                    try
+                    {
+                        var info = new FileInfo(local);
+                        if (maxFileBytes > 0 && info.Length > maxFileBytes)
+                        {
+                            result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = local, Success = false, Error = "超过单文件大小上限" });
+                            continue;
+                        }
+                        if (maxTotalBytes > 0 && result.TotalBytes + info.Length > maxTotalBytes)
+                        {
+                            result.Truncated = true;
+                            result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = local, Success = false, Error = "达到批量上传总量上限" });
+                            continue;
+                        }
+
+                        var remoteDir = Path.GetDirectoryName(remote)?.Replace('\\', '/');
+                        if (!string.IsNullOrEmpty(remoteDir))
+                            EnsureRemoteDirectory(sftp, remoteDir);
+
+                        using (var fs = File.OpenRead(local))
+                            sftp.UploadFile(fs, remote);
+
+                        result.TotalBytes += info.Length;
+                        result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = local, Success = true, Bytes = info.Length });
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = local, Success = false, Error = ex.Message });
+                    }
+                }
+
+                result.Total = result.Files.Count;
+                result.Succeeded = result.Files.Count(f => f.Success);
+                result.Failed = result.Total - result.Succeeded;
+                result.Success = result.Succeeded > 0;
+                if (!result.Success && result.Error is null)
+                    result.Error = "全部文件上传失败";
+            }
+            catch (Exception ex)
+            {
+                result.Success = false;
+                result.Error = ex.Message;
+                result.ErrorKind = ClassifySshException(ex);
+            }
+            finally
+            {
+                sw.Stop();
+                result.Duration = sw.Elapsed;
+                limitLease?.Dispose();
+            }
+            return result;
+        }, ct);
+    }
+
+    /// <summary>把本地路径展开为待上传文件列表（目录按 recursive 递归；相对路径保留子目录层级）。</summary>
+    private static void TryCollectLocal(string path, bool recursive, int cap, List<(string Local, string Relative)> items)
+    {
+        if (items.Count >= cap)
+            return;
+
+        if (File.Exists(path))
+        {
+            items.Add((path, Path.GetFileName(path)));
+            return;
+        }
+
+        if (!Directory.Exists(path))
+            return;
+
+        var rootBase = Path.GetFullPath(path);
+        foreach (var file in Directory.EnumerateFiles(path, "*", recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly))
+        {
+            if (items.Count >= cap)
+                return;
+            var rel = Path.GetRelativePath(rootBase, file).Replace('\\', '/');
+            items.Add((file, rel));
+        }
+    }
+
+    /// <summary>逐级创建远程目录（SFTP CreateDirectory 不创建中间层级）。</summary>
+    private static void EnsureRemoteDirectory(SftpClient sftp, string dir)
+    {
+        var normalized = dir.Replace('\\', '/').TrimEnd('/');
+        if (normalized.Length == 0 || normalized == "/")
+            return;
+
+        var parts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var current = string.Empty;
+        foreach (var part in parts)
+        {
+            current += "/" + part;
+            try
+            {
+                if (!sftp.Exists(current))
+                    sftp.CreateDirectory(current);
+            }
+            catch
+            {
+                // 已存在/并发创建：忽略
+            }
+        }
+    }
+
+    private static void TryCollect(SftpClient sftp, string path, bool recursive, int depth, int cap,
+        List<(string Remote, string Relative)> items, string? rootBase = null)
+    {
+        if (items.Count >= cap || depth > 16)
+            return;
+
+        SftpFileAttributes attrs;
+        try { attrs = sftp.GetAttributes(path); }
+        catch { return; }
+
+        if (!attrs.IsDirectory)
+        {
+            items.Add((path, Relativize(rootBase, path, Path.GetFileName(path.TrimEnd('/')))));
+            return;
+        }
+
+        rootBase ??= path.TrimEnd('/');
+
+        List<ISftpFile> entries;
+        try { entries = sftp.ListDirectory(path).ToList(); }
+        catch { return; }
+
+        foreach (var entry in entries)
+        {
+            if (items.Count >= cap)
+                return;
+            if (entry.Name is "." or ".." || entry.IsSymbolicLink)
+                continue;
+
+            if (entry.IsDirectory)
+            {
+                if (recursive)
+                    TryCollect(sftp, entry.FullName, true, depth + 1, cap, items, rootBase);
+            }
+            else
+            {
+                items.Add((entry.FullName, Relativize(rootBase, entry.FullName, entry.Name)));
+            }
+        }
+    }
+
+    /// <summary>把远程文件路径转为相对下载根目录的路径（保留子目录层级）；不在根目录下时退回文件名。</summary>
+    public static string Relativize(string? rootBase, string fullPath, string fallbackName)
+    {
+        if (string.IsNullOrEmpty(rootBase))
+            return fallbackName;
+        var prefix = rootBase.EndsWith('/') ? rootBase : rootBase + "/";
+        return fullPath.StartsWith(prefix, StringComparison.Ordinal) ? fullPath[prefix.Length..] : fallbackName;
     }
 
     private bool TryAcquireTarget(string key, out IDisposable? lease, out string? reason)

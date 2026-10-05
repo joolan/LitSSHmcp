@@ -85,7 +85,77 @@
   "snapshot": {
     "useSudo": true,
     "retentionPerServer": 30,
-    "timeoutSeconds": 180
+    "timeoutSeconds": 180,
+    "minRefreshIntervalSeconds": 60
+  },
+  "connectionPool": {
+    "enabled": true,
+    "idleTimeoutSeconds": 300,
+    "keepAliveSeconds": 30,
+    "connectTimeoutSeconds": 20,
+    "maxPerServer": 1
+  },
+  "agent": {
+    "enabled": true,
+    "activeProviderId": "",
+    "systemPrompt": "",
+    "skillsDir": "",
+    "workspaceDir": "C:\\Users\\<你>\\Documents\\LitSSH",
+    "contextLimit": 40,
+    "contextTokenLimit": 24000,
+    "autoSummarize": true,
+    "toolResultMaxChars": 4000,
+    "contextTrimRatio": 0.8,
+    "compactToolDescriptions": true,
+    "spillLargeToolResults": true,
+    "spillDir": "",
+    "spillRetentionDays": 7,
+    "enableSubAgent": true,
+    "responseStyle": "concise",
+    "readOnly": false,
+    "allowedToolGroups": [],
+    "mcpServerPath": "",
+    "maxToolIterations": 20,
+    "retentionMaxSessions": 50,
+    "retentionMaxMessages": 200,
+    "retentionDays": 90,
+    "memory": {
+      "enabled": false,
+      "endpoint": "https://api.openai.com/v1",
+      "model": "text-embedding-3-small",
+      "apiKey": "",
+      "topK": 5
+    },
+    "providers": [
+      {
+        "id": "deepseek",
+        "name": "DeepSeek",
+        "type": "openai",
+        "endpoint": "https://api.deepseek.com/v1",
+        "model": "deepseek-chat",
+        "apiKey": "enc:xxxx (DPAPI密文, 由 AI 助手设置保存时自动生成; 切勿手工填明文以外的占位符)",
+        "enabled": true,
+        "temperature": 0.3,
+        "maxTokens": 0,
+        "timeoutSeconds": 120,
+        "maxRetries": 1,
+        "maxConcurrency": 3
+      },
+      {
+        "id": "ollama",
+        "name": "本地Ollama",
+        "type": "openai",
+        "endpoint": "http://127.0.0.1:11434/v1",
+        "model": "qwen2.5:14b",
+        "apiKey": "",
+        "enabled": false,
+        "temperature": 0.3,
+        "maxTokens": 0,
+        "timeoutSeconds": 120,
+        "maxRetries": 1,
+        "maxConcurrency": 3
+      }
+    ]
   },
   "security": {
     "enabled": true,

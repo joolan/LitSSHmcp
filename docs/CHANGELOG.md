@@ -6,6 +6,31 @@
 
 ### 新增
 
+- **AI 运维助手（App 内置大模型运维智能体）**：新增 `LitSSHmcp.Agent` 类库与 App 菜单「AI 运维助手」。在 App 内配置 **OpenAI 兼容大模型**（DeepSeek/通义千问/Kimi/智谱GLM/硅基流动/本地 Ollama 等，**多模型启用/停用**、设默认），用自然语言对话完成服务器/数据源/应用运维。
+  - 通过**内嵌 MCP 客户端**（stdio 子进程启动本机 `LitSSHmcp.McpServer`）驱动**全部 MCP 工具**，因此**桌面审批、命令过滤器、审计哈希链、工具分组开关**与第三方 AI 客户端完全一致（安全一致）。
+  - 手动驱动"模型→工具调用→结果回灌"循环（`Microsoft.Extensions.AI` + 官方 `ModelContextProtocol` 客户端 + OpenAI 兼容连接器）；**流式输出**（逐段渲染）。
+  - **上下文管理**：多会话持久化到独立库 `%APPDATA%\LitSSH\agent.db`（`agent_sessions`/`agent_messages`），支持**新建/切换/删除会话**、首条消息**自动命名**，按 `agent.contextLimit` 裁剪。
+  - **多模型热切换**：对话中切换模型（保持当前会话上下文）；**工具分组裁剪**（`agent.allowedToolGroups`）。
+  - **技能(Skill)**：默认把 `docs/litssh-mcp-ops-skill` 注入系统提示，可配置自定义技能目录；另拼入 MCP `server instructions` 与用户附加提示。**技能文档保持通用**（不写具体工具名），并新增**工作区文档工具** `ops_doc_read` / `ops_doc_write` / `ops_doc_list`（本地、非 MCP，路径限定在 `agent.workspaceDir` 内）——其能力由**系统提示自动注入**（而非写进 skill），使"维护 OPS_ASSETS.md 运维资产档案"真正可用。
+  - **展示**：回答以 **Markdown 渲染**（标题/粗体/斜体/删除线/行内代码/围栏代码块[**语法高亮 + 复制按钮**]/**表格**/有序无序列表[**含嵌套与任务清单**]/引用/链接/**图片**/**脚注**），**流式去抖 150ms**；支持**整条回答复制**与**导出 Markdown**；每轮对话按 **用户指令(带时间) → 工具过程 → 回答(带时间与耗时)** 展示——工具过程挂在对应指令下方，**运行中展开、完成后自动折叠，点用户指令可再次展开**；助手窗口为**非模态独立窗口**，**最大化/拉宽时内容自适应**，可与主界面同时操作。
+  - **只读模式**：仅向模型暴露只读工具；模型 API Key 纳入 DPAPI `enc:` 加密存储。
+  - **交互增强**：**重新生成 / 编辑并重发 / 继续**；工具过程每条**可展开**查看完整入参/结果、显示**耗时**，失败可**重试**；会话支持**搜索 / 重命名 / 导出**（导出 Markdown，工具过程用 `<details>` 折叠）；顶部显示**上下文用量估算与轮数**，并提供**模型连通性自检**（发一次最小请求）。
+  - **规划与进度**：内置 `update_plan` 工具（**单代理内规划器**）——多步任务先产出计划、执行中持续更新；顶部**任务计划面板**显示进度（☑/☐）。
+  - **工具分组裁剪 UI**：设置里可勾选允许的工具分组（`agent.allowedToolGroups`）。
+  - **审批联动**：破坏性工具调用时步骤显示"调用中…（可能等待人工审批）"；审批被拒/超时（`rejected`/`approval_timeout`）作为失败反馈展示并可重试。
+  - **长期记忆 / RAG**：可配置 OpenAI 兼容 **Embeddings** 端点，把历史会话与**工作区文档**向量化存入本地库（`agent.db`），对话时按相似度**召回**并注入上下文（`agent.memory.{enabled,endpoint,model,apiKey,topK}`）。
+  - **健壮性与安全**：每模型可配 **超时 / 重试 / 并发**（`ResilientChatClient`，对网络/超时/限流/5xx 瞬时错误自动退避重试；流式仅在首包前重试）；对话与"测试连接"均给出**错误分类**（`auth`/`rate_limit`/`timeout`/`network`/`server`/`bad_request`）；系统提示加入**提示注入防护**（工具输出视为不可信数据、破坏性操作须用户明确要求）；**会话保留策略**（最多会话数 / 每会话消息上限 / 保留天数，启动与每轮后自动裁剪）。真实端点 **E2E 冒烟测试**由环境变量门控（`LITSSH_AGENT_E2E=1` + `LITSSH_AGENT_E2E_KEY`）。
+  - **上下文管理（按轮裁剪 + 滚动摘要）**：改为按**轮边界**（`user` 消息）从最旧开始丢弃**整轮**，天然保持 `assistant(tool_calls) ↔ tool` **配对完整**（避免孤儿工具消息导致严格端点报 400）；同时受**双阈值**约束——条数 `agent.contextLimit` 与 token 估算 `agent.contextTokenLimit`；被裁掉的旧轮在 `agent.autoSummarize=true` 时由模型压缩为**滚动摘要**注入，摘要失败则直接丢弃旧轮。此外：**单个工具结果注入上限** `agent.toolResultMaxChars`（默认 4000 字符，超出截断、完整结果仍见界面）、**提前触发比例** `agent.contextTrimRatio`（默认 0.8，达到上限 80% 即开始裁剪）、以及**轮内复查**——每步工具调用后重新按阈值裁剪，若单轮工具输出仍超限则把本轮较早的工具结果内容替换为占位符（保持 `CallId` 配对，提示模型必要时重调）。
+  - **Token 优化（技能按需 + 快照分节）**：`SkillRegistry` **只注入顶层 `SKILL.md`**（不再递归注入 `references/` 与 `*.template.md`），新增本地工具 **`skill_list` / `skill_read`**（限定在技能目录内）供按需读取参考文件——每轮系统提示由 ~30KB 降至 ~15KB；`ssh_snapshot_get`/`refresh` **默认返回各维度概览**（`view=summary`：`status`/`dataChars`/`headline` 关键指标 + `hint`），用 `section=` 取单维度完整数据、`detail="full"` 取全部，避免一次性把 >15 万字符塞进上下文并诱发"绕路用只读命令逐项补齐"的额外工具开销。此外：**工具描述精简**（`agent.compactToolDescriptions`，默认开——发送给模型时把中文长描述截为要点并指向 `mcp_usage_guide`，降低每次请求固定 token；ML 实测 `tools/list` 约 68KB，其中中文描述是主要可压部分）；**资产档案改增量维护**（新增本地工具 `ops_doc_append`/`ops_doc_patch`，技能与系统提示改为"按需读、增量写"，不再每任务整份重写）。并进一步：**大结果落盘句柄**（`agent.spillLargeToolResults`/`spillDir`/`spillRetentionDays`——超限工具结果写入 `%APPDATA%\LitSSH\spills`，主上下文只留预览 + `spill://` 句柄，新增本地工具 `spill_list`/`spill_read`/`spill_grep` 按需分段读取/搜索）；**子代理隔离**（`agent.enableSubAgent`——`run_subagent` 把独立**只读**取证任务放到隔离上下文执行、只回摘要，大日志/多步排查不再占用主上下文）；并提供 **Prompt Caching 指引**（系统提示与工具定义保持稳定前缀，充分利用 provider 端缓存）。
+  - **SSH 连接复用池（`connectionPool`）**：MCP 的 SSH 工具不再"每次调用新建连接→执行→断开"，改为**按服务器复用一条连接**（命令执行完不断开、放回池），**空闲 `idleTimeoutSeconds`（默认 300s）自动断开**，并设 `keepAliveSeconds`（默认 30s）防止被 NAT/防火墙静默掐断、掉线自动重连；同一连接串行化。配置经 `SecurityOptionsProvider` 热读取（`enabled`/`idleTimeoutSeconds`/`keepAliveSeconds`/`connectTimeoutSeconds`/`maxPerServer`；`maxPerServer` 默认 1，可设 1~16 让**同服务器并发调用分配到多条连接**）。可在桌面 App「安全设置 → SSH 连接复用」调整（另含「快照刷新最短间隔」）。效果：一轮密集排障/一次快照从"几十次 SSH 登录"降为**1 次登录、空闲后断开**，避免目标机登录日志反复"连-断"触发告警。**命令通道与 SFTP 通道各自入池**（`ssh_list_files`/`ssh_upload_file`/`ssh_download_file` 复用 SFTP 连接）。App 交互式终端不受影响。
+  - **批量/目录下载 `ssh_download_files`（工具 51 → 52）**：用**一条 SFTP 连接**下载多个文件或整个目录（`recursive` 递归、跳过软链接防环、深度上限 16），**整批一次人工确认**，避免"下载文件夹"时每个文件重复建连/认证与逐文件审批；`remotePaths` 每个源路径均过 `allowedRemotePaths` 白名单，受 `maxFiles`（默认 200）上限约束（超出 `truncated=true`），结果逐文件返回 `remotePath/localPath/success/size/error`。
+  - **批量/目录上传 `ssh_upload_files`（工具 52 → 53）**：与下载对称——**一条 SFTP 连接**上传多个本地文件或整个本地目录（`recursive` 递归），**按相对路径保留子目录结构**（远程逐级自动建目录），**整批一次人工确认**；每个本地路径过 `allowedLocalPaths`、远程目录过 `allowedRemotePaths`，每文件受 `fileTransfer.maxFileSizeBytes`、总数受 `maxFiles` 约束；结果逐文件返回。
+  - **AI 助手界面重构**：左侧会话区顶部只保留 **「AI 助手设置」「新建」** 两个按钮；会话列表 **右键菜单** 提供 重命名 / 删除 / **打开工作区文件夹（资源管理器）** / 清空显示 / 导出 Markdown；右侧移除 测试连接、继续、清空显示、导出 Markdown 按钮（**测试连接**移至设置里模型右键菜单）；**发送/停止合并为一个按状态切换的按钮**；**模型选择下拉整合到输入区**；设置窗口左侧顶部只保留「添加」，模型的 删除 / 启用停用 / 测试连接 改为**模型列表右键菜单**，列表用**圆点 + 灰色删除线体现启用/禁用**。
+  - **模型与会话记忆**：聊天模型下拉**只列启用模型**；**每个会话记住最后使用的模型**（`agent_sessions.ProviderId`）——切换会话自动恢复该会话的模型，若其**已删除/停用**则回退全局默认、再回退第一个启用模型；设置里模型**右键启用/停用立即持久化**（无需再点「保存」）；关闭设置后重载会保留当前会话历史（不再清空上下文）。长期记忆/RAG 增加**红字提示**：它是全局共享配置（所有模型/会话共用同一 Embeddings 端点/模型/Key），请勿随对话模型改动。另外：模型右键「删除」**弹窗确认后立即生效**；**切换会话/切换模型不再重连 MCP**——`AgentRuntime` 拆分为"MCP 宿主（只连一次）+ 对话会话"，`ResetSession` 仅重建会话（复用已获取的工具/提示/连接），切换会话即时生效且不再重启 MCP 子进程。
+  - **AI 助手设置改为双 Tab**：**「助手设置」**（全局：系统提示、技能目录、工作区目录、MCP 路径、上下文/输出、自动摘要、工具描述精简、落盘、子代理、只读、**工具分组**、长期记忆/RAG、会话保留）+ **「大模型设置」**（模型列表 + 每个模型自身的 Endpoint/模型名/Key/temperature/maxTokens/超时/重试/并发），并各自加红字说明"全局共用 / 随模型独立"。杜绝把全局项误当成模型项。
+  - **API Key 掩码显示 + 单任务约束**：设置里模型 API Key 改用 `PasswordBox`（圆点显示，随选中模型同步，输入即回写，保存仍走 DPAPI 加密）；**任务进行中不允许切换会话**（切换会被拦截并提示"当前会话任务进行中，同一时间只能有一个任务，请等待或点「停止」"），避免同一时间多任务导致的会话错乱。
+  - **输出与工具效率（基于历史会话/审计分析）**：新增 `agent.responseStyle`（`concise` 默认 / `standard` / `detailed`）——系统提示按**运维习惯**要求"结论先行、只讲重点、控制篇幅"以压低输出 token；`snapshot.minRefreshIntervalSeconds`（默认 60s）+ `ssh_snapshot_refresh` 的 `force` 参数——距上次成功快照小于间隔且未 `force` 时**直接返回已有快照**（`status=fresh`），消除同一任务内反复全量刷新（历史审计显示曾 **3.5 分钟刷 4 次**、单日 34 次）；技能/系统提示补充"**多个只读提权检查合并成一条命令**以减少审批次数"。
+  - 配置项 `AppConfig.Agent`（`ConfigMigrator` 兜底、`config.example.json` 示例）；发布脚本 `scripts/build-release.ps1` 会把 MCP 服务器内置到 App 的 `mcp/` 子目录。
 - **服务器快照工具 `ssh_snapshot_get` / `ssh_snapshot_refresh`**（归入 `ssh` 分组，工具总数 49 → 51）：把服务器整机态势**采集并持久化到独立库** `%APPDATA%\LitSSH\snapshots.db`（快照记录 + 快照事件流水两张表，与审计库分离，便于独立备份/清理），随时按 `serverId` 查询。默认采集四个维度：
   - `resource` 态势：负载/内存/磁盘（含使用率）/CPU 核数与型号/发行版/内核/主机名/IP/运行时长；
   - `portmap` 端口↔进程名/PID/用户↔systemd 服务**三元组 + 程序路径 `exe` + 完整启动命令行 `cmdline`**（`ss` 提取，区分 TCP/UDP、双栈 `0.0.0.0`/`::`/`*` 与 Unix socket；pid 经 `ps -o user/comm` + `readlink /proc/<pid>/exe` + `/proc/<pid>/cmdline` + `/proc/<pid>/cgroup` 补齐属主、可执行文件路径、启动命令与服务归属；`cmdline` 中常见凭据参数 password/secret/token 等自动脱敏）；
@@ -17,7 +42,8 @@
   - **默认只读本地快照不连服务器**；`ssh_snapshot_refresh` 为**同步阻塞**采集，描述已提示"耗时较长（典型 10~30 秒，弱网更久）"；**单飞限流**——同一服务器同时只允许一个快照，重复调用立即返回 `status=snapshot_in_progress`（含进行中的 `snapshotId`），不排队。**失败也落库**（`state=failed`，保留已采集到的部分 section 与失败事件；连接失败/超时/取消都会正确收尾，不留 `running` 孤儿）。
   - **提权可配置**：`config.json` 新增 `snapshot.useSudo`（默认 `true`）——开启且服务器配置了 `SudoType` 时自动以 sudo/su 执行**内置固定只读命令**（root 视图更完整），**不逐次弹审批**；关闭或未配置时自动降级（相关字段缺失并标注 `degraded`）。采集命令仍受命令过滤器 `Blocked` 规则约束。
   - **可扩展 + 可保留**：采集维度实现 `ISnapshotCollector` 并在 `Program.cs` 注册即可扩展（为后续趋势图/定时任务预留统一历史 `data`）；`snapshot.retentionPerServer`（默认 30，`0`=不限）按服务器保留最近 N 份并级联清理事件。
-  - 每次刷新写一条审计记录（`category=probe`）；快照详情与事件在快照库内独立留存。测试期快照库格式版本为 **v2**：版本不一致时直接重建（不做历史迁移，旧快照自动清空）。
+  -   每次刷新写一条审计记录（`category=probe`）；快照详情与事件在快照库内独立留存。测试期快照库格式版本为 **v2**：版本不一致时直接重建（不做历史迁移，旧快照自动清空）。
+  - **返回视图（降低 token）**：`ssh_snapshot_get`/`ssh_snapshot_refresh` 新增 `section`、`detail` 参数——**默认 `data.view=summary` 只返回各维度概览**（`status`/`durationMs`/`error`/`note`/`dataChars`/`headline` 关键指标），不再默认回全量 `data`；`section="resource|portmap|docker|nginx_tls|systemd|security"` 取某维度完整数据，`detail="full"` 才返回全部；`SnapshotTools.BuildDataView` 对超长字符串/数组做**硬上限压缩**并提示按需拉取。
 
 ### 桌面 App
 

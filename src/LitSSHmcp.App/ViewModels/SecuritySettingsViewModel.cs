@@ -39,6 +39,12 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     private bool _snapshotUseSudo = true;
     private string _snapshotRetention = "30";
     private string _snapshotTimeout = "180";
+    private string _snapshotMinRefresh = "60";
+    private bool _connectionPoolEnabled = true;
+    private string _connectionPoolIdle = "300";
+    private string _connectionPoolKeepAlive = "30";
+    private string _connectionPoolConnectTimeout = "20";
+    private string _connectionPoolMaxPerServer = "1";
     private string _statusMessage = string.Empty;
 
     public SecuritySettingsViewModel()
@@ -77,6 +83,12 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     public bool SnapshotUseSudo { get => _snapshotUseSudo; set => Set(ref _snapshotUseSudo, value); }
     public string SnapshotRetention { get => _snapshotRetention; set => Set(ref _snapshotRetention, value); }
     public string SnapshotTimeout { get => _snapshotTimeout; set => Set(ref _snapshotTimeout, value); }
+    public string SnapshotMinRefresh { get => _snapshotMinRefresh; set => Set(ref _snapshotMinRefresh, value); }
+    public bool ConnectionPoolEnabled { get => _connectionPoolEnabled; set => Set(ref _connectionPoolEnabled, value); }
+    public string ConnectionPoolIdle { get => _connectionPoolIdle; set => Set(ref _connectionPoolIdle, value); }
+    public string ConnectionPoolKeepAlive { get => _connectionPoolKeepAlive; set => Set(ref _connectionPoolKeepAlive, value); }
+    public string ConnectionPoolConnectTimeout { get => _connectionPoolConnectTimeout; set => Set(ref _connectionPoolConnectTimeout, value); }
+    public string ConnectionPoolMaxPerServer { get => _connectionPoolMaxPerServer; set => Set(ref _connectionPoolMaxPerServer, value); }
 
     public string StatusMessage
     {
@@ -125,6 +137,14 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             SnapshotUseSudo = config.Snapshot.UseSudo;
             SnapshotRetention = config.Snapshot.RetentionPerServer.ToString();
             SnapshotTimeout = config.Snapshot.TimeoutSeconds.ToString();
+            SnapshotMinRefresh = config.Snapshot.MinRefreshIntervalSeconds.ToString();
+
+            var pool = config.ConnectionPool ?? new ConnectionPoolConfig();
+            ConnectionPoolEnabled = pool.Enabled;
+            ConnectionPoolIdle = pool.IdleTimeoutSeconds.ToString();
+            ConnectionPoolKeepAlive = pool.KeepAliveSeconds.ToString();
+            ConnectionPoolConnectTimeout = pool.ConnectTimeoutSeconds.ToString();
+            ConnectionPoolMaxPerServer = pool.MaxPerServer.ToString();
 
             StatusMessage = "已加载当前安全配置";
         }
@@ -197,6 +217,14 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             config.Snapshot.UseSudo = SnapshotUseSudo;
             config.Snapshot.RetentionPerServer = (int)Math.Max(0, ParseLong(SnapshotRetention, 30));
             config.Snapshot.TimeoutSeconds = (int)Math.Max(1, ParseLong(SnapshotTimeout, 180));
+            config.Snapshot.MinRefreshIntervalSeconds = (int)Math.Max(0, ParseLong(SnapshotMinRefresh, 60));
+
+            config.ConnectionPool ??= new ConnectionPoolConfig();
+            config.ConnectionPool.Enabled = ConnectionPoolEnabled;
+            config.ConnectionPool.IdleTimeoutSeconds = (int)Math.Max(0, ParseLong(ConnectionPoolIdle, 300));
+            config.ConnectionPool.KeepAliveSeconds = (int)Math.Max(0, ParseLong(ConnectionPoolKeepAlive, 30));
+            config.ConnectionPool.ConnectTimeoutSeconds = (int)Math.Max(5, ParseLong(ConnectionPoolConnectTimeout, 20));
+            config.ConnectionPool.MaxPerServer = (int)Math.Clamp(ParseLong(ConnectionPoolMaxPerServer, 1), 1, 16);
 
             await _configService.SaveConfigAsync(config);
             StatusMessage = "已保存 (过滤器/限流规则无需重启即刻生效)";

@@ -99,6 +99,28 @@
                     <TextBlock Text="采集超时(秒):" VerticalAlignment="Center"/>
                     <TextBox Text="{Binding SnapshotTimeout, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,0,0"/>
                 </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="刷新最短间隔(秒):" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding SnapshotMinRefresh, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,4,0"/>
+                    <TextBlock Text="(间隔内 refresh 直接返回缓存; force=true 可强制重采)" VerticalAlignment="Center" Foreground="Gray" FontSize="10"/>
+                </StackPanel>
+
+                <TextBlock Text="SSH 连接复用 (connectionPool)" FontWeight="Bold" Margin="0,8,0,4"/>
+                <CheckBox Content="复用 SSH 连接（每服务器保持连接、空闲自动断开；关闭则每次新建连接）" IsChecked="{Binding ConnectionPoolEnabled}" Margin="0,0,0,6"
+                          ToolTip="避免 AI/密集工具调用反复“连-断”触发目标机登录告警；命令/文件传输共用池，连接按配置变更自动失效"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="空闲断开(秒):" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding ConnectionPoolIdle, UpdateSourceTrigger=PropertyChanged}" Width="55" Margin="4,0,16,0"/>
+                    <TextBlock Text="keepalive(秒):" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding ConnectionPoolKeepAlive, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,16,0"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="连接超时(秒):" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding ConnectionPoolConnectTimeout, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,16,0"/>
+                    <TextBlock Text="每服务器连接数:" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding ConnectionPoolMaxPerServer, UpdateSourceTrigger=PropertyChanged}" Width="40" Margin="4,0,4,0"/>
+                    <TextBlock Text="(1~16, 并发调用分配到不同连接)" VerticalAlignment="Center" Foreground="Gray" FontSize="10"/>
+                </StackPanel>
 
                 <TextBlock Text="查询结果脱敏 (列名正则=模式, 每行一条; 模式: full/email/phone/last4)" FontWeight="Bold" Margin="0,8,0,4"/>
                 <TextBox Text="{Binding MaskingRules, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True"

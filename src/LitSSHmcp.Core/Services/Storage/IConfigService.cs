@@ -101,6 +101,12 @@ public class ConfigService : IConfigService
 
         foreach (var ds in config.DataSources)
             ds.Password = _protector.Protect(ds.Password);
+
+        foreach (var provider in config.Agent?.Providers ?? Array.Empty<AgentProviderConfig>())
+            provider.ApiKey = _protector.Protect(provider.ApiKey);
+
+        if (config.Agent?.Memory is not null)
+            config.Agent.Memory.ApiKey = _protector.Protect(config.Agent.Memory.ApiKey);
     }
 
     private void DecryptSecrets(AppConfig config)
@@ -114,6 +120,12 @@ public class ConfigService : IConfigService
 
         foreach (var ds in config.DataSources)
             ds.Password = _protector.Unprotect(ds.Password);
+
+        foreach (var provider in config.Agent?.Providers ?? Array.Empty<AgentProviderConfig>())
+            provider.ApiKey = _protector.Unprotect(provider.ApiKey);
+
+        if (config.Agent?.Memory is not null)
+            config.Agent.Memory.ApiKey = _protector.Unprotect(config.Agent.Memory.ApiKey);
     }
 
     private bool ContainsPlaintextSecrets(AppConfig config)
@@ -125,7 +137,9 @@ public class ConfigService : IConfigService
             if (HasPlaintext(server.SudoPassword)) return true;
         }
 
-        return config.DataSources.Any(ds => HasPlaintext(ds.Password));
+        return config.DataSources.Any(ds => HasPlaintext(ds.Password)) ||
+               (config.Agent?.Providers ?? Array.Empty<AgentProviderConfig>()).Any(p => HasPlaintext(p.ApiKey)) ||
+               (config.Agent?.Memory is not null && HasPlaintext(config.Agent.Memory.ApiKey));
     }
 
     private bool HasPlaintext(string? value) => !string.IsNullOrEmpty(value) && !_protector.IsProtected(value);

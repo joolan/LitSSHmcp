@@ -50,8 +50,12 @@ var unknownToolGroups = ToolGroups.UnknownGroups(startupConfig?.Tools);
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSingleton<IConfigService, ConfigService>();
-builder.Services.AddSingleton<ISshService, SshService>();
+        builder.Services.AddSingleton<IConfigService, ConfigService>();
+        builder.Services.AddSingleton<ISshConnectionPool>(sp => new SshConnectionPool(
+            sp.GetService<ISshKnownHostsStore>(),
+            () => sp.GetRequiredService<ISecurityOptionsProvider>().SshHostKey.Mode,
+            () => sp.GetRequiredService<ISecurityOptionsProvider>().ConnectionPool));
+        builder.Services.AddSingleton<ISshService, SshService>();
 builder.Services.AddSingleton<IAuditLogService, AuditLogService>();
 builder.Services.AddSingleton<DesktopApprovalService>();
 builder.Services.AddSingleton<CliApprovalChannel>();

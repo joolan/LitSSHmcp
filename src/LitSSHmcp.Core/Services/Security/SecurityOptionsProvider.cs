@@ -21,6 +21,7 @@ public interface ISecurityOptionsProvider
     LimitsConfig Limits { get; }
     AuditConfig Audit { get; }
     ApprovalConfig Approval { get; }
+    ConnectionPoolConfig ConnectionPool { get; }
     void Invalidate();
 }
 
@@ -39,6 +40,7 @@ public sealed class SecurityOptionsProvider : ISecurityOptionsProvider
     private LimitsConfig _limits = new();
     private AuditConfig _audit = new();
     private ApprovalConfig _approval = new();
+    private ConnectionPoolConfig _connectionPool = new();
 
     public SecurityOptionsProvider() : this(ConfigPaths.ConfigFile)
     {
@@ -93,6 +95,11 @@ public sealed class SecurityOptionsProvider : ISecurityOptionsProvider
     public ApprovalConfig Approval
     {
         get { EnsureFresh(); return _approval; }
+    }
+
+    public ConnectionPoolConfig ConnectionPool
+    {
+        get { EnsureFresh(); return _connectionPool; }
     }
 
     public void Invalidate()
@@ -171,6 +178,7 @@ public sealed class SecurityOptionsProvider : ISecurityOptionsProvider
         _limits = config.Security?.Limits ?? new LimitsConfig();
         _audit = config.Security?.Audit ?? new AuditConfig();
         _approval = config.Security?.Approval ?? new ApprovalConfig();
+        _connectionPool = config.ConnectionPool ?? new ConnectionPoolConfig();
 
         _lastWriteUtc = lastWriteUtc;
     }

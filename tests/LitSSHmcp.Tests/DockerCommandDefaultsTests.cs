@@ -43,6 +43,7 @@ public class DockerCommandDefaultsTests
         public Core.Models.LimitsConfig Limits => _config.Security.Limits;
         public Core.Models.AuditConfig Audit => _config.Security.Audit;
         public Core.Models.ApprovalConfig Approval => _config.Security.Approval;
+        public Core.Models.ConnectionPoolConfig ConnectionPool => _config.ConnectionPool;
         public void Invalidate() { }
     }
 }

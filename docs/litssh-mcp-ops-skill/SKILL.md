@@ -13,7 +13,7 @@ description: Use when operating or troubleshooting servers and applications thro
 
 ## 0. 开始前
 
-0. **先读资产档案**：工作区若已有 `OPS_ASSETS.md`（运维资产档案，见第 9 节），**先读它**——里面有准确的服务器/应用/日志路径与拓扑；没有则按第 9 节**创建**并在本次任务中持续维护。
+0. **资产档案按需读取**：需要既有的服务器/应用/日志路径/拓扑信息时，才读工作区 `OPS_ASSETS.md`（见第 9 节）；本次确认/纠正了新事实再**增量更新**（优先 `ops_doc_append`/`ops_doc_patch`），**不必每轮都读写**。
 1. 不确定有哪些工具 / 怎么用 → 调 `mcp_usage_guide`；MCP 自身异常 → `mcp_self_check`。
 2. 拿到准确的标识：
    - 服务器：`ssh_list_servers` → 取 `id`（用 `id` 最稳，也可传名称/主机名）。
@@ -37,9 +37,9 @@ description: Use when operating or troubleshooting servers and applications thro
 | 意图 | 工具 |
 |---|---|
 | 服务器列表/状态/连通性 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection`（已禁用的服务器不在列表中，相关工具会返回 `server_disabled`） |
-| 服务器整机快照 | `ssh_snapshot_get`（默认读本地最新快照）、`ssh_snapshot_refresh`（重新采集，较慢） |
+| 服务器整机快照 | `ssh_snapshot_get`（默认读本地最新快照，返回各维度概览；`section=`/`detail="full"` 取完整）、`ssh_snapshot_refresh`（重新采集，较慢） |
 | 执行命令 / 提权 / 历史 | `ssh_execute_command`、`ssh_execute_sudo`、`ssh_get_command_history`、`ssh_get_sudo_status` |
-| 文件 | `ssh_list_files`、`ssh_upload_file`、`ssh_download_file` |
+| 文件 | `ssh_list_files`、`ssh_upload_file`、`ssh_upload_files`（批量/目录，一条连接）、`ssh_download_file`、`ssh_download_files`（批量/目录，一条连接） |
 | Docker | `docker_ps`、`docker_logs`、`docker_inspect`、`docker_stats`、`docker_images`、`docker_restart`、`docker_exec` |
 | systemd | `service_status`、`service_list`、`service_restart`、`service_logs` |
 | 日志文件 | `log_find`（发现）、`log_tail`、`log_grep` |
@@ -51,7 +51,7 @@ description: Use when operating or troubleshooting servers and applications thro
 
 ### 服务器快照（整机态势，优先用）
 
-`ssh_snapshot_get(serverId)` 一次拿到该服务器**整机态势**（本机持久化，默认只读本地、不连服务器；无快照或要最新数据用 `ssh_snapshot_refresh`，较慢、同机单飞）：
+`ssh_snapshot_get(serverId)` 拿到该服务器**整机态势概览**（本机持久化，默认只读本地、不连服务器）。**默认只回各维度概览（关键指标 + 数据大小），不含完整数据**：需要某维度完整数据用 `section="resource|portmap|docker|nginx_tls|systemd|security"`，需要全部才用 `detail="full"`（较大）。无快照或要最新数据用 `ssh_snapshot_refresh`（较慢、同机单飞，参数同上）。
 
 - `resource`：CPU/内存/磁盘/负载/系统信息；含**阈值告警 `warnings`/`riskLevel`**（内存/swap/磁盘/负载）与 **top5 进程 `topByCpu`/`topByMemory`**（谁在吃 CPU/内存）。
 - `portmap`：端口↔进程名/PID/用户↔systemd 服务三元组，含**程序路径 `exe`** 与**完整启动命令 `cmdline`**（凭据参数已脱敏），区分 TCP/UDP、双栈；Unix socket 分系统级(`unixSockets`)与**桌面/用户会话(`unixSocketsDesktop`，默认折叠**，如 gnome/pipewire/dbus/X11)。
@@ -60,11 +60,11 @@ description: Use when operating or troubleshooting servers and applications thro
 - `systemd`：单元健康聚合与失败清单。
 - `security`：安全巡检——SSH 有效配置（`PermitRootLogin`/`PasswordAuthentication`/端口）、防火墙（`ufw`/`firewalld`/iptables）、`fail2ban`、MySQL 匿名账户/远程 root/可远程登录的高权账户（`SHOW GRANTS` 判定；**优先用"匹配该服务器的已配置 MySQL 数据源凭据"核查，账号需有 `mysql.*` SELECT 权限；否则标注未检查**）、系统空口令账户、sudoers `NOPASSWD`，以及**公网暴露的高危端口**（3306/5432/6379/2375/9200/21/23…）；统一输出 `findings[]`（`severity`/`id`/`title`/`detail`/`evidence`）与 `summary` 计数。
 
-维度状态：`ok`/`degraded`（如未提权或缺权限）/`skipped`（环境不具备）/`failed`；返回还含 `events`（采集事件流水）与 `recent`（最近若干份摘要）。**整机盘点优先用快照**，比逐条拼 `ssh_execute_command` 全面且稳定。
+维度状态：`ok`/`degraded`（如未提权或缺权限）/`skipped`（环境不具备）/`failed`；返回还含 `events`（采集事件流水）与 `recent`（最近若干份摘要）。**整机盘点优先用快照**，比逐条拼 `ssh_execute_command` 全面且稳定。**`ssh_snapshot_refresh` 有最短刷新间隔节流（默认 60s，超过会返回 `status=fresh` 的缓存，除非传 `force=true`）——同一任务内不要重复刷新，先 `get`。**
 
 ## 3. 标准排障流程（Triage）
 
-0. **整机态势**：`ssh_snapshot_get(serverId)` 一次拿到 资源/端口↔进程↔服务(含 `exe`/启动命令)/Docker/nginx 配置与证书/systemd；无快照或要最新数据 → `ssh_snapshot_refresh(serverId)`（较慢、同机单飞）。
+0. **整机态势**：先 `ssh_snapshot_get(serverId)`（默认概览）；仅当**无快照**或**确需最新**时 `ssh_snapshot_refresh(serverId)`（较慢、同机单飞、**有最短刷新间隔节流，不要在同一任务内重复刷新**）。需要某维度细节用 `section=`，全部才用 `detail="full"`。
 1. **定位**：`app_health_snapshot(appId)` 一步拿到该应用所在服务器的 Java 进程/容器/监听端口 + 依赖库连通性；或 `topology_get_overview` / `topology_get_dependencies` 看依赖。
 2. **分侧取证**：
    - 服务器：`ssh_get_server_status` / `ssh_test_connection`（失败会给 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`）。
@@ -113,8 +113,9 @@ description: Use when operating or troubleshooting servers and applications thro
 - 先给**证据**再给结论；标注证据来自哪个工具 + 哪台 `host`。
 - 只读优先；任何“重启/删除/改配置”都先说明影响面并等待确认（会触发审批）。
 - 遇 `blocked`/`rejected` 不要重试轰炸；遇 `approval_timeout` 提示用户后重试；遇 `server_ambiguous`/`pid_ambiguous`/`log_path_ambiguous` 用精确标识重试。
+- **减少审批次数**：多个**只读**提权检查（读 sudoers/服务文件/端口属主等）尽量**合并成一条 `ssh_execute_sudo` 命令**一次执行，而不是逐条弹审批。
 - 不要自行编造路径、端口、ID；拿不到就用列表/发现工具（`ssh_list_servers`、`log_find`、`java_processes`）。
-- 任务收尾时**更新资产档案**（`OPS_ASSETS.md`，见第 9 节）：把本次确认/纠正的服务器、应用、日志路径、依赖记进去，并追加一条变更记录。
+- 本次如确认/纠正了新事实，收尾时**增量更新资产档案**（`OPS_ASSETS.md`，见第 9 节）：优先 `ops_doc_append`/`ops_doc_patch`，避免整份重写；无新事实则跳过。
 
 ## 8. 参考
 
@@ -125,10 +126,10 @@ description: Use when operating or troubleshooting servers and applications thro
 
 ## 9. 运维资产档案（在工作区创建并持续维护）
 
-**目标**：让资产/拓扑知识“自动进化”。在工作空间（或用户项目根目录）维护一份**独立的资产 + 应用拓扑关系文档**，每次用 MCP 排障/运维时先读它、再用最新事实更新纠正它，从而越来越准地定位**服务器、应用、日志**。它是 AI 的“长期记忆”，**不是** MCP 的一部分。
+**目标**：让资产/拓扑知识“自动进化”。在工作空间（或用户项目根目录）维护一份**独立的资产 + 应用拓扑关系文档**，需要时读取、再用最新事实**增量更新**纠正它，从而越来越准地定位**服务器、应用、日志**。它是 AI 的“长期记忆”，**不是** MCP 的一部分。
 
-- **位置**：默认工作区根目录 `OPS_ASSETS.md`（也可放 `docs/` 或用户指定）；只维护一份；用你自己的文件读写能力维护（MCP 无写文件工具）。起手模板：`OPS_ASSETS.template.md`。
-- **何时做**：任务开始先读；过程中/结束发现新事实或纠正旧事实就**立即更新并记变更**；拓扑变动时用 `topology_discover` 对账。
+- **位置**：默认工作区根目录 `OPS_ASSETS.md`（也可放 `docs/` 或用户指定）；只维护一份；用本地工具 `ops_doc_read`/`ops_doc_append`/`ops_doc_patch`/`ops_doc_write`/`ops_doc_list` 维护（**优先 append/patch 增量更新，省 token**）。起手模板：`OPS_ASSETS.template.md`。
+- **何时做**：需要历史信息时才读；发现新事实或纠正旧事实就**立即增量更新并记变更**；拓扑变动时用 `topology_discover` 对账。
 - **内容结构**：服务器 / 数据源 / 应用（含端口、部署路径、**日志路径**）/ 拓扑关系 / 待确认存疑 / 更新日志（表格）；**结构可按实际环境扩展/精简**（如域名证书、Cron、MQ、备份、K8s 等）。
 - **核心规则**（细则见 `references/asset-ledger.md`）：① 以 MCP 实时数据为准纠正；② 存稳定的 `id`；③ 只记事实带证据；④ **绝不存密钥**；⑤ 合并去重；⑥ 冲突不硬猜（放“待确认”并问用户）；⑦ 不覆盖用户手写内容；⑧ **可按实际调整文档结构/内容，但必须注明调整原因**（在更新日志以 `类型=结构` 记录：改了什么 + 为什么 + 影响）。
 - **文档过大可拆分**：条目/日志很多时，拆成“主索引 `OPS_ASSETS.md` + 子文件”（如 `ops/asset-changelog.md` 单独放更新日志、`ops/asset-apps.md` 等）；主文档保留摘要与相对链接，同一事实只存一处，拆分同样要注明原因。

@@ -1,3 +1,4 @@
+using System.IO;
 using LitSSHmcp.Core.Services.Datasource;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Snapshot;
@@ -23,6 +24,12 @@ public static class AppServiceFactory
 
     /// <summary>快照库（供历史/详情窗口读取）。单飞约束在库内（Running 唯一部分索引）, 跨窗口/进程一致。</summary>
     public static ISnapshotStore CreateSnapshotStore() => new SnapshotStore();
+
+    /// <summary>AI 助手会话/消息库（agent.db）。</summary>
+    public static LitSSHmcp.Agent.IContextStore CreateAgentContextStore() => new LitSSHmcp.Agent.ContextStore();
+
+    /// <summary>App 内置技能目录（skills/litssh-mcp-ops-skill）。</summary>
+    public static string BundledSkillsDir => Path.Combine(AppContext.BaseDirectory, "skills", "litssh-mcp-ops-skill");
 
     /// <summary>快照服务（App 端手动采集）。注意: 一个实例对应一把内存单飞锁, UI 侧应长期复用同一实例。</summary>
     public static ISnapshotService CreateSnapshotService()

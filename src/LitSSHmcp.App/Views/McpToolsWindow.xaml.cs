@@ -15,7 +15,7 @@ using LitSSHmcp.Core.Models;
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。
 namespace LitSSHmcp.App.Views;
 
-public partial class McpToolsWindow : Window
+public partial class McpToolsWindow : Wpf.Ui.Controls.FluentWindow
 {
     private const string DocsResourceName = "LitSSHmcp.App.docs.TOOLS.md";
 

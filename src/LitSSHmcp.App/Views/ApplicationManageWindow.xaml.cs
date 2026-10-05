@@ -6,7 +6,7 @@ using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class ApplicationManageWindow : Window
+public partial class ApplicationManageWindow : Wpf.Ui.Controls.FluentWindow
 {
     private ViewModels.ApplicationManageViewModel ViewModel => (ViewModels.ApplicationManageViewModel)DataContext;
 

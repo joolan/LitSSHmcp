@@ -2,7 +2,7 @@ using System.Windows;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class TextInputDialog : Window
+public partial class TextInputDialog : Wpf.Ui.Controls.FluentWindow
 {
     public TextInputDialog(string title, string prompt, string initial)
     {

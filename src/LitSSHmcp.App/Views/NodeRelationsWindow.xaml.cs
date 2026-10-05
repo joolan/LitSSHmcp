@@ -22,7 +22,7 @@ public class RelationRow
     public bool ToIsCurrent { get; set; }
 }
 
-public partial class NodeRelationsWindow : Window
+public partial class NodeRelationsWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly string _nodeId;
     private readonly IConfigService _config = AppServiceFactory.CreateConfigService();

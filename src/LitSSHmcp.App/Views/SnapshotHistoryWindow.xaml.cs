@@ -5,7 +5,7 @@ using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class SnapshotHistoryWindow : Window
+public partial class SnapshotHistoryWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly SnapshotHistoryViewModel _viewModel;
     private readonly string? _initialServerId;

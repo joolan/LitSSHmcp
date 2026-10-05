@@ -1,8 +1,9 @@
 using System.Windows;
+using Wpf.Ui.Controls;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class DatasourceEditWindow : Window
+public partial class DatasourceEditWindow : FluentWindow
 {
     public DatasourceEditWindow()
     {

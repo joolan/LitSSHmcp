@@ -1,8 +1,15 @@
-<Window x:Class="LitSSHmcp.App.Views.TopologyManageWindow"
+<ui:FluentWindow xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" x:Class="LitSSHmcp.App.Views.TopologyManageWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="拓扑关系管理" Height="580" Width="880"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="拓扑关系管理"/>
+        <Grid Grid.Row="1">
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -27,7 +34,7 @@
                                     <Run Text="{Binding To, Mode=OneWay}" FontWeight="SemiBold"/>
                                     <Run Text="  "/>
                                     <Run Text="{Binding Type, Mode=OneWay}" Foreground="#0A66C2"/>
-                                    <Run Text="{Binding NoteDisplay, Mode=OneWay}" Foreground="Gray"/>
+                                    <Run Text="{Binding NoteDisplay, Mode=OneWay}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 </TextBlock>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -46,7 +53,7 @@
                     <TextBlock Text="关系类型:" Margin="0,0,0,2"/>
                     <ComboBox IsEditable="True" ItemsSource="{Binding RelationTypes}"
                               Text="{Binding RelationTypeText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,2"/>
-                    <TextBlock TextWrapping="Wrap" Foreground="Gray" FontSize="10" Margin="0,0,0,6"
+                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10" Margin="0,0,0,6"
                                Text="runsOn: 应用/数据库 运行在 服务器 (From=app:/ds:, To=ssh:)&#x0a;connectsTo: 应用 连接 数据库 (From=app:, To=ds:)&#x0a;canAccess: 服务器 可访问 数据库 (From=ssh:, To=ds:)&#x0a;relatedTo: 通用关系(无特定语义, 仅作占位/待确认关联; 也会按方向参与依赖查询)"/>
 
                     <TextBlock Text="备注(可选):" Margin="0,0,0,2"/>
@@ -58,12 +65,14 @@
                         <Button Content="删除选中" Command="{Binding DeleteRelationCommand}" Padding="10,4"/>
                     </StackPanel>
 
-                    <TextBlock TextWrapping="Wrap" Foreground="Gray" FontSize="10" Margin="0,10,0,0"
+                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10" Margin="0,10,0,0"
                                Text="选中一条关系可回填到上方修改; 节点格式: ssh:服务器ID / ds:数据源ID / app:应用ID"/>
                 </StackPanel>
             </Grid>
         </GroupBox>
 
-        <TextBlock Grid.Row="1" Text="{Binding StatusMessage}" Margin="4,6,0,0" Foreground="Gray" TextWrapping="Wrap"/>
+        <TextBlock Grid.Row="1" Text="{Binding StatusMessage}" Margin="4,6,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
     </Grid>
-</Window>
+</Grid>
+    </Grid>
+</ui:FluentWindow>

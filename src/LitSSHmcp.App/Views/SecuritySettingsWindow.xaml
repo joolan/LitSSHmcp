@@ -1,8 +1,15 @@
-<Window x:Class="LitSSHmcp.App.Views.SecuritySettingsWindow"
+<ui:FluentWindow xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" x:Class="LitSSHmcp.App.Views.SecuritySettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="安全设置" Height="680" Width="760"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="安全设置"/>
+        <Grid Grid.Row="1">
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -46,7 +53,7 @@
                     <TextBlock Text="主机密钥校验模式:" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <ComboBox x:Name="HostKeyModeBox" IsEditable="True" Width="100"
                               Text="{Binding SshHostKeyMode, UpdateSourceTrigger=PropertyChanged}"/>
-                    <TextBlock Text="(Tofu=首连记录, Strict=仅信任已记录, Off=不校验)" VerticalAlignment="Center" Foreground="Gray" FontSize="10" Margin="8,0,0,0"/>
+                    <TextBlock Text="(Tofu=首连记录, Strict=仅信任已记录, Off=不校验)" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10" Margin="8,0,0,0"/>
                 </StackPanel>
                 <TextBlock Text="拓扑发现允许路径 (每行一条):" Margin="0,0,0,2"/>
                 <TextBox Text="{Binding DiscoveryPaths, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="40" FontFamily="Consolas" Margin="0,0,0,4"/>
@@ -95,14 +102,14 @@
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                     <TextBlock Text="每服务器保留份数:" VerticalAlignment="Center"/>
                     <TextBox Text="{Binding SnapshotRetention, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,4,0"/>
-                    <TextBlock Text="(0=不限)" VerticalAlignment="Center" Foreground="Gray" Margin="0,0,16,0"/>
+                    <TextBlock Text="(0=不限)" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,16,0"/>
                     <TextBlock Text="采集超时(秒):" VerticalAlignment="Center"/>
                     <TextBox Text="{Binding SnapshotTimeout, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,0,0"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                     <TextBlock Text="刷新最短间隔(秒):" VerticalAlignment="Center"/>
                     <TextBox Text="{Binding SnapshotMinRefresh, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,4,0"/>
-                    <TextBlock Text="(间隔内 refresh 直接返回缓存; force=true 可强制重采)" VerticalAlignment="Center" Foreground="Gray" FontSize="10"/>
+                    <TextBlock Text="(间隔内 refresh 直接返回缓存; force=true 可强制重采)" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10"/>
                 </StackPanel>
 
                 <TextBlock Text="SSH 连接复用 (connectionPool)" FontWeight="Bold" Margin="0,8,0,4"/>
@@ -119,7 +126,7 @@
                     <TextBox Text="{Binding ConnectionPoolConnectTimeout, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,16,0"/>
                     <TextBlock Text="每服务器连接数:" VerticalAlignment="Center"/>
                     <TextBox Text="{Binding ConnectionPoolMaxPerServer, UpdateSourceTrigger=PropertyChanged}" Width="40" Margin="4,0,4,0"/>
-                    <TextBlock Text="(1~16, 并发调用分配到不同连接)" VerticalAlignment="Center" Foreground="Gray" FontSize="10"/>
+                    <TextBlock Text="(1~16, 并发调用分配到不同连接)" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10"/>
                 </StackPanel>
 
                 <TextBlock Text="查询结果脱敏 (列名正则=模式, 每行一条; 模式: full/email/phone/last4)" FontWeight="Bold" Margin="0,8,0,4"/>
@@ -134,7 +141,9 @@
                 <Button Content="重新加载" Width="90" Padding="6,4" Margin="0,0,6,0" Click="OnReload"/>
                 <Button Content="保存" Width="90" Padding="6,4" Click="OnSave"/>
             </StackPanel>
-            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="Gray"/>
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
         </DockPanel>
     </Grid>
-</Window>
+</Grid>
+    </Grid>
+</ui:FluentWindow>

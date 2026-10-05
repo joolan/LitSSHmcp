@@ -3,7 +3,7 @@ using LitSSHmcp.App.ViewModels;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class SecuritySettingsWindow : Window
+public partial class SecuritySettingsWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly SecuritySettingsViewModel _viewModel = new();
 

@@ -1,8 +1,9 @@
 using System.Windows;
+using Wpf.Ui.Controls;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class ServerEditWindow : Window
+public partial class ServerEditWindow : FluentWindow
 {
     public ServerEditWindow()
     {

@@ -46,7 +46,7 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10,8,0,0">
-                    <TextBlock Text="图例:" Foreground="Gray" Margin="0,0,8,0"/>
+                    <TextBlock Text="图例:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,0"/>
                     <Border Background="#EEF3FB" BorderBrush="#9BB7E0" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
                         <TextBlock Text="SSH服务器(内含 应用/数据库 = runsOn)" FontSize="11"/>
                     </Border>
@@ -382,7 +382,7 @@
                                 <TextBox Text="{Binding SelectedEdgeNote, UpdateSourceTrigger=PropertyChanged}"
                                          AcceptsReturn="True" TextWrapping="Wrap" Height="64" VerticalScrollBarVisibility="Auto"
                                          IsEnabled="{Binding SelectedEdgeEditable}" Margin="0,2,0,8"/>
-                                <TextBlock Text="{Binding SelectedEdgeHint}" Foreground="#B00020" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <TextBlock Text="{Binding SelectedEdgeHint}" Foreground="{DynamicResource AppDangerBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                     <Button Content="保存" Width="72" Padding="6,4" Margin="0,0,6,0" Click="OnSaveEdge"
                                             IsEnabled="{Binding SelectedEdgeEditable}"/>
@@ -395,6 +395,6 @@
             </Grid>
         </Border>
 
-        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,6,0,0" Foreground="Gray"/>
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,6,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
     </Grid>
 </Window>

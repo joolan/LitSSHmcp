@@ -9,7 +9,7 @@ using Microsoft.Win32;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class AuditWindow : Window
+public partial class AuditWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly AuditViewModel _viewModel = new();
     private string? _lastCellText;

@@ -4,7 +4,7 @@ using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class TopologyManageWindow : Window
+public partial class TopologyManageWindow : Wpf.Ui.Controls.FluentWindow
 {
     public TopologyManageWindow()
     {

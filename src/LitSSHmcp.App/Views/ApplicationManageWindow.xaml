@@ -1,8 +1,15 @@
-<Window x:Class="LitSSHmcp.App.Views.ApplicationManageWindow"
+<ui:FluentWindow xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" x:Class="LitSSHmcp.App.Views.ApplicationManageWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="应用管理" Height="480" Width="780"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="应用管理"/>
+        <Grid Grid.Row="1">
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -39,6 +46,8 @@
             </DockPanel>
         </GroupBox>
 
-        <TextBlock Grid.Row="1" Text="{Binding StatusMessage}" Margin="4,6,0,0" Foreground="Gray" TextWrapping="Wrap"/>
+        <TextBlock Grid.Row="1" Text="{Binding StatusMessage}" Margin="4,6,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
     </Grid>
-</Window>
+</Grid>
+    </Grid>
+</ui:FluentWindow>

@@ -6,7 +6,7 @@ using LitSSHmcp.App.ViewModels;
 
 namespace LitSSHmcp.App.Views;
 
-public partial class DatasourceManageWindow : Window
+public partial class DatasourceManageWindow : Wpf.Ui.Controls.FluentWindow
 {
     private DatasourceManageViewModel ViewModel => (DatasourceManageViewModel)DataContext;
 

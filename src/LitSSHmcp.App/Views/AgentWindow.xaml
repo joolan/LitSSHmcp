@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
-        Title="AI 运维助手" Height="820" Width="1240" MinWidth="960" MinHeight="620"
+        Title="AI 运维助手" Height="840" Width="1280" MinWidth="980" MinHeight="640"
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
@@ -38,7 +38,7 @@
                         <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                             <Setter Property="Padding" Value="10,7"/>
-                            <Setter Property="Margin" Value="0,0,0,4"/>
+                            <Setter Property="Margin" Value="0,0,0,2"/>
                             <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnSessionRightClick"/>
                         </Style>
                     </ListBox.ItemContainerStyle>
@@ -61,8 +61,7 @@
                 </ListBox>
             </DockPanel>
 
-            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                          Background="{DynamicResource AppBorderBrush}"/>
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent"/>
 
             <!-- 右：对话 -->
             <Grid Grid.Column="2" Margin="10,0,0,0">
@@ -93,35 +92,46 @@
                 <Grid Grid.Row="1">
                 <ScrollViewer x:Name="ChatScroll" VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding Turns}" Margin="2">
+                    <ItemsControl ItemsSource="{Binding Turns}" Margin="4,2,8,2">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Margin="0,8" HorizontalAlignment="Stretch">
-                                    <!-- 用户气泡 -->
+                                <StackPanel Margin="0,10" HorizontalAlignment="Stretch">
+                                    <!-- 用户气泡（hover 显示时间/操作） -->
                                     <Border Style="{DynamicResource UserBubbleStyle}" Cursor="Hand" MouseLeftButtonUp="OnUserClick"
                                             ToolTip="点击展开/折叠本轮工具过程">
                                         <StackPanel>
                                             <TextBlock Text="{Binding UserText}" TextWrapping="Wrap" FontFamily="Microsoft YaHei" FontSize="13"/>
-                                            <DockPanel Margin="0,3,0,0">
-                                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                                    <ui:Button Content="重发" FontSize="10" Padding="8,1" Margin="0,0,4,0"
+                                            <StackPanel Margin="0,4,0,0" HorizontalAlignment="Right">
+                                                <StackPanel.Style>
+                                                    <Style TargetType="StackPanel">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </StackPanel.Style>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding UserTime}" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                    <ui:Button Appearance="Transparent" Padding="4" ToolTip="重发"
+                                                               Icon="{ui:SymbolIcon ArrowSync24}"
                                                                Command="{Binding DataContext.RegenerateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                               CommandParameter="{Binding}" ToolTip="重新生成这一轮的回答"/>
-                                                    <ui:Button Content="编辑" FontSize="10" Padding="8,1"
-                                                               Click="OnEditTurn" ToolTip="编辑该指令并重发（会替换其后的对话）"/>
+                                                               CommandParameter="{Binding}"/>
+                                                    <ui:Button Appearance="Transparent" Padding="4" ToolTip="编辑并重发"
+                                                               Icon="{ui:SymbolIcon Edit24}" Click="OnEditTurn"/>
                                                 </StackPanel>
-                                                <TextBlock Text="{Binding UserTime}" FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}" HorizontalAlignment="Right"/>
-                                            </DockPanel>
+                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
 
                                     <!-- 工具过程 -->
                                     <Expander Visibility="{Binding ToolsVisibility}" IsExpanded="{Binding ShowTools, Mode=TwoWay}"
-                                              Margin="0,4,0,0" Padding="6">
+                                              Margin="0,10,0,0" Padding="6">
                                         <Expander.Header>
                                             <TextBlock Text="{Binding ToolHeader}" FontSize="11" Foreground="{DynamicResource AppWarningBrush}"/>
                                         </Expander.Header>
-                                        <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto">
+                                        <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto">
                                             <ItemsControl ItemsSource="{Binding Steps}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
@@ -161,10 +171,10 @@
                                     </Expander>
 
                                     <!-- 助手回答卡片 -->
-                                    <Border Style="{DynamicResource AssistantCardStyle}" Margin="0,4,0,0"
+                                    <Border Style="{DynamicResource AssistantCardStyle}" Margin="0,14,0,0"
                                             Visibility="{Binding AssistantVisibility}">
                                         <StackPanel>
-                                            <DockPanel Margin="0,0,0,4">
+                                            <DockPanel Margin="0,0,0,6">
                                                 <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Chat24" FontSize="15" Margin="0,0,6,0"
                                                                Foreground="{DynamicResource AppAccentBrush}"/>
                                                 <TextBlock Text="AI 助手" FontWeight="SemiBold" FontSize="11"
@@ -175,11 +185,23 @@
                                                        Margin="0,3,0,0" Visibility="{Binding NoteVisibility}"/>
                                             <TextBlock Text="运行中…" Foreground="{DynamicResource AppAccentBrush}" FontSize="11" Margin="0,2,0,0"
                                                        Visibility="{Binding RunningVisibility}"/>
-                                            <DockPanel Margin="0,2,0,0">
-                                                <ui:Button DockPanel.Dock="Right" Content="复制" FontSize="10" Padding="8,1" Margin="6,0,0,0"
-                                                           Click="OnCopyAnswer" ToolTip="复制本条回答"/>
-                                                <TextBlock Text="{Binding Footer}" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10" HorizontalAlignment="Right"/>
-                                            </DockPanel>
+                                            <!-- hover 显示：复制 + 用时 -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <StackPanel.Style>
+                                                    <Style TargetType="StackPanel">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </StackPanel.Style>
+                                                <ui:Button Appearance="Transparent" Padding="4" ToolTip="复制回答"
+                                                           Icon="{ui:SymbolIcon Copy24}" Click="OnCopyAnswer"/>
+                                                <TextBlock Text="{Binding Footer}" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10"
+                                                           VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
@@ -190,7 +212,7 @@
 
                 <!-- 空态引导 -->
                 <StackPanel Visibility="{Binding EmptyStateVisibility}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                            MaxWidth="420">
+                            MaxWidth="440">
                     <ui:SymbolIcon Symbol="Chat24" FontSize="44" HorizontalAlignment="Center"
                                    Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,10"/>
                     <TextBlock Text="开始与 AI 运维助手对话" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
@@ -201,32 +223,89 @@
                 </StackPanel>
                 </Grid>
 
-                <!-- 输入区 -->
-                <DockPanel Grid.Row="2" Margin="0,8,0,0">
-                    <TextBlock DockPanel.Dock="Bottom" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="2,6,0,0" TextWrapping="Wrap">
+                <!-- 集成式输入区 -->
+                <DockPanel Grid.Row="2" Margin="0,10,0,0">
+                    <TextBlock DockPanel.Dock="Bottom" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="4,6,0,0" TextWrapping="Wrap"
+                               Text="{Binding ContextInfo}"/>
+                    <TextBlock DockPanel.Dock="Bottom" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="4,4,0,0" TextWrapping="Wrap">
                         <Run Text="{Binding StatusMessage, Mode=OneWay}"/>
                     </TextBlock>
-                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding ContextInfo}" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
-                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-                        <ui:Button DockPanel.Dock="Right" Content="取消编辑" Padding="10,4" Margin="6,0,0,0"
-                                   Command="{Binding CancelEditCommand}" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}"/>
-                        <TextBlock DockPanel.Dock="Left" Text="模型:" VerticalAlignment="Center" Margin="2,0,6,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                        <ComboBox ItemsSource="{Binding Providers}" SelectedItem="{Binding SelectedProvider}"
-                                  DisplayMemberPath="Name" HorizontalAlignment="Left" Width="280" VerticalContentAlignment="Center"/>
-                    </DockPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <ui:TextBox Grid.Column="0" Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}"
-                                    AcceptsReturn="True" MinHeight="56" MaxHeight="150" TextWrapping="Wrap"
-                                    VerticalScrollBarVisibility="Auto" FontFamily="Consolas"
-                                    KeyDown="OnInputKeyDown"
-                                    PlaceholderText="输入指令…（Enter 发送，Shift+Enter 换行）"/>
-                        <ui:Button Grid.Column="1" Content="{Binding SendButtonText}" Width="86" Height="56" Margin="8,0,0,0"
-                                   Appearance="Primary" Command="{Binding SendOrStopCommand}"/>
-                    </Grid>
+
+                    <Border Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1" CornerRadius="{DynamicResource AppRadiusL}" Padding="10">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <ui:TextBox Grid.Row="0" Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}"
+                                        AcceptsReturn="True" MinHeight="44" MaxHeight="160" TextWrapping="Wrap"
+                                        BorderThickness="0" Background="Transparent"
+                                        VerticalScrollBarVisibility="Auto" FontFamily="Microsoft YaHei" FontSize="13"
+                                        KeyDown="OnInputKeyDown"
+                                        PlaceholderText="今天帮你做些什么？  @ 添加上下文  / 调用技能与指令"/>
+
+                            <Grid Grid.Row="1" Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <ui:Button Grid.Column="0" Appearance="Transparent" Padding="6" ToolTip="更多（清空显示 / 导出 / 设置）"
+                                           Icon="{ui:SymbolIcon Add24}" Click="OnComposerMore">
+                                    <ui:Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="清空显示" Click="OnClearDisplay"/>
+                                            <MenuItem Header="导出 Markdown" Click="OnExport"/>
+                                            <Separator/>
+                                            <MenuItem Header="AI 助手设置" Click="OnOpenSettings"/>
+                                        </ContextMenu>
+                                    </ui:Button.ContextMenu>
+                                </ui:Button>
+
+                                <ui:Button Grid.Column="2" Content="取消编辑" Padding="10,4" Margin="0,0,8,0"
+                                           Command="{Binding CancelEditCommand}" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}"/>
+
+                                <ComboBox Grid.Column="3" ItemsSource="{Binding Providers}" SelectedItem="{Binding SelectedProvider}"
+                                          DisplayMemberPath="Name" Width="170" Height="34" Margin="0,0,8,0" VerticalContentAlignment="Center"
+                                          ToolTip="切换模型"/>
+
+                                <ui:Button Grid.Column="4" Appearance="Primary" Width="42" Height="34" Padding="0"
+                                           Command="{Binding SendOrStopCommand}" ToolTip="{Binding SendButtonText}">
+                                    <Grid>
+                                        <ui:SymbolIcon Symbol="Send24" FontSize="16">
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                        <ui:SymbolIcon Symbol="Stop24" FontSize="16">
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                    </Grid>
+                                </ui:Button>
+                            </Grid>
+                        </Grid>
+                    </Border>
                 </DockPanel>
             </Grid>
         </Grid>

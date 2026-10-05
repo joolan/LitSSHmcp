@@ -41,6 +41,17 @@ public partial class AgentWindow : FluentWindow
         _ = _viewModel.ReloadProvidersAsync();
     }
 
+    // 输入区「＋」更多：左键打开其右键菜单
+    private void OnComposerMore(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.ContextMenu is { } menu)
+        {
+            menu.PlacementTarget = element;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+    }
+
     // 右键会话：选中该项（让右键菜单作用于该会话）
     private void OnSessionRightClick(object sender, MouseButtonEventArgs e)
     {

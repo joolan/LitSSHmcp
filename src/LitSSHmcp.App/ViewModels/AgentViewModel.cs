@@ -537,27 +537,73 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         foreach (var path in paths)
         {
-            try
+            if (Directory.Exists(path))
             {
-                if (Attachments.Any(a => string.Equals(a.Path, path, StringComparison.OrdinalIgnoreCase)))
-                    continue;
-                var parsed = AttachmentService.Parse(path);
-                Attachments.Add(new AgentAttachment
+                List<string> files;
+                try
                 {
-                    Name = parsed.Name,
-                    Path = path,
-                    Kind = parsed.Kind,
-                    MediaType = parsed.MediaType,
-                    ImageBytes = parsed.ImageBytes,
-                    Text = parsed.Text
-                });
+                    files = Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly).ToList();
+                }
+                catch (Exception ex)
+                {
+                    StatusMessage = "读取文件夹失败: " + ex.Message;
+                    continue;
+                }
+
+                if (files.Count == 0)
+                {
+                    StatusMessage = $"文件夹为空，已忽略: {Path.GetFileName(path)}";
+                    continue;
+                }
+
+                foreach (var file in files.Take(MaxFolderFiles))
+                    AddOneFile(file);
+
+                if (files.Count > MaxFolderFiles)
+                    StatusMessage = $"文件夹内文件较多，仅添加前 {MaxFolderFiles} 个: {Path.GetFileName(path)}";
+                continue;
             }
-            catch (Exception ex)
-            {
-                StatusMessage = "附件读取失败: " + ex.Message;
-            }
+
+            AddOneFile(path);
         }
+
         OnPropertyChanged(nameof(HasAttachments));
+    }
+
+    private const int MaxFolderFiles = 50;
+
+    private void AddOneFile(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                StatusMessage = "已跳过(文件不存在): " + Path.GetFileName(path);
+                return;
+            }
+            if (Attachments.Any(a => string.Equals(a.Path, path, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            var parsed = AttachmentService.Parse(path);
+            if (parsed.Kind == AttachmentKind.Document && parsed.Text.StartsWith("(暂不支持解析", StringComparison.Ordinal))
+            {
+                StatusMessage = "已跳过(不支持的类型): " + parsed.Name;
+                return;
+            }
+            Attachments.Add(new AgentAttachment
+            {
+                Name = parsed.Name,
+                Path = path,
+                Kind = parsed.Kind,
+                MediaType = parsed.MediaType,
+                ImageBytes = parsed.ImageBytes,
+                Text = parsed.Text
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "附件读取失败: " + ex.Message;
+        }
     }
 
     public void RemoveAttachment(AgentAttachment attachment)

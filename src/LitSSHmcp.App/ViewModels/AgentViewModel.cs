@@ -607,6 +607,21 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         return (display.ToString(), model.ToString(), images);
     }
 
+    private static string BuildSessionTitle(string userText)
+    {
+        var hasImage = userText.Contains("🖼");
+        var hasFile = userText.Contains("📎");
+        var text = string.Join(" ", userText
+            .Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => !l.StartsWith("🖼") && !l.StartsWith("📎")))
+            .Trim();
+
+        if (string.IsNullOrWhiteSpace(text))
+            text = hasImage ? "[图片]" : hasFile ? "[文件]" : "运维会话";
+        return text.Length <= 20 ? text : text[..20];
+    }
+
     private static string SaveAttachmentToWorkspace(string workspaceRoot, string name, string content)
     {
         var dir = System.IO.Path.Combine(workspaceRoot, "attachments");
@@ -670,6 +685,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         var turn = new AgentTurn(displayText, DateTime.UtcNow);
+        foreach (var image in pending.Where(a => a.IsImage))
+            turn.Images.Add(image.Path);
         Turns.Add(turn);
         await RunTurnAsync(turn, contents);
     }
@@ -682,8 +699,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         // 首次用户消息自动命名
         if (_sessionTitled is false)
         {
-            var title = turn.UserText.Length <= 20 ? turn.UserText : turn.UserText[..20];
-            await _store.RenameSessionAsync(_sessionId, title);
+            await _store.RenameSessionAsync(_sessionId, BuildSessionTitle(turn.UserText));
             _sessionTitled = true;
         }
 
@@ -986,6 +1002,9 @@ public class AgentTurn : INotifyPropertyChanged
     public string UserTime { get => _userTime; private set => SetField(ref _userTime, value); }
 
     public ObservableCollection<AgentStep> Steps { get; } = new();
+
+    /// <summary>本轮附带的图片文件路径（用于气泡内缩略图预览）。</summary>
+    public ObservableCollection<string> Images { get; } = new();
     public bool HasSteps => Steps.Count > 0;
     public string ToolHeader => $"工具过程 ({Steps.Count})";
     public Visibility ToolsVisibility => HasSteps ? Visibility.Visible : Visibility.Collapsed;

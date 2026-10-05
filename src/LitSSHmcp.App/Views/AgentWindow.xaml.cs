@@ -131,29 +131,6 @@ public partial class AgentWindow : FluentWindow
 
     private void OnInputKeyDown(object sender, KeyEventArgs e)
     {
-        // Ctrl+V 粘贴剪贴板图片为附件
-        if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) != 0 && Clipboard.ContainsImage())
-        {
-            try
-            {
-                var image = Clipboard.GetImage();
-                if (image is not null)
-                {
-                    var dir = Path.Combine(Path.GetTempPath(), "litssh-attach");
-                    Directory.CreateDirectory(dir);
-                    var file = Path.Combine(dir, $"paste-{DateTime.Now:yyyyMMdd-HHmmss}.png");
-                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
-                    using (var fs = File.Create(file))
-                        encoder.Save(fs);
-                    _viewModel.AddAttachmentFiles(new[] { file });
-                }
-            }
-            catch { /* 剪贴板异常忽略 */ }
-            e.Handled = true;
-            return;
-        }
-
         if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0 && !_viewModel.IsBusy)
         {
             _viewModel.SendCommand.Execute(null);
@@ -161,15 +138,54 @@ public partial class AgentWindow : FluentWindow
         }
     }
 
-    private void OnAddAttachment(object sender, RoutedEventArgs e)
+    // 整窗 Ctrl+V：剪贴板含图片则作为附件
+    private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) != 0 && Clipboard.ContainsImage())
+        {
+            TryPasteImage();
+            e.Handled = true;
+        }
+    }
+
+    private void TryPasteImage()
+    {
+        try
+        {
+            var image = Clipboard.GetImage();
+            if (image is null)
+                return;
+            var dir = Path.Combine(Path.GetTempPath(), "litssh-attach");
+            Directory.CreateDirectory(dir);
+            var file = Path.Combine(dir, $"paste-{DateTime.Now:yyyyMMdd-HHmmss}.png");
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
+            using (var fs = File.Create(file))
+                encoder.Save(fs);
+            _viewModel.AddAttachmentFiles(new[] { file });
+        }
+        catch { /* 剪贴板异常忽略 */ }
+    }
+
+    private void OnAddImage(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Multiselect = true,
-            Title = "添加图片 / 文件",
-            Filter = "图片|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp"
-                     + "|文档|*.txt;*.md;*.log;*.json;*.yaml;*.yml;*.xml;*.csv;*.docx;*.pdf;*.ini;*.conf;*.properties;*.sql;*.sh;*.ps1;*.cs;*.java;*.py;*.js;*.ts;*.go;*.html;*.css"
-                     + "|所有文件|*.*"
+            Title = "添加图片",
+            Filter = "图片|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|所有文件|*.*"
+        };
+        if (dialog.ShowDialog() == true)
+            _viewModel.AddAttachmentFiles(dialog.FileNames);
+    }
+
+    private void OnAddFile(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Multiselect = true,
+            Title = "添加文件",
+            Filter = "文档|*.txt;*.md;*.log;*.json;*.yaml;*.yml;*.xml;*.csv;*.docx;*.pdf;*.ini;*.conf;*.properties;*.sql;*.sh;*.ps1;*.cs;*.java;*.py;*.js;*.ts;*.go;*.html;*.css|所有文件|*.*"
         };
         if (dialog.ShowDialog() == true)
             _viewModel.AddAttachmentFiles(dialog.FileNames);
@@ -179,6 +195,33 @@ public partial class AgentWindow : FluentWindow
     {
         if ((sender as FrameworkElement)?.DataContext is AgentAttachment attachment)
             _viewModel.RemoveAttachment(attachment);
+    }
+
+    // 点击附件芯片：图片则预览大图（点“移除”按钮时不触发）
+    private void OnPreviewAttachment(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<System.Windows.Controls.Button>(e.OriginalSource as DependencyObject) is not null)
+            return;
+        if ((sender as FrameworkElement)?.DataContext is AgentAttachment { IsImage: true } attachment)
+            new ImagePreviewWindow(attachment.Path) { Owner = this }.ShowDialog();
+    }
+
+    // 点击气泡内缩略图：预览大图
+    private void OnPreviewImage(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is string path && !string.IsNullOrWhiteSpace(path))
+            new ImagePreviewWindow(path) { Owner = this }.ShowDialog();
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? node) where T : DependencyObject
+    {
+        while (node is not null)
+        {
+            if (node is T match)
+                return match;
+            node = System.Windows.Media.VisualTreeHelper.GetParent(node);
+        }
+        return null;
     }
 
     private void OnComposerDragOver(object sender, DragEventArgs e)

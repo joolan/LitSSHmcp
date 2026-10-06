@@ -344,7 +344,7 @@
                                     AcceptsReturn="True" MinHeight="64" MaxHeight="400" TextWrapping="Wrap"
                                     BorderThickness="0" Background="Transparent"
                                     VerticalScrollBarVisibility="Auto" FontFamily="Microsoft YaHei" FontSize="13"
-                                    KeyDown="OnInputKeyDown"
+                                    PreviewKeyDown="OnInputKeyDown"
                                     AllowDrop="True" PreviewDragOver="OnComposerDragOver" PreviewDrop="OnComposerDrop"
                                     PlaceholderText="今天帮你做些什么？"
                                     ToolTip="Enter 发送；Shift+Enter 换行；可拖入图片/文档或 Ctrl+V 粘贴图片"/>

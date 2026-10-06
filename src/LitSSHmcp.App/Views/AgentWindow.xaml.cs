@@ -169,11 +169,13 @@ public partial class AgentWindow : FluentWindow
 
     private void OnInputKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0 && !_viewModel.IsBusy)
-        {
+        if (e.Key != Key.Enter || (Keyboard.Modifiers & ModifierKeys.Shift) != 0 || _viewModel.IsBusy)
+            return;
+
+        _viewModel.Input = InputBox.Text;
+        if (_viewModel.SendCommand.CanExecute(null))
             _viewModel.SendCommand.Execute(null);
-            e.Handled = true;
-        }
+        e.Handled = true;
     }
 
     // 整窗 Ctrl+V：剪贴板含图片/文件则作为附件；纯文本交给输入框正常粘贴

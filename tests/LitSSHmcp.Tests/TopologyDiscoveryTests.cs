@@ -548,6 +548,7 @@ public class TopologyDiscoveryTests
             SudoUsed = true;
             return ExecuteCommandAsync(server, command, ct);
         }
+        public Task<SshShellSession> OpenShellAsync(SshServerConfig server, string terminalType, uint columns, uint rows, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<FileTransferResult> UploadFileAsync(SshServerConfig server, string localPath, string remotePath, IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<FileTransferResult> DownloadFileAsync(SshServerConfig server, string remotePath, string localPath, IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<RemoteFileListResult> ListRemoteFilesAsync(SshServerConfig server, string remotePath, CancellationToken ct = default) => throw new NotSupportedException();

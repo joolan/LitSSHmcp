@@ -29,11 +29,11 @@ public class MainViewModel : INotifyPropertyChanged
     private bool _snapshotBusy;
 
     private SshServerConfig? _selectedServer;
-    private SessionViewModel? _selectedSession;
+    private object? _selectedSession;
     private string _statusMessage = string.Empty;
 
     public ObservableCollection<SshServerConfig> Servers { get; } = new();
-    public ObservableCollection<SessionViewModel> Sessions { get; } = new();
+    public ObservableCollection<object> Sessions { get; } = new();
 
     public ICommand LoadServersCommand { get; }
     public ICommand AddServerCommand { get; }
@@ -50,6 +50,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand NavigateApplicationsCommand { get; }
     public ICommand OpenSettingsCommand { get; }
     public ICommand OpenSessionManagerCommand { get; }
+    public ICommand OpenTerminalCommand { get; }
     public ICommand AskAgentCommand { get; }
     public ICommand SnapshotRefreshCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
@@ -65,7 +66,7 @@ public class MainViewModel : INotifyPropertyChanged
         EditServerCommand = new RelayCommand(_ => EditServer(), _ => SelectedServer != null);
         DeleteServerCommand = new RelayCommand(_ => DeleteServer(), _ => SelectedServer != null);
         ConnectCommand = new RelayCommand(_ => Connect(SelectedServer), _ => SelectedServer != null);
-        CloseSessionCommand = new RelayCommand(p => CloseSession(p as SessionViewModel));
+        CloseSessionCommand = new RelayCommand(p => CloseSession(p));
         OpenAuditCommand = new RelayCommand(_ => OpenAudit());
         OpenTopologyCommand = new RelayCommand(_ => OpenTopology());
         OpenAgentCommand = new RelayCommand(_ => OpenAgent());
@@ -75,6 +76,7 @@ public class MainViewModel : INotifyPropertyChanged
         NavigateApplicationsCommand = new RelayCommand(_ => NavigateApplications());
         OpenSettingsCommand = new RelayCommand(_ => OpenSettings());
         OpenSessionManagerCommand = new RelayCommand(_ => ShowSessionWindow());
+        OpenTerminalCommand = new RelayCommand(_ => ConnectTerminal(SelectedServer), _ => SelectedServer != null);
         AskAgentCommand = new RelayCommand(_ => AskAgent());
         SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
@@ -109,13 +111,14 @@ public class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             (EditServerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DeleteServerCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenTerminalCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ConnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenSnapshotHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
     }
 
-    public SessionViewModel? SelectedSession
+    public object? SelectedSession
     {
         get => _selectedSession;
         set { _selectedSession = value; OnPropertyChanged(); }
@@ -184,12 +187,35 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        var existing = Sessions.FirstOrDefault(s => s.Server.Id == server.Id);
+        var existing = Sessions.OfType<SessionViewModel>().FirstOrDefault(s => s.Server.Id == server.Id);
         if (existing == null)
         {
             existing = new SessionViewModel(server, _sshService, _auditLogService);
             Sessions.Add(existing);
             StatusMessage = $"已打开会话: {server.Name}";
+        }
+
+        SelectedSession = existing;
+        ShowSessionWindow();
+    }
+
+    /// <summary>打开一个交互式终端标签（PTY shell）。</summary>
+    public void ConnectTerminal(SshServerConfig? server)
+    {
+        if (server == null) return;
+
+        if (server.Disabled)
+        {
+            StatusMessage = $"服务器 {server.Name} 已禁用, 不允许连接。";
+            return;
+        }
+
+        var existing = Sessions.OfType<TerminalSessionViewModel>().FirstOrDefault(t => t.Server.Id == server.Id);
+        if (existing == null)
+        {
+            existing = new TerminalSessionViewModel(server, _sshService);
+            Sessions.Add(existing);
+            StatusMessage = $"已打开终端: {server.Name}";
         }
 
         SelectedSession = existing;
@@ -211,21 +237,31 @@ public class MainViewModel : INotifyPropertyChanged
         _sessionWindow.Closed += (_, _) =>
         {
             _sessionWindow = null;
+            foreach (var term in Sessions.OfType<TerminalSessionViewModel>().ToList())
+                _ = term.DisposeAsync();
             Sessions.Clear();
             SelectedSession = null;
         };
         _sessionWindow.Show();
     }
 
-    private void CloseSession(SessionViewModel? session)
+    private void CloseSession(object? session)
     {
         if (session == null) return;
         var index = Sessions.IndexOf(session);
+        if (session is TerminalSessionViewModel term)
+            _ = term.DisposeAsync();
         Sessions.Remove(session);
-        if (SelectedSession == session)
+        if (ReferenceEquals(SelectedSession, session) || SelectedSession == session)
             SelectedSession = Sessions.Count > 0 ? Sessions[Math.Max(0, Math.Min(index, Sessions.Count - 1))] : null;
 
-        StatusMessage = Sessions.Count == 0 ? "已关闭全部会话" : $"已关闭会话: {session.Server.Name}";
+        var name = session switch
+        {
+            SessionViewModel s => s.Server.Name,
+            TerminalSessionViewModel t => t.Server.Name,
+            _ => string.Empty
+        };
+        StatusMessage = Sessions.Count == 0 ? "已关闭全部会话" : $"已关闭会话: {name}";
     }
 
     private async void LoadServers()

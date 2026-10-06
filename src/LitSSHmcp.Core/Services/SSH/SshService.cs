@@ -1402,8 +1402,32 @@ public class SshService : ISshService
         return output;
     }
 
-    private SshClient CreateSshClient(SshServerConfig server) =>        SshClientFactory.Create(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);
+    private SshClient CreateSshClient(SshServerConfig server) => SshClientFactory.Create(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);
 
     private SftpClient CreateSftpClient(SshServerConfig server) =>
         SshClientFactory.CreateSftp(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);
+
+    /// <summary>打开一条交互式 shell（PTY）会话（独占一条连接，不走连接池）。</summary>
+    public async Task<SshShellSession> OpenShellAsync(SshServerConfig server, string terminalType, uint columns, uint rows, CancellationToken ct = default)
+    {
+        var client = CreateSshClient(server);
+        try
+        {
+            await Task.Run(() => client.Connect(), ct).ConfigureAwait(false);
+            var shell = client.CreateShellStream(
+                string.IsNullOrWhiteSpace(terminalType) ? "xterm-256color" : terminalType,
+                Math.Max(1u, columns),
+                Math.Max(1u, rows),
+                0,
+                0,
+                8192);
+            Log($"Opened shell on {server.Host}:{server.Port}");
+            return new SshShellSession(client, shell);
+        }
+        catch
+        {
+            try { client.Dispose(); } catch { /* ignore */ }
+            throw;
+        }
+    }
 }

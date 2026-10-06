@@ -226,6 +226,9 @@ public class SnapshotServiceTests : IDisposable
         public Task<CommandResult> ExecuteWithSudoAsync(SshServerConfig server, string command, CancellationToken ct = default) =>
             Task.FromResult(new CommandResult { Success = true });
 
+        public Task<SshShellSession> OpenShellAsync(SshServerConfig server, string terminalType, uint columns, uint rows, CancellationToken ct = default) =>
+            throw new NotSupportedException();
+
         public Task<FileTransferResult> UploadFileAsync(SshServerConfig server, string localPath, string remotePath, IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default) =>
             throw new NotSupportedException();
 

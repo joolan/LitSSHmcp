@@ -36,8 +36,8 @@
                     <MenuItem Header="下载…" Click="OnDownload"/>
                     <MenuItem Header="下载所选（含文件夹）…" Click="OnDownloadSelected"/>
                     <Separator/>
-                    <MenuItem Header="压缩为 zip…" Click="OnCompress"/>
-                    <MenuItem Header="解压…" Click="OnExtract"/>
+                    <MenuItem Header="压缩…（zip / tar.gz）" Click="OnCompress"/>
+                    <MenuItem Header="解压…（zip / tar.gz）" Click="OnExtract"/>
                     <Separator/>
                     <MenuItem Header="复制" Click="OnCopy"/>
                     <MenuItem Header="剪切" Click="OnCut"/>

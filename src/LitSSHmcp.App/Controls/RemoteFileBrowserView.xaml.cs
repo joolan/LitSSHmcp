@@ -313,7 +313,7 @@ public partial class RemoteFileBrowserView : UserControl
         var items = FileList.SelectedItems.Cast<RemoteFileItem>().ToList();
         if (items.Count == 0)
             return;
-        var name = Views.TextInputDialog.Prompt(Owner, "压缩为 zip", "压缩文件名（.zip）:", "archive.zip");
+        var name = Views.TextInputDialog.Prompt(Owner, "压缩", "压缩文件名（.zip 或 .tar.gz）:", "archive.zip");
         if (string.IsNullOrWhiteSpace(name))
             return;
         _ = CompressAsync(vm, items, name!);
@@ -345,7 +345,11 @@ public partial class RemoteFileBrowserView : UserControl
         if (entries is not null)
         {
             var existing = new HashSet<string>(vm.Items.Select(i => i.Name), StringComparer.Ordinal);
-            var conflicts = entries.Count(existing.Contains);
+            var conflicts = entries.Count(entry =>
+            {
+                var first = entry.Contains('/') ? entry[..entry.IndexOf('/')] : entry;
+                return existing.Contains(entry) || existing.Contains(first);
+            });
             if (conflicts > 0)
             {
                 var choice = Views.ConflictDialog.Ask(Owner, $"{item.Name}（含 {conflicts} 个同名项）");

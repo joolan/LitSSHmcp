@@ -34,9 +34,9 @@
                     </StackPanel>
                     <StackPanel>
                         <ui:Button Icon="{ui:SymbolIcon Home24}" Width="44" Height="44" Margin="0,0,0,4"
-                                   HorizontalAlignment="Center" ToolTip="主页（服务器 / 会话）"
+                                   HorizontalAlignment="Center" ToolTip="主页（快捷入口 / 数据看板）"
                                    Appearance="{Binding CurrentPage, Converter={StaticResource PageAppearance}, ConverterParameter=Home}"
-                                   Command="{Binding NavigateHomeCommand}"/>
+                                   Command="{Binding NavigateHomeCommand}" Click="OnHomeNavClick"/>
                         <ui:Button Icon="{ui:SymbolIcon Server24}" Width="44" Height="44" Margin="0,0,0,4"
                                    HorizontalAlignment="Center" ToolTip="SSH 服务器管理"
                                    Appearance="{Binding CurrentPage, Converter={StaticResource PageAppearance}, ConverterParameter=Servers}"

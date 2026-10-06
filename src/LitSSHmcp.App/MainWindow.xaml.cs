@@ -18,6 +18,28 @@ public partial class MainWindow : FluentWindow
         InitializeComponent();
         DataContext = new MainViewModel();
         WindowLayout.Attach(this, "main");
+
+        // 启动及切回「主页」时，默认聚焦到 AI 快捷提问输入框
+        Loaded += (_, _) => FocusHomeAsk();
+        ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.CurrentPage))
+                FocusHomeAsk();
+        };
+    }
+
+    private void OnHomeNavClick(object sender, RoutedEventArgs e) => FocusHomeAsk();
+
+    private void FocusHomeAsk()
+    {
+        if (ViewModel.CurrentPage != MainPage.Home)
+            return;
+
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            HomeAskBox.Focus();
+            Keyboard.Focus(HomeAskBox);
+        }), System.Windows.Threading.DispatcherPriority.Input);
     }
 
     private void OnServerDoubleClick(object sender, MouseButtonEventArgs e)

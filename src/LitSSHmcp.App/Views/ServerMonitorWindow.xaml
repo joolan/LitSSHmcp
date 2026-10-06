@@ -15,19 +15,19 @@
             <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,12"/>
 
             <TextBlock Text="CPU" FontWeight="SemiBold"/>
-            <ProgressBar Height="16" Margin="0,2,0,12" Minimum="0" Maximum="100" Value="{Binding CpuPercent}"/>
+            <ProgressBar Height="16" Margin="0,2,0,12" Minimum="0" Maximum="100" Value="{Binding CpuPercent, Mode=OneWay}"/>
 
             <DockPanel>
                 <TextBlock DockPanel.Dock="Right" Text="{Binding MemText}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                 <TextBlock Text="内存" FontWeight="SemiBold"/>
             </DockPanel>
-            <ProgressBar Height="16" Margin="0,2,0,12" Minimum="0" Maximum="100" Value="{Binding MemPercent}"/>
+            <ProgressBar Height="16" Margin="0,2,0,12" Minimum="0" Maximum="100" Value="{Binding MemPercent, Mode=OneWay}"/>
 
             <DockPanel>
                 <TextBlock DockPanel.Dock="Right" Text="{Binding DiskText}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                 <TextBlock Text="磁盘 (/)" FontWeight="SemiBold"/>
             </DockPanel>
-            <ProgressBar Height="16" Margin="0,2,0,12" Minimum="0" Maximum="100" Value="{Binding DiskPercent}"/>
+            <ProgressBar Height="16" Margin="0,2,0,12" Minimum="0" Maximum="100" Value="{Binding DiskPercent, Mode=OneWay}"/>
 
             <TextBlock Text="{Binding LoadText}" Margin="0,4,0,2"/>
             <TextBlock Text="{Binding UptimeText}" Margin="0,0,0,2"/>

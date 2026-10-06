@@ -53,4 +53,24 @@ public partial class TerminalTabView : UserControl
         if (width >= MinPanelWidth)
             UiPrefs.SetDouble(WidthKey, width);
     }
+
+    private void OnSendInput(object sender, RoutedEventArgs e) => SendBoxText();
+
+    private void OnSendBoxKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            SendBoxText();
+            e.Handled = true;
+        }
+    }
+
+    private void SendBoxText()
+    {
+        var text = SendBox.Text;
+        if (string.IsNullOrEmpty(text))
+            return;
+        Vm?.SendInput(text + "\r");
+        SendBox.Text = string.Empty;
+    }
 }

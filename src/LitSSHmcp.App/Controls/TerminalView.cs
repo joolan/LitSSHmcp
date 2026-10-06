@@ -55,7 +55,7 @@ public sealed class TerminalView : Grid
             IsHitTestVisible = false
         };
         _ime.PreviewKeyDown += OnImePreviewKeyDown;
-        _ime.TextChanged += OnImeTextChanged;
+        _ime.AddHandler(TextInputEvent, new TextCompositionEventHandler(OnImeTextInput), handledEventsToo: true);
         Children.Add(_ime);
     }
 
@@ -271,24 +271,14 @@ public sealed class TerminalView : Grid
         }
     }
 
-    private bool _clearingIme;
-
-    private void OnImeTextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    private void OnImeTextInput(object sender, TextCompositionEventArgs e)
     {
-        if (_clearingIme)
-            return;
-
-        var text = _ime.Text;
+        var text = FilterInput(e.Text);
         if (string.IsNullOrEmpty(text))
             return;
 
-        _clearingIme = true;
+        _session?.SendInput(text);
         _ime.Text = string.Empty;
-        _clearingIme = false;
-
-        var filtered = FilterInput(text);
-        if (!string.IsNullOrEmpty(filtered))
-            _session?.SendInput(filtered);
     }
 
     private static string FilterInput(string text)

@@ -18,6 +18,12 @@
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         </DockPanel>
 
+        <DockPanel DockPanel.Dock="Bottom" Margin="6,4,6,6">
+            <ui:Button DockPanel.Dock="Right" Content="发送" Padding="16,4" Appearance="Primary" Margin="6,0,0,0" Click="OnSendInput"/>
+            <ui:TextBox FontWeight="Normal" x:Name="SendBox" KeyDown="OnSendBoxKeyDown"
+                        PlaceholderText="在此输入或粘贴内容，按回车 / 点「发送」直接下发到该 SSH 终端"/>
+        </DockPanel>
+
         <Grid Margin="6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="FileCol" Width="300"/>

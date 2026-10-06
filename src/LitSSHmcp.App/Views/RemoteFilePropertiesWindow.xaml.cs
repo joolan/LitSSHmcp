@@ -9,6 +9,8 @@ public partial class RemoteFilePropertiesWindow : FluentWindow
 {
     private readonly RemoteFileBrowserViewModel _vm;
     private readonly RemoteFileItem _item;
+    private readonly string _ownerInitial;
+    private readonly string _groupInitial;
     private bool _syncing;
 
     public RemoteFilePropertiesWindow(RemoteFileBrowserViewModel vm, RemoteFileItem item)
@@ -23,17 +25,37 @@ public partial class RemoteFilePropertiesWindow : FluentWindow
         SizeText.Text = item.IsDirectory ? "—" : $"{item.SizeText}（{item.Size} 字节）";
         ModifiedText.Text = item.LastModified == default ? "—" : item.LastModified.ToString("yyyy-MM-dd HH:mm:ss");
 
-        var (owner, group) = SplitOwner(item.Owner);
-        OwnerBox.Text = owner;
-        GroupBox.Text = group;
+        (_ownerInitial, _groupInitial) = SplitOwner(item.Owner);
 
         var octal = TryOctalFromSymbolic(item.Permissions);
-        if (octal is not null)
-            SetFromOctal(octal);
-        else
-            ModeBox.Text = item.IsDirectory ? "755" : "644";
-        if (octal is null)
-            SetFromOctal(ModeBox.Text);
+        ModeBox.Text = octal ?? (item.IsDirectory ? "755" : "644");
+        SetFromOctal(ModeBox.Text);
+
+        Loaded += async (_, _) => await LoadAccountsAsync();
+    }
+
+    private async Task LoadAccountsAsync()
+    {
+        try
+        {
+            var (users, groups) = await _vm.LoadAccountsAsync();
+            OwnerBox.ItemsSource = WithCurrent(users, _ownerInitial);
+            GroupBox.ItemsSource = WithCurrent(groups, _groupInitial);
+            OwnerBox.SelectedItem = string.IsNullOrEmpty(_ownerInitial) ? null : _ownerInitial;
+            GroupBox.SelectedItem = string.IsNullOrEmpty(_groupInitial) ? null : _groupInitial;
+        }
+        catch
+        {
+            // 账号列表加载失败：下拉为空
+        }
+    }
+
+    private static List<string> WithCurrent(List<string> items, string current)
+    {
+        var list = new List<string>(items);
+        if (!string.IsNullOrEmpty(current) && !list.Contains(current, StringComparer.Ordinal))
+            list.Insert(0, current);
+        return list;
     }
 
     private void OnPermChanged(object sender, RoutedEventArgs e)
@@ -118,8 +140,15 @@ public partial class RemoteFilePropertiesWindow : FluentWindow
 
     private async void OnApply(object sender, RoutedEventArgs e)
     {
-        await _vm.ApplyPermissionsAsync(_item, ModeBox.Text, OwnerBox.Text, GroupBox.Text, RecursiveBox.IsChecked == true);
-        StatusText.Text = _vm.StatusMessage;
+        var owner = OwnerBox.SelectedItem as string;
+        var group = GroupBox.SelectedItem as string;
+        var ok = await _vm.ApplyPermissionsAsync(_item, ModeBox.Text, owner, group, RecursiveBox.IsChecked == true);
+        if (!ok)
+        {
+            System.Windows.MessageBox.Show(_vm.StatusMessage, "修改权限失败",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            return;
+        }
         Close();
     }
 

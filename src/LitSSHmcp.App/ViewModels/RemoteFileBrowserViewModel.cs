@@ -348,8 +348,8 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         await LoadAsync();
     }
 
-    /// <summary>应用权限（chmod）与属主/属组（chown）。</summary>
-    public async Task ApplyPermissionsAsync(RemoteFileItem item, string mode, string? owner, string? group, bool recursive)
+    /// <summary>应用权限（chmod）与属主/属组（chown）；返回是否成功。</summary>
+    public async Task<bool> ApplyPermissionsAsync(RemoteFileItem item, string mode, string? owner, string? group, bool recursive)
     {
         var commands = new List<string>();
         var flag = recursive ? "-R " : string.Empty;
@@ -359,7 +359,7 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
             if (!IsValidMode(mode))
             {
                 StatusMessage = "权限格式应为 3~4 位八进制（如 755 / 644）";
-                return;
+                return false;
             }
             commands.Add($"chmod {flag}{Quote(mode.Trim())} {Quote(item.FullName)}");
         }
@@ -371,11 +371,71 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         }
 
         if (commands.Count == 0)
-            return;
+        {
+            StatusMessage = "没有需要修改的属性";
+            return false;
+        }
 
-        await RunCommandAsync(string.Join(" && ", commands), "属性已更新");
-        await LoadAsync();
+        IsBusy = true;
+        try
+        {
+            var result = await _ssh.ExecuteCommandAsync(_server, string.Join(" && ", commands), timeoutSeconds: 30);
+            if (result.Success)
+            {
+                StatusMessage = "属性已更新";
+                await LoadAsync();
+                return true;
+            }
+
+            StatusMessage = "修改失败: " + (string.IsNullOrEmpty(result.Error) ? result.Output : result.Error);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "修改失败: " + ex.Message;
+            return false;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
+
+    /// <summary>读取服务器上的真实账号/用户组名（属主下拉用）。</summary>
+    public async Task<(List<string> Users, List<string> Groups)> LoadAccountsAsync()
+    {
+        var users = new List<string>();
+        var groups = new List<string>();
+        try
+        {
+            users = await ReadNamesAsync("getent passwd | cut -d: -f1", "cut -d: -f1 /etc/passwd");
+            groups = await ReadNamesAsync("getent group | cut -d: -f1", "cut -d: -f1 /etc/group");
+        }
+        catch
+        {
+            // 读取失败：返回空列表
+        }
+        return (users, groups);
+    }
+
+    private async Task<List<string>> ReadNamesAsync(string primary, string fallback)
+    {
+        var result = await _ssh.ExecuteCommandAsync(_server, primary, timeoutSeconds: 15);
+        var names = ParseNames(result.Success ? result.Output : string.Empty);
+        if (names.Count == 0)
+        {
+            var fallbackResult = await _ssh.ExecuteCommandAsync(_server, fallback, timeoutSeconds: 15);
+            names = ParseNames(fallbackResult.Success ? fallbackResult.Output : string.Empty);
+        }
+        return names;
+    }
+
+    private static List<string> ParseNames(string output)
+        => output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(n => n.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
 
     private static bool IsValidMode(string mode)
         => mode.Trim().Length is 3 or 4 && mode.Trim().All(c => c >= '0' && c <= '7');

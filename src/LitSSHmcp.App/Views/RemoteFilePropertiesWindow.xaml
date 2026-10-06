@@ -82,9 +82,9 @@
                     <ui:TextBox FontWeight="Normal" x:Name="ModeBox" Width="70" TextChanged="OnModeChanged" ToolTip="八进制权限，如 755"/>
                     <TextBlock Text="权限码" VerticalAlignment="Center" Margin="6,0,16,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                     <TextBlock Text="属主:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <ui:TextBox FontWeight="Normal" x:Name="OwnerBox" Width="90" Margin="0,0,10,0"/>
+                    <ComboBox x:Name="OwnerBox" Width="130" Margin="0,0,10,0" IsEditable="False"/>
                     <TextBlock Text="属组:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <ui:TextBox FontWeight="Normal" x:Name="GroupBox" Width="90"/>
+                    <ComboBox x:Name="GroupBox" Width="130" IsEditable="False"/>
                 </StackPanel>
                 <CheckBox x:Name="RecursiveBox" Content="应用到子目录（递归）" Margin="0,2,0,8"/>
             </StackPanel>
@@ -93,7 +93,7 @@
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,10,16,12">
             <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
             <ui:Button Content="复制路径" Padding="12,4" Margin="0,0,8,0" Click="OnCopyPath"/>
-            <ui:Button Content="应用权限" Padding="16,4" Appearance="Primary" Margin="0,0,8,0" Click="OnApply"/>
+            <ui:Button Content="修改权限" Padding="16,4" Appearance="Primary" Margin="0,0,8,0" Click="OnApply"/>
             <ui:Button Content="关闭" Padding="16,4" IsCancel="True" Click="OnClose"/>
         </StackPanel>
     </Grid>

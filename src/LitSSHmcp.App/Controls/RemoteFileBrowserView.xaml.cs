@@ -219,6 +219,11 @@ public partial class RemoteFileBrowserView : UserControl
         _dragStart = e.GetPosition(null);
         var item = FindAncestor<ListViewItem>(e.OriginalSource as DependencyObject);
         _maybeDrag = e.ClickCount == 1 && item is { IsSelected: true };
+        if (_maybeDrag)
+        {
+            // 阻止默认“按下已选中项即打回单选”，保留 Ctrl 多选以便整体拖拽下载
+            e.Handled = true;
+        }
     }
 
     private void OnListPreviewMouseMove(object sender, MouseEventArgs e)

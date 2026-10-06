@@ -12,6 +12,8 @@
                        ToolTip="显示 / 隐藏远程文件" Command="{Binding ToggleFileBrowserCommand}"/>
             <ui:Button DockPanel.Dock="Left" Icon="{ui:SymbolIcon ArrowSync24}" Padding="8,3" Margin="0,0,8,4"
                        ToolTip="重新连接" Command="{Binding ReconnectCommand}"/>
+            <ui:Button DockPanel.Dock="Left" Icon="{ui:SymbolIcon Code24}" Padding="8,3" Margin="0,0,8,4"
+                       ToolTip="命令片段" Click="OnSnippets"/>
             <TextBlock DockPanel.Dock="Right" Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}"
                        VerticalAlignment="Center" Margin="6,0" TextTrimming="CharacterEllipsis"/>
             <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}"

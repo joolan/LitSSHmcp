@@ -22,7 +22,9 @@
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
             <ui:Button Content="添加" Icon="{ui:SymbolIcon Add24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding AddServerCommand}"/>
-            <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,3" Command="{Binding LoadServersCommand}"/>
+            <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding LoadServersCommand}"/>
+            <ui:Button Content="批量执行" Icon="{ui:SymbolIcon Play24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding OpenBatchExecCommand}"/>
+            <ui:Button Content="会话日志" Icon="{ui:SymbolIcon History24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding OpenTerminalLogsCommand}"/>
             <TextBlock Text="（选中服务器后右键可 连接 / 打开终端 / 编辑 / 采集快照 / 快照历史 / 删除；双击打开交互式终端）"
                        VerticalAlignment="Center" Margin="10,0,0,0" FontSize="11"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
@@ -40,6 +42,7 @@
                         <Separator/>
                         <MenuItem Header="采集快照" Click="OnSnapshotRefreshClick"/>
                         <MenuItem Header="快照历史" Click="OnSnapshotHistoryClick"/>
+                        <MenuItem Header="资源监控" Click="OnMonitorClick"/>
                         <Separator/>
                         <MenuItem Header="删除" Click="OnDeleteClick"/>
                     </ContextMenu>

@@ -93,6 +93,9 @@ public class MainWindowXamlTests
             var server = new LitSSHmcp.Core.Models.SshServerConfig { Name = "t", Host = "127.0.0.1" };
             var vm = new LitSSHmcp.App.ViewModels.RemoteFileBrowserViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService());
             _ = new RemoteFilePropertiesWindow(vm, new LitSSHmcp.App.ViewModels.RemoteFileItem { Name = "a.txt", FullName = "/home/u/a.txt" });
+            _ = new BatchExecWindow();
+            _ = new TerminalLogWindow();
+            _ = new ServerMonitorWindow(new LitSSHmcp.App.ViewModels.ServerMonitorViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
         });
         Assert.Null(ex);
     }
@@ -108,6 +111,7 @@ public class MainWindowXamlTests
             _ = new McpToolsView();
             _ = new AppearanceSettingsView();
             _ = new TerminalSettingsView();
+            _ = new SnippetSettingsView();
         });
         Assert.Null(ex);
     }

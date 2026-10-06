@@ -27,6 +27,8 @@ public partial class ServerManageView : UserControl
 
     private void OnSnapshotHistoryClick(object sender, RoutedEventArgs e) => ViewModel?.OpenSnapshotHistoryCommand.Execute(null);
 
+    private void OnMonitorClick(object sender, RoutedEventArgs e) => ViewModel?.OpenMonitorCommand.Execute(null);
+
     private void OnItemDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not ListView listView)

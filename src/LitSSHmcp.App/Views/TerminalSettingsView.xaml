@@ -39,6 +39,7 @@
                     <ui:TextBox FontWeight="Normal" x:Name="ScrollbackBox" Width="90"/>
                 </StackPanel>
                 <CheckBox x:Name="CopyOnSelectBox" Content="选中即复制" Margin="0,4,0,0"/>
+                <CheckBox x:Name="RecordSessionsBox" Content="记录会话日志（可回放，存于 %APPDATA%\LitSSH\terminal-logs）" Margin="0,4,0,0"/>
             </StackPanel>
         </Border>
 

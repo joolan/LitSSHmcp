@@ -20,6 +20,9 @@
             <TabItem Header="终端">
                 <views:TerminalSettingsView/>
             </TabItem>
+            <TabItem Header="命令片段">
+                <views:SnippetSettingsView/>
+            </TabItem>
             <TabItem Header="安全设置">
                 <views:SecuritySettingsView/>
             </TabItem>

@@ -1,0 +1,37 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.ServerMonitorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="资源监控" Height="360" Width="440"
+        WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="{Binding Title}"/>
+
+        <StackPanel Grid.Row="1" Margin="16,8,16,12">
+            <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,12"/>
+
+            <TextBlock Text="CPU" FontWeight="SemiBold"/>
+            <ProgressBar Height="16" Margin="0,2,0,12" Minimum="0" Maximum="100" Value="{Binding CpuPercent}"/>
+
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding MemText}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                <TextBlock Text="内存" FontWeight="SemiBold"/>
+            </DockPanel>
+            <ProgressBar Height="16" Margin="0,2,0,12" Minimum="0" Maximum="100" Value="{Binding MemPercent}"/>
+
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding DiskText}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                <TextBlock Text="磁盘 (/)" FontWeight="SemiBold"/>
+            </DockPanel>
+            <ProgressBar Height="16" Margin="0,2,0,12" Minimum="0" Maximum="100" Value="{Binding DiskPercent}"/>
+
+            <TextBlock Text="{Binding LoadText}" Margin="0,4,0,2"/>
+            <TextBlock Text="{Binding UptimeText}" Margin="0,0,0,2"/>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="0,8,0,0"/>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

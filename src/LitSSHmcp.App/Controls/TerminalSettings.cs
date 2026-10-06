@@ -22,6 +22,7 @@ public static class TerminalSettings
     public static int Scrollback { get; private set; } = 2000;
     public static string CursorStyle { get; private set; } = "block"; // block / bar / underline
     public static bool CopyOnSelect { get; private set; } = true;
+    public static bool RecordSessions { get; private set; } = true;
     public static TerminalTheme Theme { get; private set; } = Themes[0];
 
     public static event Action? Changed;
@@ -35,17 +36,19 @@ public static class TerminalSettings
         Scrollback = (int)UiPrefs.GetDouble("terminal.scrollback", 2000);
         CursorStyle = UiPrefs.GetString("terminal.cursor", "block");
         CopyOnSelect = UiPrefs.GetString("terminal.copyOnSelect", "true") == "true";
+        RecordSessions = UiPrefs.GetString("terminal.recordSessions", "true") == "true";
         var themeName = UiPrefs.GetString("terminal.theme", Themes[0].Name);
         Theme = Array.Find(Themes, t => t.Name == themeName) ?? Themes[0];
     }
 
-    public static void Save(string fontFamily, double fontSize, int scrollback, string cursorStyle, bool copyOnSelect, string themeName)
+    public static void Save(string fontFamily, double fontSize, int scrollback, string cursorStyle, bool copyOnSelect, string themeName, bool recordSessions)
     {
         UiPrefs.SetString("terminal.fontFamily", string.IsNullOrWhiteSpace(fontFamily) ? "Consolas" : fontFamily);
         UiPrefs.SetDouble("terminal.fontSize", Math.Clamp(fontSize, 8, 32));
         UiPrefs.SetDouble("terminal.scrollback", Math.Clamp(scrollback, 200, 100000));
         UiPrefs.SetString("terminal.cursor", cursorStyle);
         UiPrefs.SetString("terminal.copyOnSelect", copyOnSelect ? "true" : "false");
+        UiPrefs.SetString("terminal.recordSessions", recordSessions ? "true" : "false");
         UiPrefs.SetString("terminal.theme", themeName);
         Load();
         Changed?.Invoke();

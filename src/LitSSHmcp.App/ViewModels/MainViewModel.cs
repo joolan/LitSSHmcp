@@ -54,6 +54,9 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand OpenSettingsCommand { get; }
     public ICommand OpenSessionManagerCommand { get; }
     public ICommand OpenTerminalCommand { get; }
+    public ICommand OpenBatchExecCommand { get; }
+    public ICommand OpenMonitorCommand { get; }
+    public ICommand OpenTerminalLogsCommand { get; }
     public ICommand AskAgentCommand { get; }
     public ICommand SnapshotRefreshCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
@@ -80,6 +83,9 @@ public class MainViewModel : INotifyPropertyChanged
         OpenSettingsCommand = new RelayCommand(_ => OpenSettings());
         OpenSessionManagerCommand = new RelayCommand(_ => ShowSessionWindow());
         OpenTerminalCommand = new RelayCommand(_ => ConnectTerminal(SelectedServer), _ => SelectedServer != null);
+        OpenBatchExecCommand = new RelayCommand(_ => OpenBatchExec());
+        OpenMonitorCommand = new RelayCommand(_ => OpenMonitor(SelectedServer), _ => SelectedServer != null);
+        OpenTerminalLogsCommand = new RelayCommand(_ => OpenTerminalLogs());
         AskAgentCommand = new RelayCommand(_ => AskAgent());
         SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
@@ -119,6 +125,7 @@ public class MainViewModel : INotifyPropertyChanged
             (EditServerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DeleteServerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenTerminalCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenMonitorCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ConnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenSnapshotHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -408,6 +415,57 @@ public class MainViewModel : INotifyPropertyChanged
         _auditWindow = new AuditWindow { Topmost = false };
         _auditWindow.Closed += (_, _) => _auditWindow = null;
         _auditWindow.Show();
+    }
+
+    // 批量执行：多服务器同时下发同一条命令
+    private BatchExecWindow? _batchExecWindow;
+
+    private void OpenBatchExec()
+    {
+        if (_batchExecWindow is { IsLoaded: true })
+        {
+            _batchExecWindow.Activate();
+            return;
+        }
+
+        var vm = new BatchExecViewModel(Servers, _sshService);
+        _batchExecWindow = new BatchExecWindow { DataContext = vm, Topmost = false };
+        _batchExecWindow.Closed += (_, _) => _batchExecWindow = null;
+        _batchExecWindow.Show();
+    }
+
+    // 资源监控：某台服务器的 CPU/内存/磁盘小面板
+    private ServerMonitorWindow? _monitorWindow;
+
+    private void OpenMonitor(SshServerConfig? server)
+    {
+        if (server == null)
+            return;
+        if (_monitorWindow is { IsLoaded: true })
+        {
+            _monitorWindow.Activate();
+            return;
+        }
+
+        _monitorWindow = new ServerMonitorWindow(new ServerMonitorViewModel(server, _sshService)) { Topmost = false };
+        _monitorWindow.Closed += (_, _) => _monitorWindow = null;
+        _monitorWindow.Show();
+    }
+
+    // 会话日志：查看/回放终端会话记录
+    private TerminalLogWindow? _logWindow;
+
+    private void OpenTerminalLogs()
+    {
+        if (_logWindow is { IsLoaded: true })
+        {
+            _logWindow.Activate();
+            return;
+        }
+
+        _logWindow = new TerminalLogWindow { Topmost = false };
+        _logWindow.Closed += (_, _) => _logWindow = null;
+        _logWindow.Show();
     }
 
     // 设置：整合「安全设置 / 工具分组 / 导入导出 / MCP 工具说明」为多 Tab 独立窗口

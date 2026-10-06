@@ -16,6 +16,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     private CancellationTokenSource? _cts;
     private bool _started;
     private bool _disposed;
+    private Services.SessionLogger? _logger;
 
     public TerminalSessionViewModel(SshServerConfig server, ISshService ssh, int cols = 80, int rows = 24)
     {
@@ -53,6 +54,8 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         }
         _cts?.Dispose();
         _cts = null;
+        try { _logger?.Dispose(); } catch { /* ignore */ }
+        _logger = null;
         IsConnected = false;
         Model.Feed("\r\n[重新连接…]\r\n");
         await EnsureStartedAsync(Model.Cols, Model.Rows);
@@ -119,6 +122,8 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
                 return;
             }
             _shell = shell;
+            if (TerminalSettings.RecordSessions)
+                _logger = new Services.SessionLogger(Server.Name, Server.Host);
             IsConnected = true;
             StatusMessage = "已连接";
             // 连接建立前可能已按控件尺寸调整过模型：补一次窗口尺寸同步
@@ -144,6 +149,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         {
             if (string.IsNullOrEmpty(text))
                 return;
+            _logger?.Write(text);
             if (dispatcher is not null)
                 _ = dispatcher.BeginInvoke(new Action(() => SafeFeed(text)));
             else
@@ -228,6 +234,8 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         if (shell is not null)
             await shell.DisposeAsync();
         _cts?.Dispose();
+        try { _logger?.Dispose(); } catch { /* ignore */ }
+        _logger = null;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

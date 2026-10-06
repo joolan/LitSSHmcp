@@ -4,7 +4,6 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
-
 namespace LitSSHmcp.App.Controls;
 
 /// <summary>终端标签内容：左侧远程文件浏览器 + 右侧终端；分栏宽度记忆、可显示/隐藏。</summary>
@@ -45,6 +44,33 @@ public partial class TerminalTabView : UserControl
             return;
         var saved = UiPrefs.GetDouble(WidthKey, DefaultWidth);
         FileCol.Width = vm.ShowFileBrowser ? new GridLength(Math.Max(MinPanelWidth, saved)) : new GridLength(0);
+    }
+
+    private void OnSnippets(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        var snippets = SnippetStore.Load();
+        var added = 0;
+        foreach (var snippet in snippets)
+        {
+            if (string.IsNullOrWhiteSpace(snippet.Command))
+                continue;
+            var command = snippet.Command;
+            var item = new MenuItem
+            {
+                Header = string.IsNullOrWhiteSpace(snippet.Name) ? command : snippet.Name,
+                ToolTip = command
+            };
+            item.Click += (_, _) => Vm?.SendInput(command + "\r");
+            menu.Items.Add(item);
+            added++;
+        }
+        if (added == 0)
+            menu.Items.Add(new MenuItem { Header = "（无片段，请在 设置 → 命令片段 添加）", IsEnabled = false });
+
+        menu.PlacementTarget = sender as UIElement;
+        menu.Placement = PlacementMode.Bottom;
+        menu.IsOpen = true;
     }
 
     private void OnSplitterDragCompleted(object sender, DragCompletedEventArgs e)

@@ -32,6 +32,47 @@ public class MainWindowXamlTests
     }
 
     [Fact]
+    public void Main_window_pages_do_not_overlap()
+    {
+        var ex = RunSta(() =>
+        {
+            var window = new MainWindow();
+            var vm = (LitSSHmcp.App.ViewModels.MainViewModel)window.DataContext;
+            var home = (System.Windows.UIElement)window.FindName("HomeView")!;
+            var servers = (System.Windows.UIElement)window.FindName("ServersView")!;
+            var dataSources = (System.Windows.UIElement)window.FindName("DataSourcesView")!;
+            var applications = (System.Windows.UIElement)window.FindName("ApplicationsView")!;
+
+            window.UpdateLayout();
+            Pump(window);
+            Assert.Equal(System.Windows.Visibility.Visible, home.Visibility);
+            Assert.Equal(System.Windows.Visibility.Collapsed, servers.Visibility);
+            Assert.Equal(System.Windows.Visibility.Collapsed, dataSources.Visibility);
+            Assert.Equal(System.Windows.Visibility.Collapsed, applications.Visibility);
+
+            vm.CurrentPage = LitSSHmcp.App.ViewModels.MainPage.Applications;
+            window.UpdateLayout();
+            Pump(window);
+            Assert.Equal(System.Windows.Visibility.Collapsed, home.Visibility);
+            Assert.Equal(System.Windows.Visibility.Collapsed, servers.Visibility);
+            Assert.Equal(System.Windows.Visibility.Collapsed, dataSources.Visibility);
+            Assert.Equal(System.Windows.Visibility.Visible, applications.Visibility);
+
+            vm.CurrentPage = LitSSHmcp.App.ViewModels.MainPage.Servers;
+            window.UpdateLayout();
+            Pump(window);
+            Assert.Equal(System.Windows.Visibility.Collapsed, home.Visibility);
+            Assert.Equal(System.Windows.Visibility.Visible, servers.Visibility);
+            Assert.Equal(System.Windows.Visibility.Collapsed, dataSources.Visibility);
+            Assert.Equal(System.Windows.Visibility.Collapsed, applications.Visibility);
+        });
+        Assert.Null(ex);
+    }
+
+    private static void Pump(System.Windows.Window window)
+        => window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.DataBind);
+
+    [Fact]
     public void App_settings_window_parses_xaml()
     {
         var ex = RunSta(() => _ = new AppSettingsWindow(new ConfigService()));

@@ -64,7 +64,7 @@
             <!-- 右侧主区域：页面宿主 -->
             <Grid Grid.Column="1">
                 <!-- 主页：服务器 + 会话 -->
-                <Grid Margin="10"
+                <Grid x:Name="HomeView" Margin="10"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Home}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="240" MinWidth="180"/>
@@ -227,15 +227,22 @@
                 </Grid>
 
                 <!-- SSH 服务器管理 -->
-                <views:ServerManageView Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Servers}"/>
+                <Grid x:Name="ServersView"
+                      Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Servers}">
+                    <views:ServerManageView/>
+                </Grid>
 
                 <!-- 数据源管理 -->
-                <views:DatasourceManageView DataContext="{Binding DatasourcePage}"
-                                            Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=DataSources}"/>
+                <Grid x:Name="DataSourcesView"
+                      Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=DataSources}">
+                    <views:DatasourceManageView DataContext="{Binding DatasourcePage}"/>
+                </Grid>
 
                 <!-- 应用管理 -->
-                <views:ApplicationManageView DataContext="{Binding ApplicationPage}"
-                                             Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Applications}"/>
+                <Grid x:Name="ApplicationsView"
+                      Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Applications}">
+                    <views:ApplicationManageView DataContext="{Binding ApplicationPage}"/>
+                </Grid>
             </Grid>
         </Grid>
     </Grid>

@@ -25,12 +25,17 @@
                  ToolTip="远程路径，回车跳转"/>
 
         <ListView Grid.Row="2" x:Name="FileList" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}"
+                  SelectionMode="Extended"
                   Padding="2" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
+                  PreviewMouseLeftButtonDown="OnListPreviewLeftButtonDown" PreviewMouseMove="OnListPreviewMouseMove"
                   Background="Transparent" BorderThickness="0" controls:GridViewSort.Enabled="True">
             <ListView.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="打开 / 进入" Click="OnOpen"/>
                     <MenuItem Header="下载…" Click="OnDownload"/>
+                    <MenuItem Header="下载所选（含文件夹）…" Click="OnDownloadSelected"/>
+                    <Separator/>
+                    <MenuItem Header="属性…" Click="OnProperties"/>
                     <Separator/>
                     <MenuItem Header="重命名…" Click="OnRename"/>
                     <MenuItem Header="删除" Click="OnDelete"/>

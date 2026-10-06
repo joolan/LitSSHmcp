@@ -30,6 +30,25 @@ public static class UiPrefs
         }
     }
 
+    public static string GetString(string key, string fallback)
+    {
+        lock (Gate)
+        {
+            var map = Load();
+            return map.TryGetValue(key, out var value) ? value : fallback;
+        }
+    }
+
+    public static void SetString(string key, string value)
+    {
+        lock (Gate)
+        {
+            var map = Load();
+            map[key] = value;
+            Save(map);
+        }
+    }
+
     private static Dictionary<string, string> Load()
     {
         if (_cache is not null)

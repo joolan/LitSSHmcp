@@ -90,6 +90,7 @@ public class MainWindowXamlTests
             _ = new SshSessionWindow();
             _ = new LitSSHmcp.App.Controls.RemoteFileBrowserView();
             _ = new LitSSHmcp.App.Controls.TerminalTabView();
+            _ = new RemoteFilePropertiesWindow(new LitSSHmcp.App.ViewModels.RemoteFileItem { Name = "a.txt", FullName = "/home/u/a.txt" });
         });
         Assert.Null(ex);
     }

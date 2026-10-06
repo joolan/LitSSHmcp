@@ -157,6 +157,72 @@ public partial class RemoteFileBrowserView : UserControl
             FileList.SelectedItem = item.DataContext;
     }
 
+    private void OnDownloadSelected(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        var items = FileList.SelectedItems.Cast<RemoteFileItem>().ToList();
+        if (items.Count == 0)
+            return;
+        var dialog = new OpenFolderDialog { Title = "下载到文件夹" };
+        if (dialog.ShowDialog(Owner) != true)
+            return;
+        _ = vm.DownloadToDirectoryAsync(items, dialog.FolderName);
+    }
+
+    private void OnProperties(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel?.SelectedItem is not { } item)
+            return;
+        new Views.RemoteFilePropertiesWindow(item) { Owner = Owner }.ShowDialog();
+    }
+
+    // ---- 拖出下载（拖到资源管理器） ----
+
+    private Point _dragStart;
+    private bool _maybeDrag;
+
+    private void OnListPreviewLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _dragStart = e.GetPosition(null);
+        _maybeDrag = FileList.SelectedItems.Count > 0;
+    }
+
+    private void OnListPreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_maybeDrag || e.LeftButton != MouseButtonState.Pressed)
+            return;
+        var pos = e.GetPosition(null);
+        if (Math.Abs(pos.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(pos.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+
+        _maybeDrag = false;
+        _ = StartDragOutAsync();
+    }
+
+    private async Task StartDragOutAsync()
+    {
+        if (ViewModel is not { } vm)
+            return;
+        var items = FileList.SelectedItems.Cast<RemoteFileItem>().ToList();
+        if (items.Count == 0)
+            return;
+
+        var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "litssh-drag", Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(dir);
+        var ok = await vm.DownloadToDirectoryAsync(items, dir);
+        if (!ok)
+            return;
+
+        var paths = System.IO.Directory.GetFileSystemEntries(dir);
+        if (paths.Length == 0)
+            return;
+
+        var data = new DataObject(DataFormats.FileDrop, paths);
+        DragDrop.DoDragDrop(FileList, data, DragDropEffects.Copy);
+    }
+
     private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
     {
         while (current != null)

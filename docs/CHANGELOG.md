@@ -62,6 +62,7 @@
   - **交互式终端（SSH 客户端基础）**：SSH 服务器管理右键新增 **「打开终端（交互式）」**，在「SSH 会话管理」窗口中打开 **PTY shell 标签**（与命令会话标签共存）。实现了**自包含 VT100/ANSI 终端**（`TerminalModel` 缓冲+解析器、`TerminalView` 自绘控件、`TerminalSessionViewModel`）：支持光标定位/移动、擦除(ED/EL/ECH)、**SGR 颜色/属性**、滚动区域、插入/删除行/字符、**备用屏(?1049)**、自动换行、保存/恢复光标、**滚动回看**（滚轮）；键盘映射 Enter/Tab/Esc/方向键/Home/End/Insert/Delete/PgUp/PgDn/F1-F12/Ctrl+字母；窗口尺寸变化自动 `ChangeWindowSize`。底层经 `ISshService.OpenShellAsync`（SSH.NET `CreateShellStream` + `xterm-256color`）建立独立连接。可运行 `vim` / `top` / `htop` / `less` 等全屏程序。
   - **SFTP 服务器文件可视化（与终端整合）**：交互式终端标签内**左侧分栏**为远程文件浏览器（可「文件」按钮显示/隐藏）：路径栏导航、目录列表（名称/大小/修改时间、列排序）、**上传文件、下载、新建文件夹、重命名、删除、双击进入目录 / 下载并打开文件**；文件操作走独立 SFTP 连接（`RemoteFileBrowserViewModel` + `RemoteFileBrowserView`），命令式操作（mkdir/mv/rm）经 `ssh_execute` 执行。
   - **终端/文件体验增强**：**关闭 SSH 标签二次确认**（关闭整个会话管理窗口也确认）；文件浏览器**默认打开用户 home**（先 `printf $HOME` 定位，避免权限打开根目录失败）；**分栏宽度记忆**（`%APPDATA%\LitSSH\ui-prefs.json`）；**编辑并回传**（下载到临时目录打开，监视改动**自动回传 SFTP**）；**拖拽上传文件/文件夹**（递归，走 `UploadBatchAsync`）；文件列表新增**权限/属主列**（`-rw-r--r-- user/group`）。
+  - **服务器/文件操作增强**：SSH 服务器管理**双击行打开交互式终端**（原为编辑）；文件浏览器支持**多选**、**下载所选（含文件夹递归）到文件夹**、**从列表拖出到资源管理器下载**（拖拽时下载到临时目录再交给系统）、**属性对话框**（名称/路径/类型/大小/时间/权限/属主 + 复制路径）、**每服务器记忆上次目录**（键 `ssh.files.lastdir.<id>`，首次仍回退 home）。
 
 
 

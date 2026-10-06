@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
 
@@ -60,13 +61,17 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         set { _isBusy = value; OnPropertyChanged(); }
     }
 
-    /// <summary>首次打开：定位到用户 home（避免因权限打不开根目录）。</summary>
+    private string PathKey => "ssh.files.lastdir." + _server.Id;
+
+    /// <summary>首次打开：优先上次目录，其次用户 home（避免因权限打不开根目录）。</summary>
     public async Task InitializeAsync()
     {
         if (_initialized)
             return;
         _initialized = true;
-        await LoadAsync(await ResolveHomeAsync());
+
+        var saved = UiPrefs.GetString(PathKey, string.Empty);
+        await LoadAsync(string.IsNullOrWhiteSpace(saved) ? await ResolveHomeAsync() : saved);
     }
 
     private async Task<string> ResolveHomeAsync()
@@ -123,6 +128,7 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
             }
 
             StatusMessage = result.Truncated ? $"{Items.Count} 项（已截断）" : $"{Items.Count} 项";
+            UiPrefs.SetString(PathKey, CurrentPath);
         }
         catch (Exception ex)
         {
@@ -203,6 +209,34 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             StatusMessage = "下载失败: " + ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>批量下载所选（含文件夹，递归）到本地目录。</summary>
+    public async Task<bool> DownloadToDirectoryAsync(IReadOnlyList<RemoteFileItem> items, string localDirectory)
+    {
+        if (items.Count == 0)
+            return false;
+
+        IsBusy = true;
+        StatusMessage = $"下载 {items.Count} 项…";
+        try
+        {
+            var result = await _ssh.DownloadBatchAsync(_server, items.Select(i => i.FullName).ToList(), localDirectory,
+                recursive: true, maxFiles: 5000, maxTotalBytes: 2L * 1024 * 1024 * 1024);
+            StatusMessage = result.Success
+                ? $"已下载 {result.Succeeded} 项" + (result.Failed > 0 ? $"，失败 {result.Failed}" : string.Empty)
+                : "下载失败: " + result.Error;
+            return result.Success && result.Succeeded > 0;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "下载失败: " + ex.Message;
+            return false;
         }
         finally
         {

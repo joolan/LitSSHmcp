@@ -20,7 +20,7 @@
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
             <ui:Button Content="添加" Icon="{ui:SymbolIcon Add24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding AddServerCommand}"/>
             <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,3" Command="{Binding LoadServersCommand}"/>
-            <TextBlock Text="（选中服务器后右键可 连接 / 编辑 / 采集快照 / 快照历史 / 删除；双击打开编辑窗口）"
+            <TextBlock Text="（选中服务器后右键可 连接 / 打开终端 / 编辑 / 采集快照 / 快照历史 / 删除；双击打开交互式终端）"
                        VerticalAlignment="Center" Margin="10,0,0,0" FontSize="11"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
         </StackPanel>

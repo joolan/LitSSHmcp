@@ -1,0 +1,56 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.RemoteFilePropertiesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="文件属性" Height="360" Width="460"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="文件属性"/>
+
+        <Grid Grid.Row="1" Margin="16,8,16,0" VerticalAlignment="Top">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="80"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="名称:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,8"/>
+            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="NameText" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="完整路径:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,8"/>
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="PathText" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                     FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="类型:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,8"/>
+            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="TypeText" Margin="0,0,0,8"/>
+
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="大小:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,8"/>
+            <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SizeText" Margin="0,0,0,8"/>
+
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="修改时间:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,8"/>
+            <TextBlock Grid.Row="4" Grid.Column="1" x:Name="ModifiedText" Margin="0,0,0,8"/>
+
+            <TextBlock Grid.Row="5" Grid.Column="0" Text="权限:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,8"/>
+            <TextBlock Grid.Row="5" Grid.Column="1" x:Name="PermissionText" Margin="0,0,0,8"/>
+
+            <TextBlock Grid.Row="6" Grid.Column="0" Text="属主:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,8"/>
+            <TextBlock Grid.Row="6" Grid.Column="1" x:Name="OwnerText" Margin="0,0,0,8"/>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,10,16,12">
+            <ui:Button Content="复制路径" Padding="12,4" Margin="0,0,8,0" Click="OnCopyPath"/>
+            <ui:Button Content="关闭" Padding="16,4" Appearance="Primary" IsCancel="True" Click="OnClose"/>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

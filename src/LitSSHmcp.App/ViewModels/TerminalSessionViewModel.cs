@@ -79,7 +79,20 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     private async Task ReadLoopAsync(SshShellSession shell, CancellationToken ct)
     {
         var buffer = new byte[8192];
+        var charBuffer = new char[8192];
+        var decoder = System.Text.Encoding.UTF8.GetDecoder();
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
+
+        void FeedOnUi(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return;
+            if (dispatcher is not null)
+                _ = dispatcher.BeginInvoke(new Action(() => SafeFeed(text)));
+            else
+                SafeFeed(text);
+        }
+
         try
         {
             while (!ct.IsCancellationRequested && shell.IsConnected)
@@ -88,12 +101,9 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
                 if (n <= 0)
                     break;
 
-                var data = new byte[n];
-                Array.Copy(buffer, data, n);
-                if (dispatcher is not null)
-                    _ = dispatcher.BeginInvoke(new Action(() => Model.Feed(data, 0, n)));
-                else
-                    Model.Feed(data, 0, n);
+                decoder.Convert(buffer, 0, n, charBuffer, 0, charBuffer.Length, flush: false,
+                    out _, out var charsUsed, out _);
+                FeedOnUi(new string(charBuffer, 0, charsUsed));
             }
         }
         catch
@@ -101,8 +111,29 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
             // 连接结束/异常：落到下方状态
         }
 
+        OnDisconnected();
+    }
+
+    private void SafeFeed(string text)
+    {
+        try { Model.Feed(text); }
+        catch { /* 渲染数据异常不应导致进程退出 */ }
+    }
+
+    /// <summary>连接结束：切回 UI 线程更新状态（避免跨线程 PropertyChanged 引发异常）。</summary>
+    private void OnDisconnected()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+            _ = dispatcher.BeginInvoke(new Action(ApplyDisconnected));
+        else
+            ApplyDisconnected();
+    }
+
+    private void ApplyDisconnected()
+    {
         IsConnected = false;
-        if (!string.IsNullOrEmpty(StatusMessage) && StatusMessage != "连接失败: ")
+        if (!StatusMessage.StartsWith("连接失败", StringComparison.Ordinal))
             StatusMessage = "连接已断开";
     }
 

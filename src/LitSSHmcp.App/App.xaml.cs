@@ -1,4 +1,5 @@
-﻿using System.Windows;
+﻿using System.IO;
+using System.Windows;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Win32;
@@ -14,6 +15,11 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // 兜底：任何未处理异常都不应让整个 APP 直接退出（例如终端断开时的边界情况）
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += (_, args) => SafeLog(args.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, args) => { SafeLog(args.Exception); args.SetObserved(); };
+
         // 异步读取配置并应用主题：**不能**在 UI 线程同步等待（GetAwaiter().GetResult() 会死锁，
         // 导致 OnStartup 不返回、StartupUri 主窗口永不创建——表现为"双击没反应"）。
         _ = ApplyThemeAsync();
@@ -26,6 +32,38 @@ public partial class App : Application
         catch
         {
             // 非关键路径
+        }
+    }
+
+    private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        SafeLog(e.Exception);
+        e.Handled = true;
+        try
+        {
+            MessageBox.Show("发生未处理错误（已拦截，程序继续运行）：\n\n" + e.Exception.Message,
+                "LitSSH", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        catch
+        {
+            // 忽略弹窗失败
+        }
+    }
+
+    private static void SafeLog(Exception? ex)
+    {
+        if (ex is null)
+            return;
+        try
+        {
+            var dir = ConfigPaths.LogsDir;
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "app-errors.log"),
+                $"[{DateTime.Now:O}] {ex}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch
+        {
+            // 记录日志失败不影响运行
         }
     }
 

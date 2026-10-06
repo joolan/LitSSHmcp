@@ -77,6 +77,16 @@ public class TerminalModelTests
     }
 
     [Fact]
+    public void Wide_characters_advance_two_columns()
+    {
+        var model = new TerminalModel(20, 5);
+        model.Feed("中A");
+        Assert.Equal('中', model.CellAt(0, 0).Ch);
+        Assert.Equal('A', model.CellAt(2, 0).Ch);
+        Assert.Equal(3, model.CursorX);
+    }
+
+    [Fact]
     public void Scrolling_pushes_lines_to_scrollback()
     {
         var model = new TerminalModel(10, 2);

@@ -228,17 +228,43 @@ public sealed class TerminalModel
             _wrapPending = false;
         }
 
+        var width = IsWide(ch) ? 2 : 1;
+        if (width == 2 && _cx >= _cols - 1 && _autoWrap)
+        {
+            _cx = 0;
+            LineFeed();
+        }
+
         SetCell(_cx, _cy, ch, _attr);
-        if (_cx == _cols - 1)
+        if (width == 2 && _cx + 1 < _cols)
+            SetCell(_cx + 1, _cy, ' ', _attr);
+
+        if (_cx + width >= _cols)
         {
             if (_autoWrap)
                 _wrapPending = true;
+            else
+                _cx = _cols - 1;
         }
         else
         {
-            _cx++;
+            _cx += width;
         }
     }
+
+    /// <summary>CJK/全角字符占两列。</summary>
+    private static bool IsWide(char c)
+        => (c >= 0x1100 && c <= 0x115F)
+        || (c >= 0x2E80 && c <= 0x303E)
+        || (c >= 0x3041 && c <= 0x33FF)
+        || (c >= 0x3400 && c <= 0x4DBF)
+        || (c >= 0x4E00 && c <= 0x9FFF)
+        || (c >= 0xA000 && c <= 0xA4CF)
+        || (c >= 0xAC00 && c <= 0xD7A3)
+        || (c >= 0xF900 && c <= 0xFAFF)
+        || (c >= 0xFE30 && c <= 0xFE4F)
+        || (c >= 0xFF00 && c <= 0xFF60)
+        || (c >= 0xFFE0 && c <= 0xFFE6);
 
     private void ProcessEsc(char ch)
     {

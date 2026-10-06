@@ -619,8 +619,32 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
             catch (TaskCanceledException) { return; }
             if (cts.IsCancellationRequested)
                 return;
-            await UploadEditBackAsync();
+            await PromptUploadBackAsync();
         });
+    }
+
+    /// <summary>编辑后询问是否回传覆盖（不再自动上传）。</summary>
+    private async Task PromptUploadBackAsync()
+    {
+        var local = _editLocalPath;
+        var remote = _editRemotePath;
+        if (local is null || remote is null || !File.Exists(local))
+            return;
+
+        var dispatcher = Application.Current?.Dispatcher;
+        var yes = false;
+        if (dispatcher is not null)
+        {
+            yes = dispatcher.Invoke(() => System.Windows.MessageBox.Show(
+                $"文件已被修改：\n{Path.GetFileName(remote)}\n\n是否回传并覆盖服务器上的文件？",
+                "回传修改", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question)
+                == System.Windows.MessageBoxResult.Yes);
+        }
+
+        // 无论选择如何，本次编辑会话不再重复提示
+        StopEditWatch();
+        if (yes)
+            await UploadEditBackAsync();
     }
 
     /// <summary>把当前编辑的临时文件回传到原远程路径。</summary>

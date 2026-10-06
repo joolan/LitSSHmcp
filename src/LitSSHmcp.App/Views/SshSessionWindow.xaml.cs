@@ -64,6 +64,37 @@ public partial class SshSessionWindow : FluentWindow
             vm.SshTileHeight += delta;
     }
 
+    private void OnLayoutMenu(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm)
+            return;
+
+        var menu = new System.Windows.Controls.ContextMenu();
+        void Add(string header, SessionLayout layout)
+        {
+            var mi = new System.Windows.Controls.MenuItem { Header = header, IsCheckable = true, IsChecked = vm.SshLayout == layout };
+            mi.Click += (_, _) => vm.SshLayout = layout;
+            menu.Items.Add(mi);
+        }
+
+        Add("标签切换", SessionLayout.Tabs);
+        Add("平铺 1 列", SessionLayout.Tile1);
+        Add("平铺 2 列", SessionLayout.Tile2);
+        Add("平铺 3 列", SessionLayout.Tile3);
+        menu.Items.Add(new System.Windows.Controls.Separator());
+
+        var down = new System.Windows.Controls.MenuItem { Header = "行高 -" };
+        down.Click += (_, _) => vm.SshTileHeight -= 40;
+        menu.Items.Add(down);
+        var up = new System.Windows.Controls.MenuItem { Header = "行高 +" };
+        up.Click += (_, _) => vm.SshTileHeight += 40;
+        menu.Items.Add(up);
+
+        menu.PlacementTarget = sender as UIElement;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
     private void SetLayout(SessionLayout layout)
     {
         if (DataContext is MainViewModel vm)

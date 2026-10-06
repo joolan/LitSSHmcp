@@ -21,6 +21,7 @@ public partial class TerminalSettingsView : UserControl
         CursorBox.SelectedItem = TerminalSettings.CursorStyle;
         ScrollbackBox.Text = TerminalSettings.Scrollback.ToString();
         CopyOnSelectBox.IsChecked = TerminalSettings.CopyOnSelect;
+        ShowFileBrowserBox.IsChecked = TerminalSettings.ShowFileBrowser;
         RecordSessionsBox.IsChecked = TerminalSettings.RecordSessions;
     }
 
@@ -40,7 +41,8 @@ public partial class TerminalSettingsView : UserControl
             CursorBox.SelectedItem as string ?? "block",
             CopyOnSelectBox.IsChecked == true,
             ThemeBox.SelectedItem as string ?? TerminalSettings.Themes[0].Name,
-            RecordSessionsBox.IsChecked == true);
+            RecordSessionsBox.IsChecked == true,
+            ShowFileBrowserBox.IsChecked == true);
 
         StatusText.Text = "已保存并应用";
     }

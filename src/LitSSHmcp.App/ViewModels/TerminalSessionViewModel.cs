@@ -72,7 +72,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
 
     public ICommand ToggleFileBrowserCommand { get; }
 
-    private bool _showFileBrowser = true;
+    private bool _showFileBrowser = TerminalSettings.ShowFileBrowser;
     public bool ShowFileBrowser
     {
         get => _showFileBrowser;

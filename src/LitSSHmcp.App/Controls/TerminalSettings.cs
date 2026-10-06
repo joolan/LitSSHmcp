@@ -23,6 +23,7 @@ public static class TerminalSettings
     public static string CursorStyle { get; private set; } = "block"; // block / bar / underline
     public static bool CopyOnSelect { get; private set; } = true;
     public static bool RecordSessions { get; private set; } = true;
+    public static bool ShowFileBrowser { get; private set; } = true;
     public static TerminalTheme Theme { get; private set; } = Themes[0];
 
     public static event Action? Changed;
@@ -37,11 +38,12 @@ public static class TerminalSettings
         CursorStyle = UiPrefs.GetString("terminal.cursor", "block");
         CopyOnSelect = UiPrefs.GetString("terminal.copyOnSelect", "true") == "true";
         RecordSessions = UiPrefs.GetString("terminal.recordSessions", "true") == "true";
+        ShowFileBrowser = UiPrefs.GetString("terminal.showFileBrowser", "true") == "true";
         var themeName = UiPrefs.GetString("terminal.theme", Themes[0].Name);
         Theme = Array.Find(Themes, t => t.Name == themeName) ?? Themes[0];
     }
 
-    public static void Save(string fontFamily, double fontSize, int scrollback, string cursorStyle, bool copyOnSelect, string themeName, bool recordSessions)
+    public static void Save(string fontFamily, double fontSize, int scrollback, string cursorStyle, bool copyOnSelect, string themeName, bool recordSessions, bool showFileBrowser)
     {
         UiPrefs.SetString("terminal.fontFamily", string.IsNullOrWhiteSpace(fontFamily) ? "Consolas" : fontFamily);
         UiPrefs.SetDouble("terminal.fontSize", Math.Clamp(fontSize, 8, 32));
@@ -49,6 +51,7 @@ public static class TerminalSettings
         UiPrefs.SetString("terminal.cursor", cursorStyle);
         UiPrefs.SetString("terminal.copyOnSelect", copyOnSelect ? "true" : "false");
         UiPrefs.SetString("terminal.recordSessions", recordSessions ? "true" : "false");
+        UiPrefs.SetString("terminal.showFileBrowser", showFileBrowser ? "true" : "false");
         UiPrefs.SetString("terminal.theme", themeName);
         Load();
         Changed?.Invoke();

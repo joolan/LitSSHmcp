@@ -187,7 +187,7 @@ public sealed class TransferQueueViewModel : INotifyPropertyChanged
 
         var dispatcher = Application.Current?.Dispatcher;
         var choice = dispatcher is not null
-            ? dispatcher.Invoke(() => Views.ConflictDialog.Ask(Application.Current?.MainWindow, targetPath))
+            ? dispatcher.Invoke(() => Views.ConflictDialog.Ask(ActiveWindow(), targetPath))
             : Views.ConflictChoice.Overwrite;
 
         return choice switch
@@ -198,6 +198,20 @@ public sealed class TransferQueueViewModel : INotifyPropertyChanged
             Views.ConflictChoice.Overwrite => true,
             _ => _cancelAll = true
         };
+    }
+
+    /// <summary>取当前激活窗口作为弹窗 Owner（避免弹到主界面）。</summary>
+    private static Window? ActiveWindow()
+    {
+        var windows = Application.Current?.Windows;
+        if (windows is null)
+            return null;
+        foreach (Window window in windows)
+        {
+            if (window.IsActive)
+                return window;
+        }
+        return Application.Current?.MainWindow;
     }
 
     private void Finish(Job job, bool success, string? error, int? succeeded = null, int? failed = null)

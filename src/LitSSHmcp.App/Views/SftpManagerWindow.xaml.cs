@@ -120,7 +120,12 @@ public partial class SftpManagerWindow : FluentWindow
         add.Click += (_, _) => _vm.AddBookmark(_vm.Remote.CurrentPath);
         menu.Items.Add(add);
         var remove = new System.Windows.Controls.MenuItem { Header = "移除当前目录书签" };
-        remove.Click += (_, _) => _vm.RemoveBookmark(_vm.Remote.CurrentPath);
+        remove.Click += (_, _) =>
+        {
+            if (System.Windows.MessageBox.Show($"移除此书签？\n{_vm.Remote.CurrentPath}", "移除书签",
+                    System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.Yes)
+                _vm.RemoveBookmark(_vm.Remote.CurrentPath);
+        };
         menu.Items.Add(remove);
 
         menu.PlacementTarget = sender as UIElement;

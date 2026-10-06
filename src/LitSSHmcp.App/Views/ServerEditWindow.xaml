@@ -15,7 +15,7 @@
         <ui:TitleBar Grid.Row="0" Title="编辑 SSH 服务器"/>
 
         <ScrollViewer Grid.Row="1" Margin="16,0,16,0" VerticalScrollBarVisibility="Auto">
-            <Border Style="{DynamicResource CardBorderStyle}" MaxWidth="430" HorizontalAlignment="Left">
+            <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="92"/>

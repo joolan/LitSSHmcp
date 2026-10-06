@@ -93,10 +93,14 @@
                 </TabControl.ItemTemplate>
             </TabControl>
 
-            <TextBlock Text="从「SSH 服务器管理」右键服务器选择「连接」（命令会话）或「打开终端」（交互式），即可在此打开标签页。"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="13" TextWrapping="Wrap" MaxWidth="520" TextAlignment="Center">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
+            <ui:Button x:Name="NewConnectionButton" Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3"
+                       HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0" ToolTip="新建连接…"
+                       Click="OnNewConnection"
+                       Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}"/>
+
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
                         <Setter Property="Visibility" Value="Visible"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding HasSessions}" Value="True">
@@ -104,8 +108,12 @@
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </TextBlock.Style>
-            </TextBlock>
+                </StackPanel.Style>
+                <TextBlock Text="当前没有已打开的 SSH 会话标签。" HorizontalAlignment="Center"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="13" Margin="0,0,0,12"/>
+                <ui:Button Content="选择服务器新建连接" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="16,6"
+                           HorizontalAlignment="Center" Click="OnNewConnection"/>
+            </StackPanel>
         </Grid>
     </Grid>
 </ui:FluentWindow>

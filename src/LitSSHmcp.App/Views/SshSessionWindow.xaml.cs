@@ -48,6 +48,39 @@ public partial class SshSessionWindow : FluentWindow
         }
     }
 
+    // ---- 新建连接（空状态入口 + 标签右侧「+」） ----
+
+    private void OnNewConnection(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm)
+            return;
+
+        var menu = new System.Windows.Controls.ContextMenu();
+        var servers = vm.Servers.Where(s => !s.Disabled).ToList();
+        if (servers.Count == 0)
+        {
+            menu.Items.Add(new System.Windows.Controls.MenuItem { Header = "（无可用服务器）", IsEnabled = false });
+        }
+        else
+        {
+            foreach (var server in servers)
+            {
+                var sub = new System.Windows.Controls.MenuItem { Header = server.Name };
+                var command = new System.Windows.Controls.MenuItem { Header = "命令会话" };
+                command.Click += (_, _) => vm.Connect(server);
+                var terminal = new System.Windows.Controls.MenuItem { Header = "交互式终端" };
+                terminal.Click += (_, _) => vm.ConnectTerminal(server);
+                sub.Items.Add(command);
+                sub.Items.Add(terminal);
+                menu.Items.Add(sub);
+            }
+        }
+
+        menu.PlacementTarget = sender as UIElement;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
     // ---- 标签拖拽排序 / 双击重命名 ----
 
     private const string TabDragFormat = "LitSshTab";

@@ -102,17 +102,16 @@
                     <DataTemplate>
                         <Grid Margin="0,2">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="70"/>
-                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="320"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="180"/>
-                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="120"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{Binding Direction}" Foreground="{DynamicResource AppAccentBrush}"/>
                             <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
-                            <ProgressBar Grid.Column="3" Height="14" Minimum="0" Maximum="100" Value="{Binding Progress, Mode=OneWay}"
+                            <ProgressBar Grid.Column="2" Height="14" Minimum="0" Maximum="100" Value="{Binding Progress, Mode=OneWay}"
                                          IsIndeterminate="{Binding IsIndeterminate}" Margin="0,0,8,0"/>
-                            <TextBlock Grid.Column="4" Text="{Binding Status}" TextTrimming="CharacterEllipsis"
+                            <TextBlock Grid.Column="3" Text="{Binding Status}" TextTrimming="CharacterEllipsis"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                         </Grid>
                     </DataTemplate>

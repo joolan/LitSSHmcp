@@ -34,14 +34,16 @@ public sealed class TransferQueueViewModel : INotifyPropertyChanged
     private readonly ISshService _ssh;
     private readonly SshServerConfig _server;
     private readonly Func<Task>? _afterUpload;
+    private readonly Func<Task>? _afterDownload;
     private readonly Queue<Job> _pending = new();
     private bool _running;
 
-    public TransferQueueViewModel(ISshService ssh, SshServerConfig server, Func<Task>? afterUpload = null)
+    public TransferQueueViewModel(ISshService ssh, SshServerConfig server, Func<Task>? afterUpload = null, Func<Task>? afterDownload = null)
     {
         _ssh = ssh;
         _server = server;
         _afterUpload = afterUpload;
+        _afterDownload = afterDownload;
     }
 
     public ObservableCollection<TransferItem> Items { get; } = new();
@@ -126,9 +128,17 @@ public sealed class TransferQueueViewModel : INotifyPropertyChanged
             job.Item.Status = "失败: " + ex.Message;
         }
 
+        job.Item.IsIndeterminate = false;
         job.Item.Progress = 100;
-        if (_afterUpload is not null && job.IsUpload)
-            await _afterUpload();
+        if (job.IsUpload)
+        {
+            if (_afterUpload is not null)
+                await _afterUpload();
+        }
+        else if (_afterDownload is not null)
+        {
+            await _afterDownload();
+        }
     }
 
     private void Finish(Job job, bool success, string? error)

@@ -491,22 +491,23 @@ public class MainViewModel : INotifyPropertyChanged
         _portForwardWindow.Show();
     }
 
-    // SFTP 文件管理：本地+远程双栏 + 传输队列
-    private SftpManagerWindow? _sftpWindow;
+    // SFTP 文件管理：本地+远程双栏 + 传输队列（每台服务器一个独立窗口）
+    private readonly Dictionary<string, SftpManagerWindow> _sftpWindows = new();
 
     private void OpenSftpManager(SshServerConfig? server)
     {
         if (server == null)
             return;
-        if (_sftpWindow is { IsLoaded: true })
+        if (_sftpWindows.TryGetValue(server.Id, out var existing) && existing.IsLoaded)
         {
-            _sftpWindow.Activate();
+            existing.Activate();
             return;
         }
 
-        _sftpWindow = new SftpManagerWindow(new SftpManagerViewModel(server, _sshService)) { Topmost = false };
-        _sftpWindow.Closed += (_, _) => _sftpWindow = null;
-        _sftpWindow.Show();
+        var window = new SftpManagerWindow(new SftpManagerViewModel(server, _sshService)) { Topmost = false };
+        window.Closed += (_, _) => _sftpWindows.Remove(server.Id);
+        _sftpWindows[server.Id] = window;
+        window.Show();
     }
 
     // 设置：整合「安全设置 / 工具分组 / 导入导出 / MCP 工具说明」为多 Tab 独立窗口

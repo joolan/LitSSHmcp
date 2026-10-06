@@ -11,7 +11,7 @@ public sealed class SftpManagerViewModel
         Server = server;
         Local = new LocalFileBrowserViewModel();
         Remote = new RemoteFileBrowserViewModel(server, ssh);
-        Queue = new TransferQueueViewModel(ssh, server, () => Remote.LoadAsync());
+        Queue = new TransferQueueViewModel(ssh, server, () => Remote.LoadAsync(), () => { Local.Load(); return Task.CompletedTask; });
     }
 
     /// <summary>窗口加载时触发远程目录初始化（放到此处以便测试构造窗口时不触发连接）。</summary>

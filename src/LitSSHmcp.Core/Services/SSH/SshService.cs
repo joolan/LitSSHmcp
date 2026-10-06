@@ -1281,7 +1281,9 @@ public class SshService : ISshService
         if (!Directory.Exists(path))
             return;
 
-        var rootBase = Path.GetFullPath(path);
+        // 以“所选路径的父目录”为基准，保留所选文件夹本身的层级
+        var full = Path.GetFullPath(path);
+        var rootBase = Directory.GetParent(full)?.FullName ?? full;
         foreach (var file in Directory.EnumerateFiles(path, "*", recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly))
         {
             if (items.Count >= cap)

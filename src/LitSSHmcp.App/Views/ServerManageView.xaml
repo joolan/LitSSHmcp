@@ -39,6 +39,7 @@
                     <ContextMenu>
                         <MenuItem Header="连接（命令会话）" Click="OnConnectClick"/>
                         <MenuItem Header="打开终端（交互式）" Click="OnOpenTerminalClick"/>
+                        <MenuItem Header="SFTP 文件管理" Click="OnSftpManagerClick"/>
                         <MenuItem Header="编辑" Click="OnEditClick"/>
                         <Separator/>
                         <MenuItem Header="采集快照" Click="OnSnapshotRefreshClick"/>

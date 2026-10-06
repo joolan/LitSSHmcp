@@ -59,6 +59,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand OpenMonitorCommand { get; }
     public ICommand OpenTerminalLogsCommand { get; }
     public ICommand OpenPortForwardCommand { get; }
+    public ICommand OpenSftpManagerCommand { get; }
     public ICommand AskAgentCommand { get; }
     public ICommand SnapshotRefreshCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
@@ -89,6 +90,7 @@ public class MainViewModel : INotifyPropertyChanged
         OpenMonitorCommand = new RelayCommand(_ => OpenMonitor(SelectedServer), _ => SelectedServer != null);
         OpenTerminalLogsCommand = new RelayCommand(_ => OpenTerminalLogs());
         OpenPortForwardCommand = new RelayCommand(_ => OpenPortForward());
+        OpenSftpManagerCommand = new RelayCommand(_ => OpenSftpManager(SelectedServer), _ => SelectedServer != null);
         AskAgentCommand = new RelayCommand(_ => AskAgent());
         SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
@@ -129,6 +131,7 @@ public class MainViewModel : INotifyPropertyChanged
             (DeleteServerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenTerminalCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenMonitorCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenSftpManagerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ConnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenSnapshotHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -486,6 +489,24 @@ public class MainViewModel : INotifyPropertyChanged
         _portForwardWindow = new PortForwardWindow(vm) { Topmost = false };
         _portForwardWindow.Closed += (_, _) => _portForwardWindow = null;
         _portForwardWindow.Show();
+    }
+
+    // SFTP 文件管理：本地+远程双栏 + 传输队列
+    private SftpManagerWindow? _sftpWindow;
+
+    private void OpenSftpManager(SshServerConfig? server)
+    {
+        if (server == null)
+            return;
+        if (_sftpWindow is { IsLoaded: true })
+        {
+            _sftpWindow.Activate();
+            return;
+        }
+
+        _sftpWindow = new SftpManagerWindow(new SftpManagerViewModel(server, _sshService)) { Topmost = false };
+        _sftpWindow.Closed += (_, _) => _sftpWindow = null;
+        _sftpWindow.Show();
     }
 
     // 设置：整合「安全设置 / 工具分组 / 导入导出 / MCP 工具说明」为多 Tab 独立窗口

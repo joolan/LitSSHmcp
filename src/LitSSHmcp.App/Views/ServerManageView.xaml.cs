@@ -19,6 +19,8 @@ public partial class ServerManageView : UserControl
 
     private void OnOpenTerminalClick(object sender, RoutedEventArgs e) => ViewModel?.OpenTerminalCommand.Execute(null);
 
+    private void OnSftpManagerClick(object sender, RoutedEventArgs e) => ViewModel?.OpenSftpManagerCommand.Execute(null);
+
     private void OnEditClick(object sender, RoutedEventArgs e) => ViewModel?.EditServerCommand.Execute(null);
 
     private void OnDeleteClick(object sender, RoutedEventArgs e) => ViewModel?.DeleteServerCommand.Execute(null);

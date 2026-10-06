@@ -23,8 +23,42 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         _ssh = ssh;
         Model = new TerminalModel(cols, rows);
         FileBrowser = new RemoteFileBrowserViewModel(server, ssh);
+        FileBrowser.CdRequested = ChangeDirectory;
         ToggleFileBrowserCommand = new RelayCommand(_ => ShowFileBrowser = !ShowFileBrowser);
+        ReconnectCommand = new RelayCommand(_ => _ = ReconnectAsync());
     }
+
+    public ICommand ReconnectCommand { get; }
+
+    /// <summary>在终端里 cd 到指定目录（用于文件列表右键「切换到此目录」）。</summary>
+    public void ChangeDirectory(string remotePath) => SendInput($"cd {Quote(remotePath)}\r");
+
+    /// <summary>重开会话（用于 exit/logout 或断线后恢复）。</summary>
+    public async Task ReconnectAsync()
+    {
+        if (_disposed)
+            return;
+
+        SshShellSession? old;
+        lock (_gate)
+        {
+            old = _shell;
+            _shell = null;
+            _started = false;
+        }
+        try { _cts?.Cancel(); } catch { /* ignore */ }
+        if (old is not null)
+        {
+            try { await old.DisposeAsync(); } catch { /* ignore */ }
+        }
+        _cts?.Dispose();
+        _cts = null;
+        IsConnected = false;
+        Model.Feed("\r\n[重新连接…]\r\n");
+        await EnsureStartedAsync(Model.Cols, Model.Rows);
+    }
+
+    private static string Quote(string path) => "'" + path.Replace("'", "'\\''") + "'";
 
     public SshServerConfig Server { get; }
 

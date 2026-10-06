@@ -35,7 +35,12 @@
                     <MenuItem Header="下载…" Click="OnDownload"/>
                     <MenuItem Header="下载所选（含文件夹）…" Click="OnDownloadSelected"/>
                     <Separator/>
-                    <MenuItem Header="属性…" Click="OnProperties"/>
+                    <MenuItem Header="复制" Click="OnCopy"/>
+                    <MenuItem Header="剪切" Click="OnCut"/>
+                    <MenuItem Header="粘贴" Click="OnPaste"/>
+                    <Separator/>
+                    <MenuItem Header="切换到所在目录（终端 cd）" Click="OnCd"/>
+                    <MenuItem Header="属性 / 权限…" Click="OnProperties"/>
                     <Separator/>
                     <MenuItem Header="重命名…" Click="OnRename"/>
                     <MenuItem Header="删除" Click="OnDelete"/>

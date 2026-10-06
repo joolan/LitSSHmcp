@@ -172,10 +172,39 @@ public partial class RemoteFileBrowserView : UserControl
 
     private void OnProperties(object sender, RoutedEventArgs e)
     {
-        if (ViewModel?.SelectedItem is not { } item)
+        if (ViewModel is not { } vm || vm.SelectedItem is not { } item)
             return;
-        new Views.RemoteFilePropertiesWindow(item) { Owner = Owner }.ShowDialog();
+        new Views.RemoteFilePropertiesWindow(vm, item) { Owner = Owner }.ShowDialog();
     }
+
+    private void OnCopy(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        var items = SelectedItems();
+        if (items.Count > 0)
+            vm.CopyItems(items);
+    }
+
+    private void OnCut(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        var items = SelectedItems();
+        if (items.Count > 0)
+            vm.CutItems(items);
+    }
+
+    private void OnPaste(object sender, RoutedEventArgs e) => _ = ViewModel?.PasteAsync();
+
+    private void OnCd(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm && vm.SelectedItem is { } item)
+            vm.RequestCd(item);
+    }
+
+    private List<RemoteFileItem> SelectedItems()
+        => FileList.SelectedItems.Cast<RemoteFileItem>().ToList();
 
     // ---- 拖出下载（拖到资源管理器） ----
 
@@ -185,7 +214,8 @@ public partial class RemoteFileBrowserView : UserControl
     private void OnListPreviewLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _dragStart = e.GetPosition(null);
-        _maybeDrag = FileList.SelectedItems.Count > 0;
+        var item = FindAncestor<ListViewItem>(e.OriginalSource as DependencyObject);
+        _maybeDrag = e.ClickCount == 1 && item is { IsSelected: true };
     }
 
     private void OnListPreviewMouseMove(object sender, MouseEventArgs e)

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.ViewModels;
@@ -7,9 +8,10 @@ using LitSSHmcp.App.ViewModels;
 namespace LitSSHmcp.App.Controls;
 
 /// <summary>
-/// 自绘终端控件：把 <see cref="TerminalModel"/> 的单元格画到界面，处理键盘输入、鼠标滚动回看与尺寸变化。
+/// 自绘终端控件：把 <see cref="TerminalModel"/> 的单元格画到界面，处理键盘/IME 输入、鼠标滚动回看与尺寸变化。
+/// 内含一个近乎不可见的 <see cref="TextBox"/> 作为输入宿主（用于中文输入法 IME 组合输入）。
 /// </summary>
-public sealed class TerminalView : FrameworkElement
+public sealed class TerminalView : Grid
 {
     private const uint DefaultFg = 0xD4D4D4;
     private const uint DefaultBg = 0x1E1E1E;
@@ -18,6 +20,7 @@ public sealed class TerminalView : FrameworkElement
     private readonly Typeface _boldTypeface = new(new FontFamily("Consolas"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
     private readonly Dictionary<uint, SolidColorBrush> _brushCache = new();
     private readonly Dictionary<long, FormattedText> _textCache = new();
+    private readonly TextBox _ime;
 
     private double _fontSize = 14;
     private double _cellWidth = 8;
@@ -33,6 +36,27 @@ public sealed class TerminalView : FrameworkElement
         Focusable = true;
         ClipToBounds = true;
         Cursor = Cursors.IBeam;
+        Background = Brushes.Transparent;
+
+        // 输入宿主：近乎不可见的 TextBox，用于中文输入法(IME)组合输入；键盘事件在其上处理。
+        _ime = new TextBox
+        {
+            Width = 1,
+            Height = 1,
+            Opacity = 0,
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
+            Foreground = Brushes.Transparent,
+            CaretBrush = Brushes.Transparent,
+            IsUndoEnabled = false,
+            AcceptsReturn = false,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            IsHitTestVisible = false
+        };
+        _ime.PreviewKeyDown += OnImePreviewKeyDown;
+        _ime.TextInput += OnImeTextInput;
+        Children.Add(_ime);
     }
 
     public static readonly DependencyProperty SessionProperty = DependencyProperty.Register(
@@ -86,7 +110,7 @@ public sealed class TerminalView : FrameworkElement
     {
         RecalcCellSize();
         RecalcGrid();
-        Focus();
+        _ime.Focus();
     }
 
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
@@ -217,7 +241,7 @@ public sealed class TerminalView : FrameworkElement
 
     protected override void OnMouseDown(MouseButtonEventArgs e)
     {
-        Focus();
+        _ime.Focus();
         base.OnMouseDown(e);
     }
 
@@ -231,7 +255,7 @@ public sealed class TerminalView : FrameworkElement
         e.Handled = true;
     }
 
-    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    private void OnImePreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (_scrollOffset != 0)
         {
@@ -247,13 +271,14 @@ public sealed class TerminalView : FrameworkElement
         }
     }
 
-    protected override void OnTextInput(TextCompositionEventArgs e)
+    private void OnImeTextInput(object sender, TextCompositionEventArgs e)
     {
         var text = e.Text;
         if (!string.IsNullOrEmpty(text))
         {
             _session?.SendInput(FilterInput(text));
             e.Handled = true;
+            _ime.Text = string.Empty;
         }
     }
 

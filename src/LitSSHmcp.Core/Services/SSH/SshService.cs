@@ -1090,7 +1090,7 @@ public class SshService : ISshService
                 {
                     if (ct.IsCancellationRequested || items.Count >= cap)
                         break;
-                    TryCollect(sftp, path, recursive, 0, cap, items);
+                    TryCollect(sftp, path, recursive, 0, cap, items, ParentRemote(path));
                 }
 
                 if (items.Count == 0)
@@ -1329,7 +1329,8 @@ public class SshService : ISshService
             return;
         }
 
-        rootBase ??= path.TrimEnd('/');
+        // 以“所选路径的父目录”为相对基准，保留所选文件夹本身的层级
+        rootBase ??= ParentRemote(path);
 
         List<ISftpFile> entries;
         try { entries = sftp.ListDirectory(path).ToList(); }
@@ -1361,6 +1362,16 @@ public class SshService : ISshService
             return fallbackName;
         var prefix = rootBase.EndsWith('/') ? rootBase : rootBase + "/";
         return fullPath.StartsWith(prefix, StringComparison.Ordinal) ? fullPath[prefix.Length..] : fallbackName;
+    }
+
+    /// <summary>远程路径的父目录（用于保留所选文件夹本身的层级）。</summary>
+    private static string ParentRemote(string path)
+    {
+        var trimmed = path.TrimEnd('/');
+        var idx = trimmed.LastIndexOf('/');
+        if (idx < 0)
+            return string.Empty;
+        return idx == 0 ? "/" : trimmed[..idx];
     }
 
     private bool TryAcquireTarget(string key, out IDisposable? lease, out string? reason)

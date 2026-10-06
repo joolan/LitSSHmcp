@@ -175,6 +175,8 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         var paths = localPaths.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
         if (paths.Count == 0)
             return;
+        if (IsBusy)
+            return;
 
         IsBusy = true;
         StatusMessage = "上传中…";
@@ -221,6 +223,8 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
     {
         if (items.Count == 0)
             return false;
+        if (IsBusy)
+            return false;
 
         IsBusy = true;
         StatusMessage = $"下载 {items.Count} 项…";
@@ -242,6 +246,116 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         {
             IsBusy = false;
         }
+    }
+
+    // ---- 复制 / 剪切 / 粘贴 ----
+
+    private readonly List<string> _clipboard = new();
+    private bool _clipboardCut;
+
+    public bool HasClipboard => _clipboard.Count > 0;
+
+    /// <summary>请求在终端中 cd 到某目录（由终端标签注入）。</summary>
+    public Action<string>? CdRequested { get; set; }
+
+    /// <summary>切换到该项所在目录（目录本身 / 文件的父目录）并在终端执行 cd。</summary>
+    public void RequestCd(RemoteFileItem item)
+    {
+        var dir = item.IsDirectory ? item.FullName : ParentOf(item.FullName);
+        CdRequested?.Invoke(dir);
+        StatusMessage = $"已在终端切换目录: {dir}";
+    }
+
+    public void CopyItems(IEnumerable<RemoteFileItem> items)
+    {
+        _clipboard.Clear();
+        _clipboard.AddRange(items.Select(i => i.FullName));
+        _clipboardCut = false;
+        StatusMessage = $"已复制 {_clipboard.Count} 项到剪贴板";
+    }
+
+    public void CutItems(IEnumerable<RemoteFileItem> items)
+    {
+        _clipboard.Clear();
+        _clipboard.AddRange(items.Select(i => i.FullName));
+        _clipboardCut = true;
+        StatusMessage = $"已剪切 {_clipboard.Count} 项";
+    }
+
+    public async Task PasteAsync()
+    {
+        if (_clipboard.Count == 0)
+        {
+            StatusMessage = "剪贴板为空";
+            return;
+        }
+        if (IsBusy)
+            return;
+
+        var commands = new List<string>();
+        foreach (var source in _clipboard)
+        {
+            var name = BaseName(source);
+            var parent = ParentOf(source);
+            var target = JoinPath(CurrentPath, name);
+
+            if (string.Equals(parent, CurrentPath, StringComparison.Ordinal) && !_clipboardCut)
+                continue; // 复制到原目录会产生嵌套，跳过
+
+            commands.Add(_clipboardCut
+                ? $"mv -- {Quote(source)} {Quote(target)}"
+                : $"cp -a -- {Quote(source)} {Quote(target)}");
+        }
+
+        if (commands.Count == 0)
+        {
+            StatusMessage = "无需粘贴（与原目录相同）";
+            return;
+        }
+
+        await RunCommandAsync(string.Join(" && ", commands), _clipboardCut ? "已剪切粘贴" : "已复制粘贴");
+        if (_clipboardCut)
+            _clipboard.Clear();
+        await LoadAsync();
+    }
+
+    /// <summary>应用权限（chmod）与属主/属组（chown）。</summary>
+    public async Task ApplyPermissionsAsync(RemoteFileItem item, string mode, string? owner, string? group, bool recursive)
+    {
+        var commands = new List<string>();
+        var flag = recursive ? "-R " : string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(mode))
+        {
+            if (!IsValidMode(mode))
+            {
+                StatusMessage = "权限格式应为 3~4 位八进制（如 755 / 644）";
+                return;
+            }
+            commands.Add($"chmod {flag}{Quote(mode.Trim())} {Quote(item.FullName)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(owner))
+        {
+            var ownerGroup = owner.Trim() + (string.IsNullOrWhiteSpace(group) ? string.Empty : ":" + group.Trim());
+            commands.Add($"chown {flag}{Quote(ownerGroup)} {Quote(item.FullName)}");
+        }
+
+        if (commands.Count == 0)
+            return;
+
+        await RunCommandAsync(string.Join(" && ", commands), "属性已更新");
+        await LoadAsync();
+    }
+
+    private static bool IsValidMode(string mode)
+        => mode.Trim().Length is 3 or 4 && mode.Trim().All(c => c >= '0' && c <= '7');
+
+    private static string BaseName(string path)
+    {
+        var trimmed = path.TrimEnd('/');
+        var idx = trimmed.LastIndexOf('/');
+        return idx >= 0 ? trimmed[(idx + 1)..] : trimmed;
     }
 
     /// <summary>下载到临时目录、用系统默认程序打开，并监视改动自动回传 SFTP。</summary>

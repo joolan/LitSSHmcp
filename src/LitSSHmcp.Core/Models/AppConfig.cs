@@ -21,6 +21,9 @@ public class AppConfig
     /// <summary>SSH 连接复用池（每服务器复用一条连接、空闲自动断开，避免密集工具调用反复连断）。</summary>
     public ConnectionPoolConfig ConnectionPool { get; set; } = new();
 
+    /// <summary>端口转发定义（本地/远程/动态 SOCKS）。</summary>
+    public PortForwardConfig[] PortForwards { get; set; } = Array.Empty<PortForwardConfig>();
+
     /// <summary>界面外观（主题）。</summary>
     public UiConfig Ui { get; set; } = new();
 

@@ -22,6 +22,7 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ISshService _sshService;
     private readonly IAuditLogService _auditLogService;
     private readonly ITopologyStore _topologyStore = new TopologyStore();
+    private readonly PortForwardService _portForwardService = new();
 
     // 快照: 采集服务实例须长期复用(内存单飞锁绑定实例); 库供历史窗口读取。
     private readonly ISnapshotService _snapshotService = AppServiceFactory.CreateSnapshotService();
@@ -57,6 +58,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand OpenBatchExecCommand { get; }
     public ICommand OpenMonitorCommand { get; }
     public ICommand OpenTerminalLogsCommand { get; }
+    public ICommand OpenPortForwardCommand { get; }
     public ICommand AskAgentCommand { get; }
     public ICommand SnapshotRefreshCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
@@ -86,6 +88,7 @@ public class MainViewModel : INotifyPropertyChanged
         OpenBatchExecCommand = new RelayCommand(_ => OpenBatchExec());
         OpenMonitorCommand = new RelayCommand(_ => OpenMonitor(SelectedServer), _ => SelectedServer != null);
         OpenTerminalLogsCommand = new RelayCommand(_ => OpenTerminalLogs());
+        OpenPortForwardCommand = new RelayCommand(_ => OpenPortForward());
         AskAgentCommand = new RelayCommand(_ => AskAgent());
         SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
@@ -466,6 +469,23 @@ public class MainViewModel : INotifyPropertyChanged
         _logWindow = new TerminalLogWindow { Topmost = false };
         _logWindow.Closed += (_, _) => _logWindow = null;
         _logWindow.Show();
+    }
+
+    // 端口转发：本地/远程/动态 SOCKS
+    private PortForwardWindow? _portForwardWindow;
+
+    private void OpenPortForward()
+    {
+        if (_portForwardWindow is { IsLoaded: true })
+        {
+            _portForwardWindow.Activate();
+            return;
+        }
+
+        var vm = new PortForwardViewModel(_configService, _portForwardService, Servers);
+        _portForwardWindow = new PortForwardWindow(vm) { Topmost = false };
+        _portForwardWindow.Closed += (_, _) => _portForwardWindow = null;
+        _portForwardWindow.Show();
     }
 
     // 设置：整合「安全设置 / 工具分组 / 导入导出 / MCP 工具说明」为多 Tab 独立窗口

@@ -5,6 +5,28 @@
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <Style x:Key="TileCloseButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+            <Setter Property="Padding" Value="5,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#33EF4444"/>
+                                <Setter Property="Foreground" Value="#EF4444"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
     <DockPanel>
         <DockPanel DockPanel.Dock="Top" Margin="6,6,6,0">
@@ -14,11 +36,11 @@
                        ToolTip="重新连接" Command="{Binding ReconnectCommand}"/>
             <ui:Button DockPanel.Dock="Left" Icon="{ui:SymbolIcon Code24}" Padding="8,3" Margin="0,0,8,4"
                        ToolTip="命令片段" Click="OnSnippets"/>
-            <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Dismiss24}" Appearance="Transparent" Padding="6,1" Margin="4,0,0,0"
-                       ToolTip="关闭会话"
-                       Visibility="{Binding DataContext.IsSshTiled, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"
-                       Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                       CommandParameter="{Binding}"/>
+            <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource TileCloseButton}" Margin="4,0,0,0"
+                    ToolTip="关闭会话"
+                    Visibility="{Binding DataContext.IsSshTiled, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"
+                    Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    CommandParameter="{Binding}"/>
             <TextBlock DockPanel.Dock="Right" Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}"
                        VerticalAlignment="Center" Margin="6,0" TextTrimming="CharacterEllipsis"/>
             <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}"

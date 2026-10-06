@@ -17,6 +17,63 @@ public partial class SshSessionWindow : FluentWindow
     {
         InitializeComponent();
         WindowLayout.Attach(this, "ssh-session");
+        Loaded += OnLoadedHook;
+    }
+
+    private MainViewModel? _vmHooked;
+
+    private void OnLoadedHook(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm && !ReferenceEquals(_vmHooked, vm))
+        {
+            if (_vmHooked is not null)
+            {
+                _vmHooked.PropertyChanged -= OnVmPropertyChanged;
+                _vmHooked.Sessions.CollectionChanged -= OnSessionsChanged;
+            }
+            _vmHooked = vm;
+            vm.PropertyChanged += OnVmPropertyChanged;
+            vm.Sessions.CollectionChanged += OnSessionsChanged;
+        }
+        TilingScroll.SizeChanged -= OnTilingSizeChanged;
+        TilingScroll.SizeChanged += OnTilingSizeChanged;
+        UpdateTileHeight();
+    }
+
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MainViewModel.SshLayout) or nameof(MainViewModel.SshTileHeight))
+            UpdateTileHeight();
+    }
+
+    private void OnSessionsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => UpdateTileHeight();
+
+    private void OnTilingSizeChanged(object sender, SizeChangedEventArgs e) => UpdateTileHeight();
+
+    /// <summary>平铺卡片高度：内容未溢出时铺满可用高度，溢出时用用户设定行高（出现滚动条）。</summary>
+    private void UpdateTileHeight()
+    {
+        if (DataContext is not MainViewModel vm)
+            return;
+
+        var cols = Math.Max(1, vm.SshTileColumns);
+        var count = vm.Sessions.Count;
+        if (count == 0)
+        {
+            vm.SshTileCardHeight = vm.SshTileHeight;
+            return;
+        }
+
+        var rows = (int)Math.Ceiling(count / (double)cols);
+        var available = TilingScroll.ActualHeight;
+        if (available <= 20)
+        {
+            vm.SshTileCardHeight = vm.SshTileHeight;
+            return;
+        }
+
+        var per = available / rows - 6;
+        vm.SshTileCardHeight = Math.Max(vm.SshTileHeight, per);
     }
 
     protected override void OnClosing(CancelEventArgs e)

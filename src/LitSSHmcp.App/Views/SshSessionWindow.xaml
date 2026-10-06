@@ -9,6 +9,47 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <controls:MainPageAppearanceConverter x:Key="LayoutAppearance"/>
+
+        <Style x:Key="TileCloseButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+            <Setter Property="Padding" Value="5,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#33EF4444"/>
+                                <Setter Property="Foreground" Value="#EF4444"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <ControlTemplate x:Key="SessionTabTemplate" TargetType="TabControl">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <StackPanel Orientation="Horizontal">
+                        <TabPanel IsItemsHost="True" x:Name="HeaderPanel" Panel.ZIndex="1" Margin="2,3,0,0"/>
+                        <ui:Button x:Name="AddTabButton" Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3"
+                                   Margin="4,2,0,0" ToolTip="新建连接…" Click="OnNewConnection"/>
+                    </StackPanel>
+                </ScrollViewer>
+                <ContentPresenter Grid.Row="1" x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/>
+            </Grid>
+        </ControlTemplate>
+
         <!-- 命令会话标签 -->
         <DataTemplate DataType="{x:Type vm:SessionViewModel}">
             <Grid Margin="6">
@@ -20,11 +61,11 @@
                 </Grid.RowDefinitions>
 
                 <DockPanel Grid.Row="0" Margin="0,0,0,6">
-                    <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Dismiss24}" Appearance="Transparent" Padding="6,1" Margin="4,0,0,0"
-                               ToolTip="关闭会话"
-                               Visibility="{Binding DataContext.IsSshTiled, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"
-                               Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                               CommandParameter="{Binding}"/>
+                    <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource TileCloseButton}" Margin="4,0,0,0"
+                            ToolTip="关闭会话"
+                            Visibility="{Binding DataContext.IsSshTiled, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"
+                            Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}"/>
                     <ui:Button DockPanel.Dock="Right" Content="测试连接" Padding="10,3" Margin="6,0,0,0" Command="{Binding TestConnectionCommand}"/>
                     <TextBlock DockPanel.Dock="Right" Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center" Margin="6,0" TextTrimming="CharacterEllipsis"/>
                     <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
@@ -81,21 +122,9 @@
         <ui:TitleBar Grid.Row="0" Title="SSH 会话管理"/>
 
         <Grid Grid.Row="1" Margin="10">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-
-            <DockPanel Grid.Row="0" Margin="0,0,0,6"
-                       Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
-                <ui:Button DockPanel.Dock="Left" Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3"
-                           ToolTip="新建连接…" Click="OnNewConnection"/>
-                <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Eye24}" Padding="8,3"
-                           ToolTip="布局 / 显示方式" Click="OnLayoutMenu"/>
-            </DockPanel>
-
-            <Grid Grid.Row="1">
+            <Grid>
                 <TabControl x:Name="Tabs" ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}"
+                        Template="{StaticResource SessionTabTemplate}"
                         Visibility="{Binding IsSshTabbed, Converter={StaticResource BoolToVis}}"
                         AllowDrop="True" PreviewMouseLeftButtonDown="OnTabsPreviewMouseLeftButtonDown"
                         PreviewMouseMove="OnTabsPreviewMouseMove" DragOver="OnTabsDragOver" Drop="OnTabsDrop"
@@ -114,7 +143,7 @@
                 </TabControl.ItemTemplate>
             </TabControl>
 
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+            <ScrollViewer x:Name="TilingScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           Visibility="{Binding IsSshTiled, Converter={StaticResource BoolToVis}}">
                 <ItemsControl ItemsSource="{Binding Sessions}">
                     <ItemsControl.ItemsPanel>
@@ -126,7 +155,7 @@
                         <DataTemplate>
                             <Border Margin="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
                                     CornerRadius="{DynamicResource AppRadiusS}" ClipToBounds="True"
-                                    Height="{Binding DataContext.SshTileHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+                                    Height="{Binding DataContext.SshTileCardHeight, RelativeSource={RelativeSource AncestorType=Window}}">
                                 <ContentPresenter Content="{Binding}"/>
                             </Border>
                         </DataTemplate>
@@ -152,5 +181,14 @@
             </StackPanel>
             </Grid>
         </Grid>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,8,6,0" Panel.ZIndex="50"
+                    Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
+            <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,4,0"
+                       ToolTip="新建连接…" Click="OnNewConnection"
+                       Visibility="{Binding IsSshTiled, Converter={StaticResource BoolToVis}}"/>
+            <ui:Button Icon="{ui:SymbolIcon Eye24}" Padding="8,3" ToolTip="布局 / 显示方式" Click="OnLayoutMenu"/>
+        </StackPanel>
     </Grid>
 </ui:FluentWindow>

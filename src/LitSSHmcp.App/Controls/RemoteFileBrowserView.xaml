@@ -33,6 +33,7 @@
             <ListView.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="打开 / 进入" Click="OnOpen"/>
+                    <MenuItem Header="打开方式…（选择程序）" Click="OnOpenWith"/>
                     <MenuItem Header="下载…" Click="OnDownload"/>
                     <MenuItem Header="下载所选（含文件夹）…" Click="OnDownloadSelected"/>
                     <Separator/>

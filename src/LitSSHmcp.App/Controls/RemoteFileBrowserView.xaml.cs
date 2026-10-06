@@ -94,6 +94,28 @@ public partial class RemoteFileBrowserView : UserControl
 
     private void OnOpen(object sender, RoutedEventArgs e) => OpenSelected();
 
+    private void OnOpenWith(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm && vm.SelectedItem is { IsDirectory: false } item)
+            _ = OpenWithAsync(vm, item);
+    }
+
+    private static async Task OpenWithAsync(RemoteFileBrowserViewModel vm, RemoteFileItem item)
+    {
+        var local = await vm.OpenFileForEditAsync(item);
+        if (local is null)
+            return;
+        try
+        {
+            // 调起系统「打开方式」对话框，让用户选择程序
+            Process.Start(new ProcessStartInfo("rundll32.exe", $"shell32.dll,OpenAs_RunDLL \"{local}\"") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            vm.StatusMessage = "打开方式失败: " + ex.Message;
+        }
+    }
+
     private void OpenSelected()
     {
         if (ViewModel is not { } vm || vm.SelectedItem is not { } item)

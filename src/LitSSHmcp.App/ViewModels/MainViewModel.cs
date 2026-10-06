@@ -240,6 +240,20 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    private double _sshTileCardHeight = 360;
+
+    /// <summary>平铺卡片实际高度：内容未溢出时铺满可用高度，溢出时用用户设定行高（并出现滚动条）。</summary>
+    public double SshTileCardHeight
+    {
+        get => _sshTileCardHeight;
+        set
+        {
+            if (Math.Abs(value - _sshTileCardHeight) < 0.1) return;
+            _sshTileCardHeight = value;
+            OnPropertyChanged();
+        }
+    }
+
     public void Connect(SshServerConfig? server)
     {
         if (server == null) return;

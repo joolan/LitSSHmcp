@@ -101,6 +101,8 @@ public class MainViewModel : INotifyPropertyChanged
         GroupedServers = System.Windows.Data.CollectionViewSource.GetDefaultView(Servers);
         GroupedServers.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription(nameof(SshServerConfig.Group)));
 
+        _sshTileHeight = Services.UiPrefs.GetDouble("ssh.tileHeight", 360);
+
         // 启动时建表并回收上次崩溃遗留的 Running 快照；失败不阻断（首次读写还会惰性建表兜底）
         _ = InitializeSnapshotStoreAsync();
 
@@ -216,7 +218,27 @@ public class MainViewModel : INotifyPropertyChanged
 
     public bool IsSshTabbed => SshLayout == SessionLayout.Tabs;
     public bool IsSshTiled => !IsSshTabbed;
-    public int SshTileColumns => SshLayout == SessionLayout.Tile2 ? 2 : 1;
+
+    public int SshTileColumns => SshLayout switch
+    {
+        SessionLayout.Tile3 => 3,
+        SessionLayout.Tile2 => 2,
+        _ => 1
+    };
+
+    private double _sshTileHeight = 360;
+    public double SshTileHeight
+    {
+        get => _sshTileHeight;
+        set
+        {
+            var clamped = Math.Clamp(value, 200, 900);
+            if (Math.Abs(clamped - _sshTileHeight) < 0.1) return;
+            _sshTileHeight = clamped;
+            OnPropertyChanged();
+            Services.UiPrefs.SetDouble("ssh.tileHeight", clamped);
+        }
+    }
 
     public void Connect(SshServerConfig? server)
     {
@@ -746,7 +768,8 @@ public enum SessionLayout
 {
     Tabs,
     Tile1,
-    Tile2
+    Tile2,
+    Tile3
 }
 
 /// <summary>主页「AI 快捷提问」的待转交附件。</summary>

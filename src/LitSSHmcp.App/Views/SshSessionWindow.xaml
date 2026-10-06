@@ -76,7 +76,28 @@
         <ui:TitleBar Grid.Row="0" Title="SSH 会话管理"/>
 
         <Grid Grid.Row="1" Margin="10">
-            <TabControl x:Name="Tabs" ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}"
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,6"
+                        Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
+                <ui:Button Content="标签" Padding="8,3" Margin="0,0,4,0" ToolTip="标签切换" Click="OnLayoutTabs"
+                           Appearance="{Binding SshLayout, Converter={StaticResource LayoutAppearance}, ConverterParameter=Tabs}"/>
+                <ui:Button Content="平铺1列" Padding="8,3" Margin="0,0,4,0" ToolTip="每行 1 个会话" Click="OnLayoutTile1"
+                           Appearance="{Binding SshLayout, Converter={StaticResource LayoutAppearance}, ConverterParameter=Tile1}"/>
+                <ui:Button Content="平铺2列" Padding="8,3" Margin="0,0,4,0" ToolTip="每行 2 个会话" Click="OnLayoutTile2"
+                           Appearance="{Binding SshLayout, Converter={StaticResource LayoutAppearance}, ConverterParameter=Tile2}"/>
+                <ui:Button Content="平铺3列" Padding="8,3" Margin="0,0,4,0" ToolTip="每行 3 个会话" Click="OnLayoutTile3"
+                           Appearance="{Binding SshLayout, Converter={StaticResource LayoutAppearance}, ConverterParameter=Tile3}"/>
+                <ui:Button Content="行高-" Padding="8,3" Margin="0,0,4,0" ToolTip="减小平铺行高" Click="OnTileHeightDown"/>
+                <ui:Button Content="行高+" Padding="8,3" Margin="0,0,4,0" ToolTip="增大平铺行高" Click="OnTileHeightUp"/>
+                <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" ToolTip="新建连接…" Click="OnNewConnection"/>
+            </StackPanel>
+
+            <Grid Grid.Row="1">
+                <TabControl x:Name="Tabs" ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}"
                         Visibility="{Binding IsSshTabbed, Converter={StaticResource BoolToVis}}"
                         AllowDrop="True" PreviewMouseLeftButtonDown="OnTabsPreviewMouseLeftButtonDown"
                         PreviewMouseMove="OnTabsPreviewMouseMove" DragOver="OnTabsDragOver" Drop="OnTabsDrop"
@@ -95,18 +116,6 @@
                 </TabControl.ItemTemplate>
             </TabControl>
 
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0"
-                        Panel.ZIndex="20"
-                        Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
-                <ui:Button Content="标签" Padding="8,3" Margin="0,0,4,0" ToolTip="标签切换" Click="OnLayoutTabs"
-                           Appearance="{Binding SshLayout, Converter={StaticResource LayoutAppearance}, ConverterParameter=Tabs}"/>
-                <ui:Button Content="平铺1列" Padding="8,3" Margin="0,0,4,0" ToolTip="每行 1 个会话" Click="OnLayoutTile1"
-                           Appearance="{Binding SshLayout, Converter={StaticResource LayoutAppearance}, ConverterParameter=Tile1}"/>
-                <ui:Button Content="平铺2列" Padding="8,3" Margin="0,0,4,0" ToolTip="每行 2 个会话" Click="OnLayoutTile2"
-                           Appearance="{Binding SshLayout, Converter={StaticResource LayoutAppearance}, ConverterParameter=Tile2}"/>
-                <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" ToolTip="新建连接…" Click="OnNewConnection"/>
-            </StackPanel>
-
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           Visibility="{Binding IsSshTiled, Converter={StaticResource BoolToVis}}">
                 <ItemsControl ItemsSource="{Binding Sessions}">
@@ -117,10 +126,18 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Margin="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
-                                    CornerRadius="{DynamicResource AppRadiusS}" Height="360" ClipToBounds="True">
-                                <ContentPresenter Content="{Binding}"/>
-                            </Border>
+                            <Grid>
+                                <Border Margin="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                                        CornerRadius="{DynamicResource AppRadiusS}" ClipToBounds="True"
+                                        Height="{Binding DataContext.SshTileHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+                                    <ContentPresenter Content="{Binding}"/>
+                                </Border>
+                                <Button Content="✕" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,5,7,0"
+                                        Width="22" Height="22" Padding="0" FontSize="11" ToolTip="关闭会话"
+                                        Background="#66000000" Foreground="White" BorderThickness="0"
+                                        Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}"/>
+                            </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -142,6 +159,7 @@
                 <ui:Button Content="选择服务器新建连接" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="16,6"
                            HorizontalAlignment="Center" Click="OnNewConnection"/>
             </StackPanel>
+            </Grid>
         </Grid>
     </Grid>
 </ui:FluentWindow>

@@ -53,6 +53,16 @@ public partial class SshSessionWindow : FluentWindow
     private void OnLayoutTabs(object sender, RoutedEventArgs e) => SetLayout(SessionLayout.Tabs);
     private void OnLayoutTile1(object sender, RoutedEventArgs e) => SetLayout(SessionLayout.Tile1);
     private void OnLayoutTile2(object sender, RoutedEventArgs e) => SetLayout(SessionLayout.Tile2);
+    private void OnLayoutTile3(object sender, RoutedEventArgs e) => SetLayout(SessionLayout.Tile3);
+
+    private void OnTileHeightDown(object sender, RoutedEventArgs e) => AdjustHeight(-40);
+    private void OnTileHeightUp(object sender, RoutedEventArgs e) => AdjustHeight(40);
+
+    private void AdjustHeight(double delta)
+    {
+        if (DataContext is MainViewModel vm)
+            vm.SshTileHeight += delta;
+    }
 
     private void SetLayout(SessionLayout layout)
     {

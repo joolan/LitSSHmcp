@@ -197,6 +197,27 @@ public class MainViewModel : INotifyPropertyChanged
         set { _statusMessage = value; OnPropertyChanged(); }
     }
 
+    // ---- SSH 会话管理布局 ----
+
+    private SessionLayout _sshLayout = SessionLayout.Tabs;
+    public SessionLayout SshLayout
+    {
+        get => _sshLayout;
+        set
+        {
+            if (_sshLayout == value) return;
+            _sshLayout = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsSshTabbed));
+            OnPropertyChanged(nameof(IsSshTiled));
+            OnPropertyChanged(nameof(SshTileColumns));
+        }
+    }
+
+    public bool IsSshTabbed => SshLayout == SessionLayout.Tabs;
+    public bool IsSshTiled => !IsSshTabbed;
+    public int SshTileColumns => SshLayout == SessionLayout.Tile2 ? 2 : 1;
+
     public void Connect(SshServerConfig? server)
     {
         if (server == null) return;
@@ -718,6 +739,14 @@ public enum MainPage
     Servers,
     DataSources,
     Applications
+}
+
+/// <summary>SSH 会话管理窗口的布局方式。</summary>
+public enum SessionLayout
+{
+    Tabs,
+    Tile1,
+    Tile2
 }
 
 /// <summary>主页「AI 快捷提问」的待转交附件。</summary>

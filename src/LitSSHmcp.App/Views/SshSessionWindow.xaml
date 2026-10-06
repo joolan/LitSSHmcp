@@ -8,6 +8,7 @@
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <controls:MainPageAppearanceConverter x:Key="LayoutAppearance"/>
         <!-- 命令会话标签 -->
         <DataTemplate DataType="{x:Type vm:SessionViewModel}">
             <Grid Margin="6">
@@ -76,6 +77,7 @@
 
         <Grid Grid.Row="1" Margin="10">
             <TabControl x:Name="Tabs" ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}"
+                        Visibility="{Binding IsSshTabbed, Converter={StaticResource BoolToVis}}"
                         AllowDrop="True" PreviewMouseLeftButtonDown="OnTabsPreviewMouseLeftButtonDown"
                         PreviewMouseMove="OnTabsPreviewMouseMove" DragOver="OnTabsDragOver" Drop="OnTabsDrop"
                         MouseDoubleClick="OnTabsDoubleClick">
@@ -93,10 +95,35 @@
                 </TabControl.ItemTemplate>
             </TabControl>
 
-            <ui:Button x:Name="NewConnectionButton" Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3"
-                       HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0" ToolTip="新建连接…"
-                       Click="OnNewConnection"
-                       Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0"
+                        Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
+                <ui:Button Content="标签" Padding="8,3" Margin="0,0,4,0" ToolTip="标签切换" Click="OnLayoutTabs"
+                           Appearance="{Binding SshLayout, Converter={StaticResource LayoutAppearance}, ConverterParameter=Tabs}"/>
+                <ui:Button Content="平铺1列" Padding="8,3" Margin="0,0,4,0" ToolTip="每行 1 个会话" Click="OnLayoutTile1"
+                           Appearance="{Binding SshLayout, Converter={StaticResource LayoutAppearance}, ConverterParameter=Tile1}"/>
+                <ui:Button Content="平铺2列" Padding="8,3" Margin="0,0,4,0" ToolTip="每行 2 个会话" Click="OnLayoutTile2"
+                           Appearance="{Binding SshLayout, Converter={StaticResource LayoutAppearance}, ConverterParameter=Tile2}"/>
+                <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" ToolTip="新建连接…" Click="OnNewConnection"/>
+            </StackPanel>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                          Visibility="{Binding IsSshTiled, Converter={StaticResource BoolToVis}}">
+                <ItemsControl ItemsSource="{Binding Sessions}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="{Binding SshTileColumns}"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Margin="4,4,4,0" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                                    CornerRadius="{DynamicResource AppRadiusS}" Height="380" ClipToBounds="True">
+                                <ContentPresenter Content="{Binding}"/>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
 
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520">
                 <StackPanel.Style>

@@ -48,6 +48,18 @@ public partial class SshSessionWindow : FluentWindow
         }
     }
 
+    // ---- 布局切换（标签 / 平铺） ----
+
+    private void OnLayoutTabs(object sender, RoutedEventArgs e) => SetLayout(SessionLayout.Tabs);
+    private void OnLayoutTile1(object sender, RoutedEventArgs e) => SetLayout(SessionLayout.Tile1);
+    private void OnLayoutTile2(object sender, RoutedEventArgs e) => SetLayout(SessionLayout.Tile2);
+
+    private void SetLayout(SessionLayout layout)
+    {
+        if (DataContext is MainViewModel vm)
+            vm.SshLayout = layout;
+    }
+
     // ---- 新建连接（空状态入口 + 标签右侧「+」） ----
 
     private void OnNewConnection(object sender, RoutedEventArgs e)

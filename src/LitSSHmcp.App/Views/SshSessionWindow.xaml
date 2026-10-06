@@ -1,0 +1,98 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.SshSessionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="SSH 会话管理" Height="700" Width="1000"
+        WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="SSH 会话管理"/>
+
+        <Grid Grid.Row="1" Margin="10">
+            <TabControl ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}">
+                <TabControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <Button Content="✕"
+                                    Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}"
+                                    Width="16" Height="16" Padding="0" FontSize="10"
+                                    Background="Transparent" BorderThickness="0" ToolTip="关闭会话"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </TabControl.ItemTemplate>
+                <TabControl.ContentTemplate>
+                    <DataTemplate>
+                        <Grid Margin="6">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="160"/>
+                            </Grid.RowDefinitions>
+
+                            <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                                <ui:Button DockPanel.Dock="Right" Content="测试连接" Padding="10,3" Margin="6,0,0,0" Command="{Binding TestConnectionCommand}"/>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center" Margin="6,0" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            </DockPanel>
+
+                            <TextBox Grid.Row="1" Text="{Binding Output, Mode=OneWay}" IsReadOnly="True"
+                                     VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" Padding="6"
+                                     FontFamily="Consolas" Background="{DynamicResource AppCodeBgBrush}" Foreground="{DynamicResource AppCodeTextBrush}"/>
+
+                            <Grid Grid.Row="2" Margin="0,6,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0" Text="{Binding CommandText, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalContentAlignment="Center" Padding="5" Margin="0,0,6,0"
+                                         FontFamily="Consolas" KeyDown="OnCommandKeyDown"/>
+                                <ui:Button Grid.Column="1" Content="执行" Padding="16,5" Margin="0,0,6,0" Appearance="Primary" Command="{Binding ExecuteCommand}"/>
+                                <ui:Button Grid.Column="2" Content="清空" Padding="12,5" Command="{Binding ClearOutputCommand}"/>
+                            </Grid>
+
+                            <DockPanel Grid.Row="3">
+                                <TextBlock DockPanel.Dock="Top" Text="最近活动" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                <ListBox ItemsSource="{Binding RecentActivity}" FontFamily="Consolas" FontSize="11" Padding="2" Background="Transparent" BorderThickness="0">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock TextTrimming="CharacterEllipsis">
+                                                <Run Text="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss}', Mode=OneWay}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                <Run Text="  "/>
+                                                <Run Text="{Binding Command, Mode=OneWay}"/>
+                                                <Run Text="  "/>
+                                                <Run Text="{Binding Status, Mode=OneWay}" Foreground="{DynamicResource AppAccentBrush}"/>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </DockPanel>
+                        </Grid>
+                    </DataTemplate>
+                </TabControl.ContentTemplate>
+            </TabControl>
+
+            <TextBlock Text="从「SSH 服务器管理」右键服务器选择「连接」，即可在此打开会话标签页。"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="13">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasSessions}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

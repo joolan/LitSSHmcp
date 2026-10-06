@@ -49,6 +49,8 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand NavigateDataSourcesCommand { get; }
     public ICommand NavigateApplicationsCommand { get; }
     public ICommand OpenSettingsCommand { get; }
+    public ICommand OpenSessionManagerCommand { get; }
+    public ICommand AskAgentCommand { get; }
     public ICommand SnapshotRefreshCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
 
@@ -72,6 +74,8 @@ public class MainViewModel : INotifyPropertyChanged
         NavigateDataSourcesCommand = new RelayCommand(_ => NavigateDataSources());
         NavigateApplicationsCommand = new RelayCommand(_ => NavigateApplications());
         OpenSettingsCommand = new RelayCommand(_ => OpenSettings());
+        OpenSessionManagerCommand = new RelayCommand(_ => ShowSessionWindow());
+        AskAgentCommand = new RelayCommand(_ => AskAgent());
         SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
 
@@ -119,6 +123,37 @@ public class MainViewModel : INotifyPropertyChanged
 
     public bool HasSessions => Sessions.Count > 0;
 
+    // ---- 主页数据看板 ----
+
+    /// <summary>服务器总数。</summary>
+    public int ServerCount => Servers.Count;
+
+    /// <summary>已禁用服务器数。</summary>
+    public int DisabledServerCount => Servers.Count(s => s.Disabled);
+
+    private int _datasourceCount;
+    public int DatasourceCount
+    {
+        get => _datasourceCount;
+        private set { _datasourceCount = value; OnPropertyChanged(); }
+    }
+
+    private int _applicationCount;
+    public int ApplicationCount
+    {
+        get => _applicationCount;
+        private set { _applicationCount = value; OnPropertyChanged(); }
+    }
+
+    private string _homeQuestion = string.Empty;
+
+    /// <summary>主页「AI 快捷提问」输入内容。</summary>
+    public string HomeQuestion
+    {
+        get => _homeQuestion;
+        set { _homeQuestion = value; OnPropertyChanged(); }
+    }
+
     private MainPage _currentPage = MainPage.Home;
 
     /// <summary>右侧主区域当前展示的页面。</summary>
@@ -158,6 +193,28 @@ public class MainViewModel : INotifyPropertyChanged
         }
 
         SelectedSession = existing;
+        ShowSessionWindow();
+    }
+
+    // SSH 会话管理窗口（独立非模态窗口：多标签，每个服务器一个标签；不设 Owner/不置顶）
+    private SshSessionWindow? _sessionWindow;
+
+    private void ShowSessionWindow()
+    {
+        if (_sessionWindow is { IsLoaded: true })
+        {
+            _sessionWindow.Activate();
+            return;
+        }
+
+        _sessionWindow = new SshSessionWindow { DataContext = this, Topmost = false };
+        _sessionWindow.Closed += (_, _) =>
+        {
+            _sessionWindow = null;
+            Sessions.Clear();
+            SelectedSession = null;
+        };
+        _sessionWindow.Show();
     }
 
     private void CloseSession(SessionViewModel? session)
@@ -179,6 +236,11 @@ public class MainViewModel : INotifyPropertyChanged
             Servers.Clear();
             foreach (var server in config.Servers)
                 Servers.Add(server);
+
+            DatasourceCount = config.DataSources.Length;
+            ApplicationCount = config.Applications.Length;
+            OnPropertyChanged(nameof(ServerCount));
+            OnPropertyChanged(nameof(DisabledServerCount));
 
             StatusMessage = $"已加载 {Servers.Count} 台服务器";
         }
@@ -352,17 +414,32 @@ public class MainViewModel : INotifyPropertyChanged
     // 非模态独立窗口: 可与主界面同时操作
     private AgentWindow? _agentWindow;
 
-    private void OpenAgent()
+    private AgentWindow EnsureAgentWindow()
     {
         if (_agentWindow is { IsLoaded: true })
         {
             _agentWindow.Activate();
-            return;
+            return _agentWindow;
         }
 
-        _agentWindow = new AgentWindow(_configService, AppServiceFactory.CreateAgentContextStore(), AppServiceFactory.BundledSkillsDir);
+        _agentWindow = new AgentWindow(_configService, AppServiceFactory.CreateAgentContextStore(), AppServiceFactory.BundledSkillsDir) { Topmost = false };
         _agentWindow.Closed += (_, _) => _agentWindow = null;
         _agentWindow.Show();
+        return _agentWindow;
+    }
+
+    private void OpenAgent() => EnsureAgentWindow();
+
+    // 主页「AI 快捷提问」：打开助手并把问题填入输入框
+    private void AskAgent()
+    {
+        var window = EnsureAgentWindow();
+        var question = HomeQuestion?.Trim();
+        if (!string.IsNullOrEmpty(question))
+        {
+            window.SubmitPrompt(question);
+            HomeQuestion = string.Empty;
+        }
     }
 
     // 采集服务器快照(同步阻塞, 典型 10~30 秒)。单飞: 服务内 per-server 锁 + 库内 Running 唯一约束跨进程生效;

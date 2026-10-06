@@ -87,6 +87,7 @@ public class MainWindowXamlTests
             _ = new ServerManageView();
             _ = new DatasourceManageView();
             _ = new ApplicationManageView();
+            _ = new SshSessionWindow();
         });
         Assert.Null(ex);
     }

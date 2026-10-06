@@ -36,6 +36,13 @@ public partial class AgentWindow : FluentWindow
             turn.ShowTools = !turn.ShowTools;
     }
 
+    /// <summary>主页「AI 快捷提问」：把问题填入输入框并聚焦（不自动发送）。</summary>
+    public void SubmitPrompt(string text)
+    {
+        _viewModel.Input = text;
+        Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()), System.Windows.Threading.DispatcherPriority.Input);
+    }
+
     private void OnOpenSettings(object sender, RoutedEventArgs e) => OpenSettings(null);
 
     private void OpenSettings(string? tab)

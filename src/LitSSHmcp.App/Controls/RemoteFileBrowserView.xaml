@@ -17,6 +17,7 @@
             <ui:Button Icon="{ui:SymbolIcon ArrowSync24}" Padding="6,3" Margin="0,0,4,4" ToolTip="刷新" Click="OnReload"/>
             <ui:Button Icon="{ui:SymbolIcon FolderAdd24}" Padding="6,3" Margin="0,0,4,4" ToolTip="新建文件夹" Click="OnNewFolder"/>
             <ui:Button Icon="{ui:SymbolIcon ArrowUpload24}" Padding="6,3" Margin="0,0,4,4" ToolTip="上传文件到当前目录（也可把文件/文件夹拖到此处上传）" Click="OnUpload"/>
+            <ui:Button Icon="{ui:SymbolIcon Star24}" Padding="6,3" Margin="0,0,4,4" ToolTip="目录书签" Click="OnBookmarks"/>
         </WrapPanel>
 
         <TextBox Grid.Row="1" x:Name="PathBox" Margin="0,0,0,6" Padding="4,3"
@@ -34,6 +35,9 @@
                     <MenuItem Header="打开 / 进入" Click="OnOpen"/>
                     <MenuItem Header="下载…" Click="OnDownload"/>
                     <MenuItem Header="下载所选（含文件夹）…" Click="OnDownloadSelected"/>
+                    <Separator/>
+                    <MenuItem Header="压缩为 zip…" Click="OnCompress"/>
+                    <MenuItem Header="解压…" Click="OnExtract"/>
                     <Separator/>
                     <MenuItem Header="复制" Click="OnCopy"/>
                     <MenuItem Header="剪切" Click="OnCut"/>

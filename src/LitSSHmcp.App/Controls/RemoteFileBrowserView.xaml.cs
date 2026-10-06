@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using Microsoft.Win32;
 
@@ -259,6 +260,104 @@ public partial class RemoteFileBrowserView : UserControl
 
         var data = new DataObject(DataFormats.FileDrop, paths);
         DragDrop.DoDragDrop(FileList, data, DragDropEffects.Copy);
+    }
+
+    // ---- 目录书签 ----
+
+    private void OnBookmarks(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        var bookmarks = SftpBookmarkStore.Load(vm.Server.Id);
+        var menu = new ContextMenu();
+        if (bookmarks.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "（无书签）", IsEnabled = false });
+        }
+        else
+        {
+            foreach (var path in bookmarks)
+            {
+                var item = new MenuItem { Header = path };
+                var target = path;
+                item.Click += (_, _) => _ = vm.LoadAsync(target);
+                menu.Items.Add(item);
+            }
+        }
+        menu.Items.Add(new Separator());
+
+        var add = new MenuItem { Header = "添加当前目录为书签" };
+        add.Click += (_, _) => SftpBookmarkStore.Save(vm.Server.Id,
+            SftpBookmarkStore.Load(vm.Server.Id).Append(vm.CurrentPath));
+        menu.Items.Add(add);
+
+        var remove = new MenuItem { Header = "移除当前目录书签" };
+        remove.Click += (_, _) =>
+        {
+            if (MessageBox.Show($"移除此书签？\n{vm.CurrentPath}", "移除书签", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+                SftpBookmarkStore.Save(vm.Server.Id, SftpBookmarkStore.Load(vm.Server.Id).Where(x => x != vm.CurrentPath));
+        };
+        menu.Items.Add(remove);
+
+        menu.PlacementTarget = sender as UIElement;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    // ---- 压缩 / 解压 ----
+
+    private void OnCompress(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        var items = FileList.SelectedItems.Cast<RemoteFileItem>().ToList();
+        if (items.Count == 0)
+            return;
+        var name = Views.TextInputDialog.Prompt(Owner, "压缩为 zip", "压缩文件名（.zip）:", "archive.zip");
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+        _ = CompressAsync(vm, items, name!);
+    }
+
+    private static async Task CompressAsync(RemoteFileBrowserViewModel vm, List<RemoteFileItem> items, string name)
+    {
+        var (ok, message) = await vm.CompressAsync(items, name);
+        if (!ok)
+            MessageBox.Show(message, "压缩失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    private void OnExtract(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || vm.SelectedItem is not { } item)
+            return;
+        if (!item.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show("仅支持解压 .zip 文件。", "解压", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        _ = ExtractAsync(vm, item);
+    }
+
+    private async Task ExtractAsync(RemoteFileBrowserViewModel vm, RemoteFileItem item)
+    {
+        var overwrite = true;
+        var entries = await vm.ListZipEntriesAsync(item);
+        if (entries is not null)
+        {
+            var existing = new HashSet<string>(vm.Items.Select(i => i.Name), StringComparer.Ordinal);
+            var conflicts = entries.Count(existing.Contains);
+            if (conflicts > 0)
+            {
+                var choice = Views.ConflictDialog.Ask(Owner, $"{item.Name}（含 {conflicts} 个同名项）");
+                if (choice == Views.ConflictChoice.Cancel)
+                    return;
+                overwrite = choice is Views.ConflictChoice.Overwrite or Views.ConflictChoice.OverwriteAll;
+            }
+        }
+
+        var (ok, message) = await vm.ExtractAsync(item, overwrite);
+        if (!ok)
+            MessageBox.Show(message, "解压失败", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject

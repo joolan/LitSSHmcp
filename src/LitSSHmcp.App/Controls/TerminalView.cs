@@ -597,10 +597,11 @@ public sealed class TerminalView : Grid
         if (ctrl && e.Key == Key.Insert) { CopySelection(); e.Handled = true; return; }
         if (shift && e.Key == Key.Insert) { Paste(); e.Handled = true; return; }
 
-        // 普通空格：英文输入法下 TextInput 常收不到空格，这里直接补发（IME 激活时交给输入法处理）
+        // 普通空格：英文输入法下 TextInput 常收不到空格。输入宿主中无正在组合的文本 → 视为真实空格直接补发；
+        // 有组合文本（中文输入法预编辑）时交给输入法处理（用于确认候选）。
         if (e.Key == Key.Space
             && (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) == 0
-            && InputMethod.Current?.ImeState != InputMethodState.On)
+            && string.IsNullOrEmpty(_ime.Text))
         {
             _session?.SendInput(" ");
             e.Handled = true;

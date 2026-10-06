@@ -71,16 +71,16 @@
                     <ui:TextBox FontWeight="Normal" Grid.Row="9" Grid.Column="1" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"
                                 ToolTip="多个标签用逗号分隔" Margin="0,0,0,8"/>
 
-                    <TextBlock Grid.Row="10" Grid.Column="0" Text="状态:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <CheckBox Grid.Row="10" Grid.Column="1" Content="禁用此服务器"
+                    <TextBlock Grid.Row="11" Grid.Column="0" Text="状态:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <CheckBox Grid.Row="11" Grid.Column="1" Content="禁用此服务器"
                               IsChecked="{Binding Disabled, UpdateSourceTrigger=PropertyChanged}"
                               VerticalAlignment="Center" Margin="0,0,0,8"
                               ToolTip="禁用后: 不出现在 MCP 的 ssh_list_servers; 资产拓扑中不可建链/连接; 拓扑发现跳过; 任何按服务器标识的工具调用都返回 server_disabled 而不执行"/>
 
-                    <TextBlock Grid.Row="11" Grid.Column="0" Grid.ColumnSpan="2" Text="提权配置" FontWeight="SemiBold" Margin="0,10,0,8"/>
+                    <TextBlock Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="2" Text="提权配置" FontWeight="SemiBold" Margin="0,10,0,8"/>
 
-                    <TextBlock Grid.Row="12" Grid.Column="0" Text="提权方式:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ComboBox Grid.Row="12" Grid.Column="1" SelectedIndex="{Binding SudoTypeIndex}" Margin="0,0,0,8">
+                    <TextBlock Grid.Row="13" Grid.Column="0" Text="提权方式:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ComboBox Grid.Row="13" Grid.Column="1" SelectedIndex="{Binding SudoTypeIndex}" Margin="0,0,0,8">
                         <ComboBoxItem Content="不启用"/>
                         <ComboBoxItem Content="当前用户sudo"/>
                         <ComboBoxItem Content="root用户"/>
@@ -88,17 +88,17 @@
                         <ComboBoxItem Content="自动(sudo优先,失败再su)"/>
                     </ComboBox>
 
-                    <TextBlock Grid.Row="13" Grid.Column="0" Text="提权用户:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="13" Grid.Column="1" Text="{Binding SudoUsername, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBlock Grid.Row="14" Grid.Column="0" Text="提权用户:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="14" Grid.Column="1" Text="{Binding SudoUsername, UpdateSourceTrigger=PropertyChanged}"
                                 IsEnabled="{Binding IsCustomSudoUser}" Margin="0,0,0,8"
                                 ToolTip="仅'指定用户'模式需要填写"/>
 
-                    <TextBlock Grid.Row="14" Grid.Column="0" Text="提权密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <PasswordBox FontWeight="Normal" Grid.Row="14" Grid.Column="1" x:Name="SudoPasswordBox" Margin="0,0,0,8"
+                    <TextBlock Grid.Row="15" Grid.Column="0" Text="提权密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <PasswordBox FontWeight="Normal" Grid.Row="15" Grid.Column="1" x:Name="SudoPasswordBox" Margin="0,0,0,8"
                                  ToolTip="当前用户sudo: 填写SSH用户密码; root/指定用户: 填写对应密码"/>
 
-                    <TextBlock Grid.Row="15" Grid.Column="0" Text="分组:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="15" Grid.Column="1" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBlock Grid.Row="10" Grid.Column="0" Text="分组:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="10" Grid.Column="1" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}"
                                 Margin="0,0,0,8" ToolTip="连接管理器分组名（可留空）；相同分组会归为一组"/>
                 </Grid>
             </Border>

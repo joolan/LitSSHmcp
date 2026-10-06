@@ -330,9 +330,9 @@ public partial class RemoteFileBrowserView : UserControl
     {
         if (ViewModel is not { } vm || vm.SelectedItem is not { } item)
             return;
-        if (!item.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        if (!RemoteFileBrowserViewModel.IsArchive(item.Name))
         {
-            MessageBox.Show("仅支持解压 .zip 文件。", "解压", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("仅支持解压 .zip / .tar.gz / .tgz 文件。", "解压", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         _ = ExtractAsync(vm, item);
@@ -341,7 +341,7 @@ public partial class RemoteFileBrowserView : UserControl
     private async Task ExtractAsync(RemoteFileBrowserViewModel vm, RemoteFileItem item)
     {
         var overwrite = true;
-        var entries = await vm.ListZipEntriesAsync(item);
+        var entries = await vm.ListArchiveEntriesAsync(item);
         if (entries is not null)
         {
             var existing = new HashSet<string>(vm.Items.Select(i => i.Name), StringComparer.Ordinal);

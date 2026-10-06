@@ -463,34 +463,60 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>压缩所选文件/文件夹为 zip（存于当前目录）。返回是否成功。</summary>
+    /// <summary>压缩所选文件/文件夹（.zip 用 zip，.tar.gz/.tgz 用 tar）。返回是否成功。</summary>
     public async Task<(bool Ok, string Message)> CompressAsync(IReadOnlyList<RemoteFileItem> items, string archiveName)
     {
         if (items.Count == 0)
             return (false, "请先选择要压缩的文件/文件夹");
         if (string.IsNullOrWhiteSpace(archiveName))
             return (false, "请输入压缩文件名");
-        if (!archiveName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-            archiveName += ".zip";
-        if (Items.Any(i => string.Equals(i.Name, archiveName, StringComparison.Ordinal)))
-            return (false, "当前目录已存在同名文件: " + archiveName);
-        if (!await HasCommandAsync("zip"))
-            return (false, "服务器未安装 zip，无法压缩");
+
+        var name = archiveName.Trim();
+        var isZip = name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+        var isTar = name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase);
+        if (!isZip && !isTar)
+        {
+            name += ".zip";
+            isZip = true;
+        }
+
+        if (Items.Any(i => string.Equals(i.Name, name, StringComparison.Ordinal)))
+            return (false, "当前目录已存在同名文件: " + name);
 
         var names = string.Join(' ', items.Select(i => Quote(i.Name)));
-        var command = $"cd {Quote(CurrentPath)} && zip -r {Quote(archiveName)} {names}";
-        await RunCommandAsync(command, $"已压缩为 {archiveName}");
+        string command;
+        if (isZip)
+        {
+            if (!await HasCommandAsync("zip"))
+                return (false, "服务器未安装 zip，无法压缩为 .zip（可改用 .tar.gz）");
+            command = $"cd {Quote(CurrentPath)} && zip -r {Quote(name)} {names}";
+        }
+        else
+        {
+            if (!await HasCommandAsync("tar"))
+                return (false, "服务器未安装 tar，无法压缩为 .tar.gz");
+            command = $"cd {Quote(CurrentPath)} && tar -czf {Quote(name)} {names}";
+        }
+
+        await RunCommandAsync(command, $"已压缩为 {name}");
         await LoadAsync();
-        return (true, $"已压缩为 {archiveName}");
+        return (true, $"已压缩为 {name}");
     }
 
-    /// <summary>列出 zip 内的条目名（用于解压前检测同名冲突）；失败返回 null。</summary>
-    public async Task<List<string>?> ListZipEntriesAsync(RemoteFileItem archive)
+    /// <summary>列出压缩包内的条目名（用于解压前检测同名冲突）；失败返回 null。</summary>
+    public async Task<List<string>?> ListArchiveEntriesAsync(RemoteFileItem archive)
     {
+        string command;
+        if (IsZip(archive.Name))
+            command = $"cd {Quote(CurrentPath)} && unzip -Z1 {Quote(archive.Name)}";
+        else if (IsTarGz(archive.Name))
+            command = $"cd {Quote(CurrentPath)} && tar -tzf {Quote(archive.Name)}";
+        else
+            return null;
+
         try
         {
-            var result = await _ssh.ExecuteCommandAsync(_server,
-                $"cd {Quote(CurrentPath)} && unzip -Z1 {Quote(archive.Name)}", timeoutSeconds: 30);
+            var result = await _ssh.ExecuteCommandAsync(_server, command, timeoutSeconds: 30);
             if (!result.Success)
                 return null;
             return result.Output
@@ -505,20 +531,39 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>解压 zip 到当前目录；overwrite=false 时跳过同名项。</summary>
+    /// <summary>解压 .zip / .tar.gz 到当前目录；overwrite=false 时跳过同名项。</summary>
     public async Task<(bool Ok, string Message)> ExtractAsync(RemoteFileItem archive, bool overwrite)
     {
-        if (!archive.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-            return (false, "仅支持解压 .zip 文件");
-        if (!await HasCommandAsync("unzip"))
-            return (false, "服务器未安装 unzip，无法解压");
+        string command;
+        if (IsZip(archive.Name))
+        {
+            if (!await HasCommandAsync("unzip"))
+                return (false, "服务器未安装 unzip，无法解压 .zip");
+            command = $"cd {Quote(CurrentPath)} && unzip {(overwrite ? "-o" : "-n")} {Quote(archive.Name)}";
+        }
+        else if (IsTarGz(archive.Name))
+        {
+            if (!await HasCommandAsync("tar"))
+                return (false, "服务器未安装 tar，无法解压 .tar.gz");
+            var flag = overwrite ? string.Empty : "--skip-old-files ";
+            command = $"cd {Quote(CurrentPath)} && tar -xzf {flag}{Quote(archive.Name)}";
+        }
+        else
+        {
+            return (false, "仅支持解压 .zip / .tar.gz / .tgz");
+        }
 
-        var flag = overwrite ? "-o" : "-n";
-        var command = $"cd {Quote(CurrentPath)} && unzip {flag} {Quote(archive.Name)}";
         await RunCommandAsync(command, $"已解压 {archive.Name}");
         await LoadAsync();
         return (true, $"已解压 {archive.Name}");
     }
+
+    public static bool IsZip(string name) => name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsTarGz(string name)
+        => name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsArchive(string name) => IsZip(name) || IsTarGz(name);
 
     /// <summary>下载到临时目录、用系统默认程序打开，并监视改动自动回传 SFTP。</summary>
     public async Task<string?> OpenFileForEditAsync(RemoteFileItem item)

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows.Input;
 using LitSSHmcp.App.Controls;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
@@ -21,11 +22,25 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         Server = server;
         _ssh = ssh;
         Model = new TerminalModel(cols, rows);
+        FileBrowser = new RemoteFileBrowserViewModel(server, ssh);
+        ToggleFileBrowserCommand = new RelayCommand(_ => ShowFileBrowser = !ShowFileBrowser);
     }
 
     public SshServerConfig Server { get; }
 
     public TerminalModel Model { get; }
+
+    /// <summary>左侧远程文件浏览器（SFTP）。</summary>
+    public RemoteFileBrowserViewModel FileBrowser { get; }
+
+    public ICommand ToggleFileBrowserCommand { get; }
+
+    private bool _showFileBrowser = true;
+    public bool ShowFileBrowser
+    {
+        get => _showFileBrowser;
+        set { _showFileBrowser = value; OnPropertyChanged(); }
+    }
 
     public string Title => Server.Name;
 

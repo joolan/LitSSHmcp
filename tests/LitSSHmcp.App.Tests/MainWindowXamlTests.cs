@@ -88,6 +88,7 @@ public class MainWindowXamlTests
             _ = new DatasourceManageView();
             _ = new ApplicationManageView();
             _ = new SshSessionWindow();
+            _ = new LitSSHmcp.App.Controls.RemoteFileBrowserView();
         });
         Assert.Null(ex);
     }

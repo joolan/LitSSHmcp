@@ -134,6 +134,7 @@ public partial class MainWindow : FluentWindow
     {
         if (e.Key == Key.Enter && (Keyboard.Modifiers & (ModifierKeys.Shift | ModifierKeys.Control)) == 0)
         {
+            ViewModel.HomeQuestion = HomeAskBox.Text;
             ViewModel.SendHomeAsk();
             e.Handled = true;
         }

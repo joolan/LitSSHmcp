@@ -66,7 +66,7 @@
                 <!-- 主页：快捷入口 + 数据看板 + AI 快捷提问 -->
                 <Grid x:Name="HomeView" Margin="16"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Home}">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel>
                             <TextBlock Text="主页" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,16"/>
 
@@ -121,7 +121,8 @@
 
                             <TextBlock Text="AI 快捷提问" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                            <Border Style="{DynamicResource CardBorderStyle}" MaxWidth="880" HorizontalAlignment="Left">
+                            <Border Style="{DynamicResource CardBorderStyle}" MaxWidth="900"
+                                    HorizontalAlignment="Stretch" VerticalAlignment="Top">
                                 <StackPanel>
                                     <DockPanel Margin="0,0,0,6" LastChildFill="True"
                                                Visibility="{Binding HasHomeAttachments, Converter={StaticResource BoolToVis}}">
@@ -143,9 +144,9 @@
                                     </DockPanel>
 
                                     <TextBox x:Name="HomeAskBox" Text="{Binding HomeQuestion, UpdateSourceTrigger=PropertyChanged}"
-                                             AcceptsReturn="True" MinHeight="72" MaxHeight="220" TextWrapping="Wrap"
+                                             AcceptsReturn="True" MinHeight="90" MaxHeight="220" TextWrapping="Wrap"
                                              VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent"
-                                             Padding="2" KeyDown="OnHomeAskKeyDown"
+                                             VerticalContentAlignment="Top" Padding="2" PreviewKeyDown="OnHomeAskKeyDown"
                                              ToolTip="Enter 发送 / Shift+Enter 换行"/>
 
                                     <DockPanel Margin="0,6,0,0">

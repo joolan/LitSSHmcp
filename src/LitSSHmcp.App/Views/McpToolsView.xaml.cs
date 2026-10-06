@@ -6,8 +6,8 @@ using LitSSHmcp.Core.Models;
 // 【同步约定 · 请勿删除】MCP 工具发生任何变动（新增/改名/删除、参数或描述变化、分组变化）时, 以下三处必须同步更新:
 //   1) MCP 服务器端: src/LitSSHmcp.McpServer/Tools/*.cs 的 [McpServerTool]/[Description] 注解、
 //      UsageGuideTools.GetUsageGuide() 内置清单、Program.cs 的 WithTools<T>() 注册;
-//   2) 文档:         docs/TOOLS.md (本窗口内容的唯一事实来源, 见该文件顶部"同步约定");
-//   3) App 端:       本窗口 McpToolsWindow —— 内容由 docs/TOOLS.md 嵌入, 解析约定见下, 通常无需改代码。
+//   2) 文档:         docs/TOOLS.md (本视图内容的唯一事实来源, 见该文件顶部"同步约定");
+//   3) App 端:       本视图 McpToolsView —— 内容由 docs/TOOLS.md 嵌入, 解析约定见下, 通常无需改代码。
 // 解析约定(见 docs/TOOLS.md「文档结构约定」):
 //   - "## <中文分组名>（<分组键>）" = 工具分组, 分组键须与 config.json 的 tools.enabledGroups / App「工具分组设置」一致;
 //   - "### `工具名`" = 具体工具(取反引号内的名字, 计入工具数); 后随的 "（只读）" 之类括注忽略;
@@ -15,13 +15,13 @@ using LitSSHmcp.Core.Models;
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。
 namespace LitSSHmcp.App.Views;
 
-public partial class McpToolsWindow : Wpf.Ui.Controls.FluentWindow
+public partial class McpToolsView : UserControl
 {
     private const string DocsResourceName = "LitSSHmcp.App.docs.TOOLS.md";
 
     private readonly List<DocEntry> _entries;
 
-    public McpToolsWindow()
+    public McpToolsView()
     {
         InitializeComponent();
 
@@ -35,7 +35,7 @@ public partial class McpToolsWindow : Wpf.Ui.Controls.FluentWindow
 
     private static List<DocEntry> LoadDocs()
     {
-        var assembly = typeof(McpToolsWindow).Assembly;
+        var assembly = typeof(McpToolsView).Assembly;
         using var stream = assembly.GetManifestResourceStream(DocsResourceName);
         if (stream == null)
         {
@@ -170,7 +170,7 @@ public partial class McpToolsWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnCopyAll(object sender, RoutedEventArgs e)
     {
-        var assembly = typeof(McpToolsWindow).Assembly;
+        var assembly = typeof(McpToolsView).Assembly;
         using var stream = assembly.GetManifestResourceStream(DocsResourceName);
         if (stream == null)
             return;

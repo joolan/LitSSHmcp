@@ -43,7 +43,6 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand CloseSessionCommand { get; }
     public ICommand OpenAuditCommand { get; }
     public ICommand OpenTopologyCommand { get; }
-    public ICommand OpenMcpToolsCommand { get; }
     public ICommand OpenAgentCommand { get; }
     public ICommand NavigateHomeCommand { get; }
     public ICommand NavigateServersCommand { get; }
@@ -67,7 +66,6 @@ public class MainViewModel : INotifyPropertyChanged
         CloseSessionCommand = new RelayCommand(p => CloseSession(p as SessionViewModel));
         OpenAuditCommand = new RelayCommand(_ => OpenAudit());
         OpenTopologyCommand = new RelayCommand(_ => OpenTopology());
-        OpenMcpToolsCommand = new RelayCommand(_ => OpenMcpTools());
         OpenAgentCommand = new RelayCommand(_ => OpenAgent());
         NavigateHomeCommand = new RelayCommand(_ => CurrentPage = MainPage.Home);
         NavigateServersCommand = new RelayCommand(_ => CurrentPage = MainPage.Servers);
@@ -268,7 +266,7 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    // 资产拓扑：非模态独立窗口（不强制置顶，可与主界面同时操作）
+    // 资产拓扑：独立窗口（不设 Owner / 不置顶，避免始终浮在主界面之上；可与主界面同时操作）
     private TopologyWindow? _topologyWindow;
 
     private void OpenTopology()
@@ -279,12 +277,12 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        _topologyWindow = new TopologyWindow { Owner = Application.Current.MainWindow };
+        _topologyWindow = new TopologyWindow { Topmost = false };
         _topologyWindow.Closed += (_, _) => _topologyWindow = null;
         _topologyWindow.Show();
     }
 
-    // 审计日志：非模态独立窗口（不强制置顶，可与主界面同时操作）
+    // 审计日志：独立窗口（不设 Owner / 不置顶，避免始终浮在主界面之上；可与主界面同时操作）
     private AuditWindow? _auditWindow;
 
     private void OpenAudit()
@@ -295,15 +293,12 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        _auditWindow = new AuditWindow { Owner = Application.Current.MainWindow };
+        _auditWindow = new AuditWindow { Topmost = false };
         _auditWindow.Closed += (_, _) => _auditWindow = null;
         _auditWindow.Show();
     }
 
-    // MCP 工具说明(内容来自 docs/TOOLS.md 嵌入资源, 与 MCP 服务器端工具注解双向同步 — 见 McpToolsWindow 文件头注释)
-    private void OpenMcpTools() => new McpToolsWindow { Owner = Application.Current.MainWindow }.ShowDialog();
-
-    // 设置：整合「工具分组 / 安全设置 / 配置导入导出」为多 Tab 独立窗口
+    // 设置：整合「安全设置 / 工具分组 / 导入导出 / MCP 工具说明」为多 Tab 独立窗口
     private AppSettingsWindow? _settingsWindow;
 
     private void OpenSettings()

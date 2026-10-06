@@ -53,8 +53,6 @@
                                    HorizontalAlignment="Center" ToolTip="资产拓扑（独立窗口）" Command="{Binding OpenTopologyCommand}"/>
                         <ui:Button Icon="{ui:SymbolIcon History24}" Appearance="Transparent" Width="44" Height="44" Margin="0,0,0,4"
                                    HorizontalAlignment="Center" ToolTip="审计日志（独立窗口）" Command="{Binding OpenAuditCommand}"/>
-                        <ui:Button Icon="{ui:SymbolIcon Book24}" Appearance="Transparent" Width="44" Height="44" Margin="0,0,0,4"
-                                   HorizontalAlignment="Center" ToolTip="MCP 工具说明" Command="{Binding OpenMcpToolsCommand}"/>
                         <ui:Button Icon="{ui:SymbolIcon Chat24}" Appearance="Primary" Width="44" Height="44" Margin="0,0,0,4"
                                    HorizontalAlignment="Center" ToolTip="AI 运维助手" Command="{Binding OpenAgentCommand}"/>
                     </StackPanel>

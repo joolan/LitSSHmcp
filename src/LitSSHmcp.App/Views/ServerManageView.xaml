@@ -19,11 +19,10 @@
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
             <ui:Button Content="添加" Icon="{ui:SymbolIcon Add24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding AddServerCommand}"/>
-            <ui:Button Content="编辑" Padding="12,3" Margin="0,0,6,0" Command="{Binding EditServerCommand}"/>
-            <ui:Button Content="连接" Padding="12,3" Margin="0,0,6,0" Appearance="Primary" Command="{Binding ConnectCommand}"/>
-            <ui:Button Content="采集快照" Padding="12,3" Margin="0,0,6,0" Command="{Binding SnapshotRefreshCommand}"/>
-            <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding LoadServersCommand}"/>
-            <ui:Button Content="删除" Padding="12,3" Command="{Binding DeleteServerCommand}"/>
+            <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,3" Command="{Binding LoadServersCommand}"/>
+            <TextBlock Text="（选中服务器后右键可 连接 / 编辑 / 采集快照 / 快照历史 / 删除；双击打开编辑窗口）"
+                       VerticalAlignment="Center" Margin="10,0,0,0" FontSize="11"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
         </StackPanel>
 
         <GroupBox Grid.Row="2" Header="服务器 (禁用后不出现在 MCP 的 ssh_list_servers, 不可连接/建链)" Padding="6">

@@ -99,6 +99,7 @@ public class MainWindowXamlTests
             _ = new SecuritySettingsView();
             _ = new ToolGroupsView();
             _ = new ConfigTransferView();
+            _ = new McpToolsView();
         });
         Assert.Null(ex);
     }

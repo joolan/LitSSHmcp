@@ -35,7 +35,7 @@ public partial class ServerManageView : UserControl
             return;
 
         listView.SelectedItem = item.DataContext;
-        ViewModel?.ConnectCommand.Execute(null);
+        ViewModel?.EditServerCommand.Execute(null);
     }
 
     private void OnListPreviewRightClick(object sender, MouseButtonEventArgs e)

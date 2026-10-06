@@ -23,6 +23,9 @@
             <TabItem Header="导入 / 导出">
                 <views:ConfigTransferView x:Name="TransferView"/>
             </TabItem>
+            <TabItem Header="MCP 工具说明">
+                <views:McpToolsView/>
+            </TabItem>
         </TabControl>
     </Grid>
 </ui:FluentWindow>

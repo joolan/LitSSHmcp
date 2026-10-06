@@ -27,20 +27,9 @@
                                 <DockPanel Margin="0,0,0,12">
                                     <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                    <TextBlock Text="以下为『全局』设置：所有模型与会话共用，不随对话模型切换。"
+                                    <TextBlock Text="以下为『全局』设置：所有模型与会话共用，不随对话模型切换。外观（主题/强调色）见主程序「设置 → 外观」。"
                                                Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                 </DockPanel>
-
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <TextBlock Text="界面主题:" VerticalAlignment="Center"/>
-                                    <ComboBox ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme, Mode=TwoWay}" Width="140" Margin="6,0,10,0"/>
-                                    <TextBlock Text="(system=跟随系统 / light / dark)" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <TextBlock Text="强调色:" VerticalAlignment="Center"/>
-                                    <ComboBox ItemsSource="{Binding Accents}" SelectedItem="{Binding Accent, Mode=TwoWay}" Width="140" Margin="6,0,10,0"/>
-                                    <TextBlock Text="(影响主按钮/选中高亮)" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                </StackPanel>
 
                                 <TextBlock Text="系统附加提示（可选）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SystemPrompt, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="60" FontFamily="Consolas" Margin="0,0,0,6"/>
                                 <TextBlock Text="技能目录（空=用内置 litssh-mcp-ops-skill）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SkillsDir, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>

@@ -144,58 +144,6 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     private string _statusMessage = string.Empty;
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
 
-    /// <summary>界面主题（全局）：system / light / dark；切换即时生效。</summary>
-    public IReadOnlyList<string> Themes { get; } = new[] { "system", "light", "dark" };
-
-    private string _theme = "system";
-    public string Theme
-    {
-        get => _theme;
-        set
-        {
-            if (string.Equals(_theme, value, StringComparison.Ordinal))
-                return;
-            Set(ref _theme, value);
-            ThemeService.Apply(value, AccentToHex(Accent));
-        }
-    }
-
-    /// <summary>强调色选项。</summary>
-    public IReadOnlyList<string> Accents { get; } = new[] { "系统默认", "蓝色", "紫色", "绿色", "橙色", "红色" };
-
-    private string _accent = "系统默认";
-    public string Accent
-    {
-        get => _accent;
-        set
-        {
-            if (string.Equals(_accent, value, StringComparison.Ordinal))
-                return;
-            Set(ref _accent, value);
-            ThemeService.Apply(Theme, AccentToHex(value));
-        }
-    }
-
-    private static string AccentToHex(string? label) => label switch
-    {
-        "蓝色" => "#0078D4",
-        "紫色" => "#8B5CF6",
-        "绿色" => "#10B981",
-        "橙色" => "#F59E0B",
-        "红色" => "#EF4444",
-        _ => string.Empty
-    };
-
-    private static string HexToAccent(string? hex) => (hex ?? string.Empty).Trim().ToUpperInvariant() switch
-    {
-        "#0078D4" => "蓝色",
-        "#8B5CF6" => "紫色",
-        "#10B981" => "绿色",
-        "#F59E0B" => "橙色",
-        "#EF4444" => "红色",
-        _ => "系统默认"
-    };
-
     public RelayCommand AddProviderCommand => _addProviderCommand ??= new RelayCommand(_ =>
     {
         var p = new AgentProviderEdit { Name = "新模型", Type = "openai", Enabled = true };
@@ -302,9 +250,6 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             RetentionMaxMessages = agent.RetentionMaxMessages.ToString();
             RetentionDays = agent.RetentionDays.ToString();
 
-            Theme = string.IsNullOrWhiteSpace(config.Ui?.Theme) ? "system" : config.Ui!.Theme;
-            Accent = HexToAccent(config.Ui?.Accent);
-
             StatusMessage = "已加载";
         }
         catch (Exception ex)
@@ -353,10 +298,6 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent.RetentionMaxSessions = (int)Math.Max(0, ParseLong(RetentionMaxSessions, 50));
             config.Agent.RetentionMaxMessages = (int)Math.Max(0, ParseLong(RetentionMaxMessages, 200));
             config.Agent.RetentionDays = (int)Math.Max(0, ParseLong(RetentionDays, 90));
-
-            config.Ui ??= new UiConfig();
-            config.Ui.Theme = string.IsNullOrWhiteSpace(Theme) ? "system" : Theme;
-            config.Ui.Accent = AccentToHex(Accent);
 
             await _configService.SaveConfigAsync(config);
             StatusMessage = "已保存（重新打开「AI 运维助手」生效）";

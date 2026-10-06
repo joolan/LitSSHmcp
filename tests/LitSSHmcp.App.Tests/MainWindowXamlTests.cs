@@ -107,6 +107,7 @@ public class MainWindowXamlTests
             _ = new ConfigTransferView();
             _ = new McpToolsView();
             _ = new AppearanceSettingsView();
+            _ = new TerminalSettingsView();
         });
         Assert.Null(ex);
     }

@@ -27,6 +27,7 @@
                         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="服务器名称:" VerticalAlignment="Center" Margin="0,0,10,8"/>
@@ -95,6 +96,10 @@
                     <TextBlock Grid.Row="14" Grid.Column="0" Text="提权密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
                     <PasswordBox FontWeight="Normal" Grid.Row="14" Grid.Column="1" x:Name="SudoPasswordBox" Margin="0,0,0,8"
                                  ToolTip="当前用户sudo: 填写SSH用户密码; root/指定用户: 填写对应密码"/>
+
+                    <TextBlock Grid.Row="15" Grid.Column="0" Text="分组:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="15" Grid.Column="1" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}"
+                                Margin="0,0,0,8" ToolTip="连接管理器分组名（可留空）；相同分组会归为一组"/>
                 </Grid>
             </Border>
         </ScrollViewer>

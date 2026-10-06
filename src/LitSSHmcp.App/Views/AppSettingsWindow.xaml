@@ -17,6 +17,9 @@
             <TabItem Header="外观">
                 <views:AppearanceSettingsView/>
             </TabItem>
+            <TabItem Header="终端">
+                <views:TerminalSettingsView/>
+            </TabItem>
             <TabItem Header="安全设置">
                 <views:SecuritySettingsView/>
             </TabItem>

@@ -35,6 +35,9 @@ public class MainViewModel : INotifyPropertyChanged
     public ObservableCollection<SshServerConfig> Servers { get; } = new();
     public ObservableCollection<object> Sessions { get; } = new();
 
+    /// <summary>按「分组」字段分组的服务器视图（连接管理器）。</summary>
+    public System.ComponentModel.ICollectionView GroupedServers { get; }
+
     public ICommand LoadServersCommand { get; }
     public ICommand AddServerCommand { get; }
     public ICommand EditServerCommand { get; }
@@ -82,6 +85,10 @@ public class MainViewModel : INotifyPropertyChanged
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
 
         Sessions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSessions));
+
+        // 服务器列表按「分组」字段分组（连接管理器树形分组）
+        GroupedServers = System.Windows.Data.CollectionViewSource.GetDefaultView(Servers);
+        GroupedServers.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription(nameof(SshServerConfig.Group)));
 
         // 启动时建表并回收上次崩溃遗留的 Running 快照；失败不阻断（首次读写还会惰性建表兜底）
         _ = InitializeSnapshotStoreAsync();

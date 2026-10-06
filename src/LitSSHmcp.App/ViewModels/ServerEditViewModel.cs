@@ -23,6 +23,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
     private string _keyFilePath = string.Empty;
     private string _description = string.Empty;
     private string _tagsText = string.Empty;
+    private string _group = string.Empty;
     private string _statusMessage = string.Empty;
     private bool _isTestRunning;
     private int _sudoTypeIndex;
@@ -53,6 +54,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
             KeyFilePath = server.KeyFilePath ?? string.Empty;
             Description = server.Description ?? string.Empty;
             TagsText = string.Join(", ", server.Tags);
+            Group = server.Group ?? string.Empty;
             SudoTypeIndex = (int)server.SudoType;
             SudoUsername = server.SudoUsername ?? string.Empty;
             Disabled = server.Disabled;
@@ -113,6 +115,13 @@ public class ServerEditViewModel : INotifyPropertyChanged
     {
         get => _tagsText;
         set { _tagsText = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>连接管理器分组名（空=未分组）。</summary>
+    public string Group
+    {
+        get => _group;
+        set { _group = value; OnPropertyChanged(); }
     }
 
     /// <summary>禁用后：不出现在 MCP 的 ssh_list_servers、拓扑不可建链/连接、发现跳过、工具调用一律 server_disabled。</summary>
@@ -248,6 +257,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
             KeyFilePath = IsKeyFileAuth ? KeyFilePath : null,
             Description = Description,
             Tags = tags,
+            Group = Group,
             SudoType = (SudoType)SudoTypeIndex,
             SudoUsername = IsCustomSudoUser ? SudoUsername : null,
             Disabled = Disabled

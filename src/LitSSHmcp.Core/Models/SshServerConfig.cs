@@ -33,6 +33,10 @@ public class SshServerConfig
     public string? KeyFilePassphrase { get; set; }
     public string? Description { get; set; }
     public string[] Tags { get; set; } = Array.Empty<string>();
+
+    /// <summary>连接管理器分组名（用于树形分组/文件夹）；空 = 未分组。</summary>
+    public string Group { get; set; } = string.Empty;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastConnectedAt { get; set; }
 

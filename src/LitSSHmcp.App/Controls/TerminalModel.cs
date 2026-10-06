@@ -52,7 +52,9 @@ public sealed class TerminalModel
     private int _scrollBottom;
 
     private readonly List<TerminalCell[]> _scrollback = new();
-    private const int MaxScrollback = 2000;
+
+    /// <summary>回看行数上限。</summary>
+    public int MaxScrollback { get; set; } = 2000;
 
     // 解析状态
     private enum ParseState { Ground, Esc, Csi, Osc, OscEsc }
@@ -61,6 +63,7 @@ public sealed class TerminalModel
 
     public TerminalModel(int cols, int rows)
     {
+        MaxScrollback = Math.Max(200, TerminalSettings.Scrollback);
         Resize(cols, rows);
     }
 
@@ -98,6 +101,18 @@ public sealed class TerminalModel
         for (var i = 0; i < _cols; i++)
             line[i] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
         return line;
+    }
+
+    /// <summary>清空当前屏幕缓冲与回看（本地清屏）。</summary>
+    public void ClearMainBuffer()
+    {
+        Fill(Active, _cols, _rows, TerminalAttributes.Default);
+        if (!_altScreen)
+            _scrollback.Clear();
+        _cx = 0;
+        _cy = 0;
+        _wrapPending = false;
+        RaiseChanged();
     }
 
     public void Resize(int cols, int rows)

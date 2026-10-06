@@ -27,3 +27,16 @@ public sealed class MainPageAppearanceConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+/// <summary>分组名为空时显示占位文本。</summary>
+public sealed class GroupLabelConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var text = value?.ToString();
+        return string.IsNullOrWhiteSpace(text) ? "（未分组）" : text!;
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}

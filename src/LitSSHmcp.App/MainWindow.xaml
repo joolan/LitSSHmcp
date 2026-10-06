@@ -54,8 +54,6 @@
                                    HorizontalAlignment="Center" ToolTip="资产拓扑（独立窗口）" Command="{Binding OpenTopologyCommand}"/>
                         <ui:Button Icon="{ui:SymbolIcon History24}" Appearance="Transparent" Width="44" Height="44" Margin="0,0,0,4"
                                    HorizontalAlignment="Center" ToolTip="审计日志（独立窗口）" Command="{Binding OpenAuditCommand}"/>
-                        <ui:Button Icon="{ui:SymbolIcon Chat24}" Appearance="Primary" Width="44" Height="44" Margin="0,0,0,4"
-                                   HorizontalAlignment="Center" ToolTip="AI 运维助手" Command="{Binding OpenAgentCommand}"/>
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -83,10 +81,8 @@
                                            Command="{Binding OpenTopologyCommand}"/>
                                 <ui:Button Content="审计日志" Icon="{ui:SymbolIcon History24}" Padding="14,6" Margin="0,0,8,8"
                                            Command="{Binding OpenAuditCommand}"/>
-                                <ui:Button Content="设置" Icon="{ui:SymbolIcon Settings24}" Padding="14,6" Margin="0,0,8,8"
-                                           Command="{Binding OpenSettingsCommand}"/>
                                 <ui:Button Content="AI 运维助手" Icon="{ui:SymbolIcon Chat24}" Padding="14,6" Margin="0,0,8,8"
-                                           Appearance="Primary" Command="{Binding OpenAgentCommand}"/>
+                                           Command="{Binding OpenAgentCommand}"/>
                             </WrapPanel>
 
                             <TextBlock Text="数据看板" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8"

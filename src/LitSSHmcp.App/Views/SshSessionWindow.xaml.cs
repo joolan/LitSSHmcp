@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using Wpf.Ui.Controls;
@@ -44,5 +46,84 @@ public partial class SshSessionWindow : FluentWindow
             session.ExecuteCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    // ---- 标签拖拽排序 / 双击重命名 ----
+
+    private const string TabDragFormat = "LitSshTab";
+    private Point _tabDragStart;
+    private object? _tabDragItem;
+
+    private void OnTabsPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _tabDragItem = null;
+        var tab = FindAncestor<TabItem>(e.OriginalSource as DependencyObject);
+        if (tab is null || FindAncestor<System.Windows.Controls.Button>(e.OriginalSource as DependencyObject) is not null)
+            return;
+        _tabDragStart = e.GetPosition(null);
+        _tabDragItem = tab.DataContext;
+    }
+
+    private void OnTabsPreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_tabDragItem is null || e.LeftButton != MouseButtonState.Pressed)
+            return;
+        var pos = e.GetPosition(null);
+        if (Math.Abs(pos.X - _tabDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(pos.Y - _tabDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+
+        var item = _tabDragItem;
+        _tabDragItem = null;
+        var data = new DataObject(TabDragFormat, item);
+        DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Move);
+    }
+
+    private void OnTabsDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(TabDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnTabsDrop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(TabDragFormat) || DataContext is not MainViewModel vm)
+            return;
+        var source = e.Data.GetData(TabDragFormat);
+        var target = FindAncestor<TabItem>(e.OriginalSource as DependencyObject)?.DataContext;
+        if (source is null || target is null || ReferenceEquals(source, target))
+            return;
+
+        var from = vm.Sessions.IndexOf(source);
+        var to = vm.Sessions.IndexOf(target);
+        if (from >= 0 && to >= 0)
+            vm.Sessions.Move(from, to);
+        e.Handled = true;
+    }
+
+    private void OnTabsDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        var tab = FindAncestor<TabItem>(e.OriginalSource as DependencyObject);
+        if (tab is null || FindAncestor<System.Windows.Controls.Button>(e.OriginalSource as DependencyObject) is not null)
+            return;
+        if (tab.DataContext is not ISshTab sshTab)
+            return;
+
+        var name = TextInputDialog.Prompt(this, "重命名标签", "新名称:", sshTab.Title);
+        if (!string.IsNullOrWhiteSpace(name))
+            sshTab.Rename(name!);
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
+    {
+        while (current is not null)
+        {
+            if (current is T match)
+                return match;
+            current = current is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(current)
+                : LogicalTreeHelper.GetParent(current);
+        }
+        return null;
     }
 }

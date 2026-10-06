@@ -9,7 +9,7 @@ using LitSSHmcp.Core.Services.Storage;
 namespace LitSSHmcp.App.ViewModels;
 
 /// <summary>一个已连接的服务器会话（对应主界面右侧一个标签页）。</summary>
-public class SessionViewModel : INotifyPropertyChanged
+public class SessionViewModel : INotifyPropertyChanged, ISshTab
 {
     private readonly ISshService _ssh;
     private readonly IAuditLogService? _audit;
@@ -34,7 +34,15 @@ public class SessionViewModel : INotifyPropertyChanged
     }
 
     public SshServerConfig Server { get; }
-    public string Title => Server.Name;
+    public string Title => string.IsNullOrWhiteSpace(_customTitle) ? Server.Name : _customTitle!;
+
+    private string? _customTitle;
+
+    public void Rename(string title)
+    {
+        _customTitle = title;
+        OnPropertyChanged(nameof(Title));
+    }
     public string Subtitle => $"{Server.Host}:{Server.Port}";
     public ObservableCollection<CommandAuditLog> RecentActivity { get; } = new();
 

@@ -8,7 +8,7 @@ using LitSSHmcp.Core.Services.SSH;
 namespace LitSSHmcp.App.ViewModels;
 
 /// <summary>一个交互式 SSH 终端标签（PTY shell）。输出喂给 <see cref="TerminalModel"/>，键盘输入回写 shell。</summary>
-public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDisposable
+public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDisposable, ISshTab
 {
     private readonly ISshService _ssh;
     private readonly object _gate = new();
@@ -79,7 +79,15 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         set { _showFileBrowser = value; OnPropertyChanged(); }
     }
 
-    public string Title => Server.Name;
+    public string Title => string.IsNullOrWhiteSpace(_customTitle) ? Server.Name : _customTitle!;
+
+    private string? _customTitle;
+
+    public void Rename(string title)
+    {
+        _customTitle = title;
+        OnPropertyChanged(nameof(Title));
+    }
 
     public string Subtitle => $"{Server.Host}:{Server.Port}";
 

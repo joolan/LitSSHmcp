@@ -75,7 +75,10 @@
         <ui:TitleBar Grid.Row="0" Title="SSH 会话管理"/>
 
         <Grid Grid.Row="1" Margin="10">
-            <TabControl ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}">
+            <TabControl x:Name="Tabs" ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}"
+                        AllowDrop="True" PreviewMouseLeftButtonDown="OnTabsPreviewMouseLeftButtonDown"
+                        PreviewMouseMove="OnTabsPreviewMouseMove" DragOver="OnTabsDragOver" Drop="OnTabsDrop"
+                        MouseDoubleClick="OnTabsDoubleClick">
                 <TabControl.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Orientation="Horizontal">

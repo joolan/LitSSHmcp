@@ -14,6 +14,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     private SshShellSession? _shell;
     private CancellationTokenSource? _cts;
     private bool _started;
+    private bool _disposed;
 
     public TerminalSessionViewModel(SshServerConfig server, ISshService ssh, int cols = 80, int rows = 24)
     {
@@ -63,9 +64,16 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         try
         {
             var shell = await _ssh.OpenShellAsync(Server, "xterm-256color", (uint)cols, (uint)rows);
+            if (_disposed)
+            {
+                await shell.DisposeAsync();
+                return;
+            }
             _shell = shell;
             IsConnected = true;
             StatusMessage = "已连接";
+            // 连接建立前可能已按控件尺寸调整过模型：补一次窗口尺寸同步
+            shell.Resize((uint)Model.Cols, (uint)Model.Rows);
             _cts = new CancellationTokenSource();
             _ = ReadLoopAsync(shell, _cts.Token);
         }
@@ -160,6 +168,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
 
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
         try { _cts?.Cancel(); } catch { /* ignore */ }
         SshShellSession? shell;
         lock (_gate)

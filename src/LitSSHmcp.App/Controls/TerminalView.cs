@@ -27,7 +27,6 @@ public sealed class TerminalView : FrameworkElement
     private int _rows = 24;
     private int _scrollOffset;
     private TerminalSessionViewModel? _session;
-    private bool _started;
 
     public TerminalView()
     {
@@ -59,12 +58,18 @@ public sealed class TerminalView : FrameworkElement
 
         _session = newSession;
         _scrollOffset = 0;
-        _started = false;
         if (newSession is not null)
         {
             newSession.Model.Changed += OnModelChanged;
-            Loaded -= OnViewLoaded;
-            Loaded += OnViewLoaded;
+            // 立即用当前已知尺寸启动，避免依赖布局/Loaded 时序导致终端永不启动
+            _ = newSession.EnsureStartedAsync(_cols, _rows);
+            if (IsLoaded)
+                OnViewLoaded(this, new RoutedEventArgs());
+            else
+            {
+                Loaded -= OnViewLoaded;
+                Loaded += OnViewLoaded;
+            }
         }
         InvalidateVisual();
     }
@@ -106,23 +111,12 @@ public sealed class TerminalView : FrameworkElement
             return;
         var cols = Math.Max(2, (int)(ActualWidth / _cellWidth));
         var rows = Math.Max(2, (int)(ActualHeight / _cellHeight));
-        if (cols == _cols && rows == _rows && _started)
+        if (cols == _cols && rows == _rows)
             return;
 
         _cols = cols;
         _rows = rows;
-        if (_session is null)
-            return;
-
-        if (!_started)
-        {
-            _started = true;
-            _ = _session.EnsureStartedAsync(cols, rows);
-        }
-        else
-        {
-            _session.Resize(cols, rows);
-        }
+        _session?.Resize(cols, rows);
     }
 
     protected override void OnRender(DrawingContext dc)

@@ -67,7 +67,8 @@
                     <Button Content="上级" Padding="8,3" Margin="0,0,4,0" Click="OnRemoteUp"/>
                     <Button Content="刷新" Padding="8,3" Margin="0,0,4,0" Click="OnRemoteRefresh"/>
                     <Button Content="新建文件夹" Padding="8,3" Margin="0,0,4,0" Click="OnRemoteNewFolder"/>
-                    <Button Content="删除" Padding="8,3" Click="OnRemoteDelete"/>
+                    <Button Content="删除" Padding="8,3" Margin="0,0,4,0" Click="OnRemoteDelete"/>
+                    <Button Content="书签" Padding="8,3" Click="OnBookmarks"/>
                 </WrapPanel>
                 <TextBox DockPanel.Dock="Top" Text="{Binding Remote.CurrentPath, UpdateSourceTrigger=PropertyChanged}"
                          FontFamily="Consolas" Margin="0,0,0,4" Padding="4,3" KeyDown="OnRemotePathKeyDown"/>
@@ -102,16 +103,20 @@
                     <DataTemplate>
                         <Grid Margin="0,2">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="60"/>
-                                <ColumnDefinition Width="320"/>
+                                <ColumnDefinition Width="56"/>
+                                <ColumnDefinition Width="260"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="70"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="120"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{Binding Direction}" Foreground="{DynamicResource AppAccentBrush}"/>
                             <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
-                            <ProgressBar Grid.Column="2" Height="14" Minimum="0" Maximum="100" Value="{Binding Progress, Mode=OneWay}"
+                            <TextBlock Grid.Column="2" Text="{Binding StartedText}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <TextBlock Grid.Column="3" Text="{Binding DurationText}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <ProgressBar Grid.Column="4" Height="14" Minimum="0" Maximum="100" Value="{Binding Progress, Mode=OneWay}"
                                          IsIndeterminate="{Binding IsIndeterminate}" Margin="0,0,8,0"/>
-                            <TextBlock Grid.Column="3" Text="{Binding Status}" TextTrimming="CharacterEllipsis"
+                            <TextBlock Grid.Column="5" Text="{Binding Status}" TextTrimming="CharacterEllipsis"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                         </Grid>
                     </DataTemplate>

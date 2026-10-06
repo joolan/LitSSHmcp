@@ -98,6 +98,7 @@ public class MainWindowXamlTests
             _ = new ServerMonitorWindow(new LitSSHmcp.App.ViewModels.ServerMonitorViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
             _ = new ServerSnippetsWindow(server);
             _ = new SftpManagerWindow(new LitSSHmcp.App.ViewModels.SftpManagerViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
+            _ = new ConflictDialog("a.txt");
         });
         Assert.Null(ex);
     }

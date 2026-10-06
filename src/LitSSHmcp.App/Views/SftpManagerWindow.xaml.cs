@@ -96,4 +96,35 @@ public partial class SftpManagerWindow : FluentWindow
     private void OnUpload(object sender, RoutedEventArgs e) => _vm.UploadSelected();
 
     private void OnDownload(object sender, RoutedEventArgs e) => _vm.DownloadSelected();
+
+    private void OnBookmarks(object sender, RoutedEventArgs e)
+    {
+        var menu = new System.Windows.Controls.ContextMenu();
+        if (_vm.Bookmarks.Count == 0)
+        {
+            menu.Items.Add(new System.Windows.Controls.MenuItem { Header = "（无书签）", IsEnabled = false });
+        }
+        else
+        {
+            foreach (var path in _vm.Bookmarks)
+            {
+                var item = new System.Windows.Controls.MenuItem { Header = path };
+                var target = path;
+                item.Click += (_, _) => _ = _vm.Remote.LoadAsync(target);
+                menu.Items.Add(item);
+            }
+        }
+
+        menu.Items.Add(new Separator());
+        var add = new System.Windows.Controls.MenuItem { Header = "添加当前目录为书签" };
+        add.Click += (_, _) => _vm.AddBookmark(_vm.Remote.CurrentPath);
+        menu.Items.Add(add);
+        var remove = new System.Windows.Controls.MenuItem { Header = "移除当前目录书签" };
+        remove.Click += (_, _) => _vm.RemoveBookmark(_vm.Remote.CurrentPath);
+        menu.Items.Add(remove);
+
+        menu.PlacementTarget = sender as UIElement;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
 }

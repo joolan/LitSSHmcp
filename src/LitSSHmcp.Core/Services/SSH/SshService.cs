@@ -1071,8 +1071,25 @@ public class SshService : ISshService
         }, ct);
     }
 
+    /// <summary>远程路径是否存在。</summary>
+    public async Task<bool> RemoteFileExistsAsync(SshServerConfig server, string remotePath, CancellationToken ct = default)
+    {
+        return await Task.Run(() =>
+        {
+            try
+            {
+                using var conn = OpenSftpConnection(server);
+                return conn.Client.Exists(remotePath);
+            }
+            catch
+            {
+                return false;
+            }
+        }, ct);
+    }
+
     public async Task<BatchTransferResult> DownloadBatchAsync(SshServerConfig server, IReadOnlyList<string> remotePaths,
-        string localDirectory, bool recursive, int maxFiles, long maxTotalBytes, CancellationToken ct = default)
+        string localDirectory, bool recursive, int maxFiles, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default)
     {
         return await Task.Run(() =>
         {
@@ -1126,6 +1143,12 @@ public class SshService : ISshService
                         if (!string.IsNullOrEmpty(dir))
                             Directory.CreateDirectory(dir);
 
+                        if (overwriteResolver is not null && File.Exists(localPath) && !overwriteResolver(localPath))
+                        {
+                            result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = localPath, Success = false, Error = "已跳过(同名)" });
+                            continue;
+                        }
+
                         if (maxTotalBytes > 0 && result.TotalBytes >= maxTotalBytes)
                         {
                             result.Truncated = true;
@@ -1172,7 +1195,7 @@ public class SshService : ISshService
     /// <summary>把路径展开为待下载文件列表（目录按 recursive 递归；跳过软链接防环；限制深度与数量）。
     /// 关键：相对路径始终相对**顶层下载根目录**计算，递归子目录不会丢层级。</summary>
     public async Task<BatchTransferResult> UploadBatchAsync(SshServerConfig server, IReadOnlyList<string> localPaths,
-        string remoteDirectory, bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, CancellationToken ct = default)
+        string remoteDirectory, bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default)
     {
         return await Task.Run(() =>
         {
@@ -1214,9 +1237,19 @@ public class SshService : ISshService
                     var remote = $"{remoteRoot}/{relative}";
                     try
                     {
-                        var info = new FileInfo(local);
-                        if (maxFileBytes > 0 && info.Length > maxFileBytes)
+                        if (overwriteResolver is not null)
                         {
+                            var exists = false;
+                            try { exists = sftp.Exists(remote); } catch { /* ignore */ }
+                            if (exists && !overwriteResolver(remote))
+                            {
+                                result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = local, Success = false, Error = "已跳过(同名)" });
+                                continue;
+                            }
+                        }
+
+                        var info = new FileInfo(local);
+                        if (maxFileBytes > 0 && info.Length > maxFileBytes)                        {
                             result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = local, Success = false, Error = "超过单文件大小上限" });
                             continue;
                         }

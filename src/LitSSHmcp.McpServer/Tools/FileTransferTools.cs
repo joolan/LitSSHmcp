@@ -194,7 +194,7 @@ public class FileTransferTools
         }
 
         var result = await _sshService.UploadBatchAsync(server, paths, remoteDirectory, recursive,
-            Math.Clamp(maxFiles, 1, 5000), ft.MaxFileSizeBytes, 0, cancellationToken);
+            Math.Clamp(maxFiles, 1, 5000), ft.MaxFileSizeBytes, 0, ct: cancellationToken);
 
         await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
         {
@@ -395,7 +395,7 @@ public class FileTransferTools
             }
         }
 
-        var result = await _sshService.DownloadBatchAsync(server, paths, localDirectory, recursive, Math.Clamp(maxFiles, 1, 5000), 0, cancellationToken);
+        var result = await _sshService.DownloadBatchAsync(server, paths, localDirectory, recursive, Math.Clamp(maxFiles, 1, 5000), 0, ct: cancellationToken);
 
         await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
         {

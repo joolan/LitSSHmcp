@@ -23,6 +23,12 @@ public sealed class TransferItem : INotifyPropertyChanged
     private bool _isIndeterminate;
     public bool IsIndeterminate { get => _isIndeterminate; set { _isIndeterminate = value; OnPropertyChanged(); } }
 
+    private string _startedText = string.Empty;
+    public string StartedText { get => _startedText; set { _startedText = value; OnPropertyChanged(); } }
+
+    private string _durationText = string.Empty;
+    public string DurationText { get => _durationText; set { _durationText = value; OnPropertyChanged(); } }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -37,6 +43,9 @@ public sealed class TransferQueueViewModel : INotifyPropertyChanged
     private readonly Func<Task>? _afterDownload;
     private readonly Queue<Job> _pending = new();
     private bool _running;
+    private bool _overwriteAll;
+    private bool _skipAll;
+    private bool _cancelAll;
 
     public TransferQueueViewModel(ISshService ssh, SshServerConfig server, Func<Task>? afterUpload = null, Func<Task>? afterDownload = null)
     {
@@ -88,8 +97,17 @@ public sealed class TransferQueueViewModel : INotifyPropertyChanged
 
     private async Task RunAsync(Job job)
     {
+        if (_cancelAll)
+        {
+            job.Item.Status = "已取消";
+            return;
+        }
+
         job.Item.Status = "进行中…";
         job.Item.IsIndeterminate = job.IsDirectory;
+        job.Item.StartedText = DateTime.Now.ToString("HH:mm:ss");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
         try
         {
             if (job.IsUpload)
@@ -97,14 +115,22 @@ public sealed class TransferQueueViewModel : INotifyPropertyChanged
                 if (job.IsDirectory)
                 {
                     var result = await _ssh.UploadBatchAsync(_server, new[] { job.LocalPath }, GetRemoteDir(job.RemotePath),
-                        recursive: true, maxFiles: 5000, maxFileBytes: 512L * 1024 * 1024, maxTotalBytes: 2L * 1024 * 1024 * 1024);
-                    Finish(job, result.Success, result.Error);
+                        recursive: true, maxFiles: 5000, maxFileBytes: 512L * 1024 * 1024, maxTotalBytes: 2L * 1024 * 1024 * 1024,
+                        overwriteResolver: ResolveConflict);
+                    Finish(job, result.Success, result.Error, result.Succeeded, result.Failed);
                 }
                 else
                 {
-                    var progress = MakeProgress(job.Item);
-                    var result = await _ssh.UploadFileAsync(_server, job.LocalPath, job.RemotePath, progress);
-                    Finish(job, result.Success, result.Message);
+                    if (await _ssh.RemoteFileExistsAsync(_server, job.RemotePath) && !ResolveConflict(job.RemotePath))
+                    {
+                        job.Item.Status = "已跳过(同名)";
+                    }
+                    else
+                    {
+                        var progress = MakeProgress(job.Item);
+                        var result = await _ssh.UploadFileAsync(_server, job.LocalPath, job.RemotePath, progress);
+                        Finish(job, result.Success, result.Message);
+                    }
                 }
             }
             else
@@ -112,14 +138,22 @@ public sealed class TransferQueueViewModel : INotifyPropertyChanged
                 if (job.IsDirectory)
                 {
                     var result = await _ssh.DownloadBatchAsync(_server, new[] { job.RemotePath }, Path.GetDirectoryName(job.LocalPath) ?? ".",
-                        recursive: true, maxFiles: 5000, maxTotalBytes: 2L * 1024 * 1024 * 1024);
-                    Finish(job, result.Success, result.Error);
+                        recursive: true, maxFiles: 5000, maxTotalBytes: 2L * 1024 * 1024 * 1024,
+                        overwriteResolver: ResolveConflict);
+                    Finish(job, result.Success, result.Error, result.Succeeded, result.Failed);
                 }
                 else
                 {
-                    var progress = MakeProgress(job.Item);
-                    var result = await _ssh.DownloadFileAsync(_server, job.RemotePath, job.LocalPath, progress);
-                    Finish(job, result.Success, result.Message);
+                    if (File.Exists(job.LocalPath) && !ResolveConflict(job.LocalPath))
+                    {
+                        job.Item.Status = "已跳过(同名)";
+                    }
+                    else
+                    {
+                        var progress = MakeProgress(job.Item);
+                        var result = await _ssh.DownloadFileAsync(_server, job.RemotePath, job.LocalPath, progress);
+                        Finish(job, result.Success, result.Message);
+                    }
                 }
             }
         }
@@ -128,6 +162,8 @@ public sealed class TransferQueueViewModel : INotifyPropertyChanged
             job.Item.Status = "失败: " + ex.Message;
         }
 
+        sw.Stop();
+        job.Item.DurationText = $"{sw.Elapsed.TotalSeconds:0.0}s";
         job.Item.IsIndeterminate = false;
         job.Item.Progress = 100;
         if (job.IsUpload)
@@ -141,9 +177,39 @@ public sealed class TransferQueueViewModel : INotifyPropertyChanged
         }
     }
 
-    private void Finish(Job job, bool success, string? error)
+    /// <summary>同名冲突处理：返回 true=覆盖，false=跳过；支持「全部覆盖/全部跳过/取消」。</summary>
+    private bool ResolveConflict(string targetPath)
     {
-        job.Item.Status = success ? "完成" : "失败: " + (error ?? "未知错误");
+        if (_overwriteAll)
+            return true;
+        if (_skipAll || _cancelAll)
+            return false;
+
+        var dispatcher = Application.Current?.Dispatcher;
+        var choice = dispatcher is not null
+            ? dispatcher.Invoke(() => Views.ConflictDialog.Ask(Application.Current?.MainWindow, targetPath))
+            : Views.ConflictChoice.Overwrite;
+
+        return choice switch
+        {
+            Views.ConflictChoice.OverwriteAll => _overwriteAll = true,
+            Views.ConflictChoice.SkipAll => _skipAll = true,
+            Views.ConflictChoice.Skip => false,
+            Views.ConflictChoice.Overwrite => true,
+            _ => _cancelAll = true
+        };
+    }
+
+    private void Finish(Job job, bool success, string? error, int? succeeded = null, int? failed = null)
+    {
+        if (success)
+        {
+            job.Item.Status = failed is > 0 ? $"完成（成功 {succeeded}，跳过/失败 {failed}）" : "完成";
+        }
+        else
+        {
+            job.Item.Status = "失败: " + (error ?? "未知错误");
+        }
     }
 
     private IProgress<FileTransferProgress> MakeProgress(TransferItem item)

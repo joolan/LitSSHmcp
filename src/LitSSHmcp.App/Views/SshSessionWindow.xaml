@@ -62,35 +62,7 @@
 
         <!-- 交互式终端标签（左：远程文件；右：终端） -->
         <DataTemplate DataType="{x:Type vm:TerminalSessionViewModel}">
-            <DockPanel>
-                <DockPanel DockPanel.Dock="Top" Margin="6,6,6,0">
-                    <ui:Button DockPanel.Dock="Left" Icon="{ui:SymbolIcon Folder24}" Padding="8,3" Margin="0,0,8,4"
-                               ToolTip="显示 / 隐藏远程文件" Command="{Binding ToggleFileBrowserCommand}"/>
-                    <TextBlock DockPanel.Dock="Right" Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center" Margin="6,0" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                </DockPanel>
-                <Grid Margin="6">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <Border Grid.Column="0" Width="300" Margin="0,0,4,0"
-                            Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
-                            CornerRadius="{DynamicResource AppRadiusS}" Padding="6"
-                            Visibility="{Binding ShowFileBrowser, Converter={StaticResource BoolToVis}}">
-                        <controls:RemoteFileBrowserView DataContext="{Binding FileBrowser}"/>
-                    </Border>
-
-                    <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch" Background="Transparent"
-                                  Visibility="{Binding ShowFileBrowser, Converter={StaticResource BoolToVis}}"/>
-
-                    <Border Grid.Column="2" Background="#1E1E1E" CornerRadius="{DynamicResource AppRadiusS}">
-                        <controls:TerminalView Session="{Binding}" Margin="4"/>
-                    </Border>
-                </Grid>
-            </DockPanel>
+            <controls:TerminalTabView/>
         </DataTemplate>
     </Window.Resources>
 

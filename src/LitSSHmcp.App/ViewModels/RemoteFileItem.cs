@@ -9,12 +9,16 @@ public sealed class RemoteFileItem
     public bool IsSymbolicLink { get; init; }
     public long Size { get; init; }
     public DateTime LastModified { get; init; }
+    public string Permissions { get; init; } = string.Empty;
+    public string Owner { get; init; } = string.Empty;
 
     public string Glyph => IsDirectory ? "📁" : "📄";
 
     public string SizeText => IsDirectory ? string.Empty : FormatSize(Size);
 
     public string ModifiedText => LastModified == default ? string.Empty : LastModified.ToString("yyyy-MM-dd HH:mm");
+
+    public string OwnerText => string.IsNullOrEmpty(Owner) ? Permissions : $"{Permissions} {Owner}";
 
     private static string FormatSize(long bytes)
     {

@@ -1,19 +1,27 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.CompilerServices;
+using System.Windows;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
 
 namespace LitSSHmcp.App.ViewModels;
 
 /// <summary>
-/// 远程文件浏览器（SFTP）：目录导航、上传/下载、新建/重命名/删除。
+/// 远程文件浏览器（SFTP）：目录导航、上传/下载（支持文件夹）、新建/重命名/删除、编辑并回传。
 /// 与交互式终端共用一个服务器的连接信息，但文件操作走独立的 SFTP 连接。
 /// </summary>
 public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
 {
     private readonly ISshService _ssh;
     private readonly SshServerConfig _server;
+    private bool _initialized;
+
+    private FileSystemWatcher? _editWatch;
+    private string? _editLocalPath;
+    private string? _editRemotePath;
+    private CancellationTokenSource? _editDebounce;
 
     public RemoteFileBrowserViewModel(SshServerConfig server, ISshService ssh)
     {
@@ -52,6 +60,34 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         set { _isBusy = value; OnPropertyChanged(); }
     }
 
+    /// <summary>首次打开：定位到用户 home（避免因权限打不开根目录）。</summary>
+    public async Task InitializeAsync()
+    {
+        if (_initialized)
+            return;
+        _initialized = true;
+        await LoadAsync(await ResolveHomeAsync());
+    }
+
+    private async Task<string> ResolveHomeAsync()
+    {
+        try
+        {
+            var result = await _ssh.ExecuteCommandAsync(_server, "printf %s \"$HOME\"");
+            if (result.Success)
+            {
+                var home = result.Output.Trim();
+                if (!string.IsNullOrEmpty(home) && home.StartsWith('/'))
+                    return home;
+            }
+        }
+        catch
+        {
+            // 忽略，回退默认
+        }
+        return ".";
+    }
+
     public async Task LoadAsync(string? path = null)
     {
         if (!string.IsNullOrWhiteSpace(path))
@@ -80,7 +116,9 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
                     IsDirectory = file.IsDirectory,
                     IsSymbolicLink = file.IsSymbolicLink,
                     Size = file.Size,
-                    LastModified = file.LastModified
+                    LastModified = file.LastModified,
+                    Permissions = file.Permissions,
+                    Owner = file.Owner
                 });
             }
 
@@ -96,11 +134,7 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         }
     }
 
-    public Task GoUpAsync()
-    {
-        var parent = ParentOf(CurrentPath);
-        return LoadAsync(parent);
-    }
+    public Task GoUpAsync() => LoadAsync(ParentOf(CurrentPath));
 
     public async Task NewFolderAsync(string name)
     {
@@ -129,16 +163,22 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         await LoadAsync();
     }
 
-    public async Task UploadAsync(string localPath)
+    /// <summary>上传本地文件/文件夹（递归）到当前目录。</summary>
+    public async Task UploadPathsAsync(IEnumerable<string> localPaths)
     {
-        var name = System.IO.Path.GetFileName(localPath);
-        var remote = JoinPath(CurrentPath, name);
+        var paths = localPaths.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+        if (paths.Count == 0)
+            return;
+
         IsBusy = true;
-        StatusMessage = $"上传中: {name}…";
+        StatusMessage = "上传中…";
         try
         {
-            var result = await _ssh.UploadFileAsync(_server, localPath, remote);
-            StatusMessage = result.Success ? $"已上传: {name}" : "上传失败: " + result.Message;
+            var result = await _ssh.UploadBatchAsync(_server, paths, CurrentPath,
+                recursive: true, maxFiles: 5000, maxFileBytes: 512L * 1024 * 1024, maxTotalBytes: 2L * 1024 * 1024 * 1024);
+            StatusMessage = result.Success
+                ? $"已上传 {result.Succeeded} 项" + (result.Failed > 0 ? $"，失败 {result.Failed}" : string.Empty)
+                : "上传失败: " + result.Error;
         }
         catch (Exception ex)
         {
@@ -170,14 +210,97 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>下载到临时目录并用系统默认程序打开（简单编辑）。</summary>
-    public async Task<string?> OpenFileAsync(RemoteFileItem item)
+    /// <summary>下载到临时目录、用系统默认程序打开，并监视改动自动回传 SFTP。</summary>
+    public async Task<string?> OpenFileForEditAsync(RemoteFileItem item)
     {
-        var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "litssh-remote");
-        System.IO.Directory.CreateDirectory(dir);
-        var local = System.IO.Path.Combine(dir, item.Name);
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-remote");
+        Directory.CreateDirectory(dir);
+        var local = Path.Combine(dir, item.Name);
         await DownloadAsync(item, local);
-        return System.IO.File.Exists(local) ? local : null;
+        if (!File.Exists(local))
+            return null;
+
+        StartEditWatch(local, item.FullName);
+        return local;
+    }
+
+    private void StartEditWatch(string localPath, string remotePath)
+    {
+        StopEditWatch();
+        _editLocalPath = localPath;
+        _editRemotePath = remotePath;
+        try
+        {
+            var dir = Path.GetDirectoryName(localPath);
+            var name = Path.GetFileName(localPath);
+            if (string.IsNullOrEmpty(dir))
+                return;
+            _editWatch = new FileSystemWatcher(dir, name)
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName
+            };
+            _editWatch.Changed += OnEdited;
+            _editWatch.Created += OnEdited;
+            _editWatch.Renamed += OnRenamed;
+            _editWatch.EnableRaisingEvents = true;
+        }
+        catch
+        {
+            // 监视失败不影响编辑（用户可手动「回传」）
+        }
+    }
+
+    private void OnEdited(object sender, FileSystemEventArgs e) => ScheduleUploadBack();
+    private void OnRenamed(object sender, RenamedEventArgs e) => ScheduleUploadBack();
+
+    private void ScheduleUploadBack()
+    {
+        _editDebounce?.Cancel();
+        var cts = new CancellationTokenSource();
+        _editDebounce = cts;
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(1500, cts.Token); }
+            catch (TaskCanceledException) { return; }
+            if (cts.IsCancellationRequested)
+                return;
+            await UploadEditBackAsync();
+        });
+    }
+
+    /// <summary>把当前编辑的临时文件回传到原远程路径。</summary>
+    public async Task UploadEditBackAsync()
+    {
+        var local = _editLocalPath;
+        var remote = _editRemotePath;
+        if (local is null || remote is null || !File.Exists(local))
+            return;
+
+        try
+        {
+            var result = await _ssh.UploadFileAsync(_server, local, remote);
+            SetStatus(result.Success ? $"已回传: {Path.GetFileName(remote)}" : "回传失败: " + result.Message);
+        }
+        catch (Exception ex)
+        {
+            SetStatus("回传失败: " + ex.Message);
+        }
+    }
+
+    private void StopEditWatch()
+    {
+        try { if (_editWatch is not null) _editWatch.EnableRaisingEvents = false; } catch { /* ignore */ }
+        try { _editWatch?.Dispose(); } catch { /* ignore */ }
+        _editWatch = null;
+    }
+
+    private void SetStatus(string message)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+            _ = dispatcher.BeginInvoke(new Action(() => StatusMessage = message));
+        else
+            StatusMessage = message;
     }
 
     private async Task RunCommandAsync(string command, string successMessage)

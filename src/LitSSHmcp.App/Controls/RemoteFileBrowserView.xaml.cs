@@ -8,7 +8,7 @@ using Microsoft.Win32;
 
 namespace LitSSHmcp.App.Controls;
 
-/// <summary>远程文件浏览器视图（左侧文件面板）：目录导航、上传/下载、新建/重命名/删除。</summary>
+/// <summary>远程文件浏览器视图（左侧文件面板）：目录导航、上传/下载（含文件夹）、新建/重命名/删除、编辑回传。</summary>
 public partial class RemoteFileBrowserView : UserControl
 {
     private bool _loadedOnce;
@@ -26,7 +26,7 @@ public partial class RemoteFileBrowserView : UserControl
         if (_loadedOnce || ViewModel is null)
             return;
         _loadedOnce = true;
-        _ = ViewModel.LoadAsync();
+        _ = ViewModel.InitializeAsync();
     }
 
     private Window? Owner => Window.GetWindow(this);
@@ -53,13 +53,22 @@ public partial class RemoteFileBrowserView : UserControl
         var dialog = new OpenFileDialog { Title = "上传文件", Multiselect = true, Filter = "所有文件|*.*" };
         if (dialog.ShowDialog(Owner) != true)
             return;
-        _ = UploadManyAsync(vm, dialog.FileNames);
+        _ = vm.UploadPathsAsync(dialog.FileNames);
     }
 
-    private static async Task UploadManyAsync(RemoteFileBrowserViewModel vm, IEnumerable<string> paths)
+    private void OnDragOver(object sender, DragEventArgs e)
     {
-        foreach (var path in paths)
-            await vm.UploadAsync(path);
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnDrop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+        {
+            _ = ViewModel?.UploadPathsAsync(paths);
+            e.Handled = true;
+        }
     }
 
     private void OnPathKeyDown(object sender, KeyEventArgs e)
@@ -98,7 +107,7 @@ public partial class RemoteFileBrowserView : UserControl
 
     private static async Task OpenFileAsync(RemoteFileBrowserViewModel vm, RemoteFileItem item)
     {
-        var local = await vm.OpenFileAsync(item);
+        var local = await vm.OpenFileForEditAsync(item);
         if (local is null)
             return;
         try

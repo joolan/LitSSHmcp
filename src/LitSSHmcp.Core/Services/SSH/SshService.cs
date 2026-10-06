@@ -982,7 +982,8 @@ public class SshService : ISshService
                         Size = (long)f.Length,
                         LastModified = f.LastWriteTime,
                         IsDirectory = f.IsDirectory,
-                        IsSymbolicLink = f.IsSymbolicLink
+                        IsSymbolicLink = f.IsSymbolicLink,
+                        Permissions = FormatPermissions(f)
                     })
                     .ToArray();
 
@@ -1034,7 +1035,9 @@ public class SshService : ISshService
                                 FullName = remotePath.TrimEnd('/') + "/" + name,
                                 Size = size,
                                 IsDirectory = isDir,
-                                IsSymbolicLink = isLink
+                                IsSymbolicLink = isLink,
+                                Permissions = parts[0],
+                                Owner = parts.Length >= 4 ? parts[2] + "/" + parts[3] : string.Empty
                             };
                         }
                         return null;
@@ -1403,6 +1406,31 @@ public class SshService : ISshService
     }
 
     private SshClient CreateSshClient(SshServerConfig server) => SshClientFactory.Create(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);
+
+    /// <summary>由 SFTP 文件属性生成 rwx 权限串（如 -rw-r--r-- / drwxr-xr-x）。</summary>
+    private static string FormatPermissions(Renci.SshNet.Sftp.ISftpFile file)
+    {
+        try
+        {
+            var a = file.Attributes;
+            var b = new System.Text.StringBuilder(10);
+            b.Append(file.IsDirectory ? 'd' : file.IsSymbolicLink ? 'l' : '-');
+            b.Append(a.OwnerCanRead ? 'r' : '-');
+            b.Append(a.OwnerCanWrite ? 'w' : '-');
+            b.Append(a.OwnerCanExecute ? 'x' : '-');
+            b.Append(a.GroupCanRead ? 'r' : '-');
+            b.Append(a.GroupCanWrite ? 'w' : '-');
+            b.Append(a.GroupCanExecute ? 'x' : '-');
+            b.Append(a.OthersCanRead ? 'r' : '-');
+            b.Append(a.OthersCanWrite ? 'w' : '-');
+            b.Append(a.OthersCanExecute ? 'x' : '-');
+            return b.ToString();
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
 
     private SftpClient CreateSftpClient(SshServerConfig server) =>
         SshClientFactory.CreateSftp(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);

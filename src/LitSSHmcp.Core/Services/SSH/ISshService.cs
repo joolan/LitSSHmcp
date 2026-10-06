@@ -91,6 +91,12 @@ public class RemoteFileInfo
     public DateTime LastModified { get; set; }
     public bool IsDirectory { get; set; }
     public bool IsSymbolicLink { get; set; }
+
+    /// <summary>权限字符串（如 <c>-rw-r--r--</c> / <c>drwxr-xr-x</c>）；无法获取时为空。</summary>
+    public string Permissions { get; set; } = string.Empty;
+
+    /// <summary>属主（user/group 或数字 uid）；无法获取时为空。</summary>
+    public string Owner { get; set; } = string.Empty;
 }
 
 /// <summary>

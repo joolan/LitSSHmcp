@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Windows;
 using System.Windows.Input;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
@@ -13,6 +15,22 @@ public partial class SshSessionWindow : FluentWindow
     {
         InitializeComponent();
         WindowLayout.Attach(this, "ssh-session");
+    }
+
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        if (DataContext is MainViewModel { HasSessions: true } vm)
+        {
+            var result = System.Windows.MessageBox.Show(
+                $"确定关闭 SSH 会话管理？当前 {vm.Sessions.Count} 个会话将断开。",
+                "关闭", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
+            if (result != System.Windows.MessageBoxResult.Yes)
+            {
+                e.Cancel = true;
+                return;
+            }
+        }
+        base.OnClosing(e);
     }
 
     private void OnCommandKeyDown(object sender, KeyEventArgs e)

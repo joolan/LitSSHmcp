@@ -248,12 +248,6 @@ public class MainViewModel : INotifyPropertyChanged
     private void CloseSession(object? session)
     {
         if (session == null) return;
-        var index = Sessions.IndexOf(session);
-        if (session is TerminalSessionViewModel term)
-            _ = term.DisposeAsync();
-        Sessions.Remove(session);
-        if (ReferenceEquals(SelectedSession, session) || SelectedSession == session)
-            SelectedSession = Sessions.Count > 0 ? Sessions[Math.Max(0, Math.Min(index, Sessions.Count - 1))] : null;
 
         var name = session switch
         {
@@ -261,6 +255,19 @@ public class MainViewModel : INotifyPropertyChanged
             TerminalSessionViewModel t => t.Server.Name,
             _ => string.Empty
         };
+        var extra = session is TerminalSessionViewModel ? "终端连接将断开。" : string.Empty;
+        var confirm = MessageBox.Show($"确定关闭会话「{name}」？{extra}",
+            "关闭会话", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.Yes)
+            return;
+
+        var index = Sessions.IndexOf(session);
+        if (session is TerminalSessionViewModel term)
+            _ = term.DisposeAsync();
+        Sessions.Remove(session);
+        if (ReferenceEquals(SelectedSession, session) || SelectedSession == session)
+            SelectedSession = Sessions.Count > 0 ? Sessions[Math.Max(0, Math.Min(index, Sessions.Count - 1))] : null;
+
         StatusMessage = Sessions.Count == 0 ? "已关闭全部会话" : $"已关闭会话: {name}";
     }
 

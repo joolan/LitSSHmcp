@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
+        AllowDrop="True" DragOver="OnDragOver" Drop="OnDrop">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -15,7 +16,7 @@
             <ui:Button Icon="{ui:SymbolIcon ArrowUp24}" Padding="6,3" Margin="0,0,4,4" ToolTip="上一级" Click="OnUp"/>
             <ui:Button Icon="{ui:SymbolIcon ArrowSync24}" Padding="6,3" Margin="0,0,4,4" ToolTip="刷新" Click="OnReload"/>
             <ui:Button Icon="{ui:SymbolIcon FolderAdd24}" Padding="6,3" Margin="0,0,4,4" ToolTip="新建文件夹" Click="OnNewFolder"/>
-            <ui:Button Icon="{ui:SymbolIcon ArrowUpload24}" Padding="6,3" Margin="0,0,4,4" ToolTip="上传文件到当前目录" Click="OnUpload"/>
+            <ui:Button Icon="{ui:SymbolIcon ArrowUpload24}" Padding="6,3" Margin="0,0,4,4" ToolTip="上传文件到当前目录（也可把文件/文件夹拖到此处上传）" Click="OnUpload"/>
         </WrapPanel>
 
         <TextBox Grid.Row="1" x:Name="PathBox" Margin="0,0,0,6" Padding="4,3"
@@ -37,7 +38,7 @@
             </ListView.ContextMenu>
             <ListView.View>
                 <GridView>
-                    <GridViewColumn Header="名称" Width="220">
+                    <GridViewColumn Header="名称" Width="200">
                         <GridViewColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
@@ -47,6 +48,7 @@
                             </DataTemplate>
                         </GridViewColumn.CellTemplate>
                     </GridViewColumn>
+                    <GridViewColumn Header="权限" Width="120" DisplayMemberBinding="{Binding OwnerText}"/>
                     <GridViewColumn Header="大小" Width="80" DisplayMemberBinding="{Binding SizeText}"/>
                     <GridViewColumn Header="修改时间" Width="130" DisplayMemberBinding="{Binding ModifiedText}"/>
                 </GridView>

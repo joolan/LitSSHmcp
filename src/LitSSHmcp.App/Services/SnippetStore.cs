@@ -5,18 +5,25 @@ using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.Services;
 
-/// <summary>命令片段存储（%APPDATA%\LitSSH\snippets.json）。</summary>
+/// <summary>
+/// 命令片段存储：
+///  - 全局片段：%APPDATA%\LitSSH\snippets.json
+///  - 每服务器片段：%APPDATA%\LitSSH\server-snippets.json（字典：serverId -> 片段列表）
+/// </summary>
 public static class SnippetStore
 {
-    private static readonly string FilePath = Path.Combine(ConfigPaths.AppDataDir, "snippets.json");
+    private static readonly string GlobalPath = Path.Combine(ConfigPaths.AppDataDir, "snippets.json");
+    private static readonly string ServerPath = Path.Combine(ConfigPaths.AppDataDir, "server-snippets.json");
 
-    public static List<CommandSnippet> Load()
+    // ---- 全局 ----
+
+    public static List<CommandSnippet> LoadGlobal()
     {
         try
         {
-            if (File.Exists(FilePath))
+            if (File.Exists(GlobalPath))
             {
-                var list = JsonSerializer.Deserialize<List<CommandSnippet>>(File.ReadAllText(FilePath));
+                var list = JsonSerializer.Deserialize<List<CommandSnippet>>(File.ReadAllText(GlobalPath));
                 if (list is not null)
                     return list;
             }
@@ -28,15 +35,60 @@ public static class SnippetStore
         return Defaults();
     }
 
-    public static void Save(IEnumerable<CommandSnippet> snippets)
+    public static void SaveGlobal(IEnumerable<CommandSnippet> snippets)
+        => SaveList(GlobalPath, snippets);
+
+    // ---- 每服务器 ----
+
+    public static List<CommandSnippet> LoadServer(string serverId)
+    {
+        if (string.IsNullOrEmpty(serverId))
+            return new List<CommandSnippet>();
+        return LoadMap().TryGetValue(serverId, out var list) ? list : new List<CommandSnippet>();
+    }
+
+    public static void SaveServer(string serverId, IEnumerable<CommandSnippet> snippets)
+    {
+        if (string.IsNullOrEmpty(serverId))
+            return;
+        var map = LoadMap();
+        map[serverId] = snippets.Where(s => !string.IsNullOrWhiteSpace(s.Command)).ToList();
+        try
+        {
+            var dir = Path.GetDirectoryName(ServerPath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+            File.WriteAllText(ServerPath, JsonSerializer.Serialize(map));
+        }
+        catch
+        {
+            // 保存失败忽略
+        }
+    }
+
+    private static Dictionary<string, List<CommandSnippet>> LoadMap()
     {
         try
         {
-            var dir = Path.GetDirectoryName(FilePath);
+            if (File.Exists(ServerPath))
+                return JsonSerializer.Deserialize<Dictionary<string, List<CommandSnippet>>>(File.ReadAllText(ServerPath)) ?? new();
+        }
+        catch
+        {
+            // 损坏则空
+        }
+        return new();
+    }
+
+    private static void SaveList(string path, IEnumerable<CommandSnippet> snippets)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
             var list = snippets.Where(s => !string.IsNullOrWhiteSpace(s.Command)).ToList();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(list));
+            File.WriteAllText(path, JsonSerializer.Serialize(list));
         }
         catch
         {

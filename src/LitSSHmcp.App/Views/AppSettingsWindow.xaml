@@ -21,7 +21,7 @@
                 <views:TerminalSettingsView/>
             </TabItem>
             <TabItem Header="命令片段">
-                <views:SnippetSettingsView/>
+                <views:SnippetEditorView/>
             </TabItem>
             <TabItem Header="安全设置">
                 <views:SecuritySettingsView/>

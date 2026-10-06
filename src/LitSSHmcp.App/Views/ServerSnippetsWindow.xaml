@@ -1,0 +1,16 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.ServerSnippetsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:views="clr-namespace:LitSSHmcp.App.Views"
+        Title="服务器命令片段" Height="520" Width="720"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="服务器命令片段"/>
+        <views:SnippetEditorView Grid.Row="1" x:Name="Editor"/>
+    </Grid>
+</ui:FluentWindow>

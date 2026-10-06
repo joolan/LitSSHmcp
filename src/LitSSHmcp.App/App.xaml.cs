@@ -35,10 +35,26 @@ public partial class App : Application
         }
     }
 
+    private static readonly HashSet<string> _shownErrors = new();
+
     private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
         SafeLog(e.Exception);
         e.Handled = true;
+
+        // 同一条错误只提示一次，避免定时/绑定类异常反复弹窗被误认为卡死
+        var key = e.Exception.GetType().Name + ": " + e.Exception.Message;
+        bool show;
+        lock (_shownErrors)
+        {
+            show = _shownErrors.Add(key);
+            if (_shownErrors.Count > 200)
+                _shownErrors.Clear();
+        }
+
+        if (!show)
+            return;
+
         try
         {
             MessageBox.Show("发生未处理错误（已拦截，程序继续运行）：\n\n" + e.Exception.Message,

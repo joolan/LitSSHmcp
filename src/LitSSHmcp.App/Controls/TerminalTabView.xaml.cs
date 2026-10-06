@@ -48,30 +48,56 @@ public partial class TerminalTabView : UserControl
 
     private void OnSnippets(object sender, RoutedEventArgs e)
     {
+        var vm = Vm;
         var menu = new ContextMenu();
-        var snippets = SnippetStore.Load();
-        var added = 0;
-        foreach (var snippet in snippets)
-        {
-            if (string.IsNullOrWhiteSpace(snippet.Command))
-                continue;
-            var command = snippet.Command;
-            var item = new MenuItem
-            {
-                Header = string.IsNullOrWhiteSpace(snippet.Name) ? command : snippet.Name,
-                ToolTip = command
-            };
-            item.Click += (_, _) => Vm?.SendInput(command + "\r");
-            menu.Items.Add(item);
-            added++;
-        }
-        if (added == 0)
-            menu.Items.Add(new MenuItem { Header = "（无片段，请在 设置 → 命令片段 添加）", IsEnabled = false });
+
+        menu.Items.Add(new MenuItem { Header = "全局片段", IsEnabled = false });
+        var global = SnippetStore.LoadGlobal();
+        if (global.Count == 0)
+            menu.Items.Add(new MenuItem { Header = "（无）", IsEnabled = false });
+        foreach (var snippet in global)
+            AddSnippetItem(menu, snippet);
+
+        menu.Items.Add(new Separator());
+        var serverName = vm?.Server.Name ?? string.Empty;
+        menu.Items.Add(new MenuItem { Header = $"服务器片段（{serverName}）", IsEnabled = false });
+        var serverSnippets = vm is null ? new List<CommandSnippet>() : SnippetStore.LoadServer(vm.Server.Id);
+        if (serverSnippets.Count == 0)
+            menu.Items.Add(new MenuItem { Header = "（无）", IsEnabled = false });
+        foreach (var snippet in serverSnippets)
+            AddSnippetItem(menu, snippet);
+
+        menu.Items.Add(new Separator());
+        var manageServer = new MenuItem { Header = "管理服务器片段…", IsEnabled = vm is not null };
+        if (vm is not null)
+            manageServer.Click += (_, _) => OpenSnippetsWindow(vm.Server.Id, $"服务器命令片段 - {vm.Server.Name}");
+        menu.Items.Add(manageServer);
+
+        var manageGlobal = new MenuItem { Header = "管理全局片段…" };
+        manageGlobal.Click += (_, _) => OpenSnippetsWindow(null, "全局命令片段");
+        menu.Items.Add(manageGlobal);
 
         menu.PlacementTarget = sender as UIElement;
         menu.Placement = PlacementMode.Bottom;
         menu.IsOpen = true;
     }
+
+    private void AddSnippetItem(ContextMenu menu, CommandSnippet snippet)
+    {
+        if (string.IsNullOrWhiteSpace(snippet.Command))
+            return;
+        var command = snippet.Command;
+        var item = new MenuItem
+        {
+            Header = string.IsNullOrWhiteSpace(snippet.Name) ? command : snippet.Name,
+            ToolTip = command
+        };
+        item.Click += (_, _) => Vm?.SendInput(command + "\r");
+        menu.Items.Add(item);
+    }
+
+    private void OpenSnippetsWindow(string? serverId, string title)
+        => new Views.ServerSnippetsWindow(serverId, title) { Owner = Window.GetWindow(this) }.ShowDialog();
 
     private void OnSplitterDragCompleted(object sender, DragCompletedEventArgs e)
     {

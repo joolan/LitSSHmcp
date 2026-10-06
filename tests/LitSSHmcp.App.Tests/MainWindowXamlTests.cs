@@ -96,6 +96,7 @@ public class MainWindowXamlTests
             _ = new BatchExecWindow();
             _ = new TerminalLogWindow();
             _ = new ServerMonitorWindow(new LitSSHmcp.App.ViewModels.ServerMonitorViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
+            _ = new ServerSnippetsWindow(server);
         });
         Assert.Null(ex);
     }
@@ -111,7 +112,7 @@ public class MainWindowXamlTests
             _ = new McpToolsView();
             _ = new AppearanceSettingsView();
             _ = new TerminalSettingsView();
-            _ = new SnippetSettingsView();
+            _ = new SnippetEditorView();
         });
         Assert.Null(ex);
     }

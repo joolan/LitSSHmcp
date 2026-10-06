@@ -9,6 +9,7 @@
     <Window.Resources>
         <controls:MainPageVisibilityConverter x:Key="PageVis"/>
         <controls:MainPageAppearanceConverter x:Key="PageAppearance"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
@@ -91,7 +92,8 @@
                             <TextBlock Text="数据看板" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                             <WrapPanel Margin="0,0,0,20">
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12">
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                        Cursor="Hand" ToolTip="打开 SSH 服务器管理" MouseLeftButtonUp="OnHomeServersClick">
                                     <StackPanel>
                                         <TextBlock Text="{Binding ServerCount}" FontSize="30" FontWeight="SemiBold"/>
                                         <TextBlock Text="SSH 服务器" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
@@ -101,13 +103,15 @@
                                         </TextBlock>
                                     </StackPanel>
                                 </Border>
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12">
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                        Cursor="Hand" ToolTip="打开数据源管理" MouseLeftButtonUp="OnHomeDatasourcesClick">
                                     <StackPanel>
                                         <TextBlock Text="{Binding DatasourceCount}" FontSize="30" FontWeight="SemiBold"/>
                                         <TextBlock Text="数据源" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                     </StackPanel>
                                 </Border>
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12">
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                        Cursor="Hand" ToolTip="打开应用管理" MouseLeftButtonUp="OnHomeApplicationsClick">
                                     <StackPanel>
                                         <TextBlock Text="{Binding ApplicationCount}" FontSize="30" FontWeight="SemiBold"/>
                                         <TextBlock Text="应用" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
@@ -117,14 +121,51 @@
 
                             <TextBlock Text="AI 快捷提问" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                            <DockPanel MaxWidth="760" HorizontalAlignment="Left" Margin="0,0,0,8">
-                                <ui:Button DockPanel.Dock="Right" Content="提问" Icon="{ui:SymbolIcon Chat24}"
-                                           Appearance="Primary" Padding="16,5" Margin="8,0,0,0" Command="{Binding AskAgentCommand}"/>
-                                <ui:TextBox FontWeight="Normal" Text="{Binding HomeQuestion, UpdateSourceTrigger=PropertyChanged}"
-                                            PlaceholderText="输入运维问题，例如：检查 10.0.2.15 的磁盘与内存使用…"/>
-                            </DockPanel>
-                            <TextBlock Text="点击「提问」会打开 AI 运维助手并填入该问题（按回车发送）。"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"/>
+                            <Border Style="{DynamicResource CardBorderStyle}" MaxWidth="880" HorizontalAlignment="Left">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,6" LastChildFill="True"
+                                               Visibility="{Binding HasHomeAttachments, Converter={StaticResource BoolToVis}}">
+                                        <ui:Button DockPanel.Dock="Right" Style="{DynamicResource ActionRowButton}" Content="清除全部"
+                                                   Padding="8,2" Margin="8,0,0,0" VerticalAlignment="Top" Click="OnHomeClearAttachments"/>
+                                        <ItemsControl ItemsSource="{Binding HomeAttachments}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="{DynamicResource AppRadiusS}"
+                                                            Padding="8,3" Margin="0,0,6,6">
+                                                        <TextBlock Text="{Binding Name}" FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="200"/>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </DockPanel>
+
+                                    <TextBox x:Name="HomeAskBox" Text="{Binding HomeQuestion, UpdateSourceTrigger=PropertyChanged}"
+                                             AcceptsReturn="True" MinHeight="72" MaxHeight="220" TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent"
+                                             Padding="2" KeyDown="OnHomeAskKeyDown"
+                                             ToolTip="Enter 发送 / Shift+Enter 换行"/>
+
+                                    <DockPanel Margin="0,6,0,0">
+                                        <ui:Button DockPanel.Dock="Right" Content="发送" Icon="{ui:SymbolIcon Send24}" Appearance="Primary"
+                                                   Padding="16,5" Click="OnHomeSend"/>
+                                        <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="8,4" Click="OnHomeMore"
+                                                   ToolTip="添加图片 / 文件">
+                                            <ui:Button.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="添加图片…" Click="OnHomeAddImage"/>
+                                                    <MenuItem Header="添加文件…" Click="OnHomeAddFile"/>
+                                                    <MenuItem Header="清除全部附件" Click="OnHomeClearAttachments"/>
+                                                </ContextMenu>
+                                            </ui:Button.ContextMenu>
+                                        </ui:Button>
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="Enter 发送 / Shift+Enter 换行；发送时会把文字与附件填入 AI 运维助手的输入区（若助手输入区已有内容会先确认）。"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="0,6,0,0"/>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

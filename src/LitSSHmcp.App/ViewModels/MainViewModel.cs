@@ -430,16 +430,72 @@ public class MainViewModel : INotifyPropertyChanged
 
     private void OpenAgent() => EnsureAgentWindow();
 
-    // 主页「AI 快捷提问」：打开助手并把问题填入输入框
-    private void AskAgent()
+    // 主页「AI 快捷提问」：把文字与附件填入 AI 运维助手的输入区
+    private void AskAgent() => SendHomeAsk();
+
+    /// <summary>把主页快捷提问的文本/附件送入 AI 运维助手输入区（助手已有内容时先确认覆盖）。</summary>
+    public void SendHomeAsk()
     {
-        var window = EnsureAgentWindow();
-        var question = HomeQuestion?.Trim();
-        if (!string.IsNullOrEmpty(question))
+        var text = HomeQuestion?.Trim() ?? string.Empty;
+        var paths = HomeAttachments.Select(a => a.Path).ToList();
+        if (text.Length == 0 && paths.Count == 0)
         {
-            window.SubmitPrompt(question);
-            HomeQuestion = string.Empty;
+            StatusMessage = "请先输入问题或添加附件";
+            return;
         }
+
+        var window = EnsureAgentWindow();
+        var vm = window.ViewModel;
+        if (!string.IsNullOrWhiteSpace(vm.Input) || vm.HasAttachments)
+        {
+            var result = MessageBox.Show(
+                "AI 运维助手的输入区已有内容，是否覆盖？",
+                "AI 快捷提问", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes)
+                return;
+
+            vm.ClearAttachments();
+            vm.Input = string.Empty;
+        }
+
+        window.SubmitPrompt(text, paths);
+        HomeQuestion = string.Empty;
+        ClearHomeAttachments();
+    }
+
+    // ---- 主页快捷提问的附件 ----
+
+    public ObservableCollection<HomeAttachment> HomeAttachments { get; } = new();
+
+    public bool HasHomeAttachments => HomeAttachments.Count > 0;
+
+    public void AddHomeAttachmentPaths(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
+        {
+            if (!System.IO.File.Exists(path))
+                continue;
+            if (HomeAttachments.Any(a => string.Equals(a.Path, path, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+            var isImage = ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp";
+            HomeAttachments.Add(new HomeAttachment
+            {
+                Name = System.IO.Path.GetFileName(path),
+                Path = path,
+                IsImage = isImage
+            });
+        }
+        OnPropertyChanged(nameof(HasHomeAttachments));
+    }
+
+    public void ClearHomeAttachments()
+    {
+        if (HomeAttachments.Count == 0)
+            return;
+        HomeAttachments.Clear();
+        OnPropertyChanged(nameof(HasHomeAttachments));
     }
 
     // 采集服务器快照(同步阻塞, 典型 10~30 秒)。单飞: 服务内 per-server 锁 + 库内 Running 唯一约束跨进程生效;
@@ -512,6 +568,14 @@ public enum MainPage
     Servers,
     DataSources,
     Applications
+}
+
+/// <summary>主页「AI 快捷提问」的待转交附件。</summary>
+public sealed class HomeAttachment
+{
+    public required string Name { get; init; }
+    public required string Path { get; init; }
+    public bool IsImage { get; init; }
 }
 
 public class RelayCommand : ICommand

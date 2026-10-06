@@ -36,10 +36,15 @@ public partial class AgentWindow : FluentWindow
             turn.ShowTools = !turn.ShowTools;
     }
 
-    /// <summary>主页「AI 快捷提问」：把问题填入输入框并聚焦（不自动发送）。</summary>
-    public void SubmitPrompt(string text)
+    /// <summary>对外暴露的助手 ViewModel（供主页快捷提问写入输入/附件）。</summary>
+    public AgentViewModel ViewModel => _viewModel;
+
+    /// <summary>主页「AI 快捷提问」：把问题与附件填入输入框并聚焦（不自动发送）。</summary>
+    public void SubmitPrompt(string text, IReadOnlyList<string>? attachmentPaths = null)
     {
         _viewModel.Input = text;
+        if (attachmentPaths is { Count: > 0 })
+            _viewModel.AddAttachmentFiles(attachmentPaths);
         Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()), System.Windows.Threading.DispatcherPriority.Input);
     }
 

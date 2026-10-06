@@ -987,6 +987,8 @@ public class SshService : ISshService
                     })
                     .ToArray();
 
+                EnrichOwners(server, remotePath, mapped);
+
                 return new RemoteFileListResult
                 {
                     Success = true,
@@ -1417,6 +1419,48 @@ public class SshService : ISshService
     }
 
     private SshClient CreateSshClient(SshServerConfig server) => SshClientFactory.Create(server, _knownHosts, _securityOptions?.SshHostKey.Mode ?? SshHostKeyMode.Tofu);
+
+    /// <summary>SFTP 列表不含属主名；用一次 `ls -la` 补齐属主/属组（按文件名合并）。</summary>
+    private void EnrichOwners(SshServerConfig server, string remotePath, RemoteFileInfo[] files)
+    {
+        if (files.Length == 0 || files.All(f => !string.IsNullOrEmpty(f.Owner)))
+            return;
+        try
+        {
+            using var conn = OpenConnection(server);
+            var escaped = remotePath.Replace("'", "'\\''");
+            using var cmd = conn.Client.CreateCommand($"ls -la -- '{escaped}'");
+            cmd.CommandTimeout = TimeSpan.FromSeconds(20);
+            var output = cmd.Execute();
+            if (cmd.ExitStatus != 0)
+                return;
+
+            var map = new Dictionary<string, (string Mode, string Owner)>(StringComparer.Ordinal);
+            foreach (var line in output.Split('\n'))
+            {
+                if (string.IsNullOrWhiteSpace(line) || line.StartsWith("total"))
+                    continue;
+                var parts = line.Split(new[] { ' ' }, 9, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 9)
+                    continue;
+                map[parts[8]] = (parts[0], parts[2] + "/" + parts[3]);
+            }
+
+            foreach (var f in files)
+            {
+                if (!map.TryGetValue(f.Name, out var info))
+                    continue;
+                if (string.IsNullOrEmpty(f.Owner))
+                    f.Owner = info.Owner;
+                if (string.IsNullOrEmpty(f.Permissions))
+                    f.Permissions = info.Mode;
+            }
+        }
+        catch
+        {
+            // 补齐失败不影响列表（属主留空）
+        }
+    }
 
     /// <summary>由 SFTP 文件属性生成 rwx 权限串（如 -rw-r--r-- / drwxr-xr-x）。</summary>
     private static string FormatPermissions(Renci.SshNet.Sftp.ISftpFile file)

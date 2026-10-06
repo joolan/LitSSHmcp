@@ -292,24 +292,53 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         if (IsBusy)
             return;
 
-        var commands = new List<string>();
+        var jobs = new List<(string Source, string Target, bool Conflict)>();
         foreach (var source in _clipboard)
         {
             var name = BaseName(source);
             var parent = ParentOf(source);
-            var target = JoinPath(CurrentPath, name);
+            var sameDir = string.Equals(parent, CurrentPath, StringComparison.Ordinal);
 
-            if (string.Equals(parent, CurrentPath, StringComparison.Ordinal) && !_clipboardCut)
+            if (sameDir && !_clipboardCut)
                 continue; // 复制到原目录会产生嵌套，跳过
+            if (sameDir && _clipboardCut)
+                continue; // 剪切到原目录无意义
 
+            var target = JoinPath(CurrentPath, name);
+            var conflict = Items.Any(i => string.Equals(i.Name, name, StringComparison.Ordinal));
+            jobs.Add((source, target, conflict));
+        }
+
+        if (jobs.Count == 0)
+        {
+            StatusMessage = "无需粘贴（与原目录相同）";
+            return;
+        }
+
+        var conflicts = jobs.Count(j => j.Conflict);
+        var overwrite = false;
+        if (conflicts > 0)
+        {
+            var answer = MessageBox.Show(
+                $"目标目录已存在 {conflicts} 个同名文件/文件夹，是否覆盖？",
+                "粘贴", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            overwrite = answer == MessageBoxResult.Yes;
+        }
+
+        var commands = new List<string>();
+        foreach (var (source, target, conflict) in jobs)
+        {
+            if (conflict && !overwrite)
+                continue;
+            var prefix = conflict ? $"rm -rf -- {Quote(target)} && " : string.Empty;
             commands.Add(_clipboardCut
-                ? $"mv -- {Quote(source)} {Quote(target)}"
-                : $"cp -a -- {Quote(source)} {Quote(target)}");
+                ? $"{prefix}mv -- {Quote(source)} {Quote(target)}"
+                : $"{prefix}cp -a -- {Quote(source)} {Quote(target)}");
         }
 
         if (commands.Count == 0)
         {
-            StatusMessage = "无需粘贴（与原目录相同）";
+            StatusMessage = "已取消粘贴";
             return;
         }
 

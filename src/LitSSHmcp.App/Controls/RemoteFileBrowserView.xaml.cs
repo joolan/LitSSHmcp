@@ -153,7 +153,10 @@ public partial class RemoteFileBrowserView : UserControl
     private void OnListPreviewRightClick(object sender, MouseButtonEventArgs e)
     {
         var item = FindAncestor<ListViewItem>(e.OriginalSource as DependencyObject);
-        if (item != null)
+        if (item == null)
+            return;
+        // 仅当右键落在“未选中”的项上时才改写选择，避免破坏 Ctrl 多选
+        if (!item.IsSelected)
             FileList.SelectedItem = item.DataContext;
     }
 

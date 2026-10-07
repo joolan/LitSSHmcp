@@ -6,17 +6,21 @@ using Wpf.Ui.Controls;
 
 namespace LitSSHmcp.App.Views;
 
-/// <summary>自建「打开方式」对话框（避开 Windows 11 对系统 OpenAs 的限制）：列出已注册应用，可选“浏览…”。</summary>
+/// <summary>
+/// 自建「打开方式」对话框（避开 Windows 11 对系统 OpenAs 的限制）。
+/// 按文件扩展名收集候选程序：扩展名 OpenWithProgids / OpenWithList + HKCR\Applications（含 SupportedTypes 过滤）。
+/// </summary>
 public partial class OpenWithDialog : FluentWindow
 {
     private readonly string _file;
+    private bool _launched;
 
     public OpenWithDialog(string file)
     {
         InitializeComponent();
         _file = file;
         FileText.Text = file;
-        List.ItemsSource = EnumeratePrograms();
+        List.ItemsSource = EnumeratePrograms(file);
     }
 
     /// <summary>弹窗让用户选择程序打开文件；返回是否已用某程序打开。</summary>
@@ -29,12 +33,74 @@ public partial class OpenWithDialog : FluentWindow
         return dialog._launched;
     }
 
-    private bool _launched;
-
-    private static List<ProgramItem> EnumeratePrograms()
+    private static List<ProgramItem> EnumeratePrograms(string file)
     {
+        var ext = Path.GetExtension(file).ToLowerInvariant();
         var programs = new List<ProgramItem>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenExe = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenName = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(string? command, string? fallbackName)
+        {
+            if (string.IsNullOrWhiteSpace(command))
+                return;
+
+            var commandText = command!;
+            var exe = TryGetExe(commandText) ?? string.Empty;
+            if (exe.Length > 0 && !seenExe.Add(exe))
+                return;
+
+            var name = Description(exe) ?? fallbackName;
+            if (string.IsNullOrWhiteSpace(name))
+                name = exe.Length > 0 ? Path.GetFileName(exe) : commandText;
+            if (!seenName.Add(name!))
+                return;
+            programs.Add(new ProgramItem(name!, exe, commandText));
+        }
+
+        // 1) 扩展名的 OpenWithProgids（HKCR + HKCU FileExts）
+        foreach (var (hive, path) in new[]
+                 {
+                     (Registry.ClassesRoot, ext + "\\OpenWithProgids"),
+                     (Registry.CurrentUser, @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\" + ext + "\\OpenWithProgids")
+                 })
+        {
+            try
+            {
+                using var key = hive.OpenSubKey(path);
+                if (key is null)
+                    continue;
+                foreach (var progId in key.GetValueNames())
+                    Add(GetProgidCommand(progId), GetProgidName(progId));
+            }
+            catch
+            {
+                // 忽略
+            }
+        }
+
+        // 2) OpenWithList（exe 名）
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\" + ext + "\\OpenWithList");
+            if (key is not null)
+            {
+                foreach (var valueName in key.GetValueNames())
+                {
+                    if (string.Equals(valueName, "MRUList", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (key.GetValue(valueName) is string exeName && !string.IsNullOrWhiteSpace(exeName))
+                        Add(GetApplicationCommand(exeName) ?? $"\"{exeName}\" %1", null);
+                }
+            }
+        }
+        catch
+        {
+            // 忽略
+        }
+
+        // 3) HKCR\Applications（若声明 SupportedTypes 则按扩展名过滤）
         try
         {
             using var apps = Registry.ClassesRoot.OpenSubKey("Applications");
@@ -45,44 +111,60 @@ public partial class OpenWithDialog : FluentWindow
                     if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                         continue;
                     using var appKey = apps.OpenSubKey(name);
-                    var display = appKey?.GetValue(null) as string;
-                    using var cmdKey = appKey?.OpenSubKey("shell\\open\\command");
-                    var command = cmdKey?.GetValue(null) as string;
-                    if (string.IsNullOrWhiteSpace(command))
-                        continue;
-
-                    // 优先用 exe 的本地化文件描述作为显示名
-                    string? description = null;
-                    try
+                    using var supported = appKey?.OpenSubKey("SupportedTypes");
+                    if (supported is not null)
                     {
-                        var exe = TryGetExe(command!);
-                        if (exe is not null && File.Exists(exe))
-                            description = FileVersionInfo.GetVersionInfo(exe).FileDescription;
+                        var types = supported.GetValueNames();
+                        if (types.Length > 0 && ext.Length > 0 &&
+                            !types.Any(n => string.Equals(n, ext, StringComparison.OrdinalIgnoreCase)))
+                            continue;
                     }
-                    catch
-                    {
-                        // 忽略版本信息读取失败
-                    }
-
-                    var label = !string.IsNullOrWhiteSpace(description)
-                        ? description!
-                        : (string.IsNullOrWhiteSpace(display) ? name : display!);
-                    if (seen.Add(label))
-                        programs.Add(new ProgramItem(label, name, command!));
+                    var command = appKey?.OpenSubKey("shell\\open\\command")?.GetValue(null) as string;
+                    Add(command, appKey?.GetValue(null) as string);
                 }
             }
         }
         catch
         {
-            // 注册表读取失败则回退
+            // 忽略
         }
 
         if (programs.Count == 0)
-        {
-            foreach (var exe in new[] { "notepad.exe" })
-                programs.Add(new ProgramItem(exe, exe, exe));
-        }
+            programs.Add(new ProgramItem("记事本", "notepad.exe", "notepad.exe %1"));
+
         return programs.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static string? GetProgidCommand(string progId)
+    {
+        try { return Registry.ClassesRoot.OpenSubKey(progId + "\\shell\\open\\command")?.GetValue(null) as string; }
+        catch { return null; }
+    }
+
+    private static string? GetProgidName(string progId)
+    {
+        try { return Registry.ClassesRoot.OpenSubKey(progId)?.GetValue(null) as string; }
+        catch { return null; }
+    }
+
+    private static string? GetApplicationCommand(string exeName)
+    {
+        try { return Registry.ClassesRoot.OpenSubKey("Applications\\" + exeName + "\\shell\\open\\command")?.GetValue(null) as string; }
+        catch { return null; }
+    }
+
+    private static string? Description(string exe)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(exe) && File.Exists(exe))
+                return FileVersionInfo.GetVersionInfo(exe).FileDescription;
+        }
+        catch
+        {
+            // 忽略
+        }
+        return null;
     }
 
     private void OnOk(object sender, RoutedEventArgs e)

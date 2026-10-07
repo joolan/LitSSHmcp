@@ -216,6 +216,22 @@ public partial class RemoteFileBrowserView : UserControl
 
     private void OnPaste(object sender, RoutedEventArgs e) => _ = ViewModel?.PasteAsync();
 
+    private void OnCopyToRemote(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        var items = FileList.SelectedItems.Cast<RemoteFileItem>().ToList();
+        if (items.Count == 0)
+        {
+            MessageBox.Show("请先选择要复制的文件 / 文件夹。", "复制到远程服务器",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        // 非模态：不阻塞主程序（及其它窗口）
+        new Views.RemoteCopyWindow(vm.Server, items) { Owner = Owner }.Show();
+    }
+
     private void OnCd(object sender, RoutedEventArgs e)
     {
         if (ViewModel is { } vm && vm.SelectedItem is { } item)
@@ -224,6 +240,12 @@ public partial class RemoteFileBrowserView : UserControl
 
     private List<RemoteFileItem> SelectedItems()
         => FileList.SelectedItems.Cast<RemoteFileItem>().ToList();
+
+    private void OnFileSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ViewModel is { } vm)
+            vm.SelectedItems = FileList.SelectedItems.Cast<RemoteFileItem>().ToList();
+    }
 
     // ---- 拖出下载（拖到资源管理器） ----
 

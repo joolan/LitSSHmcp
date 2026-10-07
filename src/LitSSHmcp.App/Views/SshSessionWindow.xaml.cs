@@ -30,11 +30,11 @@ public partial class SshSessionWindow : FluentWindow
             if (_vmHooked is not null)
             {
                 _vmHooked.PropertyChanged -= OnVmPropertyChanged;
-                _vmHooked.Sessions.CollectionChanged -= OnSessionsChanged;
+                _vmHooked.DockedSessions.CollectionChanged -= OnSessionsChanged;
             }
             _vmHooked = vm;
             vm.PropertyChanged += OnVmPropertyChanged;
-            vm.Sessions.CollectionChanged += OnSessionsChanged;
+            vm.DockedSessions.CollectionChanged += OnSessionsChanged;
         }
         TilingScroll.SizeChanged -= OnTilingSizeChanged;
         TilingScroll.SizeChanged += OnTilingSizeChanged;
@@ -58,7 +58,7 @@ public partial class SshSessionWindow : FluentWindow
             return;
 
         var cols = Math.Max(1, vm.SshTileColumns);
-        var count = vm.Sessions.Count;
+        var count = vm.DockedSessions.Count;
         if (count == 0)
         {
             vm.SshTileCardHeight = vm.SshTileHeight;
@@ -91,19 +91,6 @@ public partial class SshSessionWindow : FluentWindow
             }
         }
         base.OnClosing(e);
-    }
-
-    private void OnCommandKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter)
-            return;
-
-        if (sender is TextBox { DataContext: SessionViewModel session } &&
-            session.ExecuteCommand.CanExecute(null))
-        {
-            session.ExecuteCommand.Execute(null);
-            e.Handled = true;
-        }
     }
 
     // ---- 布局切换（标签 / 平铺） ----
@@ -265,35 +252,101 @@ public partial class SshSessionWindow : FluentWindow
         menu.IsOpen = true;
     }
 
-    // ---- 标签拖拽排序 / 双击重命名 ----
+    // ---- 标签拖拽排序 / 拖出分离 / 双击重命名 ----
 
     private const string TabDragFormat = "LitSshTab";
-    private Point _tabDragStart;
-    private object? _tabDragItem;
+    private Point _dragStart;
+    private object? _dragItem;
+    private bool _dragOutside;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT point);
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct POINT { public int X; public int Y; }
 
     private void OnTabsPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        _tabDragItem = null;
+        _dragItem = null;
         var tab = FindAncestor<TabItem>(e.OriginalSource as DependencyObject);
         if (tab is null || FindAncestor<System.Windows.Controls.Button>(e.OriginalSource as DependencyObject) is not null)
             return;
-        _tabDragStart = e.GetPosition(null);
-        _tabDragItem = tab.DataContext;
+        _dragStart = e.GetPosition(null);
+        _dragItem = tab.DataContext;
     }
 
     private void OnTabsPreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (_tabDragItem is null || e.LeftButton != MouseButtonState.Pressed)
+        if (_dragItem is null || e.LeftButton != MouseButtonState.Pressed || !HasPassedDragThreshold(e))
             return;
+        BeginDrag((DependencyObject)sender);
+    }
+
+    // 卡片头拖拽把手（避免与终端内文本选择冲突）
+    private void OnCardGripMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _dragItem = (sender as FrameworkElement)?.DataContext;
+        _dragStart = e.GetPosition(null);
+    }
+
+    private void OnCardGripMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_dragItem is null || e.LeftButton != MouseButtonState.Pressed || !HasPassedDragThreshold(e))
+            return;
+        BeginDrag((DependencyObject)sender);
+    }
+
+    private bool HasPassedDragThreshold(MouseEventArgs e)
+    {
         var pos = e.GetPosition(null);
-        if (Math.Abs(pos.X - _tabDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(pos.Y - _tabDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+        return Math.Abs(pos.X - _dragStart.X) >= SystemParameters.MinimumHorizontalDragDistance ||
+               Math.Abs(pos.Y - _dragStart.Y) >= SystemParameters.MinimumVerticalDragDistance;
+    }
+
+    private void BeginDrag(DependencyObject source)
+    {
+        var item = _dragItem;
+        _dragItem = null;
+        if (item is null)
             return;
 
-        var item = _tabDragItem;
-        _tabDragItem = null;
-        var data = new DataObject(TabDragFormat, item);
-        DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Move);
+        _dragOutside = false;
+        DragDrop.DoDragDrop(source, new DataObject(TabDragFormat, item), DragDropEffects.Move);
+
+        if (_dragOutside && DataContext is MainViewModel vm)
+            vm.FloatSession(item);
+        _dragOutside = false;
+    }
+
+    /// <summary>拖拽过程中用屏幕坐标判断光标是否离开窗口范围（离开=拖出，松开即分离为独立窗口）。</summary>
+    private void OnDragQueryContinueDrag(object sender, QueryContinueDragEventArgs e)
+    {
+        if (e.EscapePressed)
+        {
+            _dragOutside = false;
+            return;
+        }
+        if ((e.KeyStates & DragDropKeyStates.LeftMouseButton) == 0)
+            return; // 左键已松开
+
+        try
+        {
+            if (!GetCursorPos(out var pt))
+                return;
+            var topLeft = PointToScreen(new Point(0, 0));
+            var bottomRight = PointToScreen(new Point(ActualWidth, ActualHeight));
+            _dragOutside = pt.X < topLeft.X || pt.Y < topLeft.Y || pt.X > bottomRight.X || pt.Y > bottomRight.Y;
+        }
+        catch
+        {
+            // 忽略
+        }
+    }
+
+    private void OnDetachItem(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm && (sender as FrameworkElement)?.DataContext is { } session)
+            vm.FloatSession(session);
     }
 
     private void OnTabsDragOver(object sender, DragEventArgs e)

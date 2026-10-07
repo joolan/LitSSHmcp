@@ -34,6 +34,21 @@ public interface ISshService
     /// <paramref name="overwriteResolver"/> 在目标文件已存在时被调用（参数=远程目标路径），返回 true=覆盖，false=跳过；null=一律覆盖。</summary>
     Task<BatchTransferResult> UploadBatchAsync(SshServerConfig server, IReadOnlyList<string> localPaths, string remoteDirectory,
         bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// 执行命令并实时回调 stdout / stderr 的行（用于解析传输进度）。
+    /// <paramref name="stdinText"/> 非空时写入命令的标准输入后关闭（用于把密码安全传给 sshpass 临时文件，避免进 argv）。
+    /// </summary>
+    Task<CommandResult> ExecuteStreamingAsync(SshServerConfig server, string command,
+        Action<string>? onStdout = null, Action<string>? onStderr = null,
+        string? stdinText = null, CancellationToken ct = default, int timeoutSeconds = 120);
+
+    /// <summary>
+    /// 跨机复制：让「源服务器」直接把所选路径推送到「目标服务器」（数据走服务器间通道，不经本机磁盘）。
+    /// 直连不可用且允许时，回退为经本机内存中转。固定方向：源 → 目标。
+    /// </summary>
+    Task<RemoteCopyResult> CopyRemoteToRemoteAsync(RemoteCopyRequest request,
+        IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default);
 }
 
 /// <summary>连通性探测结果。</summary>

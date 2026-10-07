@@ -1548,4 +1548,472 @@ public class SshService : ISshService
             throw;
         }
     }
+
+    /// <summary>执行命令并实时回调 stdout / stderr 行（用于解析进度）。stdinText 非空时写入命令 stdin 后关闭。</summary>
+    public async Task<CommandResult> ExecuteStreamingAsync(SshServerConfig server, string command,
+        Action<string>? onStdout = null, Action<string>? onStderr = null,
+        string? stdinText = null, CancellationToken ct = default, int timeoutSeconds = 120)
+    {
+        return await Task.Run(async () =>
+        {
+            if (!TryAcquireTarget($"ssh:{server.Id}", out var lease, out var limitReason))
+                return RateLimitedCommand(limitReason);
+
+            var sw = Stopwatch.StartNew();
+            try
+            {
+                Log($"Executing streaming command on {server.Host}:{server.Port}");
+                using var conn = OpenConnection(server);
+                using var cmd = conn.Client.CreateCommand(command);
+                cmd.CommandTimeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 86400));
+
+                var stdout = new StringBuilder();
+                var stderr = new StringBuilder();
+
+                var execTask = cmd.ExecuteAsync(ct);
+                var outTask = Task.Run(() => PumpStream(cmd.OutputStream, stdout, onStdout));
+                var errTask = Task.Run(() => PumpStream(cmd.ExtendedOutputStream, stderr, onStderr));
+
+                if (stdinText is not null)
+                {
+                    try
+                    {
+                        using var input = cmd.CreateInputStream();
+                        var bytes = Encoding.UTF8.GetBytes(stdinText);
+                        await input.WriteAsync(bytes, ct).ConfigureAwait(false);
+                        await input.FlushAsync(ct).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // 通道可能已关闭；以退出码为准
+                    }
+                }
+
+                try { await execTask.ConfigureAwait(false); }
+                catch { /* 退出码/错误在下方汇总 */ }
+
+                try { await Task.WhenAll(outTask, errTask).ConfigureAwait(false); }
+                catch { /* 流在命令结束时被释放，忽略 */ }
+
+                sw.Stop();
+                var ok = cmd.ExitStatus == 0;
+                var res = new CommandResult
+                {
+                    Success = ok,
+                    Output = stdout.ToString(),
+                    Error = stderr.ToString(),
+                    ExitCode = cmd.ExitStatus ?? -1,
+                    Duration = sw.Elapsed
+                };
+                if (!ok && cmd.ExitStatus is null && res.Error.Length == 0)
+                    res.Error = "命令未返回退出码（连接中断或超时）";
+                return RedactResult(res, server);
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                Log($"Streaming command failed: {ex.Message}", "ERROR");
+                return RedactResult(new CommandResult
+                {
+                    Success = false,
+                    Error = ex.Message,
+                    ErrorKind = ClassifySshException(ex),
+                    ExitCode = -1,
+                    Duration = sw.Elapsed
+                }, server);
+            }
+            finally
+            {
+                lease?.Dispose();
+            }
+        }, ct);
+    }
+
+    /// <summary>逐字符读取流并按 \r / \n 切行回调（rsync 进度用 \r 刷新）。命令结束时流被释放，异常忽略。</summary>
+    private static void PumpStream(Stream stream, StringBuilder sink, Action<string>? onLine)
+    {
+        try
+        {
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            var buffer = new char[8192];
+            var line = new StringBuilder();
+            int n;
+            while ((n = reader.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                for (var i = 0; i < n; i++)
+                {
+                    var c = buffer[i];
+                    if (c == '\n' || c == '\r')
+                    {
+                        if (line.Length > 0)
+                        {
+                            var text = line.ToString();
+                            sink.AppendLine(text);
+                            onLine?.Invoke(text);
+                            line.Clear();
+                        }
+                    }
+                    else
+                    {
+                        line.Append(c);
+                    }
+                }
+            }
+
+            if (line.Length > 0)
+            {
+                var text = line.ToString();
+                sink.AppendLine(text);
+                onLine?.Invoke(text);
+            }
+        }
+        catch
+        {
+            // 命令结束时流会被释放，忽略
+        }
+    }
+
+    /// <summary>跨机复制：源机直接推送 → 目标机（数据走服务器间通道）。失败且允许时回退内存中转。</summary>
+    public async Task<RemoteCopyResult> CopyRemoteToRemoteAsync(RemoteCopyRequest request,
+        IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default)
+    {
+        var sw = Stopwatch.StartNew();
+        var result = new RemoteCopyResult { ItemsTotal = request.SourcePaths.Count };
+
+        if (request.SourcePaths.Count == 0)
+        {
+            result.Error = "未选择要复制的源路径";
+            result.ErrorKind = "bad_request";
+            result.Duration = sw.Elapsed;
+            return result;
+        }
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.Target.Username))
+            {
+                result.Error = "目标服务器未配置登录用户名";
+                result.ErrorKind = "bad_request";
+                return result;
+            }
+
+            // 1) 源机能力 + 免密探测
+            var probe = await ExecuteCommandAsync(request.Source,
+                RemoteCopyCommandBuilder.BuildProbeCommand(request.TargetHost, request.TargetPort, request.Target.Username), ct, 30);
+            var probeOut = probe.Output ?? string.Empty;
+            var hasRsync = probeOut.Contains("LITSSH_HAS_RSYNC", StringComparison.Ordinal);
+            var hasTar = probeOut.Contains("LITSSH_HAS_TAR", StringComparison.Ordinal);
+            var hasSshpass = probeOut.Contains("LITSSH_HAS_SSHPASS", StringComparison.Ordinal);
+            var hasPv = probeOut.Contains("LITSSH_HAS_PV", StringComparison.Ordinal);
+            var keyOk = probeOut.Contains("LITSSH_KEY_OK", StringComparison.Ordinal);
+
+            // 2) 总大小（供进度；失败不影响）
+            try
+            {
+                var size = await ExecuteCommandAsync(request.Source,
+                    RemoteCopyCommandBuilder.BuildMeasureSizeCommand(request.SourcePaths), ct, 60);
+                if (size.Success && long.TryParse(size.Output.Trim(), out var bytes) && bytes > 0)
+                    result.TotalBytes = bytes;
+            }
+            catch { /* 忽略 */ }
+
+            if (request.Transport == RemoteCopyTransport.Relay)
+                return await RelayCopyAsync(request, result, progress, ct, sw);
+
+            // 3) 认证决策
+            bool usePassword;
+            switch (request.AuthMode)
+            {
+                case RemoteCopyAuthMode.KeyOnly:
+                    if (!keyOk)
+                        return OfferRelayOrFail(result, request, "源服务器未能免密连接目标（已选择仅密钥）。请在源机配置到目标的免密后重试。", "auth");
+                    usePassword = false;
+                    break;
+                case RemoteCopyAuthMode.Password:
+                    if (string.IsNullOrEmpty(request.Target.Password))
+                        return OfferRelayOrFail(result, request, "目标服务器未配置密码，无法使用密码直连。", "auth");
+                    if (!hasSshpass)
+                    {
+                        result.NeedsSshpassInstall = true;
+                        return OfferRelayOrFail(result, request, "源服务器未安装 sshpass，无法使用密码直连。请在源机安装 sshpass 或配置到目标的免密。", "dependency");
+                    }
+                    usePassword = true;
+                    break;
+                default:
+                    if (keyOk)
+                    {
+                        usePassword = false;
+                    }
+                    else if (hasSshpass && !string.IsNullOrEmpty(request.Target.Password))
+                    {
+                        usePassword = true;
+                    }
+                    else
+                    {
+                        var hasPassword = !string.IsNullOrEmpty(request.Target.Password);
+                        if (hasPassword && !hasSshpass)
+                            result.NeedsSshpassInstall = true;
+                        return OfferRelayOrFail(result, request,
+                            hasPassword
+                                ? "源服务器未安装 sshpass，无法使用密码直连。"
+                                : "源服务器既未能免密连接目标，也未配置目标密码。",
+                            hasPassword ? "dependency" : "auth");
+                    }
+                    break;
+            }
+
+            // 4) 目标端能力（rsync/tar 需两端都存在；从本机连接目标的 Host 探测）
+            var targetHasRsync = false;
+            var targetHasTar = false;
+            var targetTarSkip = false;
+            try
+            {
+                var targetProbe = await ExecuteCommandAsync(request.Target,
+                    RemoteCopyCommandBuilder.BuildTargetProbeCommand(), ct, 30);
+                if (targetProbe.Success)
+                {
+                    targetHasRsync = targetProbe.Output.Contains("LITSSH_T_RSYNC", StringComparison.Ordinal);
+                    targetHasTar = targetProbe.Output.Contains("LITSSH_T_TAR", StringComparison.Ordinal);
+                    targetTarSkip = targetProbe.Output.Contains("LITSSH_T_TAR_SKIP", StringComparison.Ordinal);
+                }
+            }
+            catch { /* 探测失败按"无"处理，走 tar / 中转 */ }
+
+            var bothRsync = hasRsync && targetHasRsync;
+            var bothTar = hasTar && targetHasTar;
+
+            // 5) 选择传输引擎（rsync 优先，退化 tar|ssh）
+            var useRsync = request.Transport switch
+            {
+                RemoteCopyTransport.Rsync => bothRsync,
+                RemoteCopyTransport.Tar => false,
+                _ => bothRsync
+            };
+            if (request.Transport == RemoteCopyTransport.Rsync && !bothRsync)
+                result.Warning = "rsync 未在源机或目标机可用，改为 tar|ssh。";
+            if (!useRsync && !bothTar)
+            {
+                result.Warning = "源机或目标机缺少 rsync / tar。";
+                return OfferRelayOrFail(result, request, "源机或目标机缺少 rsync / tar，无法直连传输。", "dependency");
+            }
+
+            // tar 跳过同名：目标 tar 需支持 --skip-old-files；不支持则在不覆盖模式下退回内存中转
+            var tarSkipOldFiles = false;
+            if (!request.Overwrite && !useRsync)
+            {
+                if (targetTarSkip)
+                {
+                    tarSkipOldFiles = true;
+                }
+                else
+                {
+                    result.Warning = "目标 tar 不支持 --skip-old-files，改用内存中转以跳过同名文件。";
+                    return await RelayCopyAsync(request, result, progress, ct, sw);
+                }
+            }
+
+            // 「不覆盖同名」：先在目标端统计已存在的同名文件数，用于提示"跳过 N 个"
+            if (!request.Overwrite)
+            {
+                try
+                {
+                    var listRes = await ExecuteCommandAsync(request.Source,
+                        RemoteCopyCommandBuilder.BuildDestFileListCommand(request.SourcePaths, request.TargetDirectory), ct, 120);
+                    if (listRes.Success && !string.IsNullOrWhiteSpace(listRes.Output))
+                    {
+                        var countRes = await ExecuteStreamingAsync(request.Target,
+                            RemoteCopyCommandBuilder.BuildCountExistingCommand(), null, null, listRes.Output, ct, 120);
+                        var m = System.Text.RegularExpressions.Regex.Match(countRes.Output ?? string.Empty, @"LITSSH_SKIPPED:(\d+)");
+                        if (m.Success && int.TryParse(m.Groups[1].Value, out var skipped))
+                            result.ItemsSkipped = skipped;
+                    }
+                }
+                catch { /* 统计失败不影响传输 */ }
+            }
+
+            // 5) 构建并执行（密码经 stdin 传给 sshpass 临时文件，不进 argv）
+            var command = RemoteCopyCommandBuilder.BuildDirectCommand(request, usePassword, useRsync, hasPv, result.TotalBytes, tarSkipOldFiles);
+            var lastPct = -1;
+            var gate = new object();
+            void Report(int pct)
+            {
+                lock (gate)
+                {
+                    if (pct <= lastPct) return;
+                    lastPct = pct;
+                }
+                progress?.Report(new FileTransferProgress { BytesTransferred = pct, TotalBytes = 100 });
+            }
+
+            var exec = await ExecuteStreamingAsync(request.Source, command,
+                line => { if (useRsync) { var p = RemoteCopyCommandBuilder.ParseRsyncPercent(line); if (p is int v) Report(v); } },
+                line => { var p = RemoteCopyCommandBuilder.ParsePvPercent(line); if (p is int v) Report(v); },
+                usePassword ? request.Target.Password : null,
+                ct, request.TimeoutSeconds);
+
+            result.Strategy = useRsync ? "rsync" : "tar";
+            result.Log = exec.Output ?? string.Empty;
+
+            if (exec.Success)
+            {
+                result.Success = true;
+                result.ItemsSucceeded = request.SourcePaths.Count;
+                result.BytesTransferred = result.TotalBytes;
+                return result;
+            }
+
+            var execError = string.IsNullOrWhiteSpace(exec.Error)
+                ? $"直连传输失败（退出码 {exec.ExitCode}）"
+                : exec.Error.Trim();
+            return OfferRelayOrFail(result, request, execError, "transfer");
+        }
+        catch (Exception ex)
+        {
+            result.Error = ex.Message;
+            result.ErrorKind = ClassifySshException(ex);
+            return result;
+        }
+        finally
+        {
+            sw.Stop();
+            result.Duration = sw.Elapsed;
+        }
+    }
+
+    /// <summary>直连失败：记录错误；若允许内存中转，则标记 NeedsRelayConfirmation 交由调用方（界面）询问用户，Core 不自动中转。</summary>
+    private static RemoteCopyResult OfferRelayOrFail(RemoteCopyResult result, RemoteCopyRequest request, string error, string kind)
+    {
+        if (!string.IsNullOrEmpty(result.Warning))
+            result.Warning = result.Warning + "；" + error;
+        result.Error = error;
+        result.ErrorKind = kind;
+        if (request.AllowRelayFallback)
+            result.NeedsRelayConfirmation = true;
+        return result;
+    }
+
+    /// <summary>经本机内存中转：SFTP 读源 → 直接写目标（不落磁盘）。</summary>
+    private async Task<RemoteCopyResult> RelayCopyAsync(RemoteCopyRequest request, RemoteCopyResult result,
+        IProgress<FileTransferProgress>? progress, CancellationToken ct, Stopwatch sw)
+    {
+        result.Strategy = "relay";
+        result.Error = null;
+        result.ErrorKind = "unknown";
+        if (string.IsNullOrEmpty(result.Warning))
+            result.Warning = "经本机内存中转（不落盘；非服务器间直连，速度受本机链路限制）";
+
+        var endpoint = WithEndpoint(request.Target, request.TargetHost, request.TargetPort);
+        long transferred = 0;
+        var skippedHolder = new long[1];
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                using var srcConn = OpenSftpConnection(request.Source);
+                using var dstConn = OpenSftpConnection(endpoint);
+                EnsureRemoteDirectory(dstConn.Client, request.TargetDirectory);
+
+                foreach (var path in request.SourcePaths)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    try
+                    {
+                        transferred += RelayCopyOne(srcConn.Client, dstConn.Client, path, request.TargetDirectory,
+                            request.Overwrite, transferred, result.TotalBytes, progress, ct, skippedHolder);
+                        result.ItemsSucceeded++;
+                    }
+                    catch (Exception ex)
+                    {
+                        result.ItemsFailed++;
+                        result.Error = ex.Message;
+                    }
+                }
+            }, ct).ConfigureAwait(false);
+
+            result.BytesTransferred = transferred;
+            result.ItemsSkipped = (int)Math.Min(int.MaxValue, skippedHolder[0]);
+            result.Success = result.ItemsFailed == 0;
+            if (!result.Success && string.IsNullOrEmpty(result.Error))
+                result.Error = "部分项复制失败";
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Error = ex.Message;
+            result.ErrorKind = ClassifySshException(ex);
+        }
+        finally
+        {
+            sw.Stop();
+            result.Duration = sw.Elapsed;
+        }
+
+        return result;
+    }
+
+    private static long RelayCopyOne(SftpClient src, SftpClient dst, string srcPath, string dstDir,
+        bool overwrite, long baseBytes, long total, IProgress<FileTransferProgress>? progress, CancellationToken ct, long[] skipped)
+    {
+        var name = RemoteCopyCommandBuilder.BaseNameOf(srcPath);
+        var targetPath = JoinRemote(dstDir, name);
+        var attr = src.GetAttributes(srcPath);
+
+        if (attr.IsDirectory)
+        {
+            EnsureRemoteDirectory(dst, targetPath);
+            long sum = 0;
+            foreach (var entry in src.ListDirectory(srcPath))
+            {
+                if (entry.Name is "." or "..") continue;
+                if (entry.IsSymbolicLink) continue;
+                sum += RelayCopyOne(src, dst, entry.FullName, targetPath, overwrite, baseBytes + sum, total, progress, ct, skipped);
+            }
+            return sum;
+        }
+
+        if (!overwrite && dst.Exists(targetPath))
+        {
+            skipped[0]++;
+            return 0;
+        }
+
+        long copied = 0;
+        using var rs = src.OpenRead(srcPath);
+        using var ws = dst.OpenWrite(targetPath);
+        var buffer = new byte[128 * 1024];
+        int n;
+        while ((n = rs.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            ct.ThrowIfCancellationRequested();
+            ws.Write(buffer, 0, n);
+            copied += n;
+            if (progress is not null && total > 0)
+                progress.Report(new FileTransferProgress { BytesTransferred = baseBytes + copied, TotalBytes = total });
+        }
+        return copied;
+    }
+
+    private static string JoinRemote(string dir, string name)
+    {
+        if (string.IsNullOrEmpty(dir)) return name;
+        return dir.EndsWith('/') ? dir + name : dir + "/" + name;
+    }
+
+    private static SshServerConfig WithEndpoint(SshServerConfig s, string host, int port) => new()
+    {
+        Id = s.Id,
+        Name = s.Name,
+        Host = host,
+        Port = port,
+        Username = s.Username,
+        AuthType = s.AuthType,
+        Password = s.Password,
+        KeyFilePath = s.KeyFilePath,
+        KeyFilePassphrase = s.KeyFilePassphrase,
+        SudoType = s.SudoType,
+        SudoUsername = s.SudoUsername,
+        SudoPassword = s.SudoPassword,
+        Disabled = s.Disabled
+    };
 }

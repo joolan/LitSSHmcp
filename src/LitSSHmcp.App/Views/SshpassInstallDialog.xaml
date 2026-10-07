@@ -1,0 +1,40 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.SshpassInstallDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="源服务器缺少 sshpass" Height="560" Width="680"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="源服务器缺少 sshpass"/>
+
+        <TextBlock Grid.Row="1" x:Name="HintText" Margin="16,4,16,8" TextWrapping="Wrap"
+                   Text="源服务器未安装 sshpass，无法用「目标密码」直连。请在源服务器上安装后点「已安装，重试」。"/>
+
+        <Border Grid.Row="2" Margin="16,0,16,0" Style="{DynamicResource CardBorderStyle}" Padding="6">
+            <TextBox x:Name="CmdBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                     FontFamily="Consolas" FontSize="12.5" VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent"/>
+        </Border>
+
+        <TextBlock Grid.Row="3" Margin="16,8,16,0" TextWrapping="Wrap" FontSize="11"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   Text="提示：命令需在源服务器执行；若当前登录账号是 root，可去掉行首的 sudo。"/>
+
+        <DockPanel Grid.Row="4" Margin="16,10,16,12">
+            <ui:Button DockPanel.Dock="Left" Content="复制命令" Click="OnCopy"/>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button x:Name="RelayButton" Content="改用内存中转" Margin="0,0,8,0" Click="OnRelay"/>
+                <ui:Button Content="已安装，重试" Appearance="Primary" Width="110" Margin="0,0,8,0" Click="OnRetry"/>
+                <ui:Button Content="取消" Width="80" IsCancel="True" Click="OnCancel"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

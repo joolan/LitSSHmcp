@@ -42,6 +42,15 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         set { _selectedItem = value; OnPropertyChanged(); }
     }
 
+    private IReadOnlyList<RemoteFileItem> _selectedItems = Array.Empty<RemoteFileItem>();
+
+    /// <summary>当前多选项（由视图在 SelectionChanged 时回写；供"远程互传"等读取）。</summary>
+    public IReadOnlyList<RemoteFileItem> SelectedItems
+    {
+        get => _selectedItems;
+        set { _selectedItems = value; OnPropertyChanged(); }
+    }
+
     private string _currentPath = ".";
     public string CurrentPath
     {

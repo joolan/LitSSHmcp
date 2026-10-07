@@ -106,12 +106,16 @@
 - **新增「服务器快照历史」窗口**：通用查看页，顶部可**切换服务器**；左列历史快照列表（时间/状态/耗时/提权/错误），选中后右侧展示该次快照的**采集维度概览**（维度/状态/耗时/说明）、**采集事件**流水与**原始数据 JSON**。
 - **安全设置新增「服务器快照」区**：采集是否提权（`snapshot.useSudo`）、每服务器保留份数（`snapshot.retentionPerServer`，0=不限）、采集超时秒数（`snapshot.timeoutSeconds`），读写 `config.json` 的顶层 `snapshot` 段。
 - **设置窗口新增「关于」Tab**：介绍项目定位与 MCP / 桌面 App 的核心能力，顶部注明 **GitHub 开源地址**（https://github.com/joolan/LitSSHmcp）与 **MIT 许可**。
+- **跨机文件复制（源→目标，走服务器间内网通道）**：SSH 会话管理的**远程文件面板**支持多选后 **右键「复制到远程服务器…」**——独立弹窗：左侧为待复制列表，右侧选择**其它服务器**（可切换 **主机地址 / 内网地址**）并浏览目标目录，确认后由**源服务器直接推送**到目标（优先 **`rsync`**，退化 **`tar | ssh`**，可 **`-z` 压缩**），数据**不经本机磁盘**、利用服务器间内网高速通道；进度实时显示（rsync 百分比 / pv）。**认证**：优先源机免密，其次 **`sshpass` + 目标密码**（密码经命令 **stdin** 写入源机 0600 临时文件，**不进命令行 / 日志**）；源机缺 **`sshpass`** 时**弹出安装引导框**（探测源机包管理器，按发行版给出 `apt-get`/`yum`(含 EPEL)/`dnf`/`zypper`/`pacman`/`apk` 安装命令，可一键复制），安装后可点「已安装，重试」或改用内存中转；源机缺 `rsync`/`tar` 或认证不可用时**默认报错**；勾选「直连失败时询问是否内存中转」后，会**弹窗让用户确认**是否改用**经本机内存中转**（SFTP 读→写，不落盘），Core 不自动回退。传输完成后**自动刷新目标服务器文件列表**；「覆盖同名」对 **rsync（`--ignore-existing`）与 tar（`--skip-old-files`）均生效**，取消覆盖时会**在目标端预统计并提示「跳过 N 个同名文件」**（目标 tar 不支持 `--skip-old-files` 时自动改走内存中转以保证不覆盖）。服务器配置新增可选 **内网地址 / 内网端口**（`SshServerConfig.InternalHost` / `InternalPort`，跨机复制时优先内网地址）。另在 **SSH 服务器管理条目右键新增「远程互传（服务器↔服务器）…」**：打开独立窗口，**左右两侧均为可切换的服务器文件浏览器**（左侧现场多选源文件、右侧选择目标服务器与目录；任一侧切换后另一侧自动排除该服务器），其余选项/进度/跳过统计/内存中转与上文一致。
+- **会话标签/卡片可拖出为独立窗口**：SSH 会话窗口在**标签布局**下拖动标签、在**平铺（卡片）布局**下拖动卡片头把手，**拖离窗口范围后松手**即把该会话**分离为一个独立、紧凑、可缩放、可自由摆放的窗口**（位置/尺寸按会话记忆，见 `ui-layout.json`）。独立窗口右上角提供 **「收回」**（送回主会话窗口）与 **「✕ 关闭会话」**；标签/卡片右键亦提供 **「分离为独立窗口」**。终端连接状态由会话 VM 持有，**分离/收回不重连、不断开**；主窗口只显示未分离的会话（`DockedSessions`），关闭主窗口会一并关闭独立窗口。
+- **主页快捷入口精简**：移除「数据源管理 / 应用管理」（改由下方**数据看板卡片**点击进入），减少重复入口。
 
 ### 修复
 
 - **`nginx_tls` 有效配置被 su 交互式 PTY 的登录噪声污染**：`su` 通道机的 `effectiveConfig` 会混入登录 banner（`Last login…`）、命令行回显（`su - root -c '…'`）、`Password:` 提示与 ANSI 转义码（`sudo` 非 PTY 通道本就干净）。现按首个 `# configuration file` 头截断并剥离 ANSI/控制字符，得到干净的有效配置。
 - **`mysql_diagnostics` 报"格式错"**：`SHOW FULL PROCESSLIST` 解析用了错误列序（把 `Host` 当 `db`、把 `Command`（`Query`/`Daemon`/`Sleep`…）当 `Time`），`Convert.ToInt64("Daemon")` 抛 `FormatException` 导致整个诊断失败、只能绕道 `mysql_query`。现按正确列序（`Id,User,Host,db,Command,Time,State,Info`）取值，并以不抛异常的数值转换兜底；`byDatabase` 与"最长运行查询"统计同步修正。
 - **浅色主题主按钮（强调色底）文字发黑**：`Controls.xaml` 的全局隐式 `TextBlock` 样式设置了 `Foreground`，其优先级高于内容控件内部文本的继承值，导致 `ui:Button Appearance=Primary`（以及 ComboBox 等）内部文字被强制为浅色主题的深色前景。移除全局 `Foreground` setter（前景改由 `FluentWindow` 的 `WindowForeground` 继承，随主题变化），并为 `AccentButtonForeground`/`PointerOver`/`Pressed` 统一白色前景，修复"蓝底黑字"。
+- **跨机复制：兼容旧 OpenSSH + 两端能力探测 + 不阻塞主程序**：① 源机为旧版 OpenSSH（如 CentOS 7 自带 7.4）时不支持 `StrictHostKeyChecking=accept-new`（OpenSSH ≥ 7.6 才有）而报 `unsupported option "accept-new"`，改用兼容的 `StrictHostKeyChecking=no`；② **rsync/tar 需源机与目标机两端都存在**，此前只探测源机，目标机无 rsync 时报 `rsync: remote command not found`——现**同时探测目标端**，任一端缺失自动退化 `tar|ssh`，两端都缺则提示/内存中转；③ 将「复制到远程服务器」窗口改为**非模态**，其中转确认框 / sshpass 安装引导框仅**模态于该窗口**，不再阻塞 App 主程序。
 
 ## [1.1.1] - 2026-10-04
 

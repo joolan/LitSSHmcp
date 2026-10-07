@@ -1,0 +1,98 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                    xmlns:vm="clr-namespace:LitSSHmcp.App.ViewModels"
+                    xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
+
+    <!-- 会话内容模板（App 级共享）：SSH 会话窗口与「分离的独立会话窗口」共用，保证两边渲染一致 -->
+    <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+    <Style x:Key="TileCloseButton" TargetType="Button">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+        <Setter Property="Padding" Value="5,0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="#33EF4444"/>
+                            <Setter Property="Foreground" Value="#EF4444"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 命令会话标签内容 -->
+    <DataTemplate DataType="{x:Type vm:SessionViewModel}">
+        <Grid Margin="6">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="160"/>
+            </Grid.RowDefinitions>
+
+            <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource TileCloseButton}" Margin="4,0,0,0"
+                        ToolTip="关闭会话"
+                        Visibility="{Binding DataContext.IsSshTiled, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"
+                        Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"/>
+                <ui:Button DockPanel.Dock="Right" Content="测试连接" Padding="10,3" Margin="6,0,0,0" Command="{Binding TestConnectionCommand}"/>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center" Margin="6,0" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+
+            <TextBox Grid.Row="1" Text="{Binding Output, Mode=OneWay}" IsReadOnly="True"
+                     VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" Padding="6"
+                     FontFamily="Consolas" Background="{DynamicResource AppCodeBgBrush}" Foreground="{DynamicResource AppCodeTextBrush}"/>
+
+            <Grid Grid.Row="2" Margin="0,6,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Grid.Column="0" Text="{Binding CommandText, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalContentAlignment="Center" Padding="5" Margin="0,0,6,0"
+                         FontFamily="Consolas">
+                    <TextBox.InputBindings>
+                        <KeyBinding Key="Enter" Command="{Binding ExecuteCommand}"/>
+                    </TextBox.InputBindings>
+                </TextBox>
+                <ui:Button Grid.Column="1" Content="执行" Padding="16,5" Margin="0,0,6,0" Appearance="Primary" Command="{Binding ExecuteCommand}"/>
+                <ui:Button Grid.Column="2" Content="清空" Padding="12,5" Command="{Binding ClearOutputCommand}"/>
+            </Grid>
+
+            <DockPanel Grid.Row="3">
+                <TextBlock DockPanel.Dock="Top" Text="最近活动" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <ListBox ItemsSource="{Binding RecentActivity}" FontFamily="Consolas" FontSize="11" Padding="2" Background="Transparent" BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock TextTrimming="CharacterEllipsis">
+                                <Run Text="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss}', Mode=OneWay}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                <Run Text="  "/>
+                                <Run Text="{Binding Command, Mode=OneWay}"/>
+                                <Run Text="  "/>
+                                <Run Text="{Binding Status, Mode=OneWay}" Foreground="{DynamicResource AppAccentBrush}"/>
+                            </TextBlock>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Grid>
+    </DataTemplate>
+
+    <!-- 交互式终端标签内容（左：远程文件；右：终端） -->
+    <DataTemplate DataType="{x:Type vm:TerminalSessionViewModel}">
+        <controls:TerminalTabView/>
+    </DataTemplate>
+</ResourceDictionary>

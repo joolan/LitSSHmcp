@@ -26,7 +26,7 @@
             <ui:Button Content="批量执行" Icon="{ui:SymbolIcon Play24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding OpenBatchExecCommand}"/>
             <ui:Button Content="会话日志" Icon="{ui:SymbolIcon History24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding OpenTerminalLogsCommand}"/>
             <ui:Button Content="端口转发" Icon="{ui:SymbolIcon Share24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding OpenPortForwardCommand}"/>
-            <TextBlock Text="（选中服务器后右键可 连接 / 打开终端 / 编辑 / 采集快照 / 快照历史 / 删除；双击打开交互式终端）"
+            <TextBlock Text="（选中服务器后右键可 连接 / 打开终端 / SFTP 文件管理 / 远程互传 / 编辑 / 采集快照 / 快照历史 / 删除；双击打开交互式终端）"
                        VerticalAlignment="Center" Margin="10,0,0,0" FontSize="11"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
         </StackPanel>
@@ -40,6 +40,7 @@
                         <MenuItem Header="连接（命令会话）" Click="OnConnectClick"/>
                         <MenuItem Header="打开终端（交互式）" Click="OnOpenTerminalClick"/>
                         <MenuItem Header="SFTP 文件管理" Click="OnSftpManagerClick"/>
+                        <MenuItem Header="远程互传（服务器↔服务器）…" Click="OnRemoteCopyClick"/>
                         <MenuItem Header="编辑" Click="OnEditClick"/>
                         <Separator/>
                         <MenuItem Header="采集快照" Click="OnSnapshotRefreshClick"/>

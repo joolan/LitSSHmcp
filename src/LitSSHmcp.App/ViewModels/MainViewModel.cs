@@ -36,6 +36,9 @@ public class MainViewModel : INotifyPropertyChanged
     public ObservableCollection<SshServerConfig> Servers { get; } = new();
     public ObservableCollection<object> Sessions { get; } = new();
 
+    /// <summary>主会话窗口实际显示的会话（= Sessions 去掉已分离为独立窗口的）；浮窗按会话独立承载。</summary>
+    public ObservableCollection<object> DockedSessions { get; } = new();
+
     /// <summary>按「分组」字段分组的服务器视图（连接管理器）。</summary>
     public System.ComponentModel.ICollectionView GroupedServers { get; }
 
@@ -60,6 +63,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand OpenTerminalLogsCommand { get; }
     public ICommand OpenPortForwardCommand { get; }
     public ICommand OpenSftpManagerCommand { get; }
+    public ICommand OpenRemoteCopyCommand { get; }
     public ICommand AskAgentCommand { get; }
     public ICommand SnapshotRefreshCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
@@ -91,11 +95,16 @@ public class MainViewModel : INotifyPropertyChanged
         OpenTerminalLogsCommand = new RelayCommand(_ => OpenTerminalLogs());
         OpenPortForwardCommand = new RelayCommand(_ => OpenPortForward());
         OpenSftpManagerCommand = new RelayCommand(_ => OpenSftpManager(SelectedServer), _ => SelectedServer != null);
+        OpenRemoteCopyCommand = new RelayCommand(_ => OpenRemoteCopy(SelectedServer), _ => SelectedServer != null);
         AskAgentCommand = new RelayCommand(_ => AskAgent());
         SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
 
-        Sessions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSessions));
+        Sessions.CollectionChanged += (_, _) =>
+        {
+            RebuildDockedSessions();
+            OnPropertyChanged(nameof(HasSessions));
+        };
 
         // 服务器列表按「分组」字段分组（连接管理器树形分组）
         GroupedServers = System.Windows.Data.CollectionViewSource.GetDefaultView(Servers);
@@ -134,6 +143,7 @@ public class MainViewModel : INotifyPropertyChanged
             (OpenTerminalCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenMonitorCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenSftpManagerCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenRemoteCopyCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ConnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenSnapshotHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -147,6 +157,9 @@ public class MainViewModel : INotifyPropertyChanged
     }
 
     public bool HasSessions => Sessions.Count > 0;
+
+    /// <summary>主窗口是否有可显示（未分离）的会话；用于空状态提示。</summary>
+    public bool HasDockedSessions => DockedSessions.Count > 0;
 
     // ---- 主页数据看板 ----
 
@@ -314,6 +327,12 @@ public class MainViewModel : INotifyPropertyChanged
         _sessionWindow.Closed += (_, _) =>
         {
             _sessionWindow = null;
+            foreach (var w in _floatWindows.Values.ToList())
+            {
+                w.SuppressDock();
+                w.Close();
+            }
+            _floatWindows.Clear();
             foreach (var term in Sessions.OfType<TerminalSessionViewModel>().ToList())
                 _ = term.DisposeAsync();
             Sessions.Clear();
@@ -321,6 +340,68 @@ public class MainViewModel : INotifyPropertyChanged
         };
         _sessionWindow.Show();
     }
+
+    // ---- 会话分离为独立窗口（拖出会话窗口 / 右键「分离为独立窗口」） ----
+
+    private readonly Dictionary<object, SshSessionFloatWindow> _floatWindows = new();
+
+    /// <summary>把会话分离为一个独立、紧凑、可缩放的窗口；主窗口不再显示该会话。</summary>
+    public void FloatSession(object? session)
+    {
+        if (session is null)
+            return;
+
+        if (_floatWindows.TryGetValue(session, out var existing) && existing.IsLoaded)
+        {
+            existing.Activate();
+            return;
+        }
+
+        var window = new SshSessionFloatWindow(this, session) { Topmost = false };
+        window.DockRequested += DockSession;
+        window.CloseRequested += CloseSession;
+        _floatWindows[session] = window;
+        RebuildDockedSessions();
+
+        if (ReferenceEquals(SelectedSession, session))
+            SelectedSession = DockedSessions.FirstOrDefault();
+
+        window.Show();
+        StatusMessage = $"已分离为独立窗口: {TitleOf(session)}";
+    }
+
+    /// <summary>把独立窗口的会话收回主窗口。</summary>
+    private void DockSession(object session)
+    {
+        if (_floatWindows.TryGetValue(session, out var window))
+        {
+            _floatWindows.Remove(session);
+            window.SuppressDock();
+            window.Close();
+        }
+
+        RebuildDockedSessions();
+        SelectedSession = session;
+        StatusMessage = $"已收回会话: {TitleOf(session)}";
+    }
+
+    private void RebuildDockedSessions()
+    {
+        DockedSessions.Clear();
+        foreach (var s in Sessions)
+        {
+            if (!_floatWindows.ContainsKey(s))
+                DockedSessions.Add(s);
+        }
+        OnPropertyChanged(nameof(HasDockedSessions));
+    }
+
+    private static string TitleOf(object session) => session switch
+    {
+        SessionViewModel s => s.Server.Name,
+        TerminalSessionViewModel t => t.Server.Name,
+        _ => string.Empty
+    };
 
     private void CloseSession(object? session)
     {
@@ -339,11 +420,21 @@ public class MainViewModel : INotifyPropertyChanged
             return;
 
         var index = Sessions.IndexOf(session);
+
+        // 若该会话正处于独立窗口，先关闭该窗口（避免触发"收回"）
+        if (_floatWindows.TryGetValue(session, out var floatWin))
+        {
+            _floatWindows.Remove(session);
+            floatWin.SuppressDock();
+            floatWin.Close();
+        }
+
         if (session is TerminalSessionViewModel term)
             _ = term.DisposeAsync();
         Sessions.Remove(session);
+        RebuildDockedSessions();
         if (ReferenceEquals(SelectedSession, session) || SelectedSession == session)
-            SelectedSession = Sessions.Count > 0 ? Sessions[Math.Max(0, Math.Min(index, Sessions.Count - 1))] : null;
+            SelectedSession = DockedSessions.Count > 0 ? DockedSessions[Math.Max(0, Math.Min(index, DockedSessions.Count - 1))] : null;
 
         StatusMessage = Sessions.Count == 0 ? "已关闭全部会话" : $"已关闭会话: {name}";
     }
@@ -564,6 +655,25 @@ public class MainViewModel : INotifyPropertyChanged
         var window = new SftpManagerWindow(new SftpManagerViewModel(server, _sshService)) { Topmost = false };
         window.Closed += (_, _) => _sftpWindows.Remove(server.Id);
         _sftpWindows[server.Id] = window;
+        window.Show();
+    }
+
+    // 远程互传：服务器 ↔ 服务器（源机直连推送到目标；每台源服务器一个独立非模态窗口）
+    private readonly Dictionary<string, RemoteCopyWindow> _remoteCopyWindows = new();
+
+    private void OpenRemoteCopy(SshServerConfig? server)
+    {
+        if (server == null)
+            return;
+        if (_remoteCopyWindows.TryGetValue(server.Id, out var existing) && existing.IsLoaded)
+        {
+            existing.Activate();
+            return;
+        }
+
+        var window = new RemoteCopyWindow(server) { Topmost = false };
+        window.Closed += (_, _) => _remoteCopyWindows.Remove(server.Id);
+        _remoteCopyWindows[server.Id] = window;
         window.Show();
     }
 

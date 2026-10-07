@@ -18,6 +18,8 @@ public class ServerEditViewModel : INotifyPropertyChanged
     private string _name = string.Empty;
     private string _host = string.Empty;
     private int _port = 22;
+    private string _internalHost = string.Empty;
+    private string _internalPort = string.Empty;
     private string _username = string.Empty;
     private int _authTypeIndex;
     private string _keyFilePath = string.Empty;
@@ -49,6 +51,8 @@ public class ServerEditViewModel : INotifyPropertyChanged
             Name = server.Name;
             Host = server.Host;
             Port = server.Port;
+            InternalHost = server.InternalHost ?? string.Empty;
+            InternalPort = server.InternalPort is > 0 ? server.InternalPort.Value.ToString() : string.Empty;
             Username = server.Username;
             AuthTypeIndex = server.AuthType == AuthType.KeyFile ? 1 : 0;
             KeyFilePath = server.KeyFilePath ?? string.Empty;
@@ -83,6 +87,20 @@ public class ServerEditViewModel : INotifyPropertyChanged
     {
         get => _port;
         set { _port = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>内网地址（可选）：跨机复制时源服务器可用该地址直连目标，走服务器间内网通道；空=回退主机地址。</summary>
+    public string InternalHost
+    {
+        get => _internalHost;
+        set { _internalHost = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>内网 SSH 端口（可选）：留空沿用上面的端口。</summary>
+    public string InternalPort
+    {
+        get => _internalPort;
+        set { _internalPort = value; OnPropertyChanged(); }
     }
 
     public string Username
@@ -252,6 +270,8 @@ public class ServerEditViewModel : INotifyPropertyChanged
             Name = Name,
             Host = Host,
             Port = Port,
+            InternalHost = string.IsNullOrWhiteSpace(InternalHost) ? null : InternalHost.Trim(),
+            InternalPort = int.TryParse(InternalPort?.Trim(), out var internalPort) && internalPort > 0 ? internalPort : null,
             Username = Username,
             AuthType = IsKeyFileAuth ? AuthType.KeyFile : AuthType.Password,
             KeyFilePath = IsKeyFileAuth ? KeyFilePath : null,

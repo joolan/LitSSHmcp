@@ -26,7 +26,7 @@
                  ToolTip="远程路径，回车跳转"/>
 
         <ListView Grid.Row="2" x:Name="FileList" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}"
-                  SelectionMode="Extended"
+                  SelectionMode="Extended" SelectionChanged="OnFileSelectionChanged"
                   Padding="2" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                   PreviewMouseLeftButtonDown="OnListPreviewLeftButtonDown" PreviewMouseMove="OnListPreviewMouseMove"
                   Background="Transparent" BorderThickness="0" controls:GridViewSort.Enabled="True">
@@ -43,6 +43,8 @@
                     <MenuItem Header="复制" Click="OnCopy"/>
                     <MenuItem Header="剪切" Click="OnCut"/>
                     <MenuItem Header="粘贴" Click="OnPaste"/>
+                    <Separator/>
+                    <MenuItem Header="复制到远程服务器…" Click="OnCopyToRemote"/>
                     <Separator/>
                     <MenuItem Header="切换到所在目录（终端 cd）" Click="OnCd"/>
                     <MenuItem Header="属性 / 权限…" Click="OnProperties"/>

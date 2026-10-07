@@ -246,6 +246,12 @@ public class SnapshotServiceTests : IDisposable
 
         public Task<BatchTransferResult> UploadBatchAsync(SshServerConfig server, IReadOnlyList<string> localPaths, string remoteDirectory, bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default) =>
             throw new NotSupportedException();
+
+        public Task<CommandResult> ExecuteStreamingAsync(SshServerConfig server, string command, Action<string>? onStdout = null, Action<string>? onStderr = null, string? stdinText = null, CancellationToken ct = default, int timeoutSeconds = 120) =>
+            throw new NotSupportedException();
+
+        public Task<RemoteCopyResult> CopyRemoteToRemoteAsync(RemoteCopyRequest request, IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class FakeConfigService : IConfigService

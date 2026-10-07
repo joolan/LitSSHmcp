@@ -27,6 +27,16 @@ public class SshServerConfig
     public string Host { get; set; } = string.Empty;
     public int Port { get; set; } = 22;
     public string Username { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 内网地址（可选）：跨机复制（源→目标）时，源服务器可用该地址直连目标，从而走服务器间内网高速通道；
+    /// 为空时回退 <see cref="Host"/>。仅影响跨机复制，不影响 LitSSH 自身连接。
+    /// </summary>
+    public string? InternalHost { get; set; }
+
+    /// <summary>内网 SSH 端口（可选）：为空或 &lt;=0 时沿用 <see cref="Port"/>。</summary>
+    public int? InternalPort { get; set; }
+
     public AuthType AuthType { get; set; } = AuthType.Password;
     public string? Password { get; set; }
     public string? KeyFilePath { get; set; }

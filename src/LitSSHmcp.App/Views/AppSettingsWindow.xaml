@@ -35,6 +35,9 @@
             <TabItem Header="MCP 工具说明">
                 <views:McpToolsView/>
             </TabItem>
+            <TabItem Header="关于">
+                <views:AboutView/>
+            </TabItem>
         </TabControl>
     </Grid>
 </ui:FluentWindow>

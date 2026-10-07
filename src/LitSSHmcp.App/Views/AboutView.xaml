@@ -1,0 +1,73 @@
+<UserControl x:Class="LitSSHmcp.App.Views.AboutView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="10">
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                <ui:SymbolIcon Symbol="Info24" FontSize="22" Margin="0,0,8,0" VerticalAlignment="Center"
+                               Foreground="{DynamicResource AppAccentBrush}"/>
+                <TextBlock Text="关于 LitSSH MCP" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
+            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,12"
+                       Text="Windows 平台下的 SSH / 数据库运维 MCP 服务器，并配套桌面管理端（App）。让 AI 智能体安全地通过 SSH 管理远程服务器，并贯通 MySQL / PostgreSQL / Redis 数据源与资产拓扑，支撑跨服务器 / 应用 / 容器 / 数据库的全链路故障排查。"/>
+
+            <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
+                <StackPanel>
+                    <TextBlock Text="开源与许可" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,4">
+                        <Run Text="项目开源地址："/>
+                        <Hyperlink NavigateUri="https://github.com/joolan/LitSSHmcp" RequestNavigate="OnRequestNavigate">https://github.com/joolan/LitSSHmcp</Hyperlink>
+                    </TextBlock>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,4">
+                        <Run Text="许可证：本项目采用 "/>
+                        <Run FontWeight="SemiBold" Text="MIT 许可证（MIT License）"/>
+                        <Run Text="，可自由使用、修改、分发与商用，请保留原始版权与许可声明。"/>
+                    </TextBlock>
+                    <TextBlock Text="Copyright (c) 2026 LitSSH" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
+                <StackPanel>
+                    <TextBlock Text="MCP 核心能力（AI 可调用的工具）" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,6"
+                               Text="通过 Model Context Protocol（stdio）向任意 MCP 客户端暴露 50+ 工具，覆盖以下能力域（可在「工具分组」按部署裁剪）："/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 运维：命令执行、sudo 提权、连接测试/状态、批量与目录文件上传下载、目录浏览。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源：MySQL / PostgreSQL 只读查询、执行计划、写操作与诊断（连接数/慢查询/锁/复制），Redis 只读与写/管理命令、诊断；支持直连或 SSH 隧道，密码仅本机保存、不暴露给 AI。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 容器与服务：Docker 容器/镜像/日志/inspect/stats，systemd 服务状态与日志。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 日志与 Java：按关键字/正则检索日志、发现日志文件，Java 进程/线程栈/堆内存/JVM 信息。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 快照与拓扑：整机快照（资源/端口进程服务/证书/Docker/systemd/安全巡检），资产拓扑总览、依赖查询与自动发现。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 聚合体检：按应用聚合所在服务器进程/容器/端口与依赖数据源的连通性，支撑全链路排障。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 安全与审计：命令/SQL 过滤、敏感操作桌面审批、文件传输路径白名单、TOFU 主机密钥校验、按目标限流，全部操作写入 HMAC-SHA256 哈希链审计。"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
+                <StackPanel>
+                    <TextBlock Text="桌面 App 核心功能" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 主页看板：快捷入口 + 服务器/数据源/应用统计，支持 AI 快捷提问（含附件）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器管理：表格增删改查与排序、右键菜单（连接/编辑/采集快照/快照历史/删除），独立「SSH 会话管理」窗口含命令会话与交互式终端（内置 SFTP 文件可视化上传/下载）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源 / 应用管理：MySQL / PostgreSQL / Redis 与应用节点维护，密码本机 DPAPI 加密。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑：可视化编辑——拖动/缩放节点、拖拽创建关系、自动正交避障连线、网格吸附、撤销重做、导出图片。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 审计日志：按服务器/数据源/会话筛选与关键字检索、复制、导出 CSV、哈希链完整性校验。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手：内置大模型智能体，内嵌 MCP 客户端调用全部工具（审批/过滤/审计与第三方客户端一致），支持流式输出、多会话、只读模式、Markdown 渲染、任务计划与长期记忆。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 工具说明：集中查看工具参数与路由并一键复制到提示词，与 docs/TOOLS.md 双向同步。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 外观：基于 WPF-UI（Fluent）的现代界面，支持深色 / 浅色 / 跟随系统主题与强调色。"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
+                <StackPanel>
+                    <TextBlock Text="技术栈" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               Text=".NET 8 · WPF + WPF-UI（Fluent）· ModelContextProtocol SDK · SSH.NET · SQLite（审计/快照/会话）· DPAPI（凭据加密）。"/>
+                </StackPanel>
+            </Border>
+
+            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="0,2,0,0"
+                       Text="如有问题或建议，欢迎在 GitHub 仓库提交 Issue 或 Pull Request。"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

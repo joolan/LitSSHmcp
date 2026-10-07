@@ -16,7 +16,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
 │ LitSSHmcp.McpServer │  │   LitSSHmcp.App     │  │   LitSSHmcp.Cli     │
 │ MCP服务器(stdio)     │  │ WPF管理界面(MVVM)    │  │ 终端SSH工具          │
- │ 51个MCP Tools        │  │ 服务器/数据源/拓扑配置 │  │ list/connect/run    │
+ │ 53个MCP Tools        │  │ 服务器/数据源/拓扑配置 │  │ list/connect/run    │
 └──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
            │                        │                        │
            └────────────────────────┼────────────────────────┘
@@ -319,7 +319,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 
 ```bash
 dotnet build LitSSHmcp.slnx                      # 全量构建（应 0 警告 0 错误）
-dotnet test LitSSHmcp.slnx                      # 全部测试(Core + McpServer + App，184 用例)
+dotnet test LitSSHmcp.slnx                      # 全部测试(Core + Agent + McpServer + App，496 用例)
 dotnet publish src/LitSSHmcp.McpServer -c Release -r win-x64 --self-contained -o publish
 dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publish
 ```

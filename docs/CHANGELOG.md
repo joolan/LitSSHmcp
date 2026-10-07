@@ -105,11 +105,13 @@
 - **服务器列表右键新增「采集快照」与「快照历史」**：采集为同步操作（典型 10~30 秒），完成/失败后自动打开历史窗口并定位本次快照；**单飞限流**——同一服务器同时只允许一个采集（App 内全局忙标志 + 服务内存锁 + 库内 `Running` 唯一部分索引，**跨 App / MCP 进程**也生效），重复触发返回进行中提示。
 - **新增「服务器快照历史」窗口**：通用查看页，顶部可**切换服务器**；左列历史快照列表（时间/状态/耗时/提权/错误），选中后右侧展示该次快照的**采集维度概览**（维度/状态/耗时/说明）、**采集事件**流水与**原始数据 JSON**。
 - **安全设置新增「服务器快照」区**：采集是否提权（`snapshot.useSudo`）、每服务器保留份数（`snapshot.retentionPerServer`，0=不限）、采集超时秒数（`snapshot.timeoutSeconds`），读写 `config.json` 的顶层 `snapshot` 段。
+- **设置窗口新增「关于」Tab**：介绍项目定位与 MCP / 桌面 App 的核心能力，顶部注明 **GitHub 开源地址**（https://github.com/joolan/LitSSHmcp）与 **MIT 许可**。
 
 ### 修复
 
 - **`nginx_tls` 有效配置被 su 交互式 PTY 的登录噪声污染**：`su` 通道机的 `effectiveConfig` 会混入登录 banner（`Last login…`）、命令行回显（`su - root -c '…'`）、`Password:` 提示与 ANSI 转义码（`sudo` 非 PTY 通道本就干净）。现按首个 `# configuration file` 头截断并剥离 ANSI/控制字符，得到干净的有效配置。
 - **`mysql_diagnostics` 报"格式错"**：`SHOW FULL PROCESSLIST` 解析用了错误列序（把 `Host` 当 `db`、把 `Command`（`Query`/`Daemon`/`Sleep`…）当 `Time`），`Convert.ToInt64("Daemon")` 抛 `FormatException` 导致整个诊断失败、只能绕道 `mysql_query`。现按正确列序（`Id,User,Host,db,Command,Time,State,Info`）取值，并以不抛异常的数值转换兜底；`byDatabase` 与"最长运行查询"统计同步修正。
+- **浅色主题主按钮（强调色底）文字发黑**：`Controls.xaml` 的全局隐式 `TextBlock` 样式设置了 `Foreground`，其优先级高于内容控件内部文本的继承值，导致 `ui:Button Appearance=Primary`（以及 ComboBox 等）内部文字被强制为浅色主题的深色前景。移除全局 `Foreground` setter（前景改由 `FluentWindow` 的 `WindowForeground` 继承，随主题变化），并为 `AccentButtonForeground`/`PointerOver`/`Pressed` 统一白色前景，修复"蓝底黑字"。
 
 ## [1.1.1] - 2026-10-04
 

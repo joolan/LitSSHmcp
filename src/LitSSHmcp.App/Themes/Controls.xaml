@@ -55,11 +55,18 @@
         <Setter Property="FontSize" Value="11"/>
     </Style>
 
-    <!-- 默认文字：常规字重 + 主题前景（避免整体偏粗） -->
+    <!-- 默认文字：仅统一字重；前景色交由属性继承（FluentWindow 已设 WindowForeground，随主题变化）。
+         切勿在此设置 Foreground：隐式 TextBlock 样式会覆盖 Button/ComboBox 等内容控件内部
+         生成文本的前景，导致“蓝底按钮黑字”等对比度问题。 -->
     <Style TargetType="TextBlock">
         <Setter Property="FontWeight" Value="Normal"/>
-        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
     </Style>
+
+    <!-- 主按钮（ui:Button Appearance=Primary）文字前景：覆盖 WPF-UI 默认值。
+         统一为白色，避免浅色主题下被全局前景渲染成黑色（深色主题维持原有观感）。 -->
+    <SolidColorBrush x:Key="AccentButtonForeground" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#FFFFFFFF"/>
 
     <!-- 侧栏/标题栏动作按钮：透明、圆角、明确的悬停/按下反馈 -->
     <Style x:Key="ActionRowButton" TargetType="Button">

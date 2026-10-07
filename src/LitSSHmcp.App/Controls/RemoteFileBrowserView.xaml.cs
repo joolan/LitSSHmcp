@@ -106,27 +106,7 @@ public partial class RemoteFileBrowserView : UserControl
         if (local is null)
             return;
 
-        // 优先调起系统「打开方式」对话框
-        if (NativeShell.OpenWith(Owner, local))
-            return;
-
-        // 回退：自建选择程序对话框
-        var dialog = new OpenFileDialog
-        {
-            Title = "选择要使用的程序",
-            Filter = "程序 (*.exe)|*.exe|所有文件|*.*"
-        };
-        if (dialog.ShowDialog(Owner) != true)
-            return;
-
-        try
-        {
-            Process.Start(new ProcessStartInfo(dialog.FileName, $"\"{local}\"") { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            vm.StatusMessage = "启动所选程序失败: " + ex.Message;
-        }
+        Views.OpenWithDialog.Show(Owner, local);
     }
 
     private void OpenSelected()

@@ -4,6 +4,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:vm="clr-namespace:LitSSHmcp.App.ViewModels"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="SSH 会话管理" Height="700" Width="1000"
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Window.Resources>
@@ -119,22 +120,20 @@
 
         <ui:TitleBar Grid.Row="0" Title="SSH 会话管理"/>
 
+        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Margin="0,0,150,0" Panel.ZIndex="60"
+                    shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                    Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
+            <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
+                       ToolTip="新建连接…" Click="OnNewConnection"/>
+            <ui:Button Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
+                       ToolTip="批量执行（发送到会话窗口）" Click="OnBatchExec"/>
+            <ui:Button Icon="{ui:SymbolIcon Eye24}" Appearance="Transparent" Padding="6,3"
+                       ToolTip="布局 / 显示方式" Click="OnLayoutMenu"/>
+        </StackPanel>
+
         <Grid Grid.Row="1" Margin="10">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-
-            <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,4"
-                        Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
-                <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
-                           ToolTip="新建连接…" Click="OnNewConnection"/>
-                <ui:Button Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
-                           ToolTip="批量执行（发送到会话窗口）" Click="OnBatchExec"/>
-                <ui:Button Icon="{ui:SymbolIcon Eye24}" Padding="8,3" ToolTip="布局 / 显示方式" Click="OnLayoutMenu"/>
-            </StackPanel>
-
-            <Grid Grid.Row="1">
+            <Grid>
                 <TabControl x:Name="Tabs" ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}"
                         Template="{StaticResource SessionTabTemplate}"
                         SelectionChanged="OnTabsSelectionChanged"

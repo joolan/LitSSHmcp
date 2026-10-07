@@ -56,6 +56,7 @@
                 <DockPanel Grid.Row="0">
                     <ui:Button DockPanel.Dock="Right" Content="执行" Icon="{ui:SymbolIcon Play24}" Appearance="Primary"
                                Padding="16,5" Margin="8,0,0,0" Command="{Binding RunCommand}"/>
+                    <ui:Button DockPanel.Dock="Right" Content="片段" Padding="10,5" Margin="8,0,0,0" ToolTip="选择全局命令片段填充到输入框" Click="OnSnippets"/>
                     <ui:TextBox FontWeight="Normal" Text="{Binding Command, UpdateSourceTrigger=PropertyChanged}"
                                 FontFamily="Consolas" PlaceholderText="要批量执行的命令，例如：uptime; df -h" VerticalContentAlignment="Center"/>
                 </DockPanel>

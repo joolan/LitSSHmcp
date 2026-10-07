@@ -22,6 +22,9 @@ public partial class TerminalTabView : UserControl
 
     private TerminalSessionViewModel? Vm => DataContext as TerminalSessionViewModel;
 
+    /// <summary>聚焦终端输入（切换标签后调用）。</summary>
+    public void FocusInput() => Terminal.FocusInput();
+
     private void Hook()
     {
         if (Vm is { } vm)

@@ -127,6 +127,13 @@ public sealed class TerminalView : Grid
         RecalcGrid();
     }
 
+    /// <summary>聚焦输入（切换标签后自动激活终端输入）。</summary>
+    public void FocusInput()
+    {
+        _ime.Focus();
+        Keyboard.Focus(_ime);
+    }
+
     public static readonly DependencyProperty SessionProperty = DependencyProperty.Register(
         nameof(Session), typeof(TerminalSessionViewModel), typeof(TerminalView),
         new PropertyMetadata(null, OnSessionChanged));

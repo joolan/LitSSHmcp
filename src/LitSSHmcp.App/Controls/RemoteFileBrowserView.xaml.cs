@@ -100,26 +100,28 @@ public partial class RemoteFileBrowserView : UserControl
             _ = OpenWithAsync(vm, item);
     }
 
-    private static async Task OpenWithAsync(RemoteFileBrowserViewModel vm, RemoteFileItem item)
+    private async Task OpenWithAsync(RemoteFileBrowserViewModel vm, RemoteFileItem item)
     {
         var local = await vm.OpenFileForEditAsync(item);
         if (local is null)
             return;
+
+        // 自建“选择程序”对话框（系统 OpenAs 在部分 Windows 版本被禁用）
+        var dialog = new OpenFileDialog
+        {
+            Title = "选择要使用的程序",
+            Filter = "程序 (*.exe)|*.exe|所有文件|*.*"
+        };
+        if (dialog.ShowDialog(Owner) != true)
+            return;
+
         try
         {
-            // 优先用 shell "openas" 动词调起系统「打开方式」对话框
-            Process.Start(new ProcessStartInfo(local) { UseShellExecute = true, Verb = "openas" });
+            Process.Start(new ProcessStartInfo(dialog.FileName, $"\"{local}\"") { UseShellExecute = true });
         }
-        catch
+        catch (Exception ex)
         {
-            try
-            {
-                Process.Start(new ProcessStartInfo("rundll32.exe", $"shell32.dll,OpenAs_RunDLL \"{local}\"") { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                vm.StatusMessage = "打开方式失败: " + ex.Message;
-            }
+            vm.StatusMessage = "启动所选程序失败: " + ex.Message;
         }
     }
 

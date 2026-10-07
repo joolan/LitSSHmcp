@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LitSSHmcp.App.Controls;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using Wpf.Ui.Controls;
@@ -119,6 +120,45 @@ public partial class SshSessionWindow : FluentWindow
     {
         if (DataContext is MainViewModel vm)
             vm.SshTileHeight += delta;
+    }
+
+    // ---- 切换标签后自动聚焦会话输入 ----
+
+    private void OnTabsSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm || !vm.IsSshTabbed)
+            return;
+        Dispatcher.BeginInvoke(new Action(FocusActiveInput), System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private void FocusActiveInput()
+    {
+        var host = Tabs.Template?.FindName("PART_SelectedContentHost", Tabs) as DependencyObject ?? Tabs;
+        var terminal = FindDescendant<TerminalTabView>(host);
+        if (terminal is not null)
+        {
+            terminal.FocusInput();
+            return;
+        }
+        var box = FindDescendant<TextBox>(host, t => !t.IsReadOnly && t.IsVisible);
+        box?.Focus();
+    }
+
+    private static T? FindDescendant<T>(DependencyObject? root, Func<T, bool>? predicate = null) where T : DependencyObject
+    {
+        if (root is null)
+            return null;
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match && (predicate is null || predicate(match)))
+                return match;
+            var found = FindDescendant(child, predicate);
+            if (found is not null)
+                return found;
+        }
+        return null;
     }
 
     private void OnBatchExec(object sender, RoutedEventArgs e)

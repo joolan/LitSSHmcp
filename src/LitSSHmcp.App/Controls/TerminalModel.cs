@@ -53,6 +53,9 @@ public sealed class TerminalModel
 
     private readonly List<TerminalCell[]> _scrollback = new();
 
+    /// <summary>是否处于备用屏（vim/top/less 等全屏程序）。</summary>
+    public bool IsAltScreen => _altScreen;
+
     /// <summary>回看行数上限。</summary>
     public int MaxScrollback { get; set; } = 2000;
 

@@ -44,6 +44,8 @@
                         <TabPanel IsItemsHost="True" x:Name="HeaderPanel" Panel.ZIndex="1" Margin="2,3,0,0"/>
                         <ui:Button x:Name="AddTabButton" Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3"
                                    Margin="4,2,0,0" ToolTip="新建连接…" Click="OnNewConnection"/>
+                        <ui:Button x:Name="BatchTabButton" Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3"
+                                   Margin="2,2,0,0" ToolTip="批量执行（发送到会话窗口）" Click="OnBatchExec"/>
                     </StackPanel>
                 </ScrollViewer>
                 <ContentPresenter Grid.Row="1" x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/>
@@ -187,6 +189,9 @@
                     Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
             <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,4,0"
                        ToolTip="新建连接…" Click="OnNewConnection"
+                       Visibility="{Binding IsSshTiled, Converter={StaticResource BoolToVis}}"/>
+            <ui:Button Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3" Margin="0,0,4,0"
+                       ToolTip="批量执行（发送到会话窗口）" Click="OnBatchExec"
                        Visibility="{Binding IsSshTiled, Converter={StaticResource BoolToVis}}"/>
             <ui:Button Icon="{ui:SymbolIcon Eye24}" Padding="8,3" ToolTip="布局 / 显示方式" Click="OnLayoutMenu"/>
         </StackPanel>

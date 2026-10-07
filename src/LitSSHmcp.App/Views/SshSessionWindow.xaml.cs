@@ -121,6 +121,14 @@ public partial class SshSessionWindow : FluentWindow
             vm.SshTileHeight += delta;
     }
 
+    private void OnBatchExec(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm)
+            return;
+        var batchVm = new SessionBatchExecViewModel(vm, vm.Servers);
+        new SessionBatchExecWindow { DataContext = batchVm, Owner = this }.ShowDialog();
+    }
+
     private void OnLayoutMenu(object sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel vm)

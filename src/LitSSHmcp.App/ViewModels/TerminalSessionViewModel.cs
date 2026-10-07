@@ -91,6 +91,9 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
 
     public string Subtitle => $"{Server.Host}:{Server.Port}";
 
+    /// <summary>是否处于全屏程序（vim/top 等备用屏）——批量执行时视为不安全。</summary>
+    public bool IsFullScreenActive => Model.IsAltScreen;
+
     private string _statusMessage = "未连接";
     public string StatusMessage
     {

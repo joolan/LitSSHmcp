@@ -184,8 +184,8 @@
             </Grid>
         </Grid>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"
-                    Margin="0,8,6,0" Panel.ZIndex="50"
+        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Margin="0,0,150,0" Panel.ZIndex="50"
                     Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
             <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,4,0"
                        ToolTip="新建连接…" Click="OnNewConnection"

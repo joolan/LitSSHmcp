@@ -120,6 +120,12 @@ public sealed class SessionBatchExecViewModel : INotifyPropertyChanged
                 skipped++;
                 continue;
             }
+            if (term.IsBusyOrUnsafe)
+            {
+                target.Status = "已跳过（命令执行中，未回到提示符）";
+                skipped++;
+                continue;
+            }
 
             term.SendInput(command + "\r");
             target.Status = "已发送";

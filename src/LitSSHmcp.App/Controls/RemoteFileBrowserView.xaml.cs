@@ -107,12 +107,19 @@ public partial class RemoteFileBrowserView : UserControl
             return;
         try
         {
-            // 调起系统「打开方式」对话框，让用户选择程序
-            Process.Start(new ProcessStartInfo("rundll32.exe", $"shell32.dll,OpenAs_RunDLL \"{local}\"") { UseShellExecute = true });
+            // 优先用 shell "openas" 动词调起系统「打开方式」对话框
+            Process.Start(new ProcessStartInfo(local) { UseShellExecute = true, Verb = "openas" });
         }
-        catch (Exception ex)
+        catch
         {
-            vm.StatusMessage = "打开方式失败: " + ex.Message;
+            try
+            {
+                Process.Start(new ProcessStartInfo("rundll32.exe", $"shell32.dll,OpenAs_RunDLL \"{local}\"") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                vm.StatusMessage = "打开方式失败: " + ex.Message;
+            }
         }
     }
 

@@ -94,4 +94,22 @@ public class TerminalModelTests
         Assert.Equal(1, model.ScrollbackCount);
         Assert.Equal('A', model.ScrollbackLine(1)[0].Ch);
     }
+
+    [Fact]
+    public void Scrollback_line_is_padded_after_resize()
+    {
+        var model = new TerminalModel(5, 2);
+        model.Feed("A\r\nB\r\nC");
+        model.Resize(20, 2);
+        var line = model.ScrollbackLine(1);
+        Assert.Equal(20, line.Length);
+    }
+
+    [Fact]
+    public void Last_line_text_reflects_prompt()
+    {
+        var model = new TerminalModel(20, 3);
+        model.Feed("hello\r\nuser@host:~$ ");
+        Assert.EndsWith("$", model.LastNonEmptyLineText());
+    }
 }

@@ -91,11 +91,39 @@ public sealed class TerminalModel
         return Active[y * _cols + x];
     }
 
-    /// <summary>取回看行（offset 从 1 开始，1=最近滚出的一行）。</summary>
+    /// <summary>取回看行（offset 从 1 开始，1=最近滚出的一行）。始终返回当前列宽的行（旧行会补/截）。</summary>
     public TerminalCell[] ScrollbackLine(int indexFromEnd)
     {
         var idx = _scrollback.Count - indexFromEnd;
-        return idx >= 0 && idx < _scrollback.Count ? _scrollback[idx] : EmptyLine();
+        if (idx < 0 || idx >= _scrollback.Count)
+            return EmptyLine();
+
+        var src = _scrollback[idx];
+        if (src.Length == _cols)
+            return src;
+
+        // 终端宽度变化后，旧回看行长度与当前不同：补齐到当前列宽，避免越界
+        var line = EmptyLine();
+        Array.Copy(src, line, Math.Min(src.Length, _cols));
+        return line;
+    }
+
+    /// <summary>当前屏幕最后一行非空文本（用于判断是否已回到提示符）。</summary>
+    public string LastNonEmptyLineText()
+    {
+        for (var y = _rows - 1; y >= 0; y--)
+        {
+            var sb = new System.Text.StringBuilder(_cols);
+            for (var x = 0; x < _cols; x++)
+            {
+                var ch = Active[y * _cols + x].Ch;
+                sb.Append(ch == '\0' ? ' ' : ch);
+            }
+            var text = sb.ToString().TrimEnd();
+            if (text.Length > 0)
+                return text;
+        }
+        return string.Empty;
     }
 
     private TerminalCell[] EmptyLine()

@@ -94,6 +94,22 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     /// <summary>是否处于全屏程序（vim/top 等备用屏）——批量执行时视为不安全。</summary>
     public bool IsFullScreenActive => Model.IsAltScreen;
 
+    /// <summary>是否“忙碌/不安全”：全屏程序运行中，或末行不像已回到 shell 提示符（批量执行时跳过）。</summary>
+    public bool IsBusyOrUnsafe => !IsConnected || IsFullScreenActive || !IsLikelyIdle;
+
+    /// <summary>末行是否是常见的 shell 提示符结尾（$ # % &gt; ❯ 等）。</summary>
+    private bool IsLikelyIdle
+    {
+        get
+        {
+            var line = Model.LastNonEmptyLineText();
+            if (string.IsNullOrWhiteSpace(line))
+                return false;
+            var last = line.TrimEnd()[^1];
+            return last is '$' or '#' or '%' or '>' or '❯';
+        }
+    }
+
     private string _statusMessage = "未连接";
     public string StatusMessage
     {

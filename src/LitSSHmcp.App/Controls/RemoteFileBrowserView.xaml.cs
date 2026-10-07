@@ -106,7 +106,11 @@ public partial class RemoteFileBrowserView : UserControl
         if (local is null)
             return;
 
-        // 自建“选择程序”对话框（系统 OpenAs 在部分 Windows 版本被禁用）
+        // 优先调起系统「打开方式」对话框
+        if (NativeShell.OpenWith(Owner, local))
+            return;
+
+        // 回退：自建选择程序对话框
         var dialog = new OpenFileDialog
         {
             Title = "选择要使用的程序",

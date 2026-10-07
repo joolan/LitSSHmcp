@@ -42,10 +42,6 @@
                 <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                     <StackPanel Orientation="Horizontal">
                         <TabPanel IsItemsHost="True" x:Name="HeaderPanel" Panel.ZIndex="1" Margin="2,3,0,0"/>
-                        <ui:Button x:Name="AddTabButton" Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3"
-                                   Margin="4,2,0,0" ToolTip="新建连接…" Click="OnNewConnection"/>
-                        <ui:Button x:Name="BatchTabButton" Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3"
-                                   Margin="2,2,0,0" ToolTip="批量执行（发送到会话窗口）" Click="OnBatchExec"/>
                     </StackPanel>
                 </ScrollViewer>
                 <ContentPresenter Grid.Row="1" x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/>
@@ -129,18 +125,14 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <DockPanel Grid.Row="0" Margin="0,0,0,4" LastChildFill="False"
-                       Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal"
-                            Visibility="{Binding IsSshTiled, Converter={StaticResource BoolToVis}}">
-                    <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,4,0"
-                               ToolTip="新建连接…" Click="OnNewConnection"/>
-                    <ui:Button Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3" Margin="0,0,4,0"
-                               ToolTip="批量执行（发送到会话窗口）" Click="OnBatchExec"/>
-                </StackPanel>
-                <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Eye24}" Padding="8,3"
-                           ToolTip="布局 / 显示方式" Click="OnLayoutMenu"/>
-            </DockPanel>
+            <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,4"
+                        Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
+                <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
+                           ToolTip="新建连接…" Click="OnNewConnection"/>
+                <ui:Button Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
+                           ToolTip="批量执行（发送到会话窗口）" Click="OnBatchExec"/>
+                <ui:Button Icon="{ui:SymbolIcon Eye24}" Padding="8,3" ToolTip="布局 / 显示方式" Click="OnLayoutMenu"/>
+            </StackPanel>
 
             <Grid Grid.Row="1">
                 <TabControl x:Name="Tabs" ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}"

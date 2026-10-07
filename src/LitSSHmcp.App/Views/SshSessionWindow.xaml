@@ -49,6 +49,39 @@
             </Grid>
         </ControlTemplate>
 
+        <Style x:Key="SessionCaptionButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppTextBrush}"/>
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons,Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Width" Value="46"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SessionCloseButton" TargetType="Button" BasedOn="{StaticResource SessionCaptionButton}">
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E81123"/>
+                    <Setter Property="Foreground" Value="White"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- 命令会话标签 -->
         <DataTemplate DataType="{x:Type vm:SessionViewModel}">
             <Grid Margin="6">
@@ -118,21 +151,33 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="SSH 会话管理"/>
+        <Border Grid.Row="0" Height="36" Background="{DynamicResource AppSurfaceBrush}"
+                MouseLeftButtonDown="OnTitleBarMouseDown">
+            <Grid>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="14,0,0,0">
+                    <TextBlock Text="SSH 会话管理" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
+                        <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
+                                   ToolTip="新建连接…" Click="OnNewConnection"/>
+                        <ui:Button Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
+                                   ToolTip="批量执行（发送到会话窗口）" Click="OnBatchExec"/>
+                        <ui:Button Icon="{ui:SymbolIcon Eye24}" Appearance="Transparent" Padding="6,3"
+                                   ToolTip="布局 / 显示方式" Click="OnLayoutMenu"/>
+                    </StackPanel>
+                </StackPanel>
 
-        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
-                    Margin="0,0,150,0" Panel.ZIndex="60"
-                    shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                    Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
-            <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
-                       ToolTip="新建连接…" Click="OnNewConnection"/>
-            <ui:Button Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
-                       ToolTip="批量执行（发送到会话窗口）" Click="OnBatchExec"/>
-            <ui:Button Icon="{ui:SymbolIcon Eye24}" Appearance="Transparent" Padding="6,3"
-                       ToolTip="布局 / 显示方式" Click="OnLayoutMenu"/>
-        </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Stretch"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Style="{StaticResource SessionCaptionButton}" Content="&#xE921;" Click="OnMinimizeWindow"/>
+                    <Button Style="{StaticResource SessionCaptionButton}" Content="&#xE922;" Click="OnMaximizeWindow"/>
+                    <Button Style="{StaticResource SessionCloseButton}" Content="&#xE8BB;" Click="OnCloseWindow"/>
+                </StackPanel>
+            </Grid>
+        </Border>
 
-        <Grid Grid.Row="1" Margin="10">
+        <Grid Grid.Row="1" Margin="6">
             <Grid>
                 <TabControl x:Name="Tabs" ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}"
                         Template="{StaticResource SessionTabTemplate}"

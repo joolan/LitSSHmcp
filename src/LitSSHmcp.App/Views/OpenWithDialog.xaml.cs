@@ -50,7 +50,23 @@ public partial class OpenWithDialog : FluentWindow
                     var command = cmdKey?.GetValue(null) as string;
                     if (string.IsNullOrWhiteSpace(command))
                         continue;
-                    var label = string.IsNullOrWhiteSpace(display) ? name : display!;
+
+                    // 优先用 exe 的本地化文件描述作为显示名
+                    string? description = null;
+                    try
+                    {
+                        var exe = TryGetExe(command!);
+                        if (exe is not null && File.Exists(exe))
+                            description = FileVersionInfo.GetVersionInfo(exe).FileDescription;
+                    }
+                    catch
+                    {
+                        // 忽略版本信息读取失败
+                    }
+
+                    var label = !string.IsNullOrWhiteSpace(description)
+                        ? description!
+                        : (string.IsNullOrWhiteSpace(display) ? name : display!);
                     if (seen.Add(label))
                         programs.Add(new ProgramItem(label, name, command!));
                 }
@@ -98,6 +114,18 @@ public partial class OpenWithDialog : FluentWindow
     }
 
     private void OnCancel(object sender, RoutedEventArgs e) => Close();
+
+    private static string? TryGetExe(string command)
+    {
+        var c = command.Trim();
+        if (c.StartsWith('"'))
+        {
+            var end = c.IndexOf('"', 1);
+            return end > 0 ? c[1..end] : null;
+        }
+        var sp = c.IndexOf(' ');
+        return sp < 0 ? c : c[..sp];
+    }
 
     private static bool Launch(string commandTemplate, string file)
     {

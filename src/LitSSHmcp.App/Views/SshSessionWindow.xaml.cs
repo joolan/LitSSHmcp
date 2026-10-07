@@ -122,6 +122,32 @@ public partial class SshSessionWindow : FluentWindow
             vm.SshTileHeight += delta;
     }
 
+    // ---- 自定义标题栏 ----
+
+    private void OnTitleBarMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<System.Windows.Controls.Button>(e.OriginalSource as DependencyObject) is not null)
+            return;
+        if (e.ClickCount == 2)
+        {
+            ToggleMaximize();
+            return;
+        }
+        if (e.LeftButton == MouseButtonState.Pressed)
+        {
+            try { DragMove(); } catch { /* ignore */ }
+        }
+    }
+
+    private void OnMinimizeWindow(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnMaximizeWindow(object sender, RoutedEventArgs e) => ToggleMaximize();
+
+    private void OnCloseWindow(object sender, RoutedEventArgs e) => Close();
+
+    private void ToggleMaximize()
+        => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
     // ---- 切换标签后自动聚焦会话输入 ----
 
     private void OnTabsSelectionChanged(object sender, SelectionChangedEventArgs e)

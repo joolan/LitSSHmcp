@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "servers": [
     {
       "id": "web-server-01",
@@ -165,7 +165,6 @@
         "name": "DeepSeek",
         "type": "openai",
         "endpoint": "https://api.deepseek.com/v1",
-        "model": "deepseek-chat",
         "apiKey": "enc:xxxx (DPAPI密文, 由 AI 助手设置保存时自动生成; 切勿手工填明文以外的占位符)",
         "enabled": true,
         "temperature": 0.3,
@@ -173,14 +172,17 @@
         "timeoutSeconds": 120,
         "maxRetries": 1,
         "maxConcurrency": 3,
-        "supportsVision": false
+        "supportsVision": false,
+        "models": [
+          { "id": "deepseek-chat", "name": "deepseek-chat", "enabled": true, "supportsVision": false },
+          { "id": "deepseek-reasoner", "name": "deepseek-reasoner", "enabled": true, "supportsVision": false }
+        ]
       },
       {
         "id": "ollama",
         "name": "本地Ollama",
         "type": "openai",
         "endpoint": "http://127.0.0.1:11434/v1",
-        "model": "qwen2.5:14b",
         "apiKey": "",
         "enabled": false,
         "temperature": 0.3,
@@ -188,7 +190,11 @@
         "timeoutSeconds": 120,
         "maxRetries": 1,
         "maxConcurrency": 3,
-        "supportsVision": false
+        "supportsVision": false,
+        "models": [
+          { "id": "ollama-qwen25", "name": "qwen2.5:14b", "enabled": true, "supportsVision": false },
+          { "id": "ollama-gemma3", "name": "gemma3", "enabled": true, "supportsVision": true }
+        ]
       }
     ]
   },

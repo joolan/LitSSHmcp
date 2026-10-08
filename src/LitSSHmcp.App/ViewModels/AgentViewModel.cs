@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.Agent;
@@ -59,6 +60,10 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         };
 
         Turns.CollectionChanged += (_, _) => OnPropertyChanged(nameof(EmptyStateVisibility));
+
+        // 模型下拉视图：按厂家（GroupName）分组，选中项仍是具体的某个模型
+        ComboView = CollectionViewSource.GetDefaultView(ComboProviders);
+        ComboView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(AgentProviderConfig.GroupName)));
     }
 
     public ObservableCollection<AgentProviderConfig> Providers { get; } = new();
@@ -66,7 +71,15 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>模型下拉列表 = 可用模型 + 末尾固定的“模型设置”入口。</summary>
     public ObservableCollection<AgentProviderConfig> ComboProviders { get; } = new();
 
-    private readonly AgentProviderConfig _modelSettingsEntry = new() { Id = "\u0001model-settings", Name = "模型设置" };
+    /// <summary>模型下拉的分组视图（按厂家 GroupName 分组）。</summary>
+    public ICollectionView ComboView { get; }
+
+    private readonly AgentProviderConfig _modelSettingsEntry = new()
+    {
+        Id = "\u0001model-settings",
+        Name = "模型设置",
+        GroupName = "设置"
+    };
 
     /// <summary>请求打开设置窗口（参数为初始 Tab：null=助手设置 / "model"=大模型设置）。</summary>
     public event Action<string?>? SettingsRequested;
@@ -506,7 +519,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             _suppressSelection = true;
             Providers.Clear();
-            foreach (var p in _agentConfig.Providers.Where(p => p.Enabled && !string.IsNullOrWhiteSpace(p.Model) && !string.IsNullOrWhiteSpace(p.Endpoint)))
+            foreach (var p in AgentProviderGroupConfig.Flatten(_agentConfig.Providers))
                 Providers.Add(p);
             RebuildComboProviders();
             SelectedProvider = PickProvider(_agentConfig.ActiveProviderId);
@@ -722,7 +735,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             StatusMessage = "正在连接 MCP 服务器…";
             _runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history, UpdatePlan);
             ResetSessionToolModes();
-            StatusMessage = $"已就绪 · {SelectedProvider.Name} / {SelectedProvider.Model} · {_runtime.ToolCount} 个工具"
+            StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
             ModelStatus = "ready";
             RefreshContextInfo();
@@ -751,7 +764,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             _runtime.ResetSession(SelectedProvider, history);
             _runtime.SetToolSelection(false, null);
             ResetSessionToolModes();
-            StatusMessage = $"已就绪 · {SelectedProvider.Name} / {SelectedProvider.Model} · {_runtime.ToolCount} 个工具"
+            StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
             ModelStatus = "ready";
             RefreshContextInfo();
@@ -772,7 +785,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             _agentConfig = config.Agent ?? new AgentConfig();
             _suppressSelection = true;
             Providers.Clear();
-            foreach (var p in _agentConfig.Providers.Where(p => p.Enabled && !string.IsNullOrWhiteSpace(p.Model) && !string.IsNullOrWhiteSpace(p.Endpoint)))
+            foreach (var p in AgentProviderGroupConfig.Flatten(_agentConfig.Providers))
                 Providers.Add(p);
             RebuildComboProviders();
             var session = Sessions.FirstOrDefault(s => s.Id == _sessionId);
@@ -796,7 +809,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (IsBusy || SelectedProvider is null) return;
         var history = await LoadHistoryFromStoreAsync();
-        StatusMessage = $"切换到 {SelectedProvider.Name} …";
+        StatusMessage = $"切换到 {SelectedProvider.DisplayName} …";
         await ResetRuntimeAsync(history);
     }
 
@@ -1308,7 +1321,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 new ChatOptions { MaxOutputTokens = 8, Temperature = 0 },
                 CancellationToken.None);
             stopwatch.Stop();
-            StatusMessage = $"连接正常 · {SelectedProvider.Name}（{stopwatch.ElapsedMilliseconds} ms）";
+            StatusMessage = $"连接正常 · {SelectedProvider.DisplayName}（{stopwatch.ElapsedMilliseconds} ms）";
         }
         catch (Exception ex)
         {

@@ -3,7 +3,7 @@ using LitSSHmcp.Core.Models;
 namespace LitSSHmcp.Core.Services.Storage;
 
 /// <summary>
-/// 配置结构迁移。当前 schemaVersion = 2（1→2 新增 syncTasks，并保证 security/agent/snapshot/connectionPool 等节非空）。
+/// 配置结构迁移。当前 schemaVersion = 3（2→3 大模型接入改为「厂家下挂多模型」，v2 单模型 provider 拆出 models）。
 /// 后续结构变更时在此追加迁移步骤并提升 AppConfig.CurrentSchemaVersion。
 /// </summary>
 public static class ConfigMigrator
@@ -107,6 +107,49 @@ public static class ConfigMigrator
         if (config.SyncTasks == null)
         {
             config.SyncTasks = Array.Empty<SyncTaskConfig>();
+            changed = true;
+        }
+
+        // v2→v3：大模型接入从「一个 provider = 一个模型」改为「一个厂家下挂多个模型」。
+        // 旧 JSON 的 model 字段反序列化到遗留 Model 上（此时 models 为空），在此转成单模型列表；
+        // 模型 Id 沿用旧 provider Id，保证已保存的 activeProviderId / 会话 ProviderId 继续命中。
+        if (config.Agent != null && config.Agent.Providers != null)
+        {
+            foreach (var g in config.Agent.Providers)
+            {
+                if (g == null)
+                    continue;
+
+                if ((g.Models == null || g.Models.Length == 0) && !string.IsNullOrWhiteSpace(g.Model))
+                {
+                    g.Models = new[]
+                    {
+                        new AgentModelConfig
+                        {
+                            Id = g.Id,
+                            Name = g.Model.Trim(),
+                            Enabled = true,
+                            SupportsVision = g.SupportsVision
+                        }
+                    };
+                    changed = true;
+                }
+                else if (g.Models == null)
+                {
+                    g.Models = Array.Empty<AgentModelConfig>();
+                    changed = true;
+                }
+
+                if (g.Model != null)
+                {
+                    g.Model = null;   // 已转入 models，不再写出遗留字段
+                    changed = true;
+                }
+            }
+        }
+        else if (config.Agent != null && config.Agent.Providers == null)
+        {
+            config.Agent.Providers = Array.Empty<AgentProviderGroupConfig>();
             changed = true;
         }
 

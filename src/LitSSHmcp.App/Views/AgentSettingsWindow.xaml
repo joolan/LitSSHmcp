@@ -127,7 +127,7 @@
 
                         <Border Grid.Column="0" Style="{DynamicResource CardBorderStyle}">
                             <DockPanel>
-                                <TextBlock DockPanel.Dock="Top" Text="大模型接入（可多模型）" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <TextBlock DockPanel.Dock="Top" Text="模型服务商（每家可挂多个模型）" FontWeight="SemiBold" Margin="0,0,0,8"/>
                                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
                                     <ui:Button Content="添加" Padding="12,3" Click="OnAdd"/>
                                     <TextBlock Text="(右键：删除/启停/测试连接)" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10" Margin="8,0,0,0"/>
@@ -191,13 +191,48 @@
                                     <DockPanel Margin="0,0,0,10">
                                         <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"
                                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock Text="以下为『当前选中模型自身』的参数，每个模型独立保存。"
+                                        <TextBlock Text="以下为『当前选中服务商』的配置：Endpoint/API Key/采样与重试等厂家级共享，其下可挂多个模型，各模型单独启用与配置视觉。"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                     </DockPanel>
                                     <TextBlock Text="名称:"/><ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-                                    <TextBlock Text="类型（openai=OpenAI 兼容端点）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.Type, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-                                    <TextBlock Text="Endpoint（如 https://api.deepseek.com/v1）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.Endpoint, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-                                    <TextBlock Text="模型名 model（如 deepseek-chat）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.Model, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="服务商（选择后自动填写 Endpoint 与模型列表，之后只需填 API Key）:"/>
+                                    <ComboBox ItemsSource="{Binding ProviderPresets}" SelectedItem="{Binding SelectedPreset, Mode=TwoWay}"
+                                              HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+                                    <TextBlock Text="Endpoint（OpenAI 兼容基地址，可手动修改）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.Endpoint, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+
+                                    <TextBlock Text="模型列表（勾选的模型会出现在「AI 运维助手 / 临时聊天」的模型下拉中，按厂家分组选择）:" FontWeight="SemiBold" Margin="0,4,0,6"/>
+                                    <ItemsControl ItemsSource="{Binding SelectedProvider.Models}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,0,0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <ui:TextBox Grid.Column="0" FontWeight="Normal" VerticalContentAlignment="Center"
+                                                                Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+                                                    <CheckBox Grid.Column="1" Content="启用" IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                                              VerticalAlignment="Center" Margin="10,0,8,0"/>
+                                                    <CheckBox Grid.Column="2" Content="支持视觉" IsChecked="{Binding SupportsVision, Mode=TwoWay}"
+                                                              VerticalAlignment="Center" Margin="0,0,8,0"
+                                                              ToolTip="该模型是否可接收图片附件（不同模型能力不同，逐模型配置）"/>
+                                                    <ui:Button Grid.Column="3" Content="删除" Padding="8,2" Click="OnRemoveModel"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,8">
+                                        <ComboBox IsEditable="True" ItemsSource="{Binding SelectedPresetModelNames}"
+                                                  Text="{Binding NewModelName, UpdateSourceTrigger=PropertyChanged}"
+                                                  Width="260" Height="28" Padding="10,4" FontWeight="Normal"
+                                                  ToolTip="从预设候选选择，或手动输入任意模型名"/>
+                                        <ui:Button Content="添加模型" Padding="10,3" Margin="6,0,0,0" Click="OnAddModel"/>
+                                        <TextBlock Text="(下拉为该服务商预设候选，也可手输)" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="8,0,0,0"/>
+                                    </StackPanel>
+
                                     <TextBlock Text="API Key（本机加密存储）:"/>
                                     <PasswordBox FontWeight="Normal" x:Name="ApiKeyBox" PasswordChar="●" Margin="0,0,0,6" PasswordChanged="OnApiKeyChanged"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
@@ -214,7 +249,6 @@
                                         <TextBlock Text="并发上限:" VerticalAlignment="Center"/>
                                         <ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.MaxConcurrency, UpdateSourceTrigger=PropertyChanged}" Width="36" Margin="6,0,0,0"/>
                                     </StackPanel>
-                                    <CheckBox Content="支持视觉（可接收图片附件；如 GPT-4o / Qwen-VL / GLM-4V）" IsChecked="{Binding SelectedProvider.SupportsVision, Mode=TwoWay}" Margin="0,4,0,6"/>
                                 <TextBlock Text="提示：切换启用/停用会立即保存；其余字段修改后点右下角「保存」。"
                                                Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" TextWrapping="Wrap"/>
                                 </StackPanel>

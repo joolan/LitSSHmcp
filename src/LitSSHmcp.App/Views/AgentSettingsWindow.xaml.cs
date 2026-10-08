@@ -58,14 +58,22 @@ public partial class AgentSettingsWindow : FluentWindow
 
     private void OnAdd(object sender, RoutedEventArgs e) => _viewModel.AddProvider();
 
+    private void OnAddModel(object sender, RoutedEventArgs e) => _viewModel.AddModel();
+
+    private void OnRemoveModel(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is ModelItemEdit model)
+            _viewModel.RemoveModel(model);
+    }
+
     private void OnRemove(object sender, RoutedEventArgs e)
     {
         var provider = _viewModel.SelectedProvider;
         if (provider is null)
             return;
         var result = System.Windows.MessageBox.Show(
-            $"确定删除模型「{provider.Name}」？删除后立即生效。",
-            "删除模型", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            $"确定删除服务商「{provider.Name}」及其下 {provider.Models.Count} 个模型？删除后立即生效。",
+            "删除服务商", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
         if (result == System.Windows.MessageBoxResult.Yes)
             _ = _viewModel.RemoveSelectedProviderAsync();
     }

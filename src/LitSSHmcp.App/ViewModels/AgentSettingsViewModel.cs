@@ -61,7 +61,118 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     }
 
     private AgentProviderEdit? _selectedProvider;
-    public AgentProviderEdit? SelectedProvider { get => _selectedProvider; set => Set(ref _selectedProvider, value); }
+    public AgentProviderEdit? SelectedProvider
+    {
+        get => _selectedProvider;
+        set
+        {
+            if (ReferenceEquals(_selectedProvider, value)) return;
+            if (_selectedProvider is not null)
+                _selectedProvider.PropertyChanged -= OnSelectedProviderPropertyChanged;
+            Set(ref _selectedProvider, value);
+            if (value is not null)
+                value.PropertyChanged += OnSelectedProviderPropertyChanged;
+            SyncPresetFromProvider();
+        }
+    }
+
+    /// <summary>服务商预设列表（类型下拉）。</summary>
+    public IReadOnlyList<ModelProviderPreset> ProviderPresets => ModelProviderPreset.All;
+
+    private ModelProviderPreset _selectedPreset = ModelProviderPreset.Custom;
+
+    /// <summary>当前选中的服务商预设；切换时自动覆盖填写 Endpoint 与模型列表。</summary>
+    public ModelProviderPreset SelectedPreset
+    {
+        get => _selectedPreset;
+        set
+        {
+            if (value is null || ReferenceEquals(_selectedPreset, value)) return;
+            _selectedPreset = value;
+            OnPropertyChanged(nameof(SelectedPreset));
+            OnPropertyChanged(nameof(SelectedPresetModelNames));
+            ApplyPreset(value);
+        }
+    }
+
+    /// <summary>当前预设的模型名候选（“添加模型”下拉可选项，仍可手动输入任意模型名）。</summary>
+    public IReadOnlyList<string> SelectedPresetModelNames =>
+        _selectedPreset.Models.Select(m => m.Name).ToArray();
+
+    private string _newModelName = string.Empty;
+
+    /// <summary>“添加模型”输入框内容。</summary>
+    public string NewModelName { get => _newModelName; set => Set(ref _newModelName, value); }
+
+    /// <summary>按已填 Endpoint 反向匹配预设（不覆盖任何字段）。</summary>
+    private void SyncPresetFromProvider()
+    {
+        var preset = ModelProviderPreset.FindByEndpoint(_selectedProvider?.Endpoint);
+        var changed = !ReferenceEquals(_selectedPreset, preset);
+        _selectedPreset = preset;
+        if (changed)
+            OnPropertyChanged(nameof(SelectedPreset));
+        OnPropertyChanged(nameof(SelectedPresetModelNames));
+    }
+
+    private void OnSelectedProviderPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AgentProviderEdit.Endpoint))
+            SyncPresetFromProvider();
+    }
+
+    /// <summary>应用预设：覆盖 Type/Endpoint，并用预设模型重建模型列表（自定义预设不动任何字段）。</summary>
+    private void ApplyPreset(ModelProviderPreset preset)
+    {
+        if (preset.IsCustom || SelectedProvider is null)
+            return;
+        SelectedProvider.Type = preset.Type;
+        SelectedProvider.Endpoint = preset.Endpoint;
+        if (string.IsNullOrWhiteSpace(SelectedProvider.Name) || SelectedProvider.Name is "新模型" or "新服务商")
+            SelectedProvider.Name = preset.Name;
+
+        SelectedProvider.Models.Clear();
+        foreach (var m in preset.Models)
+            SelectedProvider.Models.Add(new ModelItemEdit { Name = m.Name, Enabled = true, SupportsVision = m.Vision });
+
+        StatusMessage = $"已应用预设「{preset.Name}」：Endpoint 与 {preset.Models.Count} 个模型已自动填写，请输入 API Key，并按需勾选模型/视觉";
+    }
+
+    /// <summary>添加一个模型（可从预设候选选择，也可手动输入任意模型名）。</summary>
+    public void AddModel()
+    {
+        if (SelectedProvider is null)
+            return;
+        var name = NewModelName?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            StatusMessage = "请输入或从下拉选择要添加的模型名";
+            return;
+        }
+        if (SelectedProvider.Models.Any(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            StatusMessage = $"模型已存在: {name}";
+            return;
+        }
+
+        var presetHit = _selectedPreset.Models.FirstOrDefault(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
+        SelectedProvider.Models.Add(new ModelItemEdit
+        {
+            Name = name,
+            Enabled = true,
+            SupportsVision = presetHit?.Vision ?? SelectedProvider.SupportsVision
+        });
+        NewModelName = string.Empty;
+        StatusMessage = $"已添加模型 {name}（点右下角「保存」生效）";
+    }
+
+    /// <summary>删除一个模型条目（调用方在行内“删除”按钮触发）。</summary>
+    public void RemoveModel(ModelItemEdit? model)
+    {
+        if (model is null || SelectedProvider is null)
+            return;
+        SelectedProvider.Models.Remove(model);
+    }
 
     private string _systemPrompt = string.Empty;
     public string SystemPrompt { get => _systemPrompt; set => Set(ref _systemPrompt, value); }
@@ -144,9 +255,12 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     private string _statusMessage = string.Empty;
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
 
+    /// <summary>当前选用的模型 Id（厂家下具体模型；本窗口只读保留，删除模型后由主窗口按需回退）。</summary>
+    private string _activeProviderId = string.Empty;
+
     public RelayCommand AddProviderCommand => _addProviderCommand ??= new RelayCommand(_ =>
     {
-        var p = new AgentProviderEdit { Name = "新模型", Type = "openai", Enabled = true };
+        var p = new AgentProviderEdit { Name = "新服务商", Type = "openai", Enabled = true };
         Providers.Add(p);
         SelectedProvider = p;
     });
@@ -192,14 +306,20 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
         StatusMessage = $"测试连接中… ({SelectedProvider.Name})";
         try
         {
-            var client = ChatClientFactory.Create(SelectedProvider.ToModel());
+            var flat = AgentProviderGroupConfig.Flatten(new[] { SelectedProvider.ToModel() }).FirstOrDefault();
+            if (flat is null)
+            {
+                StatusMessage = "无法测试：请填写 Endpoint 并在模型列表中至少启用一个模型";
+                return;
+            }
+            var client = ChatClientFactory.Create(flat);
             var sw = System.Diagnostics.Stopwatch.StartNew();
             await client.GetResponseAsync(
                 new[] { new ChatMessage(ChatRole.User, "ping") },
                 new ChatOptions { MaxOutputTokens = 8, Temperature = 0 },
                 CancellationToken.None);
             sw.Stop();
-            StatusMessage = $"连接正常 · {SelectedProvider.Name}（{sw.ElapsedMilliseconds} ms）";
+            StatusMessage = $"连接正常 · {SelectedProvider.Name} / {flat.Model}（{sw.ElapsedMilliseconds} ms）";
         }
         catch (Exception ex)
         {
@@ -216,7 +336,8 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             Providers.Clear();
             foreach (var p in agent.Providers)
                 Providers.Add(AgentProviderEdit.From(p));
-            SelectedProvider = Providers.FirstOrDefault(p => p.Id == agent.ActiveProviderId) ?? Providers.FirstOrDefault();
+            _activeProviderId = agent.ActiveProviderId ?? string.Empty;
+            SelectedProvider = Providers.FirstOrDefault();
 
             SystemPrompt = agent.SystemPrompt;
             SkillsDir = agent.SkillsDir;
@@ -267,7 +388,7 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             var config = await _configService.LoadConfigAsync();
             config.Agent ??= new AgentConfig();
             config.Agent.Providers = Providers.Select(p => p.ToModel()).ToArray();
-            config.Agent.ActiveProviderId = SelectedProvider?.Id ?? string.Empty;
+            config.Agent.ActiveProviderId = _activeProviderId ?? string.Empty;
             config.Agent.SystemPrompt = SystemPrompt ?? string.Empty;
             config.Agent.SkillsDir = SkillsDir ?? string.Empty;
             config.Agent.WorkspaceDir = WorkspaceDir ?? string.Empty;
@@ -331,6 +452,9 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     };
 
     public event PropertyChangedEventHandler? PropertyChanged;
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
     private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value)) return;
@@ -339,7 +463,7 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     }
 }
 
-/// <summary>设置界面里可编辑的模型配置。</summary>
+/// <summary>设置界面里可编辑的大模型厂家配置（endpoint/key 共享，下挂多个模型）。</summary>
 public class AgentProviderEdit : INotifyPropertyChanged
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -353,8 +477,8 @@ public class AgentProviderEdit : INotifyPropertyChanged
     private string _endpoint = string.Empty;
     public string Endpoint { get => _endpoint; set => Set(ref _endpoint, value); }
 
-    private string _model = string.Empty;
-    public string Model { get => _model; set => Set(ref _model, value); }
+    /// <summary>该厂家下的模型列表（勾选启用 + 逐模型视觉）。</summary>
+    public ObservableCollection<ModelItemEdit> Models { get; } = new();
 
     private string _apiKey = string.Empty;
     public string ApiKey { get => _apiKey; set => Set(ref _apiKey, value); }
@@ -380,30 +504,37 @@ public class AgentProviderEdit : INotifyPropertyChanged
     private bool _supportsVision;
     public bool SupportsVision { get => _supportsVision; set => Set(ref _supportsVision, value); }
 
-    public static AgentProviderEdit From(AgentProviderConfig p) => new()
+    public static AgentProviderEdit From(AgentProviderGroupConfig p)
     {
-        Id = p.Id,
-        Name = p.Name,
-        Type = p.Type,
-        Endpoint = p.Endpoint,
-        Model = p.Model,
-        ApiKey = p.ApiKey ?? string.Empty,
-        Enabled = p.Enabled,
-        Temperature = p.Temperature.ToString("0.##"),
-        MaxTokens = p.MaxTokens.ToString(),
-        TimeoutSeconds = p.TimeoutSeconds.ToString(),
-        MaxRetries = p.MaxRetries.ToString(),
-        MaxConcurrency = p.MaxConcurrency.ToString(),
-        SupportsVision = p.SupportsVision
-    };
+        var edit = new AgentProviderEdit
+        {
+            Id = p.Id,
+            Name = p.Name,
+            Type = p.Type,
+            Endpoint = p.Endpoint,
+            ApiKey = p.ApiKey ?? string.Empty,
+            Enabled = p.Enabled,
+            Temperature = p.Temperature.ToString("0.##"),
+            MaxTokens = p.MaxTokens.ToString(),
+            TimeoutSeconds = p.TimeoutSeconds.ToString(),
+            MaxRetries = p.MaxRetries.ToString(),
+            MaxConcurrency = p.MaxConcurrency.ToString(),
+            SupportsVision = p.SupportsVision
+        };
+        foreach (var m in p.Models ?? Array.Empty<AgentModelConfig>())
+        {
+            if (m is not null)
+                edit.Models.Add(ModelItemEdit.From(m));
+        }
+        return edit;
+    }
 
-    public AgentProviderConfig ToModel() => new()
+    public AgentProviderGroupConfig ToModel() => new()
     {
         Id = string.IsNullOrWhiteSpace(Id) ? Guid.NewGuid().ToString("N") : Id,
         Name = Name ?? string.Empty,
         Type = string.IsNullOrWhiteSpace(Type) ? "openai" : Type.Trim(),
         Endpoint = Endpoint ?? string.Empty,
-        Model = Model ?? string.Empty,
         ApiKey = ApiKey,
         Enabled = Enabled,
         Temperature = double.TryParse(Temperature, out var t) ? t : 0.3,
@@ -411,6 +542,46 @@ public class AgentProviderEdit : INotifyPropertyChanged
         TimeoutSeconds = int.TryParse(TimeoutSeconds, out var to) && to > 0 ? to : 120,
         MaxRetries = int.TryParse(MaxRetries, out var mr) && mr >= 0 ? mr : 1,
         MaxConcurrency = int.TryParse(MaxConcurrency, out var mc) && mc > 0 ? mc : 3,
+        SupportsVision = SupportsVision,
+        Models = Models.Where(x => !string.IsNullOrWhiteSpace(x.Name)).Select(x => x.ToModel()).ToArray()
+    };
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+}
+
+/// <summary>设置界面里可编辑的单个模型条目（模型名 + 启用 + 视觉）。</summary>
+public class ModelItemEdit : INotifyPropertyChanged
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    private string _name = string.Empty;
+    public string Name { get => _name; set => Set(ref _name, value); }
+
+    private bool _enabled = true;
+    public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
+
+    private bool _supportsVision;
+    public bool SupportsVision { get => _supportsVision; set => Set(ref _supportsVision, value); }
+
+    public static ModelItemEdit From(AgentModelConfig m) => new()
+    {
+        Id = m.Id,
+        Name = m.Name,
+        Enabled = m.Enabled,
+        SupportsVision = m.SupportsVision
+    };
+
+    public AgentModelConfig ToModel() => new()
+    {
+        Id = string.IsNullOrWhiteSpace(Id) ? Guid.NewGuid().ToString("N") : Id,
+        Name = Name?.Trim() ?? string.Empty,
+        Enabled = Enabled,
         SupportsVision = SupportsVision
     };
 

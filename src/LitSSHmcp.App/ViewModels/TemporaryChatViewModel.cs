@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Input;
 using LitSSHmcp.Agent;
 using LitSSHmcp.App.Services;
@@ -36,9 +37,16 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
         _initialProviderId = initialProviderId;
         SendOrStopCommand = new RelayCommand(_ => { if (IsBusy) _cts?.Cancel(); else _ = SendAsync(); },
             _ => IsBusy || (!string.IsNullOrWhiteSpace(Input) || HasAttachments));
+
+        // 模型下拉视图：按厂家（GroupName）分组，选中项仍是具体的某个模型
+        ComboView = CollectionViewSource.GetDefaultView(Providers);
+        ComboView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(AgentProviderConfig.GroupName)));
     }
 
     public ObservableCollection<AgentProviderConfig> Providers { get; } = new();
+
+    /// <summary>模型下拉的分组视图（按厂家 GroupName 分组）。</summary>
+    public ICollectionView ComboView { get; }
     public ObservableCollection<AgentTurn> Turns { get; } = new();
     public ObservableCollection<AgentAttachment> Attachments { get; } = new();
 
@@ -87,7 +95,7 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
             var cfg = await _configService.LoadConfigAsync();
             _config = cfg.Agent ?? new AgentConfig();
             Providers.Clear();
-            foreach (var p in _config.Providers.Where(p => p.Enabled))
+            foreach (var p in AgentProviderGroupConfig.Flatten(_config.Providers))
                 Providers.Add(p);
 
             var pick = Providers.FirstOrDefault(p => p.Id == _initialProviderId)
@@ -121,7 +129,7 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
             _provider = SelectedProvider;
             _session = new AgentSession(client, SelectedProvider, Array.Empty<IAgentTool>(),
                 TempSystemPrompt, _config, history, recall: null, spill: null);
-            StatusMessage = $"模型：{SelectedProvider.Name} / {SelectedProvider.Model}（临时，不保存）";
+            StatusMessage = $"模型：{SelectedProvider.DisplayName}（临时，不保存）";
         }
         catch (Exception ex)
         {

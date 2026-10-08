@@ -440,9 +440,21 @@
                                 </Ellipse.Style>
                             </Ellipse>
 
-                            <ComboBox Grid.Column="5" ItemsSource="{Binding ComboProviders}" SelectedItem="{Binding SelectedProvider}"
+                            <ComboBox Grid.Column="5" ItemsSource="{Binding ComboView}" SelectedItem="{Binding SelectedProvider}"
                                       DisplayMemberPath="Name" Width="180" Height="34" Margin="0,0,8,0" VerticalContentAlignment="Center"
-                                      ToolTip="{Binding StatusMessage}"/>
+                                      Padding="10,4"
+                                      ToolTip="{Binding StatusMessage}">
+                                <ComboBox.GroupStyle>
+                                    <GroupStyle>
+                                        <GroupStyle.HeaderTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11" Margin="2,6,2,2"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            </DataTemplate>
+                                        </GroupStyle.HeaderTemplate>
+                                    </GroupStyle>
+                                </ComboBox.GroupStyle>
+                            </ComboBox>
 
                             <ui:Button Grid.Column="6" Appearance="Primary" Width="42" Height="34" Padding="0"
                                        Command="{Binding SendOrStopCommand}" ToolTip="{Binding SendButtonText}">

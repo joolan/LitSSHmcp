@@ -23,9 +23,21 @@
                        Foreground="{DynamicResource AppTextSecondaryBrush}" Text="模型:"/>
             <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0,0,0" TextTrimming="CharacterEllipsis"
                        Foreground="{DynamicResource AppTextSecondaryBrush}" Text="{Binding StatusMessage}"/>
-            <ComboBox ItemsSource="{Binding Providers}" SelectedItem="{Binding SelectedProvider}"
-                      DisplayMemberPath="Name" Width="220" Height="32" VerticalContentAlignment="Center"
-                      ToolTip="临时聊天也可切换模型（保留已聊内容）"/>
+            <ComboBox ItemsSource="{Binding ComboView}" SelectedItem="{Binding SelectedProvider}"
+                      DisplayMemberPath="Name" Width="240" Height="32" VerticalContentAlignment="Center"
+                      HorizontalAlignment="Left" Padding="10,4"
+                      ToolTip="临时聊天也可切换模型（按厂家分组，保留已聊内容）">
+                <ComboBox.GroupStyle>
+                    <GroupStyle>
+                        <GroupStyle.HeaderTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11" Margin="2,6,2,2"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            </DataTemplate>
+                        </GroupStyle.HeaderTemplate>
+                    </GroupStyle>
+                </ComboBox.GroupStyle>
+            </ComboBox>
         </DockPanel>
 
         <Border Grid.Row="2" Margin="12,0,12,0" Background="{DynamicResource AppSurfaceAltBrush}"

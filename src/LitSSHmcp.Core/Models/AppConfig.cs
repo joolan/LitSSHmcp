@@ -1,8 +1,10 @@
+using System.Text.Json.Serialization;
+
 namespace LitSSHmcp.Core.Models;
 
 public class AppConfig
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     /// <summary>配置结构版本。缺失该字段的旧文件反序列化为 0，由 ConfigMigrator 迁移到当前版本。</summary>
     public int SchemaVersion { get; set; }
@@ -41,10 +43,10 @@ public class AgentConfig
 {
     public bool Enabled { get; set; } = true;
 
-    /// <summary>大模型接入列表（可多个，单独启用/停用）。</summary>
-    public AgentProviderConfig[] Providers { get; set; } = Array.Empty<AgentProviderConfig>();
+    /// <summary>大模型接入列表（每个厂家/服务商一条，下挂多个可选模型）。</summary>
+    public AgentProviderGroupConfig[] Providers { get; set; } = Array.Empty<AgentProviderGroupConfig>();
 
-    /// <summary>当前选用的 provider Id（空=用第一个启用的）。</summary>
+    /// <summary>当前选用的模型 Id（即某厂家下某模型的 Id；空=用第一个启用的）。</summary>
     public string ActiveProviderId { get; set; } = string.Empty;
 
     /// <summary>追加在"基础行为约定 + MCP server instructions + 技能"之后的额外系统提示。</summary>
@@ -114,11 +116,114 @@ public class AgentConfig
     public int RetentionDays { get; set; } = 90;
 }
 
-/// <summary>单个大模型接入配置（type=openai 表示 OpenAI 兼容端点）。</summary>
+/// <summary>
+/// 一个大模型厂家/服务商接入（endpoint + API Key 厂家级共享，下挂多个可选模型）。
+/// type=openai 表示 OpenAI 兼容端点。
+/// </summary>
+public class AgentProviderGroupConfig
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Name { get; set; } = string.Empty;
+    public string Type { get; set; } = "openai";
+    public string Endpoint { get; set; } = string.Empty;
+
+    /// <summary>API Key（磁盘上为 DPAPI 密文 enc:）。</summary>
+    public string? ApiKey { get; set; }
+
+    public bool Enabled { get; set; } = true;
+    public double Temperature { get; set; } = 0.3;
+
+    /// <summary>最大输出 token；0=用服务端默认。</summary>
+    public int MaxTokens { get; set; }
+
+    /// <summary>单次请求超时（秒）。</summary>
+    public int TimeoutSeconds { get; set; } = 120;
+
+    /// <summary>失败重试次数（网络/超时/限流/5xx 等瞬时错误）。</summary>
+    public int MaxRetries { get; set; } = 1;
+
+    /// <summary>同一模型允许的并发请求数上限。</summary>
+    public int MaxConcurrency { get; set; } = 3;
+
+    /// <summary>视觉能力的厂家级标记：v2 遗留值迁移到模型上；新增自定义模型时作为默认值。</summary>
+    public bool SupportsVision { get; set; }
+
+    /// <summary>该厂家下的模型列表（勾选启用的模型才会出现在模型下拉中）。</summary>
+    public AgentModelConfig[] Models { get; set; } = Array.Empty<AgentModelConfig>();
+
+    /// <summary>v2 单模型遗留字段：加载时由 ConfigMigrator 转入 Models 后置空（不再写出）。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Model { get; set; }
+
+    /// <summary>
+    /// 把厂家列表摊平为"可直接对话的模型"列表（供聊天/临时聊天下拉与会话选中使用）：
+    /// 保留厂家级 endpoint/key/参数，模型级字段取自各模型；过滤掉停用的厂家/模型与空 endpoint/模型名。
+    /// </summary>
+    public static AgentProviderConfig[] Flatten(IEnumerable<AgentProviderGroupConfig>? groups)
+    {
+        if (groups is null)
+            return Array.Empty<AgentProviderConfig>();
+
+        var list = new List<AgentProviderConfig>();
+        foreach (var g in groups)
+        {
+            if (g is null || !g.Enabled || string.IsNullOrWhiteSpace(g.Endpoint))
+                continue;
+            foreach (var m in g.Models ?? Array.Empty<AgentModelConfig>())
+            {
+                if (m is null || !m.Enabled || string.IsNullOrWhiteSpace(m.Name))
+                    continue;
+                list.Add(new AgentProviderConfig
+                {
+                    Id = m.Id,
+                    Name = m.Name,
+                    GroupName = g.Name,
+                    Type = string.IsNullOrWhiteSpace(g.Type) ? "openai" : g.Type,
+                    Endpoint = g.Endpoint,
+                    Model = m.Name,
+                    ApiKey = g.ApiKey,
+                    Enabled = true,
+                    Temperature = g.Temperature,
+                    MaxTokens = g.MaxTokens,
+                    TimeoutSeconds = g.TimeoutSeconds,
+                    MaxRetries = g.MaxRetries,
+                    MaxConcurrency = g.MaxConcurrency,
+                    SupportsVision = m.SupportsVision
+                });
+            }
+        }
+        return list.ToArray();
+    }
+}
+
+/// <summary>厂家下的单个模型条目（模型名 + 是否启用 + 是否支持视觉）。</summary>
+public class AgentModelConfig
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    /// <summary>模型名（OpenAI 兼容 model 参数，如 deepseek-chat / gpt-5-mini）。</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>是否启用（启用的模型才会出现在模型下拉中）。</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>该模型是否支持视觉（可接收图片附件；不同模型能力不同，逐模型配置）。</summary>
+    public bool SupportsVision { get; set; }
+}
+
+/// <summary>摊平后的单个可选模型（厂家参数 + 一个具体模型名），对话运行时直接消费。</summary>
 public class AgentProviderConfig
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>所属厂家名（仅用于 UI 下拉分组显示）。</summary>
+    public string GroupName { get; set; } = string.Empty;
+
+    /// <summary>显示名："厂家 / 模型名"（厂家名为空时仅模型名），用于状态栏/提示。</summary>
+    [JsonIgnore]
+    public string DisplayName => string.IsNullOrWhiteSpace(GroupName) ? Name : $"{GroupName} / {Name}";
+
     public string Type { get; set; } = "openai";
     public string Endpoint { get; set; } = string.Empty;
     public string Model { get; set; } = string.Empty;

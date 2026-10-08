@@ -62,6 +62,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand OpenMonitorCommand { get; }
     public ICommand OpenTerminalLogsCommand { get; }
     public ICommand OpenPortForwardCommand { get; }
+    public ICommand OpenSyncCommand { get; }
     public ICommand OpenSftpManagerCommand { get; }
     public ICommand OpenRemoteCopyCommand { get; }
     public ICommand AskAgentCommand { get; }
@@ -94,6 +95,7 @@ public class MainViewModel : INotifyPropertyChanged
         OpenMonitorCommand = new RelayCommand(_ => OpenMonitor(SelectedServer), _ => SelectedServer != null);
         OpenTerminalLogsCommand = new RelayCommand(_ => OpenTerminalLogs());
         OpenPortForwardCommand = new RelayCommand(_ => OpenPortForward());
+        OpenSyncCommand = new RelayCommand(_ => OpenSync());
         OpenSftpManagerCommand = new RelayCommand(_ => OpenSftpManager(SelectedServer), _ => SelectedServer != null);
         OpenRemoteCopyCommand = new RelayCommand(_ => OpenRemoteCopy(SelectedServer), _ => SelectedServer != null);
         AskAgentCommand = new RelayCommand(_ => AskAgent());
@@ -637,6 +639,22 @@ public class MainViewModel : INotifyPropertyChanged
         _portForwardWindow = new PortForwardWindow(vm) { Topmost = false };
         _portForwardWindow.Closed += (_, _) => _portForwardWindow = null;
         _portForwardWindow.Show();
+    }
+
+    // 文件/文件夹同步（单向）
+    private SyncWindow? _syncWindow;
+
+    private void OpenSync()
+    {
+        if (_syncWindow is { IsLoaded: true })
+        {
+            _syncWindow.Activate();
+            return;
+        }
+
+        _syncWindow = new SyncWindow { Topmost = false };
+        _syncWindow.Closed += (_, _) => _syncWindow = null;
+        _syncWindow.Show();
     }
 
     // SFTP 文件管理：本地+远程双栏 + 传输队列（每台服务器一个独立窗口）

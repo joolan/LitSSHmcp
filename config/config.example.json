@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "servers": [
     {
       "id": "web-server-01",
@@ -73,6 +73,30 @@
     { "from": "app:order-worker", "to": "ssh:web-server-01", "type": "runsOn", "note": "订单Worker容器运行在Web服务器" },
     { "from": "app:order-service", "to": "ds:mysql-order-01", "type": "connectsTo", "note": "订单服务连接订单库" },
     { "from": "ssh:web-server-01", "to": "ds:mysql-order-01", "type": "canAccess", "note": "Web服务器可访问订单库" }
+  ],
+  "syncTasks": [
+    {
+      "id": "sync-web-backup",
+      "name": "Web目录同步到备份机",
+      "enabled": false,
+      "direction": "RemoteToRemote",
+      "sourceServerId": "web-server-01",
+      "sourceRemotePath": "/www/wwwroot",
+      "targetServerId": "db-server-01",
+      "targetRemotePath": "/backup/wwwroot",
+      "deleteExtra": false,
+      "useInternalAddress": false,
+      "includePatterns": [],
+      "excludePatterns": ["*.tmp"],
+      "scheduleType": "Weekly",
+      "intervalMinutes": 60,
+      "weekDays": [1, 3, 5],
+      "monthDays": [1],
+      "timeOfDay": "03:00",
+      "maxRetries": 3,
+      "lastRunAt": null,
+      "lastResult": null
+    }
   ],
   "tools": {
     "enabledGroups": [

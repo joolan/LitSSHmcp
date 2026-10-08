@@ -8,6 +8,7 @@
         Title="SSH 会话管理" Height="700" Width="1000"
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <controls:MainPageAppearanceConverter x:Key="LayoutAppearance"/>
 
         <ControlTemplate x:Key="SessionTabTemplate" TargetType="TabControl">

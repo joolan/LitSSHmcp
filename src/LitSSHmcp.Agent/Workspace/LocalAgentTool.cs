@@ -6,12 +6,19 @@ namespace LitSSHmcp.Agent;
 internal sealed class LocalAgentTool : IAgentTool
 {
     private readonly AIFunction _function;
+    private readonly bool _readOnly;
 
-    public LocalAgentTool(AIFunction function) => _function = function;
+    public LocalAgentTool(AIFunction function, bool readOnly = false)
+    {
+        _function = function;
+        _readOnly = readOnly;
+    }
 
     public string Name => _function.Name;
     public AITool Tool => _function;
     public bool Destructive => false;
+    public bool ReadOnly => _readOnly;
+    public string? ToolGroup => null;
 
     public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct) =>
         await _function.InvokeAsync(new AIFunctionArguments(arguments), ct);

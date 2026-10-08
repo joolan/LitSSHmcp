@@ -1,0 +1,217 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.SyncWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="文件 / 文件夹同步" Height="700" Width="920" MinHeight="580" MinWidth="780"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="文件 / 文件夹同步（单向 · 仅 App 运行期间执行）"/>
+
+        <Grid Grid.Row="1" Margin="12,0,12,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 任务列表 -->
+            <DockPanel Grid.Column="0">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                    <ui:Button Content="新建" Padding="12,3" Margin="0,0,6,0" Command="{Binding NewTaskCommand}"/>
+                    <ui:Button Content="删除" Padding="12,3" Command="{Binding DeleteTaskCommand}"/>
+                </StackPanel>
+                <ListBox ItemsSource="{Binding Tasks}" SelectedItem="{Binding SelectedTask}"
+                         Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                           Text="{Binding LastResult}"/>
+                                <TextBlock FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                           Text="{Binding LastRunAt, StringFormat='上次: {0:MM-dd HH:mm}'}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent"/>
+
+            <!-- 编辑区 -->
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="任务名称" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <ui:TextBox FontWeight="Normal" Text="{Binding SelectedTask.Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="同步方向:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox ItemsSource="{Binding DirectionNames}" SelectedIndex="{Binding DirectionIndex}" Width="150"/>
+                        <CheckBox Content="启用" IsChecked="{Binding SelectedTask.Enabled, UpdateSourceTrigger=PropertyChanged}" Margin="20,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- 本地路径（本地↔远程） -->
+                    <StackPanel Visibility="{Binding LocalPathVisibility}" Margin="0,0,0,10">
+                        <TextBlock Text="本地路径" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Grid.Column="0" FontWeight="Normal" Margin="0,0,6,0"
+                                        Text="{Binding SelectedTask.LocalPath, UpdateSourceTrigger=PropertyChanged}"
+                                        PlaceholderText="如 D:\data\www"/>
+                            <ui:Button Grid.Column="1" Content="选择文件夹…" Padding="10,3" Click="OnPickLocalPath"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- 源（远程→本地 / 远程→远程） -->
+                    <StackPanel Visibility="{Binding SourceVisibility}" Margin="0,0,0,10">
+                        <TextBlock Text="源服务器" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <ComboBox ItemsSource="{Binding Servers}" DisplayMemberPath="DisplayName" SelectedValuePath="Id"
+                                  SelectedValue="{Binding SelectedTask.SourceServerId, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                        <TextBlock Text="源远程路径" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Grid.Column="0" FontWeight="Normal" Margin="0,0,6,0"
+                                        Text="{Binding SelectedTask.SourceRemotePath, UpdateSourceTrigger=PropertyChanged}"
+                                        PlaceholderText="如 /var/www/html"/>
+                            <ui:Button Grid.Column="1" Content="浏览远程…" Padding="10,3" Click="OnPickSourcePath"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- 目标（本地→远程 / 远程→远程） -->
+                    <StackPanel Visibility="{Binding TargetVisibility}" Margin="0,0,0,10">
+                        <TextBlock Text="目标服务器" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <ComboBox ItemsSource="{Binding Servers}" DisplayMemberPath="DisplayName" SelectedValuePath="Id"
+                                  SelectedValue="{Binding SelectedTask.TargetServerId, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                        <TextBlock Text="目标远程路径" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Grid.Column="0" FontWeight="Normal" Margin="0,0,6,0"
+                                        Text="{Binding SelectedTask.TargetRemotePath, UpdateSourceTrigger=PropertyChanged}"
+                                        PlaceholderText="如 /backup/www"/>
+                            <ui:Button Grid.Column="1" Content="浏览远程…" Padding="10,3" Click="OnPickTargetPath"/>
+                        </Grid>
+                        <CheckBox Content="使用内网地址连接目标（需目标已配置内网地址）" Margin="0,8,0,0"
+                                  Visibility="{Binding InternalAddressVisibility}"
+                                  IsChecked="{Binding SelectedTask.UseInternalAddress, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+
+                    <CheckBox Content="镜像删除目标端多余文件" IsChecked="{Binding SelectedTask.DeleteExtra, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,2"/>
+                    <TextBlock TextWrapping="Wrap" Margin="24,0,0,12" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               Text="含义：勾选后，目标端存在、但同步源中不存在的文件/文件夹会被删除，使目标与源完全一致（镜像）。默认不勾选，仅新增/更新，绝不删除任何文件。"/>
+
+                    <TextBlock Text="文件过滤（可选，glob；逗号/空格分隔）" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="仅同步:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ui:TextBox Grid.Column="1" FontWeight="Normal"
+                                    Text="{Binding IncludeText, UpdateSourceTrigger=PropertyChanged}"
+                                    PlaceholderText="如 *.conf, nginx/*.log（留空=全部文件）"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="排除:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ui:TextBox Grid.Column="1" FontWeight="Normal"
+                                    Text="{Binding ExcludeText, UpdateSourceTrigger=PropertyChanged}"
+                                    PlaceholderText="如 *.tmp, cache/*（留空=不排除）"/>
+                    </Grid>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,12" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               Text="按相对路径或文件名匹配，支持 * 与 ?（如 *.log 匹配任意目录下的 .log 文件）。「仅同步」为空时同步全部；同时命中排除项的文件会被跳过。"/>
+
+                    <TextBlock Text="调度（三选一）" FontWeight="SemiBold" Margin="0,0,0,6"/>
+
+                    <!-- 固定间隔 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <RadioButton Content="固定间隔" GroupName="SyncSchedule" VerticalAlignment="Center"
+                                     IsChecked="{Binding IsIntervalSchedule, Mode=TwoWay}" Width="110"/>
+                        <TextBlock Text="每隔" VerticalAlignment="Center" Margin="6,0,4,0" IsEnabled="{Binding IsIntervalSchedule}"/>
+                        <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTask.IntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                    IsEnabled="{Binding IsIntervalSchedule}"/>
+                        <TextBlock Text="分钟" VerticalAlignment="Center" Margin="6,0,0,0" IsEnabled="{Binding IsIntervalSchedule}"/>
+                    </StackPanel>
+
+                    <!-- 每周固定时刻 -->
+                    <StackPanel Margin="0,0,0,6">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton Content="每周固定时刻" GroupName="SyncSchedule" VerticalAlignment="Center"
+                                         IsChecked="{Binding IsWeeklySchedule, Mode=TwoWay}" Width="110"/>
+                            <TextBlock Text="时刻" VerticalAlignment="Center" Margin="0,0,4,0" IsEnabled="{Binding IsWeeklySchedule}"/>
+                            <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTask.TimeOfDay, UpdateSourceTrigger=PropertyChanged}"
+                                        IsEnabled="{Binding IsWeeklySchedule}" ToolTip="HH:mm"/>
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding WeekdayOptions}" IsEnabled="{Binding IsWeeklySchedule}" Margin="24,6,0,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox Content="{Binding Label}" IsChecked="{Binding Selected, Mode=TwoWay}" Margin="0,0,10,0"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- 每月固定 -->
+                    <StackPanel Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton Content="每月固定" GroupName="SyncSchedule" VerticalAlignment="Center"
+                                         IsChecked="{Binding IsMonthlySchedule, Mode=TwoWay}" Width="110"/>
+                            <TextBlock Text="时刻" VerticalAlignment="Center" Margin="0,0,4,0" IsEnabled="{Binding IsMonthlySchedule}"/>
+                            <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTask.TimeOfDay, UpdateSourceTrigger=PropertyChanged}"
+                                        IsEnabled="{Binding IsMonthlySchedule}" ToolTip="HH:mm"/>
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding MonthDayOptions}" IsEnabled="{Binding IsMonthlySchedule}" Margin="24,6,0,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox Content="{Binding Label}" IsChecked="{Binding Selected, Mode=TwoWay}" Margin="0,0,10,4" MinWidth="26"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="（日期 1-28；多选）" FontSize="11" Margin="24,0,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="失败重试次数(0-5):" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ui:TextBox FontWeight="Normal" Width="60" Text="{Binding SelectedTask.MaxRetries, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Text="（指数退避；远程↔远程需两端安装 rsync）" VerticalAlignment="Center" Margin="6,0,0,0"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"/>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <DockPanel Grid.Row="2" Margin="12,10,12,12">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="测试（传探针）" Padding="12,5" Margin="0,0,8,0" Command="{Binding TestCommand}"/>
+                <ui:Button Content="保存" Appearance="Primary" Padding="14,5" Margin="0,0,8,0" Command="{Binding SaveCommand}"/>
+                <ui:Button Content="立即运行" Padding="12,5" Margin="0,0,8,0" Command="{Binding RunNowCommand}"/>
+                <ui:Button Content="关闭" Width="80" IsCancel="True" Click="OnClose"/>
+            </StackPanel>
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,0"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

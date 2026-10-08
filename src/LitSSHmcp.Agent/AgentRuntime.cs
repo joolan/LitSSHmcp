@@ -20,6 +20,8 @@ public sealed class AgentRuntime : IAsyncDisposable
     private readonly string _prompt;
     private readonly List<IAgentTool> _baseTools;
     private readonly List<IAgentTool> _subTools;
+    private bool _sessionReadOnly;
+    private HashSet<string>? _sessionGroups;
     private readonly Action<IReadOnlyList<PlanItem>>? _onPlan;
     private readonly Func<string, CancellationToken, Task<string?>>? _recall;
     private readonly SpillStore? _spill;
@@ -60,12 +62,50 @@ public sealed class AgentRuntime : IAsyncDisposable
     private AgentSession BuildSession(AgentProviderConfig provider, IEnumerable<ChatMessage>? history)
     {
         var client = ChatClientFactory.Create(provider);
-        var tools = new List<IAgentTool>(_baseTools);
+        var restriction = RestrictionNote();
+        var tools = new List<IAgentTool>(Filter(_baseTools));
         if (_config.EnableSubAgent)
-            tools.Add(SubAgents.Create(client, provider, _config, _subTools));
+            tools.Add(SubAgents.Create(client, provider, _config, Filter(_subTools).ToList(), restriction));
         if (_onPlan is not null)
             tools.Add(PlanTools.Create(_onPlan));
-        return new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill);
+        return new AgentSession(client, provider, tools, _prompt + restriction, _config, history, _recall, _spill);
+    }
+
+    /// <summary>会话级限制提示（只读 / 工具分组）：写入系统提示，随会话重建与上下文压缩一并保留。</summary>
+    private string RestrictionNote()
+    {
+        var readOnly = _config.ReadOnly || _sessionReadOnly;
+        if (!readOnly && _sessionGroups is null)
+            return string.Empty;
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("\n\n【会话限制（本会话强制生效，即使上下文被压缩也必须遵守）】");
+        if (readOnly)
+            sb.Append("\n- 只读模式：仅可调用只读工具；禁止任何写操作（命令/SQL/文件写入/重启等）。");
+        if (_sessionGroups is not null)
+            sb.Append("\n- 工具分组限制：本次仅可使用以下分组的工具：").Append(string.Join("、", _sessionGroups)).Append("；其它分组工具不可用。");
+        sb.Append("\n请据此调整策略：不要调用不可用的工具、不要臆造结果；需要写操作或受限工具时，明确说明当前限制并给出替代建议。");
+        return sb.ToString();
+    }
+
+    /// <summary>按会话级选择（只读 / 限定工具分组）过滤工具；本地工具（无分组）不受分组限制。</summary>
+    private IEnumerable<IAgentTool> Filter(IEnumerable<IAgentTool> tools) =>
+        tools.Where(t =>
+            (!_sessionReadOnly || t.ReadOnly) &&
+            (_sessionGroups is null || t.ToolGroup is null || _sessionGroups.Contains(t.ToolGroup)));
+
+    /// <summary>
+    /// 设置会话级工具选择（「/只读」「/工具」）：只读仅保留只读工具；分组仅保留指定分组的 MCP 工具。
+    /// 重建对话会话但**保留当前上下文**（不重连 MCP）。
+    /// </summary>
+    public void SetToolSelection(bool readOnly, IReadOnlyCollection<string>? allowedGroups)
+    {
+        var history = Session.Messages.Where(m => m.Role != ChatRole.System).ToList();
+        _sessionReadOnly = readOnly;
+        _sessionGroups = allowedGroups is { Count: > 0 }
+            ? new HashSet<string>(allowedGroups, StringComparer.OrdinalIgnoreCase)
+            : null;
+        Session = BuildSession(Provider, history);
     }
 
     /// <summary>连接 MCP 服务器、装配工具与系统提示、构建对话会话（含可选长期记忆）。</summary>

@@ -240,4 +240,29 @@ public class RemoteCopyCommandBuilderTests
         Assert.Contains("LITSSH_KEY_OK", cmd);
         Assert.Contains("root@10.0.0.6", cmd);
     }
+
+    [Fact]
+    public void BuildRsyncSyncCommand_adds_include_exclude_filters_and_endpoint()
+    {
+        var cmd = RemoteCopyCommandBuilder.BuildRsyncSyncCommand(
+            "/src/", "10.0.0.9", 2222, "root", "/dst", deleteExtra: true, usePassword: false,
+            includes: new[] { "*.conf" }, excludes: new[] { "*.tmp" });
+
+        Assert.Contains("root@10.0.0.9", cmd);
+        Assert.Contains("-p 2222", cmd);
+        Assert.Contains("--delete", cmd);
+        Assert.Contains("--include='*/'", cmd);
+        Assert.Contains("--include='*.conf'", cmd);
+        Assert.Contains("--exclude='*'", cmd);
+        Assert.Contains("--exclude='*.tmp'", cmd);
+    }
+
+    [Fact]
+    public void BuildRsyncSyncCommand_without_filters_has_no_filter_args()
+    {
+        var cmd = RemoteCopyCommandBuilder.BuildRsyncSyncCommand(
+            "/src/", "10.0.0.9", 22, "root", "/dst", deleteExtra: false, usePassword: false);
+        Assert.DoesNotContain("--include=", cmd);
+        Assert.DoesNotContain("--exclude=", cmd);
+    }
 }

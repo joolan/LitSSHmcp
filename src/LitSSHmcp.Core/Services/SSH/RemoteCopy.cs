@@ -243,6 +243,54 @@ public static class RemoteCopyCommandBuilder
         return bootstrap + payload;
     }
 
+    /// <summary>
+    /// 构建「服务器端 rsync 单向同步」命令（在源机执行）：把 <paramref name="sourceSpec"/> 同步到目标 targetDir；
+    /// <paramref name="deleteExtra"/> 时加 <c>--delete</c>（删除目标端多余文件）。sourceSpec 以 "/" 结尾表示“目录内容”。
+    /// </summary>
+    public static string BuildRsyncSyncCommand(string sourceSpec, string targetHost, int targetPort, string targetUser,
+        string targetDir, bool deleteExtra, bool usePassword,
+        IReadOnlyList<string>? includes = null, IReadOnlyList<string>? excludes = null)
+    {
+        var dest = targetUser + "@" + targetHost;
+        var sshOpts = BuildSshOptions(!usePassword, targetPort);
+        var sshCmd = "ssh " + sshOpts;
+        var destQ = ShellQuote(dest);
+        var auth = usePassword ? "sshpass -f \"$f\" " : "";
+        var del = deleteExtra ? " --delete" : "";
+        var filters = BuildRsyncFilters(includes, excludes);
+        var mk = sshCmd + " " + destQ + " " + ShellQuote("mkdir -p -- " + ShellQuote(targetDir));
+        var target = dest + ":" + targetDir.TrimEnd('/') + "/";
+        var rsync = "rsync -a -s --partial" + del + filters + " --info=progress2 -e \"" + sshCmd + "\" -- " +
+                    ShellQuote(sourceSpec) + " " + ShellQuote(target);
+        var payload = auth + mk + " && " + auth + rsync;
+
+        if (!usePassword)
+            return payload;
+
+        const string bootstrap =
+            "umask 077; d=$(mktemp -d 2>/dev/null || mktemp -d -t litssh); " +
+            "f=\"$d/pw\"; cat > \"$f\"; chmod 600 \"$f\"; " +
+            "trap 'rm -rf \"$d\"' EXIT HUP INT TERM; ";
+        return bootstrap + payload;
+    }
+
+    private static string BuildRsyncFilters(IReadOnlyList<string>? includes, IReadOnlyList<string>? excludes)
+    {
+        var sb = new System.Text.StringBuilder();
+        var inc = includes?.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).ToList() ?? new List<string>();
+        var exc = excludes?.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).ToList() ?? new List<string>();
+        if (inc.Count > 0)
+        {
+            sb.Append(" --include='*/'");
+            foreach (var p in inc)
+                sb.Append(" --include=").Append(ShellQuote(p));
+            sb.Append(" --exclude='*'");
+        }
+        foreach (var p in exc)
+            sb.Append(" --exclude=").Append(ShellQuote(p));
+        return sb.ToString();
+    }
+
     public static int? ParseRsyncPercent(string line)
     {
         if (string.IsNullOrEmpty(line)) return null;

@@ -159,10 +159,10 @@ LitSSHmcp/
 ### 4.5 配置与加密（`Services/Storage` + `Services/Security`）
 
 - `ConfigService`：读写 `%APPDATA%\LitSSH\config.json`；**读写双向迁移**——发现明文密码即加密为 `enc:` 形式，保证磁盘无明文。
-- `ConfigMigrator`：按 `AppConfig.schemaVersion` 迁移旧结构（当前版本 1）；缺失版本号的旧文件自动补写。
+- `ConfigMigrator`：按 `AppConfig.schemaVersion` 迁移旧结构（当前版本 2：1→2 补 `syncTasks` 字段与 `agent`/`snapshot`/`connectionPool` 默认值）；缺失版本号的旧文件自动补写。
 - `ConfigPaths` / `AppConfigJson`：统一 `%APPDATA%\LitSSH` 下的路径（`config.json`/`audit.db`/`snapshots.db`/`known_hosts.json`/`logs`）与 JSON 序列化选项。
 - `DpapiSecretProtector`（`ISecretProtector.cs`）：`ProtectedData`，`LocalMachine`/`CurrentUser` 范围，前缀 `enc:` 标识。
-- 配置结构：`schemaVersion`、`servers[]`、`dataSources[]`、`applications[]`、`relations[]`、`security{commandFilter, sqlFilter, fileTransfer}`（完整示例见 README 快速开始）。
+- 配置结构：`schemaVersion`、`servers[]`、`dataSources[]`、`applications[]`、`relations[]`、`syncTasks[]`、`tools{enabledGroups}`、`snapshot{}`、`connectionPool{}`、`ui{theme, accent}`、`agent{...}`、`security{commandFilter, sqlFilter, fileTransfer, sshHostKey, discovery, logs, limits, audit, masking, approval}`（完整示例见 `config/config.example.json` 与 README 快速开始）。
 
 ### 4.6 服务器快照（`Services/Snapshot`）
 
@@ -186,6 +186,7 @@ LitSSHmcp/
 - **长期记忆 / RAG**：`EmbeddingClientFactory`（OpenAI 兼容 embeddings）+ `AgentMemoryStore`（`agent.db` 的 `agent_memory` 表存向量）+ `AgentMemoryService`（索引/召回）；`AgentRuntime` 索引工作区文档、每轮对话落库，`AgentSession` 在发送前**召回相关记忆**注入上下文。`ToolFilter` 按 `allowedToolGroups` + 只读模式裁剪工具。
 - **健壮性**：`ResilientChatClient`（`DelegatingChatClient`）为每模型提供**并发上限 + 单次超时 + 瞬时错误重试**（流式仅在首包前重试）；`ChatErrorClassifier` 把异常分类为 `auth/rate_limit/timeout/network/server/bad_request` 供 UI 提示；`ContextStore.PruneAsync` 按保留策略裁剪会话/消息；系统提示内置提示注入防护。
 - **上下文管理**：`AgentSession.ManageContextAsync` 每轮发送前按 **user 轮边界**丢弃最旧整轮（保证 `tool_calls↔tool` 配对），并同时受条数与 token 双阈值约束；被裁旧轮经 `SummarizeAsync` 压缩为**滚动摘要**（`autoSummarize`）后作为一条 System 消息注入。`ReplaceHistory`（编辑/重发）会清空摘要。工具结果注入上下文前按 `toolResultMaxChars` 截断；`CompactIfNeededAsync` 在每步工具后复查，超限时 `CompactToolResults` 将本轮较早的工具结果替换为占位符（保持 `CallId` 配对）。
+- **斜杠命令与临时聊天**：`AgentViewModel` 解析输入框的 `/命令`（`SlashCommand` 面板悬浮于输入框上方）；`/临时聊天` 打开独立的 `TemporaryChatWindow`/`TemporaryChatViewModel`（纯聊天：不注入技能与 MCP 工具、仅内存、可切模型、关闭即清空，与主任务互不影响）；`/压缩会话` 调 `AgentSession.CompactNowAsync`；`/清空屏幕`（仅清显示）；`/清空上下文`（仅重置模型上下文）；`/只读`（会话级只读，`IAgentTool.ReadOnly`，再执行或点标签 ✕ 退出）；`/工具`（`ToolGroupsDialog` 多选，`AgentRuntime.SetToolSelection` 重建会话保留上下文、不重连 MCP）。会话限制（只读/工具分组）追加到系统提示并同步给子代理，**压缩后仍保留**。
 - **上下文**：独立 SQLite `%APPDATA%\LitSSH\agent.db`（`agent_sessions`/`agent_messages`/`agent_memory`）。
 - **配置**：`AppConfig.Agent`（多 provider、active、systemPrompt、skillsDir、workspaceDir、contextLimit、readOnly、allowedToolGroups、memory、mcpServerPath、maxToolIterations）；API Key 纳入 DPAPI `enc:` 加密。
 - **UI**：`Views/AgentWindow`（按"用户指令(时间)/工具过程/回答(时间与耗时)"的轮次展示 + `Controls/MarkdownBox` Markdown 渲染 + 工具过程可折叠 + 任务计划面板）+ `Views/AgentSettingsWindow`（模型/分组/记忆/参数），主菜单「AI 运维助手」打开（非模态独立窗口）。
@@ -194,7 +195,7 @@ LitSSHmcp/
 
 - MVVM：`Views/`（窗口）+ `ViewModels/`（`INotifyPropertyChanged` + `RelayCommand`）。
 - 窗口清单：
-  - `MainWindow` / `MainViewModel`：主界面壳层。左侧图标导航栏 + 右侧**主区域页面宿主**（按 `MainPage` 切换）：**主页**（服务器列表 + 会话标签）、**SSH 服务器管理**（`ServerManageView`）、**数据源管理**（`DatasourceManageView`）、**应用管理**（`ApplicationManageView`）。资产拓扑/审计日志仍为独立窗口；
+  - `MainWindow` / `MainViewModel`：主界面壳层。左侧图标导航栏 + 右侧**主区域页面宿主**（按 `MainPage` 切换）：**主页**（服务器列表 + 会话标签）、**SSH 服务器管理**（`ServerManageView`）、**数据源管理**（`DatasourceManageView`）、**应用管理**（`ApplicationManageView`）。资产拓扑/审计日志仍为独立窗口；**关闭主窗口**时弹「最小化到托盘 / 退出程序」（WinForms `NotifyIcon`，后台继续运行、双击托盘图标恢复）；
   - `ServerEditWindow` / `ServerEditViewModel`：服务器新增/编辑；  - `DatasourceManageView` / `DatasourceManageViewModel`：数据源增删改与连通性测试（主区域页面，不再弹窗）；
   - （原「拓扑关系管理」窗口已并入下方「资产拓扑」可视化编辑器，不再单独提供）
   - `ApplicationManageView` / `ApplicationManageViewModel`：应用(`app:`)节点维护（含 Docker 容器名 `ContainerName`；主区域页面，不再弹窗）；
@@ -202,6 +203,7 @@ LitSSHmcp/
   - `AppSettingsWindow`（底部 **设置** 入口，多 Tab）：`AppearanceSettingsView` / `AppearanceSettingsViewModel`（全局 **界面主题/强调色**，写入 `ui.theme`/`ui.accent`）；`SecuritySettingsView` / `SecuritySettingsViewModel`（**MCP 全局开关**、命令/SQL 过滤、文件传输、主机密钥、发现路径、限流、审计策略、**审批通道**、**审批模式**、**查询结果脱敏**）；`ToolGroupsView` / `ToolGroupsViewModel`（勾选 `tools.enabledGroups`）；`ConfigTransferView` / `ConfigTransferViewModel`（配置导入/导出）；`McpToolsView`（**MCP 工具说明**）；
   - `TopologyWindow` / `TopologyViewModel`：资产拓扑可视化 + 自动发现入口；**非模态独立窗口**（不置顶，可与主界面同时操作）。`runsOn` 的应用**与数据库**都内嵌在所属服务器区块内（一眼看出服务器上运行了哪些服务/库），节点标题附带端口（如 `订单库 :3306`），`connectsTo`/`canAccess` 以带类型标注的连线绘制，数据库运行在所连服务器上时省略冗余 `canAccess`，自动发现的关系用虚线区分；鼠标悬浮任一节点显示详情（主机/端口/账号/类型/描述/标签，密码等敏感信息不展示）。连线绘制在**服务器区块之上、叶子节点之下**，采用**避障正交路由**（Hanan 栅格 + A*，不直穿其它节点；端点从四边中点择优；源/目标所在服务器区块对其子节点透明，可进入 `runsOn` 嵌套区块；回退 Z 形），拐角圆角化，起点圆点、终点箭头；交叉处过桥。**可交互编辑**：拖动/缩放节点（拖服务器带动子节点；位置按「起点 + 总位移」绝对推导、往返不漂移；**四角手柄 + 四边内侧直接拉伸**，最小尺寸 80×36）、选中节点从边中点端口**拖拽建边**（自动推断类型并做逻辑校验，含 `runsOn` 每节点唯一）、**点选连线删除**（手动关系删 `config.Relations`；自动发现边清理 `TopologyEdges`）、拖动连线**端点锚点**指定接边位置、**网格吸附**、**Ctrl+Z/Y 撤销重做**、「重新自动布局」；手动布局存 `%APPDATA%\LitSSH\topology-layout.json`。画布支持**无限平移/缩放**（滚轮缩放、适应窗口、`Ctrl+0` 重置；右上角**「更多操作 ▾」**下拉含 ＋/－/适应/100%/刷新/**导出图片…**）；关系属性面板可拖动；拖动节点进出服务器时按**几何落点**自动增删 `runsOn`（完全落入=建立、拖出=弹窗确认删除、部分重叠=禁止回退），落点判定见 `TopologyViewModel.EndNodeDragAsync`。`runsOn` 托管的子节点用**点线边框**渲染；画布有**网格背景**且移动/缩放吸附 10px；调整大小与其它节点接触时就地停住、被挡后以当前几何**重锚**（反向拖动无死区），服务器缩小时托管子节点自动收紧、**不参与** `ServerOverlapInvalid` 校验；手动锚点通过 `FixedFromSide/ToSide` 固定侧向、移动/拖动过程（快路由）也不漂移；拖动过程跳过过桥计算并跳过吸附后未位移的重算以降低卡顿。画布网格用独立 `GridLayer`（`DrawingBrush.Transform` 跟随缩放/平移，任何缩放/平移后边缘都有网格）；空白处**左键按住即可平移**（不再用中/右键）；指针悬停节点四边/四角切换缩放光标（**四边按下即可拉伸该侧**）、节点上切换移动光标；节点**右键菜单**打开 `NodeRelationsWindow` 列出该节点相关关系并可编辑（`RelationRules` 校验）/删除（列表用节点名、当前节点红色加粗、悬浮显示 ID）。解除 `runsOn` 后由 `RelocateOrphanedStandalone` 将残留的独立节点移到就近空白处；同走廊连线不再分道错位（`LaneGap=0`，连接点可重叠）。
   - `McpToolsView`（设置窗口 Tab「MCP 工具说明」）：展示 MCP 接入配置 + 意图路由表 + 全部工具的参数/用法。内容来自 `docs/TOOLS.md`（以 `EmbeddedResource` 嵌入 `LitSSHmcp.App.csproj`），因此**与 MCP 服务器端工具注解共享唯一事实来源**：工具变动时须同步 ① `src/LitSSHmcp.McpServer/Tools/*.cs` 的 `[McpServerTool]`/`[Description]` 注解（`mcp_usage_guide` 清单由其反射生成，无需手改）② `docs/TOOLS.md` ③ `Program.cs` 的 `WithTools<T>()`；三者一致性由 `tests/LitSSHmcp.McpServer.Tests` 守门。左侧按 **`概览与接入` + 14 个工具分组**展示，分组标题为 `## <中文名>（<分组键>）`，分组键与「工具分组设置」的 `tools.enabledGroups`（`ToolGroups.All`）保持一致；`### \`工具名\`` 计为工具，其它 `###` 子标题并入章节内容。
+  - `SyncWindow` / `SyncViewModel`：文件/文件夹**单向同步**任务编辑（方向联动、调度三选一、`SyncFileFilter` 文件过滤 glob、远程↔远程「使用内网地址」）。本地↔远程走 Core `SyncService`（SFTP 按 `size+mtime` 比对、临时文件 + rename 原子落盘）；远程↔远程走**服务器端 `rsync` 直连**（`RemoteCopyCommandBuilder.BuildRsyncSyncCommand`，`SyncService.CheckRemoteRemote` 校验两端 rsync 与认证：源机免密优先，否则 `sshpass`+目标密码，失败时给出源机免密配置命令）。`App/Services/SyncScheduler`（轮询 + 指数退避重试，仅 App 运行期执行）；`Core/Services/Sync/SyncStateStore` 落盘上次运行时间/结果（`sync-state.json`）；结果经 `Views/ResultDialog` 模态展示（正文可复制）。配置 `syncTasks`（schemaVersion 2）。
 - 主界面 `MainWindow` 采用**左侧图标导航栏 + 右侧主区域页面宿主**：顶部导航为 主页 / SSH 服务器管理 / 数据源管理 / 应用管理（高亮当前页）；分割线下为 资产拓扑 / 审计日志（独立窗口）；**最下方为 设置**（外观 / 安全设置 / 工具分组 / 导入导出 / MCP 工具说明 多 Tab 窗口）。SSH 服务器管理页顶部仅 添加/刷新，其余操作（连接/编辑/采集快照/快照历史/删除）走条目右键菜单，双击行打开编辑窗口。**主页为看板**：快捷入口（打开会话管理/资产拓扑/审计日志/AI 助手；数据源/应用从下方数据看板卡片进入）、数据看板（服务器总数·禁用数、数据源数、应用数；点卡片跳转对应管理页）、AI 快捷提问（输入问题或附件后发送，填入助手输入区）。**「连接」打开独立的 `SshSessionWindow`（SSH 会话管理，多标签、非模态/不置顶，每服务器一个标签）。会话标签/卡片支持拖出窗口（或右键「分离为独立窗口」）弹出独立、紧凑、可缩放的 `SshSessionFloatWindow`（位置/尺寸按会话记忆，标题栏含「收回」/「关闭会话」）；主窗口只显示未分离的会话（`MainViewModel.DockedSessions`），连接状态由会话 VM 持有、分离/收回不重连。** 服务器右键 **「打开终端（交互式）」** 打开 **PTY shell 标签**（与命令会话标签共存）：`SshShellSession`（Core，封装 SSH.NET `CreateShellStream`/`ChangeWindowSize`）→ `TerminalSessionViewModel` 读取字节喂给 `Controls/TerminalModel`（自包含 VT100/ANSI 缓冲与解析）→ `Controls/TerminalView` 自绘渲染 + 键盘/滚轮回看 + 尺寸自适应。终端标签内**左侧分栏**为 SFTP 文件浏览器（`RemoteFileBrowserViewModel` + `Controls/RemoteFileBrowserView`：默认 home、导航/上传（含拖拽文件夹，`UploadBatchAsync`）/下载/新建/重命名/删除/权限属主列，编辑改动自动回传，独立 SFTP 连接，结构操作经 `ssh_execute`）；分栏宽度记忆于 `%APPDATA%\LitSSH\ui-prefs.json`（`Services/UiPrefs`）。
 - 配置导入/导出：整合进底部 **设置 → 导入/导出** Tab（导出可选脱敏，不含任何密码；导入覆盖当前配置）；同窗口 **工具分组** Tab 用于裁剪暴露给 AI 的工具分组。
 
@@ -321,7 +323,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 
 ```bash
 dotnet build LitSSHmcp.slnx                      # 全量构建（应 0 警告 0 错误）
-dotnet test LitSSHmcp.slnx                      # 全部测试(Core + Agent + McpServer + App，520 用例)
+dotnet test LitSSHmcp.slnx                      # 全部测试(Core + Agent + McpServer + App，549 用例)
 dotnet publish src/LitSSHmcp.McpServer -c Release -r win-x64 --self-contained -o publish
 dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publish
 ```

@@ -278,6 +278,8 @@ public class AgentSessionTests
         public string Name { get; }
         public AITool Tool { get; }
         public bool Destructive => false;
+        public bool ReadOnly => false;
+        public string? ToolGroup => null;
         public IDictionary<string, object?>? LastArgs { get; private set; }
 
         public Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct)

@@ -26,6 +26,10 @@ internal sealed class McpAgentTool : IAgentTool
 
     public bool Destructive => _tool.ProtocolTool.Annotations?.DestructiveHint == true;
 
+    public bool ReadOnly => _tool.ProtocolTool.Annotations?.ReadOnlyHint == true;
+
+    public string? ToolGroup => ToolFilter.GroupOf(Name);
+
     public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct) =>
         await _tool.InvokeAsync(new AIFunctionArguments(arguments), ct);
 }

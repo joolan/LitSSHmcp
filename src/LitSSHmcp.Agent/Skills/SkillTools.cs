@@ -27,7 +27,7 @@ public static class SkillTools
             """{"type":"object","properties":{"path":{"type":"string","description":"相对技能目录的文件路径, 如 references/ssh-workarounds.md"}},"required":["path"]}""",
             args => Read(root, ArgumentReader.ReadString(args, "path")));
 
-        return new IAgentTool[] { new LocalAgentTool(list), new LocalAgentTool(read) };
+        return new IAgentTool[] { new LocalAgentTool(list, readOnly: true), new LocalAgentTool(read, readOnly: true) };
     }
 
     private static string ListFiles(string root)

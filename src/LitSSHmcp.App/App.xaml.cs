@@ -33,7 +33,21 @@ public partial class App : Application
         {
             // 非关键路径
         }
+
+        // 文件/文件夹同步调度器：仅 App 运行期间执行
+        try
+        {
+            _syncScheduler = new SyncScheduler(new ConfigService());
+            _syncScheduler.Start();
+            Exit += (_, _) => _syncScheduler?.Dispose();
+        }
+        catch
+        {
+            // 调度器启动失败不影响 App
+        }
     }
+
+    private static SyncScheduler? _syncScheduler;
 
     private static readonly HashSet<string> _shownErrors = new();
 

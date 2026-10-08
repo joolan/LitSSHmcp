@@ -20,6 +20,7 @@ public sealed class AgentSession
     private readonly Func<string, CancellationToken, Task<string?>>? _recall;
     private readonly string _systemPrompt;
     private readonly SpillStore? _spill;
+    private readonly int? _maxIterationsOverride;
 
     /// <summary>滚动摘要：被裁剪掉的旧轮次压缩成的一段文本（注入为继系统提示后的第一条 System 消息）。</summary>
     private string? _summary;
@@ -38,7 +39,8 @@ public sealed class AgentSession
         AgentConfig config,
         IEnumerable<ChatMessage>? history = null,
         Func<string, CancellationToken, Task<string?>>? recall = null,
-        SpillStore? spill = null)
+        SpillStore? spill = null,
+        int? maxIterationsOverride = null)
     {
         _client = client;
         _provider = provider;
@@ -48,6 +50,7 @@ public sealed class AgentSession
         _recall = recall;
         _systemPrompt = systemPrompt;
         _spill = spill;
+        _maxIterationsOverride = maxIterationsOverride;
         Messages.Add(new ChatMessage(ChatRole.System, systemPrompt));
         if (history is not null)
             Messages.AddRange(history);
@@ -93,7 +96,7 @@ public sealed class AgentSession
         if (_provider.MaxTokens > 0)
             options.MaxOutputTokens = _provider.MaxTokens;
 
-        var maxIterations = Math.Max(1, _config.MaxToolIterations);
+        var maxIterations = Math.Max(1, _maxIterationsOverride ?? _config.MaxToolIterations);
         for (var iteration = 0; iteration < maxIterations; iteration++)
         {
             // 流式接收：逐段把文本增量推给 UI，同时累积为完整响应（含工具调用）。
@@ -176,6 +179,54 @@ public sealed class AgentSession
         Messages.Clear();
         Messages.Add(new ChatMessage(ChatRole.System, _systemPrompt));
         Messages.AddRange(history);
+    }
+
+    /// <summary>
+    /// 立即压缩会话上下文（供「/压缩会话」手动触发）：无视阈值，把较早的轮次摘要并丢弃，只保留最近 2 轮 + 滚动摘要。
+    /// 返回是否实际发生了压缩。
+    /// </summary>
+    public async Task<bool> CompactNowAsync(CancellationToken ct = default)
+    {
+        var boundaries = new List<int>();
+        for (var i = 0; i < Messages.Count; i++)
+            if (Messages[i].Role == ChatRole.User)
+                boundaries.Add(i);
+
+        if (boundaries.Count <= 2)
+            return false;
+
+        var keepFrom = boundaries[Math.Max(0, boundaries.Count - 2)];
+        var start = 1;
+        while (start < keepFrom && Messages[start].Role == ChatRole.System)
+            start++;
+        if (start >= keepFrom)
+            return false;
+
+        var dropped = Messages.Skip(start).Take(keepFrom - start).ToList();
+        if (dropped.Count == 0)
+            return false;
+
+        if (_config.AutoSummarize)
+        {
+            try { await SummarizeAsync(dropped, ct); }
+            catch { /* 摘要失败则直接丢弃旧轮 */ }
+        }
+
+        var kept = Messages.Skip(keepFrom).ToList();
+        Messages.Clear();
+        Messages.Add(new ChatMessage(ChatRole.System, _systemPrompt));
+        if (!string.IsNullOrWhiteSpace(_summary))
+            Messages.Add(new ChatMessage(ChatRole.System, "以下是更早对话的摘要(仅供参考, 以实际工具结果为准):\n" + _summary));
+        Messages.AddRange(kept);
+        return true;
+    }
+
+    /// <summary>只重置模型上下文（保留系统提示，清空历史与滚动摘要）。供「/清空上下文」使用，不影响界面与已存记录。</summary>
+    public void ClearContext()
+    {
+        _summary = null;
+        Messages.Clear();
+        Messages.Add(new ChatMessage(ChatRole.System, _systemPrompt));
     }
 
     /// <summary>仅重新调用某个工具（UI "重试"用），不改动上下文、不喂回模型。</summary>

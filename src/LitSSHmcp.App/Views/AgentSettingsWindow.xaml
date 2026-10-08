@@ -66,6 +66,9 @@
                                 </StackPanel>
                                 <CheckBox Content="启用子代理（run_subagent：独立上下文的只读取证，只回摘要）" IsChecked="{Binding EnableSubAgent, Mode=TwoWay}" Margin="0,0,0,6"/>
                                 <CheckBox Content="只读模式（仅向模型暴露只读工具）" IsChecked="{Binding ReadOnly, Mode=TwoWay}" Margin="0,0,0,6"/>
+                                <TextBlock TextWrapping="Wrap" Margin="26,0,0,8" FontSize="11"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                           Text="只读模式保留的工具（按 MCP 只读注解 readOnlyHint）：查询/读取/诊断/巡检类——ssh_list_servers、ssh_get_server_status、ssh_get_sudo_status、ssh_test_connection、ssh_snapshot_get、ssh_get_command_history、ssh_list_files；datasource_list、datasource_test_connection、*_get_sql_history、mysql_query/mysql_explain/mysql_diagnostics、postgres_query/explain/diagnostics、redis_read/redis_diagnostics；docker_ps/logs/inspect/stats/images、service_status/list/logs、log_tail/grep/find、java_processes/threads/heap/info、topology_get_overview/get_dependencies/discover、app_health_snapshot、mcp_usage_guide/self_check/list_sessions；以及本地只读工具（skill_list/read、spill_list/read/grep、ops_doc_read/list、update_plan、run_subagent）。不含执行/写入/审批类：ssh_execute_command/sudo、ssh_upload*/download*、mysql/postgres/redis 的 *_execute、docker_restart/exec、service_restart 等。"/>
 
                                 <TextBlock Text="允许的工具分组（全勾 = 不限制）" FontWeight="SemiBold" Margin="0,10,0,6"/>
                                 <ItemsControl ItemsSource="{Binding ToolGroupOptions}">

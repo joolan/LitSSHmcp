@@ -105,6 +105,8 @@ public class SpillAndSubAgentTests : IDisposable
         public string Name { get; }
         public AITool Tool { get; }
         public bool Destructive => false;
+        public bool ReadOnly => false;
+        public string? ToolGroup => null;
         public Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct) => Task.FromResult(_result);
     }
 

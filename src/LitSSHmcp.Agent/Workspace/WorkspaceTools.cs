@@ -57,11 +57,11 @@ public static class WorkspaceTools
 
         return new IAgentTool[]
         {
-            new LocalAgentTool(read),
+            new LocalAgentTool(read, readOnly: true),
             new LocalAgentTool(write),
             new LocalAgentTool(append),
             new LocalAgentTool(patch),
-            new LocalAgentTool(list)
+            new LocalAgentTool(list, readOnly: true)
         };
     }
 

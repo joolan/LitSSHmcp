@@ -27,7 +27,7 @@ public static class PlanTools
                 return $"计划已更新：{done}/{items.Count} 完成";
             });
 
-        return new LocalAgentTool(function);
+        return new LocalAgentTool(function, readOnly: true);
     }
 
     /// <summary>解析计划文本（每行 '- [ ] …' / '- [x] …'，普通行视为未完成项）。</summary>

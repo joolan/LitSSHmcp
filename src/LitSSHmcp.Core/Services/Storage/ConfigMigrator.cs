@@ -3,7 +3,7 @@ using LitSSHmcp.Core.Models;
 namespace LitSSHmcp.Core.Services.Storage;
 
 /// <summary>
-/// 配置结构迁移。当前 schemaVersion = 1（初始版本）。
+/// 配置结构迁移。当前 schemaVersion = 2（1→2 新增 syncTasks，并保证 security/agent/snapshot/connectionPool 等节非空）。
 /// 后续结构变更时在此追加迁移步骤并提升 AppConfig.CurrentSchemaVersion。
 /// </summary>
 public static class ConfigMigrator
@@ -101,6 +101,12 @@ public static class ConfigMigrator
         if (config.Agent.Memory == null)
         {
             config.Agent.Memory = new AgentMemoryConfig();
+            changed = true;
+        }
+
+        if (config.SyncTasks == null)
+        {
+            config.SyncTasks = Array.Empty<SyncTaskConfig>();
             changed = true;
         }
 

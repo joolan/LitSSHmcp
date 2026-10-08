@@ -33,7 +33,12 @@ public static class SpillTools
             """{"type":"object","properties":{"handle":{"type":"string","description":"句柄(spill://xxx 或文件名)"},"pattern":{"type":"string","description":"正则表达式"},"max":{"type":"integer","description":"最多返回条数, 默认 100"}},"required":["handle","pattern"]}""",
             args => Grep(store, ArgumentReader.ReadString(args, "handle"), ArgumentReader.ReadString(args, "pattern"), ArgumentReader.ReadInt(args, "max")));
 
-        return new IAgentTool[] { new LocalAgentTool(list), new LocalAgentTool(read), new LocalAgentTool(grep) };
+        return new IAgentTool[]
+        {
+            new LocalAgentTool(list, readOnly: true),
+            new LocalAgentTool(read, readOnly: true),
+            new LocalAgentTool(grep, readOnly: true)
+        };
     }
 
     private static string Read(SpillStore store, string? handle, int? offset, int? limit)

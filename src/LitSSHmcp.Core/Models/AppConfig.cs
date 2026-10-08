@@ -2,7 +2,7 @@ namespace LitSSHmcp.Core.Models;
 
 public class AppConfig
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     /// <summary>配置结构版本。缺失该字段的旧文件反序列化为 0，由 ConfigMigrator 迁移到当前版本。</summary>
     public int SchemaVersion { get; set; }
@@ -29,6 +29,9 @@ public class AppConfig
 
     /// <summary>内置 AI 运维助手（LitSSHmcp.App 的 Agent）配置。</summary>
     public AgentConfig Agent { get; set; } = new();
+
+    /// <summary>文件/文件夹同步任务（仅单向；App 运行期由调度器执行，关闭 App 即停止）。</summary>
+    public SyncTaskConfig[] SyncTasks { get; set; } = Array.Empty<SyncTaskConfig>();
 }
 
 /// <summary>

@@ -64,4 +64,8 @@ public class SshServerConfig
 
     [JsonIgnore]
     public string TagsText => Tags.Length == 0 ? string.Empty : string.Join(", ", Tags);
+
+    /// <summary>下拉/列表展示名：禁用时追加「（已禁用）」（禁用仅表示不对 MCP/AI 暴露，仍可用于本地同步等）。</summary>
+    [JsonIgnore]
+    public string DisplayName => Disabled ? Name + "（已禁用）" : Name;
 }

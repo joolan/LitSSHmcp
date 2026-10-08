@@ -177,7 +177,263 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string Input
     {
         get => _input;
-        set { if (Set(ref _input, value)) { (SendCommand as RelayCommand)?.RaiseCanExecuteChanged(); (SendOrStopCommand as RelayCommand)?.RaiseCanExecuteChanged(); } }
+        set
+        {
+            if (Set(ref _input, value))
+            {
+                (SendCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (SendOrStopCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                UpdateSlashPalette();
+            }
+        }
+    }
+
+    // ---- 斜杠命令（/临时聊天 等） ----
+
+    /// <summary>请求打开「临时聊天」面板（参数为可选初始文本），由 AgentWindow 打开独立窗口。</summary>
+    public event Action<string?>? TemporaryChatRequested;
+
+    /// <summary>请求弹出「工具分组多选」对话框，由 AgentWindow 处理后回调 <see cref="ApplyToolGroups"/>。</summary>
+    public event Action? ToolGroupsSelectorRequested;
+
+    /// <summary>当前会话已限制的工具分组（空=不限制）。</summary>
+    public IReadOnlyList<string> CurrentSessionGroups =>
+        string.IsNullOrEmpty(_sessionToolGroups)
+            ? Array.Empty<string>()
+            : _sessionToolGroups.Split(", ", StringSplitOptions.RemoveEmptyEntries);
+
+    /// <summary>应用「工具分组多选」结果（空=不限制）。</summary>
+    public void ApplyToolGroups(IReadOnlyList<string>? groups)
+        => _ = ApplyToolSelectionAsync(_sessionReadOnly, groups is { Count: > 0 } ? string.Join(" ", groups) : null);
+
+    public IReadOnlyList<SlashCommand> SlashCommandList { get; } = SlashCommands.All;
+
+    public ObservableCollection<SlashCommand> SlashSuggestions { get; } = new();
+
+    private bool _isSlashPaletteOpen;
+    public bool IsSlashPaletteOpen { get => _isSlashPaletteOpen; private set => Set(ref _isSlashPaletteOpen, value); }
+
+    private SlashCommand? _selectedSlashSuggestion;
+    public SlashCommand? SelectedSlashSuggestion { get => _selectedSlashSuggestion; set => Set(ref _selectedSlashSuggestion, value); }
+
+    private void UpdateSlashPalette()
+    {
+        var token = SlashCommands.CurrentToken(Input);
+        if (token is null)
+        {
+            CloseSlashPalette();
+            return;
+        }
+
+        var matches = SlashCommands.Match(token);
+        SlashSuggestions.Clear();
+        foreach (var m in matches)
+            SlashSuggestions.Add(m);
+
+        SelectedSlashSuggestion = SlashSuggestions.FirstOrDefault();
+        IsSlashPaletteOpen = SlashSuggestions.Count > 0;
+    }
+
+    public void CloseSlashPalette()
+    {
+        IsSlashPaletteOpen = false;
+        SlashSuggestions.Clear();
+        SelectedSlashSuggestion = null;
+    }
+
+    public void MoveSlashSelection(int delta)
+    {
+        if (!IsSlashPaletteOpen || SlashSuggestions.Count == 0)
+            return;
+        var i = Math.Max(0, SlashSuggestions.IndexOf(SelectedSlashSuggestion!));
+        i = (i + delta + SlashSuggestions.Count) % SlashSuggestions.Count;
+        SelectedSlashSuggestion = SlashSuggestions[i];
+    }
+
+    /// <summary>执行面板当前选中的命令（回车/Tab）。/工具 需带参数，先填入前缀让用户补充。</summary>
+    public bool ExecuteSelectedSlashCommand()
+    {
+        var selected = SelectedSlashSuggestion;
+        if (selected is null)
+            return false;
+        if (selected.Name == SlashCommands.Tools)
+        {
+            CloseSlashPalette();
+            ToolGroupsSelectorRequested?.Invoke();
+            return true;
+        }
+        return TryExecuteSlashCommand(selected, string.Empty);
+    }
+
+    /// <summary>输入首位是已知命令时直接执行（输入框回车）；支持「/工具 log mysql」这类带参数命令。</summary>
+    public bool TryExecuteInputCommand()
+    {
+        var (cmd, args) = SlashCommands.Parse(Input);
+        return cmd is not null && TryExecuteSlashCommand(cmd, args);
+    }
+
+    private bool TryExecuteSlashCommand(SlashCommand cmd, string args)
+    {
+        CloseSlashPalette();
+        switch (cmd.Name)
+        {
+            case SlashCommands.TempChat:
+                Input = string.Empty;
+                TemporaryChatRequested?.Invoke(null);
+                return true;
+            case SlashCommands.CompactSession:
+                Input = string.Empty;
+                _ = CompactSessionAsync();
+                return true;
+            case SlashCommands.ClearScreen:
+                Input = string.Empty;
+                ClearScreenDisplay();
+                return true;
+            case SlashCommands.ClearContext:
+                Input = string.Empty;
+                _ = ClearContextAsync();
+                return true;
+            case SlashCommands.ReadOnly:
+                Input = string.Empty;
+                _ = ApplyToolSelectionAsync(!_sessionReadOnly, _sessionToolGroups);
+                return true;
+            case SlashCommands.Tools:
+                Input = string.Empty;
+                _ = ApplyToolSelectionAsync(_sessionReadOnly, args);
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>只清空屏幕展示（保留会话上下文/模型记忆，不影响正在运行的任务）。</summary>
+    private void ClearScreenDisplay()
+    {
+        Turns.Clear();
+        Plan.Clear();
+        RefreshContextInfo();
+        ShowNotice("已清空屏幕显示（会话上下文与模型记忆保留）");
+    }
+
+    /// <summary>只重置模型上下文（保留屏幕显示与持久化记录）。</summary>
+    private async Task ClearContextAsync()
+    {
+        if (IsBusy)
+        {
+            ShowNotice("任务进行中，无法清空上下文；请等任务结束后再试。");
+            return;
+        }
+        if (_runtime is null)
+        {
+            await EnsureRuntimeAsync(await LoadHistoryFromStoreAsync());
+            if (_runtime is null)
+                return;
+        }
+
+        _runtime.Session.ClearContext();
+        RefreshContextInfo();
+        ShowNotice("已清空模型上下文（屏幕与记录保留）");
+    }
+
+    // ---- 会话级工具选择（/只读 · /工具 <组…>） ----
+
+    private bool _sessionReadOnly;
+    public bool IsSessionReadOnly => _sessionReadOnly;
+    public Visibility ReadOnlyChipVisibility => _sessionReadOnly ? Visibility.Visible : Visibility.Collapsed;
+
+    private string? _sessionToolGroups;
+    public string ToolFilterChipText => string.IsNullOrEmpty(_sessionToolGroups) ? string.Empty : $"工具：{_sessionToolGroups}";
+    public Visibility ToolFilterChipVisibility => string.IsNullOrEmpty(_sessionToolGroups) ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>退出只读模式（点「只读」标签）。</summary>
+    public void ExitReadOnly() => _ = ApplyToolSelectionAsync(false, _sessionToolGroups);
+
+    /// <summary>清除工具分组限制（点「工具」标签）。</summary>
+    public void ExitToolFilter() => _ = ApplyToolSelectionAsync(_sessionReadOnly, null);
+
+    private async Task ApplyToolSelectionAsync(bool readOnly, string? groups)
+    {
+        if (IsBusy)
+        {
+            ShowNotice("任务进行中，请等任务结束后再调整工具。");
+            return;
+        }
+        if (_runtime is null)
+        {
+            await EnsureRuntimeAsync(await LoadHistoryFromStoreAsync());
+            if (_runtime is null)
+                return;
+        }
+
+        var parsed = (groups ?? string.Empty)
+            .Split(new[] { ' ', ',', '，', ';', '|', '/', '、' }, StringSplitOptions.RemoveEmptyEntries)
+            .ToList();
+        var valid = parsed
+            .Where(g => ToolGroups.All.Contains(g, StringComparer.OrdinalIgnoreCase))
+            .Select(g => g.ToLowerInvariant())
+            .Distinct()
+            .ToList();
+        var invalid = parsed
+            .Where(g => !ToolGroups.All.Contains(g, StringComparer.OrdinalIgnoreCase))
+            .Distinct()
+            .ToList();
+
+        _sessionReadOnly = readOnly;
+        _sessionToolGroups = valid.Count > 0 ? string.Join(", ", valid) : null;
+        OnPropertyChanged(nameof(IsSessionReadOnly));
+        OnPropertyChanged(nameof(ReadOnlyChipVisibility));
+        OnPropertyChanged(nameof(ToolFilterChipText));
+        OnPropertyChanged(nameof(ToolFilterChipVisibility));
+
+        _runtime.SetToolSelection(readOnly, valid.Count > 0 ? valid : null);
+        RefreshContextInfo();
+
+        StatusMessage = $"会话工具已更新：{(readOnly ? "只读 · " : string.Empty)}" +
+                        $"{(valid.Count > 0 ? string.Join("/", valid) : "全部分组")} · 共 {_runtime.ToolCount} 个工具";
+        if (invalid.Count > 0)
+            ShowNotice("未知分组已忽略：" + string.Join(", ", invalid));
+        else
+            ShowNotice(StatusMessage);
+    }
+
+    private void ResetSessionToolModes()
+    {
+        _sessionReadOnly = false;
+        _sessionToolGroups = null;
+        OnPropertyChanged(nameof(IsSessionReadOnly));
+        OnPropertyChanged(nameof(ReadOnlyChipVisibility));
+        OnPropertyChanged(nameof(ToolFilterChipText));
+        OnPropertyChanged(nameof(ToolFilterChipVisibility));
+    }
+
+    /// <summary>立即压缩当前会话上下文（较早轮次摘要后丢弃，保留最近 2 轮）。</summary>
+    public async Task CompactSessionAsync()
+    {
+        if (IsBusy)
+        {
+            StatusMessage = "任务进行中，无法压缩会话；请等任务结束后再试。";
+            return;
+        }
+
+        if (_runtime is null)
+        {
+            await EnsureRuntimeAsync(await LoadHistoryFromStoreAsync());
+            if (_runtime is null)
+                return;
+        }
+
+        try
+        {
+            StatusMessage = "正在压缩会话上下文…";
+            var changed = await _runtime.Session.CompactNowAsync();
+            RefreshContextInfo();
+            StatusMessage = changed ? "已压缩会话上下文（较早轮次已摘要）" : "轮次较少，无需压缩";
+            ShowNotice(changed ? "🗜 已压缩会话上下文：较早轮次已摘要并保留最近 2 轮" : "轮次较少，无需压缩");
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "压缩失败: " + ex.Message;
+        }
     }
 
     private bool _isBusy;
@@ -195,6 +451,29 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private string _statusMessage = "加载中…";
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
+
+    private string _noticeText = string.Empty;
+    public string NoticeText
+    {
+        get => _noticeText;
+        private set { if (Set(ref _noticeText, value)) OnPropertyChanged(nameof(NoticeVisibility)); }
+    }
+
+    public Visibility NoticeVisibility => string.IsNullOrEmpty(_noticeText) ? Visibility.Collapsed : Visibility.Visible;
+
+    private int _noticeVersion;
+
+    /// <summary>在对话区底部弹出一条临时提示，<paramref name="seconds"/> 秒后自动消失。</summary>
+    public void ShowNotice(string message, int seconds = 4)
+    {
+        NoticeText = message;
+        var version = ++_noticeVersion;
+        _ = Task.Delay(TimeSpan.FromSeconds(seconds)).ContinueWith(_ =>
+        {
+            if (version == _noticeVersion)
+                _uiInvoke(() => NoticeText = string.Empty);
+        });
+    }
 
     private string _contextInfo = string.Empty;
     public string ContextInfo { get => _contextInfo; set => Set(ref _contextInfo, value); }
@@ -442,6 +721,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             ModelStatus = "connecting";
             StatusMessage = "正在连接 MCP 服务器…";
             _runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history, UpdatePlan);
+            ResetSessionToolModes();
             StatusMessage = $"已就绪 · {SelectedProvider.Name} / {SelectedProvider.Model} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
             ModelStatus = "ready";
@@ -469,6 +749,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         try
         {
             _runtime.ResetSession(SelectedProvider, history);
+            _runtime.SetToolSelection(false, null);
+            ResetSessionToolModes();
             StatusMessage = $"已就绪 · {SelectedProvider.Name} / {SelectedProvider.Model} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
             ModelStatus = "ready";

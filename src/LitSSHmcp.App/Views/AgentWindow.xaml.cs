@@ -22,6 +22,8 @@ public partial class AgentWindow : FluentWindow
 
         _viewModel = new AgentViewModel(configService, store, skillsDir, action => Dispatcher.Invoke(action));
         _viewModel.SettingsRequested += tab => Dispatcher.Invoke(() => OpenSettings(tab));
+        _viewModel.TemporaryChatRequested += text => Dispatcher.Invoke(() => OpenTemporaryChat(text));
+        _viewModel.ToolGroupsSelectorRequested += () => Dispatcher.Invoke(OpenToolGroupsDialog);
         DataContext = _viewModel;
         WindowLayout.Attach(this, "agent");
         _viewModel.Turns.CollectionChanged += (_, _) => ChatScroll.ScrollToEnd();
@@ -169,13 +171,92 @@ public partial class AgentWindow : FluentWindow
 
     private void OnInputKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Enter || (Keyboard.Modifiers & ModifierKeys.Shift) != 0 || _viewModel.IsBusy)
+        // 斜杠命令面板导航/选择
+        if (_viewModel.IsSlashPaletteOpen)
+        {
+            if (e.Key == Key.Down) { _viewModel.MoveSlashSelection(1); ScrollSlashIntoView(); e.Handled = true; return; }
+            if (e.Key == Key.Up) { _viewModel.MoveSlashSelection(-1); ScrollSlashIntoView(); e.Handled = true; return; }
+            if (e.Key == Key.Escape) { _viewModel.CloseSlashPalette(); e.Handled = true; return; }
+            if ((e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0) || e.Key == Key.Tab)
+            {
+                if (_viewModel.ExecuteSelectedSlashCommand())
+                {
+                    InputBox.Focus();
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+
+        if (e.Key != Key.Enter || (Keyboard.Modifiers & ModifierKeys.Shift) != 0)
             return;
 
+        // 输入恰好是某个斜杠命令 → 直接执行（即使主任务进行中也可用，如 /临时聊天）
         _viewModel.Input = InputBox.Text;
+        if (_viewModel.TryExecuteInputCommand())
+        {
+            InputBox.Focus();
+            e.Handled = true;
+            return;
+        }
+
+        if (_viewModel.IsBusy)
+            return;
         if (_viewModel.SendCommand.CanExecute(null))
             _viewModel.SendCommand.Execute(null);
         e.Handled = true;
+    }
+
+    private void OnSlashSuggestionClick(object sender, MouseButtonEventArgs e)
+    {
+        if (SlashList.SelectedItem is SlashCommand)
+        {
+            _viewModel.ExecuteSelectedSlashCommand();
+            InputBox.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void OnExitReadOnly(object sender, RoutedEventArgs e) => _viewModel.ExitReadOnly();
+
+    private void OnExitToolFilter(object sender, RoutedEventArgs e) => _viewModel.ExitToolFilter();
+
+    /// <summary>键盘上下移动斜杠建议时，把选中项滚动到可见区。</summary>
+    private void ScrollSlashIntoView()
+    {
+        if (_viewModel.SelectedSlashSuggestion is { } item)
+            SlashList.ScrollIntoView(item);
+    }
+
+    private void OpenToolGroupsDialog()
+    {
+        var selected = ToolGroupsDialog.Show(this, _viewModel.CurrentSessionGroups);
+        if (selected is not null)
+            _viewModel.ApplyToolGroups(selected);
+    }
+
+    private TemporaryChatWindow? _temporaryChatWindow;
+
+    private void OpenTemporaryChat(string? initialText)
+    {
+        if (_temporaryChatWindow is { IsLoaded: true })
+        {
+            _temporaryChatWindow.Activate();
+            if (!string.IsNullOrWhiteSpace(initialText))
+                _temporaryChatWindow.Prefill(initialText!);
+            return;
+        }
+
+        var window = new TemporaryChatWindow(_configService, _viewModel.SelectedProvider?.Id)
+        {
+            Owner = this,
+            Topmost = false
+        };
+        window.Closed += (_, _) => _temporaryChatWindow = null;
+        _temporaryChatWindow = window;
+        if (!string.IsNullOrWhiteSpace(initialText))
+            window.Prefill(initialText!);
+        window.Show();
     }
 
     // 整窗 Ctrl+V：剪贴板含图片/文件则作为附件；纯文本交给输入框正常粘贴

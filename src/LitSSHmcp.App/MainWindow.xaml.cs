@@ -13,11 +13,17 @@ public partial class MainWindow : FluentWindow
 {
     private MainViewModel ViewModel => (MainViewModel)DataContext;
 
+    private System.Windows.Forms.NotifyIcon? _tray;
+    private bool _allowClose;
+
     public MainWindow()
     {
         InitializeComponent();
         DataContext = new MainViewModel();
         WindowLayout.Attach(this, "main");
+        Closing += OnMainClosing;
+        if (Application.Current is { } app)
+            app.Exit += (_, _) => DisposeTray();
 
         // 启动及切回「主页」时，默认聚焦到 AI 快捷提问输入框
         Loaded += (_, _) => FocusHomeAsk();
@@ -170,5 +176,102 @@ public partial class MainWindow : FluentWindow
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
             menu.IsOpen = true;
         }
+    }
+
+    // ---- 关闭主窗口：选择「最小化到托盘」或「退出程序」 ----
+
+    private void OnMainClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (_allowClose)
+        {
+            DisposeTray();
+            return;
+        }
+
+        var choice = Views.CloseChoiceDialog.Show(this);
+        switch (choice)
+        {
+            case Views.CloseChoice.Exit:
+                _allowClose = true;
+                DisposeTray();
+                return; // 允许关闭
+            case Views.CloseChoice.MinimizeToTray:
+                e.Cancel = true;
+                MinimizeToTray();
+                return;
+            default:
+                e.Cancel = true;
+                return;
+        }
+    }
+
+    private void MinimizeToTray()
+    {
+        EnsureTray();
+        Hide();
+        try
+        {
+            _tray?.ShowBalloonTip(2500, "LitSSH", "已最小化到托盘，后台继续运行；双击托盘图标可恢复主界面。",
+                System.Windows.Forms.ToolTipIcon.Info);
+        }
+        catch
+        {
+            // 气泡提示失败忽略
+        }
+    }
+
+    private void EnsureTray()
+    {
+        if (_tray is not null)
+        {
+            _tray.Visible = true;
+            return;
+        }
+
+        var menu = new System.Windows.Forms.ContextMenuStrip();
+        menu.Items.Add("显示主界面", null, (_, _) => RestoreFromTray());
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add("退出程序", null, (_, _) => ExitFromTray());
+
+        _tray = new System.Windows.Forms.NotifyIcon
+        {
+            Icon = System.Drawing.SystemIcons.Application,
+            Text = "LitSSH MCP Manager",
+            Visible = true,
+            ContextMenuStrip = menu
+        };
+        _tray.DoubleClick += (_, _) => RestoreFromTray();
+    }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+        FocusHomeAsk();
+    }
+
+    private void ExitFromTray()
+    {
+        _allowClose = true;
+        DisposeTray();
+        Application.Current.Shutdown();
+    }
+
+    private void DisposeTray()
+    {
+        try
+        {
+            if (_tray is not null)
+            {
+                _tray.Visible = false;
+                _tray.Dispose();
+            }
+        }
+        catch
+        {
+            // 忽略
+        }
+        _tray = null;
     }
 }

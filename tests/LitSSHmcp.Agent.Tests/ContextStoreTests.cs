@@ -154,6 +154,21 @@ public class ContextStoreTests : IDisposable
         Assert.Empty(await store.GetMessagesAsync(id));
     }
 
+    [Fact]
+    public async Task Session_plan_roundtrip()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("s");
+        Assert.Equal(string.Empty, await store.GetSessionPlanAsync(id));
+
+        await store.SetSessionPlanAsync(id, "[{\"Text\":\"排查\",\"Done\":true}]");
+        Assert.Equal("[{\"Text\":\"排查\",\"Done\":true}]", await store.GetSessionPlanAsync(id));
+
+        await store.SetSessionPlanAsync(id, string.Empty);
+        Assert.Equal(string.Empty, await store.GetSessionPlanAsync(id));
+    }
+
     public void Dispose()
     {
         try { File.Delete(_dbPath); } catch { /* ignore */ }

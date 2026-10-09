@@ -109,6 +109,28 @@
                                         <TextBlock Text="应用" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                     </StackPanel>
                                 </Border>
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                        Cursor="Hand" ToolTip="打开端口转发" MouseLeftButtonUp="OnHomePortForwardClick">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding PortForwardCount}" FontSize="30" FontWeight="SemiBold"/>
+                                        <TextBlock Text="端口转发规则" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <TextBlock FontSize="11" Foreground="{DynamicResource AppSuccessBrush}">
+                                            <Run Text="运行中 "/>
+                                            <Run Text="{Binding PortForwardRunningCount, Mode=OneWay}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                        Cursor="Hand" ToolTip="打开文件/文件夹同步" MouseLeftButtonUp="OnHomeSyncClick">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding SyncTaskCount}" FontSize="30" FontWeight="SemiBold"/>
+                                        <TextBlock Text="同步任务" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <TextBlock FontSize="11" Foreground="{DynamicResource AppSuccessBrush}">
+                                            <Run Text="启用 "/>
+                                            <Run Text="{Binding SyncTaskEnabledCount, Mode=OneWay}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
                             </WrapPanel>
 
                             <TextBlock Text="AI 快捷提问" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8"

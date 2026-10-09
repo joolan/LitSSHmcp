@@ -135,7 +135,7 @@
     "skillsDir": "",
     "workspaceDir": "C:\\Users\\<你>\\Documents\\LitSSH",
     "contextLimit": 40,
-    "contextTokenLimit": 24000,
+    "contextTokenLimit": 96000,
     "autoSummarize": true,
     "toolResultMaxChars": 4000,
     "contextTrimRatio": 0.8,

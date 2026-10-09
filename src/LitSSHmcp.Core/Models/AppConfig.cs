@@ -62,7 +62,7 @@ public class AgentConfig
     public int ContextLimit { get; set; } = 40;
 
     /// <summary>上下文 token 估算上限（与 ContextLimit 共同构成双阈值；超出时连同最旧整轮一起裁剪；0=仅按条数）。</summary>
-    public int ContextTokenLimit { get; set; } = 24000;
+    public int ContextTokenLimit { get; set; } = 96000;
 
     /// <summary>滚动摘要：裁剪旧轮次时调用模型把其压缩成摘要并注入上下文（可选，默认开启）。</summary>
     public bool AutoSummarize { get; set; } = true;

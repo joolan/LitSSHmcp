@@ -206,19 +206,6 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>请求打开「临时聊天」面板（参数为可选初始文本），由 AgentWindow 打开独立窗口。</summary>
     public event Action<string?>? TemporaryChatRequested;
 
-    /// <summary>请求弹出「工具分组多选」对话框，由 AgentWindow 处理后回调 <see cref="ApplyToolGroups"/>。</summary>
-    public event Action? ToolGroupsSelectorRequested;
-
-    /// <summary>当前会话已限制的工具分组（空=不限制）。</summary>
-    public IReadOnlyList<string> CurrentSessionGroups =>
-        string.IsNullOrEmpty(_sessionToolGroups)
-            ? Array.Empty<string>()
-            : _sessionToolGroups.Split(", ", StringSplitOptions.RemoveEmptyEntries);
-
-    /// <summary>应用「工具分组多选」结果（空=不限制）。</summary>
-    public void ApplyToolGroups(IReadOnlyList<string>? groups)
-        => _ = ApplyToolSelectionAsync(_sessionReadOnly, groups is { Count: > 0 } ? string.Join(" ", groups) : null);
-
     public IReadOnlyList<SlashCommand> SlashCommandList { get; } = SlashCommands.All;
 
     public ObservableCollection<SlashCommand> SlashSuggestions { get; } = new();
@@ -263,18 +250,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         SelectedSlashSuggestion = SlashSuggestions[i];
     }
 
-    /// <summary>执行面板当前选中的命令（回车/Tab）。/工具 需带参数，先填入前缀让用户补充。</summary>
+    /// <summary>执行面板当前选中的命令（回车/Tab）。</summary>
     public bool ExecuteSelectedSlashCommand()
     {
         var selected = SelectedSlashSuggestion;
         if (selected is null)
             return false;
-        if (selected.Name == SlashCommands.Tools)
-        {
-            CloseSlashPalette();
-            ToolGroupsSelectorRequested?.Invoke();
-            return true;
-        }
         return TryExecuteSlashCommand(selected, string.Empty);
     }
 
@@ -306,14 +287,6 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 Input = string.Empty;
                 _ = ClearContextAsync();
                 return true;
-            case SlashCommands.ReadOnly:
-                Input = string.Empty;
-                _ = ApplyToolSelectionAsync(!_sessionReadOnly, _sessionToolGroups);
-                return true;
-            case SlashCommands.Tools:
-                Input = string.Empty;
-                _ = ApplyToolSelectionAsync(_sessionReadOnly, args);
-                return true;
         }
 
         return false;
@@ -344,79 +317,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         _runtime.Session.ClearContext();
+        await PersistSummaryAsync();
         RefreshContextInfo();
         ShowNotice("已清空模型上下文（屏幕与记录保留）");
-    }
-
-    // ---- 会话级工具选择（/只读 · /工具 <组…>） ----
-
-    private bool _sessionReadOnly;
-    public bool IsSessionReadOnly => _sessionReadOnly;
-    public Visibility ReadOnlyChipVisibility => _sessionReadOnly ? Visibility.Visible : Visibility.Collapsed;
-
-    private string? _sessionToolGroups;
-    public string ToolFilterChipText => string.IsNullOrEmpty(_sessionToolGroups) ? string.Empty : $"工具：{_sessionToolGroups}";
-    public Visibility ToolFilterChipVisibility => string.IsNullOrEmpty(_sessionToolGroups) ? Visibility.Collapsed : Visibility.Visible;
-
-    /// <summary>退出只读模式（点「只读」标签）。</summary>
-    public void ExitReadOnly() => _ = ApplyToolSelectionAsync(false, _sessionToolGroups);
-
-    /// <summary>清除工具分组限制（点「工具」标签）。</summary>
-    public void ExitToolFilter() => _ = ApplyToolSelectionAsync(_sessionReadOnly, null);
-
-    private async Task ApplyToolSelectionAsync(bool readOnly, string? groups)
-    {
-        if (IsBusy)
-        {
-            ShowNotice("任务进行中，请等任务结束后再调整工具。");
-            return;
-        }
-        if (_runtime is null)
-        {
-            await EnsureRuntimeAsync(await LoadHistoryFromStoreAsync());
-            if (_runtime is null)
-                return;
-        }
-
-        var parsed = (groups ?? string.Empty)
-            .Split(new[] { ' ', ',', '，', ';', '|', '/', '、' }, StringSplitOptions.RemoveEmptyEntries)
-            .ToList();
-        var valid = parsed
-            .Where(g => ToolGroups.All.Contains(g, StringComparer.OrdinalIgnoreCase))
-            .Select(g => g.ToLowerInvariant())
-            .Distinct()
-            .ToList();
-        var invalid = parsed
-            .Where(g => !ToolGroups.All.Contains(g, StringComparer.OrdinalIgnoreCase))
-            .Distinct()
-            .ToList();
-
-        _sessionReadOnly = readOnly;
-        _sessionToolGroups = valid.Count > 0 ? string.Join(", ", valid) : null;
-        OnPropertyChanged(nameof(IsSessionReadOnly));
-        OnPropertyChanged(nameof(ReadOnlyChipVisibility));
-        OnPropertyChanged(nameof(ToolFilterChipText));
-        OnPropertyChanged(nameof(ToolFilterChipVisibility));
-
-        _runtime.SetToolSelection(readOnly, valid.Count > 0 ? valid : null);
-        RefreshContextInfo();
-
-        StatusMessage = $"会话工具已更新：{(readOnly ? "只读 · " : string.Empty)}" +
-                        $"{(valid.Count > 0 ? string.Join("/", valid) : "全部分组")} · 共 {_runtime.ToolCount} 个工具";
-        if (invalid.Count > 0)
-            ShowNotice("未知分组已忽略：" + string.Join(", ", invalid));
-        else
-            ShowNotice(StatusMessage);
-    }
-
-    private void ResetSessionToolModes()
-    {
-        _sessionReadOnly = false;
-        _sessionToolGroups = null;
-        OnPropertyChanged(nameof(IsSessionReadOnly));
-        OnPropertyChanged(nameof(ReadOnlyChipVisibility));
-        OnPropertyChanged(nameof(ToolFilterChipText));
-        OnPropertyChanged(nameof(ToolFilterChipVisibility));
     }
 
     /// <summary>立即压缩当前会话上下文（较早轮次摘要后丢弃，保留最近 2 轮）。</summary>
@@ -439,6 +342,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             StatusMessage = "正在压缩会话上下文…";
             var changed = await _runtime.Session.CompactNowAsync();
+            await PersistSummaryAsync();
             RefreshContextInfo();
             StatusMessage = changed ? "已压缩会话上下文（较早轮次已摘要）" : "轮次较少，无需压缩";
             ShowNotice(changed ? "🗜 已压缩会话上下文：较早轮次已摘要并保留最近 2 轮" : "轮次较少，无需压缩");
@@ -490,6 +394,10 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private string _contextInfo = string.Empty;
     public string ContextInfo { get => _contextInfo; set => Set(ref _contextInfo, value); }
+
+    private string _contextInfoTooltip = string.Empty;
+    /// <summary>上下文圆环的悬浮详情：概要 + 构成分解（系统/工具定义/摘要/消息/缓存命中）。</summary>
+    public string ContextInfoTooltip { get => _contextInfoTooltip; set => Set(ref _contextInfoTooltip, value); }
 
     /// <summary>当前模型连接状态：idle / connecting / ready / error（用于模型选择框的状态标识）。</summary>
     private string _modelStatus = "idle";
@@ -579,40 +487,145 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (SelectedProvider is not null && !string.Equals(session?.ProviderId, SelectedProvider.Id, StringComparison.Ordinal))
             _ = PersistProviderSelectionAsync(SelectedProvider.Id);
 
-        var rows = await _store.GetMessagesAsync(id);
-        _sessionTitled = rows.Any(r => r.Role == "user");
+        var (turns, history, hasUser) = await BuildTranscriptAsync(id);
+        foreach (var turn in turns)
+            Turns.Add(turn);
+        _sessionTitled = hasUser;
 
-        AgentTurn? current = null;
-        var history = new List<ChatMessage>();
-        foreach (var row in rows)
-        {
-            if (row.Role == "user")
-            {
-                var (cleanText, images) = ParseStoredUser(row.Content);
-                current = new AgentTurn(cleanText, ParseUtc(row.Timestamp)) { StorageText = row.Content };
-                foreach (var image in images)
-                    current.Images.Add(image);
-                Turns.Add(current);
-                history.Add(new ChatMessage(ChatRole.User, cleanText));
-            }
-            else if (row.Role == "assistant")
-            {
-                current ??= AddPlaceholderTurn(row.Timestamp);
-                current.AssistantText = row.Content;
-                current.IsRunning = false;
-                current.SetTimes(LocalHms(row.Timestamp), string.Empty);
-                history.Add(new ChatMessage(ChatRole.Assistant, row.Content));
-            }
-        }
+        RestorePlan(await _store.GetSessionPlanAsync(id));
 
         await ResetRuntimeAsync(history);
     }
 
-    private AgentTurn AddPlaceholderTurn(string timestamp)
+    // ---- 统一的会话记录解析（UI Turns 与模型 history 的唯一来源） ----
+
+    private const string ToolTracePrefix = "【本轮工具轨迹（历史恢复，仅供参考；以实际工具结果为准）】\n";
+
+    /// <summary>重启恢复时重新载入历史图片的最大张数（从最新往回；其余图片只保留文本标记）。</summary>
+    private const int ReloadImageQuota = 3;
+
+    /// <summary>
+    /// 从持久化记录重建 UI Turns 与模型 history（**唯一入口**，所有加载/切换/重发路径共用）。
+    /// 工具轨迹以 <c>role="tool"</c> JSON 行存储：UI 还原为可展开步骤，模型得到一条文本轨迹（不伪造 function_call 配对）。
+    /// </summary>
+    private async Task<(List<AgentTurn> Turns, List<ChatMessage> History, bool HasUser)> BuildTranscriptAsync(long sessionId)
     {
-        var turn = new AgentTurn(string.Empty, ParseUtc(timestamp));
-        Turns.Add(turn);
-        return turn;
+        var rows = await _store.GetMessagesAsync(sessionId);
+        var turns = new List<AgentTurn>();
+        var hasUser = rows.Any(r => r.Role == "user");
+
+        AgentTurn? current = null;
+        void EnsureCurrent(string timestamp)
+        {
+            if (current is null)
+            {
+                current = new AgentTurn(string.Empty, ParseUtc(timestamp));
+                turns.Add(current);
+            }
+        }
+
+        foreach (var row in rows)
+        {
+            switch (row.Role)
+            {
+                case "user":
+                {
+                    var (cleanText, images) = ParseStoredUser(row.Content);
+                    current = new AgentTurn(cleanText, ParseUtc(row.Timestamp)) { StorageText = row.Content };
+                    foreach (var image in images)
+                        current.Images.Add(image);
+                    turns.Add(current);
+                    break;
+                }
+                case "tool":
+                {
+                    var step = AgentTranscript.Deserialize(row.Content);
+                    if (step is null)
+                        break;
+                    EnsureCurrent(row.Timestamp);
+                    current!.Steps.Add(AgentTranscript.ToStep(step));
+                    break;
+                }
+                case "assistant":
+                {
+                    EnsureCurrent(row.Timestamp);
+                    current!.AssistantText = row.Content;
+                    current.IsRunning = false;
+                    current.SetTimes(LocalHms(row.Timestamp), string.Empty);
+                    break;
+                }
+            }
+        }
+
+        return (turns, BuildHistoryFromTurns(turns, turns.Count), hasUser);
+    }
+
+    /// <summary>
+    /// 由内存 Turns 构造模型 history（user + 可选最近图片 → 工具轨迹 System → assistant），
+    /// 加载/切模型/编辑重发共用，保证任何路径下模型所见历史一致。
+    /// </summary>
+    private List<ChatMessage> BuildHistoryFromTurns(IReadOnlyList<AgentTurn> turns, int upTo)
+    {
+        var vision = SelectedProvider?.SupportsVision == true;
+        var reloadable = vision ? CollectReloadImages(turns, upTo) : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var history = new List<ChatMessage>();
+
+        for (var i = 0; i < upTo && i < turns.Count; i++)
+        {
+            var turn = turns[i];
+            var hasUser = turn.StorageText is not null || !string.IsNullOrEmpty(turn.UserText);
+            if (hasUser)
+            {
+                var contents = new List<AIContent>();
+                if (!string.IsNullOrEmpty(turn.UserText))
+                    contents.Add(new TextContent(turn.UserText));
+                foreach (var image in turn.Images)
+                {
+                    if (!reloadable.Contains(image) || !File.Exists(image))
+                        continue;
+                    try
+                    {
+                        var parsed = AttachmentService.Parse(image);
+                        if (parsed.ImageBytes is not null)
+                            contents.Add(new DataContent(parsed.ImageBytes, parsed.MediaType ?? "image/png"));
+                    }
+                    catch
+                    {
+                        // 单张图片读取失败忽略，仅保留文本
+                    }
+                }
+                if (contents.Count == 0)
+                    contents.Add(new TextContent(string.Empty));
+                history.Add(new ChatMessage(ChatRole.User, contents));
+            }
+
+            var trace = AgentTranscript.BuildTrace(turn.Steps);
+            if (trace.Length > 0)
+                history.Add(new ChatMessage(ChatRole.System, ToolTracePrefix + trace));
+
+            if (!string.IsNullOrEmpty(turn.AssistantText))
+                history.Add(new ChatMessage(ChatRole.Assistant, turn.AssistantText));
+        }
+
+        return history;
+    }
+
+    /// <summary>从最新往回挑选可重载的图片（最多 <see cref="ReloadImageQuota"/> 张）。</summary>
+    private static HashSet<string> CollectReloadImages(IReadOnlyList<AgentTurn> turns, int upTo)
+    {
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var count = 0;
+        for (var i = Math.Min(upTo, turns.Count) - 1; i >= 0 && count < ReloadImageQuota; i--)
+        {
+            foreach (var image in turns[i].Images)
+            {
+                if (count >= ReloadImageQuota)
+                    break;
+                if (allowed.Add(image))
+                    count++;
+            }
+        }
+        return allowed;
     }
 
     public async Task NewSessionAsync()
@@ -713,6 +726,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             Turns.Clear();
             _editingTurn = null;
             Plan.Clear();
+            _ = PersistPlanAsync();
             OnPropertyChanged(nameof(IsEditing));
             RefreshContextInfo();
         }
@@ -734,7 +748,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             ModelStatus = "connecting";
             StatusMessage = "正在连接 MCP 服务器…";
             _runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history, UpdatePlan);
-            ResetSessionToolModes();
+            await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
             ModelStatus = "ready";
@@ -762,8 +776,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         try
         {
             _runtime.ResetSession(SelectedProvider, history);
-            _runtime.SetToolSelection(false, null);
-            ResetSessionToolModes();
+            await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
             ModelStatus = "ready";
@@ -813,14 +826,10 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         await ResetRuntimeAsync(history);
     }
 
+    /// <summary>从持久化记录重建模型历史（与 <see cref="LoadSessionAsync"/> 共用同一解析，保证一致）。</summary>
     private async Task<List<ChatMessage>> LoadHistoryFromStoreAsync()
     {
-        var history = new List<ChatMessage>();
-        foreach (var row in await _store.GetMessagesAsync(_sessionId))
-        {
-            if (row.Role == "user") history.Add(new ChatMessage(ChatRole.User, row.Content));
-            else if (row.Role == "assistant") history.Add(new ChatMessage(ChatRole.Assistant, row.Content));
-        }
+        var (_, history, _) = await BuildTranscriptAsync(_sessionId);
         return history;
     }
 
@@ -1151,7 +1160,11 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (fixedText is null)
         {
             Input = string.Empty;
-            Plan.Clear();   // 新指令 = 新任务：清掉上一轮残留的计划(模型如需会重新 update_plan)
+            if (Plan.Count > 0)
+            {
+                Plan.Clear();   // 新指令 = 新任务：清掉上一轮残留的计划(模型如需会重新 update_plan)
+                _ = PersistPlanAsync();
+            }
         }
 
         var displayText = text ?? string.Empty;
@@ -1220,6 +1233,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             _cts?.Dispose();
             _cts = null;
             await PersistTranscriptAsync();
+            await PersistSummaryAsync();
             try
             {
                 await _store.PruneAsync(_agentConfig.RetentionMaxSessions, _agentConfig.RetentionMaxMessages, _agentConfig.RetentionDays, CancellationToken.None);
@@ -1348,14 +1362,17 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             case AgentEventKind.ToolCall:
                 FlushDelta(turn);
-                turn.Steps.Add(new AgentStep(e.ToolName ?? "工具", e.ArgumentsJson ?? string.Empty, e.Destructive));
+                turn.Steps.Add(new AgentStep(e.ToolName ?? "工具", e.ArgumentsJson ?? string.Empty, e.Destructive, e.CallId));
                 break;
 
             case AgentEventKind.ToolResult:
                 FlushDelta(turn);
                 var body = Truncate(e.Text, 20000);
                 var denied = LooksApprovalDenied(e.Text);
-                var pending = turn.Steps.LastOrDefault(s => s.IsRunning && s.Tool == (e.ToolName ?? "工具"));
+                var pending = e.CallId is null
+                    ? turn.Steps.LastOrDefault(s => s.IsRunning && s.Tool == (e.ToolName ?? "工具"))
+                    : turn.Steps.LastOrDefault(s => s.IsRunning && s.CallId == e.CallId)
+                      ?? turn.Steps.LastOrDefault(s => s.IsRunning && s.Tool == (e.ToolName ?? "工具"));
                 pending?.Complete(e.ToolSuccess && !denied, denied ? "（审批未通过）\n" + body : body, e.DurationMs);
                 break;
 
@@ -1384,7 +1401,48 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         Plan.Clear();
         foreach (var item in items)
             Plan.Add(new PlanItemVM(item));
+        _ = PersistPlanAsync();
     });
+
+    private sealed record StoredPlanItem(string Text, bool Done);
+
+    /// <summary>把当前任务计划持久化到会话行（跨重启恢复）。</summary>
+    private async Task PersistPlanAsync()
+    {
+        if (_sessionId <= 0)
+            return;
+        try
+        {
+            var json = Plan.Count == 0
+                ? string.Empty
+                : JsonSerializer.Serialize(Plan.Select(p => new StoredPlanItem(p.Text, p.Done)).ToList());
+            await _store.SetSessionPlanAsync(_sessionId, json);
+        }
+        catch
+        {
+            // 计划保存失败不影响主流程
+        }
+    }
+
+    /// <summary>恢复持久化的任务计划（无效 JSON 时视为无计划）。</summary>
+    private void RestorePlan(string? json)
+    {
+        Plan.Clear();
+        if (string.IsNullOrWhiteSpace(json))
+            return;
+        try
+        {
+            var items = JsonSerializer.Deserialize<List<StoredPlanItem>>(json);
+            if (items is null)
+                return;
+            foreach (var item in items)
+                Plan.Add(new PlanItemVM(new PlanItem(item.Done, item.Text)));
+        }
+        catch
+        {
+            // 损坏的计划 JSON 忽略
+        }
+    }
 
     private static bool LooksApprovalDenied(string? text) =>
         !string.IsNullOrEmpty(text) &&
@@ -1393,19 +1451,40 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
          text.Contains("\"status\":\"rejected\"", StringComparison.OrdinalIgnoreCase) ||
          text.Contains("\"status\": \"rejected\"", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>从库里恢复该会话的滚动摘要到当前运行时（会话/模型切换、启动时调用）。</summary>
+    private async Task RestoreSummaryFromStoreAsync()
+    {
+        if (_runtime is null || _sessionId <= 0)
+            return;
+        try
+        {
+            _runtime.Session.RestoreSummary(await _store.GetSessionSummaryAsync(_sessionId));
+        }
+        catch
+        {
+            // 恢复失败不影响主流程
+        }
+    }
+
+    /// <summary>把当前滚动摘要持久化（每轮结束、手动压缩、清空上下文后调用）。</summary>
+    private async Task PersistSummaryAsync()
+    {
+        if (_sessionId <= 0)
+            return;
+        try
+        {
+            await _store.SetSessionSummaryAsync(_sessionId, _runtime?.Session.Summary ?? string.Empty);
+        }
+        catch
+        {
+            // 保存失败不影响主流程
+        }
+    }
+
     private void RebuildSessionHistoryUpTo(int turnIndex)
     {
         if (_runtime is null) return;
-        var history = new List<ChatMessage>();
-        for (var i = 0; i < turnIndex && i < Turns.Count; i++)
-        {
-            var turn = Turns[i];
-            if (!string.IsNullOrEmpty(turn.UserText))
-                history.Add(new ChatMessage(ChatRole.User, turn.UserText));
-            if (!string.IsNullOrEmpty(turn.AssistantText))
-                history.Add(new ChatMessage(ChatRole.Assistant, turn.AssistantText));
-        }
-        _runtime.Session.ReplaceHistory(history);
+        _runtime.Session.ReplaceHistory(BuildHistoryFromTurns(Turns, turnIndex));
     }
 
     private async Task PersistTranscriptAsync()
@@ -1415,6 +1494,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             if (!string.IsNullOrEmpty(turn.UserText) || string.IsNullOrEmpty(turn.StorageText) is false)
                 messages.Add(("user", turn.StorageText ?? turn.UserText));
+            foreach (var step in turn.Steps)
+                messages.Add(("tool", AgentTranscript.Serialize(step)));
             if (!string.IsNullOrEmpty(turn.AssistantText))
                 messages.Add(("assistant", turn.AssistantText));
         }
@@ -1423,12 +1504,38 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void RefreshContextInfo()
     {
-        var tokens = _runtime?.Session.EstimatedTokens ?? 0;
+        var session = _runtime?.Session;
+        var tokens = session?.EstimatedTokensCalibrated ?? 0;
         var tools = _runtime?.ToolCount ?? 0;
         var limit = _agentConfig.ContextTokenLimit;
         ContextPercent = limit > 0 ? Math.Min(1.0, (double)tokens / limit) : 0;
         var pct = limit > 0 ? $" ({ContextPercent * 100:F0}%)" : string.Empty;
-        ContextInfo = $"轮次 {Turns.Count} · 上下文 ~{tokens} tokens{pct} · 上限 {_agentConfig.ContextLimit} 条 / {limit} tokens{( _agentConfig.AutoSummarize ? " · 自动摘要" : "")} · {tools} 工具";
+        var usage = session is { HasRealUsage: true }
+            ? $" · 真实用量 in {session.SessionInputTokens} / out {session.SessionOutputTokens} tokens"
+              + (session.SessionCachedInputTokens > 0
+                  ? $" · 缓存命中 {session.SessionCachedInputTokens} ({(session.SessionInputTokens > 0 ? session.SessionCachedInputTokens * 100 / session.SessionInputTokens : 0)}%)"
+                  : string.Empty)
+            : " · 估算值(该模型未返回用量)";
+        ContextInfo = $"轮次 {Turns.Count} · 上下文 ~{tokens} tokens{pct}{usage} · 上限 {_agentConfig.ContextLimit} 条 / {limit} tokens{( _agentConfig.AutoSummarize ? " · 自动摘要" : "")} · {tools} 工具";
+
+        if (session is null)
+        {
+            ContextInfoTooltip = ContextInfo;
+            return;
+        }
+
+        var b = session.GetContextBreakdown();
+        var lines = new List<string>
+        {
+            ContextInfo,
+            "── 构成（估算）──",
+            $"系统提示 ~{b.SystemPrompt}",
+            $"工具定义 ~{b.ToolDefinitions}（固定前缀，不计入上限）",
+            $"摘要 ~{b.Summary}",
+            $"用户 ~{b.User} · 助手 ~{b.Assistant} · 工具结果 ~{b.ToolResults}",
+            $"消息合计 ~{b.MessagesTotal} · 请求合计(含工具) ~{b.RequestTotal}"
+        };
+        ContextInfoTooltip = string.Join("\n", lines);
     }
 
     /// <summary>解析持久化的用户消息：剥离附件标记行，收集图片绝对路径，文件以名字回显。</summary>
@@ -1542,7 +1649,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             if (vision && File.Exists(abs))
             {
-                try { dataParts.Add(new DataContent(await File.ReadAllBytesAsync(abs), MediaTypeFromExt(abs))); }
+                try
+                {
+                    var parsed = AttachmentService.Parse(abs);
+                    if (parsed.ImageBytes is not null)
+                        dataParts.Add(new DataContent(parsed.ImageBytes, parsed.MediaType ?? "image/png"));
+                }
                 catch { model.Append($"\n（图片 {name} 读取失败）"); }
             }
             else
@@ -1752,16 +1864,20 @@ public class AgentTurn : INotifyPropertyChanged
 /// <summary>一次工具调用（可展开看完整入参/结果，带耗时与重试）。</summary>
 public sealed class AgentStep : INotifyPropertyChanged
 {
-    public AgentStep(string tool, string argsJson, bool destructive = false)
+    public AgentStep(string tool, string argsJson, bool destructive = false, string? callId = null)
     {
         Tool = tool;
         ArgsJson = argsJson;
         Destructive = destructive;
+        CallId = callId;
     }
 
     public string Tool { get; }
     public string ArgsJson { get; }
     public bool Destructive { get; }
+
+    /// <summary>模型侧的工具调用 Id（并行执行时用于把结果精确回填到对应步骤）。</summary>
+    public string? CallId { get; }
 
     private bool _isRunning = true;
     public bool IsRunning

@@ -45,6 +45,9 @@ public partial class App : Application
         {
             // 调度器启动失败不影响 App
         }
+
+        // 端口转发：退出时统一停止活动隧道并断开 SSH 连接
+        Exit += (_, _) => AppServiceFactory.DisposePortForwardService();
     }
 
     private static SyncScheduler? _syncScheduler;

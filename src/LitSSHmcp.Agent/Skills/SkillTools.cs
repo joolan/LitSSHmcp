@@ -4,8 +4,8 @@ using Microsoft.Extensions.AI;
 namespace LitSSHmcp.Agent;
 
 /// <summary>
-/// 技能参考文件工具（本地、非 MCP）：只读，路径限制在技能目录内。
-/// 技能正文（SKILL.md）已注入系统提示，<c>references/</c> 等细节按需用 <c>skill_read</c> 读取，避免每次请求都携带整个技能目录。
+/// 技能文件工具（本地、非 MCP）：只读，路径限制在技能目录内。
+/// 技能索引（大技能的标题/描述/章节）已注入系统提示，SKILL.md 全文与 <c>references/</c> 等细节按需用 <c>skill_read</c> 读取，避免每次请求都携带整个技能目录。
 /// </summary>
 public static class SkillTools
 {
@@ -17,14 +17,14 @@ public static class SkillTools
 
         var list = new LocalFunction(
             "skill_list",
-            "列出可用的技能参考文件(相对技能目录的路径)",
+            "列出可用的技能文件(相对技能目录的路径)",
             """{"type":"object","properties":{}}""",
             _ => ListFiles(root));
 
         var read = new LocalFunction(
             "skill_read",
-            "读取技能参考文件(如 references/ssh-workarounds.md); path 相对技能目录, 只读",
-            """{"type":"object","properties":{"path":{"type":"string","description":"相对技能目录的文件路径, 如 references/ssh-workarounds.md"}},"required":["path"]}""",
+            "读取技能文件全文(如 SKILL.md 或 references/ssh-workarounds.md); path 相对技能目录, 只读",
+            """{"type":"object","properties":{"path":{"type":"string","description":"相对技能目录的文件路径, 如 SKILL.md、references/ssh-workarounds.md"}},"required":["path"]}""",
             args => Read(root, ArgumentReader.ReadString(args, "path")));
 
         return new IAgentTool[] { new LocalAgentTool(list, readOnly: true), new LocalAgentTool(read, readOnly: true) };

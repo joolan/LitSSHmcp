@@ -20,8 +20,6 @@ public static class SlashCommands
     public const string CompactSession = "/压缩会话";
     public const string ClearScreen = "/清空屏幕";
     public const string ClearContext = "/清空上下文";
-    public const string ReadOnly = "/只读";
-    public const string Tools = "/工具";
 
     public static readonly IReadOnlyList<SlashCommand> All = new[]
     {
@@ -29,8 +27,6 @@ public static class SlashCommands
         new SlashCommand(CompactSession, "立即压缩当前会话上下文（把较早轮次摘要后丢弃）", SlashCommandKind.Action),
         new SlashCommand(ClearScreen, "只清空屏幕显示（会话上下文与模型记忆保留）", SlashCommandKind.Action),
         new SlashCommand(ClearContext, "只重置模型上下文（保留屏幕与记录，不删除会话记录）", SlashCommandKind.Action),
-        new SlashCommand(ReadOnly, "切换会话只读模式（仅保留只读工具；再次执行或点「只读」标签退出）", SlashCommandKind.Action),
-        new SlashCommand(Tools, "选择本次会话可用的工具分组（多选；不勾=不限制；也可直接输入 /工具 log mysql）", SlashCommandKind.Action),
     };
 
     /// <summary>输入是否正处于“正在输入斜杠命令”状态（以 / 开头且首个 token 内无空白）；是则返回该前缀，否则 null。</summary>

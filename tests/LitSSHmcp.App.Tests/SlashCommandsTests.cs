@@ -47,20 +47,23 @@ public class SlashCommandsTests
         => Assert.Contains(SlashCommands.All, c => c.Name == SlashCommands.ClearScreen);
 
     [Fact]
-    public void Clear_context_readonly_tools_registered()
+    public void Clear_context_command_registered()
+        => Assert.Contains(SlashCommands.All, c => c.Name == SlashCommands.ClearContext);
+
+    [Fact]
+    public void Removed_tool_commands_are_not_registered()
     {
-        Assert.Contains(SlashCommands.All, c => c.Name == SlashCommands.ClearContext);
-        Assert.Contains(SlashCommands.All, c => c.Name == SlashCommands.ReadOnly);
-        Assert.Contains(SlashCommands.All, c => c.Name == SlashCommands.Tools);
+        Assert.DoesNotContain(SlashCommands.All, c => c.Name == "/只读");
+        Assert.DoesNotContain(SlashCommands.All, c => c.Name == "/工具");
     }
 
     [Fact]
     public void Parse_supports_arguments()
     {
-        var (cmd, args) = SlashCommands.Parse("/工具 log mysql");
+        var (cmd, args) = SlashCommands.Parse("/压缩会话 附带说明");
         Assert.NotNull(cmd);
-        Assert.Equal(SlashCommands.Tools, cmd!.Name);
-        Assert.Equal("log mysql", args);
+        Assert.Equal(SlashCommands.CompactSession, cmd!.Name);
+        Assert.Equal("附带说明", args);
     }
 
     [Fact]

@@ -104,6 +104,14 @@ public static class ConfigMigrator
             changed = true;
         }
 
+        // 默认值刷新：旧默认 contextTokenLimit=24000 偏小，随模型窗口普遍增大升级为 96000。
+        // 仅在仍是旧默认值时替换，用户手动设过其它值则保留。
+        if (config.Agent.ContextTokenLimit == 24000)
+        {
+            config.Agent.ContextTokenLimit = 96000;
+            changed = true;
+        }
+
         if (config.SyncTasks == null)
         {
             config.SyncTasks = Array.Empty<SyncTaskConfig>();

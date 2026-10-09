@@ -2,6 +2,8 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using UglyToad.PdfPig;
 
 namespace LitSSHmcp.App.Services;
@@ -39,7 +41,8 @@ public static class AttachmentService
         if (ImageExts.Contains(ext))
         {
             var bytes = File.ReadAllBytes(path);
-            return new ParsedAttachment(name, AttachmentKind.Image, MediaTypeOf(ext), bytes, string.Empty);
+            var (outBytes, outMedia) = DownscaleImage(bytes, MediaTypeOf(ext));
+            return new ParsedAttachment(name, AttachmentKind.Image, outMedia, outBytes, string.Empty);
         }
 
         if (TextExts.Contains(ext))
@@ -53,6 +56,59 @@ public static class AttachmentService
 
         return new ParsedAttachment(name, AttachmentKind.Document, null, null,
             $"(暂不支持解析的文件类型 {ext}；可将其放到服务器后用工具分析，或转为文本再附上)");
+    }
+
+    private const int MaxImageDimension = 1536;
+    private const int JpegQuality = 85;
+
+    /// <summary>
+    /// 发送前压缩图片：最长边 &gt; <see cref="MaxImageDimension"/> 时等比缩放；JPEG 源转 JPEG(q85)，其余转 PNG。
+    /// 任何解码/编码异常或压缩后反而更大时，原样返回，保证不劣化。
+    /// </summary>
+    private static (byte[] Bytes, string MediaType) DownscaleImage(byte[] bytes, string mediaType)
+    {
+        try
+        {
+            using var input = new MemoryStream(bytes);
+            var decoder = BitmapDecoder.Create(input, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+            if (decoder.Frames.Count == 0)
+                return (bytes, mediaType);
+
+            var frame = decoder.Frames[0];
+            var longSide = Math.Max(frame.PixelWidth, frame.PixelHeight);
+
+            // 尺寸不大且体积可控：原样返回，避免无谓重编码。
+            if (longSide <= MaxImageDimension && bytes.Length <= 1_500_000)
+                return (bytes, mediaType);
+
+            BitmapSource output = frame;
+            if (longSide > MaxImageDimension)
+            {
+                var scale = (double)MaxImageDimension / longSide;
+                output = new TransformedBitmap(frame, new ScaleTransform(scale, scale));
+            }
+            if (output.CanFreeze)
+                output.Freeze();
+
+            var useJpeg = string.Equals(mediaType, "image/jpeg", StringComparison.OrdinalIgnoreCase);
+            BitmapEncoder encoder = useJpeg
+                ? new JpegBitmapEncoder { QualityLevel = JpegQuality }
+                : new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(output));
+
+            using var ms = new MemoryStream();
+            encoder.Save(ms);
+            var result = ms.ToArray();
+
+            // 仅在确实变小时采用，避免 PNG 重编码把 JPEG 撑大。
+            return result.Length < bytes.Length
+                ? (result, useJpeg ? "image/jpeg" : "image/png")
+                : (bytes, mediaType);
+        }
+        catch
+        {
+            return (bytes, mediaType);
+        }
     }
 
     private static string MediaTypeOf(string ext) => ext switch

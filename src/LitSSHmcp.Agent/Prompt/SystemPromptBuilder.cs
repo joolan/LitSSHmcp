@@ -13,7 +13,9 @@ public static class SystemPromptBuilder
         "3) 整机态势优先用 ssh_snapshot_get; 仅当确需最新且快照较旧时才 ssh_snapshot_refresh(有最短刷新间隔, 同一任务内不要重复刷新)。\n" +
         "4) 敏感/写操作(命令/SQL/文件/重启)会弹人工审批; 返回 rejected/approval_timeout 时不要反复重试, 向用户说明。\n" +
         "5) 回答用简体中文, 先给结论与证据(工具+关键输出), 再给处置建议; 简洁、面向运维。\n" +
-        "6) 一次只调用必要的工具, 避免无意义的重复调用; 多个只读提权检查尽量合并为一条命令, 减少审批次数。";
+        "6) 一次只调用必要的工具, 避免无意义的重复调用; 多个只读提权检查尽量合并为一条命令, 减少审批次数。\n" +
+        "7) 变更类操作遵循\"先只读取证 → 定位根因 → 最小变更 → 变更后验证\"; 说明影响与回滚方式。\n" +
+        "8) 同一工具/命令连续失败两次(参数/权限/网络等)就换策略或向用户说明, 不要重复同样的失败调用。";
 
     public static string Build(string? serverInstructions, string? skills, string? userPrompt, bool workspaceTools = true,
         IReadOnlyList<string>? skillFiles = null, bool spillTools = false, bool subAgent = false, string? responseStyle = null)
@@ -62,6 +64,7 @@ public static class SystemPromptBuilder
         {
             sb.AppendLine();
             sb.AppendLine("## 运维技能(按需参考)");
+            sb.AppendLine("以下为技能参考：小技能全文内联；大技能已内联**核心章节**（其余章节只列标题），需要完整流程/展开章节时用 skill_read(path=\"SKILL.md\") 读取全文再执行。");
             sb.AppendLine(skills.Trim());
         }
 

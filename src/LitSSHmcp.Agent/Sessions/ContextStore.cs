@@ -32,6 +32,18 @@ public interface IContextStore
     Task<List<AgentMessageRow>> GetMessagesAsync(long sessionId, CancellationToken ct = default);
     Task TouchSessionAsync(long id, CancellationToken ct = default);
 
+    /// <summary>读取会话的滚动摘要（裁剪旧轮次后压缩保存的文本；无则空串）。</summary>
+    Task<string> GetSessionSummaryAsync(long id, CancellationToken ct = default);
+
+    /// <summary>保存（或清空传空串）会话的滚动摘要。</summary>
+    Task SetSessionSummaryAsync(long id, string summary, CancellationToken ct = default);
+
+    /// <summary>读取会话的任务计划（JSON 数组；无则空串）。</summary>
+    Task<string> GetSessionPlanAsync(long id, CancellationToken ct = default);
+
+    /// <summary>保存（或清空传空串）会话的任务计划。</summary>
+    Task SetSessionPlanAsync(long id, string planJson, CancellationToken ct = default);
+
     /// <summary>按保留策略裁剪历史（每会话消息上限 / 最旧会话天数 / 会话数上限）；返回删除的消息数。</summary>
     Task<int> PruneAsync(int maxSessions, int maxMessagesPerSession, int retentionDays, CancellationToken ct = default);
 }
@@ -123,6 +135,30 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         {
             // 列已存在
         }
+
+        // 兼容旧库：补 Summary 列（滚动摘要，跨重启恢复用）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN Summary TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // 兼容旧库：补 Plan 列（任务计划 JSON，跨重启恢复用）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN Plan TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
     }
 
     public async Task<long> CreateSessionAsync(string title, CancellationToken ct = default)
@@ -187,6 +223,36 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     public Task TouchSessionAsync(long id, CancellationToken ct = default) =>
         ExecAsync("UPDATE agent_sessions SET UpdatedAt=@now WHERE Id=@id;",
             new() { ["@now"] = DateTime.UtcNow.ToString("O"), ["@id"] = id }, ct);
+
+    public async Task<string> GetSessionSummaryAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Summary FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : string.Empty;
+    }
+
+    public Task SetSessionSummaryAsync(long id, string summary, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET Summary=@v WHERE Id=@id;",
+            new() { ["@v"] = summary ?? string.Empty, ["@id"] = id }, ct);
+
+    public async Task<string> GetSessionPlanAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Plan FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : string.Empty;
+    }
+
+    public Task SetSessionPlanAsync(long id, string planJson, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET Plan=@v WHERE Id=@id;",
+            new() { ["@v"] = planJson ?? string.Empty, ["@id"] = id }, ct);
 
     public Task AppendMessageAsync(long sessionId, string role, string content, CancellationToken ct = default) =>
         ExecAsync("INSERT INTO agent_messages(SessionId, Role, Content, Timestamp) VALUES (@s, @r, @c, @now);",

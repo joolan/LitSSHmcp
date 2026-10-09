@@ -23,7 +23,6 @@ public partial class AgentWindow : FluentWindow
         _viewModel = new AgentViewModel(configService, store, skillsDir, action => Dispatcher.Invoke(action));
         _viewModel.SettingsRequested += tab => Dispatcher.Invoke(() => OpenSettings(tab));
         _viewModel.TemporaryChatRequested += text => Dispatcher.Invoke(() => OpenTemporaryChat(text));
-        _viewModel.ToolGroupsSelectorRequested += () => Dispatcher.Invoke(OpenToolGroupsDialog);
         DataContext = _viewModel;
         WindowLayout.Attach(this, "agent");
         _viewModel.Turns.CollectionChanged += (_, _) => ChatScroll.ScrollToEnd();
@@ -217,22 +216,11 @@ public partial class AgentWindow : FluentWindow
         }
     }
 
-    private void OnExitReadOnly(object sender, RoutedEventArgs e) => _viewModel.ExitReadOnly();
-
-    private void OnExitToolFilter(object sender, RoutedEventArgs e) => _viewModel.ExitToolFilter();
-
     /// <summary>键盘上下移动斜杠建议时，把选中项滚动到可见区。</summary>
     private void ScrollSlashIntoView()
     {
         if (_viewModel.SelectedSlashSuggestion is { } item)
             SlashList.ScrollIntoView(item);
-    }
-
-    private void OpenToolGroupsDialog()
-    {
-        var selected = ToolGroupsDialog.Show(this, _viewModel.CurrentSessionGroups);
-        if (selected is not null)
-            _viewModel.ApplyToolGroups(selected);
     }
 
     private TemporaryChatWindow? _temporaryChatWindow;

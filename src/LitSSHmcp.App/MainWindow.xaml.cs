@@ -130,6 +130,10 @@ public partial class MainWindow : FluentWindow
 
     private void OnHomeApplicationsClick(object sender, MouseButtonEventArgs e) => ViewModel.NavigateApplicationsCommand.Execute(null);
 
+    private void OnHomePortForwardClick(object sender, MouseButtonEventArgs e) => ViewModel.OpenPortForwardCommand.Execute(null);
+
+    private void OnHomeSyncClick(object sender, MouseButtonEventArgs e) => ViewModel.OpenSyncCommand.Execute(null);
+
     private void OnHomeAddImage(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog

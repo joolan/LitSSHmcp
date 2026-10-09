@@ -14,6 +14,33 @@ public static class AppServiceFactory
 {
     public static IConfigService CreateConfigService() => new ConfigService();
 
+    private static PortForwardService? _portForwardService;
+
+    /// <summary>
+    /// 端口转发服务（进程级单例）：窗口关闭后隧道仍保活，App 退出时由 DisposePortForwardService 统一停止。
+    /// 携带 known-hosts 与主机密钥模式，与其他 SSH 通路一致（TOFU/Strict/Off 按安全设置生效）。
+    /// </summary>
+    public static PortForwardService PortForwardService
+    {
+        get
+        {
+            if (_portForwardService is null)
+            {
+                var security = new SecurityOptionsProvider();
+                Interlocked.CompareExchange(
+                    ref _portForwardService,
+                    new PortForwardService(new FileSshKnownHostsStore(), () => security.SshHostKey.Mode),
+                    null);
+            }
+            return _portForwardService!;
+        }
+    }
+
+    /// <summary>App 退出时停止全部端口转发并断开连接（最多等待数秒）。</summary>
+    public static void DisposePortForwardService()
+        => Interlocked.Exchange(ref _portForwardService, null)?.Dispose();
+
+
     public static ISshService CreateSshService()
     {
         var security = new SecurityOptionsProvider();

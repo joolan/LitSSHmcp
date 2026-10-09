@@ -189,7 +189,7 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     private string _contextLimit = "40";
     public string ContextLimit { get => _contextLimit; set => Set(ref _contextLimit, value); }
 
-    private string _contextTokenLimit = "24000";
+    private string _contextTokenLimit = "96000";
     public string ContextTokenLimit { get => _contextTokenLimit; set => Set(ref _contextTokenLimit, value); }
 
     private bool _autoSummarize = true;
@@ -394,7 +394,7 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent.WorkspaceDir = WorkspaceDir ?? string.Empty;
             config.Agent.McpServerPath = McpServerPath ?? string.Empty;
             config.Agent.ContextLimit = (int)Math.Max(0, ParseLong(ContextLimit, 40));
-            config.Agent.ContextTokenLimit = (int)Math.Max(0, ParseLong(ContextTokenLimit, 24000));
+            config.Agent.ContextTokenLimit = (int)Math.Max(0, ParseLong(ContextTokenLimit, 96000));
             config.Agent.AutoSummarize = AutoSummarize;
             config.Agent.ToolResultMaxChars = (int)Math.Max(0, ParseLong(ToolResultMaxChars, 4000));
             config.Agent.CompactToolDescriptions = CompactToolDescriptions;

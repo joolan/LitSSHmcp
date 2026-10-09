@@ -238,6 +238,192 @@ public class AgentSessionTests
         Assert.Contains(userMessage.Contents, c => c is TextContent { Text: "看下这张图" });
     }
 
+    [Fact]
+    public void RepairOrphanToolCalls_fills_missing_result_from_history()
+    {
+        var call = new FunctionCallContent("c1", "echo", new Dictionary<string, object?>());
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.User, "u1"),
+            new(ChatRole.Assistant, new AIContent[] { call }),   // 孤儿：没有 tool 结果
+            new(ChatRole.User, "u2"),
+            new(ChatRole.Assistant, "a2"),
+        };
+
+        var session = new AgentSession(new FakeChatClient(),
+            new AgentProviderConfig { Model = "m", ApiKey = "k" }, Array.Empty<IAgentTool>(), "SYS",
+            new AgentConfig(), history);
+
+        var tool = Assert.Single(session.Messages, m => m.Role == ChatRole.Tool);
+        Assert.Equal("c1", Assert.IsType<FunctionResultContent>(Assert.Single(tool.Contents)).CallId);
+        // 合成结果紧随 assistant(call) 之后
+        Assert.IsType<FunctionCallContent>(Assert.Single(session.Messages[2].Contents));
+        Assert.Equal(ChatRole.Tool, session.Messages[3].Role);
+    }
+
+    [Fact]
+    public async Task RepairOrphanToolCalls_fills_missing_result_before_send()
+    {
+        var session = new AgentSession(new FakeChatClient(new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") })),
+            new AgentProviderConfig { Model = "m", ApiKey = "k" }, Array.Empty<IAgentTool>(), "SYS", new AgentConfig());
+
+        // 直接注入孤儿（模拟外部损坏/编辑后残留），发送前应被修复
+        var call = new FunctionCallContent("cX", "echo", new Dictionary<string, object?>());
+        session.Messages.Add(new ChatMessage(ChatRole.Assistant, new AIContent[] { call }));
+
+        await session.SendAsync("hi", null);
+
+        var tool = Assert.Single(session.Messages,
+            m => m.Role == ChatRole.Tool && ((FunctionResultContent)m.Contents[0]).CallId == "cX");
+        Assert.NotNull(tool);
+    }
+
+    [Fact]
+    public async Task Records_cached_input_tokens_from_usage()
+    {
+        var usage = new UsageDetails { InputTokenCount = 100, OutputTokenCount = 10, CachedInputTokenCount = 80 };
+        var session = new AgentSession(new UsageEmittingChatClient(usage),
+            new AgentProviderConfig { Model = "m", ApiKey = "k" }, Array.Empty<IAgentTool>(), "sys", new AgentConfig());
+
+        await session.SendAsync("hi", null);
+
+        Assert.Equal(80L, session.LastRequestCachedInputTokens!.Value);
+        Assert.Equal(80L, session.SessionCachedInputTokens);
+        Assert.Equal(100L, session.SessionInputTokens);
+    }
+
+    [Fact]
+    public async Task Executes_readonly_calls_in_parallel_keeping_call_order()
+    {
+        var callA = new FunctionCallContent("c1", "read_a", new Dictionary<string, object?>());
+        var callB = new FunctionCallContent("c2", "read_b", new Dictionary<string, object?>());
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, new AIContent[] { callA, callB }) }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+
+        // 两个工具都必须等到"对方也已开始"才返回：并行执行时立即满足；串行执行时第一个会超时 → 返回 NOT-PARALLEL。
+        using var bothStarted = new CountdownEvent(2);
+        async Task<object?> Probe(string result, CancellationToken ct)
+        {
+            bothStarted.Signal();
+            if (!bothStarted.Wait(TimeSpan.FromSeconds(3)))
+                return "NOT-PARALLEL";
+            await Task.Delay(20, ct);
+            return result;
+        }
+
+        var toolA = new FakeTool("read_a", "A", readOnly: true, invoke: ct => Probe("A", ct));
+        var toolB = new FakeTool("read_b", "B", readOnly: true, invoke: ct => Probe("B", ct));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { toolA, toolB }, "sys", new AgentConfig { ContextLimit = 0, ContextTokenLimit = 0 });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.DoesNotContain(events, e => e.Text == "NOT-PARALLEL");
+
+        // ToolCall 与 ToolResult 均按原始调用顺序推送（结果精确回填）
+        var kinds = events.Where(e => e.Kind is AgentEventKind.ToolCall or AgentEventKind.ToolResult)
+            .Select(e => $"{e.Kind}:{e.ToolName}").ToList();
+        Assert.Equal(new[] { "ToolCall:read_a", "ToolCall:read_b", "ToolResult:read_a", "ToolResult:read_b" }, kinds);
+
+        var toolMessages = session.Messages.Where(m => m.Role == ChatRole.Tool).ToList();
+        Assert.Equal(2, toolMessages.Count);
+        Assert.Equal("c1", Assert.IsType<FunctionResultContent>(toolMessages[0].Contents[0]).CallId);
+        Assert.Equal("c2", Assert.IsType<FunctionResultContent>(toolMessages[1].Contents[0]).CallId);
+        Assert.Contains("A", toolMessages.Select(m => ((FunctionResultContent)m.Contents[0]).Result?.ToString()));
+        Assert.Contains("B", toolMessages.Select(m => ((FunctionResultContent)m.Contents[0]).Result?.ToString()));
+    }
+
+    [Fact]
+    public async Task Consecutive_tool_failures_trip_the_breaker()
+    {
+        static ChatResponse Call(string id) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[] { new FunctionCallContent(id, "nope", new Dictionary<string, object?>()) })
+        });
+
+        var client = new FakeChatClient(
+            Call("c1"), Call("c2"), Call("c3"), Call("c4"), Call("c5"),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig { MaxToolIterations = 20 });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Error);
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Done);
+        Assert.Equal(4, session.Messages.Count(m => m.Role == ChatRole.Tool));   // 连续 4 次失败即熔断
+    }
+
+    [Fact]
+    public async Task Log_tool_result_keeps_tail_of_oversized_output()
+    {
+        var call = new FunctionCallContent("c1", "docker_logs", new Dictionary<string, object?>());
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, new AIContent[] { call }) }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+
+        var content = "START-MARKER" + new string('x', 400) + "LATEST-LINE";
+        var tool = new FakeTool("docker_logs", content);
+        var config = new AgentConfig { ContextLimit = 0, ContextTokenLimit = 0, ToolResultMaxChars = 100 };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new[] { tool }, "sys", config);
+
+        await session.SendAsync("hi", null);
+
+        var toolMessage = Assert.Single(session.Messages, m => m.Role == ChatRole.Tool);
+        var text = Assert.IsType<FunctionResultContent>(Assert.Single(toolMessage.Contents)).Result!.ToString()!;
+        Assert.Contains("LATEST-LINE", text);          // 保留最新日志（尾部）
+        Assert.DoesNotContain("START-MARKER", text);   // 头部被截断
+    }
+
+    [Fact]
+    public void Context_breakdown_splits_roles_summary_and_tools()
+    {
+        var tool = new FakeTool("echo", "r");
+        var session = new AgentSession(new FakeChatClient(), new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { tool }, "SYS", new AgentConfig());
+        session.Messages.Add(new ChatMessage(ChatRole.User, "你好"));
+        session.Messages.Add(new ChatMessage(ChatRole.Assistant, "abcdefgh"));
+        session.Messages.Add(new ChatMessage(ChatRole.Tool, new AIContent[] { new FunctionResultContent("c1", "result") }));
+        session.RestoreSummary("较早对话摘要");
+
+        var breakdown = session.GetContextBreakdown();
+
+        Assert.True(breakdown.SystemPrompt > 0);
+        Assert.True(breakdown.ToolDefinitions > 0);
+        Assert.True(breakdown.User > 0);
+        Assert.True(breakdown.Assistant > 0);
+        Assert.True(breakdown.ToolResults > 0);
+        Assert.True(breakdown.Summary > 0);
+        Assert.Equal(breakdown.MessagesTotal + breakdown.ToolDefinitions, breakdown.RequestTotal);
+        // 摘要单列，不混入系统提示
+        Assert.Equal(TokenEstimator.Estimate(new ChatMessage(ChatRole.System, "SYS")), breakdown.SystemPrompt);
+    }
+
+    private sealed class UsageEmittingChatClient : IChatClient
+    {
+        private readonly UsageDetails _usage;
+        public UsageEmittingChatClient(UsageDetails usage) => _usage = usage;
+
+        public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "ok") }));
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, new AIContent[] { new TextContent("ok") });
+            yield return new ChatResponseUpdate(ChatRole.Assistant, new AIContent[] { new UsageContent(_usage) });
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public void Dispose() { }
+    }
+
     private sealed class CapturingChatClient : IChatClient
     {
         public IEnumerable<ChatMessage>? LastMessages { get; private set; }
@@ -268,24 +454,36 @@ public class AgentSessionTests
     private sealed class FakeTool : IAgentTool
     {
         private readonly object? _result;
-        public FakeTool(string name, object? result)
+        private readonly bool _readOnly;
+        private readonly int _delayMs;
+        private readonly Func<CancellationToken, Task<object?>>? _invoke;
+
+        public FakeTool(string name, object? result, bool readOnly = false, int delayMs = 0,
+            Func<CancellationToken, Task<object?>>? invoke = null)
         {
             Name = name;
             _result = result;
+            _readOnly = readOnly;
+            _delayMs = delayMs;
+            _invoke = invoke;
             Tool = AIFunctionFactory.Create(() => _result, name);
         }
 
         public string Name { get; }
         public AITool Tool { get; }
         public bool Destructive => false;
-        public bool ReadOnly => false;
+        public bool ReadOnly => _readOnly;
         public string? ToolGroup => null;
         public IDictionary<string, object?>? LastArgs { get; private set; }
 
-        public Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct)
+        public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct)
         {
             LastArgs = arguments;
-            return Task.FromResult(_result);
+            if (_invoke is not null)
+                return await _invoke(ct);
+            if (_delayMs > 0)
+                await Task.Delay(_delayMs, ct);
+            return _result;
         }
     }
 

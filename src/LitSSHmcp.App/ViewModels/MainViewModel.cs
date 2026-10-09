@@ -22,7 +22,7 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ISshService _sshService;
     private readonly IAuditLogService _auditLogService;
     private readonly ITopologyStore _topologyStore = new TopologyStore();
-    private readonly PortForwardService _portForwardService = new();
+    private readonly PortForwardService _portForwardService = AppServiceFactory.PortForwardService;
 
     // 快照: 采集服务实例须长期复用(内存单飞锁绑定实例); 库供历史窗口读取。
     private readonly ISnapshotService _snapshotService = AppServiceFactory.CreateSnapshotService();
@@ -101,6 +101,11 @@ public class MainViewModel : INotifyPropertyChanged
         AskAgentCommand = new RelayCommand(_ => AskAgent());
         SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
+
+        // 看板：后台隧道起停（含自动重连）实时刷新"运行中"计数（事件在线程池触发 → 调度到 UI 线程）
+        _portForwardService.StateChanged += (_, _, _) =>
+            Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+                PortForwardRunningCount = _portForwardService.ActiveIds.Count));
 
         Sessions.CollectionChanged += (_, _) =>
         {
@@ -183,6 +188,38 @@ public class MainViewModel : INotifyPropertyChanged
     {
         get => _applicationCount;
         private set { _applicationCount = value; OnPropertyChanged(); }
+    }
+
+    private int _portForwardCount;
+    /// <summary>端口转发规则总数。</summary>
+    public int PortForwardCount
+    {
+        get => _portForwardCount;
+        private set { _portForwardCount = value; OnPropertyChanged(); }
+    }
+
+    private int _portForwardRunningCount;
+    /// <summary>当前运行中的端口转发数（含窗口关闭后的后台隧道）。</summary>
+    public int PortForwardRunningCount
+    {
+        get => _portForwardRunningCount;
+        private set { _portForwardRunningCount = value; OnPropertyChanged(); }
+    }
+
+    private int _syncTaskCount;
+    /// <summary>文件夹同步任务总数。</summary>
+    public int SyncTaskCount
+    {
+        get => _syncTaskCount;
+        private set { _syncTaskCount = value; OnPropertyChanged(); }
+    }
+
+    private int _syncTaskEnabledCount;
+    /// <summary>已启用的同步任务数。</summary>
+    public int SyncTaskEnabledCount
+    {
+        get => _syncTaskEnabledCount;
+        private set { _syncTaskEnabledCount = value; OnPropertyChanged(); }
     }
 
     private string _homeQuestion = string.Empty;
@@ -452,6 +489,10 @@ public class MainViewModel : INotifyPropertyChanged
 
             DatasourceCount = config.DataSources.Length;
             ApplicationCount = config.Applications.Length;
+            PortForwardCount = config.PortForwards.Length;
+            SyncTaskCount = config.SyncTasks.Length;
+            SyncTaskEnabledCount = config.SyncTasks.Count(t => t.Enabled);
+            PortForwardRunningCount = _portForwardService.ActiveIds.Count;
             OnPropertyChanged(nameof(ServerCount));
             OnPropertyChanged(nameof(DisabledServerCount));
 
@@ -637,7 +678,11 @@ public class MainViewModel : INotifyPropertyChanged
 
         var vm = new PortForwardViewModel(_configService, _portForwardService, Servers);
         _portForwardWindow = new PortForwardWindow(vm) { Topmost = false };
-        _portForwardWindow.Closed += (_, _) => _portForwardWindow = null;
+        _portForwardWindow.Closed += (_, _) =>
+        {
+            _portForwardWindow = null;
+            _ = RefreshHomeCountsAsync(); // 规则可能增删/改
+        };
         _portForwardWindow.Show();
     }
 
@@ -653,8 +698,29 @@ public class MainViewModel : INotifyPropertyChanged
         }
 
         _syncWindow = new SyncWindow { Topmost = false };
-        _syncWindow.Closed += (_, _) => _syncWindow = null;
+        _syncWindow.Closed += (_, _) =>
+        {
+            _syncWindow = null;
+            _ = RefreshHomeCountsAsync(); // 同步任务可能增删/改启停
+        };
         _syncWindow.Show();
+    }
+
+    /// <summary>刷新主页看板计数（配置类计数 + 端口转发运行数）。</summary>
+    private async Task RefreshHomeCountsAsync()
+    {
+        try
+        {
+            var config = await _configService.LoadConfigAsync();
+            PortForwardCount = config.PortForwards.Length;
+            SyncTaskCount = config.SyncTasks.Length;
+            SyncTaskEnabledCount = config.SyncTasks.Count(t => t.Enabled);
+        }
+        catch
+        {
+            // 读取失败保持原值
+        }
+        PortForwardRunningCount = _portForwardService.ActiveIds.Count;
     }
 
     // SFTP 文件管理：本地+远程双栏 + 传输队列（每台服务器一个独立窗口）

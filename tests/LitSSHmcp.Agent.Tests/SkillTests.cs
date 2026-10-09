@@ -1,3 +1,4 @@
+using System.Text;
 using LitSSHmcp.Agent;
 using Xunit;
 
@@ -27,6 +28,39 @@ public class SkillTests : IDisposable
         Assert.Contains("SKILLBODY", text);
         Assert.DoesNotContain("TEMPLATE", text);
         Assert.DoesNotContain("REFCONTENT", text);
+    }
+
+    [Fact]
+    public void Load_inlines_core_sections_and_indexes_the_rest()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-skill-big-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("---");
+            sb.AppendLine("name: big-skill");
+            sb.AppendLine("description: 大技能测试");
+            sb.AppendLine("---");
+            sb.AppendLine("# 大技能");
+            sb.AppendLine("核心前言");
+            for (var i = 1; i <= 6; i++)
+                sb.AppendLine($"## 章节{i}\n" + new string('x', 1500));
+            File.WriteAllText(Path.Combine(dir, "SKILL.md"), sb.ToString());
+
+            var text = SkillRegistry.Load(dir);
+
+            Assert.Contains("核心前言", text);                 // preamble 内联
+            Assert.Contains(new string('x', 1500), text);      // 核心章节正文内联
+            Assert.Contains("核心章节已内联", text);
+            Assert.Contains("其余章节未展开", text);            // 超预算章节仅列标题
+            Assert.Contains("章节6", text);
+            Assert.Contains("skill_read", text);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { }
+        }
     }
 
     [Fact]

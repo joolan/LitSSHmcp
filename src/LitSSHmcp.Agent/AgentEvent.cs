@@ -22,4 +22,5 @@ public sealed record AgentEvent(
     string? ArgumentsJson = null,
     bool ToolSuccess = true,
     long DurationMs = 0,
-    bool Destructive = false);
+    bool Destructive = false,
+    string? CallId = null);

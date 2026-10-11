@@ -108,6 +108,135 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
     public ObservableCollection<AgentSessionRow> Sessions { get; } = new();
     public ObservableCollection<AgentSessionRow> FilteredSessions { get; } = new();
+
+    /// <summary>已定义的分组名（持久化；空分组也会在侧栏显示）。</summary>
+    public ObservableCollection<string> Groups { get; } = new();
+
+    /// <summary>侧栏扁平项：分组标题 + 会话（供带分组的列表渲染）。</summary>
+    public ObservableCollection<SidebarItemVM> SidebarItems { get; } = new();
+
+    private SidebarItemVM? _selectedSidebarItem;
+    /// <summary>侧栏选中项；选中会话项时联动 <see cref="SelectedSession"/>，标题项不可选。</summary>
+    public SidebarItemVM? SelectedSidebarItem
+    {
+        get => _selectedSidebarItem;
+        set
+        {
+            if (value is null)
+            {
+                Set(ref _selectedSidebarItem, null);
+                return;
+            }
+            if (value.Session is { } row)
+            {
+                Set(ref _selectedSidebarItem, value);
+                SelectedSession = row;
+            }
+            else
+            {
+                // 分组标题不可选：通知一次让 ListBox 回退到原选项
+                OnPropertyChanged(nameof(SelectedSidebarItem));
+            }
+        }
+    }
+
+    /// <summary>根据当前会话把侧栏选中项同步到（重建后的）对应项。</summary>
+    private void SyncSidebarSelection()
+    {
+        var match = _selectedSession is null
+            ? null
+            : SidebarItems.FirstOrDefault(i => i.Session is { } s && s.Id == _selectedSession.Id);
+        if (!ReferenceEquals(match, _selectedSidebarItem))
+        {
+            _selectedSidebarItem = match;
+            OnPropertyChanged(nameof(SelectedSidebarItem));
+        }
+    }
+
+    /// <summary>重建侧栏扁平项：未分组（有内容时）置顶 + 各命名分组（空也显示）下挂会话。</summary>
+    private void RebuildSidebar()
+    {
+        SidebarItems.Clear();
+        var scope = FilteredSessions.ToList();
+        var filtering = !string.IsNullOrWhiteSpace(_sessionFilter);
+
+        void AddBucket(string key, string display, bool alwaysShow)
+        {
+            var items = scope
+                .Where(s => string.Equals(s.Group ?? string.Empty, key, StringComparison.Ordinal))
+                .OrderByDescending(s => s.UpdatedAt, StringComparer.Ordinal)
+                .ToList();
+            if (items.Count == 0 && (!alwaysShow || filtering))
+                return;
+            SidebarItems.Add(new SidebarItemVM { IsHeader = true, GroupName = key, HeaderText = display, Count = items.Count });
+            foreach (var s in items)
+                SidebarItems.Add(new SidebarItemVM { Session = s });
+        }
+
+        AddBucket(string.Empty, "未分组", alwaysShow: false);
+        foreach (var g in Groups.Where(x => !string.IsNullOrWhiteSpace(x))
+                     .OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+            AddBucket(g, g, alwaysShow: true);
+
+        SyncSidebarSelection();
+    }
+
+    /// <summary>加载分组定义。</summary>
+    public async Task ReloadGroupsAsync()
+    {
+        try
+        {
+            var list = await _store.ListGroupsAsync();
+            Groups.Clear();
+            foreach (var g in list)
+                Groups.Add(g);
+        }
+        catch
+        {
+            // 读取失败忽略
+        }
+    }
+
+    /// <summary>新增分组。</summary>
+    public async Task AddGroupAsync(string name)
+    {
+        var g = name?.Trim();
+        if (string.IsNullOrEmpty(g))
+            return;
+        await _store.AddGroupAsync(g);
+        await ReloadGroupsAsync();
+        RebuildSidebar();
+    }
+
+    /// <summary>重命名分组。</summary>
+    public async Task RenameGroupAsync(string oldName, string newName)
+    {
+        var to = newName?.Trim();
+        if (string.IsNullOrEmpty(oldName) || string.IsNullOrEmpty(to))
+            return;
+        await _store.RenameGroupAsync(oldName, to);
+        await ReloadGroupsAsync();
+        await ReloadSessionsAsync();
+    }
+
+    /// <summary>删除分组（其下会话归入未分组）。</summary>
+    public async Task DeleteGroupAsync(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+        await _store.DeleteGroupAsync(name);
+        await ReloadGroupsAsync();
+        await ReloadSessionsAsync();
+    }
+
+    /// <summary>把某会话移动到指定分组（空=未分组）。</summary>
+    public async Task MoveSessionToGroupAsync(AgentSessionRow? session, string group)
+    {
+        if (session is null)
+            return;
+        await _store.SetSessionGroupAsync(session.Id, group ?? string.Empty);
+        await ReloadSessionsAsync();
+    }
     public ObservableCollection<AgentTurn> Turns { get; } = new();
 
     /// <summary>对话列表的分页视图（只渲染最近 N 轮，支持"加载更早"）；模型上下文仍是全量。</summary>
@@ -718,19 +847,23 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             SelectedProvider = PickProvider(_agentConfig.ActiveProviderId);
 
             LoadingText = "正在加载会话…";
+            await ReloadGroupsAsync();
             await ReloadSessionsAsync();
-            var target = Sessions.FirstOrDefault();
-            if (target is null)
-            {
-                _sessionId = await _store.CreateSessionAsync("运维会话");
-                await ReloadSessionsAsync();
-                target = Sessions.FirstOrDefault();
-            }
-            SelectedSession = target;
             _suppressSelection = false;
-
+            var target = Sessions.FirstOrDefault();
             if (target is not null)
+            {
+                _suppressSelection = true;
+                SelectedSession = target;
+                _suppressSelection = false;
                 await LoadSessionAsync(target.Id);
+            }
+            else
+            {
+                // 没有任何历史会话：进入“新任务”态（不建空会话，首次发送消息才落库）。
+                StartNewTask();
+                await ResetRuntimeAsync(null);
+            }
 
             if (Providers.Count == 0)
                 StatusMessage = "未配置大模型：请点「AI 助手设置」添加并启用一个 OpenAI 兼容模型。";
@@ -773,6 +906,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         var keyword = SessionFilter?.Trim() ?? string.Empty;
         foreach (var s in Sessions.Where(s => keyword.Length == 0 || s.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
             FilteredSessions.Add(s);
+        RebuildSidebar();
     }
 
     private async Task LoadSessionAsync(long id)
@@ -963,22 +1097,26 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public async Task NewSessionAsync()
     {
-        _sessionId = await _store.CreateSessionAsync("运维会话");
+        // 懒建：只进入“未保存的新任务”态，不写库；首次发送消息时才落库。
+        StartNewTask();
+        await ResetRuntimeAsync(null);
+    }
+
+    /// <summary>进入“未保存的新任务”态（不写库；首次发送消息时才落库）。</summary>
+    private void StartNewTask()
+    {
+        _sessionId = 0;
         _sessionTitled = false;
         Turns.Clear();
         Plan.Clear();
         _editingTurn = null;
-        await ReloadSessionsAsync();
-        _suppressSelection = true;
-        SelectedSession = Sessions.FirstOrDefault(s => s.Id == _sessionId);
-        _suppressSelection = false;
-        if (SelectedProvider is not null)
-            _ = PersistProviderSelectionAsync(SelectedProvider.Id);
         _activeSkillIds = new();
         IsPlanMode = false;
         _toolPolicy = new Dictionary<string, AgentToolPolicy>(StringComparer.OrdinalIgnoreCase);
         ReloadSkillCatalog();
-        await ResetRuntimeAsync(null);
+        SelectedSession = null;
+        SyncSidebarSelection();
+        RefreshContextInfo();
     }
 
     private Task DeleteSessionAsync() => DeleteSessionAsync(SelectedSession);
@@ -994,16 +1132,18 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         var next = Sessions.FirstOrDefault();
         if (next is null)
         {
-            _sessionId = await _store.CreateSessionAsync("运维会话");
-            await ReloadSessionsAsync();
-            next = Sessions.FirstOrDefault();
-            wasCurrent = true;
+            if (wasCurrent)
+            {
+                StartNewTask();
+                await ResetRuntimeAsync(null);
+            }
+            return;
         }
 
         _suppressSelection = true;
         SelectedSession = wasCurrent ? next : Sessions.FirstOrDefault(s => s.Id == _sessionId);
         _suppressSelection = false;
-        if (wasCurrent && next is not null)
+        if (wasCurrent)
             await LoadSessionAsync(next.Id);
     }
 
@@ -1033,16 +1173,18 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         var next = Sessions.FirstOrDefault();
         if (next is null)
         {
-            _sessionId = await _store.CreateSessionAsync("运维会话");
-            await ReloadSessionsAsync();
-            next = Sessions.FirstOrDefault();
-            wasCurrent = true;
+            if (wasCurrent)
+            {
+                StartNewTask();
+                await ResetRuntimeAsync(null);
+            }
+            return;
         }
 
         _suppressSelection = true;
         SelectedSession = wasCurrent ? next : Sessions.FirstOrDefault(s => s.Id == _sessionId);
         _suppressSelection = false;
-        if (wasCurrent && next is not null)
+        if (wasCurrent)
             await LoadSessionAsync(next.Id);
     }
 
@@ -1670,11 +1812,28 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (_runtime is null)
             return;
 
-        // 首次用户消息自动命名
-        if (_sessionTitled is false)
+        // 懒建会话：点“新建任务”不写库；首次真正发送消息时才落库并出现在侧栏。
+        if (_sessionId <= 0)
         {
+            var title = BuildSessionTitle(turn.UserText, turn.Images.Count > 0, turn.UserText.Contains("📎"));
+            _sessionId = await _store.CreateSessionAsync(title);
+            _sessionTitled = true;
+            if (SelectedProvider is not null)
+                await PersistProviderSelectionAsync(SelectedProvider.Id);
+            await PersistActiveSkillsAsync();
+            await PersistPlanModeAsync();
+            await PersistToolPolicyAsync();
+            await ReloadSessionsAsync();
+            _suppressSelection = true;
+            SelectedSession = Sessions.FirstOrDefault(s => s.Id == _sessionId);
+            _suppressSelection = false;
+        }
+        else if (_sessionTitled is false)
+        {
+            // 旧库中“有会话但尚未发过消息”的空会话：同样以首条消息命名。
             await _store.RenameSessionAsync(_sessionId, BuildSessionTitle(turn.UserText, turn.Images.Count > 0, turn.UserText.Contains("📎")));
             _sessionTitled = true;
+            await ReloadSessionsAsync();
         }
 
         IsBusy = true;
@@ -2488,4 +2647,17 @@ public sealed class PlanItemVM
     public bool Done { get; }
     public string Text { get; }
     public string Glyph => Done ? "☑" : "☐";
+}
+
+/// <summary>AI 助手侧栏项：分组标题（<see cref="IsHeader"/>）或一个会话行。</summary>
+public sealed class SidebarItemVM
+{
+    public bool IsHeader { get; init; }
+    public string HeaderText { get; init; } = string.Empty;
+    public int Count { get; init; }
+
+    /// <summary>分组键（空串=未分组）；标题项用于右键重命名/删除分组。</summary>
+    public string GroupName { get; init; } = string.Empty;
+
+    public AgentSessionRow? Session { get; init; }
 }

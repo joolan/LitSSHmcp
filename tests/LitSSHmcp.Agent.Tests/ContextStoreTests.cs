@@ -41,6 +41,31 @@ public class ContextStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Groups_add_assign_rename_delete()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("会话");
+
+        await store.AddGroupAsync("生产");
+        Assert.Contains("生产", await store.ListGroupsAsync());
+
+        await store.SetSessionGroupAsync(id, "生产");
+        Assert.Equal("生产", (await store.ListSessionsAsync())[0].Group);
+        Assert.Equal("生产", (await store.ListSessionsAsync())[0].GroupText);
+
+        await store.RenameGroupAsync("生产", "线上");
+        Assert.Contains("线上", await store.ListGroupsAsync());
+        Assert.DoesNotContain("生产", await store.ListGroupsAsync());
+        Assert.Equal("线上", (await store.ListSessionsAsync())[0].Group);
+
+        await store.DeleteGroupAsync("线上");
+        Assert.Empty(await store.ListGroupsAsync());
+        Assert.Equal(string.Empty, (await store.ListSessionsAsync())[0].Group);
+        Assert.Equal("未分组", (await store.ListSessionsAsync())[0].GroupText);
+    }
+
+    [Fact]
     public async Task Rename_and_delete()
     {
         var store = NewStore();

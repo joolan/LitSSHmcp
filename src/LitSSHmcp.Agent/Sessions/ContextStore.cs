@@ -62,14 +62,32 @@ public interface IContextStore
     /// <summary>保存会话的工具审批策略。</summary>
     Task SetSessionToolPolicyAsync(long id, string toolPolicyJson, CancellationToken ct = default);
 
+    /// <summary>设置会话所属分组（空串=未分组）。</summary>
+    Task SetSessionGroupAsync(long id, string group, CancellationToken ct = default);
+
+    /// <summary>列出已定义的分组名（按名称排序）。</summary>
+    Task<List<string>> ListGroupsAsync(CancellationToken ct = default);
+
+    /// <summary>新增分组（已存在则忽略）。</summary>
+    Task AddGroupAsync(string name, CancellationToken ct = default);
+
+    /// <summary>重命名分组（同步更新其下会话的分组名）。</summary>
+    Task RenameGroupAsync(string oldName, string newName, CancellationToken ct = default);
+
+    /// <summary>删除分组（其下会话归入「未分组」）。</summary>
+    Task DeleteGroupAsync(string name, CancellationToken ct = default);
+
     /// <summary>按保留策略裁剪历史（每会话消息上限 / 最旧会话天数 / 会话数上限）；返回删除的消息数。</summary>
     Task<int> PruneAsync(int maxSessions, int maxMessagesPerSession, int retentionDays, CancellationToken ct = default);
 }
 
-public sealed record AgentSessionRow(long Id, string Title, string CreatedAt, string UpdatedAt, string? ProviderId = null)
+public sealed record AgentSessionRow(long Id, string Title, string CreatedAt, string UpdatedAt, string? ProviderId = null, string Group = "")
 {
     /// <summary>会话最后活跃的相对时间（刚刚 / x分钟前 / x小时前 / x天前 / 日期）。</summary>
     public string UpdatedText => RelativeTime.Format(UpdatedAt);
+
+    /// <summary>分组显示名（空=未分组）。</summary>
+    public string GroupText => string.IsNullOrWhiteSpace(Group) ? "未分组" : Group;
 }
 
 /// <summary>相对时间格式化（本地时区）。</summary>
@@ -213,6 +231,30 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         {
             // 列已存在
         }
+
+        // 兼容旧库：补 Group 列（会话分组名；''=未分组）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN \"Group\" TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // 分组定义表（用于持久化分组名，使"空分组"也能显示）
+        try
+        {
+            await using var create = connection.CreateCommand();
+            create.CommandText = "CREATE TABLE IF NOT EXISTS agent_groups (Name TEXT PRIMARY KEY, CreatedAt TEXT NOT NULL);";
+            await create.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 忽略
+        }
     }
 
     public async Task<long> CreateSessionAsync(string title, CancellationToken ct = default)
@@ -233,11 +275,12 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId FROM agent_sessions WHERE Archived=0 ORDER BY UpdatedAt DESC;";
+        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId, \"Group\" FROM agent_sessions WHERE Archived=0 ORDER BY UpdatedAt DESC;";
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             list.Add(new AgentSessionRow(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
-                reader.IsDBNull(4) ? null : reader.GetString(4)));
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? string.Empty : reader.GetString(5)));
         return list;
     }
 
@@ -247,11 +290,12 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId FROM agent_sessions WHERE Archived=1 ORDER BY UpdatedAt DESC;";
+        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId, \"Group\" FROM agent_sessions WHERE Archived=1 ORDER BY UpdatedAt DESC;";
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             list.Add(new AgentSessionRow(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
-                reader.IsDBNull(4) ? null : reader.GetString(4)));
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? string.Empty : reader.GetString(5)));
         return list;
     }
 
@@ -352,6 +396,71 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     public Task SetSessionToolPolicyAsync(long id, string toolPolicyJson, CancellationToken ct = default) =>
         ExecAsync("UPDATE agent_sessions SET ToolPolicy=@v WHERE Id=@id;",
             new() { ["@v"] = toolPolicyJson ?? string.Empty, ["@id"] = id }, ct);
+
+    public Task SetSessionGroupAsync(long id, string group, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET \"Group\"=@v WHERE Id=@id;",
+            new() { ["@v"] = group ?? string.Empty, ["@id"] = id }, ct);
+
+    public async Task<List<string>> ListGroupsAsync(CancellationToken ct = default)
+    {
+        var list = new List<string>();
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Name FROM agent_groups ORDER BY Name COLLATE NOCASE;";
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(reader.GetString(0));
+        return list;
+    }
+
+    public Task AddGroupAsync(string name, CancellationToken ct = default) =>
+        ExecAsync("INSERT OR IGNORE INTO agent_groups(Name, CreatedAt) VALUES (@n, @now);",
+            new() { ["@n"] = (name ?? string.Empty).Trim(), ["@now"] = DateTime.UtcNow.ToString("O") }, ct);
+
+    public async Task RenameGroupAsync(string oldName, string newName, CancellationToken ct = default)
+    {
+        var from = (oldName ?? string.Empty).Trim();
+        var to = (newName ?? string.Empty).Trim();
+        if (from.Length == 0 || to.Length == 0 || string.Equals(from, to, StringComparison.Ordinal))
+            return;
+
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "UPDATE agent_sessions SET \"Group\"=@to WHERE \"Group\"=@from;" +
+                              "INSERT OR IGNORE INTO agent_groups(Name, CreatedAt) VALUES (@to, @now);" +
+                              "DELETE FROM agent_groups WHERE Name=@from;";
+            cmd.Parameters.AddWithValue("@to", to);
+            cmd.Parameters.AddWithValue("@from", from);
+            cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+    }
+
+    public async Task DeleteGroupAsync(string name, CancellationToken ct = default)
+    {
+        var group = (name ?? string.Empty).Trim();
+        if (group.Length == 0)
+            return;
+
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "UPDATE agent_sessions SET \"Group\"='' WHERE \"Group\"=@g;" +
+                              "DELETE FROM agent_groups WHERE Name=@g;";
+            cmd.Parameters.AddWithValue("@g", group);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+    }
 
     public Task AppendMessageAsync(long sessionId, string role, string content, CancellationToken ct = default) =>
         ExecAsync("INSERT INTO agent_messages(SessionId, Role, Content, Timestamp) VALUES (@s, @r, @c, @now);",

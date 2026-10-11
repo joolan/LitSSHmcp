@@ -135,20 +135,82 @@ public partial class AgentWindow : FluentWindow
 
     private void OnSessionListRightClick(object sender, MouseButtonEventArgs e)
     {
-        _contextSession = FindSessionRow(e.OriginalSource as DependencyObject);
+        _contextSession = FindSidebarItem(e.OriginalSource as DependencyObject)?.Session;
         if (_contextSession is not null)
-            e.Handled = true;
+            e.Handled = true;   // 会话项：拦截，让列表菜单作用于该项；分组标题项：放行其自身菜单
     }
 
-    private static AgentSessionRow? FindSessionRow(DependencyObject? node)
+    private static SidebarItemVM? FindSidebarItem(DependencyObject? node)
     {
         while (node is not null)
         {
             if (node is System.Windows.Controls.ListBoxItem item)
-                return item.DataContext as AgentSessionRow;
+                return item.DataContext as SidebarItemVM;
             node = System.Windows.Media.VisualTreeHelper.GetParent(node);
         }
         return null;
+    }
+
+    // 新建分组
+    private async void OnNewGroup(object sender, RoutedEventArgs e)
+    {
+        var name = TextInputDialog.Prompt(this, "新建分组", "分组名称:", string.Empty);
+        if (!string.IsNullOrWhiteSpace(name))
+            await _viewModel.AddGroupAsync(name);
+    }
+
+    // 分组标题右键：重命名
+    private async void OnRenameGroup(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not SidebarItemVM { IsHeader: true } header)
+            return;
+        var name = TextInputDialog.Prompt(this, "重命名分组", "分组名称:", header.HeaderText);
+        if (!string.IsNullOrWhiteSpace(name))
+            await _viewModel.RenameGroupAsync(header.GroupName, name);
+    }
+
+    // 分组标题右键：删除（其下任务归入未分组）
+    private async void OnDeleteGroup(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not SidebarItemVM { IsHeader: true } header)
+            return;
+        if (header.GroupName.Length == 0)
+        {
+            System.Windows.MessageBox.Show("「未分组」不可删除。", "删除分组");
+            return;
+        }
+        if (System.Windows.MessageBox.Show($"删除分组「{header.HeaderText}」？其下任务将归入「未分组」。", "删除分组",
+                System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.OK)
+            return;
+        await _viewModel.DeleteGroupAsync(header.GroupName);
+    }
+
+    // 会话右键菜单打开：构建「移动到分组」子菜单（未分组 + 各分组，带勾选）
+    private void OnSessionMenuOpened(object sender, RoutedEventArgs e)
+    {
+        MoveGroupMenu.Items.Clear();
+        var session = _contextSession ?? _viewModel.SelectedSession;
+        var current = session?.Group ?? string.Empty;
+
+        void AddItem(string header, string group)
+        {
+            var item = new System.Windows.Controls.MenuItem
+            {
+                Header = header,
+                IsCheckable = true,
+                IsChecked = string.Equals(current, group, StringComparison.Ordinal)
+            };
+            item.Click += async (_, _) =>
+            {
+                if (session is not null)
+                    await _viewModel.MoveSessionToGroupAsync(session, group);
+            };
+            MoveGroupMenu.Items.Add(item);
+        }
+
+        AddItem("未分组", string.Empty);
+        foreach (var g in _viewModel.Groups)
+            AddItem(g, g);
     }
 
     private void OnDeleteSession(object sender, RoutedEventArgs e)

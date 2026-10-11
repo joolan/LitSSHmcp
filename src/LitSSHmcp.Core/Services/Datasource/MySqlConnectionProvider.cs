@@ -73,8 +73,8 @@ public class MySqlConnectionProvider : IMySqlConnectionProvider
                 Password = ds.Password ?? string.Empty,
                 Database = ds.DefaultDatabase ?? string.Empty,
                 ConnectionTimeout = 10,
-                DefaultCommandTimeout = 60,
-                Pooling = false
+                DefaultCommandTimeout = (uint)(ds.TimeoutSeconds is > 0 ? ds.TimeoutSeconds.Value : 60),
+                Pooling = ds.UsePooling && ds.AccessMode != AccessMode.SshTunnel
             };
 
             var connection = new MySqlConnection(builder.ConnectionString);

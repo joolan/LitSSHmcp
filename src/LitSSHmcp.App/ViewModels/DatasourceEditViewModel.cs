@@ -28,7 +28,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
     private string _statusMessage = string.Empty;
     private bool _isTestRunning;
     private bool _readOnlyMode;
-    private string _maxRowsText = string.Empty;
+    private bool _usePooling;    private string _maxRowsText = string.Empty;
     private string _timeoutText = string.Empty;
     private int _writeApprovalIndex;
 
@@ -69,6 +69,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             MaxRowsText = datasource.MaxRows?.ToString() ?? string.Empty;
             TimeoutText = datasource.TimeoutSeconds?.ToString() ?? string.Empty;
             WriteApprovalIndex = datasource.WriteApproval == WriteApprovalMode.AutoApprove ? 1 : 0;
+            UsePooling = datasource.UsePooling;
         }
         else if (prefill != null)
         {
@@ -165,6 +166,13 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
     {
         get => _readOnlyMode;
         set { _readOnlyMode = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>启用连接池（仅直连；经 SSH 隧道时无效）。</summary>
+    public bool UsePooling
+    {
+        get => _usePooling;
+        set { _usePooling = value; OnPropertyChanged(); }
     }
 
     public string MaxRowsText
@@ -312,6 +320,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             Description = Description,
             Tags = tags,
             ReadOnly = ReadOnlyMode,
+            UsePooling = UsePooling,
             MaxRows = int.TryParse(MaxRowsText?.Trim(), out var maxRows) && maxRows > 0 ? maxRows : null,
             TimeoutSeconds = int.TryParse(TimeoutText?.Trim(), out var timeout) && timeout > 0 ? timeout : null,
             WriteApproval = WriteApprovalIndex == 1 ? WriteApprovalMode.AutoApprove : WriteApprovalMode.Always

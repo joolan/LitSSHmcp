@@ -44,6 +44,9 @@ public class DataSourceConfig
 
     /// <summary>写操作审批策略：Always=一律桌面确认（默认）；AutoApprove=跳过桌面确认（仍受硬拦截规则）。</summary>
     public WriteApprovalMode WriteApproval { get; set; } = WriteApprovalMode.Always;
+
+    /// <summary>是否启用数据库连接池（默认关闭）。仅对直连生效；经 SSH 隧道时始终禁用（隧道随连接建立）。</summary>
+    public bool UsePooling { get; set; }
 }
 
 public class ApplicationConfig

@@ -77,8 +77,8 @@ public class PostgresConnectionProvider : IPostgresConnectionProvider
                 Password = ds.Password ?? string.Empty,
                 Database = string.IsNullOrWhiteSpace(ds.DefaultDatabase) ? "postgres" : ds.DefaultDatabase,
                 Timeout = 10,
-                CommandTimeout = 60,
-                Pooling = false
+                CommandTimeout = ds.TimeoutSeconds is > 0 ? ds.TimeoutSeconds.Value : 60,
+                Pooling = ds.UsePooling && ds.AccessMode != AccessMode.SshTunnel
             };
 
             var connection = new NpgsqlConnection(builder.ConnectionString);

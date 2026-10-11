@@ -91,6 +91,8 @@
                         <TextBlock Text="超时(秒):" VerticalAlignment="Center"/>
                         <ui:TextBox FontWeight="Normal" Text="{Binding TimeoutText, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,0,0"
                                     ToolTip="留空 = 默认30秒"/>
+                        <CheckBox Content="启用连接池" IsChecked="{Binding UsePooling}" Margin="16,0,0,0" VerticalAlignment="Center"
+                                  ToolTip="仅直连生效；经 SSH 隧道时自动禁用"/>
                     </StackPanel>
 
                     <TextBlock Grid.Row="13" Grid.Column="0" Text="写审批:" VerticalAlignment="Center" Margin="0,0,10,8"/>

@@ -29,6 +29,8 @@
                         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="服务器名称:" VerticalAlignment="Center" Margin="0,0,10,8"/>
@@ -110,6 +112,43 @@
                     <TextBlock Grid.Row="18" Grid.Column="0" Text="内网端口:" VerticalAlignment="Center" Margin="0,0,10,8"/>
                     <ui:TextBox FontWeight="Normal" Grid.Row="18" Grid.Column="1" Text="{Binding InternalPort, UpdateSourceTrigger=PropertyChanged}"
                                 Margin="0,0,0,8" ToolTip="内网 SSH 端口；留空沿用上面的端口"/>
+
+                    <TextBlock Grid.Row="19" Grid.Column="0" Grid.ColumnSpan="2" Text="生成密钥（ed25519 / rsa；生成后把下方公钥加入服务器的 ~/.ssh/authorized_keys）"
+                               FontWeight="SemiBold" Margin="0,10,0,8" TextWrapping="Wrap"/>
+                    <TextBlock Grid.Row="20" Grid.Column="0" Text="密钥生成:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <StackPanel Grid.Row="20" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                        <ComboBox SelectedIndex="{Binding KeyGenTypeIndex}" Width="120" VerticalContentAlignment="Center">
+                            <ComboBoxItem Content="ed25519"/>
+                            <ComboBoxItem Content="rsa(4096)"/>
+                        </ComboBox>
+                        <ui:Button Content="生成密钥…" Padding="10,3" Margin="6,0,0,0" Command="{Binding GenerateKeyCommand}"/>
+                        <ui:Button Content="复制公钥" Padding="10,3" Margin="6,0,0,0" Click="OnCopyPublicKey"
+                                   IsEnabled="{Binding HasPublicKey}"/>
+                    </StackPanel>
+                    <TextBlock Grid.Row="21" Grid.Column="0" Text="公钥:" VerticalAlignment="Top" Margin="0,2,10,8"/>
+                    <ui:TextBox Grid.Row="21" Grid.Column="1" Text="{Binding PublicKeyText, Mode=OneWay}" IsReadOnly="True"
+                                AcceptsReturn="True" Height="52" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"
+                                VerticalScrollBarVisibility="Auto" Margin="0,0,0,8"
+                                ToolTip="把这一行（以 ssh-ed25519 或 ssh-rsa 开头）追加到目标服务器的 ~/.ssh/authorized_keys"/>
+
+                    <TextBlock Grid.Row="22" Grid.Column="0" Text="轮换提醒(天):" VerticalAlignment="Center" Margin="0,0,10,8"
+                               ToolTip="凭据（密码/密钥）超过该天数未变更则提示轮换；0=关闭提醒"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="22" Grid.Column="1" Width="80" HorizontalAlignment="Left"
+                                Text="{Binding CredentialRotateDays, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                    <TextBlock Grid.Row="23" Grid.Column="0" Text="凭据时间:" VerticalAlignment="Top" Margin="0,0,10,6"/>
+                    <StackPanel Grid.Row="23" Grid.Column="1" Margin="0,0,0,6">
+                        <TextBlock Text="{Binding CredentialAgeText}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   FontSize="11" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding CredentialWarning}" Foreground="{DynamicResource AppDangerBrush}"
+                                   FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
+                                   Visibility="{Binding CredentialWarningVisibility}"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="24" Grid.Column="0" Text="经跳板机:" VerticalAlignment="Center" Margin="0,0,10,8"
+                               ToolTip="经该 SSH 服务器建立隧道后再连本机（目标只在跳板后可达时使用）；仅支持单级跳板"/>
+                    <ComboBox Grid.Row="24" Grid.Column="1" ItemsSource="{Binding JumpOptions}" SelectedItem="{Binding SelectedJumpOption}"
+                              DisplayMemberPath="Name" VerticalContentAlignment="Center" Margin="0,0,0,8"
+                              ToolTip="先连跳板机→建本地转发→再连本机；跳板机自身的登录方式在它的服务器配置里维护"/>
                 </Grid>
             </Border>
         </ScrollViewer>

@@ -37,6 +37,12 @@ public class SshServerConfig
     /// <summary>内网 SSH 端口（可选）：为空或 &lt;=0 时沿用 <see cref="Port"/>。</summary>
     public int? InternalPort { get; set; }
 
+    /// <summary>
+    /// 跳板机（ProxyJump，可选）：经该 SSH 服务器建立本地转发后再连本机，用于"目标只在跳板后可达"。
+    /// 值为另一台已配置服务器的 Id；仅支持单级（跳板机自身不能再配跳板）。
+    /// </summary>
+    public string? ProxyJumpServerId { get; set; }
+
     public AuthType AuthType { get; set; } = AuthType.Password;
     public string? Password { get; set; }
     public string? KeyFilePath { get; set; }
@@ -49,6 +55,14 @@ public class SshServerConfig
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastConnectedAt { get; set; }
+
+    /// <summary>
+    /// 凭据（密码/密钥/口令/提权密码）最近一次变更时间；用于「凭据轮换提醒」。为空时以 <see cref="CreatedAt"/> 兜底。
+    /// </summary>
+    public DateTime? CredentialUpdatedAt { get; set; }
+
+    /// <summary>凭据轮换提醒（天）：超过该天数在服务器编辑窗口提示轮换；0=关闭提醒。</summary>
+    public int CredentialRotateDays { get; set; }
 
     public SudoType SudoType { get; set; } = SudoType.None;
     public string? SudoUsername { get; set; }

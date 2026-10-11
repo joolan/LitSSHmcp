@@ -48,6 +48,7 @@ public class ConfigService : IConfigService
             if (ConfigMigrator.Migrate(config) || needsMigration)
                 await SaveConfigAsync(config);
 
+            ServerConfigCache.Update(config.Servers);
             return config;
         }
         catch
@@ -68,6 +69,9 @@ public class ConfigService : IConfigService
         // 若不原子，MCP 侧按 mtime 热加载时可能读到"写了一半"的 JSON（截断/空文件），
         // 导致这一次修改被当成损坏而丢弃，表现为"在界面改了但 MCP 没生效"。
         await WriteAtomicAsync(json);
+
+        // 刷新跳板机解析用的服务器快照（明文配置，连接工厂同步读取）。
+        ServerConfigCache.Update(config.Servers);
     }
 
     private async Task WriteAtomicAsync(string json)

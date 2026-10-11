@@ -250,7 +250,7 @@ public sealed class SshConnectionPool : ISshConnectionPool, IDisposable
         private static string Key(SshServerConfig s, int max)
         {
             var pw = string.IsNullOrEmpty(s.Password) ? string.Empty : Hash(s.Password!);
-            return $"{s.Host}|{s.Port}|{s.Username}|{s.AuthType}|{s.KeyFilePath}|{pw}|{max}";
+            return $"{s.Host}|{s.Port}|{s.Username}|{s.AuthType}|{s.KeyFilePath}|{pw}|{max}|jump={s.ProxyJumpServerId}";
         }
 
         private static string Hash(string value) =>

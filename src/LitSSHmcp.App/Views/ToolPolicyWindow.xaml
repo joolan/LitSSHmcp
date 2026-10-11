@@ -1,0 +1,60 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.ToolPolicyWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="工具审批策略" Height="560" Width="760" MinWidth="560" MinHeight="420"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="工具审批策略"/>
+
+        <Border Grid.Row="1" Margin="14,4,14,8" Padding="10,8" CornerRadius="{DynamicResource AppRadiusS}"
+                Background="{DynamicResource AppSurfaceAltBrush}">
+            <StackPanel>
+                <TextBlock TextWrapping="Wrap" FontSize="12"
+                           Text="本会话的 Agent 层策略：默认=正常调用；拒绝=调用前拦截、不执行；允许=Agent 不再额外限制。"/>
+                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           Text="注意：Agent 层「允许」不绕过 MCP 服务端的桌面审批——敏感操作的安全边界仍在服务端（可在「安全设置 → 审批模式」调整全局策略）。"/>
+            </StackPanel>
+        </Border>
+
+        <DataGrid x:Name="Grid" Grid.Row="2" Margin="14,0,14,0" AutoGenerateColumns="False"
+                  CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
+                  GridLinesVisibility="Horizontal" SelectionMode="Single" RowHeight="38">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="工具" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="能力域" Binding="{Binding GroupText}" Width="150" IsReadOnly="True"/>
+                <DataGridTextColumn Header="类型" Binding="{Binding KindText}" Width="70" IsReadOnly="True"/>
+                <DataGridTemplateColumn Header="策略" Width="150">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <ComboBox SelectedIndex="{Binding SelectedIndex, UpdateSourceTrigger=PropertyChanged}"
+                                      MinWidth="120" Height="30" Margin="2" VerticalContentAlignment="Center"
+                                      HorizontalContentAlignment="Left" Padding="8,0">
+                                <ComboBoxItem Content="默认"/>
+                                <ComboBoxItem Content="允许"/>
+                                <ComboBoxItem Content="拒绝"/>
+                            </ComboBox>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <DockPanel Grid.Row="3" Margin="14,10,14,14">
+            <TextBlock x:Name="StatusText" DockPanel.Dock="Left" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <ui:Button Content="全部默认" Margin="0,0,8,0" Click="OnResetAll"/>
+                <ui:Button Content="取消" Width="72" Margin="0,0,8,0" Click="OnCancel"/>
+                <ui:Button Content="确定" Appearance="Primary" Width="72" Click="OnOk"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

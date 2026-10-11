@@ -16,14 +16,23 @@ public sealed class AgentRuntime : IAsyncDisposable
     public AgentMemoryService? Memory { get; }
     public int ToolCount => Session.ToolCount;
 
+    /// <summary>本次会话实际暴露的 MCP 工具能力域（供 UI 技能选择器判定可用性）。</summary>
+    public IReadOnlySet<string> AvailableGroups =>
+        _baseTools.Select(t => t.ToolGroup).Where(g => g is not null).Select(g => g!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     private readonly AgentConfig _config;
-    private readonly string _prompt;
+    private string _prompt;
+    private readonly Func<IEnumerable<string>?, string> _promptBuilder;
     private readonly string? _readOnlyNote;
     private readonly List<IAgentTool> _baseTools;
     private readonly List<IAgentTool> _subTools;
     private readonly Action<IReadOnlyList<PlanItem>>? _onPlan;
     private readonly Func<string, CancellationToken, Task<string?>>? _recall;
     private readonly SpillStore? _spill;
+    private List<string> _activeSkillIds = new();
+    private bool _planMode;
+    private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
 
     private const string ReadOnlyNote =
         "\n\n【只读模式（全局配置）】仅可调用只读工具；禁止任何写操作（命令/SQL/文件写入/重启等）。"
@@ -34,7 +43,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         AgentProviderConfig provider,
         AgentMemoryService? memory,
         AgentConfig config,
-        string prompt,
+        Func<IEnumerable<string>?, string> promptBuilder,
         List<IAgentTool> baseTools,
         List<IAgentTool> subTools,
         Action<IReadOnlyList<PlanItem>>? onPlan,
@@ -47,13 +56,59 @@ public sealed class AgentRuntime : IAsyncDisposable
         Memory = memory;
         _config = config;
         _readOnlyNote = config.ReadOnly ? ReadOnlyNote : null;
-        _prompt = _readOnlyNote is null ? prompt : prompt + _readOnlyNote;
+        _promptBuilder = promptBuilder;
+        _prompt = ApplyReadOnlyNote(promptBuilder(null));
         _baseTools = baseTools;
         _subTools = subTools;
         _onPlan = onPlan;
         _recall = recall;
         _spill = spill;
         Session = BuildSession(provider, history);
+    }
+
+    /// <summary>当前是否处于计划模式（计划模式下只暴露只读工具）。</summary>
+    public bool PlanMode => _planMode;
+
+    /// <summary>可配置审批策略的 MCP 工具目录（供「工具审批策略」窗口）。</summary>
+    public IReadOnlyList<ToolPolicyItem> ToolCatalog =>
+        _baseTools.Where(t => t.ToolGroup is not null)
+            .OrderBy(t => t.Name, StringComparer.Ordinal)
+            .Select(t => new ToolPolicyItem(t.Name, t.ToolGroup!, t.ReadOnly, t.Destructive))
+            .ToList();
+
+    /// <summary>设置工具级审批策略（会话级，Agent 层）并应用到当前会话。</summary>
+    public void SetToolPolicy(IReadOnlyDictionary<string, AgentToolPolicy>? policy)
+    {
+        _toolPolicy = policy;
+        Session.SetToolPolicy(policy);
+    }
+
+    private string ApplyReadOnlyNote(string prompt) => _readOnlyNote is null ? prompt : prompt + _readOnlyNote;
+
+    private string BuildPrompt() =>
+        ApplyReadOnlyNote(_promptBuilder(_activeSkillIds.Count == 0 ? null : _activeSkillIds));
+
+    /// <summary>
+    /// 切换激活技能：重算系统提示并就地替换当前会话的第一条 System 消息（不重连 MCP、不丢历史）。
+    /// 应在会话空闲时调用。
+    /// </summary>
+    public void SetActiveSkills(IEnumerable<string>? activeSkillIds)
+    {
+        _activeSkillIds = activeSkillIds?.ToList() ?? new();
+        _prompt = BuildPrompt();
+        Session.SetSystemPrompt(_prompt);
+    }
+
+    /// <summary>
+    /// 切换计划模式（缓存友好）：**不改系统提示、不改工具集**，仅在会话上设一个运行期标志——
+    /// 每轮把"计划模式"提示附在用户消息尾部，并在调用前拦截写工具。因此切换不会使 prompt 前缀缓存失效。
+    /// </summary>
+    public void SetPlanMode(bool planMode)
+    {
+        if (_planMode == planMode)
+            return;
+        _planMode = planMode;
+        Session.SetPlanMode(planMode);
     }
 
     /// <summary>用当前配置与工具重新构建对话会话（仅换历史/模型，不重连 MCP）。</summary>
@@ -63,7 +118,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         Session = BuildSession(provider, history);
     }
 
-    /// <summary>构建对话会话。工具集与会话限制在运行时启动时一次性确定，会话期内恒定（保持 prompt 缓存前缀稳定）。</summary>
+    /// <summary>构建对话会话。计划模式不改变工具集（保持前缀稳定），只设置运行期标志。</summary>
     private AgentSession BuildSession(AgentProviderConfig provider, IEnumerable<ChatMessage>? history)
     {
         var client = ChatClientFactory.Create(provider);
@@ -72,7 +127,10 @@ public sealed class AgentRuntime : IAsyncDisposable
             tools.Add(SubAgents.Create(client, provider, _config, _subTools, _readOnlyNote));
         if (_onPlan is not null)
             tools.Add(PlanTools.Create(_onPlan));
-        return new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill);
+        var session = new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill);
+        session.SetToolPolicy(_toolPolicy);
+        session.SetPlanMode(_planMode);
+        return session;
     }
 
     /// <summary>连接 MCP 服务器、装配工具与系统提示、构建对话会话（含可选长期记忆）。</summary>
@@ -82,6 +140,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         string? bundledSkillsDir,
         IEnumerable<ChatMessage>? history = null,
         Action<IReadOnlyList<PlanItem>>? onPlan = null,
+        IReadOnlyCollection<string>? activeSkillIds = null,
+        bool planMode = false,
         CancellationToken ct = default)
     {
         var launch = AgentPaths.ResolveLaunch(config.McpServerPath)
@@ -101,6 +161,12 @@ public sealed class AgentRuntime : IAsyncDisposable
 
         var mcpTools = ToolFilter.Apply(host.Tools, config)
             .Select(t => (IAgentTool)new McpAgentTool(t, config.CompactToolDescriptions)).ToList();
+        // 本次会话实际暴露的 MCP 工具域（经服务端分组 + Agent 只读/分组 两层过滤后的交集），注入系统提示做"能力边界"护栏。
+        var availableGroups = mcpTools
+            .Select(t => t.ToolGroup)
+            .Where(g => g is not null)
+            .Select(g => g!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var workspaceTools = WorkspaceTools.Create(WorkspaceTools.ResolveDir(config.WorkspaceDir)).ToList();
         var skillsDir = SkillRegistry.ResolveDir(config.SkillsDir, bundledSkillsDir);
         var skillTools = skillsDir is null ? new List<IAgentTool>() : SkillTools.Create(skillsDir).ToList();
@@ -108,14 +174,17 @@ public sealed class AgentRuntime : IAsyncDisposable
         var spill = TryCreateSpill(config);
         var spillTools = spill is null ? new List<IAgentTool>() : SpillTools.Create(spill).ToList();
 
-        var prompt = SystemPromptBuilder.Build(
+        // 系统提示按"激活技能"动态构建（未选技能=仅注入索引）；切换技能时用同一定义重算。
+        var skillFiles = skillsDir is null ? null : SkillRegistry.ListReferenceFiles(skillsDir);
+        Func<IEnumerable<string>?, string> promptBuilder = activeSkills => SystemPromptBuilder.Build(
             host.ServerInstructions,
-            SkillRegistry.Load(config.SkillsDir, bundledSkillsDir),
+            SkillRegistry.Load(config.SkillsDir, bundledSkillsDir, availableGroups, activeSkills?.ToList()),
             config.SystemPrompt,
-            skillFiles: skillsDir is null ? null : SkillRegistry.ListReferenceFiles(skillsDir),
+            skillFiles: skillFiles,
             spillTools: spill is not null,
             subAgent: config.EnableSubAgent,
-            responseStyle: config.ResponseStyle);
+            responseStyle: config.ResponseStyle,
+            availableGroups: availableGroups);
 
         var memory = await TryCreateMemoryAsync(config, provider, ct);
         Func<string, CancellationToken, Task<string?>>? recall =
@@ -132,7 +201,11 @@ public sealed class AgentRuntime : IAsyncDisposable
             subTools = subTools.Where(t => t.ReadOnly).ToList();
         }
 
-        var runtime = new AgentRuntime(host, provider, memory, config, prompt, baseTools, subTools, onPlan, recall, spill, history);
+        var runtime = new AgentRuntime(host, provider, memory, config, promptBuilder, baseTools, subTools, onPlan, recall, spill, history);
+        if (activeSkillIds is { Count: > 0 })
+            runtime.SetActiveSkills(activeSkillIds);
+        if (planMode)
+            runtime.SetPlanMode(true);
         runtime.StartWorkspaceIndexing(WorkspaceTools.ResolveDir(config.WorkspaceDir));
         return runtime;
     }

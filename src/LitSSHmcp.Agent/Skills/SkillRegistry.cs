@@ -1,73 +1,241 @@
 using System.Text;
+using System.Text.RegularExpressions;
+using LitSSHmcp.Core.Models;
 
 namespace LitSSHmcp.Agent;
 
 /// <summary>
-/// 技能(markdown)加载：优先用用户配置目录，否则用内置技能目录（App 随包提供 litssh-mcp-ops-skill）。
-/// 为节省每轮请求（含工具循环每一步）的固定 token：<b>小文件全文注入，大文件只注入索引</b>
-/// （标题 + 适用描述 + 章节导读 + 按需读取方式），正文用 <c>skill_read(path="SKILL.md")</c> 按需读取。
-/// <c>references/</c> 与 <c>*.template.md</c> 始终不注入，按需用 skill_read 读取。
+/// 技能(markdown)加载与目录。技能根目录下**每个子目录为一个技能**（含 <c>SKILL.md</c>，可带 <c>references/</c>），
+/// 另兼容根目录下的单文件 <c>*.md</c>。选择器用 <see cref="List"/> 拿目录；注入系统提示时：
+/// <list type="bullet">
+///   <item>未指定激活技能 → 只注入**技能索引**（名称 + 适用描述 + 域 + <c>skill_read</c> 提示），极省 token；</item>
+///   <item>指定了激活技能 → 只注入这些技能正文（小技能全文内联，大技能"核心章节内联 + 其余章节列标题"）。</item>
+/// </list>
+/// 并按当前可用能力域裁剪：涉及域全被停用的技能跳过，部分被停用的加提示。
 /// </summary>
 public static class SkillRegistry
 {
     private const int MaxTotalChars = 8000;
 
-    /// <summary>小于等于该长度的技能全文内联（对小技能保持旧行为），超过则"核心章节内联 + 其余索引"。</summary>
+    /// <summary>小于等于该长度的技能全文内联；超过则"核心章节内联 + 其余索引"。</summary>
     private const int InlineFullTextLimit = 800;
 
-    /// <summary>大技能内联的完整前置章节预算（字符）：按章节边界截取，保证开箱即用的核心流程常驻。</summary>
+    /// <summary>大技能内联的完整前置章节预算（字符）。</summary>
     private const int CoreInlineChars = 4000;
 
     private const int MaxDescriptionChars = 400;
     private const int MaxTocItems = 12;
     private const int MaxTocChars = 300;
 
-    public static string Load(string? skillsDir, string? bundledSkillsDir = null)
+    private static readonly Regex ToolTokenRegex = new("[a-z][a-z0-9_]{2,}", RegexOptions.Compiled);
+
+    /// <summary>
+    /// 生成注入系统提示的技能文本。<paramref name="activeSkillIds"/> 为空表示"索引模式"（只列索引）。
+    /// </summary>
+    public static string Load(string? skillsDir, string? bundledSkillsDir = null,
+        IReadOnlySet<string>? availableGroups = null, IReadOnlyCollection<string>? activeSkillIds = null)
     {
         var dir = ResolveDir(skillsDir, bundledSkillsDir);
         if (dir is null)
             return string.Empty;
 
+        var files = EnumerateSkillFiles(dir);
+        var active = activeSkillIds is { Count: > 0 }
+            ? new HashSet<string>(activeSkillIds, StringComparer.OrdinalIgnoreCase)
+            : null;
+
+        return active is null
+            ? BuildIndex(files, availableGroups)
+            : BuildActive(files, active, availableGroups);
+    }
+
+    /// <summary>列出技能目录（供 UI 技能选择器）。<paramref name="availableGroups"/> 为 null 表示不判定可用性。</summary>
+    public static IReadOnlyList<SkillInfo> List(string root, IReadOnlySet<string>? availableGroups = null)
+    {
+        var result = new List<SkillInfo>();
+        foreach (var file in EnumerateSkillFiles(root))
+        {
+            var domains = SkillDomains(file.Text);
+            var disabled = availableGroups is null
+                ? Array.Empty<string>()
+                : domains.Where(g => !availableGroups.Contains(g)).ToArray();
+            var applicable = availableGroups is null || domains.Length == 0 || domains.Any(g => availableGroups.Contains(g));
+            var name = ExtractFrontmatterName(file.Text);
+            if (string.IsNullOrEmpty(name))
+                name = file.Id;
+
+            result.Add(new SkillInfo(
+                file.Id, name, ExtractTitle(file.Text), ExtractFrontmatterDescription(file.Text),
+                file.MainPath, domains, disabled, applicable, Encoding.UTF8.GetByteCount(file.Text)));
+        }
+        return result.OrderBy(s => s.Id, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    // ---- 注入构建 ----
+
+    private static string BuildIndex(List<SkillFile> files, IReadOnlySet<string>? available)
+    {
         var sb = new StringBuilder();
-        foreach (var file in Directory.EnumerateFiles(dir, "*.md", SearchOption.TopDirectoryOnly)
-                     .Where(f => !f.EndsWith(".template.md", StringComparison.OrdinalIgnoreCase))
-                     .OrderByDescending(f => Path.GetFileName(f).Equals("SKILL.md", StringComparison.OrdinalIgnoreCase))
-                     .ThenBy(f => f, StringComparer.OrdinalIgnoreCase))
+        foreach (var file in files.OrderBy(f => f.Id, StringComparer.OrdinalIgnoreCase))
+        {
+            var domains = SkillDomains(file.Text);
+            if (available is not null && domains.Length > 0 && !domains.Any(g => available.Contains(g)))
+                continue;   // 涉及域全停用 → 索引也不列
+
+            var name = ExtractFrontmatterName(file.Text);
+            if (string.IsNullOrEmpty(name))
+                name = file.Id;
+            var desc = ExtractFrontmatterDescription(file.Text);
+
+            sb.Append("- ").Append(name);
+            if (!string.IsNullOrEmpty(desc))
+                sb.Append("：").Append(desc);
+            if (domains.Length > 0)
+                sb.Append("（域: ").Append(string.Join(" / ", domains.Select(ToolGroups.Display))).Append("）");
+            sb.Append($"; 需要完整步骤时用 skill_read(path=\"{file.MainPath}\") 读取");
+            sb.AppendLine();
+        }
+        return Clamp(sb.ToString().Trim());
+    }
+
+    private static string BuildActive(List<SkillFile> files, HashSet<string> active, IReadOnlySet<string>? available)
+    {
+        var sb = new StringBuilder();
+        foreach (var file in files.Where(f => active.Contains(f.Id)).OrderBy(f => f.Id, StringComparer.OrdinalIgnoreCase))
         {
             if (sb.Length >= MaxTotalChars)
                 break;
 
-            try
-            {
-                var text = File.ReadAllText(file);
-                if (text.Trim().Length <= InlineFullTextLimit)
-                {
-                    sb.AppendLine($"## 技能: {Path.GetFileNameWithoutExtension(file)}");
-                    sb.AppendLine(text.Trim());
-                }
-                else
-                {
-                    AppendCoreAndIndex(sb, file, text);
-                }
-                sb.AppendLine();
-            }
-            catch
-            {
-                // 单个技能读取失败忽略
-            }
-        }
+            var caveat = BuildCaveat(file.Text, available);
+            if (caveat is not null)
+                sb.AppendLine(caveat);
 
-        var text2 = sb.ToString().Trim();
-        return text2.Length <= MaxTotalChars ? text2 : text2[..MaxTotalChars] + "\n...(技能内容过长已截断)";
+            if (file.Text.Trim().Length <= InlineFullTextLimit)
+            {
+                sb.AppendLine($"## 技能: {file.Id}");
+                sb.AppendLine(file.Text.Trim());
+            }
+            else
+            {
+                AppendCoreAndIndex(sb, file, file.Text);
+            }
+            sb.AppendLine();
+        }
+        return Clamp(sb.ToString().Trim());
     }
 
-    /// <summary>
-    /// 大技能：内联**完整核心章节**（frontmatter 之后的 preamble + 按顺序尽量多的 <c>##</c> 整节，累计 ≤ <see cref="CoreInlineChars"/>），
-    /// 其余章节只列标题并提示 <c>skill_read</c>；首个章节即超预算时退回纯索引。
-    /// </summary>
-    private static void AppendCoreAndIndex(StringBuilder sb, string file, string text)
+    private static string Clamp(string text) =>
+        text.Length <= MaxTotalChars ? text : text[..MaxTotalChars] + "\n...(技能内容过长已截断)";
+
+    // ---- 技能文件枚举与元数据 ----
+
+    private sealed record SkillFile(string Id, string MainPath, string Text);
+
+    private static List<SkillFile> EnumerateSkillFiles(string root)
     {
-        var fileName = Path.GetFileName(file);
+        var list = new List<SkillFile>();
+        try
+        {
+            foreach (var sub in Directory.EnumerateDirectories(root))
+            {
+                var skill = Path.Combine(sub, "SKILL.md");
+                if (!File.Exists(skill))
+                    continue;
+                var rel = Path.GetRelativePath(root, skill).Replace('\\', '/');
+                list.Add(new SkillFile(Path.GetFileName(sub), rel, SafeRead(skill)));
+            }
+
+            foreach (var file in Directory.EnumerateFiles(root, "*.md", SearchOption.TopDirectoryOnly))
+            {
+                if (file.EndsWith(".template.md", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                list.Add(new SkillFile(Path.GetFileNameWithoutExtension(file), Path.GetFileName(file), SafeRead(file)));
+            }
+        }
+        catch
+        {
+            // 目录不可读 → 返回已收集的部分
+        }
+        return list;
+    }
+
+    private static string SafeRead(string path)
+    {
+        try { return File.ReadAllText(path); }
+        catch { return string.Empty; }
+    }
+
+    /// <summary>技能涉及的能力域 = frontmatter <c>appliesTo</c>（规范化为分组键）∪ 正文扫描到的工具域。</summary>
+    private static string[] SkillDomains(string text)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in ExtractFrontmatterList(text, "appliesTo"))
+        {
+            var canonical = ToolGroups.All.FirstOrDefault(a => string.Equals(a, group, StringComparison.OrdinalIgnoreCase));
+            if (canonical is not null)
+                set.Add(canonical);
+        }
+        foreach (var group in ReferencedGroups(text))
+            set.Add(group);
+        return set.ToArray();
+    }
+
+    private static string[] ExtractFrontmatterList(string text, string key)
+    {
+        var lines = text.Split('\n');
+        if (lines.Length == 0 || lines[0].TrimEnd('\r') != "---")
+            return Array.Empty<string>();
+
+        for (var i = 1; i < lines.Length; i++)
+        {
+            var line = lines[i].TrimEnd('\r');
+            if (line.Trim() == "---")
+                break;
+            if (line.StartsWith(key + ":", StringComparison.OrdinalIgnoreCase))
+            {
+                var value = line[(key.Length + 1)..].Trim().Trim('[', ']');
+                return value.Split(new[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            }
+        }
+        return Array.Empty<string>();
+    }
+
+    private static string? BuildCaveat(string text, IReadOnlySet<string>? available)
+    {
+        if (available is null)
+            return null;
+
+        var domains = SkillDomains(text);
+        if (domains.Length == 0)
+            return null;
+
+        var disabled = domains.Where(g => !available.Contains(g))
+            .OrderBy(g => g, StringComparer.OrdinalIgnoreCase)
+            .Select(ToolGroups.Display)
+            .ToArray();
+        if (disabled.Length == 0)
+            return null;
+
+        return $"（注意：本技能涉及当前未启用的能力域：{string.Join("、", disabled)}；相关步骤不可执行，遇到时应向用户说明并给出替代方案。）";
+    }
+
+    /// <summary>扫描文本中形如工具名的 token，映射到能力域（前缀即可判定，无需完整工具清单）。</summary>
+    private static string[] ReferencedGroups(string text)
+    {
+        var groups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match match in ToolTokenRegex.Matches(text))
+        {
+            var group = ToolGroups.GroupOf(match.Value);
+            if (group is not null)
+                groups.Add(group);
+        }
+        return groups.ToArray();
+    }
+
+    // ---- 正文内联（大技能：核心章节 + 其余索引） ----
+
+    private static void AppendCoreAndIndex(StringBuilder sb, SkillFile file, string text)
+    {
         var title = ExtractTitle(text);
         var desc = ExtractFrontmatterDescription(text);
         var (preamble, sections) = SplitSections(text);
@@ -82,7 +250,6 @@ public static class SkillRegistry
             inlined++;
         }
 
-        // 连 preamble 都放不下：退回纯索引（保持极省 token 的行为）
         if (inlined == 0 && preamble.Trim().Length > CoreInlineChars)
         {
             AppendIndexEntry(sb, file, text);
@@ -91,7 +258,7 @@ public static class SkillRegistry
 
         var name = ExtractFrontmatterName(text);
         if (string.IsNullOrEmpty(name))
-            name = Path.GetFileNameWithoutExtension(file);
+            name = file.Id;
         sb.AppendLine($"### {name}" + (string.IsNullOrEmpty(title) ? string.Empty : $"：{title}") + "（核心章节已内联）");
         if (desc.Length > 0)
             sb.AppendLine($"适用: {desc}");
@@ -99,8 +266,27 @@ public static class SkillRegistry
 
         var remaining = sections.Skip(inlined).Select(GetSectionTitle).Where(t => t.Length > 0).ToList();
         if (remaining.Count > 0)
-            sb.AppendLine($"（其余章节未展开: {string.Join(" / ", remaining.Take(MaxTocItems))}；需要时用 skill_read(path=\"{fileName}\") 读取全文）");
+            sb.AppendLine($"（其余章节未展开: {string.Join(" / ", remaining.Take(MaxTocItems))}；需要时用 skill_read(path=\"{file.MainPath}\") 读取全文）");
     }
+
+    private static void AppendIndexEntry(StringBuilder sb, SkillFile file, string text)
+    {
+        var title = ExtractTitle(text);
+        var desc = ExtractFrontmatterDescription(text);
+        var toc = ExtractToc(text);
+        var name = ExtractFrontmatterName(text);
+        if (string.IsNullOrEmpty(name))
+            name = file.Id;
+
+        sb.AppendLine($"### {name}" + (string.IsNullOrEmpty(title) ? string.Empty : $"：{title}"));
+        if (desc.Length > 0)
+            sb.AppendLine($"适用: {desc}");
+        if (toc.Length > 0)
+            sb.AppendLine($"章节: {toc}");
+        sb.AppendLine($"（正文未注入以省 token；需要完整步骤时用 skill_read(path=\"{file.MainPath}\") 读取全文）");
+    }
+
+    // ---- frontmatter / 章节解析 ----
 
     /// <summary>按 <c>##</c> 标题切分为 preamble + 各完整章节（跳过围栏代码块内的标题）。</summary>
     private static (string Preamble, List<string> Sections) SplitSections(string text)
@@ -147,23 +333,6 @@ public static class SkillRegistry
         return first.StartsWith("## ", StringComparison.Ordinal) ? first[3..].Trim() : string.Empty;
     }
 
-    /// <summary>大技能的索引条目：标题、适用场景（frontmatter description）、章节导读与按需读取方式。</summary>
-    private static void AppendIndexEntry(StringBuilder sb, string file, string text)
-    {
-        var fileName = Path.GetFileName(file);
-        var title = ExtractTitle(text);
-        var desc = ExtractFrontmatterDescription(text);
-        var toc = ExtractToc(text);
-
-        sb.AppendLine($"### {Path.GetFileNameWithoutExtension(file)}" + (string.IsNullOrEmpty(title) ? string.Empty : $"：{title}"));
-        if (desc.Length > 0)
-            sb.AppendLine($"适用: {desc}");
-        if (toc.Length > 0)
-            sb.AppendLine($"章节: {toc}");
-        sb.AppendLine($"（正文未注入以省 token；需要完整步骤时用 skill_read(path=\"{fileName}\") 读取全文）");
-    }
-
-    /// <summary>取 frontmatter 之后的第一个一级标题（无则空）。</summary>
     private static string ExtractTitle(string text)
     {
         var lines = text.Split('\n');
@@ -184,7 +353,6 @@ public static class SkillRegistry
         return string.Empty;
     }
 
-    /// <summary>取 YAML frontmatter 的 description 字段（截断到 <see cref="MaxDescriptionChars"/>）。</summary>
     private static string ExtractFrontmatterDescription(string text)
     {
         var lines = text.Split('\n');
@@ -205,7 +373,6 @@ public static class SkillRegistry
         return string.Empty;
     }
 
-    /// <summary>取 YAML frontmatter 的 name 字段（无则空）。</summary>
     private static string ExtractFrontmatterName(string text)
     {
         var lines = text.Split('\n');
@@ -223,7 +390,6 @@ public static class SkillRegistry
         return string.Empty;
     }
 
-    /// <summary>取二级标题作为章节导读（跳过代码块内的 # 行）。</summary>
     private static string ExtractToc(string text)
     {
         var headers = new List<string>();

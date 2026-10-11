@@ -1,0 +1,76 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.SkillPickerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
+        Title="选择技能" Height="620" Width="900" MinWidth="680" MinHeight="460"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="选择技能"/>
+
+        <TextBlock Grid.Row="1" Margin="16,4,16,8" TextWrapping="Wrap" FontSize="12"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   Text="勾选本会话需要激活的运维技能（可多选）。未选择任何技能时，助手只接收技能索引，按需 skill_read 读取；激活后其正文会注入本轮系统提示。灰色=涉及当前未启用的能力域。"/>
+
+        <Grid Grid.Row="2" Margin="16,0,16,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" MinWidth="220"/>
+                <ColumnDefinition Width="6"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                    CornerRadius="{DynamicResource AppRadiusS}">
+                <ListBox x:Name="SkillList" SelectionMode="Multiple" Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         SelectionChanged="OnSelectionChanged" MouseDoubleClick="OnEditSkill">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="2,3">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding Description}" FontSize="11" TextWrapping="Wrap" MaxHeight="34"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock FontSize="10" Margin="0,2,0,0"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis">
+                                    <Run Text="域: " />
+                                    <Run Text="{Binding DomainText, Mode=OneWay}" />
+                                </TextBlock>
+                                <TextBlock FontSize="10" Foreground="{DynamicResource AppDangerBrush}" TextWrapping="Wrap"
+                                           Text="{Binding Note}" Visibility="{Binding NoteVisibility}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="Transparent"/>
+
+            <Border Grid.Column="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                    CornerRadius="{DynamicResource AppRadiusS}" Padding="10">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <controls:MarkdownBox x:Name="Preview"/>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <DockPanel Grid.Row="3" Margin="16,10,16,14">
+            <TextBlock x:Name="StatusText" DockPanel.Dock="Left" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <ui:Button Content="打开技能目录" Margin="0,0,8,0" Click="OnOpenSkillsDir" ToolTip="在资源管理器中打开技能根目录，可用外部编辑器修改 SKILL.md"/>
+                <ui:Button Content="导入文件…" Margin="0,0,8,0" Click="OnImportFiles" ToolTip="把 .md 文件导入为技能（写入 &lt;根目录&gt;/&lt;名&gt;/SKILL.md）"/>
+                <ui:Button Content="导入目录…" Margin="0,0,8,0" Click="OnImportFolder" ToolTip="导入一个含 SKILL.md 的技能目录"/>
+                <ui:Button Content="清空（索引模式）" Margin="0,0,16,0" Click="OnClear"/>
+                <ui:Button Content="取消" Width="72" Margin="0,0,8,0" Click="OnCancel"/>
+                <ui:Button Content="确定" Appearance="Primary" Width="72" Click="OnOk"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

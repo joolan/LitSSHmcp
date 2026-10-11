@@ -75,10 +75,19 @@
                                                 <TextBlock Text="临时聊天" FontWeight="SemiBold" FontSize="11"
                                                            Foreground="{DynamicResource AppAccentBrush}" VerticalAlignment="Center"/>
                                             </DockPanel>
+                                            <Expander Visibility="{Binding ReasoningVisibility}"
+                                                      IsExpanded="{Binding ShowReasoning, Mode=TwoWay}"
+                                                      Margin="0,0,0,6" Padding="6">
+                                                <Expander.Header>
+                                                    <TextBlock Text="思考过程" FontSize="11"
+                                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                </Expander.Header>
+                                                <controls:MarkdownBox Markdown="{Binding ReasoningText}"/>
+                                            </Expander>
                                             <controls:MarkdownBox Markdown="{Binding AssistantText}"/>
                                             <TextBlock Text="{Binding Note}" Foreground="{DynamicResource AppDangerBrush}" TextWrapping="Wrap"
                                                        FontSize="12" Margin="0,3,0,0" Visibility="{Binding NoteVisibility}"/>
-                                            <TextBlock Text="运行中…" Foreground="{DynamicResource AppAccentBrush}" FontSize="11"
+                                            <TextBlock Text="{Binding RunningText}" Foreground="{DynamicResource AppAccentBrush}" FontSize="11"
                                                        Margin="0,2,0,0" Visibility="{Binding RunningVisibility}"/>
                                         </StackPanel>
                                     </Border>

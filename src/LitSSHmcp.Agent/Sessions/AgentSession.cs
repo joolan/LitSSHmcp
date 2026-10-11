@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using LitSSHmcp.Core.Models;
 using Microsoft.Extensions.AI;
@@ -18,9 +19,18 @@ public sealed class AgentSession
     private readonly IReadOnlyList<IAgentTool> _tools;
     private readonly Dictionary<string, IAgentTool> _toolsByName;
     private readonly Func<string, CancellationToken, Task<string?>>? _recall;
-    private readonly string _systemPrompt;
+    private string _systemPrompt;
     private readonly SpillStore? _spill;
     private readonly int? _maxIterationsOverride;
+
+    private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
+    private bool _planMode;
+
+    /// <summary>计划模式每轮附在用户消息尾部的提示（不改系统提示/工具集，保持前缀缓存稳定）。</summary>
+    private const string PlanModeNotice =
+        "【计划模式】当前处于计划模式：只做只读调研/取证，可用 update_plan 列计划；" +
+        "**不要执行任何写操作**（命令/SQL/文件写入/重启等）。" +
+        "若用户的指令含执行/变更意图，明确提示用户“当前处于计划模式，需切换到执行模式后才能开始”，并先给出计划，不要擅自执行。";
 
     /// <summary>滚动摘要：被裁剪掉的旧轮次压缩成的一段文本（注入为继系统提示后的第一条 System 消息）。</summary>
     private string? _summary;
@@ -62,6 +72,35 @@ public sealed class AgentSession
 
     public int ToolCount => _tools.Count;
 
+    /// <summary>替换系统提示（用于会话中切换激活技能等场景）；只改第一条 System 消息，不动历史。</summary>
+    public void SetSystemPrompt(string prompt)
+    {
+        _systemPrompt = prompt;
+        if (Messages.Count > 0 && Messages[0].Role == ChatRole.System)
+            Messages[0] = new ChatMessage(ChatRole.System, prompt);
+        else
+            Messages.Insert(0, new ChatMessage(ChatRole.System, prompt));
+    }
+
+    /// <summary>设置工具级审批策略（会话级，Agent 层）；<c>Deny</c> 的工具在调用前被拦截。</summary>
+    public void SetToolPolicy(IReadOnlyDictionary<string, AgentToolPolicy>? policy) => _toolPolicy = policy;
+
+    /// <summary>设置计划模式（运行期标志）：不改系统提示/工具集，仅每轮附提示并拦截写工具。</summary>
+    public void SetPlanMode(bool planMode) => _planMode = planMode;
+
+    private bool IsDenied(string toolName) =>
+        _toolPolicy is not null && _toolPolicy.TryGetValue(toolName, out var policy) && policy == AgentToolPolicy.Deny;
+
+    private static string DeniedMessage(string toolName) =>
+        $"工具 {toolName} 已被本会话的「工具审批策略」禁用（拒绝），未执行。"
+        + "如需使用，请在输入区 + 菜单 → 工具审批策略 里把它改回「默认」或「允许」。";
+
+    private bool IsPlanBlocked(string toolName) =>
+        _planMode && _toolsByName.TryGetValue(toolName, out var tool) && !tool.ReadOnly;
+
+    private static string PlanBlockedMessage(string toolName) =>
+        $"计划模式下不允许执行写操作（工具 {toolName}），未执行。请切到「执行模式」后重试。";
+
     /// <summary>发送一条用户消息并跑到本轮结束（含工具调用）；事件通过 <paramref name="progress"/> 推送。</summary>
     public Task SendAsync(string userText, IProgress<AgentEvent>? progress, CancellationToken ct = default)
         => SendAsync(new AIContent[] { new TextContent(userText) }, progress, ct);
@@ -77,7 +116,11 @@ public sealed class AgentSession
         // 上下文管理：在加入本轮用户消息之前，按轮边界裁剪历史（必要时滚动摘要），保证后续 tool 配对完整。
         await CompactIfNeededAsync(ct);
 
-        Messages.Add(new ChatMessage(ChatRole.User, userContents.ToList()));
+        // 计划模式：把提示附在本轮用户消息前（尾部位，不动系统提示/工具集，缓存友好）。
+        var effectiveContents = _planMode
+            ? new List<AIContent> { new TextContent(PlanModeNotice) }.Concat(userContents).ToList()
+            : userContents.ToList();
+        Messages.Add(new ChatMessage(ChatRole.User, effectiveContents));
 
         // 长期记忆召回：作为一条临时系统上下文插在用户消息之前
         if (_recall is not null)
@@ -119,6 +162,8 @@ public sealed class AgentSession
                 {
                     if (content is TextContent { Text: { Length: > 0 } textChunk })
                         progress?.Report(new AgentEvent(AgentEventKind.AssistantText, textChunk));
+                    else if (content is TextReasoningContent { Text: { Length: > 0 } reasoningChunk })
+                        progress?.Report(new AgentEvent(AgentEventKind.AssistantReasoning, reasoningChunk));
                 }
             }
 
@@ -126,7 +171,14 @@ public sealed class AgentSession
             RecordUsage(response, estimatedBeforeRequest);
             var assistantMessages = response.Messages;
             foreach (var message in assistantMessages)
+            {
+                // 思考内容仅用于展示，绝不回喂上下文（部分 provider 不接受输入含 reasoning，且会白白撑大历史）。
+                if (message.Contents is IList<AIContent> contentsList)
+                    for (var i = contentsList.Count - 1; i >= 0; i--)
+                        if (contentsList[i] is TextReasoningContent)
+                            contentsList.RemoveAt(i);
                 Messages.Add(message);
+            }
 
             var contents = assistantMessages.SelectMany(m => m.Contents).ToList();
             var calls = contents.OfType<FunctionCallContent>().ToList();
@@ -268,6 +320,11 @@ public sealed class AgentSession
     private async Task<(bool Ok, string Text, long Ms)> InvokeOneAsync(
         string name, IDictionary<string, object?>? arguments, CancellationToken ct)
     {
+        if (IsDenied(name))
+            return (false, DeniedMessage(name), 0);
+        if (IsPlanBlocked(name))
+            return (false, PlanBlockedMessage(name), 0);
+
         var ok = true;
         string resultText;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -294,7 +351,8 @@ public sealed class AgentSession
             resultText = "工具执行异常: " + ex.Message;
         }
         stopwatch.Stop();
-        return (ok, resultText, stopwatch.ElapsedMilliseconds);
+        // 规范化：去掉 \uXXXX 转义、展开内嵌 JSON、保持紧凑——模型更省 token，界面也可读。
+        return (ok, ToolResultFormatter.Normalize(resultText), stopwatch.ElapsedMilliseconds);
     }
 
     // ---- 真实用量（provider 在响应里返回的 usage；不支持时保持 null，一切回退为估算） ----
@@ -317,6 +375,9 @@ public sealed class AgentSession
     /// <summary>本会话累计命中缓存的输入 token（含在 <see cref="SessionInputTokens"/> 之内）。</summary>
     public long SessionCachedInputTokens { get; private set; }
 
+    /// <summary>本会话累计模型请求次数。</summary>
+    public int SessionRequestCount { get; private set; }
+
     /// <summary>真实 prompt token ÷ 本地估算 的平滑比值（null=尚无真实用量）。</summary>
     public double? UsageRatio { get; private set; }
 
@@ -330,6 +391,7 @@ public sealed class AgentSession
 
     private void RecordUsage(ChatResponse response, int estimatedAtRequest)
     {
+        SessionRequestCount++;
         var usage = response.Usage;
         if (usage is null)
             return;
@@ -488,6 +550,11 @@ public sealed class AgentSession
     public async Task<(bool Success, string Result, long DurationMs)> InvokeToolAsync(
         string name, IDictionary<string, object?>? arguments, CancellationToken ct)
     {
+        if (IsDenied(name))
+            return (false, DeniedMessage(name), 0);
+        if (IsPlanBlocked(name))
+            return (false, PlanBlockedMessage(name), 0);
+
         if (!_toolsByName.TryGetValue(name, out var tool))
             return (false, $"未知工具: {name}", 0);
 
@@ -746,7 +813,13 @@ public sealed class AgentSession
     {
         if (arguments is null || arguments.Count == 0)
             return null;
-        try { return JsonSerializer.Serialize(arguments); }
+        // 不转义非 ASCII（否则中文入参会被序列化成 \uXXXX，界面/模型都难读）。
+        try { return JsonSerializer.Serialize(arguments, JsonOptions); }
         catch { return null; }
     }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 }

@@ -1,0 +1,325 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.TriggerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="触发事件" Height="760" Width="980" MinHeight="600" MinWidth="820"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="触发事件（手动 / 定时 / 同步完成后 · 仅 App 运行期间生效）"/>
+
+        <Grid Grid.Row="1" Margin="12,0,12,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="230"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 触发事件列表 -->
+            <DockPanel Grid.Column="0">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                    <ui:Button Content="新建" Padding="12,3" Margin="0,0,6,0" Command="{Binding NewTriggerCommand}"/>
+                    <ui:Button Content="删除" Padding="12,3" Command="{Binding DeleteTriggerCommand}"/>
+                    <ui:Button Content="总览" Padding="12,3" Margin="6,0,0,0" Click="OnOverview"
+                               ToolTip="可视化查看所有触发事件的调度/下次运行与动作流水线"/>
+                </StackPanel>
+                <ListBox ItemsSource="{Binding Triggers}" SelectedItem="{Binding SelectedTrigger}"
+                         Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                           Text="{Binding LastResult}"/>
+                                <TextBlock FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                           Text="{Binding LastRunAt, StringFormat='上次: {0:MM-dd HH:mm}'}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent"/>
+
+            <!-- 编辑区 -->
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="触发事件名称" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBox Grid.Column="0" FontWeight="Normal"
+                                    Text="{Binding SelectedTrigger.Name, UpdateSourceTrigger=PropertyChanged}"/>
+                        <CheckBox Grid.Column="1" Content="启用" Margin="12,0,0,0" VerticalAlignment="Center"
+                                  IsChecked="{Binding SelectedTrigger.Enabled, UpdateSourceTrigger=PropertyChanged}"/>
+                    </Grid>
+
+                    <!-- 目标 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="执行目标:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox ItemsSource="{Binding TargetNames}" SelectedIndex="{Binding TargetIndex}" Width="140"/>
+                    </StackPanel>
+                    <StackPanel Visibility="{Binding ServerVisibility}" Margin="0,0,0,10">
+                        <TextBlock Text="目标服务器（动作在该服务器上执行）" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <ComboBox ItemsSource="{Binding Servers}" DisplayMemberPath="DisplayName" SelectedValuePath="Id"
+                                  SelectedValue="{Binding SelectedTrigger.ServerId, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                    <TextBlock Visibility="{Binding ServerVisibility}" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="11"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               Text="远程 git 需服务器已配置免密/密钥；远程备份默认用 tar（缺失时回退 zip，需服务器已安装）。"/>
+
+                    <!-- 触发源 -->
+                    <TextBlock Text="触发源（手动始终可用；可叠加定时 / 被同步任务事件触发）" FontWeight="SemiBold" Margin="0,0,0,6"/>
+
+                    <CheckBox Content="定时触发" Margin="0,0,0,6"
+                              IsChecked="{Binding IsScheduleEnabled, Mode=TwoWay}"/>
+
+                    <StackPanel IsEnabled="{Binding IsScheduleEnabled}">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <RadioButton Content="固定间隔" GroupName="TriggerSchedule" VerticalAlignment="Center" Width="100"
+                                         IsChecked="{Binding IsIntervalSchedule, Mode=TwoWay}"/>
+                            <TextBlock Text="每隔" VerticalAlignment="Center" Margin="6,0,4,0"/>
+                            <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTrigger.IntervalMinutes, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBlock Text="分钟" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,0,6">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Content="每周固定时刻" GroupName="TriggerSchedule" VerticalAlignment="Center" Width="100"
+                                             IsChecked="{Binding IsWeeklySchedule, Mode=TwoWay}"/>
+                                <TextBlock Text="时刻" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTrigger.TimeOfDay, UpdateSourceTrigger=PropertyChanged}" ToolTip="HH:mm"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding WeekdayOptions}" Margin="24,6,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{Binding Label}" IsChecked="{Binding Selected, Mode=TwoWay}" Margin="0,0,10,0"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,0,8">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Content="每月固定" GroupName="TriggerSchedule" VerticalAlignment="Center" Width="100"
+                                             IsChecked="{Binding IsMonthlySchedule, Mode=TwoWay}"/>
+                                <TextBlock Text="时刻" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTrigger.TimeOfDay, UpdateSourceTrigger=PropertyChanged}" ToolTip="HH:mm"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding MonthDayOptions}" Margin="24,6,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{Binding Label}" IsChecked="{Binding Selected, Mode=TwoWay}" Margin="0,0,10,4" MinWidth="26"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="（日期 1-28；多选）" FontSize="11" Margin="24,0,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <CheckBox Content="允许被同步任务「事件触发」（在「文件/文件夹同步」任务的末尾选择本事件及触发条件）"
+                              Margin="0,4,0,12" IsChecked="{Binding SelectedTrigger.AllowEventTrigger, UpdateSourceTrigger=PropertyChanged}"/>
+
+                    <!-- 动作流水线 -->
+                    <TextBlock Text="动作流水线（按顺序执行；每个动作一张卡片，可上移/下移/删除）" FontWeight="SemiBold" Margin="0,0,0,6"/>
+
+                    <ItemsControl ItemsSource="{Binding ActionItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,8">
+                                    <StackPanel>
+                                        <!-- 卡片头：类型 + 失败继续 + 操作 -->
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                                <TextBlock Text="动作类型:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <ComboBox Width="150" SelectedIndex="{Binding TypeIndex, Mode=TwoWay}"
+                                                          ItemsSource="{Binding DataContext.ActionTypeNames, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                            </StackPanel>
+                                            <CheckBox Grid.Column="1" Content="失败后继续执行后续动作" Margin="16,0,0,0" VerticalAlignment="Center"
+                                                      IsChecked="{Binding Action.ContinueOnError, UpdateSourceTrigger=PropertyChanged}"/>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                                <ui:Button Content="上移" Padding="8,2" Margin="0,0,4,0"
+                                                           Command="{Binding DataContext.MoveUpCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           CommandParameter="{Binding}"/>
+                                                <ui:Button Content="下移" Padding="8,2" Margin="0,0,4,0"
+                                                           Command="{Binding DataContext.MoveDownCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           CommandParameter="{Binding}"/>
+                                                <ui:Button Content="删除" Padding="8,2"
+                                                           Command="{Binding DataContext.DeleteActionItemCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           CommandParameter="{Binding}"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <!-- Git -->
+                                        <StackPanel Visibility="{Binding GitVisibility}">
+                                            <TextBlock Text="仓库目录" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ui:TextBox Grid.Column="0" FontWeight="Normal" Margin="0,0,6,0"
+                                                            Text="{Binding Action.GitDir, UpdateSourceTrigger=PropertyChanged}"
+                                                            PlaceholderText="本机路径或远程绝对路径，如 /srv/app"/>
+                                                <ui:Button Grid.Column="1" Content="选择…" Padding="10,3" Click="OnPickGitDir"/>
+                                            </Grid>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                <TextBlock Text="操作:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <ComboBox Width="130" SelectedIndex="{Binding GitOperationIndex, Mode=TwoWay}"
+                                                          ItemsSource="{Binding DataContext.GitOperationNames, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                                <CheckBox Content="提交前 git add -A" Margin="16,0,0,0" VerticalAlignment="Center"
+                                                          IsChecked="{Binding Action.GitCommitAll, UpdateSourceTrigger=PropertyChanged}"/>
+                                            </StackPanel>
+                                            <TextBlock Text="提交信息模板（支持 {{timestamp}}/{{trigger}}/{{result}} 等变量）" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                            <ui:TextBox FontWeight="Normal" Margin="0,0,0,8"
+                                                        Text="{Binding Action.GitMessageTemplate, UpdateSourceTrigger=PropertyChanged}"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="推送远端:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <ui:TextBox FontWeight="Normal" Width="100" Margin="0,0,12,0"
+                                                            Text="{Binding Action.GitPushRemote, UpdateSourceTrigger=PropertyChanged}"/>
+                                                <TextBlock Text="分支:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <ui:TextBox FontWeight="Normal" Width="120" PlaceholderText="留空=当前分支"
+                                                            Text="{Binding Action.GitPushBranch, UpdateSourceTrigger=PropertyChanged}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- Webhook -->
+                                        <StackPanel Visibility="{Binding WebhookVisibility}">
+                                            <TextBlock Text="Webhook URL" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                            <ui:TextBox FontWeight="Normal" Margin="0,0,0,8"
+                                                        Text="{Binding Action.Url, UpdateSourceTrigger=PropertyChanged}"
+                                                        PlaceholderText="https://...（钉钉/企微/飞书机器人或自建接口）"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                <TextBlock Text="模板:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <ComboBox Width="130" SelectedIndex="{Binding WebhookTemplateIndex, Mode=TwoWay}"
+                                                          ItemsSource="{Binding DataContext.WebhookTemplateNames, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                                <TextBlock Text="签名密钥(可选):" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                                                <ui:TextBox FontWeight="Normal" Width="180"
+                                                            Text="{Binding Action.Secret, UpdateSourceTrigger=PropertyChanged}"
+                                                            PlaceholderText="钉钉加签 / 飞书校验 secret"/>
+                                            </StackPanel>
+                                            <TextBlock Text="请求体模板（通用 JSON；留空使用内置默认载荷，支持 {{变量}}）" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                            <ui:TextBox FontWeight="Normal" Height="70" TextWrapping="Wrap" AcceptsReturn="True"
+                                                        VerticalScrollBarVisibility="Auto" Margin="0,0,0,8"
+                                                        Text="{Binding Action.BodyTemplate, UpdateSourceTrigger=PropertyChanged}"
+                                                        PlaceholderText='{}{"trigger":"{{trigger}}","result":"{{result}}","detail":"{{steps}}"}'/>
+                                            <TextBlock Text="可用变量：{{trigger}} {{timestamp}} {{date}} {{cause}} {{result}} {{error}} {{steps}} {{notice}}" FontSize="11"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        </StackPanel>
+
+                                        <!-- Backup -->
+                                        <StackPanel Visibility="{Binding BackupVisibility}">
+                                            <TextBlock Text="待备份目录" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ui:TextBox Grid.Column="0" FontWeight="Normal" Margin="0,0,6,0"
+                                                            Text="{Binding Action.SourcePath, UpdateSourceTrigger=PropertyChanged}"
+                                                            PlaceholderText="如 D:\data 或 /srv/app"/>
+                                                <ui:Button Grid.Column="1" Content="选择…" Padding="10,3" Click="OnPickBackupSource"/>
+                                            </Grid>
+                                            <TextBlock Text="备份输出目录" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ui:TextBox Grid.Column="0" FontWeight="Normal" Margin="0,0,6,0"
+                                                            Text="{Binding Action.DestDir, UpdateSourceTrigger=PropertyChanged}"
+                                                            PlaceholderText="备份文件输出目录（不能位于源目录内）"/>
+                                                <ui:Button Grid.Column="1" Content="选择…" Padding="10,3" Click="OnPickBackupDest"/>
+                                            </Grid>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="格式:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <ComboBox Width="100" SelectedIndex="{Binding BackupFormatIndex, Mode=TwoWay}"
+                                                          ItemsSource="{Binding DataContext.BackupFormatNames, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                                <TextBlock Text="保留最近份数:" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                                                <ui:TextBox FontWeight="Normal" Width="60" Text="{Binding Action.RetentionCount, UpdateSourceTrigger=PropertyChanged}"/>
+                                                <TextBlock Text="(0=不清理，文件名 触发事件名-时间戳)" VerticalAlignment="Center" Margin="6,0,0,0"
+                                                           FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- DatabaseBackup -->
+                                        <StackPanel Visibility="{Binding DbBackupVisibility}">
+                                            <TextBlock Text="数据源（MySQL / PostgreSQL）" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                            <ComboBox DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,0,0,8"
+                                                      ItemsSource="{Binding DataContext.Datasources, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                      SelectedValue="{Binding Action.DatasourceId, UpdateSourceTrigger=PropertyChanged}"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                <TextBlock Text="库名:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <ui:TextBox FontWeight="Normal" Width="180" Margin="0,0,16,0"
+                                                            Text="{Binding Action.Database, UpdateSourceTrigger=PropertyChanged}"
+                                                            PlaceholderText="留空=数据源默认库"/>
+                                                <CheckBox Content="gzip 压缩 (.sql.gz)" VerticalAlignment="Center"
+                                                          IsChecked="{Binding Action.GzipEnabled, UpdateSourceTrigger=PropertyChanged}"/>
+                                            </StackPanel>
+                                            <TextBlock Text="指定表（留空=整库；多个用逗号/换行分隔，PostgreSQL 用 schema.table）" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                            <ui:TextBox FontWeight="Normal" Height="60" TextWrapping="Wrap" AcceptsReturn="True"
+                                                        VerticalScrollBarVisibility="Auto" Margin="0,0,0,8"
+                                                        Text="{Binding TablesText, UpdateSourceTrigger=PropertyChanged}"
+                                                        PlaceholderText="orders, customers 或每行一张表"/>
+                                            <TextBlock Text="备份输出目录（随执行目标：本机 = 本机目录 / 远程 = 服务器目录）" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ui:TextBox Grid.Column="0" FontWeight="Normal" Margin="0,0,6,0"
+                                                            Text="{Binding Action.DestDir, UpdateSourceTrigger=PropertyChanged}"
+                                                            PlaceholderText="本机目录（执行目标=本机）或服务器目录（执行目标=远程），存 .sql / .sql.gz"/>
+                                                <ui:Button Grid.Column="1" Content="选择…" Padding="10,3" Click="OnPickDbBackupDest"/>
+                                            </Grid>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                <TextBlock Text="保留最近份数:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <ui:TextBox FontWeight="Normal" Width="60" Text="{Binding Action.RetentionCount, UpdateSourceTrigger=PropertyChanged}"/>
+                                                <TextBlock Text="(0=不清理)" VerticalAlignment="Center" Margin="6,0,16,0" FontSize="11"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                <TextBlock Text="dump 工具路径(可选):" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <ui:TextBox FontWeight="Normal" Width="210"
+                                                            Text="{Binding Action.DumpToolPath, UpdateSourceTrigger=PropertyChanged}"
+                                                            PlaceholderText="留空=自动探测 mysqldump / pg_dump"/>
+                                            </StackPanel>
+                                            <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       Text="说明：执行目标=本机时在本机执行并落盘（需本机 mysqldump/pg_dump，探测不到时退化为托管流式导出，经 SSH 隧道的数据源自动建隧道）；执行目标=远程服务器时在服务器上执行、落盘到服务器目录（需服务器安装 mysqldump/pg_dump，且服务器能访问该数据库）。密码仅经环境变量传入、不写入日志。"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <ui:Button Content="＋ 添加动作" Padding="12,4" Margin="0,0,0,12" Command="{Binding AddActionCommand}"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <DockPanel Grid.Row="2" Margin="12,10,12,12">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="保存" Appearance="Primary" Padding="14,5" Margin="0,0,8,0" Command="{Binding SaveCommand}"/>
+                <ui:Button Content="立即执行" Padding="12,5" Margin="0,0,8,0" Command="{Binding RunNowCommand}"/>
+                <ui:Button Content="关闭" Width="80" IsCancel="True" Click="OnClose"/>
+            </StackPanel>
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,0"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

@@ -10,6 +10,11 @@
     <None Include="..\..\docs\litssh-mcp-ops-skill\**\*" Link="skills\litssh-mcp-ops-skill\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- AI 运维助手预置技能包(每个子目录一个技能): docs/skills/<name>/SKILL.md -> skills/<name>/SKILL.md -->
+  <ItemGroup>
+    <None Include="..\..\docs\skills\**\*" Link="skills\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- 【同步约定】MCP 工具说明的唯一事实来源是 docs/TOOLS.md。
        这里把它嵌入 App 程序集, 供菜单"配置 → MCP工具说明"(McpToolsWindow) 展示。
        MCP 工具发生变动时, 必须同步更新: ① MCP 服务器端 Tools/*.cs 注解与 UsageGuideTools 内置清单
@@ -28,7 +33,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <!-- 仅用于托盘图标 NotifyIcon；移除 WinForms 隐式 using，避免与 WPF 类型（Button/TextBox/Application 等）歧义 -->
+    <!-- 应用版本（发布脚本会以 -p:Version=<tag> 覆盖）；「设置 → 关于」页面显示该值 -->
+    <Version>1.3.0</Version>
+    <!-- ����������ͼ�� NotifyIcon���Ƴ� WinForms ��ʽ using�������� WPF ���ͣ�Button/TextBox/Application �ȣ����� -->
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 

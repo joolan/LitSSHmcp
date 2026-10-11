@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Services.Storage;
@@ -39,7 +39,17 @@ public partial class App : Application
         {
             _syncScheduler = new SyncScheduler(new ConfigService());
             _syncScheduler.Start();
-            Exit += (_, _) => _syncScheduler?.Dispose();
+
+            // 触发事件调度器：定时 + 订阅同步任务完成事件做联动；仅 App 运行期间执行
+            _triggerScheduler = new TriggerScheduler(new ConfigService());
+            _syncScheduler.TaskCompleted += _triggerScheduler.OnSyncCompleted;
+            _triggerScheduler.Start();
+
+            Exit += (_, _) =>
+            {
+                _triggerScheduler?.Dispose();
+                _syncScheduler?.Dispose();
+            };
         }
         catch
         {
@@ -51,6 +61,7 @@ public partial class App : Application
     }
 
     private static SyncScheduler? _syncScheduler;
+    private static TriggerScheduler? _triggerScheduler;
 
     private static readonly HashSet<string> _shownErrors = new();
 

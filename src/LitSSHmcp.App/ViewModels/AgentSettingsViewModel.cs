@@ -192,6 +192,9 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     private string _contextTokenLimit = "96000";
     public string ContextTokenLimit { get => _contextTokenLimit; set => Set(ref _contextTokenLimit, value); }
 
+    private string _coldStartRecentTurns = "30";
+    public string ColdStartRecentTurns { get => _coldStartRecentTurns; set => Set(ref _coldStartRecentTurns, value); }
+
     private bool _autoSummarize = true;
     public bool AutoSummarize { get => _autoSummarize; set => Set(ref _autoSummarize, value); }
 
@@ -343,8 +346,9 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             SkillsDir = agent.SkillsDir;
             WorkspaceDir = agent.WorkspaceDir;
             McpServerPath = agent.McpServerPath;
-            ContextLimit = agent.ContextLimit.ToString();
-            ContextTokenLimit = agent.ContextTokenLimit.ToString();
+        ContextLimit = agent.ContextLimit.ToString();
+        ContextTokenLimit = agent.ContextTokenLimit.ToString();
+        ColdStartRecentTurns = agent.ColdStartRecentTurns.ToString();
             AutoSummarize = agent.AutoSummarize;
             ToolResultMaxChars = agent.ToolResultMaxChars.ToString();
             CompactToolDescriptions = agent.CompactToolDescriptions;
@@ -393,8 +397,9 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent.SkillsDir = SkillsDir ?? string.Empty;
             config.Agent.WorkspaceDir = WorkspaceDir ?? string.Empty;
             config.Agent.McpServerPath = McpServerPath ?? string.Empty;
-            config.Agent.ContextLimit = (int)Math.Max(0, ParseLong(ContextLimit, 40));
-            config.Agent.ContextTokenLimit = (int)Math.Max(0, ParseLong(ContextTokenLimit, 96000));
+        config.Agent.ContextLimit = (int)Math.Max(0, ParseLong(ContextLimit, 40));
+        config.Agent.ContextTokenLimit = (int)Math.Max(0, ParseLong(ContextTokenLimit, 96000));
+        config.Agent.ColdStartRecentTurns = (int)Math.Max(0, ParseLong(ColdStartRecentTurns, 30));
             config.Agent.AutoSummarize = AutoSummarize;
             config.Agent.ToolResultMaxChars = (int)Math.Max(0, ParseLong(ToolResultMaxChars, 4000));
             config.Agent.CompactToolDescriptions = CompactToolDescriptions;
@@ -569,12 +574,20 @@ public class ModelItemEdit : INotifyPropertyChanged
     private bool _supportsVision;
     public bool SupportsVision { get => _supportsVision; set => Set(ref _supportsVision, value); }
 
+    private string _inputPrice = "0";
+    public string InputPrice { get => _inputPrice; set => Set(ref _inputPrice, value); }
+
+    private string _outputPrice = "0";
+    public string OutputPrice { get => _outputPrice; set => Set(ref _outputPrice, value); }
+
     public static ModelItemEdit From(AgentModelConfig m) => new()
     {
         Id = m.Id,
         Name = m.Name,
         Enabled = m.Enabled,
-        SupportsVision = m.SupportsVision
+        SupportsVision = m.SupportsVision,
+        InputPrice = m.InputPricePerMTok.ToString("0.####"),
+        OutputPrice = m.OutputPricePerMTok.ToString("0.####")
     };
 
     public AgentModelConfig ToModel() => new()
@@ -582,7 +595,9 @@ public class ModelItemEdit : INotifyPropertyChanged
         Id = string.IsNullOrWhiteSpace(Id) ? Guid.NewGuid().ToString("N") : Id,
         Name = Name?.Trim() ?? string.Empty,
         Enabled = Enabled,
-        SupportsVision = SupportsVision
+        SupportsVision = SupportsVision,
+        InputPricePerMTok = double.TryParse(InputPrice, out var ip) ? ip : 0,
+        OutputPricePerMTok = double.TryParse(OutputPrice, out var op) ? op : 0
     };
 
     public event PropertyChangedEventHandler? PropertyChanged;

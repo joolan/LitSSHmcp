@@ -26,6 +26,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     private string _logAllowedPaths = string.Empty;
     private string _maxConcurrent = "3";
     private string _maxPerMinute = "60";
+    private string _maxConcurrentBackups = "2";
     private bool _auditStoreSqlText = true;
     private bool _auditMaskLiterals;
     private string _auditRetentionDays = "90";
@@ -69,6 +70,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     public string LogAllowedPaths { get => _logAllowedPaths; set => Set(ref _logAllowedPaths, value); }
     public string MaxConcurrent { get => _maxConcurrent; set => Set(ref _maxConcurrent, value); }
     public string MaxPerMinute { get => _maxPerMinute; set => Set(ref _maxPerMinute, value); }
+    public string MaxConcurrentBackups { get => _maxConcurrentBackups; set => Set(ref _maxConcurrentBackups, value); }
     public bool AuditStoreSqlText { get => _auditStoreSqlText; set => Set(ref _auditStoreSqlText, value); }
     public bool AuditMaskLiterals { get => _auditMaskLiterals; set => Set(ref _auditMaskLiterals, value); }
     public string AuditRetentionDays { get => _auditRetentionDays; set => Set(ref _auditRetentionDays, value); }
@@ -122,6 +124,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             LogAllowedPaths = Join(s.Logs.AllowedPaths);
             MaxConcurrent = s.Limits.MaxConcurrentPerTarget.ToString();
             MaxPerMinute = s.Limits.MaxCallsPerMinutePerTarget.ToString();
+            MaxConcurrentBackups = s.Limits.MaxConcurrentBackups.ToString();
 
             AuditStoreSqlText = s.Audit.StoreSqlText;
             AuditMaskLiterals = s.Audit.MaskLiterals;
@@ -182,6 +185,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             s.Logs.AllowedPaths = Split(LogAllowedPaths);
             s.Limits.MaxConcurrentPerTarget = (int)Math.Max(1, ParseLong(MaxConcurrent, 3));
             s.Limits.MaxCallsPerMinutePerTarget = (int)Math.Max(0, ParseLong(MaxPerMinute, 60));
+            s.Limits.MaxConcurrentBackups = (int)Math.Clamp(ParseLong(MaxConcurrentBackups, 2), 1, 16);
 
             s.Audit.StoreSqlText = AuditStoreSqlText;
             s.Audit.MaskLiterals = AuditMaskLiterals;

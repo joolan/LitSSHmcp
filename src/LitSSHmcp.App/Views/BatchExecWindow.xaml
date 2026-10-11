@@ -50,10 +50,25 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <DockPanel Grid.Row="0">
+                <!-- 快速命令 / 一键巡检（写操作以 ⚠ 标注，执行前需确认） -->
+                <ItemsControl Grid.Row="0" ItemsSource="{Binding QuickActions}" Margin="0,0,0,8">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <ui:Button Content="{Binding Name}" Padding="8,3" Margin="0,0,6,6" ToolTip="{Binding Command}"
+                                       Command="{Binding DataContext.QuickActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                       CommandParameter="{Binding}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <DockPanel Grid.Row="1">
                     <ui:Button DockPanel.Dock="Right" Content="执行" Icon="{ui:SymbolIcon Play24}" Appearance="Primary"
                                Padding="16,5" Margin="8,0,0,0" Command="{Binding RunCommand}"/>
                     <ui:Button DockPanel.Dock="Right" Content="片段" Padding="10,5" Margin="8,0,0,0" ToolTip="选择全局命令片段填充到输入框" Click="OnSnippets"/>
@@ -61,9 +76,9 @@
                                 FontFamily="Consolas" PlaceholderText="要批量执行的命令，例如：uptime; df -h" VerticalContentAlignment="Center"/>
                 </DockPanel>
 
-                <TextBlock Grid.Row="1" Text="{Binding StatusMessage}" Margin="0,6,0,6" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,6,0,6" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
 
-                <ListBox Grid.Row="2" ItemsSource="{Binding Servers}" Background="Transparent" BorderThickness="0">
+                <ListBox Grid.Row="3" ItemsSource="{Binding Servers}" Background="Transparent" BorderThickness="0">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>

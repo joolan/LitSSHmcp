@@ -73,5 +73,48 @@ public static class ToolGroups
             .ToArray();
     }
 
+    /// <summary>
+    /// 由工具名推断所属分组（键与 <see cref="All"/> 一致），未知返回 null。
+    /// 工具命名约定见 docs/TOOLS.md；这是**唯一的工具↔分组映射实现**，Agent 与服务端共用。
+    /// </summary>
+    public static string? GroupOf(string toolName) => toolName switch
+    {
+        _ when toolName.StartsWith("mysql_", StringComparison.Ordinal) => Mysql,
+        _ when toolName.StartsWith("postgres_", StringComparison.Ordinal) => Postgres,
+        _ when toolName.StartsWith("redis_", StringComparison.Ordinal) => Redis,
+        _ when toolName.StartsWith("datasource_", StringComparison.Ordinal) => Datasource,
+        _ when toolName.StartsWith("docker_", StringComparison.Ordinal) => Docker,
+        _ when toolName.StartsWith("service_", StringComparison.Ordinal) => Service,
+        _ when toolName.StartsWith("log_", StringComparison.Ordinal) => Log,
+        _ when toolName.StartsWith("java_", StringComparison.Ordinal) => Java,
+        _ when toolName.StartsWith("topology_", StringComparison.Ordinal) => Topology,
+        _ when toolName.StartsWith("app_", StringComparison.Ordinal) => App,
+        _ when toolName.StartsWith("mcp_", StringComparison.Ordinal) => Guide,
+        "ssh_execute_command" or "ssh_execute_sudo" or "ssh_get_sudo_status" or "ssh_get_command_history" => Command,
+        "ssh_upload_file" or "ssh_upload_files" or "ssh_download_file" or "ssh_download_files" or "ssh_list_files" => FileTransfer,
+        _ when toolName.StartsWith("ssh_", StringComparison.Ordinal) => Ssh,
+        _ => null
+    };
+
+    /// <summary>分组的人类可读名（用于 server instructions / 能力边界提示，未收录则原样返回）。</summary>
+    public static string Display(string group) => group switch
+    {
+        Ssh => "服务器(ssh_*)",
+        Command => "命令/提权(ssh_execute_*)",
+        FileTransfer => "文件传输(ssh_*_file*/*_files)",
+        Datasource => "数据源(datasource_*)",
+        Mysql => "MySQL(mysql_*)",
+        Postgres => "PostgreSQL(postgres_*)",
+        Redis => "Redis(redis_*)",
+        Docker => "容器(docker_*)",
+        Service => "systemd(service_*)",
+        Log => "日志(log_*)",
+        Java => "JVM(java_*)",
+        Topology => "拓扑(topology_*)",
+        App => "应用体检(app_*)",
+        Guide => "自检/会话(mcp_*)",
+        _ => group
+    };
+
     private static bool Same(string? a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 }

@@ -10,7 +10,7 @@ namespace LitSSHmcp.Core.Services.Datasource;
 /// 复用 <see cref="IDatasourceDriver"/> 抽象，因此 mcp_self_check / datasource_test_connection /
 /// 界面"测试连接" / 拓扑发现都能直接支持 redis 类型数据源。
 /// </summary>
-public class RedisDriver : IDatasourceDriver
+public class RedisDriver : IDatasourceDriver, IRedisKeyExplorer
 {
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(30);
 
@@ -311,6 +311,139 @@ public class RedisDriver : IDatasourceDriver
         var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(CommandTimeout);
         return cts;
+    }
+
+    // ---------- 键浏览（工作台 Redis 模式） ----------
+
+    public async Task<IReadOnlyList<string>> ScanKeysAsync(DataSourceConfig ds, string match, int limit, CancellationToken ct = default)
+    {
+        var keys = new List<string>();
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        using var timeout = CreateTimeout(ct);
+
+        var pattern = string.IsNullOrWhiteSpace(match) ? "*" : match.Trim();
+        var cursor = "0";
+        do
+        {
+            var reply = await session.Client.ExecuteAsync(
+                new[] { "SCAN", cursor, "MATCH", pattern, "COUNT", "200" }, timeout.Token);
+            if (reply.IsError)
+                throw new InvalidOperationException(reply.ErrorMessage);
+
+            var items = reply.Items ?? Array.Empty<RedisValue>();
+            if (items.Count < 2)
+                break;
+
+            cursor = items[0].ToDisplayString();
+            foreach (var key in items[1].Items ?? Array.Empty<RedisValue>())
+            {
+                keys.Add(key.ToDisplayString());
+                if (keys.Count >= Math.Max(1, limit))
+                    return keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
+            }
+        } while (cursor != "0");
+
+        return keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
+    }
+
+    public async Task<RedisKeyValue> GetKeyValueAsync(DataSourceConfig ds, string key, int maxRows = 200, CancellationToken ct = default)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var session = await _connectionProvider.OpenAsync(ds, ct);
+            using var timeout = CreateTimeout(ct);
+            var client = session.Client;
+
+            var typeReply = await client.ExecuteAsync(new[] { "TYPE", key }, timeout.Token);
+            if (typeReply.IsError)
+                return new RedisKeyValue { Success = false, Error = typeReply.ErrorMessage };
+
+            var type = typeReply.ToDisplayString();
+
+            // 生存时间需单独用 TTL 命令（-1 永不过期，-2 键不存在）
+            var ttlReply = await client.ExecuteAsync(new[] { "TTL", key }, timeout.Token);
+            var ttl = ttlReply.IsError
+                ? -2
+                : ttlReply.Kind == RedisValueKind.Integer
+                    ? ttlReply.Integer
+                    : ParseLong(ttlReply.ToDisplayString());
+
+            if (type == "none")
+                return new RedisKeyValue { Success = true, Type = type, TtlSeconds = ttl, Data = null };
+
+            var top = Math.Max(0, maxRows - 1).ToString(CultureInfo.InvariantCulture);
+            var args = type switch
+            {
+                "string" => new[] { "GET", key },
+                "hash" => new[] { "HGETALL", key },
+                "list" => new[] { "LRANGE", key, "0", top },
+                "set" => new[] { "SMEMBERS", key },
+                "zset" => new[] { "ZRANGE", key, "0", top, "WITHSCORES" },
+                "stream" => new[] { "XRANGE", key, "-", "+", "COUNT", maxRows.ToString(CultureInfo.InvariantCulture) },
+                _ => Array.Empty<string>()
+            };
+
+            if (args.Length == 0)
+                return new RedisKeyValue
+                {
+                    Success = true,
+                    Type = type,
+                    TtlSeconds = ttl,
+                    Error = $"键 {key} 的类型为 {type}，暂不支持在此预览（可用命令输入框手动读取）。"
+                };
+
+            var reply = await client.ExecuteAsync(args, timeout.Token);
+            if (reply.IsError)
+                return new RedisKeyValue { Success = false, Type = type, TtlSeconds = ttl, Error = reply.ErrorMessage };
+
+            var (columns, rows, truncated) = type switch
+            {
+                "hash" => PairTable(reply, "field", "value", maxRows),
+                "zset" => PairTable(reply, "member", "score", maxRows),
+                _ => ToTable(reply, maxRows)
+            };
+            stopwatch.Stop();
+            return new RedisKeyValue
+            {
+                Success = true,
+                Type = type,
+                TtlSeconds = ttl,
+                Data = new DatasourceQueryResult
+                {
+                    Success = true,
+                    Columns = columns,
+                    Rows = rows,
+                    RowCount = rows.Count,
+                    Truncated = truncated,
+                    DurationMs = stopwatch.Elapsed.TotalMilliseconds
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            return new RedisKeyValue { Success = false, Error = ex.Message };
+        }
+    }
+
+    /// <summary>把平坦的 [a,b,a,b] 数组按两列（如 field/value、member/score）输出。</summary>
+    private static (string[] Columns, List<Dictionary<string, object?>> Rows, bool Truncated) PairTable(
+        RedisValue reply, string keyName, string valueName, int maxRows)
+    {
+        var columns = new[] { keyName, valueName };
+        var rows = new List<Dictionary<string, object?>>();
+        var items = reply.Items ?? Array.Empty<RedisValue>();
+        var truncated = false;
+        for (var i = 0; i + 1 < items.Count; i += 2)
+        {
+            if (rows.Count >= maxRows) { truncated = true; break; }
+            rows.Add(new Dictionary<string, object?>
+            {
+                [keyName] = items[i].ToDisplayString(),
+                [valueName] = RedisValueFormatter.ToCompactString(items[i + 1])
+            });
+        }
+        return (columns, rows, truncated);
     }
 
     private static (string[] Columns, List<Dictionary<string, object?>> Rows, bool Truncated) ToTable(RedisValue reply, int maxRows)

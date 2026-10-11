@@ -14,10 +14,15 @@ $root = Split-Path -Parent $PSScriptRoot
 $releaseDir = Join-Path $root "release\$Version"
 $selfContained = (-not $FrameworkDependent).ToString().ToLower()
 
+# 把 tag（如 v1.2.0）转换为可嵌入程序集的版本号（发布产物「设置 → 关于」会显示）
+$versionNumber = $Version -replace '^[vV]', ''
+$versionArg = @()
+if ($versionNumber -match '^\d+\.\d+') { $versionArg = @("-p:Version=$versionNumber") }
+
 function Publish-Project($proj, $out) {
     if (Test-Path $out) { Remove-Item -Recurse -Force $out }
     Write-Host "publish $proj -> $out"
-    dotnet publish $proj -c Release -r $Runtime --self-contained $selfContained -o $out --nologo -v q
+    dotnet publish $proj -c Release -r $Runtime --self-contained $selfContained -o $out --nologo -v q @versionArg
     if ($LASTEXITCODE -ne 0) { throw "publish failed: $proj" }
 }
 

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -31,6 +32,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private AgentTurn? _editingTurn;
     private readonly StringBuilder _pendingDelta = new();
     private DateTime _lastFlushUtc = DateTime.MinValue;
+    private readonly StringBuilder _pendingReasoning = new();
+    private DateTime _lastReasoningFlushUtc = DateTime.MinValue;
     private const int StreamFlushMs = 150;
 
     public AgentViewModel(IConfigService configService, IContextStore store, string bundledSkillsDir, Action<Action>? uiInvoke = null)
@@ -59,7 +62,19 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             OnPropertyChanged(nameof(PlanVisibility));
         };
 
-        Turns.CollectionChanged += (_, _) => OnPropertyChanged(nameof(EmptyStateVisibility));
+        Turns.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Reset || Turns.Count == 0)
+                _visibleFrom = 0;
+            OnPropertyChanged(nameof(EmptyStateVisibility));
+            OnPropertyChanged(nameof(HasMoreHistory));
+            (LoadOlderHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        };
+
+        // 对话列表分页视图：只渲染最近 N 轮，避免超长会话一次性渲染全部（模型上下文仍是全量）。
+        TurnsView = CollectionViewSource.GetDefaultView(Turns);
+        TurnsView.Filter = o => o is AgentTurn turn && turn.UiOrdinal >= _visibleFrom;
+        LoadOlderHistoryCommand = new RelayCommand(_ => LoadOlderHistory(), _ => HasMoreHistory);
 
         // 模型下拉视图：按厂家（GroupName）分组，选中项仍是具体的某个模型
         ComboView = CollectionViewSource.GetDefaultView(ComboProviders);
@@ -94,6 +109,185 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ObservableCollection<AgentSessionRow> Sessions { get; } = new();
     public ObservableCollection<AgentSessionRow> FilteredSessions { get; } = new();
     public ObservableCollection<AgentTurn> Turns { get; } = new();
+
+    /// <summary>对话列表的分页视图（只渲染最近 N 轮，支持"加载更早"）；模型上下文仍是全量。</summary>
+    public ICollectionView TurnsView { get; }
+
+    private int _visibleFrom;
+    private const int TranscriptPageSize = 20;
+
+    /// <summary>是否还有更早的记录可加载。</summary>
+    public bool HasMoreHistory => _visibleFrom > 0;
+
+    public ICommand LoadOlderHistoryCommand { get; }
+
+    /// <summary>展示更多更早的轮次（每页 <see cref="TranscriptPageSize"/>）。</summary>
+    public void LoadOlderHistory()
+    {
+        if (_visibleFrom <= 0)
+            return;
+        _visibleFrom = Math.Max(0, _visibleFrom - TranscriptPageSize);
+        TurnsView?.Refresh();
+        OnPropertyChanged(nameof(HasMoreHistory));
+        (LoadOlderHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>重置转录窗口：重算各轮序号，只显示最后 <see cref="TranscriptPageSize"/> 轮。</summary>
+    private void ResetTranscriptWindow()
+    {
+        for (var i = 0; i < Turns.Count; i++)
+            Turns[i].UiOrdinal = i;
+        _visibleFrom = Math.Max(0, Turns.Count - TranscriptPageSize);
+        TurnsView?.Refresh();
+        OnPropertyChanged(nameof(HasMoreHistory));
+        (LoadOlderHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    // ---- 技能目录与激活（选择器 / 索引模式） ----
+
+    /// <summary>可用技能目录（由技能根目录扫描，按当前可用域标注）。</summary>
+    public ObservableCollection<SkillInfo> AvailableSkills { get; } = new();
+
+    /// <summary>当前会话激活的技能（空 = 索引模式：只向模型注入技能索引）。</summary>
+    public ObservableCollection<SkillInfo> ActiveSkills { get; } = new();
+
+    public bool HasActiveSkills => ActiveSkills.Count > 0;
+
+    public bool HasAvailableSkills => AvailableSkills.Count > 0;
+
+    /// <summary>请求打开技能选择窗口（由 AgentWindow 打开）。</summary>
+    public event Action? SkillsPickerRequested;
+
+    private List<string> _activeSkillIds = new();
+
+    /// <summary>技能根目录（用户配置优先，否则内置）；无则 null。</summary>
+    public string? SkillsRoot => SkillRegistry.ResolveDir(_agentConfig.SkillsDir, _bundledSkillsDir);
+
+    // ---- 用量 / 成本（当前会话） ----
+
+    /// <summary>生成当前会话的用量与估算成本报告（供「用量 / 成本」窗口展示）。</summary>
+    public string BuildUsageReport()
+    {
+        var session = _runtime?.Session;
+        var provider = SelectedProvider;
+        if (session is null || provider is null)
+            return "尚未连接模型（无用量数据）。请先发送一条消息。";
+
+        var input = session.SessionInputTokens;
+        var output = session.SessionOutputTokens;
+        var cached = session.SessionCachedInputTokens;
+        var requests = session.SessionRequestCount;
+        var cost = input / 1_000_000.0 * provider.InputPricePerMTok + output / 1_000_000.0 * provider.OutputPricePerMTok;
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"模型：{provider.DisplayName}");
+        if (session.HasRealUsage)
+        {
+            sb.AppendLine($"请求次数：{requests}");
+            sb.AppendLine($"输入 token：{input:N0}" + (cached > 0
+                ? $"（其中缓存命中 {cached:N0}，{cached * 100 / Math.Max(1, input)}%）"
+                : string.Empty));
+            sb.AppendLine($"输出 token：{output:N0}");
+            sb.AppendLine($"合计 token：{input + output:N0}");
+            if (provider.InputPricePerMTok > 0 || provider.OutputPricePerMTok > 0)
+                sb.AppendLine($"估算成本：¥{cost:F4}（入 {provider.InputPricePerMTok}/M · 出 {provider.OutputPricePerMTok}/M）");
+            else
+                sb.AppendLine("估算成本：未填价格 —— 在「AI 助手设置 → 大模型设置」为模型填入 入/出 价格（每百万 token）后显示。");
+        }
+        else
+        {
+            sb.AppendLine("该模型未返回用量（token 为本地估算，成本无法计算）。");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("说明：统计为**当前会话**运行期累计；切换会话或重启助手会重置。缓存命中越多越省。");
+        return sb.ToString();
+    }
+
+    // ---- 计划模式 ----
+
+    private bool _planMode;
+    public bool IsPlanMode
+    {
+        get => _planMode;
+        private set
+        {
+            if (!Set(ref _planMode, value)) return;
+            OnPropertyChanged(nameof(PlanModeText));
+            OnPropertyChanged(nameof(PlanModeIndex));
+        }
+    }
+
+    /// <summary>模式下拉的选中项：0=执行模式，1=计划模式。</summary>
+    public int PlanModeIndex
+    {
+        get => _planMode ? 1 : 0;
+        set
+        {
+            var planMode = value == 1;
+            if (planMode == _planMode)
+                return;
+            SetPlanMode(planMode);
+            OnPropertyChanged(nameof(PlanModeIndex));   // 若被"任务进行中"拒绝则回退显示
+        }
+    }
+
+    public string PlanModeText => _planMode ? "计划模式" : "执行模式";
+
+    // ---- 工具审批策略（会话级，Agent 层） ----
+
+    private Dictionary<string, AgentToolPolicy> _toolPolicy = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>可配置策略的 MCP 工具目录。</summary>
+    public IReadOnlyList<ToolPolicyItem> ToolCatalog => _runtime?.ToolCatalog ?? (IReadOnlyList<ToolPolicyItem>)Array.Empty<ToolPolicyItem>();
+
+    /// <summary>当前工具审批策略（tool → policy）。</summary>
+    public IReadOnlyDictionary<string, AgentToolPolicy> ToolPolicy => _toolPolicy;
+
+    /// <summary>应用工具审批策略：更新、持久化到会话、并热更新运行时。</summary>
+    public void ApplyToolPolicy(IReadOnlyDictionary<string, AgentToolPolicy> policy)
+    {
+        _toolPolicy = new Dictionary<string, AgentToolPolicy>(policy, StringComparer.OrdinalIgnoreCase);
+        _ = PersistToolPolicyAsync();
+        _runtime?.SetToolPolicy(_toolPolicy);
+        var denied = _toolPolicy.Count(kv => kv.Value == AgentToolPolicy.Deny);
+        StatusMessage = denied == 0 ? "工具审批策略：全部默认" : $"工具审批策略：已拒绝 {denied} 个工具（调用前拦截）";
+    }
+
+    private async Task PersistToolPolicyAsync()
+    {
+        if (_sessionId <= 0)
+            return;
+        try
+        {
+            var map = _toolPolicy
+                .Where(kv => kv.Value != AgentToolPolicy.Default)
+                .ToDictionary(kv => kv.Key, kv => AgentToolPolicyParser.ToName(kv.Value));
+            var json = map.Count == 0 ? string.Empty : JsonSerializer.Serialize(map);
+            await _store.SetSessionToolPolicyAsync(_sessionId, json);
+        }
+        catch { /* 保存失败不影响主流程 */ }
+    }
+
+    private async Task RestoreToolPolicyAsync(long sessionId)
+    {
+        _toolPolicy = new Dictionary<string, AgentToolPolicy>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var json = await _store.GetSessionToolPolicyAsync(sessionId);
+            if (!string.IsNullOrWhiteSpace(json))
+            {
+                var map = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+                if (map is not null)
+                    foreach (var (tool, value) in map)
+                        _toolPolicy[tool] = AgentToolPolicyParser.Parse(value);
+            }
+        }
+        catch
+        {
+            _toolPolicy = new Dictionary<string, AgentToolPolicy>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
 
     /// <summary>挑选可用模型：优先指定 id 且模型名非空 → 任一模型名非空 → 指定 id → 第一个。</summary>
     private AgentProviderConfig? PickProvider(string? preferredId) =>
@@ -208,13 +402,38 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public IReadOnlyList<SlashCommand> SlashCommandList { get; } = SlashCommands.All;
 
-    public ObservableCollection<SlashCommand> SlashSuggestions { get; } = new();
+    /// <summary>内置命令 + 用户提示词模板（运行时合并）。</summary>
+    private IReadOnlyList<SlashCommand> _allCommands = SlashCommands.BuiltIn;
+
+    /// <summary>重新加载用户提示词模板并合并到斜杠命令（在助手设置保存后调用）。</summary>
+    public void ReloadPromptTemplates()
+    {
+        var list = new List<SlashCommand>(SlashCommands.BuiltIn);
+        try
+        {
+            foreach (var t in AgentPromptStore.Load())
+                list.Add(new SlashCommand(
+                    "/" + t.Name,
+                    string.IsNullOrWhiteSpace(t.Description) ? "提示词模板" : t.Description,
+                    SlashCommandKind.Template,
+                    t.Prompt));
+        }
+        catch
+        {
+            // 模板读取失败则仅用内置命令
+        }
+        _allCommands = list;
+        if (IsSlashPaletteOpen)
+            UpdateSlashPalette();
+    }
+
+    public ObservableCollection<SlashSuggestion> SlashSuggestions { get; } = new();
 
     private bool _isSlashPaletteOpen;
     public bool IsSlashPaletteOpen { get => _isSlashPaletteOpen; private set => Set(ref _isSlashPaletteOpen, value); }
 
-    private SlashCommand? _selectedSlashSuggestion;
-    public SlashCommand? SelectedSlashSuggestion { get => _selectedSlashSuggestion; set => Set(ref _selectedSlashSuggestion, value); }
+    private SlashSuggestion? _selectedSlashSuggestion;
+    public SlashSuggestion? SelectedSlashSuggestion { get => _selectedSlashSuggestion; set => Set(ref _selectedSlashSuggestion, value); }
 
     private void UpdateSlashPalette()
     {
@@ -225,12 +444,32 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        var matches = SlashCommands.Match(token);
-        SlashSuggestions.Clear();
-        foreach (var m in matches)
-            SlashSuggestions.Add(m);
+        var filter = token.TrimStart('/').Trim();
+        var suggestions = new List<SlashSuggestion>();
 
-        SelectedSlashSuggestion = SlashSuggestions.FirstOrDefault();
+        foreach (var command in SlashCommands.Match(_allCommands, token))
+            suggestions.Add(new SlashSuggestion { Name = command.Name, Description = command.Description, Command = command });
+
+        // codex 风格：技能直接内联在命令列表中（分组标题 + 缩进项，选中即切换激活）。
+        var skills = AvailableSkills
+            .Where(s => filter.Length == 0
+                        || s.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                        || s.Id.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                        || s.Description.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (skills.Count > 0)
+        {
+            suggestions.Add(new SlashSuggestion { IsHeader = true, Name = "技能", Description = "选中即切换激活（✓=已激活；详情用 /技能）" });
+            var active = new HashSet<string>(_activeSkillIds, StringComparer.OrdinalIgnoreCase);
+            foreach (var skill in skills)
+                suggestions.Add(new SlashSuggestion { Name = skill.Name, Description = skill.Description, SkillId = skill.Id, IsSelected = active.Contains(skill.Id) });
+        }
+
+        SlashSuggestions.Clear();
+        foreach (var suggestion in suggestions)
+            SlashSuggestions.Add(suggestion);
+
+        SelectedSlashSuggestion = SlashSuggestions.FirstOrDefault(s => !s.IsHeader);
         IsSlashPaletteOpen = SlashSuggestions.Count > 0;
     }
 
@@ -245,35 +484,77 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (!IsSlashPaletteOpen || SlashSuggestions.Count == 0)
             return;
+
         var i = Math.Max(0, SlashSuggestions.IndexOf(SelectedSlashSuggestion!));
-        i = (i + delta + SlashSuggestions.Count) % SlashSuggestions.Count;
-        SelectedSlashSuggestion = SlashSuggestions[i];
+        for (var step = 0; step < SlashSuggestions.Count; step++)
+        {
+            i = (i + delta + SlashSuggestions.Count) % SlashSuggestions.Count;
+            if (!SlashSuggestions[i].IsHeader)
+            {
+                SelectedSlashSuggestion = SlashSuggestions[i];
+                return;
+            }
+        }
     }
 
-    /// <summary>执行面板当前选中的命令（回车/Tab）。</summary>
+    /// <summary>执行面板当前选中的命令，或切换选中技能的激活状态（回车/Tab）。</summary>
     public bool ExecuteSelectedSlashCommand()
     {
         var selected = SelectedSlashSuggestion;
         if (selected is null)
             return false;
-        return TryExecuteSlashCommand(selected, string.Empty);
+        if (selected.Command is { } command)
+            return TryExecuteSlashCommand(command, string.Empty);
+        if (selected.SkillId is { } skillId)
+        {
+            ToggleSkillInline(skillId);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>在斜杠面板内联切换技能激活（保持面板打开并刷新 ✓）。</summary>
+    private void ToggleSkillInline(string skillId)
+    {
+        var ids = new List<string>(_activeSkillIds);
+        if (ids.RemoveAll(id => string.Equals(id, skillId, StringComparison.OrdinalIgnoreCase)) == 0)
+            ids.Add(skillId);
+
+        ApplySkillSelection(ids);
+        UpdateSlashPalette();
+        SelectedSlashSuggestion = SlashSuggestions.FirstOrDefault(
+            s => s.SkillId is not null && string.Equals(s.SkillId, skillId, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>输入首位是已知命令时直接执行（输入框回车）；支持「/工具 log mysql」这类带参数命令。</summary>
     public bool TryExecuteInputCommand()
     {
-        var (cmd, args) = SlashCommands.Parse(Input);
+        var (cmd, args) = SlashCommands.Parse(_allCommands, Input);
         return cmd is not null && TryExecuteSlashCommand(cmd, args);
     }
 
     private bool TryExecuteSlashCommand(SlashCommand cmd, string args)
     {
         CloseSlashPalette();
+
+        // 用户提示词模板：把正文填入输入框（不自动发送，用户可补充后回车）。
+        if (cmd.Kind == SlashCommandKind.Template)
+        {
+            Input = cmd.Prompt ?? string.Empty;
+            return true;
+        }
+
         switch (cmd.Name)
         {
             case SlashCommands.TempChat:
                 Input = string.Empty;
                 TemporaryChatRequested?.Invoke(null);
+                return true;
+            case SlashCommands.Skills:
+                Input = string.Empty;
+                CloseSlashPalette();
+                ReloadSkillCatalog();
+                SkillsPickerRequested?.Invoke();
                 return true;
             case SlashCommands.CompactSession:
                 Input = string.Empty;
@@ -369,6 +650,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string _statusMessage = "加载中…";
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
 
+    /// <summary>是否处于初始加载/切换会话的加载中状态（用于显示加载遮罩）。初始为 true，避免开窗瞬间空白。</summary>
+    private bool _isLoading = true;
+    public bool IsLoading { get => _isLoading; set => Set(ref _isLoading, value); }
+
+    private string _loadingText = "正在加载…";
+    public string LoadingText { get => _loadingText; set => Set(ref _loadingText, value); }
+
     private string _noticeText = string.Empty;
     public string NoticeText
     {
@@ -411,19 +699,16 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public async Task InitializeAsync()
     {
+        IsLoading = true;
+        LoadingText = "正在加载…";
         try
         {
             await _store.InitializeAsync();
             var config = await _configService.LoadConfigAsync();
             _agentConfig = config.Agent ?? new AgentConfig();
-            try
-            {
-                await _store.PruneAsync(_agentConfig.RetentionMaxSessions, _agentConfig.RetentionMaxMessages, _agentConfig.RetentionDays, CancellationToken.None);
-            }
-            catch
-            {
-                // 启动裁剪失败忽略
-            }
+            ReloadPromptTemplates();
+            // 裁剪放到后台，不阻塞首屏（避免历史库较大时卡在启动）。
+            _ = PruneInBackgroundAsync();
 
             _suppressSelection = true;
             Providers.Clear();
@@ -432,6 +717,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             RebuildComboProviders();
             SelectedProvider = PickProvider(_agentConfig.ActiveProviderId);
 
+            LoadingText = "正在加载会话…";
             await ReloadSessionsAsync();
             var target = Sessions.FirstOrDefault();
             if (target is null)
@@ -452,6 +738,23 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         catch (Exception ex)
         {
             StatusMessage = "初始化失败: " + ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    /// <summary>后台按保留策略裁剪历史（失败忽略，不影响启动）。</summary>
+    private async Task PruneInBackgroundAsync()
+    {
+        try
+        {
+            await _store.PruneAsync(_agentConfig.RetentionMaxSessions, _agentConfig.RetentionMaxMessages, _agentConfig.RetentionDays, CancellationToken.None);
+        }
+        catch
+        {
+            // 裁剪失败忽略
         }
     }
 
@@ -478,23 +781,39 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         _editingTurn = null;
         Turns.Clear();
         Plan.Clear();
+        IsLoading = true;
+        LoadingText = "正在加载会话…";
 
-        // 切换会话：优先用该会话最后使用的模型；已删除/停用则回退全局默认 → 第一个启用模型
-        var session = Sessions.FirstOrDefault(s => s.Id == id);
-        _suppressSelection = true;
-        SelectedProvider = PickProvider(session?.ProviderId ?? _agentConfig.ActiveProviderId);
-        _suppressSelection = false;
-        if (SelectedProvider is not null && !string.Equals(session?.ProviderId, SelectedProvider.Id, StringComparison.Ordinal))
-            _ = PersistProviderSelectionAsync(SelectedProvider.Id);
+        try
+        {
+            // 切换会话：优先用该会话最后使用的模型；已删除/停用则回退全局默认 → 第一个启用模型
+            var session = Sessions.FirstOrDefault(s => s.Id == id);
+            _suppressSelection = true;
+            SelectedProvider = PickProvider(session?.ProviderId ?? _agentConfig.ActiveProviderId);
+            _suppressSelection = false;
+            if (SelectedProvider is not null && !string.Equals(session?.ProviderId, SelectedProvider.Id, StringComparison.Ordinal))
+                _ = PersistProviderSelectionAsync(SelectedProvider.Id);
 
-        var (turns, history, hasUser) = await BuildTranscriptAsync(id);
-        foreach (var turn in turns)
-            Turns.Add(turn);
-        _sessionTitled = hasUser;
+            var (turns, history, hasUser) = await BuildTranscriptAsync(id);
+            foreach (var turn in turns)
+                Turns.Add(turn);
+            _sessionTitled = hasUser;
+            ResetTranscriptWindow();
 
-        RestorePlan(await _store.GetSessionPlanAsync(id));
+            RestorePlan(await _store.GetSessionPlanAsync(id));
+            await RestoreActiveSkillsAsync(id);
+            await RestorePlanModeAsync(id);
+            await RestoreToolPolicyAsync(id);
+            ReloadSkillCatalog();
 
-        await ResetRuntimeAsync(history);
+            // 对话内容已上屏：先撤遮罩，再后台连接/重建运行时（状态点会显示"连接中…"）。
+            IsLoading = false;
+            await ResetRuntimeAsync(history);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     // ---- 统一的会话记录解析（UI Turns 与模型 history 的唯一来源） ----
@@ -546,6 +865,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                     current!.Steps.Add(AgentTranscript.ToStep(step));
                     break;
                 }
+                case "reasoning":
+                {
+                    EnsureCurrent(row.Timestamp);
+                    current!.ReasoningText = row.Content;
+                    current.ShowReasoning = false;   // 历史恢复默认折叠，点开可看
+                    break;
+                }
                 case "assistant":
                 {
                     EnsureCurrent(row.Timestamp);
@@ -557,20 +883,27 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
         }
 
-        return (turns, BuildHistoryFromTurns(turns, turns.Count), hasUser);
+        var recentTurns = _agentConfig.ColdStartRecentTurns;
+        var from = recentTurns > 0 ? Math.Max(0, turns.Count - recentTurns) : 0;
+        var history = BuildHistoryFromTurns(turns, turns.Count, from);
+        if (from > 0)
+            history.Insert(0, new ChatMessage(ChatRole.System,
+                $"（本会话较早的 {from} 轮对话已省略以降低冷启动上下文开销；如需关键信息请让用户补充。）"));
+        return (turns, history, hasUser);
     }
 
     /// <summary>
     /// 由内存 Turns 构造模型 history（user + 可选最近图片 → 工具轨迹 System → assistant），
     /// 加载/切模型/编辑重发共用，保证任何路径下模型所见历史一致。
+    /// <paramref name="from"/> 起（默认 0）：冷启动只注入最近 N 轮，更早的由滚动摘要代表。
     /// </summary>
-    private List<ChatMessage> BuildHistoryFromTurns(IReadOnlyList<AgentTurn> turns, int upTo)
+    private List<ChatMessage> BuildHistoryFromTurns(IReadOnlyList<AgentTurn> turns, int upTo, int from = 0)
     {
         var vision = SelectedProvider?.SupportsVision == true;
         var reloadable = vision ? CollectReloadImages(turns, upTo) : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var history = new List<ChatMessage>();
 
-        for (var i = 0; i < upTo && i < turns.Count; i++)
+        for (var i = Math.Max(0, from); i < upTo && i < turns.Count; i++)
         {
             var turn = turns[i];
             var hasUser = turn.StorageText is not null || !string.IsNullOrEmpty(turn.UserText);
@@ -641,6 +974,10 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         _suppressSelection = false;
         if (SelectedProvider is not null)
             _ = PersistProviderSelectionAsync(SelectedProvider.Id);
+        _activeSkillIds = new();
+        IsPlanMode = false;
+        _toolPolicy = new Dictionary<string, AgentToolPolicy>(StringComparer.OrdinalIgnoreCase);
+        ReloadSkillCatalog();
         await ResetRuntimeAsync(null);
     }
 
@@ -732,6 +1069,135 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    // ---- 技能目录 / 激活 ----
+
+    /// <summary>重新扫描技能目录（按当前可用域标注），并刷新已激活技能的 chip。</summary>
+    public void ReloadSkillCatalog()
+    {
+        var root = SkillsRoot;
+        AvailableSkills.Clear();
+        if (root is not null)
+        {
+            try
+            {
+                foreach (var info in SkillRegistry.List(root, _runtime?.AvailableGroups))
+                    AvailableSkills.Add(info);
+            }
+            catch
+            {
+                // 目录不可读忽略
+            }
+        }
+        OnPropertyChanged(nameof(HasAvailableSkills));
+        RebuildActiveSkillChips();
+    }
+
+    private async Task RestoreActiveSkillsAsync(long sessionId)
+    {
+        _activeSkillIds = new();
+        try
+        {
+            var json = await _store.GetSessionActiveSkillsAsync(sessionId);
+            if (!string.IsNullOrWhiteSpace(json))
+                _activeSkillIds = JsonSerializer.Deserialize<List<string>>(json) ?? new();
+        }
+        catch
+        {
+            _activeSkillIds = new();
+        }
+        RebuildActiveSkillChips();
+    }
+
+    private void RebuildActiveSkillChips()
+    {
+        ActiveSkills.Clear();
+        foreach (var id in _activeSkillIds)
+        {
+            var info = AvailableSkills.FirstOrDefault(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase));
+            if (info is not null)
+                ActiveSkills.Add(info);
+        }
+        OnPropertyChanged(nameof(HasActiveSkills));
+    }
+
+    /// <summary>应用技能选择（技能选择窗口回调）：更新 chip、持久化到会话、并热更新运行时系统提示。</summary>
+    public void ApplySkillSelection(IReadOnlyList<string> skillIds)
+    {
+        _activeSkillIds = skillIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        RebuildActiveSkillChips();
+        _ = PersistActiveSkillsAsync();
+        if (_runtime is not null && !IsBusy)
+            _runtime.SetActiveSkills(_activeSkillIds.Count == 0 ? null : _activeSkillIds);
+        StatusMessage = _activeSkillIds.Count == 0
+            ? "技能：索引模式（未激活具体技能）"
+            : $"已激活 {_activeSkillIds.Count} 个技能";
+    }
+
+    /// <summary>移除某个已激活技能（chip 上的 ×）。</summary>
+    public void RemoveActiveSkill(SkillInfo skill)
+    {
+        var ids = _activeSkillIds
+            .Where(id => !string.Equals(id, skill.Id, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        ApplySkillSelection(ids);
+    }
+
+    private async Task PersistActiveSkillsAsync()
+    {
+        if (_sessionId <= 0)
+            return;
+        try
+        {
+            var json = _activeSkillIds.Count == 0 ? string.Empty : JsonSerializer.Serialize(_activeSkillIds);
+            await _store.SetSessionActiveSkillsAsync(_sessionId, json);
+        }
+        catch
+        {
+            // 保存失败不影响主流程
+        }
+    }
+
+    // ---- 计划模式 ----
+
+    /// <summary>切换计划模式（会话级）。计划模式下只暴露只读工具，模型先出计划待确认。</summary>
+    public void SetPlanMode(bool planMode)
+    {
+        if (IsBusy)
+        {
+            StatusMessage = "任务进行中，无法切换计划模式；请先停止。";
+            OnPropertyChanged(nameof(IsPlanMode));
+            return;
+        }
+        if (_planMode == planMode)
+            return;
+
+        IsPlanMode = planMode;
+        _ = PersistPlanModeAsync();
+        _runtime?.SetPlanMode(planMode);
+        StatusMessage = planMode
+            ? "已切到计划模式：只做只读调研、可列计划，不会擅自执行；确认后切回执行模式再发指令"
+            : "已切到执行模式：可正常执行写操作";
+    }
+
+    private async Task PersistPlanModeAsync()
+    {
+        if (_sessionId <= 0)
+            return;
+        try { await _store.SetSessionPlanModeAsync(_sessionId, _planMode); }
+        catch { /* 保存失败不影响主流程 */ }
+    }
+
+    private async Task RestorePlanModeAsync(long sessionId)
+    {
+        var planMode = false;
+        try { planMode = await _store.GetSessionPlanModeAsync(sessionId); }
+        catch { planMode = false; }
+        _planMode = planMode;
+        OnPropertyChanged(nameof(IsPlanMode));
+        OnPropertyChanged(nameof(PlanModeText));
+        OnPropertyChanged(nameof(PlanModeIndex));
+    }
+
     private async Task EnsureRuntimeAsync(IEnumerable<ChatMessage>? history)
     {
         if (SelectedProvider is null)
@@ -747,12 +1213,15 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             ModelStatus = "connecting";
             StatusMessage = "正在连接 MCP 服务器…";
-            _runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history, UpdatePlan);
+            _runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history, UpdatePlan,
+                _activeSkillIds.Count == 0 ? null : _activeSkillIds, _planMode);
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
             ModelStatus = "ready";
             RefreshContextInfo();
+            ReloadSkillCatalog();
+            _runtime.SetToolPolicy(_toolPolicy);
         }
         catch (Exception ex)
         {
@@ -776,11 +1245,15 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         try
         {
             _runtime.ResetSession(SelectedProvider, history);
+            _runtime.SetActiveSkills(_activeSkillIds.Count == 0 ? null : _activeSkillIds);
+            _runtime.SetPlanMode(_planMode);
+            _runtime.SetToolPolicy(_toolPolicy);
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
             ModelStatus = "ready";
             RefreshContextInfo();
+            ReloadSkillCatalog();
             await Task.CompletedTask;
         }
         catch (Exception ex)
@@ -1117,6 +1590,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 for (var i = Turns.Count - 1; i > idx; i--)
                     Turns.RemoveAt(i);
+                ResetTranscriptWindow();
                 RebuildSessionHistoryUpTo(idx);
 
                 var editText = (fixedText ?? Input)?.Trim();
@@ -1184,7 +1658,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             OnPropertyChanged(nameof(HasAttachments));
         }
 
-        var turn = new AgentTurn(displayText, DateTime.UtcNow) { StorageText = persistedText };
+        var turn = new AgentTurn(displayText, DateTime.UtcNow) { StorageText = persistedText, UiOrdinal = Turns.Count };
         foreach (var imagePath in imagePaths)
             turn.Images.Add(imagePath);
         Turns.Add(turn);
@@ -1208,6 +1682,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         var assistantText = new StringBuilder();
         _pendingDelta.Clear();
         _lastFlushUtc = DateTime.MinValue;
+        _pendingReasoning.Clear();
+        _lastReasoningFlushUtc = DateTime.MinValue;
         var progress = new SyncProgress(e => OnAgentEvent(e, turn, assistantText), _uiInvoke);
 
         try
@@ -1228,6 +1704,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         finally
         {
             FlushDelta(turn);
+            FlushReasoning(turn);
             turn.MarkDone(DateTime.UtcNow);
             IsBusy = false;
             _cts?.Dispose();
@@ -1360,13 +1837,23 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                     FlushDelta(turn);
                 break;
 
+            case AgentEventKind.AssistantReasoning:
+                var reasoningChunk = e.Text ?? string.Empty;
+                if (reasoningChunk.Length == 0) break;
+                _pendingReasoning.Append(reasoningChunk);
+                if ((DateTime.UtcNow - _lastReasoningFlushUtc).TotalMilliseconds >= StreamFlushMs)
+                    FlushReasoning(turn);
+                break;
+
             case AgentEventKind.ToolCall:
                 FlushDelta(turn);
+                FlushReasoning(turn);
                 turn.Steps.Add(new AgentStep(e.ToolName ?? "工具", e.ArgumentsJson ?? string.Empty, e.Destructive, e.CallId));
                 break;
 
             case AgentEventKind.ToolResult:
                 FlushDelta(turn);
+                FlushReasoning(turn);
                 var body = Truncate(e.Text, 20000);
                 var denied = LooksApprovalDenied(e.Text);
                 var pending = e.CallId is null
@@ -1378,11 +1865,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             case AgentEventKind.Error:
                 FlushDelta(turn);
+                FlushReasoning(turn);
                 turn.Note = e.Text ?? "错误";
                 break;
 
             case AgentEventKind.Done:
                 FlushDelta(turn);
+                FlushReasoning(turn);
                 break;
         }
     }
@@ -1394,6 +1883,15 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         turn.AssistantText += _pendingDelta.ToString();
         _pendingDelta.Clear();
         _lastFlushUtc = DateTime.UtcNow;
+    }
+
+    private void FlushReasoning(AgentTurn turn)
+    {
+        if (_pendingReasoning.Length == 0)
+            return;
+        turn.ReasoningText += _pendingReasoning.ToString();
+        _pendingReasoning.Clear();
+        _lastReasoningFlushUtc = DateTime.UtcNow;
     }
 
     private void UpdatePlan(IReadOnlyList<PlanItem> items) => _uiInvoke(() =>
@@ -1484,7 +1982,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private void RebuildSessionHistoryUpTo(int turnIndex)
     {
         if (_runtime is null) return;
-        _runtime.Session.ReplaceHistory(BuildHistoryFromTurns(Turns, turnIndex));
+        var recent = _agentConfig.ColdStartRecentTurns;
+        var from = recent > 0 ? Math.Max(0, turnIndex - recent) : 0;
+        _runtime.Session.ReplaceHistory(BuildHistoryFromTurns(Turns, turnIndex, from));
     }
 
     private async Task PersistTranscriptAsync()
@@ -1494,6 +1994,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             if (!string.IsNullOrEmpty(turn.UserText) || string.IsNullOrEmpty(turn.StorageText) is false)
                 messages.Add(("user", turn.StorageText ?? turn.UserText));
+            if (!string.IsNullOrEmpty(turn.ReasoningText))
+                messages.Add(("reasoning", turn.ReasoningText));
             foreach (var step in turn.Steps)
                 messages.Add(("tool", AgentTranscript.Serialize(step)));
             if (!string.IsNullOrEmpty(turn.AssistantText))
@@ -1763,6 +2265,9 @@ public class AgentTurn : INotifyPropertyChanged
     /// <summary>持久化用的原始文本（含附件标记与工作区相对路径）；无则用 UserText。</summary>
     public string? StorageText { get; set; }
 
+    /// <summary>在会话 Turns 中的序号（0 起，用于转录分页过滤）。</summary>
+    public int UiOrdinal { get; set; }
+
     private string _userTime;
     public string UserTime { get => _userTime; private set => SetField(ref _userTime, value); }
 
@@ -1781,8 +2286,34 @@ public class AgentTurn : INotifyPropertyChanged
     public string AssistantText
     {
         get => _assistantText;
-        set { if (SetField(ref _assistantText, value)) OnPropertyChanged(nameof(AssistantVisibility)); }
+        set
+        {
+            if (!SetField(ref _assistantText, value)) return;
+            OnPropertyChanged(nameof(AssistantVisibility));
+            OnPropertyChanged(nameof(RunningText));
+        }
     }
+
+    private string _reasoningText = string.Empty;
+    /// <summary>本轮模型输出的思考过程（仅展示，不回喂上下文、不计入回答）。</summary>
+    public string ReasoningText
+    {
+        get => _reasoningText;
+        set
+        {
+            if (!SetField(ref _reasoningText, value)) return;
+            OnPropertyChanged(nameof(HasReasoning));
+            OnPropertyChanged(nameof(ReasoningVisibility));
+            OnPropertyChanged(nameof(RunningText));
+        }
+    }
+
+    public bool HasReasoning => _reasoningText.Length > 0;
+    public Visibility ReasoningVisibility => _reasoningText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    private bool _showReasoning = true;
+    /// <summary>思考过程展开/折叠：运行中默认展开，完成后自动折叠（可手动展开）。</summary>
+    public bool ShowReasoning { get => _showReasoning; set => SetField(ref _showReasoning, value); }
 
     private bool _isRunning = true;
     public bool IsRunning
@@ -1793,10 +2324,14 @@ public class AgentTurn : INotifyPropertyChanged
             if (!SetField(ref _isRunning, value)) return;
             OnPropertyChanged(nameof(Footer));
             OnPropertyChanged(nameof(RunningVisibility));
+            OnPropertyChanged(nameof(RunningText));
             OnPropertyChanged(nameof(AssistantVisibility));
         }
     }
     public Visibility RunningVisibility => _isRunning ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>运行占位文案：正在输出思考过程时显示"思考中…"，否则"运行中…"。</summary>
+    public string RunningText => HasReasoning && string.IsNullOrEmpty(_assistantText) ? "思考中…" : "运行中…";
 
     private string _note = string.Empty;
     public string Note
@@ -1823,6 +2358,7 @@ public class AgentTurn : INotifyPropertyChanged
         _duration = secs >= 60 ? $"{secs / 60:F1} 分" : $"{secs:F1} 秒";
         IsRunning = false;
         ShowTools = false;
+        ShowReasoning = false;
         OnPropertyChanged(nameof(Footer));
     }
 
@@ -1839,11 +2375,13 @@ public class AgentTurn : INotifyPropertyChanged
         _startedLocal = DateTime.Now;
         UserTime = _startedLocal.ToString("HH:mm:ss");
         AssistantText = string.Empty;
+        ReasoningText = string.Empty;
         Note = string.Empty;
         Steps.Clear();
         _endTime = string.Empty;
         _duration = string.Empty;
         ShowTools = true;
+        ShowReasoning = true;
         IsRunning = true;
         OnPropertyChanged(nameof(Footer));
     }
@@ -1868,6 +2406,7 @@ public sealed class AgentStep : INotifyPropertyChanged
     {
         Tool = tool;
         ArgsJson = argsJson;
+        _displayArgs = string.IsNullOrWhiteSpace(argsJson) ? string.Empty : ToolResultFormatter.Format(argsJson, pretty: true);
         Destructive = destructive;
         CallId = callId;
     }
@@ -1878,6 +2417,8 @@ public sealed class AgentStep : INotifyPropertyChanged
 
     /// <summary>模型侧的工具调用 Id（并行执行时用于把结果精确回填到对应步骤）。</summary>
     public string? CallId { get; }
+
+    private readonly string _displayArgs;
 
     private bool _isRunning = true;
     public bool IsRunning
@@ -1898,20 +2439,25 @@ public sealed class AgentStep : INotifyPropertyChanged
     private string _result = string.Empty;
     public string Result { get => _result; private set { _result = value; Raise(); Raise(nameof(Detail)); } }
 
+    /// <summary>结果的可读文本（解析 JSON 后重排、中文不转义）；仅用于展示，持久化/重试仍用原始 <see cref="Result"/>。</summary>
+    private string _displayResult = string.Empty;
+
     private long _durationMs;
     public long DurationMs { get => _durationMs; private set { _durationMs = value; Raise(); Raise(nameof(Tail)); } }
 
     public string Label => $"调用 {Tool}";
     public string Tail => IsRunning ? (Destructive ? "调用中…（可能等待人工审批）" : "调用中…") : $"{DurationMs} ms";
-    public string Detail => (string.IsNullOrWhiteSpace(ArgsJson) ? string.Empty : "入参: " + ArgsJson + "\n\n") + (Result.Length > 0 ? "结果:\n" + Result : string.Empty);
+    public string Detail => (_displayArgs.Length == 0 ? string.Empty : "入参: " + _displayArgs + "\n\n") + (_displayResult.Length > 0 ? "结果:\n" + _displayResult : string.Empty);
     public Visibility RetryVisibility => !IsRunning && !Success ? Visibility.Visible : Visibility.Collapsed;
 
     public void Complete(bool success, string result, long durationMs)
     {
         Success = success;
         Result = result;
+        _displayResult = ToolResultFormatter.Format(result, pretty: true);
         DurationMs = durationMs;
         IsRunning = false;
+        Raise(nameof(Detail));
         Raise(nameof(RetryVisibility));
     }
 
@@ -1919,7 +2465,9 @@ public sealed class AgentStep : INotifyPropertyChanged
     {
         IsRunning = true;
         Result = string.Empty;
+        _displayResult = string.Empty;
         DurationMs = 0;
+        Raise(nameof(Detail));
         Raise(nameof(RetryVisibility));
     }
 

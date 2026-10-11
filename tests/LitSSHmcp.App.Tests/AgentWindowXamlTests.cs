@@ -62,4 +62,19 @@ public class AgentWindowXamlTests
         }
         Assert.Null(ex);
     }
+
+    [Fact]
+    public void Skill_picker_window_parses_xaml_and_renders_bindings()
+    {
+        var skill = new SkillInfo("nginx-5xx", "nginx-5xx", "nginx", "排查 5xx", "nginx-5xx/SKILL.md",
+            new[] { "ssh", "log" }, new[] { "docker" }, true, 1234);
+        // 通过 Show/Close 触发一次可视树与绑定求值（Run.Text 曾因默认 TwoWay 绑定只读属性而报错）。
+        var ex = RunSta(() =>
+        {
+            var window = new SkillPickerWindow("skills", new[] { skill }, new[] { "nginx-5xx" });
+            window.Show();
+            window.Close();
+        });
+        Assert.Null(ex);
+    }
 }

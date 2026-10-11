@@ -21,6 +21,8 @@ public partial class DatasourceManageView : UserControl
 
     private void OnDeleteClick(object sender, RoutedEventArgs e) => ViewModel?.DeleteCommand.Execute(null);
 
+    private void OnWorkbenchClick(object sender, RoutedEventArgs e) => ViewModel?.WorkbenchCommand.Execute(null);
+
     private void OnItemDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not ListView listView)
@@ -48,7 +50,18 @@ public partial class DatasourceManageView : UserControl
 
         var element = listView.InputHitTest(Mouse.GetPosition(listView)) as DependencyObject;
         if (FindAncestor<ListViewItem>(element) == null)
+        {
             e.Handled = true;
+            return;
+        }
+
+        // 「打开工作台」对 MySQL / PostgreSQL / Redis 数据源显示
+        var ds = ViewModel?.SelectedDataSource;
+        var supported = ds != null &&
+            (ds.Type.Equals("mysql", StringComparison.OrdinalIgnoreCase) ||
+             ds.Type.Equals("postgres", StringComparison.OrdinalIgnoreCase) ||
+             ds.Type.Equals("redis", StringComparison.OrdinalIgnoreCase));
+        WorkbenchMenuItem.Visibility = supported ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject

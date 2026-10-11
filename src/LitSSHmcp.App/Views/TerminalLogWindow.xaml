@@ -41,6 +41,19 @@
             <DockPanel Grid.Column="2">
                 <TextBlock DockPanel.Dock="Bottom" x:Name="StatusText" Margin="0,6,0,0"
                            Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6" x:Name="ReplayPanel" Visibility="Collapsed">
+                    <Button x:Name="PlayButton" Content="▶ 播放" Padding="10,3" Margin="0,0,6,0" Click="OnPlayPause"/>
+                    <Button Content="⟲ 重开" Padding="10,3" Margin="0,0,6,0" Click="OnRestart"/>
+                    <TextBlock Text="速度:" VerticalAlignment="Center" Margin="6,0,4,0"/>
+                    <ComboBox x:Name="SpeedBox" Width="70" SelectedIndex="0" VerticalContentAlignment="Center" SelectionChanged="OnSpeedChanged">
+                        <ComboBoxItem Content="1x"/>
+                        <ComboBoxItem Content="2x"/>
+                        <ComboBoxItem Content="4x"/>
+                        <ComboBoxItem Content="8x"/>
+                    </ComboBox>
+                    <TextBlock x:Name="ProgressText" VerticalAlignment="Center" Margin="10,0,0,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                </StackPanel>
                 <TextBox x:Name="ContentBox" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
                          TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                          Background="{DynamicResource AppCodeBgBrush}" Foreground="{DynamicResource AppCodeTextBrush}" Padding="6"/>

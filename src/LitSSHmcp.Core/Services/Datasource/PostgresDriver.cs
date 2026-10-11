@@ -10,7 +10,7 @@ namespace LitSSHmcp.Core.Services.Datasource;
 /// 复用 <see cref="IDatasourceDriver"/> 抽象，因此 mcp_self_check / datasource_test_connection /
 /// 界面"测试连接" / 拓扑发现都能直接支持 postgres 类型数据源。
 /// </summary>
-public class PostgresDriver : IDatasourceDriver
+public class PostgresDriver : IDatasourceDriver, IDatabaseExplorer
 {
     private readonly IPostgresConnectionProvider _connectionProvider;
 
@@ -219,6 +219,89 @@ public class PostgresDriver : IDatasourceDriver
                 DurationMs = stopwatch.Elapsed.TotalMilliseconds
             };
         }
+    }
+
+    // ---------- 数据库工作台：对象浏览 ----------
+
+    public async Task<IReadOnlyList<string>> ListDatabasesAsync(DataSourceConfig ds, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText = "SELECT datname FROM pg_database WHERE datistemplate=false ORDER BY datname";
+        var list = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(reader.GetString(0));
+        return list;
+    }
+
+    public async Task<IReadOnlyList<DbTableInfo>> ListTablesAsync(DataSourceConfig ds, string database, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText =
+            "SELECT t.table_schema, t.table_name, c.reltuples::bigint " +
+            "FROM information_schema.tables t " +
+            "LEFT JOIN pg_namespace n ON n.nspname = t.table_schema " +
+            "LEFT JOIN pg_class c ON c.relname = t.table_name AND c.relnamespace = n.oid " +
+            "WHERE t.table_type='BASE TABLE' AND t.table_schema NOT IN ('pg_catalog','information_schema') " +
+            "ORDER BY t.table_schema, t.table_name";
+        var list = new List<DbTableInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            long? rows = reader.IsDBNull(2) ? null : reader.GetInt64(2);
+            if (rows < 0) rows = null;
+            list.Add(new DbTableInfo
+            {
+                Schema = reader.GetString(0),
+                Name = reader.GetString(1),
+                Rows = rows
+            });
+        }
+        return list;
+    }
+
+    public async Task<IReadOnlyList<DbColumnInfo>> ListColumnsAsync(DataSourceConfig ds, string database, string table, string? schema = null, CancellationToken ct = default)
+    {
+        var schemaName = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+
+        var pk = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using (var pkCmd = session.Connection.CreateCommand())
+        {
+            pkCmd.CommandText =
+                "SELECT kcu.column_name FROM information_schema.table_constraints tc " +
+                "JOIN information_schema.key_column_usage kcu " +
+                "  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema " +
+                "WHERE tc.constraint_type='PRIMARY KEY' AND tc.table_schema=@s AND tc.table_name=@t";
+            pkCmd.Parameters.AddWithValue("@s", schemaName);
+            pkCmd.Parameters.AddWithValue("@t", table);
+            await using var pkReader = await pkCmd.ExecuteReaderAsync(ct);
+            while (await pkReader.ReadAsync(ct))
+                pk.Add(pkReader.GetString(0));
+        }
+
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText = "SELECT column_name, data_type, is_nullable, column_default " +
+                          "FROM information_schema.columns WHERE table_schema=@s AND table_name=@t ORDER BY ordinal_position";
+        cmd.Parameters.AddWithValue("@s", schemaName);
+        cmd.Parameters.AddWithValue("@t", table);
+        var list = new List<DbColumnInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var name = reader.GetString(0);
+            list.Add(new DbColumnInfo
+            {
+                Name = name,
+                Type = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                Nullable = !reader.IsDBNull(2) && reader.GetString(2).Equals("YES", StringComparison.OrdinalIgnoreCase),
+                PrimaryKey = pk.Contains(name),
+                Default = reader.IsDBNull(3) ? null : Convert.ToString(reader.GetValue(3))
+            });
+        }
+        return list;
     }
 
     private static string serverVersionOf(string? version)

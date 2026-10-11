@@ -25,6 +25,8 @@
                       SelectionChanged="OnServerChanged"
                       ToolTip="可切换其他服务器查看其历史快照"/>
             <Button Content="刷新" Width="70" Padding="6,4" Margin="10,0,0,0" Click="OnRefresh"/>
+            <Button Content="趋势图" Width="70" Padding="6,4" Margin="6,0,0,0" Click="OnTrend"
+                    ToolTip="用历史快照画内存/磁盘/Swap/负载趋势"/>
             <TextBlock Text="左列选择某次快照 → 右侧查看该次的采集维度/事件/原始数据"
                        VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="14,0,0,0"/>
         </StackPanel>

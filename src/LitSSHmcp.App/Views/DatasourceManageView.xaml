@@ -20,7 +20,9 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
                     <Button Content="添加" Command="{Binding AddCommand}" Width="64" Padding="6,4" Margin="0,0,6,0"/>
-                    <Button Content="刷新" Command="{Binding RefreshCommand}" Width="64" Padding="6,4"/>
+                    <Button Content="刷新" Command="{Binding RefreshCommand}" Width="64" Padding="6,4" Margin="0,0,6,0"/>
+                    <Button Content="打开工作台" Command="{Binding WorkbenchCommand}" Padding="10,4" Margin="0,0,6,0"
+                            ToolTip="只读数据库工作台：对象浏览 / SQL 查询 / 分页 / 导出 CSV（仅 MySQL / PostgreSQL）"/>
                 </StackPanel>
 
                 <ListView x:Name="DsList" ItemsSource="{Binding DataSources}" SelectedItem="{Binding SelectedDataSource}"
@@ -28,6 +30,7 @@
                           ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>
                         <ContextMenu>
+                            <MenuItem x:Name="WorkbenchMenuItem" Header="打开工作台" Click="OnWorkbenchClick"/>
                             <MenuItem Header="测试连接" Click="OnTestClick"/>
                             <MenuItem Header="编辑" Click="OnEditClick"/>
                             <MenuItem Header="删除" Click="OnDeleteClick"/>

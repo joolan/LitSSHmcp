@@ -4,7 +4,7 @@ using MySqlConnector;
 
 namespace LitSSHmcp.Core.Services.Datasource;
 
-public class MySqlDriver : IDatasourceDriver
+public class MySqlDriver : IDatasourceDriver, IDatabaseExplorer
 {
     private readonly IMySqlConnectionProvider _connectionProvider;
 
@@ -210,6 +210,71 @@ public class MySqlDriver : IDatasourceDriver
                 DurationMs = stopwatch.Elapsed.TotalMilliseconds
             };
         }
+    }
+
+    // ---------- 数据库工作台：对象浏览 ----------
+
+    private static readonly HashSet<string> MySqlSystemSchemas =
+        new(StringComparer.OrdinalIgnoreCase) { "information_schema", "performance_schema", "sys" };
+
+    public async Task<IReadOnlyList<string>> ListDatabasesAsync(DataSourceConfig ds, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText = "SHOW DATABASES";
+        var list = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var name = reader.GetString(0);
+            if (!MySqlSystemSchemas.Contains(name))
+                list.Add(name);
+        }
+        return list.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    public async Task<IReadOnlyList<DbTableInfo>> ListTablesAsync(DataSourceConfig ds, string database, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText = "SELECT TABLE_NAME, TABLE_ROWS FROM information_schema.TABLES " +
+                          "WHERE TABLE_SCHEMA=@db AND TABLE_TYPE='BASE TABLE' ORDER BY TABLE_NAME";
+        cmd.Parameters.AddWithValue("@db", database);
+        var list = new List<DbTableInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            list.Add(new DbTableInfo
+            {
+                Name = reader.GetString(0),
+                Rows = reader.IsDBNull(1) ? null : Convert.ToInt64(reader.GetValue(1))
+            });
+        }
+        return list;
+    }
+
+    public async Task<IReadOnlyList<DbColumnInfo>> ListColumnsAsync(DataSourceConfig ds, string database, string table, string? schema = null, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText = "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT " +
+                          "FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=@db AND TABLE_NAME=@t ORDER BY ORDINAL_POSITION";
+        cmd.Parameters.AddWithValue("@db", database);
+        cmd.Parameters.AddWithValue("@t", table);
+        var list = new List<DbColumnInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            list.Add(new DbColumnInfo
+            {
+                Name = reader.GetString(0),
+                Type = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                Nullable = !reader.IsDBNull(2) && reader.GetString(2).Equals("YES", StringComparison.OrdinalIgnoreCase),
+                PrimaryKey = !reader.IsDBNull(3) && reader.GetString(3).Equals("PRI", StringComparison.OrdinalIgnoreCase),
+                Default = reader.IsDBNull(4) ? null : Convert.ToString(reader.GetValue(4))
+            });
+        }
+        return list;
     }
 
     private static Dictionary<string, object?> ReadRow(MySqlDataReader reader, string[] columns)

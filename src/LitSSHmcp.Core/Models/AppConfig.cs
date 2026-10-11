@@ -34,6 +34,9 @@ public class AppConfig
 
     /// <summary>文件/文件夹同步任务（仅单向；App 运行期由调度器执行，关闭 App 即停止）。</summary>
     public SyncTaskConfig[] SyncTasks { get; set; } = Array.Empty<SyncTaskConfig>();
+
+    /// <summary>触发事件（手动/定时/同步完成后按动作流水线执行 git、webhook、备份；App 运行期内生效）。</summary>
+    public TriggerConfig[] Triggers { get; set; } = Array.Empty<TriggerConfig>();
 }
 
 /// <summary>
@@ -63,6 +66,12 @@ public class AgentConfig
 
     /// <summary>上下文 token 估算上限（与 ContextLimit 共同构成双阈值；超出时连同最旧整轮一起裁剪；0=仅按条数）。</summary>
     public int ContextTokenLimit { get; set; } = 96000;
+
+    /// <summary>
+    /// 冷启动 / 重载时，注入模型的**历史**只保留最近 N 轮（更早的由滚动摘要代表，降低冷启动首次请求成本）；
+    /// 0=不限制（整段重建）。仅影响模型上下文，界面仍可翻看与导出全部记录。
+    /// </summary>
+    public int ColdStartRecentTurns { get; set; } = 30;
 
     /// <summary>滚动摘要：裁剪旧轮次时调用模型把其压缩成摘要并注入上下文（可选，默认开启）。</summary>
     public bool AutoSummarize { get; set; } = true;
@@ -188,7 +197,9 @@ public class AgentProviderGroupConfig
                     TimeoutSeconds = g.TimeoutSeconds,
                     MaxRetries = g.MaxRetries,
                     MaxConcurrency = g.MaxConcurrency,
-                    SupportsVision = m.SupportsVision
+                    SupportsVision = m.SupportsVision,
+                    InputPricePerMTok = m.InputPricePerMTok,
+                    OutputPricePerMTok = m.OutputPricePerMTok
                 });
             }
         }
@@ -209,6 +220,12 @@ public class AgentModelConfig
 
     /// <summary>该模型是否支持视觉（可接收图片附件；不同模型能力不同，逐模型配置）。</summary>
     public bool SupportsVision { get; set; }
+
+    /// <summary>输入价格（每百万 token，用于成本估算；0=未填）。</summary>
+    public double InputPricePerMTok { get; set; }
+
+    /// <summary>输出价格（每百万 token，用于成本估算；0=未填）。</summary>
+    public double OutputPricePerMTok { get; set; }
 }
 
 /// <summary>摊平后的单个可选模型（厂家参数 + 一个具体模型名），对话运行时直接消费。</summary>
@@ -248,6 +265,12 @@ public class AgentProviderConfig
 
     /// <summary>模型是否支持视觉（可接收图片附件）。</summary>
     public bool SupportsVision { get; set; }
+
+    /// <summary>输入价格（每百万 token，用于成本估算；0=未填）。</summary>
+    public double InputPricePerMTok { get; set; }
+
+    /// <summary>输出价格（每百万 token，用于成本估算；0=未填）。</summary>
+    public double OutputPricePerMTok { get; set; }
 }
 
 /// <summary>长期记忆：用 OpenAI 兼容 embeddings 端点把历史会话/工作区文档向量化并本地检索。</summary>
@@ -443,6 +466,9 @@ public class LimitsConfig
 
     /// <summary>同一目标每分钟允许的调用数，超出即拒绝。</summary>
     public int MaxCallsPerMinutePerTarget { get; set; } = 60;
+
+    /// <summary>数据库备份动作的最大并发数（同时运行的备份任务数，1~16）；防止多任务同时 dump 压垮本机/目标。</summary>
+    public int MaxConcurrentBackups { get; set; } = 2;
 }
 
 public class FileTransferConfig

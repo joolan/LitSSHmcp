@@ -56,7 +56,10 @@
                     <TextBlock Text="每目标并发上限:" VerticalAlignment="Center"/>
                     <TextBox Text="{Binding MaxConcurrent, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,16,0"/>
                     <TextBlock Text="每分钟调用上限:" VerticalAlignment="Center"/>
-                    <TextBox Text="{Binding MaxPerMinute, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,0,0"/>
+                    <TextBox Text="{Binding MaxPerMinute, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,16,0"/>
+                    <TextBlock Text="数据库备份并发数:" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding MaxConcurrentBackups, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,0,0"
+                             ToolTip="同时运行的数据库备份任务上限(1~16)，防止多任务同时 dump 压垮本机/目标"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                     <CheckBox Content="记录SQL原文" IsChecked="{Binding AuditStoreSqlText}" Margin="0,0,16,0"/>

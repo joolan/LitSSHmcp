@@ -199,6 +199,22 @@
                         <TextBlock Text="（指数退避；远程↔远程需两端安装 rsync）" VerticalAlignment="Center" Margin="6,0,0,0"
                                    Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"/>
                     </StackPanel>
+
+                    <!-- 触发事件配置 -->
+                    <TextBlock Text="触发事件配置（本同步任务结束后触发）" FontWeight="SemiBold" Margin="0,14,0,6"/>
+                    <ItemsControl ItemsSource="{Binding EventHookOptions}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding Selected, Mode=TwoWay}" MinWidth="180" VerticalAlignment="Center"/>
+                                    <CheckBox Content="仅同步成功时触发（不勾=无条件触发，失败也触发）" Margin="12,0,0,0" VerticalAlignment="Center"
+                                              IsEnabled="{Binding Selected}" IsChecked="{Binding OnlyOnSuccess, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,2" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               Text="列表为空时：请先在「触发事件」窗口创建触发事件并勾选「允许被同步任务事件触发」。触发事件可配置为「无条件触发」或「仅同步成功时触发」。"/>
                 </StackPanel>
             </ScrollViewer>
         </Grid>

@@ -11,6 +11,15 @@ public partial class BatchExecWindow : FluentWindow
     {
         InitializeComponent();
         WindowLayout.Attach(this, "batch-exec");
+
+        // 危险快速命令执行前的确认（"带审批"）
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is BatchExecViewModel vm)
+                vm.Confirm = action => System.Windows.MessageBox.Show(
+                    $"确认在所选服务器上执行「{action.Name}」？\n\n命令：{action.Command}",
+                    "批量执行 - 操作确认", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.OK;
+        };
     }
 
     private void OnSnippets(object sender, RoutedEventArgs e)

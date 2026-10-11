@@ -24,7 +24,7 @@ public class SkillTests : IDisposable
     [Fact]
     public void Load_only_injects_top_level_skill_excluding_template()
     {
-        var text = SkillRegistry.Load(_dir);
+        var text = SkillRegistry.Load(_dir, null, null, new[] { "SKILL" });
         Assert.Contains("SKILLBODY", text);
         Assert.DoesNotContain("TEMPLATE", text);
         Assert.DoesNotContain("REFCONTENT", text);
@@ -48,7 +48,7 @@ public class SkillTests : IDisposable
                 sb.AppendLine($"## 章节{i}\n" + new string('x', 1500));
             File.WriteAllText(Path.Combine(dir, "SKILL.md"), sb.ToString());
 
-            var text = SkillRegistry.Load(dir);
+            var text = SkillRegistry.Load(dir, null, null, new[] { "SKILL" });
 
             Assert.Contains("核心前言", text);                 // preamble 内联
             Assert.Contains(new string('x', 1500), text);      // 核心章节正文内联
@@ -69,6 +69,86 @@ public class SkillTests : IDisposable
         var files = SkillRegistry.ListReferenceFiles(_dir);
         Assert.Contains("references/foo.md", files);
         Assert.DoesNotContain(files, f => Path.GetFileName(f).Equals("SKILL.md", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Load_caveats_partially_disabled_domains()
+    {
+        using var dir = new TempDir();
+        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "先 docker_ps 看容器, 再 mysql_query 查库");
+        var enabled = new HashSet<string>(new[] { "mysql" }, StringComparer.OrdinalIgnoreCase);
+
+        var text = SkillRegistry.Load(dir.Path, null, enabled, new[] { "SKILL" });
+
+        Assert.Contains("mysql_query", text);        // 技能整体保留
+        Assert.Contains("未启用的能力域", text);      // 但加了提示
+        Assert.Contains("容器", text);                // 提示里点名被停用的 docker 域
+    }
+
+    [Fact]
+    public void Load_skips_skill_when_all_referenced_domains_disabled()
+    {
+        using var dir = new TempDir();
+        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "先 docker_ps 看容器");
+        var enabled = new HashSet<string>(new[] { "mysql" }, StringComparer.OrdinalIgnoreCase);
+
+        var text = SkillRegistry.Load(dir.Path, null, enabled);
+
+        Assert.Equal(string.Empty, text);            // 技能涉及的域全被停用 → 整体跳过
+    }
+
+    [Fact]
+    public void Load_without_groups_keeps_skills_uncaveated()
+    {
+        using var dir = new TempDir();
+        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "先 docker_ps 看容器");
+
+        var text = SkillRegistry.Load(dir.Path, null, null, new[] { "SKILL" });
+
+        Assert.Contains("docker_ps", text);
+        Assert.DoesNotContain("未启用的能力域", text);
+    }
+
+    [Fact]
+    public void List_enumerates_folder_skills_with_domains()
+    {
+        using var dir = new TempDir();
+        var skillDir = Path.Combine(dir.Path, "nginx-5xx");
+        Directory.CreateDirectory(skillDir);
+        File.WriteAllText(Path.Combine(skillDir, "SKILL.md"),
+            "---\nname: nginx-5xx\ndescription: 排查 nginx 5xx\nappliesTo: [ssh, log]\n---\n# nginx\n... docker_ps ...");
+
+        var enabled = new HashSet<string>(new[] { "ssh" }, StringComparer.OrdinalIgnoreCase);
+        var list = SkillRegistry.List(dir.Path, enabled);
+
+        var skill = Assert.Single(list);
+        Assert.Equal("nginx-5xx", skill.Id);
+        Assert.Equal("nginx-5xx", skill.Name);
+        Assert.Contains("ssh", skill.Domains);
+        Assert.Contains("log", skill.Domains);
+        Assert.Contains("docker", skill.Domains);   // 由正文扫描补全
+        Assert.Contains("log", skill.DisabledDomains);
+        Assert.True(skill.Applicable);              // 至少 ssh 可用
+    }
+
+    [Fact]
+    public void Load_index_mode_lists_skills_without_body()
+    {
+        using var dir = new TempDir();
+        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "正文包含 docker_ps 的细节");
+        var enabled = new HashSet<string>(new[] { "docker" }, StringComparer.OrdinalIgnoreCase);
+
+        var text = SkillRegistry.Load(dir.Path, null, enabled);   // 未指定激活技能 → 索引模式
+
+        Assert.Contains("skill_read", text);       // 只给索引 + 读取提示
+        Assert.DoesNotContain("细节", text);        // 不含正文
+    }
+
+    private sealed class TempDir : IDisposable
+    {
+        public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "litssh-skill-" + Guid.NewGuid().ToString("N"));
+        public TempDir() => Directory.CreateDirectory(Path);
+        public void Dispose() { try { Directory.Delete(Path, true); } catch { } }
     }
 
     [Fact]

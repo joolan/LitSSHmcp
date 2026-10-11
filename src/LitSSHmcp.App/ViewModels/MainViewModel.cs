@@ -63,6 +63,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand OpenTerminalLogsCommand { get; }
     public ICommand OpenPortForwardCommand { get; }
     public ICommand OpenSyncCommand { get; }
+    public ICommand OpenTriggerCommand { get; }
     public ICommand OpenSftpManagerCommand { get; }
     public ICommand OpenRemoteCopyCommand { get; }
     public ICommand AskAgentCommand { get; }
@@ -96,6 +97,7 @@ public class MainViewModel : INotifyPropertyChanged
         OpenTerminalLogsCommand = new RelayCommand(_ => OpenTerminalLogs());
         OpenPortForwardCommand = new RelayCommand(_ => OpenPortForward());
         OpenSyncCommand = new RelayCommand(_ => OpenSync());
+        OpenTriggerCommand = new RelayCommand(_ => OpenTrigger());
         OpenSftpManagerCommand = new RelayCommand(_ => OpenSftpManager(SelectedServer), _ => SelectedServer != null);
         OpenRemoteCopyCommand = new RelayCommand(_ => OpenRemoteCopy(SelectedServer), _ => SelectedServer != null);
         AskAgentCommand = new RelayCommand(_ => AskAgent());
@@ -220,6 +222,22 @@ public class MainViewModel : INotifyPropertyChanged
     {
         get => _syncTaskEnabledCount;
         private set { _syncTaskEnabledCount = value; OnPropertyChanged(); }
+    }
+
+    private int _triggerCount;
+    /// <summary>触发事件总数。</summary>
+    public int TriggerCount
+    {
+        get => _triggerCount;
+        private set { _triggerCount = value; OnPropertyChanged(); }
+    }
+
+    private int _triggerEnabledCount;
+    /// <summary>已启用的触发事件数。</summary>
+    public int TriggerEnabledCount
+    {
+        get => _triggerEnabledCount;
+        private set { _triggerEnabledCount = value; OnPropertyChanged(); }
     }
 
     private string _homeQuestion = string.Empty;
@@ -706,6 +724,26 @@ public class MainViewModel : INotifyPropertyChanged
         _syncWindow.Show();
     }
 
+    // 触发事件（手动 / 定时 / 同步完成后）
+    private TriggerWindow? _triggerWindow;
+
+    private void OpenTrigger()
+    {
+        if (_triggerWindow is { IsLoaded: true })
+        {
+            _triggerWindow.Activate();
+            return;
+        }
+
+        _triggerWindow = new TriggerWindow { Topmost = false };
+        _triggerWindow.Closed += (_, _) =>
+        {
+            _triggerWindow = null;
+            _ = RefreshHomeCountsAsync(); // 触发事件可能增删/改启停
+        };
+        _triggerWindow.Show();
+    }
+
     /// <summary>刷新主页看板计数（配置类计数 + 端口转发运行数）。</summary>
     private async Task RefreshHomeCountsAsync()
     {
@@ -715,6 +753,8 @@ public class MainViewModel : INotifyPropertyChanged
             PortForwardCount = config.PortForwards.Length;
             SyncTaskCount = config.SyncTasks.Length;
             SyncTaskEnabledCount = config.SyncTasks.Count(t => t.Enabled);
+            TriggerCount = config.Triggers.Length;
+            TriggerEnabledCount = config.Triggers.Count(t => t.Enabled);
         }
         catch
         {

@@ -44,6 +44,72 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public async Task Denied_tool_is_blocked_without_invoking()
+    {
+        var call = new FunctionCallContent("c1", "echo", new Dictionary<string, object?> { ["x"] = "y" });
+        var assistantWithCall = new ChatMessage(ChatRole.Assistant, new AIContent[] { call });
+        var final = new ChatMessage(ChatRole.Assistant, "done");
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { assistantWithCall }),
+            new ChatResponse(new List<ChatMessage> { final }));
+
+        var tool = new FakeTool("echo", "pong");
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new[] { tool }, "sys", new AgentConfig());
+        session.SetToolPolicy(new Dictionary<string, AgentToolPolicy> { ["echo"] = AgentToolPolicy.Deny });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Null(tool.LastArgs);   // 拒绝策略 → 工具未被真正调用
+        Assert.Contains(events, e => e.Kind == AgentEventKind.ToolResult && !e.ToolSuccess && e.Text!.Contains("禁用"));
+    }
+
+    [Fact]
+    public async Task Plan_mode_blocks_write_tool_and_prepends_notice()
+    {
+        var call = new FunctionCallContent("c1", "ssh_execute_command", new Dictionary<string, object?>());
+        var assistantWithCall = new ChatMessage(ChatRole.Assistant, new AIContent[] { call });
+        var final = new ChatMessage(ChatRole.Assistant, "planned");
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { assistantWithCall }),
+            new ChatResponse(new List<ChatMessage> { final }));
+
+        var writeTool = new FakeTool("ssh_execute_command", "ran");   // 默认 readOnly=false
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new[] { writeTool }, "sys", new AgentConfig());
+        session.SetPlanMode(true);
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("重启nginx", new SyncProgress(events.Add));
+
+        Assert.Null(writeTool.LastArgs);   // 计划模式拦截写工具
+        Assert.Contains(events, e => e.Kind == AgentEventKind.ToolResult && !e.ToolSuccess && e.Text!.Contains("计划模式"));
+        var userMsg = session.Messages.First(m => m.Role == ChatRole.User);
+        Assert.Contains("【计划模式】", userMsg.Text);   // 每轮提示附在用户消息尾部
+    }
+
+    [Fact]
+    public async Task Plan_mode_allows_readonly_tool()
+    {
+        var call = new FunctionCallContent("c1", "ssh_list_servers", new Dictionary<string, object?>());
+        var assistantWithCall = new ChatMessage(ChatRole.Assistant, new AIContent[] { call });
+        var final = new ChatMessage(ChatRole.Assistant, "done");
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { assistantWithCall }),
+            new ChatResponse(new List<ChatMessage> { final }));
+
+        var readTool = new FakeTool("ssh_list_servers", "ok", readOnly: true);
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new[] { readTool }, "sys", new AgentConfig());
+        session.SetPlanMode(true);
+
+        await session.SendAsync("看看有哪些服务器", new SyncProgress(_ => { }));
+
+        Assert.NotNull(readTool.LastArgs);   // 只读工具在计划模式下仍可调用
+    }
+
+    [Fact]
     public async Task Unknown_tool_reports_error_result()
     {
         var call = new FunctionCallContent("c1", "nope", new Dictionary<string, object?>());

@@ -44,6 +44,24 @@ public interface IContextStore
     /// <summary>保存（或清空传空串）会话的任务计划。</summary>
     Task SetSessionPlanAsync(long id, string planJson, CancellationToken ct = default);
 
+    /// <summary>读取会话激活的技能 Id（JSON 数组；无则空串=索引模式）。</summary>
+    Task<string> GetSessionActiveSkillsAsync(long id, CancellationToken ct = default);
+
+    /// <summary>保存（或清空传空串）会话激活的技能 Id。</summary>
+    Task SetSessionActiveSkillsAsync(long id, string activeSkillsJson, CancellationToken ct = default);
+
+    /// <summary>读取会话是否处于计划模式。</summary>
+    Task<bool> GetSessionPlanModeAsync(long id, CancellationToken ct = default);
+
+    /// <summary>保存会话计划模式。</summary>
+    Task SetSessionPlanModeAsync(long id, bool planMode, CancellationToken ct = default);
+
+    /// <summary>读取会话的工具审批策略（tool→allow/deny 的 JSON；无则空串）。</summary>
+    Task<string> GetSessionToolPolicyAsync(long id, CancellationToken ct = default);
+
+    /// <summary>保存会话的工具审批策略。</summary>
+    Task SetSessionToolPolicyAsync(long id, string toolPolicyJson, CancellationToken ct = default);
+
     /// <summary>按保留策略裁剪历史（每会话消息上限 / 最旧会话天数 / 会话数上限）；返回删除的消息数。</summary>
     Task<int> PruneAsync(int maxSessions, int maxMessagesPerSession, int retentionDays, CancellationToken ct = default);
 }
@@ -159,6 +177,42 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         {
             // 列已存在
         }
+
+        // 兼容旧库：补 ActiveSkills 列（会话激活技能 Id 的 JSON 数组）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN ActiveSkills TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // 兼容旧库：补 PlanMode 列（0=执行模式，1=计划模式）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN PlanMode INTEGER NOT NULL DEFAULT 0;";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // 兼容旧库：补 ToolPolicy 列（工具审批策略 JSON）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN ToolPolicy TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
     }
 
     public async Task<long> CreateSessionAsync(string title, CancellationToken ct = default)
@@ -253,6 +307,51 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     public Task SetSessionPlanAsync(long id, string planJson, CancellationToken ct = default) =>
         ExecAsync("UPDATE agent_sessions SET Plan=@v WHERE Id=@id;",
             new() { ["@v"] = planJson ?? string.Empty, ["@id"] = id }, ct);
+
+    public async Task<string> GetSessionActiveSkillsAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT ActiveSkills FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : string.Empty;
+    }
+
+    public Task SetSessionActiveSkillsAsync(long id, string activeSkillsJson, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET ActiveSkills=@v WHERE Id=@id;",
+            new() { ["@v"] = activeSkillsJson ?? string.Empty, ["@id"] = id }, ct);
+
+    public async Task<bool> GetSessionPlanModeAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT PlanMode FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is long value && value != 0;
+    }
+
+    public Task SetSessionPlanModeAsync(long id, bool planMode, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET PlanMode=@v WHERE Id=@id;",
+            new() { ["@v"] = planMode ? 1 : 0, ["@id"] = id }, ct);
+
+    public async Task<string> GetSessionToolPolicyAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT ToolPolicy FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : string.Empty;
+    }
+
+    public Task SetSessionToolPolicyAsync(long id, string toolPolicyJson, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET ToolPolicy=@v WHERE Id=@id;",
+            new() { ["@v"] = toolPolicyJson ?? string.Empty, ["@id"] = id }, ct);
 
     public Task AppendMessageAsync(long sessionId, string role, string content, CancellationToken ct = default) =>
         ExecAsync("INSERT INTO agent_messages(SessionId, Role, Content, Timestamp) VALUES (@s, @r, @c, @now);",

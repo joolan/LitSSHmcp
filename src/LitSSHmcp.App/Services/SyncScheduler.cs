@@ -27,6 +27,9 @@ public sealed class SyncScheduler : IDisposable
     /// <summary>某任务正在运行时触发（供 UI 显示状态）。</summary>
     public event Action<string, bool>? RunningChanged;
 
+    /// <summary>某同步任务一次运行结束（含最终结果）后触发；供触发事件联动使用。</summary>
+    public event Action<string, SyncResult>? TaskCompleted;
+
     public void Start() => _ = LoopAsync();
 
     private async Task LoopAsync()
@@ -105,6 +108,7 @@ public sealed class SyncScheduler : IDisposable
         {
             var attempt = 0;
             var maxRetries = Math.Clamp(task.MaxRetries, 0, 5);
+            SyncResult? final = null;
             while (true)
             {
                 SyncLog.Write($"[{task.Name}] 开始同步（{task.Direction}）尝试 {attempt + 1}/{maxRetries + 1}");
@@ -125,6 +129,8 @@ public sealed class SyncScheduler : IDisposable
                 SyncLog.Write($"[{task.Name}] {(result.Success ? "成功" : "失败")}: {result.Message}" +
                               $"（传输 {result.FilesTransferred}, 删除 {result.Deleted}, 用时 {result.Duration.TotalSeconds:F1}s）");
 
+                final = result;
+
                 if (result.Success || !result.Retryable || attempt >= maxRetries)
                     break;
 
@@ -134,6 +140,9 @@ public sealed class SyncScheduler : IDisposable
                 try { await Task.Delay(delay, _cts.Token); }
                 catch (OperationCanceledException) { return; }
             }
+
+            if (final is not null)
+                TaskCompleted?.Invoke(task.Id, final);
         }
         finally
         {

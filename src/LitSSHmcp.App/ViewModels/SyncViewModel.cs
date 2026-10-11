@@ -33,10 +33,46 @@ public sealed class NumberOption : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 }
 
+/// <summary>同步任务 → 触发事件的联动选项（勾选=同步结束后触发该触发事件；OnlyOnSuccess=仅成功时触发）。</summary>
+public sealed class SyncEventHookOption : INotifyPropertyChanged
+{
+    public required string TriggerId { get; init; }
+    public required string Name { get; init; }
+    public Action? Changed;
+
+    private bool _selected;
+    public bool Selected
+    {
+        get => _selected;
+        set
+        {
+            if (_selected == value) return;
+            _selected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Selected)));
+            Changed?.Invoke();
+        }
+    }
+
+    private bool _onlyOnSuccess = true;
+    /// <summary>仅同步成功时触发（false=无条件触发，即使同步失败也触发）。</summary>
+    public bool OnlyOnSuccess
+    {
+        get => _onlyOnSuccess;
+        set
+        {
+            if (_onlyOnSuccess == value) return;
+            _onlyOnSuccess = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OnlyOnSuccess)));
+            Changed?.Invoke();
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
 /// <summary>文件/文件夹同步设置（单向）：任务增删改、方向联动、调度三选一、文件过滤；保存仅校验必填项（测试为可选自检）。</summary>
 public sealed class SyncViewModel : INotifyPropertyChanged
-{
-    private readonly IConfigService _config = new ConfigService();
+{    private readonly IConfigService _config = new ConfigService();
     private readonly SyncService _sync = new(new FileSshKnownHostsStore(), SshHostKeyMode.Tofu, new SshService());
 
     private string? _testedSignature;
@@ -57,6 +93,9 @@ public sealed class SyncViewModel : INotifyPropertyChanged
     public ObservableCollection<SyncTaskConfig> Tasks { get; } = new();
     public ObservableCollection<NumberOption> WeekdayOptions { get; } = new();
     public ObservableCollection<NumberOption> MonthDayOptions { get; } = new();
+
+    /// <summary>可被本同步任务触发的「触发事件」（仅列出启用且「允许事件触发」的）。</summary>
+    public ObservableCollection<SyncEventHookOption> EventHookOptions { get; } = new();
 
     public ICommand NewTaskCommand { get; }
     public ICommand DeleteTaskCommand { get; }
@@ -214,7 +253,25 @@ public sealed class SyncViewModel : INotifyPropertyChanged
         var months = SelectedTask?.MonthDays ?? Array.Empty<int>();
         foreach (var o in WeekdayOptions) o.Selected = weeks.Contains(o.Value);
         foreach (var o in MonthDayOptions) o.Selected = months.Contains(o.Value);
+
+        var hooks = SelectedTask?.EventHooks ?? Array.Empty<SyncEventHook>();
+        foreach (var o in EventHookOptions)
+        {
+            var hook = hooks.FirstOrDefault(h => h.TriggerId == o.TriggerId);
+            o.Selected = hook is not null;
+            o.OnlyOnSuccess = hook?.OnlyOnSuccess ?? true;
+        }
         _suppressOptions = false;
+    }
+
+    private void OnEventHooksChanged()
+    {
+        if (_suppressOptions || SelectedTask is null) return;
+        SelectedTask.EventHooks = EventHookOptions
+            .Where(o => o.Selected)
+            .Select(o => new SyncEventHook { TriggerId = o.TriggerId, OnlyOnSuccess = o.OnlyOnSuccess })
+            .ToArray();
+        InvalidateTest();
     }
 
     private void OnWeekDaysChanged()
@@ -251,6 +308,16 @@ public sealed class SyncViewModel : INotifyPropertyChanged
             Servers.Clear();
             foreach (var s in config.Servers)
                 Servers.Add(s);
+
+            // 可被本同步任务触发的「触发事件」：启用且「允许事件触发」
+            EventHookOptions.Clear();
+            foreach (var t in config.Triggers.Where(t => t.Enabled && t.AllowEventTrigger))
+            {
+                var opt = new SyncEventHookOption { TriggerId = t.Id, Name = t.Name };
+                opt.Changed = OnEventHooksChanged;
+                EventHookOptions.Add(opt);
+            }
+
             Tasks.Clear();
             foreach (var t in config.SyncTasks)
             {

@@ -55,8 +55,8 @@ public static class AppServiceFactory
     /// <summary>AI 助手会话/消息库（agent.db）。</summary>
     public static LitSSHmcp.Agent.IContextStore CreateAgentContextStore() => new LitSSHmcp.Agent.ContextStore();
 
-    /// <summary>App 内置技能目录（skills/litssh-mcp-ops-skill）。</summary>
-    public static string BundledSkillsDir => Path.Combine(AppContext.BaseDirectory, "skills", "litssh-mcp-ops-skill");
+    /// <summary>App 内置技能根目录（skills/）：其下每个子目录为一个技能（含 SKILL.md），另含总纲 litssh-mcp-ops-skill。</summary>
+    public static string BundledSkillsDir => Path.Combine(AppContext.BaseDirectory, "skills");
 
     /// <summary>快照服务（App 端手动采集）。注意: 一个实例对应一把内存单飞锁, UI 侧应长期复用同一实例。</summary>
     public static ISnapshotService CreateSnapshotService()

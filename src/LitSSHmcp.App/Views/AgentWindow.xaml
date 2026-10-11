@@ -135,7 +135,12 @@
                 <Grid Grid.Row="1">
                 <ScrollViewer x:Name="ChatScroll" VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding Turns}" Margin="4,2,8,2">
+                    <StackPanel>
+                        <!-- 单会话转录分页：加载更早的记录（仅在还有更早内容时显示） -->
+                        <ui:Button Content="加载更早的记录" HorizontalAlignment="Center" Margin="0,6,0,2" Padding="14,4"
+                                   Command="{Binding LoadOlderHistoryCommand}"
+                                   Visibility="{Binding HasMoreHistory, Converter={StaticResource BoolToVis}}"/>
+                        <ItemsControl ItemsSource="{Binding TurnsView}" Margin="4,2,8,2">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,16" HorizontalAlignment="Stretch">
@@ -182,8 +187,7 @@
                                         <Expander.Header>
                                             <TextBlock Text="{Binding ToolHeader}" FontSize="11" Foreground="{DynamicResource AppWarningBrush}"/>
                                         </Expander.Header>
-                                        <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto">
-                                            <ItemsControl ItemsSource="{Binding Steps}">
+                                        <ItemsControl ItemsSource="{Binding Steps}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
                                                         <Expander Margin="0,3" Padding="4">
@@ -218,7 +222,6 @@
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
-                                        </ScrollViewer>
                                     </Expander>
 
                                     <!-- 助手回答卡片 -->
@@ -231,10 +234,20 @@
                                                 <TextBlock Text="AI 助手" FontWeight="SemiBold" FontSize="11"
                                                            Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
                                             </DockPanel>
+                                            <!-- 思考过程（推理模型输出；运行中展开，完成后自动折叠） -->
+                                            <Expander Visibility="{Binding ReasoningVisibility}"
+                                                      IsExpanded="{Binding ShowReasoning, Mode=TwoWay}"
+                                                      Margin="0,0,0,6" Padding="6">
+                                                <Expander.Header>
+                                                    <TextBlock Text="思考过程" FontSize="11"
+                                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                </Expander.Header>
+                                                <controls:MarkdownBox Markdown="{Binding ReasoningText}"/>
+                                            </Expander>
                                             <controls:MarkdownBox Markdown="{Binding AssistantText}"/>
                                             <TextBlock Text="{Binding Note}" Foreground="{DynamicResource AppDangerBrush}" TextWrapping="Wrap" FontSize="12"
                                                        Margin="0,3,0,0" Visibility="{Binding NoteVisibility}"/>
-                                            <TextBlock Text="运行中…" Foreground="{DynamicResource AppAccentBrush}" FontSize="11" Margin="0,2,0,0"
+                                            <TextBlock Text="{Binding RunningText}" Foreground="{DynamicResource AppAccentBrush}" FontSize="11" Margin="0,2,0,0"
                                                        Visibility="{Binding RunningVisibility}"/>
                                             <!-- hover 显示：复制 + 用时（常占位） -->
                                             <StackPanel Style="{StaticResource HoverRevealStyle}" Orientation="Horizontal" Margin="0,6,0,0">
@@ -248,7 +261,8 @@
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                        </ItemsControl>
+                    </StackPanel>
                 </ScrollViewer>
 
                 <!-- 空态引导 -->
@@ -294,6 +308,37 @@
                                 </ControlTemplate>
                             </Thumb.Template>
                         </Thumb>
+
+                        <!-- 技能 chip（有激活技能时显示；未激活=索引模式） -->
+                        <DockPanel Grid.Row="1" Margin="0,6,0,0" LastChildFill="True"
+                                   Visibility="{Binding HasActiveSkills, Converter={StaticResource BoolToVis}}">
+                            <Button DockPanel.Dock="Right" Style="{DynamicResource ActionRowButton}" Padding="6,2" Margin="8,0,0,6"
+                                    VerticalAlignment="Top" Click="OnSelectSkills" ToolTip="编辑本会话激活的技能">
+                                <TextBlock Text="技能…" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            </Button>
+                            <ItemsControl ItemsSource="{Binding ActiveSkills}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource AppSurfaceAltBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                                                BorderThickness="1" CornerRadius="{DynamicResource AppRadiusS}" Padding="6,3" Margin="0,0,6,6"
+                                                ToolTip="{Binding Description}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Symbol="Document24" FontSize="13" Margin="0,0,5,0"
+                                                               Foreground="{DynamicResource AppAccentBrush}" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}" FontSize="11" VerticalAlignment="Center"/>
+                                                <Button Style="{DynamicResource ActionRowButton}" Padding="2" Margin="6,0,0,0"
+                                                        Click="OnRemoveActiveSkill" ToolTip="移除该技能">
+                                                    <ui:SymbolIcon Symbol="Delete24" FontSize="12"/>
+                                                </Button>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </DockPanel>
 
                         <!-- 附件芯片（有附件时显示） -->
                         <DockPanel Grid.Row="2" Margin="0,6,0,0" LastChildFill="True"
@@ -362,6 +407,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
@@ -375,6 +421,9 @@
                                     <ContextMenu>
                                         <MenuItem Header="添加图片…" Click="OnAddImage"/>
                                         <MenuItem Header="添加文件…" Click="OnAddFile"/>
+                                        <MenuItem Header="选择技能…" Click="OnSelectSkills"/>
+                                        <MenuItem Header="工具审批策略…" Click="OnToolPolicy"/>
+                                        <MenuItem Header="用量 / 成本…" Click="OnShowUsage"/>
                                         <MenuItem Header="清除全部附件" Click="OnClearAttachments"/>
                                         <Separator/>
                                         <MenuItem Header="清空显示" Click="OnClearDisplay"/>
@@ -385,17 +434,25 @@
                                 </ui:Button.ContextMenu>
                             </ui:Button>
 
+                            <ComboBox Grid.Column="1" Width="124" Height="34" Margin="8,0,0,0" HorizontalAlignment="Left"
+                                      VerticalContentAlignment="Center" Padding="10,4"
+                                      SelectedIndex="{Binding PlanModeIndex, Mode=TwoWay}"
+                                      ToolTip="执行模式=可正常执行写操作；计划模式=只做只读调研、可列计划，不会擅自执行（切回执行模式后由你发指令）">
+                                <ComboBoxItem Content="执行模式"/>
+                                <ComboBoxItem Content="计划模式"/>
+                            </ComboBox>
+
                             <!-- 上下文占用：环形进度，悬浮看详情 -->
-                            <Border Grid.Column="1" Width="22" Height="22" Background="Transparent" Margin="12,0,8,0"
+                            <Border Grid.Column="2" Width="22" Height="22" Background="Transparent" Margin="12,0,8,0"
                                     VerticalAlignment="Center" ToolTip="{Binding ContextInfoTooltip}">
                                 <controls:ContextRing Percent="{Binding ContextPercent}"/>
                             </Border>
 
-                            <ui:Button Grid.Column="3" Content="取消编辑" Padding="10,4" Margin="0,0,8,0"
+                            <ui:Button Grid.Column="4" Content="取消编辑" Padding="10,4" Margin="0,0,8,0"
                                        Command="{Binding CancelEditCommand}" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}"/>
 
                             <!-- 模型连接状态点 -->
-                            <Ellipse Grid.Column="4" Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,8,0"
+                            <Ellipse Grid.Column="5" Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,8,0"
                                      ToolTip="{Binding StatusMessage}">
                                 <Ellipse.Style>
                                     <Style TargetType="Ellipse">
@@ -415,7 +472,7 @@
                                 </Ellipse.Style>
                             </Ellipse>
 
-                            <ComboBox Grid.Column="5" ItemsSource="{Binding ComboView}" SelectedItem="{Binding SelectedProvider}"
+                            <ComboBox Grid.Column="6" ItemsSource="{Binding ComboView}" SelectedItem="{Binding SelectedProvider}"
                                       DisplayMemberPath="Name" Width="180" Height="34" Margin="0,0,8,0" VerticalContentAlignment="Center"
                                       Padding="10,4"
                                       ToolTip="{Binding StatusMessage}">
@@ -431,7 +488,7 @@
                                 </ComboBox.GroupStyle>
                             </ComboBox>
 
-                            <ui:Button Grid.Column="6" Appearance="Primary" Width="42" Height="34" Padding="0"
+                            <ui:Button Grid.Column="7" Appearance="Primary" Width="42" Height="34" Padding="0"
                                        Command="{Binding SendOrStopCommand}" ToolTip="{Binding SendButtonText}">
                                 <Grid>
                                     <ui:SymbolIcon Symbol="Send24" FontSize="16">
@@ -463,6 +520,17 @@
                         </Grid>
                     </Grid>
                 </Border>
+
+                <!-- 加载遮罩：初始化 / 切换会话 / 连接模型时 -->
+                <Border Grid.Row="0" Grid.RowSpan="3" Panel.ZIndex="20" Background="{DynamicResource AppCardBrush}"
+                        Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <ui:ProgressRing IsIndeterminate="True" Width="46" Height="46" HorizontalAlignment="Center"
+                                         Foreground="{DynamicResource AppAccentBrush}"/>
+                        <TextBlock Text="{Binding LoadingText}" Margin="0,12,0,0" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Grid>
 
@@ -481,8 +549,21 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <DockPanel>
+                                <TextBlock DockPanel.Dock="Left" Text="{Binding Glyph}" Width="16" FontFamily="Consolas"
+                                           Foreground="{DynamicResource AppSuccessBrush}" VerticalAlignment="Center"/>
                                 <TextBlock DockPanel.Dock="Left" Text="{Binding Name}" FontFamily="Consolas" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource AppAccentBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                           Margin="0,0,10,0" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsHeader}" Value="True">
+                                                    <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                                 <TextBlock Text="{Binding Description}" FontSize="11" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                                            Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
                             </DockPanel>

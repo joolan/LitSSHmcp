@@ -107,6 +107,9 @@ public class ConfigService : IConfigService
 
         if (config.Agent?.Memory is not null)
             config.Agent.Memory.ApiKey = _protector.Protect(config.Agent.Memory.ApiKey);
+
+        foreach (var action in (config.Triggers ?? Array.Empty<TriggerConfig>()).SelectMany(t => t?.Actions ?? Array.Empty<TriggerAction>()))
+            action.Secret = _protector.Protect(action.Secret);
     }
 
     private void DecryptSecrets(AppConfig config)
@@ -126,6 +129,9 @@ public class ConfigService : IConfigService
 
         if (config.Agent?.Memory is not null)
             config.Agent.Memory.ApiKey = _protector.Unprotect(config.Agent.Memory.ApiKey);
+
+        foreach (var action in (config.Triggers ?? Array.Empty<TriggerConfig>()).SelectMany(t => t?.Actions ?? Array.Empty<TriggerAction>()))
+            action.Secret = _protector.Unprotect(action.Secret);
     }
 
     private bool ContainsPlaintextSecrets(AppConfig config)
@@ -139,7 +145,8 @@ public class ConfigService : IConfigService
 
         return config.DataSources.Any(ds => HasPlaintext(ds.Password)) ||
                (config.Agent?.Providers ?? Array.Empty<AgentProviderGroupConfig>()).Any(p => HasPlaintext(p.ApiKey)) ||
-               (config.Agent?.Memory is not null && HasPlaintext(config.Agent.Memory.ApiKey));
+               (config.Agent?.Memory is not null && HasPlaintext(config.Agent.Memory.ApiKey)) ||
+               (config.Triggers ?? Array.Empty<TriggerConfig>()).Any(t => (t?.Actions ?? Array.Empty<TriggerAction>()).Any(a => HasPlaintext(a.Secret)));
     }
 
     private bool HasPlaintext(string? value) => !string.IsNullOrEmpty(value) && !_protector.IsProtected(value);

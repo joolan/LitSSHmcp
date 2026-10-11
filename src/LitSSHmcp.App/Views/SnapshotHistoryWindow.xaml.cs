@@ -8,6 +8,8 @@ namespace LitSSHmcp.App.Views;
 public partial class SnapshotHistoryWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly SnapshotHistoryViewModel _viewModel;
+    private readonly ISnapshotStore _store;
+    private readonly IConfigService _configService;
     private readonly string? _initialServerId;
     private readonly long? _initialSnapshotId;
     private bool _suppressServerChanged = true;
@@ -15,6 +17,8 @@ public partial class SnapshotHistoryWindow : Wpf.Ui.Controls.FluentWindow
     public SnapshotHistoryWindow(ISnapshotStore store, IConfigService configService, string? initialServerId, long? initialSnapshotId = null)
     {
         InitializeComponent();
+        _store = store;
+        _configService = configService;
         _viewModel = new SnapshotHistoryViewModel(store, configService);
         DataContext = _viewModel;
         _initialServerId = initialServerId;
@@ -39,4 +43,7 @@ public partial class SnapshotHistoryWindow : Wpf.Ui.Controls.FluentWindow
     private async void OnSnapshotChanged(object sender, SelectionChangedEventArgs e) => await _viewModel.ShowSelectedAsync();
 
     private async void OnRefresh(object sender, RoutedEventArgs e) => await _viewModel.LoadSnapshotsAsync();
+
+    private void OnTrend(object sender, RoutedEventArgs e) =>
+        new SnapshotTrendWindow(_store, _configService, _viewModel.SelectedServer?.Id) { Owner = this }.Show();
 }

@@ -21,6 +21,16 @@ public enum SyncScheduleType
     Monthly
 }
 
+/// <summary>同步任务 → 触发事件的联动：同步结束后按条件触发指定「触发事件」。</summary>
+public class SyncEventHook
+{
+    /// <summary>目标触发事件 Id（须为「允许事件触发」的触发事件）。</summary>
+    public string TriggerId { get; set; } = string.Empty;
+
+    /// <summary>仅同步成功时触发（false = 无条件触发，即使同步失败也触发）。</summary>
+    public bool OnlyOnSuccess { get; set; } = true;
+}
+
 /// <summary>一个文件夹同步任务（仅单向，运行于 App 进程内：关闭 App 即停止）。</summary>
 public class SyncTaskConfig
 {
@@ -77,6 +87,9 @@ public class SyncTaskConfig
 
     /// <summary>上次结果摘要：ok / fail:... </summary>
     public string? LastResult { get; set; }
+
+    /// <summary>同步结束后要触发的「触发事件」及其条件。</summary>
+    public SyncEventHook[] EventHooks { get; set; } = Array.Empty<SyncEventHook>();
 }
 
 /// <summary>同步调度计算（纯逻辑，便于单测）。</summary>
@@ -91,13 +104,19 @@ public static class SyncSchedule
 
     /// <summary>计算下一次运行时刻（相对 <paramref name="now"/>）；返回 null 表示未配置（不调度）。</summary>
     public static DateTime? ComputeNextRun(SyncTaskConfig task, DateTime now)
+        => ComputeNextRun(task.ScheduleType, task.IntervalMinutes, task.WeekDays, task.MonthDays,
+                          task.TimeOfDay, task.LastRunAt, now);
+
+    /// <summary>参数化版本（触发事件等其它调度对象复用；字段语义与 <see cref="SyncTaskConfig"/> 一致）。</summary>
+    public static DateTime? ComputeNextRun(SyncScheduleType type, int intervalMinutes, int[]? weekDays,
+                                           int[]? monthDays, string? timeOfDay, DateTime? lastRunAt, DateTime now)
     {
-        switch (task.ScheduleType)
+        switch (type)
         {
             case SyncScheduleType.Weekly:
             {
-                var time = ParseTimeOfDay(task.TimeOfDay);
-                var days = task.WeekDays is { Length: > 0 } ? task.WeekDays : Array.Empty<int>();
+                var time = ParseTimeOfDay(timeOfDay);
+                var days = weekDays is { Length: > 0 } ? weekDays : Array.Empty<int>();
                 DateTime? best = null;
                 foreach (var d in days.Distinct())
                 {
@@ -114,8 +133,8 @@ public static class SyncSchedule
 
             case SyncScheduleType.Monthly:
             {
-                var time = ParseTimeOfDay(task.TimeOfDay);
-                var days = task.MonthDays is { Length: > 0 } ? task.MonthDays : Array.Empty<int>();
+                var time = ParseTimeOfDay(timeOfDay);
+                var days = monthDays is { Length: > 0 } ? monthDays : Array.Empty<int>();
                 DateTime? best = null;
                 foreach (var dd in days.Distinct())
                 {
@@ -134,8 +153,8 @@ public static class SyncSchedule
 
             default:
             {
-                var interval = TimeSpan.FromMinutes(Math.Max(1, task.IntervalMinutes));
-                var baseline = task.LastRunAt ?? now;
+                var interval = TimeSpan.FromMinutes(Math.Max(1, intervalMinutes));
+                var baseline = lastRunAt ?? now;
                 var next = baseline + interval;
                 while (next <= now)
                     next += interval;

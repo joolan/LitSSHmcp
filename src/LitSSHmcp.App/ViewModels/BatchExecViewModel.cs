@@ -19,12 +19,54 @@ public sealed class BatchExecViewModel : INotifyPropertyChanged
             Servers.Add(new BatchServerItem(server));
         RunCommand = new RelayCommand(_ => _ = RunAsync(), _ => !IsRunning);
         SelectAllCommand = new RelayCommand(p => SetAll(p as string == "clear"));
+        QuickActionCommand = new RelayCommand(p => { if (p is QuickAction a) _ = RunQuickAsync(a); }, _ => !IsRunning);
     }
 
     public ObservableCollection<BatchServerItem> Servers { get; } = new();
 
     public ICommand RunCommand { get; }
     public ICommand SelectAllCommand { get; }
+
+    /// <summary>快速命令（免 AI 一键动作）：只读项直接执行，写操作（Dangerous）执行前需确认。</summary>
+    public ICommand QuickActionCommand { get; }
+
+    /// <summary>危险动作的确认回调（由窗口设置：返回 true=继续）。</summary>
+    public Func<QuickAction, bool>? Confirm { get; set; }
+
+    /// <summary>快捷命令 / 批量巡检动作列表。</summary>
+    public IReadOnlyList<QuickAction> QuickActions { get; } = new[]
+    {
+        new QuickAction("一键巡检", "echo '== uptime =='; uptime; echo '== disk =='; df -h; echo '== mem =='; free -m; echo '== top cpu =='; ps -eo pid,pcpu,pmem,comm --sort=-pcpu | head -8", false),
+        new QuickAction("磁盘 df -h", "df -h", false),
+        new QuickAction("inode df -i", "df -i", false),
+        new QuickAction("内存 free -m", "free -m", false),
+        new QuickAction("占用端口", "ss -ltnp", false),
+        new QuickAction("CPU Top", "ps -eo pid,ppid,pcpu,pmem,comm --sort=-pcpu | head -15", false),
+        new QuickAction("内存 Top", "ps -eo pid,ppid,pcpu,pmem,comm --sort=-rss | head -15", false),
+        new QuickAction("大目录 Top", "du -x -h --max-depth=1 / 2>/dev/null | sort -rh | head -15", false),
+        new QuickAction("最近日志", "journalctl -n 100 --no-pager 2>/dev/null || tail -n 100 /var/log/messages 2>/dev/null", false),
+        new QuickAction("Docker 容器", "docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}' 2>/dev/null || echo '(无 docker)'", false),
+        new QuickAction("网络地址", "ip -brief addr 2>/dev/null || ifconfig -a", false),
+        new QuickAction("⚠ 重启 nginx", "systemctl restart nginx", true),
+        new QuickAction("⚠ 重启 docker", "systemctl restart docker", true),
+    };
+
+    private async Task RunQuickAsync(QuickAction action)
+    {
+        if (IsRunning)
+            return;
+        Command = action.Command;
+        if (action.Dangerous)
+        {
+            var ok = Confirm?.Invoke(action) ?? false;
+            if (!ok)
+            {
+                StatusMessage = $"已取消（未确认）：{action.Name}";
+                return;
+            }
+        }
+        await RunAsync();
+    }
 
     private string _command = string.Empty;
     public string Command
@@ -149,3 +191,6 @@ public sealed class BatchServerItem : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
+
+/// <summary>一条快速命令 / 巡检动作。</summary>
+public sealed record QuickAction(string Name, string Command, bool Dangerous);

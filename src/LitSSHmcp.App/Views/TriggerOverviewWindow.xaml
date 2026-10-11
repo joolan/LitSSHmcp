@@ -1,0 +1,72 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.TriggerOverviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="触发事件总览" Height="700" Width="900" MinWidth="680" MinHeight="480"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="触发事件总览（调度 · 下次运行 · 动作流水线）"/>
+
+        <DockPanel Grid.Row="1" Margin="14,4,14,8">
+            <ui:Button DockPanel.Dock="Right" Content="刷新" Padding="12,4" Click="OnRefresh"/>
+            <ui:Button DockPanel.Dock="Right" Content="编辑触发事件…" Padding="12,4" Margin="0,0,8,0" Click="OnEdit"/>
+            <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+        </DockPanel>
+
+        <ScrollViewer Grid.Row="2" Margin="14,0,14,14" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Triggers}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
+                            <StackPanel>
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Name}" FontWeight="SemiBold" FontSize="14"/>
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding LastResultText}" FontSize="11" Margin="8,0,0,0"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text=" " />
+                                </DockPanel>
+                                <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
+                                    <Run Text="{Binding EnabledText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding TargetText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding SyncTriggerText, Mode=OneWay}"/>
+                                </TextBlock>
+                                <TextBlock FontSize="12" Margin="0,6,0,0">
+                                    <Run Text="调度: "/><Run Text="{Binding ScheduleText, Mode=OneWay}"/><Run Text="   下次: "/><Run Text="{Binding NextRunText, Mode=OneWay}"/><Run Text="   上次: "/><Run Text="{Binding LastRunText, Mode=OneWay}"/>
+                                </TextBlock>
+
+                                <!-- 动作流水线可视化 -->
+                                <ItemsControl ItemsSource="{Binding Steps}" Margin="0,8,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,6,6">
+                                                <Border Background="{DynamicResource AppSurfaceAltBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                                                        BorderThickness="1" CornerRadius="{DynamicResource AppRadiusS}" Padding="8,4" ToolTip="{Binding Detail}">
+                                                    <StackPanel>
+                                                        <TextBlock FontSize="12">
+                                                            <Run Text="{Binding Order, Mode=OneWay}"/><Run Text=". "/><Run Text="{Binding Label, Mode=OneWay}"/>
+                                                        </TextBlock>
+                                                        <TextBlock Text="{Binding ContinueText}" FontSize="9"
+                                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <TextBlock Text="→" VerticalAlignment="Center" Margin="4,0,0,0"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</ui:FluentWindow>

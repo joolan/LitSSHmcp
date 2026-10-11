@@ -197,6 +197,10 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
                 if (e.Text is { Length: > 0 } chunk)
                     turn.AssistantText += chunk;
                 break;
+            case AgentEventKind.AssistantReasoning:
+                if (e.Text is { Length: > 0 } reasoningChunk)
+                    turn.ReasoningText += reasoningChunk;
+                break;
             case AgentEventKind.Error:
                 turn.Note = e.Text ?? "发生错误";
                 break;

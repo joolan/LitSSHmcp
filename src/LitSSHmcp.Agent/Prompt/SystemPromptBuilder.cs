@@ -1,8 +1,9 @@
 using System.Text;
+using LitSSHmcp.Core.Models;
 
 namespace LitSSHmcp.Agent;
 
-/// <summary>拼装系统提示 = 基础行为约定 + MCP server instructions + 技能正文 + 用户附加提示。</summary>
+/// <summary>拼装系统提示 = 基础行为约定 + 能力边界 + MCP server instructions + 技能正文 + 用户附加提示。</summary>
 public static class SystemPromptBuilder
 {
     private const string BasePrompt =
@@ -18,10 +19,21 @@ public static class SystemPromptBuilder
         "8) 同一工具/命令连续失败两次(参数/权限/网络等)就换策略或向用户说明, 不要重复同样的失败调用。";
 
     public static string Build(string? serverInstructions, string? skills, string? userPrompt, bool workspaceTools = true,
-        IReadOnlyList<string>? skillFiles = null, bool spillTools = false, bool subAgent = false, string? responseStyle = null)
+        IReadOnlyList<string>? skillFiles = null, bool spillTools = false, bool subAgent = false, string? responseStyle = null,
+        IReadOnlyCollection<string>? availableGroups = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine(BasePrompt);
+
+        if (availableGroups is { Count: > 0 })
+        {
+            var display = ToolGroups.All.Where(availableGroups.Contains).Select(ToolGroups.Display).ToArray();
+            sb.AppendLine();
+            sb.AppendLine("## 能力边界(本次会话)");
+            sb.AppendLine($"- 本会话可用的 MCP 工具域: {(display.Length > 0 ? string.Join("、", display) : "（无）")}。");
+            sb.AppendLine("- 只使用**工具定义列表中实际存在**的工具; 不要调用或臆造未列出的工具。");
+            sb.AppendLine("- 技能/既定流程若涉及未启用的域, 明确告知用户该能力当前不可用并给出替代方案。");
+        }
 
         sb.AppendLine();
         sb.AppendLine("## 安全与数据可信度");

@@ -134,6 +134,8 @@ public partial class MainWindow : FluentWindow
 
     private void OnHomeSyncClick(object sender, MouseButtonEventArgs e) => ViewModel.OpenSyncCommand.Execute(null);
 
+    private void OnHomeTriggerClick(object sender, MouseButtonEventArgs e) => ViewModel.OpenTriggerCommand.Execute(null);
+
     private void OnHomeAddImage(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog

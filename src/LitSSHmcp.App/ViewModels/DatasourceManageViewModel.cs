@@ -27,6 +27,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         EditCommand = new RelayCommand(_ => Edit(), _ => SelectedDataSource != null);
         DeleteCommand = new RelayCommand(_ => Delete(), _ => SelectedDataSource != null);
         TestCommand = new RelayCommand(_ => Test(), _ => SelectedDataSource != null);
+        WorkbenchCommand = new RelayCommand(_ => OpenWorkbench(SelectedDataSource));
 
         Load();
     }
@@ -50,6 +51,24 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
     public ICommand EditCommand { get; }
     public ICommand DeleteCommand { get; }
     public ICommand TestCommand { get; }
+    public ICommand WorkbenchCommand { get; }
+
+    private DbWorkbenchWindow? _workbench;
+
+    private void OpenWorkbench(DataSourceConfig? target)
+    {
+        if (_workbench is { IsLoaded: true })
+        {
+            if (target is not null)
+                _workbench.SelectDatasource(target);
+            _workbench.Activate();
+            return;
+        }
+
+        _workbench = new DbWorkbenchWindow(target) { Owner = Application.Current.MainWindow, Topmost = false };
+        _workbench.Closed += (_, _) => _workbench = null;
+        _workbench.Show();
+    }
 
     private void RaiseCanExecuteChanged()
     {

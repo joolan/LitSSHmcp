@@ -30,6 +30,18 @@ public class SystemPromptBuilderTests
         Assert.Contains("ops_doc_read", SystemPromptBuilder.Build(null, null, null));
         Assert.DoesNotContain("ops_doc_read", SystemPromptBuilder.Build(null, null, null, workspaceTools: false));
     }
+
+    [Fact]
+    public void Build_adds_capability_boundary_when_groups_provided()
+    {
+        var prompt = SystemPromptBuilder.Build(null, null, null,
+            availableGroups: new[] { "mysql", "redis" });
+
+        Assert.Contains("## 能力边界", prompt);
+        Assert.Contains("MySQL", prompt);
+        Assert.Contains("Redis", prompt);
+        Assert.DoesNotContain("## 能力边界", SystemPromptBuilder.Build(null, null, null));
+    }
 }
 
 public class SkillRegistryTests : IDisposable
@@ -43,7 +55,7 @@ public class SkillRegistryTests : IDisposable
         File.WriteAllText(Path.Combine(_dir, "SKILL.md"), "SKILL_BODY");
         File.WriteAllText(Path.Combine(_dir, "extra.md"), "EXTRA_BODY");
 
-        var text = SkillRegistry.Load(_dir);
+        var text = SkillRegistry.Load(_dir, null, null, new[] { "SKILL", "extra" });
 
         Assert.Contains("SKILL_BODY", text);
         Assert.Contains("EXTRA_BODY", text);
@@ -56,7 +68,7 @@ public class SkillRegistryTests : IDisposable
         Directory.CreateDirectory(bundled);
         File.WriteAllText(Path.Combine(bundled, "s.md"), "BUNDLED");
 
-        Assert.Contains("BUNDLED", SkillRegistry.Load(null, bundled));
+        Assert.Contains("BUNDLED", SkillRegistry.Load(null, bundled, null, new[] { "s" }));
         Assert.Equal(string.Empty, SkillRegistry.Load(null, null));
     }
 

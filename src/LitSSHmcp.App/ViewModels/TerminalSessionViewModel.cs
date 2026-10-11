@@ -150,7 +150,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
             }
             _shell = shell;
             if (TerminalSettings.RecordSessions)
-                _logger = new Services.SessionLogger(Server.Name, Server.Host);
+                _logger = new Services.SessionLogger(Server.Name, Server.Host, Model.Cols, Model.Rows);
             IsConnected = true;
             StatusMessage = "已连接";
             // 连接建立前可能已按控件尺寸调整过模型：补一次窗口尺寸同步
@@ -231,12 +231,17 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     {
         if (string.IsNullOrEmpty(text))
             return;
+        _logger?.WriteInput(text);
         lock (_gate)
             _shell?.Write(text);
     }
 
     public void SendBytes(byte[] data)
     {
+        if (data.Length > 0)
+        {
+            try { _logger?.WriteInput(System.Text.Encoding.UTF8.GetString(data)); } catch { /* ignore */ }
+        }
         lock (_gate)
             _shell?.Write(data, 0, data.Length);
     }

@@ -23,6 +23,7 @@ public partial class AgentWindow : FluentWindow
         _viewModel = new AgentViewModel(configService, store, skillsDir, action => Dispatcher.Invoke(action));
         _viewModel.SettingsRequested += tab => Dispatcher.Invoke(() => OpenSettings(tab));
         _viewModel.TemporaryChatRequested += text => Dispatcher.Invoke(() => OpenTemporaryChat(text));
+        _viewModel.SkillsPickerRequested += () => Dispatcher.Invoke(OpenSkillPicker);
         DataContext = _viewModel;
         WindowLayout.Attach(this, "agent");
         _viewModel.Turns.CollectionChanged += (_, _) => ChatScroll.ScrollToEnd();
@@ -56,6 +57,7 @@ public partial class AgentWindow : FluentWindow
         new AgentSettingsWindow(_configService, tab) { Owner = this }.ShowDialog();
         _ = _viewModel.ReloadProvidersAsync();
         _ = _viewModel.ReloadSessionsAsync();
+        _viewModel.ReloadPromptTemplates();
     }
 
     // 输入区「＋」更多：左键打开其右键菜单
@@ -67,6 +69,56 @@ public partial class AgentWindow : FluentWindow
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
             menu.IsOpen = true;
         }
+    }
+
+    // 技能选择：/技能 命令、+ 菜单、chip 上的「技能…」按钮共用
+    private void OnSelectSkills(object sender, RoutedEventArgs e) => OpenSkillPicker();
+
+    private void OpenSkillPicker()
+    {
+        if (_viewModel.AvailableSkills.Count == 0)
+        {
+            System.Windows.MessageBox.Show("没有可用技能：请在「AI 助手设置 → 技能目录」指定目录，或使用内置技能。",
+                "AI 运维助手", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var root = _viewModel.SkillsRoot;
+        if (string.IsNullOrEmpty(root))
+            return;
+
+        var activeIds = _viewModel.ActiveSkills.Select(s => s.Id).ToList();
+        var picker = new SkillPickerWindow(root, _viewModel.AvailableSkills.ToList(), activeIds) { Owner = this };
+        if (picker.ShowDialog() == true)
+            _viewModel.ApplySkillSelection(picker.SelectedSkillIds);
+    }
+
+    private void OnRemoveActiveSkill(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is SkillInfo skill)
+            _viewModel.RemoveActiveSkill(skill);
+    }
+
+    // 工具审批策略：+ 菜单打开
+    private void OnToolPolicy(object sender, RoutedEventArgs e) => OpenToolPolicy();
+
+    // 用量 / 成本：+ 菜单打开
+    private void OnShowUsage(object sender, RoutedEventArgs e) =>
+        new UsageWindow(_viewModel.BuildUsageReport()) { Owner = this }.ShowDialog();
+
+    private void OpenToolPolicy()
+    {
+        var catalog = _viewModel.ToolCatalog;
+        if (catalog.Count == 0)
+        {
+            System.Windows.MessageBox.Show("未获取到工具目录：请先确保 AI 助手已连接模型。",
+                "AI 运维助手", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var window = new ToolPolicyWindow(catalog, _viewModel.ToolPolicy) { Owner = this };
+        if (window.ShowDialog() == true)
+            _viewModel.ApplyToolPolicy(window.Result);
     }
 
     // 拖动输入区顶部把手调整高度
@@ -208,7 +260,7 @@ public partial class AgentWindow : FluentWindow
 
     private void OnSlashSuggestionClick(object sender, MouseButtonEventArgs e)
     {
-        if (SlashList.SelectedItem is SlashCommand)
+        if (SlashList.SelectedItem is SlashSuggestion)
         {
             _viewModel.ExecuteSelectedSlashCommand();
             InputBox.Focus();

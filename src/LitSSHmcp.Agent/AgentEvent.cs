@@ -4,6 +4,8 @@ public enum AgentEventKind
 {
     /// <summary>助手文本（最终回答的一段）。</summary>
     AssistantText,
+    /// <summary>助手思考过程（推理模型输出的 reasoning 增量，仅用于展示，不回喂上下文）。</summary>
+    AssistantReasoning,
     /// <summary>发起一次工具调用（名称/参数）。</summary>
     ToolCall,
     /// <summary>工具返回（结果文本）。</summary>

@@ -118,6 +118,12 @@ public static class ConfigMigrator
             changed = true;
         }
 
+        if (config.Triggers == null)
+        {
+            config.Triggers = Array.Empty<TriggerConfig>();
+            changed = true;
+        }
+
         // v2→v3：大模型接入从「一个 provider = 一个模型」改为「一个厂家下挂多个模型」。
         // 旧 JSON 的 model 字段反序列化到遗留 Model 上（此时 models 为空），在此转成单模型列表；
         // 模型 Id 沿用旧 provider Id，保证已保存的 activeProviderId / 会话 ProviderId 继续命中。

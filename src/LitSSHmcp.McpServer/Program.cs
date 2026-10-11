@@ -99,7 +99,7 @@ builder.Services.AddSingleton<ITopologyService, TopologyService>();
 var mcp = builder.Services
     .AddMcpServer(options =>
     {
-        options.ServerInstructions = McpServerInstructions.Text;
+        options.ServerInstructions = McpServerInstructions.Build(enabledToolGroups);
         // 全局开关：security.enabled=false 时拒绝所有工具调用（热生效）
         options.Filters.Request.CallToolFilters.Add(McpGlobalSwitch.CreateFilter());
         // 会话跟踪：从 initialize 后的请求上下文取客户端信息写入会话表

@@ -9,9 +9,27 @@
                 <ui:SymbolIcon Symbol="Info24" FontSize="22" Margin="0,0,8,0" VerticalAlignment="Center"
                                Foreground="{DynamicResource AppAccentBrush}"/>
                 <TextBlock Text="关于 LitSSH MCP" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <Border x:Name="VersionBadge" Background="{DynamicResource AppSurfaceAltBrush}"
+                        BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                        CornerRadius="{DynamicResource AppRadiusS}" Padding="8,2" Margin="10,0,0,0"
+                        VerticalAlignment="Center">
+                    <TextBlock x:Name="VersionText" Text="版本 …" FontSize="12"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                </Border>
             </StackPanel>
             <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,12"
                        Text="Windows 平台下的 SSH / 数据库运维 MCP 服务器，并配套桌面管理端（App）。让 AI 智能体安全地通过 SSH 管理远程服务器，并贯通 MySQL / PostgreSQL / Redis 数据源与资产拓扑，支撑跨服务器 / 应用 / 容器 / 数据库的全链路故障排查。"/>
+
+            <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
+                <StackPanel>
+                    <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 触发事件：对本机或远程按流水线执行 Git 提交推送、Webhook 通知（钉钉/企业微信/飞书/通用）、目录与数据库备份，支持定时与「同步任务事件」触发。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据库工作台：MySQL / PostgreSQL 对象浏览与 SQL 查询、表数据分页预览、导出 CSV；Redis 键浏览（SCAN + 按类型取值 + TTL）与命令执行；只读 / 写入模式强区分，写操作复用安全链与审计。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手增强：实时展示推理模型的「思考过程」（运行中展开、完成后折叠）；工具调用/结果 JSON 规范化（中文不再被转义成 \uXXXX、内嵌 JSON 展开），既易读又显著降低 token 消耗；新增上下文缓存命中观测、图片发送前压缩、结构化滚动摘要。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 技能选择器与预置技能包：内置一组运维技能（nginx 5xx / 磁盘满 / CPU·内存飙高 / MySQL / Redis / 容器 / systemd / 证书到期等），用斜杠 /技能 或输入区 + 菜单选择激活；未选择时只注入技能索引以省 token。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 端口转发删除增加二次确认；AI 助手工具过程与思考过程在展开时按内容撑高，会话区仅保留单一滚动条。"/>
+                </StackPanel>
+            </Border>
 
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
@@ -52,7 +70,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源 / 应用管理：MySQL / PostgreSQL / Redis 与应用节点维护，密码本机 DPAPI 加密。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑：可视化编辑——拖动/缩放节点、拖拽创建关系、自动正交避障连线、网格吸附、撤销重做、导出图片。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 审计日志：按服务器/数据源/会话筛选与关键字检索、复制、导出 CSV、哈希链完整性校验。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手：内置大模型智能体，内嵌 MCP 客户端调用全部工具（审批/过滤/审计与第三方客户端一致），支持流式输出、多会话、只读模式、Markdown 渲染、任务计划与长期记忆。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手：内置大模型智能体，内嵌 MCP 客户端调用全部工具（审批/过滤/审计与第三方客户端一致），支持流式输出、多模型热切换、多会话、只读模式、Markdown 渲染、任务计划与长期记忆；实时展示推理模型的「思考过程」，工具调用/结果自动规范化为可读中文（省 token）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 工具说明：集中查看工具参数与路由并一键复制到提示词，与 docs/TOOLS.md 双向同步。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 外观：基于 WPF-UI（Fluent）的现代界面，支持深色 / 浅色 / 跟随系统主题与强调色。"/>
                 </StackPanel>
@@ -62,7 +80,7 @@
                 <StackPanel>
                     <TextBlock Text="技术栈" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                               Text=".NET 8 · WPF + WPF-UI（Fluent）· ModelContextProtocol SDK · SSH.NET · SQLite（审计/快照/会话）· DPAPI（凭据加密）。"/>
+                               Text=".NET 8（桌面 App 与 MCP 服务器）· .NET 10（CLI）· WPF + WPF-UI（Fluent）· Microsoft.Extensions.AI + ModelContextProtocol SDK · OpenAI 兼容大模型（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等）· SSH.NET · MySQL / PostgreSQL / Redis 驱动 · SQLite（审计 / 快照 / 会话 / 拓扑）· DPAPI（凭据加密）。"/>
                 </StackPanel>
             </Border>
 

@@ -123,6 +123,48 @@ public class AgentConfig
 
     /// <summary>会话保留：超过该天数的会话自动清理（0=不限）。</summary>
     public int RetentionDays { get; set; } = 90;
+
+    /// <summary>本机 PowerShell 终端 & AI 本地 CLI 执行配置（默认关闭）。</summary>
+    public LocalTerminalConfig LocalTerminal { get; set; } = new();
+}
+
+/// <summary>
+/// 本机终端 / AI 本地 CLI 配置。安全策略：**硬白名单**（仅清单内 CLI 可执行，其余直接拒绝），
+/// 且清单内命令默认每次人工审批（可「总是允许」记住）。默认关闭该工具组。
+/// </summary>
+public class LocalTerminalConfig
+{
+    /// <summary>是否向 AI 暴露本机 CLI 工具（local 工具组）。默认关闭。</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>指定 shell 可执行文件；空=自动（优先 pwsh，回退 powershell）。</summary>
+    public string ShellPath { get; set; } = string.Empty;
+
+    /// <summary>起始工作目录；空=用户主目录。</summary>
+    public string WorkingDirectory { get; set; } = string.Empty;
+
+    /// <summary>硬白名单：允许执行的 CLI（按可执行文件名匹配，忽略大小写与路径）。其余命令一律拒绝。</summary>
+    public string[] AllowedCommands { get; set; } = DefaultAllowedCommands();
+
+    /// <summary>已记住「总是允许」的完整命令（与原命令完全一致时跳过审批）。</summary>
+    public string[] AutoApprovedCommands { get; set; } = Array.Empty<string>();
+
+    /// <summary>回传给模型的输出上限（字符，超出截断）。</summary>
+    public int MaxOutputChars { get; set; } = 8000;
+
+    /// <summary>单条命令超时秒数。</summary>
+    public int TimeoutSeconds { get; set; } = 60;
+
+    /// <summary>开发/构建/云凭据类 CLI 的常用默认白名单。</summary>
+    public static string[] DefaultAllowedCommands() => new[]
+    {
+        "git", "dotnet", "msbuild", "npm", "pnpm", "yarn", "node", "npx",
+        "gh", "aws", "az", "terraform", "kubectl", "helm",
+        "docker", "docker-compose", "compose",
+        "python", "python3", "pip", "pip3", "poetry", "uv", "pdm", "conda",
+        "go", "cargo", "rustc", "java", "mvn", "gradle", "make", "cmake",
+        "where", "tree", "curl", "invoke-webrequest"
+    };
 }
 
 /// <summary>

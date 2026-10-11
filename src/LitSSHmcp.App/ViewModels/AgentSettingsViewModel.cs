@@ -255,6 +255,25 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     private string _retentionDays = "90";
     public string RetentionDays { get => _retentionDays; set => Set(ref _retentionDays, value); }
 
+    // ---- 本机终端（AI 本地 CLI）----
+    private bool _localEnabled;
+    public bool LocalEnabled { get => _localEnabled; set => Set(ref _localEnabled, value); }
+
+    private string _localShellPath = string.Empty;
+    public string LocalShellPath { get => _localShellPath; set => Set(ref _localShellPath, value); }
+
+    private string _localWorkingDirectory = string.Empty;
+    public string LocalWorkingDirectory { get => _localWorkingDirectory; set => Set(ref _localWorkingDirectory, value); }
+
+    private string _localAllowedCommands = string.Empty;
+    public string LocalAllowedCommands { get => _localAllowedCommands; set => Set(ref _localAllowedCommands, value); }
+
+    private string _localTimeoutSeconds = "60";
+    public string LocalTimeoutSeconds { get => _localTimeoutSeconds; set => Set(ref _localTimeoutSeconds, value); }
+
+    private string _localMaxOutputChars = "8000";
+    public string LocalMaxOutputChars { get => _localMaxOutputChars; set => Set(ref _localMaxOutputChars, value); }
+
     private string _statusMessage = string.Empty;
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
 
@@ -375,6 +394,14 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             RetentionMaxMessages = agent.RetentionMaxMessages.ToString();
             RetentionDays = agent.RetentionDays.ToString();
 
+            var lt = agent.LocalTerminal ?? new LocalTerminalConfig();
+            LocalEnabled = lt.Enabled;
+            LocalShellPath = lt.ShellPath;
+            LocalWorkingDirectory = lt.WorkingDirectory;
+            LocalAllowedCommands = string.Join(Environment.NewLine, lt.AllowedCommands ?? Array.Empty<string>());
+            LocalTimeoutSeconds = lt.TimeoutSeconds.ToString();
+            LocalMaxOutputChars = lt.MaxOutputChars.ToString();
+
             StatusMessage = "已加载";
         }
         catch (Exception ex)
@@ -424,6 +451,18 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent.RetentionMaxSessions = (int)Math.Max(0, ParseLong(RetentionMaxSessions, 50));
             config.Agent.RetentionMaxMessages = (int)Math.Max(0, ParseLong(RetentionMaxMessages, 200));
             config.Agent.RetentionDays = (int)Math.Max(0, ParseLong(RetentionDays, 90));
+
+            config.Agent.LocalTerminal ??= new LocalTerminalConfig();
+            config.Agent.LocalTerminal.Enabled = LocalEnabled;
+            config.Agent.LocalTerminal.ShellPath = LocalShellPath ?? string.Empty;
+            config.Agent.LocalTerminal.WorkingDirectory = LocalWorkingDirectory ?? string.Empty;
+            var allowed = (LocalAllowedCommands ?? string.Empty)
+                .Split(new[] { '\r', '\n', ',', ';', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            config.Agent.LocalTerminal.AllowedCommands = allowed.Length == 0
+                ? LocalTerminalConfig.DefaultAllowedCommands() : allowed;
+            config.Agent.LocalTerminal.TimeoutSeconds = (int)Math.Clamp(ParseLong(LocalTimeoutSeconds, 60), 1, 1800);
+            config.Agent.LocalTerminal.MaxOutputChars = (int)Math.Max(200, ParseLong(LocalMaxOutputChars, 8000));
 
             await _configService.SaveConfigAsync(config);
             StatusMessage = "已保存（重新打开「AI 运维助手」生效）";

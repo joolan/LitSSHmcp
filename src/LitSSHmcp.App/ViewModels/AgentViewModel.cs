@@ -11,6 +11,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.Agent;
 using LitSSHmcp.App.Services;
+using LitSSHmcp.App.Services.LocalTerminal;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
@@ -42,7 +43,6 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         _store = store;
         _bundledSkillsDir = bundledSkillsDir;
         _uiInvoke = uiInvoke ?? (action => action());
-
         SendCommand = new RelayCommand(_ => _ = SendAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(Input));
         StopCommand = new RelayCommand(_ => _cts?.Cancel(), _ => IsBusy);
         SendOrStopCommand = new RelayCommand(_ => { if (IsBusy) _cts?.Cancel(); else _ = SendAsync(); },
@@ -82,6 +82,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public ObservableCollection<AgentProviderConfig> Providers { get; } = new();
+
+    /// <summary>
+    /// 共享本机终端提供者（由宿主 App 注入，须在 UI 线程创建/显示）。启用「本机终端」工具后，
+    /// AI 的 local 工具会通过它拿到用户可见的同一个 PowerShell 会话。
+    /// </summary>
+    public Func<LocalTerminalSessionViewModel?>? LocalTerminalProvider { get; set; }
 
     /// <summary>模型下拉列表 = 可用模型 + 末尾固定的“模型设置”入口。</summary>
     public ObservableCollection<AgentProviderConfig> ComboProviders { get; } = new();
@@ -928,6 +934,11 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             await _store.InitializeAsync();
             var config = await _configService.LoadConfigAsync();
             _agentConfig = config.Agent ?? new AgentConfig();
+            _agentConfig.LocalTerminal ??= new LocalTerminalConfig();
+            LocalTerminalSettings.ShellPath = string.IsNullOrWhiteSpace(_agentConfig.LocalTerminal.ShellPath)
+                ? null : _agentConfig.LocalTerminal.ShellPath;
+            LocalTerminalSettings.WorkingDirectory = string.IsNullOrWhiteSpace(_agentConfig.LocalTerminal.WorkingDirectory)
+                ? null : _agentConfig.LocalTerminal.WorkingDirectory;
             ReloadPromptTemplates();
             LoadCollapsedGroups();
             // 裁剪放到后台，不阻塞首屏（避免历史库较大时卡在启动）。
@@ -1449,8 +1460,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             ModelStatus = "connecting";
             StatusMessage = "正在连接 MCP 服务器…";
+            var localTools = BuildLocalTerminalTool() is { } lt ? new[] { lt } : null;
             _runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history, UpdatePlan,
-                _activeSkillIds.Count == 0 ? null : _activeSkillIds, _planMode);
+                _activeSkillIds.Count == 0 ? null : _activeSkillIds, _planMode, extraTools: localTools);
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
@@ -1464,6 +1476,45 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             ModelStatus = "error";
             StatusMessage = "连接失败: " + ChatErrorClassifier.Describe(ex);
         }
+    }
+
+    /// <summary>构建本机 CLI 工具（仅在「本机终端」启用且宿主提供了共享终端时）。</summary>
+    private IAgentTool? BuildLocalTerminalTool()
+    {
+        var cfg = _agentConfig.LocalTerminal;
+        if (cfg is null || !cfg.Enabled || LocalTerminalProvider is null)
+            return null;
+
+        return new LocalTerminalTool(
+            () => LocalTerminalProvider?.Invoke(),
+            cfg,
+            (command, cwd) =>
+            {
+                var decision = LocalApprovalDecision.Deny;
+                _uiInvoke(() => decision = LitSSHmcp.App.Views.LocalCommandApprovalWindow.Prompt(command, cwd));
+                return decision;
+            },
+            PersistLocalTerminalConfig);
+    }
+
+    /// <summary>把「总是允许」的命令写回配置（后台，不阻塞工具调用）。</summary>
+    private void PersistLocalTerminalConfig()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var cfg = await _configService.LoadConfigAsync();
+                var agent = cfg.Agent ??= new AgentConfig();
+                agent.LocalTerminal ??= new LocalTerminalConfig();
+                agent.LocalTerminal.AutoApprovedCommands = _agentConfig.LocalTerminal?.AutoApprovedCommands ?? Array.Empty<string>();
+                await _configService.SaveConfigAsync(cfg);
+            }
+            catch
+            {
+                // 记忆失败不影响执行
+            }
+        });
     }
 
     /// <summary>切换会话/模型：复用已连接的 MCP 宿主，仅重建对话会话（不重连 MCP）。</summary>

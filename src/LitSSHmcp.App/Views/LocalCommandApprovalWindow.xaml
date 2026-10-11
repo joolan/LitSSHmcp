@@ -1,0 +1,28 @@
+<ui:FluentWindow xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" x:Class="LitSSHmcp.App.Views.LocalCommandApprovalWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="本机命令审批" Width="640" SizeToContent="Height" WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize" ShowInTaskbar="True" Topmost="True" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="本机命令审批"/>
+        <StackPanel Grid.Row="1" Margin="16,0,16,14">
+            <TextBlock Text="AI 请求在本机 PowerShell 终端执行以下命令：" TextWrapping="Wrap"/>
+            <TextBlock x:Name="CwdText" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,3,0,8"
+                       TextWrapping="Wrap"/>
+            <TextBox x:Name="CommandText" IsReadOnly="True" FontFamily="Consolas" FontSize="13"
+                     TextWrapping="Wrap" MaxHeight="220" VerticalScrollBarVisibility="Auto"
+                     Background="{DynamicResource AppCodeBgBrush}" Padding="8" BorderThickness="0"/>
+            <TextBlock Text="仅白名单内的 CLI 会被放行；命令与输出对用户可见。请确认无误后再允许。"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                <ui:Button Content="拒绝" Width="96" Margin="0,0,8,0" Click="OnDeny" IsCancel="True"/>
+                <ui:Button Content="总是允许此命令" Width="150" Margin="0,0,8,0" Click="OnAlways"/>
+                <ui:Button Content="允许一次" Appearance="Primary" Width="96" Click="OnAllow" IsDefault="True"/>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

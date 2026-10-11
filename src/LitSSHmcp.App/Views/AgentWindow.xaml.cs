@@ -16,12 +16,16 @@ public partial class AgentWindow : FluentWindow
     private readonly AgentViewModel _viewModel;
     private readonly IConfigService _configService;
 
-    public AgentWindow(IConfigService configService, IContextStore store, string skillsDir)
+    public AgentWindow(IConfigService configService, IContextStore store, string skillsDir,
+        Func<LocalTerminalSessionViewModel?>? localTerminalProvider = null)
     {
         InitializeComponent();
         _configService = configService;
 
-        _viewModel = new AgentViewModel(configService, store, skillsDir, action => Dispatcher.Invoke(action));
+        _viewModel = new AgentViewModel(configService, store, skillsDir, action => Dispatcher.Invoke(action))
+        {
+            LocalTerminalProvider = localTerminalProvider
+        };
         _viewModel.SettingsRequested += tab => Dispatcher.Invoke(() => OpenSettings(tab));
         _viewModel.TemporaryChatRequested += text => Dispatcher.Invoke(() => OpenTemporaryChat(text));
         _viewModel.SkillsPickerRequested += () => Dispatcher.Invoke(OpenSkillPicker);

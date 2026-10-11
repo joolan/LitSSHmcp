@@ -118,6 +118,21 @@
                                     <TextBlock Text="保留天数:" VerticalAlignment="Center"/>
                                     <ui:TextBox FontWeight="Normal" Text="{Binding RetentionDays, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,0,0"/>
                                 </StackPanel>
+
+                                <TextBlock Text="本机终端（AI 执行本地 CLI）" FontWeight="SemiBold" Margin="0,14,0,6"/>
+                                <CheckBox Content="启用本机 CLI 工具（local_shell）— 默认关闭" IsChecked="{Binding LocalEnabled, Mode=TwoWay}" Margin="0,0,0,6"/>
+                                <TextBlock Text="Shell 路径（空=自动 pwsh/powershell）:" Margin="0,0,0,3"/>
+                                <ui:TextBox FontWeight="Normal" Text="{Binding LocalShellPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                <TextBlock Text="起始工作目录（空=用户主目录）:" Margin="0,0,0,3"/>
+                                <ui:TextBox FontWeight="Normal" Text="{Binding LocalWorkingDirectory, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                <TextBlock Text="CLI 白名单（每行一个；仅白名单内命令可执行，其余直接拒绝）:" Margin="0,0,0,3"/>
+                                <ui:TextBox FontWeight="Normal" Text="{Binding LocalAllowedCommands, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" Margin="0,0,0,6"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Text="命令超时(秒):" VerticalAlignment="Center"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding LocalTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,16,0"/>
+                                    <TextBlock Text="输出上限(字符):" VerticalAlignment="Center"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding LocalMaxOutputChars, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"/>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </ScrollViewer>

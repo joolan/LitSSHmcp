@@ -372,16 +372,32 @@ public class MainViewModel : INotifyPropertyChanged
     /// <summary>打开（或聚焦）本机 PowerShell 终端标签；它同时作为 AI 本地 CLI 的共享会话。</summary>
     public LocalTerminalSessionViewModel ConnectLocalTerminal()
     {
+        var vm = GetOrCreateLocalTerminal();
+        SelectedSession = vm;
+        ShowSessionWindow();
+        return vm;
+    }
+
+    /// <summary>取回（必要时创建并启动）共享本机终端，不强制显示窗口。</summary>
+    public LocalTerminalSessionViewModel GetOrCreateLocalTerminal()
+    {
         var existing = Sessions.OfType<LocalTerminalSessionViewModel>().FirstOrDefault();
         if (existing == null)
         {
             existing = new LocalTerminalSessionViewModel();
             Sessions.Add(existing);
-            StatusMessage = "已打开本机 PowerShell 终端";
         }
-        SelectedSession = existing;
-        ShowSessionWindow();
+        _ = existing.EnsureStartedAsync(existing.Model.Cols, existing.Model.Rows);
         return existing;
+    }
+
+    /// <summary>提供给 AI 助手的共享本机终端（确保在 UI 线程创建/启动，并让用户可见）。</summary>
+    private LocalTerminalSessionViewModel? LocalTerminalProvider()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+            return dispatcher.Invoke(ConnectLocalTerminal);
+        return ConnectLocalTerminal();
     }
 
     // SSH 会话管理窗口（独立非模态窗口：多标签，每个服务器一个标签；不设 Owner/不置顶）
@@ -884,7 +900,7 @@ public class MainViewModel : INotifyPropertyChanged
             return _agentWindow;
         }
 
-        _agentWindow = new AgentWindow(_configService, AppServiceFactory.CreateAgentContextStore(), AppServiceFactory.BundledSkillsDir) { Topmost = false };
+        _agentWindow = new AgentWindow(_configService, AppServiceFactory.CreateAgentContextStore(), AppServiceFactory.BundledSkillsDir, LocalTerminalProvider) { Topmost = false };
         _agentWindow.Closed += (_, _) => _agentWindow = null;
         _agentWindow.Show();
         return _agentWindow;

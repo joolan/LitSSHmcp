@@ -142,7 +142,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         Action<IReadOnlyList<PlanItem>>? onPlan = null,
         IReadOnlyCollection<string>? activeSkillIds = null,
         bool planMode = false,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IEnumerable<IAgentTool>? extraTools = null)
     {
         var launch = AgentPaths.ResolveLaunch(config.McpServerPath)
             ?? throw new InvalidOperationException(
@@ -190,8 +191,9 @@ public sealed class AgentRuntime : IAsyncDisposable
         Func<string, CancellationToken, Task<string?>>? recall =
             memory is null ? null : (query, token) => memory.RecallAsync(query, token);
 
-        // 主代理基础工具 = MCP + 工作区文档 + 技能参考 + 落盘读取（不含子代理/计划，它们依赖 client/回调，按会话构建）
-        var baseTools = mcpTools.Concat(workspaceTools).Concat(skillTools).Concat(spillTools).ToList();
+        // 主代理基础工具 = MCP + 工作区文档 + 技能参考 + 落盘读取 + 宿主注入的本地工具（不含子代理/计划，它们依赖 client/回调，按会话构建）
+        var baseTools = mcpTools.Concat(workspaceTools).Concat(skillTools).Concat(spillTools)
+            .Concat(extraTools ?? Enumerable.Empty<IAgentTool>()).ToList();
         // 子代理只给只读类工具(MCP/技能/落盘)，不给工作区写工具与计划, 避免副作用与递归
         var subTools = mcpTools.Concat(skillTools).Concat(spillTools).ToList();
         // 全局只读：MCP 工具已由 ToolFilter 过滤，这里再过滤本地工具（写文档工具等），保证运行时工具集一次性恒定。

@@ -61,9 +61,11 @@ public sealed class LocalTerminalTool : IAgentTool
     public AITool Tool => _schema;
 
     private const string Description =
-        "在本机 Windows PowerShell 终端中执行一条 CLI 命令（命令与输出对用户可见）。" +
-        "仅允许白名单内的 CLI（如 git/dotnet/npm/gh/aws/az/terraform 等），且可能需用户人工审批。" +
-        "参数 command 为完整命令行；返回命令的 stdout/stderr 与退出码。";
+        "在本**会话共享的同一个**本机 Windows PowerShell 终端中执行一条 CLI 命令（命令与输出对用户可见）。" +
+        "【重要约束】同一会话只有一个终端、同一时刻只能执行一条命令：必须等本工具返回（含输出与退出码）后再发下一条；" +
+        "不要并发调用本工具，也不要在上一条命令尚未结束时提交新命令——那样会被直接拒绝。" +
+        "【适用】一次性、能自行结束的命令；不要用于交互式/长驻命令（如 vim、top、tail -f、watch、REPL、等待 stdin 的程序），否则会一直占住终端。" +
+        "仅允许白名单内的 CLI（如 git/dotnet/npm/gh/aws/az/terraform 等），且可能需用户人工审批。参数 command 为完整命令行；返回命令的 stdout/stderr 与退出码。";
 
     public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct)
     {
@@ -100,6 +102,9 @@ public sealed class LocalTerminalTool : IAgentTool
         try
         {
             var result = await terminal.RunCommandAsync(command, timeout, ct);
+            if (result.Busy)
+                return "上一条命令仍在执行中：本机终端一次只能跑一条命令，请等它返回（输出与退出码）后再提交下一条，不要并发调用。";
+
             var output = result.Output ?? string.Empty;
             if (output.Length > _config.MaxOutputChars)
                 output = output[.._config.MaxOutputChars] + "\n…[输出已截断]";

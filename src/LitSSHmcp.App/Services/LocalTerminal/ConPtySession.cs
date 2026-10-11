@@ -7,7 +7,7 @@ using Microsoft.Win32.SafeHandles;
 namespace LitSSHmcp.App.Services.LocalTerminal;
 
 /// <summary>本机命令执行结果（干净输出 + 退出码）。</summary>
-public sealed record CommandResult(string Output, int ExitCode, bool TimedOut);
+public sealed record CommandResult(string Output, int ExitCode, bool TimedOut, bool Busy = false);
 
 /// <summary>
 /// Windows 伪控制台（ConPTY）会话：把本机 shell（默认 PowerShell）当作真实终端运行，
@@ -237,7 +237,9 @@ public sealed class ConPtySession : IDisposable
         if (!IsRunning)
             throw new InvalidOperationException("本地 shell 未启动");
 
-        await _runGate.WaitAsync(ct).ConfigureAwait(false);
+        // 共享终端一次只跑一条命令：若上一条尚未结束，直接拒绝（不排队），避免命令交错。
+        if (!_runGate.Wait(0))
+            return new CommandResult(string.Empty, -1, false, Busy: true);
         try
         {
             _tempDir = string.IsNullOrEmpty(_tempDir)

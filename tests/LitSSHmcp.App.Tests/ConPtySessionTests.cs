@@ -36,4 +36,21 @@ public class ConPtySessionTests
         Assert.False(result.TimedOut);
         Assert.Equal(7, result.ExitCode);
     }
+
+    [Fact]
+    public async Task Rejects_overlapping_command_while_busy()
+    {
+        using var pty = new ConPtySession();
+        pty.Start(100, 30);
+
+        var first = pty.RunCommandAsync("Start-Sleep -Seconds 3", TimeSpan.FromSeconds(30));
+        await Task.Delay(800);
+
+        var second = await pty.RunCommandAsync("Write-Output SHOULD_NOT_RUN", TimeSpan.FromSeconds(30));
+        Assert.True(second.Busy);
+
+        var firstResult = await first;
+        Assert.False(firstResult.Busy);
+        Assert.False(firstResult.TimedOut);
+    }
 }

@@ -52,7 +52,7 @@
                 <StackPanel>
                     <TextBlock Text="MCP 核心能力（AI 可调用的工具）" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,6"
-                               Text="通过 Model Context Protocol（stdio）向任意 MCP 客户端暴露 50+ 工具，覆盖以下能力域（可在「工具分组」按部署裁剪）："/>
+                               Text="通过 Model Context Protocol（stdio）向任意 MCP 客户端暴露 53 个工具，覆盖以下能力域（可在「工具分组」按部署裁剪）："/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 运维：命令执行、sudo 提权、连接测试/状态、批量与目录文件上传下载、目录浏览。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源：MySQL / PostgreSQL 只读查询、执行计划、写操作与诊断（连接数/慢查询/锁/复制），Redis 只读与写/管理命令、诊断；支持直连或 SSH 隧道，密码仅本机保存、不暴露给 AI。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 容器与服务：Docker 容器/镜像/日志/inspect/stats，systemd 服务状态与日志。"/>

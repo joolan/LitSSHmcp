@@ -82,7 +82,7 @@ public static class SshClientFactory
         if (!string.IsNullOrWhiteSpace(jumpServer.ProxyJumpServerId))
             throw new InvalidOperationException("经跳板机连接失败：暂不支持多级跳板（跳板机自身也配置了跳板机）。");
 
-        var jumpClient = new SshClient(BuildConnectionInfo(jumpServer, jumpServer.Host, jumpServer.Port));
+        var jumpClient = new SshClient(BuildConnectionInfo(jumpServer, jumpServer.Host ?? string.Empty, jumpServer.Port));
         jumpClient.ConnectionInfo.Timeout = TimeSpan.FromSeconds(15);
         AttachHostKeyPolicy(jumpClient, jumpServer, knownHosts, hostKeyMode);
 

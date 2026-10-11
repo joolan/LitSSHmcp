@@ -106,10 +106,27 @@ public partial class DbWorkbenchWindow : FluentWindow
 
     private void OnSqlKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control)
+        if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
-            if (_vm.ExecuteCommand.CanExecute(null))
-                _vm.ExecuteCommand.Execute(null);
+            if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+            {
+                // Ctrl+Shift+Enter：执行全部
+                if (_vm.ExecuteCommand.CanExecute(null))
+                    _vm.ExecuteCommand.Execute(null);
+            }
+            else if (sender is System.Windows.Controls.TextBox sqlBox)
+            {
+                // Ctrl+Enter：有选区执行选区，否则执行光标所在语句
+                _ = _vm.ExecuteFromEditorAsync(sqlBox.SelectionStart, sqlBox.SelectionLength, sqlBox.CaretIndex);
+            }
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Escape)
+        {
+            if (_vm.CancelCommand.CanExecute(null))
+                _vm.CancelCommand.Execute(null);
             e.Handled = true;
             return;
         }

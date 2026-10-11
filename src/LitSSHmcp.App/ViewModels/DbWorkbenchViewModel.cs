@@ -10,6 +10,7 @@ using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Datasource;
 using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.Core.Services.Sql;
 using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.ViewModels;
@@ -43,6 +44,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private string _keyPattern = "*";
     private string _redisKeyInfo = string.Empty;
     private string? _pendingSelectId;
+    private CancellationTokenSource? _queryCts;
+    private bool _cancelRequested;
 
     public DbWorkbenchViewModel(IConfigService? configService = null)
     {
@@ -53,6 +56,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         LoadTablesCommand = new RelayCommand(_ => _ = LoadTablesAsync(), _ => SelectedDatasource is not null && !string.IsNullOrWhiteSpace(SelectedDatabase));
         LoadColumnsCommand = new RelayCommand(_ => _ = LoadColumnsAsync(), _ => SelectedTable is not null);
         ExecuteCommand = new RelayCommand(_ => _ = ExecuteAsync(), _ => SelectedDatasource is not null && !Busy);
+        CancelCommand = new RelayCommand(_ => CancelQuery(), _ => Busy);
         PreviewCommand = new RelayCommand(_ => _ = PreviewTableAsync(), _ => SelectedTable is not null && !Busy);
         NextPageCommand = new RelayCommand(_ => _ = ChangePageAsync(1), _ => CanPage(1) && !Busy);
         PrevPageCommand = new RelayCommand(_ => _ = ChangePageAsync(-1), _ => CanPage(-1) && !Busy);
@@ -81,6 +85,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public ICommand LoadTablesCommand { get; }
     public ICommand LoadColumnsCommand { get; }
     public ICommand ExecuteCommand { get; }
+    public ICommand CancelCommand { get; }
     public ICommand PreviewCommand { get; }
     public ICommand NextPageCommand { get; }
     public ICommand PrevPageCommand { get; }
@@ -395,14 +400,67 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             return;
         }
 
-        var filterResult = _sqlFilter.CheckReadOnly(sql);
-        if (filterResult == SqlFilterResult.Blocked)
+        var statements = SqlScriptSplitter.Split(sql);
+        if (statements.Count == 0)
         {
-            StatusMessage = "只读模式仅允许单条 SELECT / SHOW / EXPLAIN / DESC / WITH 查询（写语句请切到写入模式）。";
+            StatusMessage = "没有可执行的语句。";
             return;
         }
 
-        await RunQueryAsync(ds, sql);
+        // 逐条执行（只读），显示最后一条结果；任一条被拒/取消则停止。
+        for (var k = 0; k < statements.Count; k++)
+        {
+            var stmt = statements[k];
+            var text = sql.Substring(stmt.Start, stmt.Length);
+            if (_sqlFilter.CheckReadOnly(text) == SqlFilterResult.Blocked)
+            {
+                StatusMessage = statements.Count > 1
+                    ? $"第 {k + 1} 条语句被只读策略拒绝（只读仅允许单条 SELECT/SHOW/EXPLAIN/DESC/WITH）。"
+                    : "只读模式仅允许单条 SELECT / SHOW / EXPLAIN / DESC / WITH 查询（写语句请切到写入模式）。";
+                return;
+            }
+            await RunQueryAsync(ds, text);
+            if (_cancelRequested)
+                return;
+        }
+    }
+
+    /// <summary>从编辑器执行：有选区执行选区，否则执行光标所在语句（可含多条语句）。</summary>
+    public async Task ExecuteFromEditorAsync(int selectionStart, int selectionLength, int caretIndex)
+    {
+        var ds = SelectedDatasource;
+        if (ds is null || Busy)
+            return;
+
+        string sql;
+        if (selectionLength > 0)
+        {
+            selectionStart = Math.Clamp(selectionStart, 0, SqlText.Length);
+            selectionLength = Math.Clamp(selectionLength, 0, SqlText.Length - selectionStart);
+            sql = SqlText.Substring(selectionStart, selectionLength);
+        }
+        else
+        {
+            var stmt = SqlScriptSplitter.StatementAt(SqlText, caretIndex);
+            sql = stmt is { } s ? SqlText.Substring(s.Start, s.Length) : SqlText;
+        }
+
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            StatusMessage = "未选中或未定位到可执行语句。";
+            return;
+        }
+
+        if (IsWriteMode)
+            await ExecuteWriteAsync(ds, sql);
+        else
+            await ExecuteReadAsync(ds, sql);
+    }
+
+    private void CancelQuery()
+    {
+        _cancelRequested = true;
+        try { _queryCts?.Cancel(); } catch { /* ignore */ }
     }
 
     private async Task ExecuteWriteAsync(DataSourceConfig ds, string sql)
@@ -720,11 +778,17 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         if (driver is null) { StatusMessage = $"不支持的类型: {ds.Type}"; return; }
 
         Busy = true;
+        _cancelRequested = false;
         StatusMessage = "查询中…";
+        var cts = new CancellationTokenSource();
+        _queryCts = cts;
+        var timeoutSeconds = ds.TimeoutSeconds is > 0 ? ds.TimeoutSeconds!.Value : 0;
+        if (timeoutSeconds > 0)
+            cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         try
         {
             var maxRows = Math.Max(PageSize, 1000);
-            var result = await driver.QueryAsync(Effective(ds, SelectedDatabase), sql, maxRows);
+            var result = await driver.QueryAsync(Effective(ds, SelectedDatabase), sql, maxRows, cts.Token);
             if (!result.Success)
             {
                 StatusMessage = "查询失败: " + result.Error;
@@ -736,12 +800,25 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(PageLabel));
             StatusMessage = $"返回 {result.RowCount} 行，{result.DurationMs:F0} ms{(result.Truncated ? "（已截断）" : string.Empty)}";
         }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = _cancelRequested
+                ? "查询已取消"
+                : timeoutSeconds > 0 ? $"查询超时（> {timeoutSeconds}s）已取消" : "查询已取消";
+            Results = null;
+        }
         catch (Exception ex)
         {
             StatusMessage = "查询失败: " + ex.Message;
             Results = null;
         }
-        finally { Busy = false; }
+        finally
+        {
+            Busy = false;
+            if (ReferenceEquals(_queryCts, cts))
+                _queryCts = null;
+            cts.Dispose();
+        }
     }
 
     private static DataView BuildView(DatasourceQueryResult result)
@@ -987,6 +1064,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         (LoadTablesCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (LoadColumnsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExecuteCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PreviewCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (NextPageCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PrevPageCommand as RelayCommand)?.RaiseCanExecuteChanged();

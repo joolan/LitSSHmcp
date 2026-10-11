@@ -182,6 +182,45 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" MaxWidth="820">
+                                <ItemsControl ItemsSource="{Binding Tabs}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="0,0,4,0" CornerRadius="4" Padding="8,3" Cursor="Hand">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{DynamicResource AppSurfaceAltBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource AppSelectionBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Border.InputBindings>
+                                                    <MouseBinding MouseAction="LeftClick"
+                                                                  Command="{Binding DataContext.SelectTabCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding}"/>
+                                                </Border.InputBindings>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Title}" VerticalAlignment="Center"
+                                                               MaxWidth="150" TextTrimming="CharacterEllipsis"/>
+                                                    <Button Content="✕" Margin="6,0,0,0" Padding="4,0" FontSize="10"
+                                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                            Command="{Binding DataContext.CloseTabCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                            <ui:Button Content="+ 新建查询" Padding="8,2" Margin="4,0,0,0" Command="{Binding AddTabCommand}"/>
+                        </StackPanel>
                         <DockPanel Margin="0,0,0,4" LastChildFill="False">
                             <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
                                 <TextBlock Text="{Binding EditorLabel}" FontWeight="SemiBold"/>

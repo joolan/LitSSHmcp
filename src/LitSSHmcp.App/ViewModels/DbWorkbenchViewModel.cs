@@ -46,6 +46,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private string? _pendingSelectId;
     private CancellationTokenSource? _queryCts;
     private bool _cancelRequested;
+    private QueryTab? _selectedTab;
+    private int _tabSeq;
 
     public DbWorkbenchViewModel(IConfigService? configService = null)
     {
@@ -66,6 +68,14 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         DeleteSnippetCommand = new RelayCommand(p => DeleteSnippet(p as DbSqlSnippet));
         ScanKeysCommand = new RelayCommand(_ => _ = ScanKeysAsync(), _ => IsRedisDb && !Busy);
         UseKeyCommand = new RelayCommand(p => _ = UseKeyAsync(p as string), _ => IsRedisDb && !Busy);
+        AddTabCommand = new RelayCommand(_ => AddTab());
+        CloseTabCommand = new RelayCommand(p => CloseTab(p as QueryTab));
+        SelectTabCommand = new RelayCommand(p => { if (p is QueryTab t) SelectedTab = t; });
+
+        _tabSeq = 1;
+        Tabs.Add(new QueryTab { Title = "查询 1" });
+        _selectedTab = Tabs[0];
+        _selectedTab.IsSelected = true;
 
         _ = LoadAsync();
     }
@@ -77,6 +87,16 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     /// <summary>Redis 模式下 SCAN 出的键名。</summary>
     public ObservableCollection<string> RedisKeys { get; } = new();
+
+    /// <summary>查询标签（每个标签独立的 SQL/结果/分页/写模式）。</summary>
+    public ObservableCollection<QueryTab> Tabs { get; } = new();
+
+    /// <summary>当前活动标签；切换时在标签间存取 SQL/结果状态。</summary>
+    public QueryTab? SelectedTab
+    {
+        get => _selectedTab;
+        set => SelectTab(value);
+    }
 
     /// <summary>当前「数据源 · 库」下的 SQL 片段。</summary>
     public ObservableCollection<DbSqlSnippet> Snippets { get; } = new();
@@ -95,6 +115,9 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public ICommand DeleteSnippetCommand { get; }
     public ICommand ScanKeysCommand { get; }
     public ICommand UseKeyCommand { get; }
+    public ICommand AddTabCommand { get; }
+    public ICommand CloseTabCommand { get; }
+    public ICommand SelectTabCommand { get; }
 
     /// <summary>是否有可用片段（供面板提示）。</summary>
     public bool HasSnippets => Snippets.Count > 0;
@@ -461,6 +484,84 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     {
         _cancelRequested = true;
         try { _queryCts?.Cancel(); } catch { /* ignore */ }
+    }
+
+    // ---------- 查询标签 ----------
+
+    private void SelectTab(QueryTab? tab)
+    {
+        if (ReferenceEquals(_selectedTab, tab))
+            return;
+        if (_selectedTab is not null)
+            SaveActiveIntoTab(_selectedTab);
+        _selectedTab = tab;
+        if (tab is not null)
+            LoadActiveFromTab(tab);
+        foreach (var t in Tabs)
+            t.IsSelected = ReferenceEquals(t, _selectedTab);
+        OnPropertyChanged(nameof(SelectedTab));
+        RaiseCanExecute();
+    }
+
+    private void AddTab()
+    {
+        _tabSeq++;
+        var tab = new QueryTab
+        {
+            Title = $"查询 {_tabSeq}",
+            PageSize = _pageSize,
+            IsWriteMode = _isWriteMode
+        };
+        Tabs.Add(tab);
+        SelectedTab = tab;
+    }
+
+    private void CloseTab(QueryTab? tab)
+    {
+        if (tab is null || Tabs.Count <= 1)
+            return;
+        var wasSelected = ReferenceEquals(tab, _selectedTab);
+        var idx = Tabs.IndexOf(tab);
+        if (wasSelected)
+            _selectedTab = null;   // 避免 SelectTab 再往回写
+        Tabs.Remove(tab);
+        if (wasSelected)
+            SelectTab(Tabs[Math.Clamp(idx, 0, Tabs.Count - 1)]);
+    }
+
+    private void SaveActiveIntoTab(QueryTab tab)
+    {
+        tab.SqlText = _sqlText;
+        tab.Results = _results;
+        tab.PageSize = _pageSize;
+        tab.PageIndex = _pageIndex;
+        tab.TotalRows = _totalRows;
+        tab.IsWriteMode = _isWriteMode;
+        tab.StatusMessage = _statusMessage;
+    }
+
+    private void LoadActiveFromTab(QueryTab tab)
+    {
+        _sqlText = tab.SqlText;
+        _results = tab.Results;
+        _pageSize = tab.PageSize;
+        _pageIndex = tab.PageIndex;
+        _totalRows = tab.TotalRows;
+        _isWriteMode = tab.IsWriteMode;
+        _statusMessage = tab.StatusMessage;
+
+        OnPropertyChanged(nameof(SqlText));
+        OnPropertyChanged(nameof(Results));
+        OnPropertyChanged(nameof(PageSize));
+        OnPropertyChanged(nameof(TotalRows));
+        OnPropertyChanged(nameof(PageLabel));
+        OnPropertyChanged(nameof(IsWriteMode));
+        OnPropertyChanged(nameof(ShowWriteBanner));
+        OnPropertyChanged(nameof(ShowWriteExecute));
+        OnPropertyChanged(nameof(ShowReadExecute));
+        OnPropertyChanged(nameof(ModeTitle));
+        OnPropertyChanged(nameof(SqlHint));
+        OnPropertyChanged(nameof(StatusMessage));
     }
 
     private async Task ExecuteWriteAsync(DataSourceConfig ds, string sql)

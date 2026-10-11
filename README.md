@@ -61,7 +61,7 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 | **拓扑与体检** | 资产拓扑总览、上下游依赖查询、拓扑自动发现；按应用聚合体检 |
 | **辅助** | 使用指南、MCP 自检、会话列表 |
 
-除工具外，服务还通过 MCP **Resources** 暴露**只读上下文**（供客户端“浏览 / 挂载”，无需调用工具）：`litssh://servers`（服务器清单）、`litssh://datasources`（数据源清单）、`litssh://usage-guide`（使用指南）。资源**不含密码/密钥**、禁用服务器已排除，并按**启用的工具分组**暴露。
+除工具外，服务还通过 MCP **Resources** 暴露**只读上下文**（供客户端“浏览 / 挂载”，无需调用工具）：`litssh://servers`（服务器清单）、`litssh://datasources`（数据源清单）、`litssh://usage-guide`（使用指南）、`litssh://topology`（资产拓扑）、`litssh://server/{id}/snapshot/latest`（资源模板：某服务器最新快照概览）。资源**不含密码/密钥**、禁用服务器已排除，并按**启用的工具分组**暴露。
 
 <details>
 <summary><b>查看全部 53 个工具</b>（点击展开）</summary>

@@ -60,7 +60,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 快照与拓扑：整机快照（资源/端口进程服务/证书/Docker/systemd/安全巡检），资产拓扑总览、依赖查询与自动发现。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 聚合体检：按应用聚合所在服务器进程/容器/端口与依赖数据源的连通性，支撑全链路排障。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 安全与审计：命令/SQL 过滤、敏感操作桌面审批、文件传输路径白名单、TOFU 主机密钥校验、按目标限流，全部操作写入 HMAC-SHA256 哈希链审计。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 资源（Resources）：以只读方式向 MCP 客户端暴露服务器清单 / 数据源清单 / 使用指南（litssh:// ），供浏览与挂载为上下文；不含密码、禁用项排除，按启用的工具分组裁剪。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 资源（Resources）：以只读方式向 MCP 客户端暴露服务器清单 / 数据源清单 / 使用指南 / 资产拓扑 / 最新快照概览（litssh:// 资源与模板），供浏览与挂载为上下文；不含密码、禁用项排除，按启用的工具分组裁剪。"/>
                 </StackPanel>
             </Border>
 

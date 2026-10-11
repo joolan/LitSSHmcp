@@ -124,8 +124,9 @@ if (enabledToolGroups.Contains(ToolGroups.App)) mcp = mcp.WithTools<AppTools>();
 if (enabledToolGroups.Contains(ToolGroups.Guide)) mcp = mcp.WithTools<UsageGuideTools>().WithTools<HealthTools>();
 
 // MCP 资源：只读数据（供客户端“浏览/挂载”为上下文），按启用分组裁剪，与工具/说明保持一致。
-if (enabledToolGroups.Contains(ToolGroups.Ssh)) mcp = mcp.WithResources<SshResources>();
+if (enabledToolGroups.Contains(ToolGroups.Ssh)) mcp = mcp.WithResources<SshResources>().WithResources<SnapshotResources>();
 if (enabledToolGroups.Contains(ToolGroups.Datasource)) mcp = mcp.WithResources<DatasourceResources>();
+if (enabledToolGroups.Contains(ToolGroups.Topology)) mcp = mcp.WithResources<TopologyResources>();
 if (enabledToolGroups.Contains(ToolGroups.Guide)) mcp = mcp.WithResources<GuideResources>();
 
 builder.Logging.AddConsole(consoleLog =>

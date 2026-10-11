@@ -89,7 +89,9 @@ public sealed class LocalTerminalTool : IAgentTool
         if (terminal is null)
             return "错误：本机终端不可用（无法创建共享会话）。";
 
-        var autoApproved = _config.AutoApprovedCommands.Any(x => string.Equals(x, command, StringComparison.Ordinal));
+        var autoApproved = _config.AutoApprovedCommands.Any(rule =>
+            string.Equals(rule, command, StringComparison.Ordinal) ||
+            command.StartsWith(rule + " ", StringComparison.Ordinal));
         if (!autoApproved)
         {
             var decision = _approval(command, terminal.Subtitle);
@@ -104,9 +106,11 @@ public sealed class LocalTerminalTool : IAgentTool
         }
 
         var timeout = TimeSpan.FromSeconds(Math.Clamp(_config.TimeoutSeconds, 1, 1800));
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var result = await terminal.RunCommandAsync(command, timeout, ct);
+            sw.Stop();
             if (result.Busy)
                 return "上一条命令仍在执行中：本机终端一次只能跑一条命令，请等它返回（输出与退出码）后再提交下一条，不要并发调用。";
 
@@ -116,11 +120,16 @@ public sealed class LocalTerminalTool : IAgentTool
             if (cap > 0 && output.Length > cap)
                 output = "…[前部已省略]\n" + output[^cap..];
 
-            var status = result.TimedOut
-                ? $"超时 {timeout.TotalSeconds:0}s，已发送中断"
-                : $"退出码 {result.ExitCode}";
-            // 状态置于末尾：中央对命令输出按“保尾”截断，确保退出码可见。
-            return output.Length == 0 ? $"[{status}]（无输出）" : $"{output}\n[{status}]";
+            var status = result.Killed
+                ? $"超时 {timeout.TotalSeconds:0}s 且无法中断，已强制终止终端进程树（该会话终端下次将自动重开）"
+                : result.TimedOut
+                    ? $"超时 {timeout.TotalSeconds:0}s，已发送中断"
+                    : $"退出码 {result.ExitCode}";
+            var meta = $"{status} · 耗时 {sw.Elapsed.TotalSeconds:0.0}s";
+            if (!string.IsNullOrWhiteSpace(result.WorkingDirectory))
+                meta += $" · 工作目录 {result.WorkingDirectory}";
+            // 状态置于末尾：中央对命令输出按“保尾”截断，确保退出码/元信息可见。
+            return output.Length == 0 ? $"[{meta}]（无输出）" : $"{output}\n[{meta}]";
         }
         catch (Exception ex)
         {

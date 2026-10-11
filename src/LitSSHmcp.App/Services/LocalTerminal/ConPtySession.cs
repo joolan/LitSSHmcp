@@ -6,8 +6,8 @@ using Microsoft.Win32.SafeHandles;
 
 namespace LitSSHmcp.App.Services.LocalTerminal;
 
-/// <summary>本机命令执行结果（干净输出 + 退出码）。</summary>
-public sealed record CommandResult(string Output, int ExitCode, bool TimedOut, bool Busy = false);
+/// <summary>本机命令执行结果（干净输出 + 退出码 + 工作目录）。</summary>
+public sealed record CommandResult(string Output, int ExitCode, bool TimedOut, bool Busy = false, string WorkingDirectory = "", bool Killed = false);
 
 /// <summary>
 /// Windows 伪控制台（ConPTY）会话：把本机 shell（默认 PowerShell）当作真实终端运行，
@@ -21,6 +21,7 @@ public sealed class ConPtySession : IDisposable
     private IntPtr _outputRead = IntPtr.Zero;
     private IntPtr _hProcess = IntPtr.Zero;
     private IntPtr _hThread = IntPtr.Zero;
+    private IntPtr _hJob = IntPtr.Zero;
     private FileStream? _input;
     private FileStream? _output;
     private readonly CancellationTokenSource _cts = new();
@@ -106,6 +107,43 @@ public sealed class ConPtySession : IDisposable
             _hProcess = pi.hProcess;
             _hThread = pi.hThread;
             ProcessId = pi.dwProcessId;
+
+            // 放入 Job Object（KILL_ON_JOB_CLOSE）：关闭/强杀时整棵子进程树一起结束。
+            try
+            {
+                _hJob = CreateJobObjectW(IntPtr.Zero, null);
+                if (_hJob != IntPtr.Zero)
+                {
+                    var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+                    {
+                        BasicLimitInformation = new JOBOBJECT_BASIC_LIMIT_INFORMATION
+                        {
+                            LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                        }
+                    };
+                    var jobSize = Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
+                    var ptr = Marshal.AllocHGlobal(jobSize);
+                    try
+                    {
+                        Marshal.StructureToPtr(info, ptr, false);
+                        SetInformationJobObject(_hJob, JobObjectExtendedLimitInformation, ptr, (uint)jobSize);
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(ptr);
+                    }
+                    AssignProcessToJobObject(_hJob, _hProcess);
+                }
+            }
+            catch
+            {
+                // 已在别的 Job 中/权限不足：退化为仅杀顶层进程
+                if (_hJob != IntPtr.Zero)
+                {
+                    try { CloseHandle(_hJob); } catch { /* ignore */ }
+                    _hJob = IntPtr.Zero;
+                }
+            }
 
             // 子进程已挂上控制台，控制台自己持有的句柄可关闭
             CloseHandle(inRead);
@@ -228,9 +266,9 @@ public sealed class ConPtySession : IDisposable
     private string _tempDir = string.Empty;
 
     /// <summary>
-    /// 在共享会话里执行一条命令并返回**干净输出**与退出码：
-    /// 把命令写入临时 .ps1（点源执行以保留 cwd/env），全部流重定向到临时文件，
-    /// 再用唯一标记判断执行完成。命令会真实显示在终端里（用户可见）。
+    /// 在共享会话里执行一条命令并返回**干净输出**、退出码与当前工作目录：
+    /// 把命令写入临时 .ps1（点源执行以保留 cwd/env），用 Tee 一边实时显示在终端、一边写入临时文件，
+    /// 再用唯一标记（含退出码与 $PWD）判断完成。超时先 Ctrl+C 等其回到提示符，宽限期仍未回则强杀整棵进程树。
     /// </summary>
     public async Task<CommandResult> RunCommandAsync(string command, TimeSpan timeout, CancellationToken ct = default)
     {
@@ -251,8 +289,9 @@ public sealed class ConPtySession : IDisposable
             await File.WriteAllTextAsync(scriptPath, command ?? string.Empty, new UTF8Encoding(true), ct).ConfigureAwait(false);
 
             var token = "LITSSH_" + id;
-            var marker = "<<<" + token + "_DONE>>>";
+            var marker = "<<<" + token + ">>>";
 
+            // 只保留最近的输出用于标记检测（避免大输出把内存撑爆）
             var sink = new StringBuilder();
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             void OnOutput(string text)
@@ -260,6 +299,8 @@ public sealed class ConPtySession : IDisposable
                 lock (sink)
                 {
                     sink.Append(text);
+                    if (sink.Length > 262144)
+                        sink.Remove(0, sink.Length - 131072);
                     if (sink.ToString().Contains(marker, StringComparison.Ordinal))
                         tcs.TrySetResult(true);
                 }
@@ -268,31 +309,44 @@ public sealed class ConPtySession : IDisposable
             Output += OnOutput;
             try
             {
-                Write($"$__ec=0; . '{scriptPath}' *> '{outPath}'; $__ec=$LASTEXITCODE; " +
-                      $"Get-Content -LiteralPath '{outPath}' -Raw | Out-Host; Write-Host \"{marker} $__ec\"\r");
+                // 标记用拼接避免被命令行回显提前命中；命令输出经 Tee 实时显示并落盘。
+                var scriptArg = scriptPath.Replace("'", "''");
+                var outArg = outPath.Replace("'", "''");
+                Write(
+                    $"$__ec=0; . '{scriptArg}' *>&1 | Tee-Object -FilePath '{outArg}' | Out-Host; " +
+                    $"$__ec=$LASTEXITCODE; $__m='<<<'+'{token}'+'>>>'; " +
+                    "Write-Host ($__m + '|' + $__ec + '|' + $PWD.Path)\r");
 
                 var completed = await Task.WhenAny(tcs.Task, Task.Delay(timeout, ct)).ConfigureAwait(false);
                 var timedOut = completed != tcs.Task;
+                var killed = false;
                 if (timedOut)
                 {
-                    try { Write("\u0003"); } catch { /* 发 Ctrl+C 中断 */ }
+                    // 先尝试 Ctrl+C 回提示符；宽限期内未回到则强杀整棵进程树（终端会变为已退出，下次自动重开）。
+                    try { Write("\u0003"); } catch { /* ignore */ }
+                    if (!await WaitForReadyAsync(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false))
+                    {
+                        killed = true;
+                        try { TerminateJobObject(); } catch { /* ignore */ }
+                    }
                 }
 
                 var output = string.Empty;
                 try
                 {
                     if (File.Exists(outPath))
-                        output = await File.ReadAllTextAsync(outPath, ct).ConfigureAwait(false);
+                        output = StripAnsi(await ReadCapturedTextAsync(outPath, ct).ConfigureAwait(false));
                 }
                 catch { /* 读取失败忽略 */ }
 
-                var exitCode = ParseExitCode(sink.ToString(), marker);
-                return new CommandResult(output, exitCode, timedOut);
+                ParseResult(sink.ToString(), marker, out var exitCode, out var cwd);
+                return new CommandResult(output, exitCode, timedOut, WorkingDirectory: cwd, Killed: killed);
             }
             finally
             {
                 Output -= OnOutput;
                 try { File.Delete(scriptPath); } catch { /* ignore */ }
+                try { File.Delete(outPath); } catch { /* ignore */ }
             }
         }
         finally
@@ -301,16 +355,95 @@ public sealed class ConPtySession : IDisposable
         }
     }
 
-    private static int ParseExitCode(string text, string marker)
+    /// <summary>等待 shell 回到可接受输入（提示符）状态：发一个“就绪”标记并等它被执行输出。</summary>
+    private async Task<bool> WaitForReadyAsync(TimeSpan grace, CancellationToken ct)
     {
+        var token = "LITSSH_READY_" + Guid.NewGuid().ToString("N");
+        var ready = "<<<" + token + ">>>";
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnOutput(string text)
+        {
+            if (text.Contains(ready, StringComparison.Ordinal))
+                tcs.TrySetResult(true);
+        }
+
+        Output += OnOutput;
+        try
+        {
+            // 同样用拼接避免回显误判
+            Write($"$__r='<<<'+'{token}'+'>>>'; Write-Host $__r\r");
+            var done = await Task.WhenAny(tcs.Task, Task.Delay(grace, ct)).ConfigureAwait(false);
+            return done == tcs.Task;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Output -= OnOutput;
+        }
+    }
+
+    private static async Task<string> ReadCapturedTextAsync(string path, CancellationToken ct)
+    {
+        var bytes = await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+            return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+            return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+        return Encoding.UTF8.GetString(bytes);
+    }
+
+    private static string StripAnsi(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+        // CSI 序列 + OSC（标题）等控制序列
+        var cleaned = System.Text.RegularExpressions.Regex.Replace(text, "\u001B\\[[0-?]*[ -/]*[@-~]", string.Empty);
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, "\u001B\\][^\u0007]*(?:\u0007|\u001B\\\\)", string.Empty);
+        return cleaned;
+    }
+
+    private static void ParseResult(string text, string marker, out int exitCode, out string cwd)
+    {
+        exitCode = 0;
+        cwd = string.Empty;
         var idx = text.LastIndexOf(marker, StringComparison.Ordinal);
         if (idx < 0)
-            return -1;
-        var rest = text[(idx + marker.Length)..].TrimStart();
-        var end = 0;
-        while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '-'))
-            end++;
-        return int.TryParse(rest[..end], out var code) ? code : 0;
+        {
+            exitCode = -1;
+            return;
+        }
+
+        var rest = text[(idx + marker.Length)..];
+        var nl = rest.IndexOfAny(new[] { '\r', '\n' });
+        if (nl >= 0)
+            rest = rest[..nl];
+        // rest 形如 "|<ec>|<cwd>"
+        var p1 = rest.IndexOf('|');
+        var p2 = p1 >= 0 ? rest.IndexOf('|', p1 + 1) : -1;
+        if (p1 >= 0 && p2 >= 0)
+        {
+            var ec = rest[(p1 + 1)..p2].Trim();
+            exitCode = int.TryParse(ec, out var v) ? v : 0;
+            cwd = rest[(p2 + 1)..].Trim();
+        }
+    }
+
+    /// <summary>强杀整棵进程树（Job Object）。</summary>
+    public void TerminateJobObject()
+    {
+        if (_hJob != IntPtr.Zero)
+        {
+            try { TerminateJobObjectNative(_hJob, 0); } catch { /* ignore */ }
+        }
+        else if (_hProcess != IntPtr.Zero)
+        {
+            try { TerminateProcess(_hProcess, 0); } catch { /* ignore */ }
+        }
     }
 
     public void Dispose()
@@ -328,6 +461,12 @@ public sealed class ConPtySession : IDisposable
         {
             try { ClosePseudoConsole(_hPC); } catch { /* ignore */ }
             _hPC = IntPtr.Zero;
+        }
+        if (_hJob != IntPtr.Zero)
+        {
+            try { TerminateJobObjectNative(_hJob, 0); } catch { /* ignore */ }
+            try { CloseHandle(_hJob); } catch { /* ignore */ }   // KILL_ON_JOB_CLOSE 兜底
+            _hJob = IntPtr.Zero;
         }
         if (_hProcess != IntPtr.Zero)
         {
@@ -432,4 +571,57 @@ public sealed class ConPtySession : IDisposable
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
+
+    // ---- Job Object（进程树管理）----
+
+    private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+    private const int JobObjectExtendedLimitInformation = 9;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IO_COUNTERS
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+    {
+        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+        public IO_COUNTERS IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateJobObjectW(IntPtr lpJobAttributes, string? lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetInformationJobObject(IntPtr hJob, int jobObjectInfoClass, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+    [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "TerminateJobObject")]
+    private static extern bool TerminateJobObjectNative(IntPtr hJob, uint uExitCode);
 }

@@ -133,6 +133,25 @@
                                     <TextBlock Text="输出上限(字符):" VerticalAlignment="Center"/>
                                     <ui:TextBox FontWeight="Normal" Text="{Binding LocalMaxOutputChars, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"/>
                                 </StackPanel>
+                                <TextBlock Text="已记住「总是允许」的命令（前缀匹配；逐条移除可恢复审批）:" Margin="0,6,0,3"/>
+                                <ListBox ItemsSource="{Binding LocalAutoApproved}" MaxHeight="100" BorderThickness="0"
+                                         Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding}" FontFamily="Consolas"
+                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                <ui:Button Grid.Column="1" Content="移除" Padding="8,2" Margin="8,0,0,0"
+                                                           Command="{Binding DataContext.RemoveAutoApprovedCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           CommandParameter="{Binding}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                             </StackPanel>
                         </Border>
                     </ScrollViewer>

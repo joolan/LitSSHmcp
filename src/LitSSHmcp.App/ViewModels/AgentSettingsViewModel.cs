@@ -274,6 +274,16 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     private string _localMaxOutputChars = "200000";
     public string LocalMaxOutputChars { get => _localMaxOutputChars; set => Set(ref _localMaxOutputChars, value); }
 
+    /// <summary>已记住「总是允许」的本机命令（可逐条移除；匹配为前缀匹配）。</summary>
+    public ObservableCollection<string> LocalAutoApproved { get; } = new();
+
+    private RelayCommand? _removeAutoApproved;
+    public RelayCommand RemoveAutoApprovedCommand => _removeAutoApproved ??= new RelayCommand(p =>
+    {
+        if (p is string s)
+            LocalAutoApproved.Remove(s);
+    });
+
     private string _statusMessage = string.Empty;
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
 
@@ -401,6 +411,9 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             LocalAllowedCommands = string.Join(Environment.NewLine, lt.AllowedCommands ?? Array.Empty<string>());
             LocalTimeoutSeconds = lt.TimeoutSeconds.ToString();
             LocalMaxOutputChars = lt.MaxOutputChars.ToString();
+            LocalAutoApproved.Clear();
+            foreach (var c in lt.AutoApprovedCommands ?? Array.Empty<string>())
+                LocalAutoApproved.Add(c);
 
             StatusMessage = "已加载";
         }
@@ -463,6 +476,7 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
                 ? LocalTerminalConfig.DefaultAllowedCommands() : allowed;
             config.Agent.LocalTerminal.TimeoutSeconds = (int)Math.Clamp(ParseLong(LocalTimeoutSeconds, 60), 1, 1800);
             config.Agent.LocalTerminal.MaxOutputChars = (int)Math.Max(200, ParseLong(LocalMaxOutputChars, 200000));
+            config.Agent.LocalTerminal.AutoApprovedCommands = LocalAutoApproved.ToArray();
 
             await _configService.SaveConfigAsync(config);
             StatusMessage = "已保存（重新打开「AI 运维助手」生效）";

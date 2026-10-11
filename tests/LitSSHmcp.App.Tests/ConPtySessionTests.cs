@@ -53,4 +53,19 @@ public class ConPtySessionTests
         Assert.False(firstResult.Busy);
         Assert.False(firstResult.TimedOut);
     }
+
+    [Fact]
+    public async Task Preserves_working_directory_between_commands()
+    {
+        using var pty = new ConPtySession();
+        pty.Start(100, 30);
+
+        var change = await pty.RunCommandAsync("Set-Location $env:SystemRoot", TimeSpan.FromSeconds(30));
+        Assert.False(change.TimedOut);
+        Assert.Contains("Windows", change.WorkingDirectory);
+
+        var probe = await pty.RunCommandAsync("Write-Output (Get-Location).Path", TimeSpan.FromSeconds(30));
+        Assert.Contains("Windows", probe.Output);
+        Assert.Contains("Windows", probe.WorkingDirectory);
+    }
 }

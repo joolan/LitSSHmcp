@@ -2,6 +2,7 @@ using System.Data;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.Services;
@@ -213,8 +214,57 @@ public partial class DbWorkbenchWindow : FluentWindow
 
     private void OnResultDoubleClick(object sender, MouseButtonEventArgs e)
     {
+        // 双击列头：该列宽自适应
+        var header = FindAncestor<System.Windows.Controls.Primitives.DataGridColumnHeader>(e.OriginalSource as DependencyObject);
+        if (header?.Column is { } column)
+        {
+            column.Width = DataGridLength.Auto;
+            e.Handled = true;
+            return;
+        }
+
         if (ResultGrid.CurrentCell.IsValid)
             OnViewCell(sender, e);
+    }
+
+    /// <summary>结果列使用 NULL 显示转换器（仅影响显示，复制/导出仍为原始值）。</summary>
+    private void OnAutoGeneratingColumn(object? sender, DataGridAutoGeneratingColumnEventArgs e)
+    {
+        if (e.Column is DataGridTextColumn text)
+        {
+            var path = (text.Binding as Binding)?.Path?.Path;
+            var bindPath = string.IsNullOrEmpty(path) ? "[" + e.PropertyName + "]" : path;
+            text.Binding = new Binding(bindPath) { Converter = LitSSHmcp.App.Controls.NullToNullTextConverter.Instance };
+        }
+    }
+
+    /// <summary>把当前行复制为 INSERT 语句（表名取对象浏览器选中表，否则占位 table）。</summary>
+    private void OnCopyInsert(object sender, RoutedEventArgs e)
+    {
+        if (ResultGrid.CurrentItem is not DataRowView row)
+            return;
+        var table = row.Row.Table;
+        var columns = table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToArray();
+        var tableName = _vm.SelectedTable?.Name;
+        if (string.IsNullOrWhiteSpace(tableName))
+            tableName = "table";
+
+        var cols = string.Join(", ", columns);
+        var vals = string.Join(", ", columns.Select(c => SqlLiteral(row[c])));
+        SafeSetClipboard($"INSERT INTO {tableName} ({cols}) VALUES ({vals});");
+    }
+
+    private static string SqlLiteral(object? value)
+    {
+        if (value is null || value == DBNull.Value)
+            return "NULL";
+        return value switch
+        {
+            string s => "'" + s.Replace("'", "''") + "'",
+            bool b => b ? "1" : "0",
+            DateTime dt => "'" + dt.ToString("yyyy-MM-dd HH:mm:ss") + "'",
+            _ => Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "NULL"
+        };
     }
 
     private string? CurrentCellText()

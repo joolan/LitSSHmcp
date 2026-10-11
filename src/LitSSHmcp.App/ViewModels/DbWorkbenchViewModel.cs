@@ -71,6 +71,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         AddTabCommand = new RelayCommand(_ => AddTab());
         CloseTabCommand = new RelayCommand(p => CloseTab(p as QueryTab));
         SelectTabCommand = new RelayCommand(p => { if (p is QueryTab t) SelectedTab = t; });
+        ExplainCommand = new RelayCommand(_ => _ = ExplainAsync(), _ => IsSqlDb && !string.IsNullOrWhiteSpace(SqlText) && !Busy);
+        ExportJsonCommand = new RelayCommand(_ => ExportJson(), _ => Results is not null && !Busy);
 
         _tabSeq = 1;
         Tabs.Add(new QueryTab { Title = "查询 1" });
@@ -118,6 +120,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public ICommand AddTabCommand { get; }
     public ICommand CloseTabCommand { get; }
     public ICommand SelectTabCommand { get; }
+    public ICommand ExplainCommand { get; }
+    public ICommand ExportJsonCommand { get; }
 
     /// <summary>是否有可用片段（供面板提示）。</summary>
     public bool HasSnippets => Snippets.Count > 0;
@@ -986,6 +990,103 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 
+    /// <summary>导出结果为 JSON（数组，元素为列名→值；NULL 为 null）。</summary>
+    private void ExportJson()
+    {
+        var view = Results;
+        var table = view?.Table;
+        if (view is null || table is null)
+            return;
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "导出查询结果",
+            Filter = "JSON 文件 (*.json)|*.json",
+            FileName = $"query-{DateTime.Now:yyyyMMdd-HHmmss}.json"
+        };
+        if (dialog.ShowDialog() != true)
+            return;
+
+        try
+        {
+            var columns = table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToArray();
+            var rows = new List<Dictionary<string, object?>>();
+            foreach (DataRowView row in view)
+            {
+                var obj = new Dictionary<string, object?>();
+                foreach (var c in columns)
+                {
+                    var v = row[c];
+                    obj[c] = v is null || v == DBNull.Value ? null : v;
+                }
+                rows.Add(obj);
+            }
+
+            var json = System.Text.Json.JsonSerializer.Serialize(rows, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
+            File.WriteAllText(dialog.FileName, json, new UTF8Encoding(false));
+            StatusMessage = $"已导出 {rows.Count} 行到 {dialog.FileName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "导出失败: " + ex.Message;
+        }
+    }
+
+    /// <summary>对当前 SQL 执行 EXPLAIN，并在结果区显示执行计划。</summary>
+    private async Task ExplainAsync()
+    {
+        var ds = SelectedDatasource;
+        if (ds is null || !IsSqlDb)
+            return;
+        var sql = SqlText?.Trim() ?? string.Empty;
+        if (sql.Length == 0) { StatusMessage = "请输入 SQL。"; return; }
+
+        var driver = _registry.Get(ds.Type);
+        if (driver is null) { StatusMessage = $"不支持的类型: {ds.Type}"; return; }
+
+        Busy = true;
+        _cancelRequested = false;
+        StatusMessage = "分析执行计划…";
+        var cts = new CancellationTokenSource();
+        _queryCts = cts;
+        var timeoutSeconds = ds.TimeoutSeconds is > 0 ? ds.TimeoutSeconds!.Value : 0;
+        if (timeoutSeconds > 0)
+            cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        try
+        {
+            var result = await driver.ExplainAsync(Effective(ds, SelectedDatabase), sql, cts.Token);
+            if (!result.Success)
+            {
+                StatusMessage = "执行计划失败: " + result.Error;
+                Results = null;
+                return;
+            }
+            Results = BuildView(result);
+            OnPropertyChanged(nameof(PageLabel));
+            StatusMessage = $"执行计划（{result.RowCount} 行，{result.DurationMs:F0} ms）";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "已取消";
+            Results = null;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "执行计划失败: " + ex.Message;
+            Results = null;
+        }
+        finally
+        {
+            Busy = false;
+            if (ReferenceEquals(_queryCts, cts))
+                _queryCts = null;
+            cts.Dispose();
+        }
+    }
+
     // ---------- Redis 键浏览 ----------
 
     private async Task ScanKeysAsync()
@@ -1166,6 +1267,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         (LoadColumnsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExecuteCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ExplainCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ExportJsonCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PreviewCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (NextPageCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PrevPageCommand as RelayCommand)?.RaiseCanExecuteChanged();

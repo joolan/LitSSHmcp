@@ -86,6 +86,9 @@
                                     <Setter Property="Padding" Value="6,6,6,2"/>
                                     <Setter Property="Focusable" Value="False"/>
                                 </DataTrigger>
+                                <DataTrigger Binding="{Binding IsHeader}" Value="False">
+                                    <Setter Property="Padding" Value="26,7,10,7"/>
+                                </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </ListBox.ItemContainerStyle>
@@ -98,13 +101,13 @@
                                         MouseLeftButtonUp="OnGroupHeaderClick"
                                         PreviewMouseLeftButtonDown="OnGroupHeaderMouseDown" MouseMove="OnGroupHeaderMouseMove">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding Glyph}" FontSize="11" Width="12" VerticalAlignment="Center"
+                                        <TextBlock Text="{Binding Glyph}" FontSize="12" Width="13" VerticalAlignment="Center"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <ui:SymbolIcon Symbol="Folder24" FontSize="13" Margin="0,0,6,0"
+                                        <ui:SymbolIcon Symbol="Folder24" FontSize="15" Margin="0,0,6,0"
                                                        Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
-                                        <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"
+                                        <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock Text="{Binding Count, StringFormat=' ({0})'}" FontSize="10" Margin="4,0,0,0"
+                                        <TextBlock Text="{Binding Count, StringFormat=' ({0})'}" FontSize="11" Margin="4,0,0,0"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Border>

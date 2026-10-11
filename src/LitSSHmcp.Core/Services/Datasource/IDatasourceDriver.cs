@@ -52,6 +52,13 @@ public interface IDatasourceDriver
     Task<DatasourceExecuteResult> ExecuteAsync(DataSourceConfig ds, string sql, CancellationToken ct = default);
     Task<DatasourceQueryResult> ExplainAsync(DataSourceConfig ds, string sql, CancellationToken ct = default);
     Task<DatasourceDiagnosticsResult> DiagnoseAsync(DataSourceConfig ds, CancellationToken ct = default);
+
+    /// <summary>
+    /// 执行可能返回**多个结果集**的 SQL（存储过程 / 多语句）。默认实现退化为单个结果集
+    /// （调用 <see cref="QueryAsync"/>）；MySQL / PostgreSQL 驱动覆写以循环 NextResult。
+    /// </summary>
+    async Task<IReadOnlyList<DatasourceQueryResult>> QueryMultiAsync(DataSourceConfig ds, string sql, int maxRows, CancellationToken ct = default)
+        => new[] { await QueryAsync(ds, sql, maxRows, ct) };
 }
 
 public interface IDatasourceDriverRegistry

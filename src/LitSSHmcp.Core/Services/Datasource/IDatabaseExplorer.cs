@@ -26,6 +26,38 @@ public class DbColumnInfo
     public string? Default { get; set; }
 }
 
+/// <summary>库中的一个对象（视图 / 存储过程）。</summary>
+public class DbObjectInfo
+{
+    public string Schema { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Display => string.IsNullOrEmpty(Schema) ? Name : $"{Schema}.{Name}";
+}
+
+/// <summary>一张表/视图的索引。</summary>
+public class DbIndexInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public string[] Columns { get; set; } = Array.Empty<string>();
+    public bool Unique { get; set; }
+    public bool Primary { get; set; }
+
+    public string Display =>
+        (Primary ? "PK " : Unique ? "UQ " : string.Empty) + Name +
+        (Columns.Length > 0 ? " (" + string.Join(", ", Columns) + ")" : string.Empty);
+}
+
+/// <summary>
+/// 可选能力：更丰富的对象浏览（视图 / 存储过程 / 索引）。由 MySQL / PostgreSQL 驱动实现，
+/// 不影响 <see cref="IDatabaseExplorer"/> 的既有实现。
+/// </summary>
+public interface ISchemaObjectExplorer
+{
+    Task<IReadOnlyList<DbObjectInfo>> ListViewsAsync(DataSourceConfig ds, string database, CancellationToken ct = default);
+    Task<IReadOnlyList<DbObjectInfo>> ListProceduresAsync(DataSourceConfig ds, string database, CancellationToken ct = default);
+    Task<IReadOnlyList<DbIndexInfo>> ListIndexesAsync(DataSourceConfig ds, string database, string table, string? schema = null, CancellationToken ct = default);
+}
+
 /// <summary>
 /// 可选能力：为"数据库工作台"提供对象浏览（库/表/列）。MySQL / PostgreSQL 驱动实现；
 /// 不影响 <see cref="IDatasourceDriver"/>，Redis 等其它类型自然不具备。

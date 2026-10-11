@@ -10,7 +10,7 @@ namespace LitSSHmcp.Core.Services.Datasource;
 /// 复用 <see cref="IDatasourceDriver"/> 抽象，因此 mcp_self_check / datasource_test_connection /
 /// 界面"测试连接" / 拓扑发现都能直接支持 postgres 类型数据源。
 /// </summary>
-public class PostgresDriver : IDatasourceDriver, IDatabaseExplorer
+public class PostgresDriver : IDatasourceDriver, IDatabaseExplorer, ISchemaObjectExplorer
 {
     private readonly IPostgresConnectionProvider _connectionProvider;
 
@@ -100,6 +100,118 @@ public class PostgresDriver : IDatasourceDriver, IDatabaseExplorer
                 DurationMs = stopwatch.Elapsed.TotalMilliseconds
             };
         }
+    }
+
+    public async Task<IReadOnlyList<DatasourceQueryResult>> QueryMultiAsync(DataSourceConfig ds, string sql, int maxRows, CancellationToken ct = default)
+    {
+        var results = new List<DatasourceQueryResult>();
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var session = await _connectionProvider.OpenAsync(ds, ct);
+            await using var cmd = session.Connection.CreateCommand();
+            cmd.CommandText = sql;
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+            do
+            {
+                var result = new DatasourceQueryResult { Success = true };
+                if (reader.FieldCount > 0)
+                {
+                    var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToArray();
+                    result.Columns = columns;
+                    while (await reader.ReadAsync(ct))
+                    {
+                        if (result.Rows.Count >= maxRows) { result.Truncated = true; break; }
+                        result.Rows.Add(ReadRow(reader, columns));
+                    }
+                }
+                result.RowCount = result.Rows.Count;
+                results.Add(result);
+            } while (await reader.NextResultAsync(ct));
+
+            stopwatch.Stop();
+            if (results.Count == 0)
+                results.Add(new DatasourceQueryResult { Success = true });
+            foreach (var r in results)
+                r.DurationMs = stopwatch.Elapsed.TotalMilliseconds;
+            return results;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return new[] { new DatasourceQueryResult { Success = false, Error = ex.Message, DurationMs = stopwatch.Elapsed.TotalMilliseconds } };
+        }
+    }
+
+    public async Task<IReadOnlyList<DbObjectInfo>> ListViewsAsync(DataSourceConfig ds, string database, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText = "SELECT table_schema, table_name FROM information_schema.views " +
+                          "WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY 1,2";
+        var list = new List<DbObjectInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(new DbObjectInfo { Schema = reader.GetString(0), Name = reader.GetString(1) });
+        return list;
+    }
+
+    public async Task<IReadOnlyList<DbObjectInfo>> ListProceduresAsync(DataSourceConfig ds, string database, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText = "SELECT routine_schema, routine_name FROM information_schema.routines " +
+                          "WHERE routine_schema NOT IN ('pg_catalog','information_schema') ORDER BY 1,2";
+        var list = new List<DbObjectInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(new DbObjectInfo { Schema = reader.GetString(0), Name = reader.GetString(1) });
+        return list;
+    }
+
+    public async Task<IReadOnlyList<DbIndexInfo>> ListIndexesAsync(DataSourceConfig ds, string database, string table, string? schema = null, CancellationToken ct = default)
+    {
+        var schemaName = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText =
+            "SELECT i.relname AS index_name, ix.indisunique AS is_unique, ix.indisprimary AS is_primary, " +
+            "       a.attname AS column_name, k.ord AS ordinal " +
+            "FROM pg_class t " +
+            "JOIN pg_namespace n ON n.oid = t.relnamespace " +
+            "JOIN pg_index ix ON t.oid = ix.indrelid " +
+            "JOIN pg_class i ON i.oid = ix.indexrelid " +
+            "JOIN unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord) ON true " +
+            "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum " +
+            "WHERE n.nspname = @s AND t.relname = @t " +
+            "ORDER BY i.relname, k.ord";
+        cmd.Parameters.AddWithValue("@s", schemaName);
+        cmd.Parameters.AddWithValue("@t", table);
+
+        var rows = new List<(string Key, bool Unique, bool Primary, int Seq, string Column)>();
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                rows.Add((
+                    reader.GetString(0),
+                    !reader.IsDBNull(1) && reader.GetBoolean(1),
+                    !reader.IsDBNull(2) && reader.GetBoolean(2),
+                    Convert.ToInt32(reader.GetValue(4)),
+                    reader.IsDBNull(3) ? string.Empty : reader.GetString(3)));
+            }
+        }
+        return rows
+            .GroupBy(r => r.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new DbIndexInfo
+            {
+                Name = g.Key,
+                Unique = g.First().Unique,
+                Primary = g.First().Primary,
+                Columns = g.OrderBy(x => x.Seq).Select(x => x.Column).ToArray()
+            })
+            .ToList();
     }
 
     public async Task<DatasourceExecuteResult> ExecuteAsync(DataSourceConfig ds, string sql, CancellationToken ct = default)

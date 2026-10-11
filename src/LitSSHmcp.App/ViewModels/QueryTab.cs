@@ -37,3 +37,20 @@ public sealed class QueryTab : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
+
+/// <summary>一次查询的一个结果集（多结果集时的子标签）。</summary>
+public sealed class ResultSetRef : INotifyPropertyChanged
+{
+    public int Index { get; init; }
+    public string Label { get; init; } = string.Empty;
+    public DataView? View { get; init; }
+
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set { if (_isSelected != value) { _isSelected = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected))); } }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}

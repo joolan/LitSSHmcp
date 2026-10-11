@@ -48,6 +48,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private bool _cancelRequested;
     private QueryTab? _selectedTab;
     private int _tabSeq;
+    private int _objectCategoryIndex;
+    private int _selectedResultIndex;
 
     public DbWorkbenchViewModel(IConfigService? configService = null)
     {
@@ -73,6 +75,11 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         SelectTabCommand = new RelayCommand(p => { if (p is QueryTab t) SelectedTab = t; });
         ExplainCommand = new RelayCommand(_ => _ = ExplainAsync(), _ => IsSqlDb && !string.IsNullOrWhiteSpace(SqlText) && !Busy);
         ExportJsonCommand = new RelayCommand(_ => ExportJson(), _ => Results is not null && !Busy);
+        GenerateSelectCommand = new RelayCommand(_ => GenerateObjectSql("select"), _ => IsSqlDb && SelectedTable is not null && !Busy);
+        GenerateInsertCommand = new RelayCommand(_ => GenerateObjectSql("insert"), _ => IsSqlDb && SelectedTable is not null && !Busy);
+        GenerateCountCommand = new RelayCommand(_ => GenerateObjectSql("count"), _ => IsSqlDb && SelectedTable is not null && !Busy);
+        GenerateCallCommand = new RelayCommand(_ => GenerateObjectSql("call"), _ => IsSqlDb && SelectedTable is not null && !Busy);
+        SelectResultCommand = new RelayCommand(p => { if (p is int i) SelectResult(i); });
 
         _tabSeq = 1;
         Tabs.Add(new QueryTab { Title = "查询 1" });
@@ -86,6 +93,12 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public ObservableCollection<string> Databases { get; } = new();
     public ObservableCollection<DbTableInfo> Tables { get; } = new();
     public ObservableCollection<DbColumnInfo> Columns { get; } = new();
+
+    /// <summary>当前选中表的索引（仅“表”类别）。</summary>
+    public ObservableCollection<DbIndexInfo> Indexes { get; } = new();
+
+    /// <summary>结果集标签（多结果集时显示子标签）。</summary>
+    public ObservableCollection<ResultSetRef> ResultSetTabs { get; } = new();
 
     /// <summary>Redis 模式下 SCAN 出的键名。</summary>
     public ObservableCollection<string> RedisKeys { get; } = new();
@@ -122,6 +135,11 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public ICommand SelectTabCommand { get; }
     public ICommand ExplainCommand { get; }
     public ICommand ExportJsonCommand { get; }
+    public ICommand GenerateSelectCommand { get; }
+    public ICommand GenerateInsertCommand { get; }
+    public ICommand GenerateCountCommand { get; }
+    public ICommand GenerateCallCommand { get; }
+    public ICommand SelectResultCommand { get; }
 
     /// <summary>是否有可用片段（供面板提示）。</summary>
     public bool HasSnippets => Snippets.Count > 0;
@@ -259,8 +277,20 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public DbTableInfo? SelectedTable
     {
         get => _selectedTable;
-        set { if (Set(ref _selectedTable, value)) { _ = LoadColumnsAsync(); RaiseCanExecute(); } }
+        set { if (Set(ref _selectedTable, value)) { _ = LoadColumnsAsync(); _ = LoadIndexesAsync(); RaiseCanExecute(); } }
     }
+
+    /// <summary>对象类别：0=表，1=视图，2=存储过程。</summary>
+    public int ObjectCategoryIndex
+    {
+        get => _objectCategoryIndex;
+        set { if (Set(ref _objectCategoryIndex, value)) { OnPropertyChanged(nameof(ObjectHeader)); _ = LoadTablesAsync(); } }
+    }
+
+    public string ObjectHeader => _objectCategoryIndex switch { 1 => "视图", 2 => "存储过程", _ => "表" };
+
+    /// <summary>是否存在多个结果集（显示结果子标签）。</summary>
+    public bool HasMultipleResults => ResultSetTabs.Count > 1;
 
     public string SqlText { get => _sqlText; set { if (Set(ref _sqlText, value)) RaiseCanExecute(); } }
 
@@ -368,17 +398,104 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         Busy = true;
         try
         {
-            var tables = await explorer.ListTablesAsync(Effective(ds, SelectedDatabase), SelectedDatabase!);
+            var eff = Effective(ds, SelectedDatabase);
+            var list = new List<DbTableInfo>();
+            if (_objectCategoryIndex == 0)
+            {
+                foreach (var t in await explorer.ListTablesAsync(eff, SelectedDatabase!))
+                    list.Add(t);
+            }
+            else if (_registry.Get(ds.Type) is ISchemaObjectExplorer objExplorer)
+            {
+                var objs = _objectCategoryIndex == 1
+                    ? await objExplorer.ListViewsAsync(eff, SelectedDatabase!)
+                    : await objExplorer.ListProceduresAsync(eff, SelectedDatabase!);
+                foreach (var o in objs)
+                    list.Add(new DbTableInfo { Name = o.Name, Schema = o.Schema });
+            }
+            else
+            {
+                StatusMessage = $"{ds.Type} 不支持浏览{ObjectHeader}";
+                return;
+            }
+
             Tables.Clear();
-            foreach (var t in tables)
+            foreach (var t in list)
                 Tables.Add(t);
-            StatusMessage = $"表: {Tables.Count} 个";
+            Indexes.Clear();
+            StatusMessage = $"{ObjectHeader}: {Tables.Count} 个";
         }
         catch (Exception ex)
         {
-            StatusMessage = "读取表失败: " + ex.Message;
+            StatusMessage = $"读取{ObjectHeader}失败: " + ex.Message;
         }
         finally { Busy = false; }
+    }
+
+    private async Task LoadIndexesAsync()
+    {
+        Indexes.Clear();
+        var ds = SelectedDatasource;
+        var table = SelectedTable;
+        if (ds is null || table is null || _objectCategoryIndex != 0 || string.IsNullOrWhiteSpace(SelectedDatabase))
+            return;
+        if (_registry.Get(ds.Type) is not ISchemaObjectExplorer explorer)
+            return;
+        try
+        {
+            var idx = await explorer.ListIndexesAsync(Effective(ds, SelectedDatabase), SelectedDatabase!, table.Name, table.Schema);
+            foreach (var i in idx)
+                Indexes.Add(i);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "读取索引失败: " + ex.Message;
+        }
+    }
+
+    /// <summary>按选中对象生成 SQL（select / count / insert / call）。</summary>
+    private void GenerateObjectSql(string kind)
+    {
+        var ds = SelectedDatasource;
+        var table = SelectedTable;
+        if (ds is null || table is null) return;
+        var name = QuoteObject(ds, table);
+        SqlText = kind switch
+        {
+            "count" => $"SELECT COUNT(*) FROM {name}",
+            "call" => $"CALL {name}()",
+            "insert" when Columns.Count > 0 =>
+                $"INSERT INTO {name} ({string.Join(", ", Columns.Select(c => QuoteIdent(ds, c.Name)))}) " +
+                $"VALUES ({ParamPlaceholders(ds, Columns.Count)})",
+            _ => $"SELECT * FROM {name} LIMIT {PageSize}"
+        };
+    }
+
+    private static string QuoteObject(DataSourceConfig ds, DbTableInfo table)
+    {
+        if (ds.Type.Equals("mysql", StringComparison.OrdinalIgnoreCase))
+            return "`" + table.Name.Replace("`", "``") + "`";
+        var schema = string.IsNullOrEmpty(table.Schema) ? "public" : table.Schema;
+        return "\"" + schema.Replace("\"", "\"\"") + "\".\"" + table.Name.Replace("\"", "\"\"") + "\"";
+    }
+
+    private static string QuoteIdent(DataSourceConfig ds, string ident)
+        => ds.Type.Equals("mysql", StringComparison.OrdinalIgnoreCase)
+            ? "`" + ident.Replace("`", "``") + "`"
+            : "\"" + ident.Replace("\"", "\"\"") + "\"";
+
+    private static string ParamPlaceholders(DataSourceConfig ds, int count)
+        => ds.Type.Equals("postgres", StringComparison.OrdinalIgnoreCase)
+            ? string.Join(", ", Enumerable.Range(1, count).Select(i => "$" + i))
+            : string.Join(", ", Enumerable.Range(0, count).Select(_ => "?"));
+
+    private void SelectResult(int index)
+    {
+        if (index < 0 || index >= ResultSetTabs.Count) return;
+        _selectedResultIndex = index;
+        for (var i = 0; i < ResultSetTabs.Count; i++)
+            ResultSetTabs[i].IsSelected = i == index;
+        Results = ResultSetTabs[index].View;
     }
 
     private async Task LoadColumnsAsync()
@@ -893,17 +1010,37 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         try
         {
             var maxRows = Math.Max(PageSize, 1000);
-            var result = await driver.QueryAsync(Effective(ds, SelectedDatabase), sql, maxRows, cts.Token);
-            if (!result.Success)
+            var sets = await driver.QueryMultiAsync(Effective(ds, SelectedDatabase), sql, maxRows, cts.Token);
+            var failure = sets.FirstOrDefault(s => !s.Success);
+            if (failure is not null)
             {
-                StatusMessage = "查询失败: " + result.Error;
+                StatusMessage = "查询失败: " + failure.Error;
                 Results = null;
+                ResultSetTabs.Clear();
+                OnPropertyChanged(nameof(HasMultipleResults));
                 return;
             }
 
-            Results = BuildView(result);
+            ResultSetTabs.Clear();
+            _selectedResultIndex = 0;
+            for (var i = 0; i < sets.Count; i++)
+                ResultSetTabs.Add(new ResultSetRef
+                {
+                    Index = i,
+                    Label = $"结果 {i + 1}",
+                    View = BuildView(sets[i]),
+                    IsSelected = i == 0
+                });
+            Results = ResultSetTabs.Count > 0 ? ResultSetTabs[0].View : null;
             OnPropertyChanged(nameof(PageLabel));
-            StatusMessage = $"返回 {result.RowCount} 行，{result.DurationMs:F0} ms{(result.Truncated ? "（已截断）" : string.Empty)}";
+            OnPropertyChanged(nameof(HasMultipleResults));
+
+            var totalRows = sets.Sum(s => s.RowCount);
+            var truncated = sets.Any(s => s.Truncated);
+            var ms = sets.Count > 0 ? sets[0].DurationMs : 0;
+            StatusMessage = sets.Count > 1
+                ? $"返回 {sets.Count} 个结果集，共 {totalRows} 行，{ms:F0} ms{(truncated ? "（已截断）" : string.Empty)}"
+                : $"返回 {totalRows} 行，{ms:F0} ms{(truncated ? "（已截断）" : string.Empty)}";
         }
         catch (OperationCanceledException)
         {
@@ -1065,7 +1202,9 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
                 return;
             }
             Results = BuildView(result);
+            ResultSetTabs.Clear();
             OnPropertyChanged(nameof(PageLabel));
+            OnPropertyChanged(nameof(HasMultipleResults));
             StatusMessage = $"执行计划（{result.RowCount} 行，{result.DurationMs:F0} ms）";
         }
         catch (OperationCanceledException)
@@ -1269,6 +1408,10 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExplainCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExportJsonCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (GenerateSelectCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (GenerateInsertCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (GenerateCountCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (GenerateCallCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PreviewCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (NextPageCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PrevPageCommand as RelayCommand)?.RaiseCanExecuteChanged();

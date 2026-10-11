@@ -4,7 +4,7 @@ using MySqlConnector;
 
 namespace LitSSHmcp.Core.Services.Datasource;
 
-public class MySqlDriver : IDatasourceDriver, IDatabaseExplorer
+public class MySqlDriver : IDatasourceDriver, IDatabaseExplorer, ISchemaObjectExplorer
 {
     private readonly IMySqlConnectionProvider _connectionProvider;
 
@@ -277,8 +277,105 @@ public class MySqlDriver : IDatasourceDriver, IDatabaseExplorer
         return list;
     }
 
-    private static Dictionary<string, object?> ReadRow(MySqlDataReader reader, string[] columns)
+    public async Task<IReadOnlyList<DatasourceQueryResult>> QueryMultiAsync(DataSourceConfig ds, string sql, int maxRows, CancellationToken ct = default)
     {
+        var results = new List<DatasourceQueryResult>();
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var session = await _connectionProvider.OpenAsync(ds, ct);
+            await using var cmd = session.Connection.CreateCommand();
+            cmd.CommandText = sql;
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+            do
+            {
+                var result = new DatasourceQueryResult { Success = true };
+                if (reader.FieldCount > 0)
+                {
+                    var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToArray();
+                    result.Columns = columns;
+                    while (await reader.ReadAsync(ct))
+                    {
+                        if (result.Rows.Count >= maxRows) { result.Truncated = true; break; }
+                        result.Rows.Add(ReadRow(reader, columns));
+                    }
+                }
+                result.RowCount = result.Rows.Count;
+                results.Add(result);
+            } while (await reader.NextResultAsync(ct));
+
+            stopwatch.Stop();
+            if (results.Count == 0)
+                results.Add(new DatasourceQueryResult { Success = true });
+            foreach (var r in results)
+                r.DurationMs = stopwatch.Elapsed.TotalMilliseconds;
+            return results;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return new[] { new DatasourceQueryResult { Success = false, Error = ex.Message, DurationMs = stopwatch.Elapsed.TotalMilliseconds } };
+        }
+    }
+
+    public async Task<IReadOnlyList<DbObjectInfo>> ListViewsAsync(DataSourceConfig ds, string database, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText = "SELECT TABLE_NAME FROM information_schema.VIEWS WHERE TABLE_SCHEMA=@db ORDER BY TABLE_NAME";
+        cmd.Parameters.AddWithValue("@db", database);
+        var list = new List<DbObjectInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(new DbObjectInfo { Name = reader.GetString(0) });
+        return list;
+    }
+
+    public async Task<IReadOnlyList<DbObjectInfo>> ListProceduresAsync(DataSourceConfig ds, string database, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText = "SELECT ROUTINE_NAME FROM information_schema.ROUTINES " +
+                          "WHERE ROUTINE_SCHEMA=@db AND ROUTINE_TYPE='PROCEDURE' ORDER BY ROUTINE_NAME";
+        cmd.Parameters.AddWithValue("@db", database);
+        var list = new List<DbObjectInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(new DbObjectInfo { Name = reader.GetString(0) });
+        return list;
+    }
+
+    public async Task<IReadOnlyList<DbIndexInfo>> ListIndexesAsync(DataSourceConfig ds, string database, string table, string? schema = null, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText = $"SHOW INDEX FROM `{table.Replace("`", "``")}` FROM `{database.Replace("`", "``")}`";
+        var rows = new List<(string Key, bool Unique, int Seq, string Column)>();
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                var key = reader.GetString(2);
+                var nonUnique = Convert.ToInt32(reader.GetValue(1));
+                var seq = Convert.ToInt32(reader.GetValue(3));
+                var col = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
+                rows.Add((key, nonUnique == 0, seq, col));
+            }
+        }
+        return rows
+            .GroupBy(r => r.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new DbIndexInfo
+            {
+                Name = g.Key,
+                Unique = g.First().Unique,
+                Primary = g.Key.Equals("PRIMARY", StringComparison.OrdinalIgnoreCase),
+                Columns = g.OrderBy(x => x.Seq).Select(x => x.Column).ToArray()
+            })
+            .ToList();
+    }
+
+    private static Dictionary<string, object?> ReadRow(MySqlDataReader reader, string[] columns)    {
         var row = new Dictionary<string, object?>(columns.Length);
         for (var i = 0; i < columns.Length; i++)
         {

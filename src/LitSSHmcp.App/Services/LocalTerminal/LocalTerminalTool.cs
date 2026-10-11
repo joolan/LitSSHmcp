@@ -64,7 +64,8 @@ public sealed class LocalTerminalTool : IAgentTool
         "在本**会话共享的同一个**本机 Windows PowerShell 终端中执行一条 CLI 命令（命令与输出对用户可见）。" +
         "【重要约束】同一会话只有一个终端、同一时刻只能执行一条命令：必须等本工具返回（含输出与退出码）后再发下一条；" +
         "不要并发调用本工具，也不要在上一条命令尚未结束时提交新命令——那样会被直接拒绝。" +
-        "【适用】一次性、能自行结束的命令；不要用于交互式/长驻命令（如 vim、top、tail -f、watch、REPL、等待 stdin 的程序），否则会一直占住终端。" +
+        "【适用】一次性、能自行结束的命令；不要用于交互式/长驻命令（如 vim、top、tail -f、watch、REPL、等待 stdin 的程序），这类会一直占住终端且会被前置拒绝。" +
+        "需要连续执行多条命令时，请**分多次调用本工具**。" +
         "仅允许白名单内的 CLI（如 git/dotnet/npm/gh/aws/az/terraform 等），且可能需用户人工审批。参数 command 为完整命令行；返回命令的 stdout/stderr 与退出码。";
 
     public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct)
@@ -76,6 +77,10 @@ public sealed class LocalTerminalTool : IAgentTool
         var policy = LocalCommandPolicy.Check(command, _config.AllowedCommands);
         if (policy == LocalPolicyResult.Blocked)
             return "已拒绝：该命令被本机安全策略判定为危险或无效，禁止执行。";
+        if (policy == LocalPolicyResult.Interactive)
+            return "已拒绝：检测到交互式/长驻命令（会一直占住共享终端）。请改用一次性/非交互形式，" +
+                   "例如 `tail -n 50`、`ping -n 4`、`python script.py`（而不是裸 `python`）、`git --no-pager log` 等；" +
+                   "需要连续执行多条命令时，请分多次调用本工具。";
         if (policy == LocalPolicyResult.NotInAllowlist)
             return $"已拒绝：命令 '{LocalCommandPolicy.FirstExecutable(command)}' 不在本机 CLI 白名单内。" +
                    $"允许的 CLI：{string.Join(", ", _config.AllowedCommands)}。若确需，请在「AI 助手设置 → 本机终端」中扩充白名单。";

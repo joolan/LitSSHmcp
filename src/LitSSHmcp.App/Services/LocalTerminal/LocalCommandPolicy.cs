@@ -10,7 +10,9 @@ public enum LocalPolicyResult
     /// <summary>不在白名单内（硬拒绝）。</summary>
     NotInAllowlist,
     /// <summary>命中危险/无效规则（硬拒绝）。</summary>
-    Blocked
+    Blocked,
+    /// <summary>疑似交互式/长驻命令，会一直占住终端（硬拒绝）。</summary>
+    Interactive
 }
 
 /// <summary>
@@ -84,6 +86,9 @@ public static class LocalCommandPolicy
                 return LocalPolicyResult.Blocked;
         }
 
+        if (IsLikelyInteractive(command))
+            return LocalPolicyResult.Interactive;
+
         var exe = FirstExecutable(command);
         if (exe is null)
             return LocalPolicyResult.Blocked;
@@ -102,5 +107,58 @@ public static class LocalCommandPolicy
         }
 
         return allowed.Contains(exe) ? LocalPolicyResult.Allowed : LocalPolicyResult.NotInAllowlist;
+    }
+
+    /// <summary>
+    /// 粗判疑似交互式/长驻命令（编辑器、分页器、全屏监视、tail -f、无参 REPL、
+    /// docker/kubectl exec -it、无参数据库客户端等）——这类会一直占住共享终端。
+    /// 采用保守规则，避免误伤常见的非交互用法（如 python script.py、cmd /c、docker ps）。
+    /// </summary>
+    public static bool IsLikelyInteractive(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return false;
+
+        var exe = FirstExecutable(command)?.ToLowerInvariant();
+        if (exe is null)
+            return false;
+
+        if (exe is "vim" or "vi" or "nvim" or "nano" or "emacs" or "pico" or "less" or "more"
+            or "man" or "top" or "htop" or "btop" or "watch" or "screen" or "tmux" or "mc")
+            return true;
+
+        var tokens = SplitTokens(command);
+        var args = tokens.Skip(1).ToList();
+
+        if (exe == "tail" && args.Any(a => a is "-f" or "--follow" || a.StartsWith("--follow=", StringComparison.Ordinal)))
+            return true;
+
+        // 无参 REPL / 嵌套交互式 shell
+        if (exe is "python" or "python3" or "node" or "pwsh" or "powershell" or "cmd" or "irb" or "ruby" && args.Count == 0)
+            return true;
+
+        // 交互式容器/集群会话
+        if (exe is "docker" or "kubectl" && args.Any(a => a is "-it" or "-ti"))
+            return true;
+
+        if (exe == "git" && args.Count >= 2 &&
+            (args[0] == "rebase" && args.Contains("-i") || args[0] == "add" && args.Contains("-p")))
+            return true;
+
+        // 无参数据库客户端
+        if (exe is "mysql" or "psql" or "redis-cli" or "sqlite3" or "mongo" or "mongosh" && args.Count == 0)
+            return true;
+
+        return false;
+    }
+
+    private static List<string> SplitTokens(string command)
+    {
+        var s = command.TrimStart();
+        if (s.StartsWith('&'))
+            s = s[1..].TrimStart();
+        else if (s.StartsWith("call ", StringComparison.OrdinalIgnoreCase))
+            s = s[5..].TrimStart();
+        return s.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
     }
 }

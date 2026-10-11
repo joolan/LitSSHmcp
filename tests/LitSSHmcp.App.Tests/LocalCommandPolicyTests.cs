@@ -39,4 +39,29 @@ public class LocalCommandPolicyTests
     [InlineData("   ")]
     public void Dangerous_or_empty_commands_are_blocked(string command)
         => Assert.Equal(LocalPolicyResult.Blocked, LocalCommandPolicy.Check(command, Allowed));
+
+    [Theory]
+    [InlineData("vim file.txt")]
+    [InlineData("less app.log")]
+    [InlineData("top")]
+    [InlineData("watch -n 1 ls")]
+    [InlineData("tail -f app.log")]
+    [InlineData("tail --follow=name app.log")]
+    [InlineData("python")]
+    [InlineData("node")]
+    [InlineData("docker exec -it web bash")]
+    [InlineData("git rebase -i HEAD~3")]
+    [InlineData("redis-cli")]
+    public void Interactive_commands_are_rejected(string command)
+        => Assert.Equal(LocalPolicyResult.Interactive, LocalCommandPolicy.Check(command, Allowed));
+
+    [Theory]
+    [InlineData("python script.py")]
+    [InlineData("node app.js")]
+    [InlineData("tail -n 50 app.log")]
+    [InlineData("docker ps")]
+    [InlineData("git log --oneline")]
+    [InlineData("cmd /c exit 7")]
+    public void Non_interactive_commands_are_not_flagged(string command)
+        => Assert.False(LocalCommandPolicy.IsLikelyInteractive(command));
 }

@@ -23,8 +23,38 @@ public partial class DbWorkbenchWindow : FluentWindow
         _vm.ConfirmWrite = info => DbWritePreviewWindow.Show(this, info);
         WindowLayout.Attach(this, "dbworkbench");
 
+        // AvalonEdit 的 Text 不是依赖属性，无法绑定：这里在编辑器与 VM 之间做双向同步。
+        _vm.PropertyChanged += OnVmPropertyChanged;
+        SqlBox.TextChanged += OnEditorTextChanged;
+        SqlBox.Text = _vm.SqlText ?? string.Empty;
+
         if (initial is not null)
             _vm.RequestSelect(initial.Id);
+    }
+
+    private bool _syncingSql;
+
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(DbWorkbenchViewModel.SqlText) || _syncingSql)
+            return;
+        _syncingSql = true;
+        try
+        {
+            var text = _vm.SqlText ?? string.Empty;
+            if (!string.Equals(SqlBox.Text, text, StringComparison.Ordinal))
+                SqlBox.Text = text;
+        }
+        finally { _syncingSql = false; }
+    }
+
+    private void OnEditorTextChanged(object? sender, EventArgs e)
+    {
+        if (_syncingSql)
+            return;
+        _syncingSql = true;
+        try { _vm.SqlText = SqlBox.Text; }
+        finally { _syncingSql = false; }
     }
 
     /// <summary>已打开的工作台切换到指定数据源（数据源管理里"打开工作台"复用同一窗口）。</summary>
@@ -114,10 +144,10 @@ public partial class DbWorkbenchWindow : FluentWindow
                 if (_vm.ExecuteCommand.CanExecute(null))
                     _vm.ExecuteCommand.Execute(null);
             }
-            else if (sender is System.Windows.Controls.TextBox sqlBox)
+            else if (sender is ICSharpCode.AvalonEdit.TextEditor editor)
             {
                 // Ctrl+Enter：有选区执行选区，否则执行光标所在语句
-                _ = _vm.ExecuteFromEditorAsync(sqlBox.SelectionStart, sqlBox.SelectionLength, sqlBox.CaretIndex);
+                _ = _vm.ExecuteFromEditorAsync(editor.SelectionStart, editor.SelectionLength, editor.CaretOffset);
             }
             e.Handled = true;
             return;
@@ -128,50 +158,7 @@ public partial class DbWorkbenchWindow : FluentWindow
             if (_vm.CancelCommand.CanExecute(null))
                 _vm.CancelCommand.Execute(null);
             e.Handled = true;
-            return;
         }
-
-        // 显式处理编辑快捷键：部分环境下 Ctrl+X 只复制不删除，这里直接操作 TextBox 保证剪贴并移除选中。
-        if (Keyboard.Modifiers == ModifierKeys.Control && sender is System.Windows.Controls.TextBox tb)
-        {
-            switch (e.Key)
-            {
-                case Key.X when tb.SelectionLength > 0:
-                    SafeSetClipboard(tb.SelectedText);
-                    RemoveSelection(tb);
-                    e.Handled = true;
-                    break;
-                case Key.C when tb.SelectionLength > 0:
-                    SafeSetClipboard(tb.SelectedText);
-                    e.Handled = true;
-                    break;
-                case Key.V:
-                    if (Clipboard.ContainsText())
-                        InsertText(tb, Clipboard.GetText());
-                    e.Handled = true;
-                    break;
-                case Key.A:
-                    tb.SelectAll();
-                    e.Handled = true;
-                    break;
-            }
-        }
-    }
-
-    private static void RemoveSelection(System.Windows.Controls.TextBox tb)
-    {
-        var start = tb.SelectionStart;
-        tb.Text = tb.Text.Remove(start, tb.SelectionLength);
-        tb.SelectionStart = start;
-        tb.SelectionLength = 0;
-    }
-
-    private static void InsertText(System.Windows.Controls.TextBox tb, string text)
-    {
-        var start = tb.SelectionStart;
-        tb.Text = tb.Text.Remove(start, tb.SelectionLength).Insert(start, text);
-        tb.SelectionStart = start + text.Length;
-        tb.SelectionLength = 0;
     }
 
     // ---------- 结果复制 ----------

@@ -258,7 +258,11 @@ public class UsageGuideTools
             }
         }
 
-        return JsonSerializer.Serialize(guide, new JsonSerializerOptions { WriteIndented = true });
+        return JsonSerializer.Serialize(guide, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping   // 中文不转义（省 token、易读）
+        });
     }
 
     /// <summary>

@@ -149,8 +149,8 @@ public class LocalTerminalConfig
     /// <summary>已记住「总是允许」的完整命令（与原命令完全一致时跳过审批）。</summary>
     public string[] AutoApprovedCommands { get; set; } = Array.Empty<string>();
 
-    /// <summary>回传给模型的输出上限（字符，超出截断）。</summary>
-    public int MaxOutputChars { get; set; } = 8000;
+    /// <summary>本地安全硬上限（字符，超出保留尾部）。常规截断/落盘由中央 ToolResultMaxChars + spill 处理，这里只兜底极端输出。</summary>
+    public int MaxOutputChars { get; set; } = 200_000;
 
     /// <summary>单条命令超时秒数。</summary>
     public int TimeoutSeconds { get; set; } = 60;

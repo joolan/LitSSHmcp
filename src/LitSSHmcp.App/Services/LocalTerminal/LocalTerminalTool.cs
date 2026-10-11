@@ -111,12 +111,16 @@ public sealed class LocalTerminalTool : IAgentTool
                 return "上一条命令仍在执行中：本机终端一次只能跑一条命令，请等它返回（输出与退出码）后再提交下一条，不要并发调用。";
 
             var output = result.Output ?? string.Empty;
-            if (output.Length > _config.MaxOutputChars)
-                output = output[.._config.MaxOutputChars] + "\n…[输出已截断]";
+            // 仅作本地安全硬上限（保留尾部，错误/退出信息通常在末尾）；常规截断与落盘由中央 ToolResultMaxChars/spill 处理。
+            var cap = _config.MaxOutputChars;
+            if (cap > 0 && output.Length > cap)
+                output = "…[前部已省略]\n" + output[^cap..];
+
             var status = result.TimedOut
                 ? $"超时 {timeout.TotalSeconds:0}s，已发送中断"
                 : $"退出码 {result.ExitCode}";
-            return output.Length == 0 ? $"[{status}]（无输出）" : $"[{status}]\n{output}";
+            // 状态置于末尾：中央对命令输出按“保尾”截断，确保退出码可见。
+            return output.Length == 0 ? $"[{status}]（无输出）" : $"{output}\n[{status}]";
         }
         catch (Exception ex)
         {

@@ -271,7 +271,7 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     private string _localTimeoutSeconds = "60";
     public string LocalTimeoutSeconds { get => _localTimeoutSeconds; set => Set(ref _localTimeoutSeconds, value); }
 
-    private string _localMaxOutputChars = "8000";
+    private string _localMaxOutputChars = "200000";
     public string LocalMaxOutputChars { get => _localMaxOutputChars; set => Set(ref _localMaxOutputChars, value); }
 
     private string _statusMessage = string.Empty;
@@ -462,7 +462,7 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent.LocalTerminal.AllowedCommands = allowed.Length == 0
                 ? LocalTerminalConfig.DefaultAllowedCommands() : allowed;
             config.Agent.LocalTerminal.TimeoutSeconds = (int)Math.Clamp(ParseLong(LocalTimeoutSeconds, 60), 1, 1800);
-            config.Agent.LocalTerminal.MaxOutputChars = (int)Math.Max(200, ParseLong(LocalMaxOutputChars, 8000));
+            config.Agent.LocalTerminal.MaxOutputChars = (int)Math.Max(200, ParseLong(LocalMaxOutputChars, 200000));
 
             await _configService.SaveConfigAsync(config);
             StatusMessage = "已保存（重新打开「AI 运维助手」生效）";

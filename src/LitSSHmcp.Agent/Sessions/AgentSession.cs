@@ -708,6 +708,7 @@ public sealed class AgentSession
     /// <summary>日志类工具（<c>*_logs</c>/<c>log_tail</c>）的截断保留**尾部最新内容**，其余保留头部。</summary>
     private static bool PreferTail(string toolName) =>
         toolName.Equals("log_tail", StringComparison.OrdinalIgnoreCase) ||
+        toolName.Equals("local_shell", StringComparison.OrdinalIgnoreCase) ||
         toolName.EndsWith("_logs", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>把工具结果按 <see cref="AgentConfig.ToolResultMaxChars"/> 截断后再放入上下文（完整结果仍推送给界面）。

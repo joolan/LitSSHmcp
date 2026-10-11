@@ -77,11 +77,20 @@ public interface IContextStore
     /// <summary>删除分组（其下会话归入「未分组」）。</summary>
     Task DeleteGroupAsync(string name, CancellationToken ct = default);
 
+    /// <summary>把会话移动到指定分组并设置排序值（值越小越靠前）。</summary>
+    Task MoveSessionAsync(long id, string group, double sortOrder, CancellationToken ct = default);
+
+    /// <summary>设置分组排序值（值越小越靠前）。</summary>
+    Task MoveGroupAsync(string name, double sortOrder, CancellationToken ct = default);
+
+    /// <summary>按给定顺序重排分组（写入 0,1,2… 的排序值）。</summary>
+    Task ReorderGroupsAsync(IReadOnlyList<string> orderedNames, CancellationToken ct = default);
+
     /// <summary>按保留策略裁剪历史（每会话消息上限 / 最旧会话天数 / 会话数上限）；返回删除的消息数。</summary>
     Task<int> PruneAsync(int maxSessions, int maxMessagesPerSession, int retentionDays, CancellationToken ct = default);
 }
 
-public sealed record AgentSessionRow(long Id, string Title, string CreatedAt, string UpdatedAt, string? ProviderId = null, string Group = "")
+public sealed record AgentSessionRow(long Id, string Title, string CreatedAt, string UpdatedAt, string? ProviderId = null, string Group = "", double SortOrder = 0)
 {
     /// <summary>会话最后活跃的相对时间（刚刚 / x分钟前 / x小时前 / x天前 / 日期）。</summary>
     public string UpdatedText => RelativeTime.Format(UpdatedAt);
@@ -248,12 +257,36 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         try
         {
             await using var create = connection.CreateCommand();
-            create.CommandText = "CREATE TABLE IF NOT EXISTS agent_groups (Name TEXT PRIMARY KEY, CreatedAt TEXT NOT NULL);";
+            create.CommandText = "CREATE TABLE IF NOT EXISTS agent_groups (Name TEXT PRIMARY KEY, CreatedAt TEXT NOT NULL, SortOrder REAL NOT NULL DEFAULT 0);";
             await create.ExecuteNonQueryAsync(ct);
         }
         catch
         {
             // 忽略
+        }
+
+        // 兼容旧库：补 SortOrder 列（会话排序；值越小越靠前）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN SortOrder REAL NOT NULL DEFAULT 0;";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // 兼容旧库：补分组 SortOrder 列
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_groups ADD COLUMN SortOrder REAL NOT NULL DEFAULT 0;";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
         }
     }
 
@@ -263,7 +296,9 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
         var now = DateTime.UtcNow.ToString("O");
-        cmd.CommandText = "INSERT INTO agent_sessions(Title, CreatedAt, UpdatedAt) VALUES (@t, @now, @now); SELECT last_insert_rowid();";
+        // 新会话排到最前（SortOrder 取当前最小值 - 1）
+        cmd.CommandText = "INSERT INTO agent_sessions(Title, CreatedAt, UpdatedAt, SortOrder) " +
+                          "VALUES (@t, @now, @now, (SELECT COALESCE(MIN(SortOrder), 1) - 1 FROM agent_sessions)); SELECT last_insert_rowid();";
         cmd.Parameters.AddWithValue("@t", title ?? string.Empty);
         cmd.Parameters.AddWithValue("@now", now);
         return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
@@ -275,12 +310,13 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId, \"Group\" FROM agent_sessions WHERE Archived=0 ORDER BY UpdatedAt DESC;";
+        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId, \"Group\", SortOrder FROM agent_sessions WHERE Archived=0 ORDER BY SortOrder ASC, UpdatedAt DESC;";
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             list.Add(new AgentSessionRow(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
                 reader.IsDBNull(4) ? null : reader.GetString(4),
-                reader.IsDBNull(5) ? string.Empty : reader.GetString(5)));
+                reader.IsDBNull(5) ? string.Empty : reader.GetString(5),
+                reader.IsDBNull(6) ? 0 : reader.GetDouble(6)));
         return list;
     }
 
@@ -290,12 +326,13 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId, \"Group\" FROM agent_sessions WHERE Archived=1 ORDER BY UpdatedAt DESC;";
+        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId, \"Group\", SortOrder FROM agent_sessions WHERE Archived=1 ORDER BY UpdatedAt DESC;";
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             list.Add(new AgentSessionRow(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
                 reader.IsDBNull(4) ? null : reader.GetString(4),
-                reader.IsDBNull(5) ? string.Empty : reader.GetString(5)));
+                reader.IsDBNull(5) ? string.Empty : reader.GetString(5),
+                reader.IsDBNull(6) ? 0 : reader.GetDouble(6)));
         return list;
     }
 
@@ -407,7 +444,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Name FROM agent_groups ORDER BY Name COLLATE NOCASE;";
+        cmd.CommandText = "SELECT Name FROM agent_groups ORDER BY SortOrder ASC, Name COLLATE NOCASE;";
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             list.Add(reader.GetString(0));
@@ -415,7 +452,8 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     }
 
     public Task AddGroupAsync(string name, CancellationToken ct = default) =>
-        ExecAsync("INSERT OR IGNORE INTO agent_groups(Name, CreatedAt) VALUES (@n, @now);",
+        ExecAsync("INSERT OR IGNORE INTO agent_groups(Name, CreatedAt, SortOrder) " +
+                  "VALUES (@n, @now, (SELECT COALESCE(MAX(SortOrder), 0) + 1 FROM agent_groups));",
             new() { ["@n"] = (name ?? string.Empty).Trim(), ["@now"] = DateTime.UtcNow.ToString("O") }, ct);
 
     public async Task RenameGroupAsync(string oldName, string newName, CancellationToken ct = default)
@@ -432,7 +470,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         {
             cmd.Transaction = tx;
             cmd.CommandText = "UPDATE agent_sessions SET \"Group\"=@to WHERE \"Group\"=@from;" +
-                              "INSERT OR IGNORE INTO agent_groups(Name, CreatedAt) VALUES (@to, @now);" +
+                              "INSERT OR IGNORE INTO agent_groups(Name, CreatedAt, SortOrder) VALUES (@to, @now, (SELECT COALESCE(SortOrder, 0) FROM agent_groups WHERE Name=@from));" +
                               "DELETE FROM agent_groups WHERE Name=@from;";
             cmd.Parameters.AddWithValue("@to", to);
             cmd.Parameters.AddWithValue("@from", from);
@@ -458,6 +496,38 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
                               "DELETE FROM agent_groups WHERE Name=@g;";
             cmd.Parameters.AddWithValue("@g", group);
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+    }
+
+    public Task MoveSessionAsync(long id, string group, double sortOrder, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET \"Group\"=@g, SortOrder=@o WHERE Id=@id;",
+            new() { ["@g"] = group ?? string.Empty, ["@o"] = sortOrder, ["@id"] = id }, ct);
+
+    public Task MoveGroupAsync(string name, double sortOrder, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_groups SET SortOrder=@o WHERE Name=@n;",
+            new() { ["@o"] = sortOrder, ["@n"] = name ?? string.Empty }, ct);
+
+    public async Task ReorderGroupsAsync(IReadOnlyList<string> orderedNames, CancellationToken ct = default)
+    {
+        if (orderedNames is null || orderedNames.Count == 0)
+            return;
+
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "UPDATE agent_groups SET SortOrder=@o WHERE Name=@n;";
+            var pn = cmd.Parameters.Add("@n", SqliteType.Text);
+            var po = cmd.Parameters.Add("@o", SqliteType.Real);
+            for (var i = 0; i < orderedNames.Count; i++)
+            {
+                pn.Value = orderedNames[i];
+                po.Value = (double)i;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
         }
         await tx.CommitAsync(ct);
     }

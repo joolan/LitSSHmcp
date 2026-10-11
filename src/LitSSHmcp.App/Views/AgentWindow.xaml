@@ -92,44 +92,53 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Grid>
-                                <!-- 分组标题（点击折叠/展开；可拖入会话） -->
-                                <StackPanel x:Name="HeaderPanel" Orientation="Horizontal" Background="Transparent" Cursor="Hand"
-                                            AllowDrop="True" DragOver="OnGroupHeaderDragOver" Drop="OnGroupHeaderDrop"
-                                            MouseLeftButtonUp="OnGroupHeaderClick">
-                                    <TextBlock Text="{Binding Glyph}" FontSize="11" Width="12" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                    <ui:SymbolIcon Symbol="Folder24" FontSize="13" Margin="0,0,6,0"
-                                                   Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
-                                    <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                    <TextBlock Text="{Binding Count, StringFormat=' ({0})'}" FontSize="10" Margin="4,0,0,0"
-                                               Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
-                                    <StackPanel.ContextMenu>
-                                        <ContextMenu>
+                                <!-- 分组标题（点击折叠/展开；可拖拽排序、可接收会话） -->
+                                <Border x:Name="HeaderPanel" Background="Transparent" Cursor="Hand" HorizontalAlignment="Stretch"
+                                        AllowDrop="True" DragOver="OnGroupHeaderDragOver" Drop="OnGroupHeaderDrop"
+                                        MouseLeftButtonUp="OnGroupHeaderClick"
+                                        PreviewMouseLeftButtonDown="OnGroupHeaderMouseDown" MouseMove="OnGroupHeaderMouseMove">
+                                    <Border.ContextMenu>
+                                        <ContextMenu Opened="OnGroupMenuOpened">
                                             <MenuItem Header="重命名分组" Click="OnRenameGroup"/>
                                             <MenuItem Header="删除分组（任务归入未分组）" Click="OnDeleteGroup"/>
                                         </ContextMenu>
-                                    </StackPanel.ContextMenu>
-                                </StackPanel>
-                                <!-- 会话行（可拖动到分组标题） -->
-                                <Grid x:Name="SessionPanel" Background="Transparent"
-                                      PreviewMouseLeftButtonDown="OnSessionRowMouseDown" MouseMove="OnSessionRowMouseMove">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding Session.Title}" TextTrimming="CharacterEllipsis"
-                                               FontFamily="Microsoft YaHei" Margin="0,0,8,0"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Session.UpdatedText}" FontSize="10"
-                                               Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
-                                </Grid>
+                                    </Border.ContextMenu>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Glyph}" FontSize="11" Width="12" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <ui:SymbolIcon Symbol="Folder24" FontSize="13" Margin="0,0,6,0"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <TextBlock Text="{Binding Count, StringFormat=' ({0})'}" FontSize="10" Margin="4,0,0,0"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                                <!-- 会话行（可拖动排序/切分组；可接收落点） -->
+                                <Border x:Name="RowHighlight" Background="Transparent" CornerRadius="4"
+                                        AllowDrop="True" DragOver="OnSessionRowDragOver" Drop="OnSessionRowDrop">
+                                    <Grid x:Name="SessionPanel" Background="Transparent"
+                                          PreviewMouseLeftButtonDown="OnSessionRowMouseDown" MouseMove="OnSessionRowMouseMove">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Session.Title}" TextTrimming="CharacterEllipsis"
+                                                   FontFamily="Microsoft YaHei" Margin="0,0,8,0"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Session.UpdatedText}" FontSize="10"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
                             </Grid>
                             <DataTemplate.Triggers>
                                 <DataTrigger Binding="{Binding IsHeader}" Value="True">
-                                    <Setter TargetName="SessionPanel" Property="Visibility" Value="Collapsed"/>
+                                    <Setter TargetName="RowHighlight" Property="Visibility" Value="Collapsed"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding IsHeader}" Value="False">
                                     <Setter TargetName="HeaderPanel" Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsContextTarget}" Value="True">
+                                    <Setter TargetName="RowHighlight" Property="Background" Value="{DynamicResource AppHoverBrush}"/>
                                 </DataTrigger>
                             </DataTemplate.Triggers>
                         </DataTemplate>

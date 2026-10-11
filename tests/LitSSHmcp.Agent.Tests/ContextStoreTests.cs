@@ -1,3 +1,4 @@
+using System.Linq;
 using LitSSHmcp.Agent;
 using Xunit;
 
@@ -79,6 +80,44 @@ public class ContextStoreTests : IDisposable
         await store.DeleteSessionAsync(id);
         Assert.Empty(await store.ListSessionsAsync());
         Assert.Empty(await store.GetMessagesAsync(id));
+    }
+
+    [Fact]
+    public async Task Sessions_are_ordered_and_movable()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var a = await store.CreateSessionAsync("a");
+        var b = await store.CreateSessionAsync("b");
+        var c = await store.CreateSessionAsync("c");
+
+        // 新会话排到最前 → 顺序为 c, b, a
+        var sessions = await store.ListSessionsAsync();
+        Assert.Equal(new[] { c, b, a }, sessions.Select(s => s.Id));
+
+        // 把 a 移到最前
+        await store.MoveSessionAsync(a, string.Empty, sessions[0].SortOrder - 1);
+        Assert.Equal(a, (await store.ListSessionsAsync())[0].Id);
+
+        // 移动到分组并置顶
+        await store.AddGroupAsync("生产");
+        await store.MoveSessionAsync(b, "生产", 0);
+        var grouped = (await store.ListSessionsAsync()).First(s => s.Id == b);
+        Assert.Equal("生产", grouped.Group);
+    }
+
+    [Fact]
+    public async Task Groups_reorder_persists()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        await store.AddGroupAsync("G1");
+        await store.AddGroupAsync("G2");
+        await store.AddGroupAsync("G3");
+        Assert.Equal(new[] { "G1", "G2", "G3" }, await store.ListGroupsAsync());
+
+        await store.ReorderGroupsAsync(new[] { "G3", "G1", "G2" });
+        Assert.Equal(new[] { "G3", "G1", "G2" }, await store.ListGroupsAsync());
     }
 
     [Fact]

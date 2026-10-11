@@ -196,9 +196,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         void AddBucket(string key, string display, bool alwaysShow)
         {
+            // scope 已按持久化排序（SortOrder）排列，保持原顺序
             var items = scope
                 .Where(s => string.Equals(s.Group ?? string.Empty, key, StringComparison.Ordinal))
-                .OrderByDescending(s => s.UpdatedAt, StringComparer.Ordinal)
                 .ToList();
             if (items.Count == 0 && (!alwaysShow || filtering))
                 return;
@@ -218,8 +218,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         AddBucket(string.Empty, "未分组", alwaysShow: false);
-        foreach (var g in Groups.Where(x => !string.IsNullOrWhiteSpace(x))
-                     .OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+        foreach (var g in Groups.Where(x => !string.IsNullOrWhiteSpace(x)))
             AddBucket(g, g, alwaysShow: true);
 
         SyncSidebarSelection();
@@ -273,13 +272,63 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         await ReloadSessionsAsync();
     }
 
-    /// <summary>把某会话移动到指定分组（空=未分组）。</summary>
-    public async Task MoveSessionToGroupAsync(AgentSessionRow? session, string group)
+    /// <summary>把某会话移动到指定分组（空=未分组，排到该分组最前）。</summary>
+    public Task MoveSessionToGroupAsync(AgentSessionRow? session, string group) =>
+        MoveSessionAsync(session, group ?? string.Empty, after: null);
+
+    /// <summary>
+    /// 拖拽落点移动：把 <paramref name="dragged"/> 移到 <paramref name="group"/> 分组，
+    /// <paramref name="after"/> 为 null 表示置于该分组最前，否则紧跟在该会话之后。
+    /// </summary>
+    public async Task MoveSessionAsync(AgentSessionRow? dragged, string group, AgentSessionRow? after)
     {
-        if (session is null)
+        if (dragged is null)
             return;
-        await _store.SetSessionGroupAsync(session.Id, group ?? string.Empty);
+        group ??= string.Empty;
+
+        var siblings = Sessions
+            .Where(s => s.Id != dragged.Id && string.Equals(s.Group ?? string.Empty, group, StringComparison.Ordinal))
+            .OrderBy(s => s.SortOrder).ThenByDescending(s => s.UpdatedAt, StringComparer.Ordinal)
+            .ToList();
+
+        double order;
+        if (after is null)
+        {
+            order = siblings.Count > 0 ? siblings[0].SortOrder - 1 : 0;
+        }
+        else
+        {
+            var idx = siblings.FindIndex(s => s.Id == after.Id);
+            if (idx < 0)
+                order = siblings.Count > 0 ? siblings[^1].SortOrder + 1 : 0;
+            else
+            {
+                var lo = siblings[idx].SortOrder;
+                var hi = idx + 1 < siblings.Count ? siblings[idx + 1].SortOrder : lo + 2;
+                order = (lo + hi) / 2;
+            }
+        }
+
+        await _store.MoveSessionAsync(dragged.Id, group, order);
         await ReloadSessionsAsync();
+    }
+
+    /// <summary>拖拽排序：把分组 <paramref name="dragged"/> 移到 <paramref name="target"/> 之前。</summary>
+    public async Task ReorderGroupAsync(string dragged, string target)
+    {
+        if (string.IsNullOrEmpty(dragged) || string.Equals(dragged, target, StringComparison.Ordinal))
+            return;
+        var list = Groups.Where(g => !string.IsNullOrWhiteSpace(g)).ToList();
+        if (!list.Remove(dragged))
+            return;
+        var idx = list.IndexOf(target);
+        if (idx < 0)
+            list.Add(dragged);
+        else
+            list.Insert(idx, dragged);
+        await _store.ReorderGroupsAsync(list);
+        await ReloadGroupsAsync();
+        RebuildSidebar();
     }
     public ObservableCollection<AgentTurn> Turns { get; } = new();
 
@@ -2695,7 +2744,7 @@ public sealed class PlanItemVM
 }
 
 /// <summary>AI 助手侧栏项：分组标题（<see cref="IsHeader"/>）或一个会话行。</summary>
-public sealed class SidebarItemVM
+public sealed class SidebarItemVM : INotifyPropertyChanged
 {
     public bool IsHeader { get; init; }
     public string HeaderText { get; init; } = string.Empty;
@@ -2711,4 +2760,21 @@ public sealed class SidebarItemVM
     public string Glyph => IsHeader ? (IsCollapsed ? "▸" : "▾") : string.Empty;
 
     public AgentSessionRow? Session { get; init; }
+
+    private bool _isContextTarget;
+
+    /// <summary>右键菜单打开期间，保持该行的悬浮高亮（避免菜单弹出后悬浮态消失）。</summary>
+    public bool IsContextTarget
+    {
+        get => _isContextTarget;
+        set
+        {
+            if (_isContextTarget == value)
+                return;
+            _isContextTarget = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsContextTarget)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 }

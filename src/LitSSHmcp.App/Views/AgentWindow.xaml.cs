@@ -134,17 +134,35 @@ public partial class AgentWindow : FluentWindow
     // 右键会话：在 ListBox 层定位鼠标所在项；仅当命中“会话行”时才让列表菜单弹出，
     // 命中“分组标题”则放行其自身菜单，命中空白处则不弹菜单。
     private AgentSessionRow? _contextSession;
+    private SidebarItemVM? _highlightItem;
     private bool _rightClickOnList;
     private const string SessionDragFormat = "litssh.agent.sessionId";
+    private const string GroupDragFormat = "litssh.agent.groupName";
     private System.Windows.Point _dragStart;
     private SidebarItemVM? _dragItem;
+    private System.Windows.Point _groupDragStart;
+    private SidebarItemVM? _groupDragHeader;
+    private bool _groupDragging;
 
     private void OnSessionListRightClick(object sender, MouseButtonEventArgs e)
     {
         _rightClickOnList = true;
         _contextSession = FindSidebarItem(e.OriginalSource as DependencyObject)?.Session;
+        SetContextHighlight(_contextSession);
         if (_contextSession is not null)
             e.Handled = true;   // 会话项：拦截，让列表菜单作用于该项；分组标题项：放行其自身菜单
+    }
+
+    // 高亮右键命中的会话行（菜单打开期间保持悬浮态）
+    private void SetContextHighlight(AgentSessionRow? session)
+    {
+        if (_highlightItem is not null)
+            _highlightItem.IsContextTarget = false;
+        _highlightItem = session is null
+            ? null
+            : _viewModel.SidebarItems.FirstOrDefault(i => i.Session?.Id == session.Id);
+        if (_highlightItem is not null)
+            _highlightItem.IsContextTarget = true;
     }
 
     // 列表菜单即将打开：鼠标右键空白处不弹菜单；键盘（上下文键/Shift+F10）则作用于当前会话
@@ -163,8 +181,20 @@ public partial class AgentWindow : FluentWindow
 
     private void OnSessionMenuClosed(object sender, RoutedEventArgs e)
     {
+        SetContextHighlight(null);
         _contextSession = null;
         _rightClickOnList = false;
+    }
+
+    // 分组右键菜单即将打开：未分组（默认分组）不可重命名/删除
+    private void OnGroupMenuOpened(object sender, RoutedEventArgs e)
+    {
+        var menu = (System.Windows.Controls.ContextMenu)sender;
+        var header = (menu.PlacementTarget as FrameworkElement)?.DataContext as SidebarItemVM;
+        var isUngrouped = string.IsNullOrEmpty(header?.GroupName);
+        foreach (var obj in menu.Items)
+            if (obj is System.Windows.Controls.MenuItem mi)
+                mi.IsEnabled = !isUngrouped;
     }
 
     private static SidebarItemVM? FindSidebarItem(DependencyObject? node)
@@ -178,9 +208,15 @@ public partial class AgentWindow : FluentWindow
         return null;
     }
 
-    // 分组标题左键：折叠/展开
+    private static bool ExceedsDragThreshold(System.Windows.Point start, System.Windows.Point now) =>
+        Math.Abs(now.X - start.X) >= SystemParameters.MinimumHorizontalDragDistance ||
+        Math.Abs(now.Y - start.Y) >= SystemParameters.MinimumVerticalDragDistance;
+
+    // 分组标题左键：折叠/展开（拖拽过程中不触发）
     private void OnGroupHeaderClick(object sender, MouseButtonEventArgs e)
     {
+        if (_groupDragging)
+            return;
         if ((sender as FrameworkElement)?.DataContext is SidebarItemVM { IsHeader: true } header)
             _viewModel.ToggleGroup(header.GroupName);
     }
@@ -197,32 +233,86 @@ public partial class AgentWindow : FluentWindow
     {
         if (e.LeftButton != MouseButtonState.Pressed || _dragItem?.Session is not { } session)
             return;
-        var pos = e.GetPosition(null);
-        if (Math.Abs(pos.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(pos.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+        if (!ExceedsDragThreshold(_dragStart, e.GetPosition(null)))
             return;
         _dragItem = null;
         DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(SessionDragFormat, session.Id), DragDropEffects.Move);
     }
 
-    // 分组标题：拖入会话 → 移动到该分组
+    // 分组标题：记录拖动起点
+    private void OnGroupHeaderMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _groupDragStart = e.GetPosition(null);
+        _groupDragHeader = (sender as FrameworkElement)?.DataContext as SidebarItemVM;
+    }
+
+    // 分组标题：按住左键拖动超过阈值 → 发起分组排序拖拽（未分组固定置顶，不可拖）
+    private void OnGroupHeaderMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed ||
+            _groupDragHeader is not { IsHeader: true } header ||
+            header.GroupName.Length == 0)
+            return;
+        if (!ExceedsDragThreshold(_groupDragStart, e.GetPosition(null)))
+            return;
+        _groupDragHeader = null;
+        _groupDragging = true;
+        try
+        {
+            DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(GroupDragFormat, header.GroupName), DragDropEffects.Move);
+        }
+        finally
+        {
+            _groupDragging = false;
+        }
+    }
+
+    // 分组标题：接收会话入组 / 分组排序
     private void OnGroupHeaderDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(SessionDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
+        var ok = e.Data.GetDataPresent(SessionDragFormat) || e.Data.GetDataPresent(GroupDragFormat);
+        e.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
         e.Handled = true;
     }
 
     private async void OnGroupHeaderDrop(object sender, DragEventArgs e)
     {
-        if (e.Data.GetDataPresent(SessionDragFormat) &&
-            (sender as FrameworkElement)?.DataContext is SidebarItemVM { IsHeader: true } header &&
-            e.Data.GetData(SessionDragFormat) is long id)
+        e.Handled = true;
+        if ((sender as FrameworkElement)?.DataContext is not SidebarItemVM { IsHeader: true } header)
+            return;
+
+        if (e.Data.GetDataPresent(SessionDragFormat) && e.Data.GetData(SessionDragFormat) is long id)
         {
             var session = _viewModel.Sessions.FirstOrDefault(s => s.Id == id);
             if (session is not null)
-                await _viewModel.MoveSessionToGroupAsync(session, header.GroupName);
+                await _viewModel.MoveSessionAsync(session, header.GroupName, after: null);
         }
+        else if (e.Data.GetDataPresent(GroupDragFormat) && e.Data.GetData(GroupDragFormat) is string src)
+        {
+            if (header.GroupName.Length > 0)   // 不能以「未分组」为排序目标
+                await _viewModel.ReorderGroupAsync(src, header.GroupName);
+        }
+    }
+
+    // 会话行：接住落点 → 移到该会话所在分组，并排到它之后
+    private void OnSessionRowDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(SessionDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
         e.Handled = true;
+    }
+
+    private async void OnSessionRowDrop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as FrameworkElement)?.DataContext is not SidebarItemVM { Session: { } target })
+            return;
+        if (e.Data.GetDataPresent(SessionDragFormat) &&
+            e.Data.GetData(SessionDragFormat) is long id && id != target.Id)
+        {
+            var dragged = _viewModel.Sessions.FirstOrDefault(s => s.Id == id);
+            if (dragged is not null)
+                await _viewModel.MoveSessionAsync(dragged, target.Group, after: target);
+        }
     }
 
     // 新建分组

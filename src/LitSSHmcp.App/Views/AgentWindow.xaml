@@ -74,6 +74,7 @@
                 <ListBox x:Name="SessionList" ItemsSource="{Binding SidebarItems}" SelectedItem="{Binding SelectedSidebarItem, Mode=TwoWay}"
                          Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ContextMenuOpening="OnSessionListMenuOpening"
                          PreviewMouseRightButtonDown="OnSessionListRightClick">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
@@ -91,8 +92,12 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Grid>
-                                <!-- 分组标题 -->
-                                <StackPanel x:Name="HeaderPanel" Orientation="Horizontal">
+                                <!-- 分组标题（点击折叠/展开；可拖入会话） -->
+                                <StackPanel x:Name="HeaderPanel" Orientation="Horizontal" Background="Transparent" Cursor="Hand"
+                                            AllowDrop="True" DragOver="OnGroupHeaderDragOver" Drop="OnGroupHeaderDrop"
+                                            MouseLeftButtonUp="OnGroupHeaderClick">
+                                    <TextBlock Text="{Binding Glyph}" FontSize="11" Width="12" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                     <ui:SymbolIcon Symbol="Folder24" FontSize="13" Margin="0,0,6,0"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
                                     <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"
@@ -106,8 +111,9 @@
                                         </ContextMenu>
                                     </StackPanel.ContextMenu>
                                 </StackPanel>
-                                <!-- 会话行 -->
-                                <Grid x:Name="SessionPanel">
+                                <!-- 会话行（可拖动到分组标题） -->
+                                <Grid x:Name="SessionPanel" Background="Transparent"
+                                      PreviewMouseLeftButtonDown="OnSessionRowMouseDown" MouseMove="OnSessionRowMouseMove">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -129,7 +135,7 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                     <ListBox.ContextMenu>
-                        <ContextMenu Opened="OnSessionMenuOpened">
+                        <ContextMenu Opened="OnSessionMenuOpened" Closed="OnSessionMenuClosed">
                             <MenuItem x:Name="MoveGroupMenu" Header="移动到分组"/>
                             <Separator/>
                             <MenuItem Header="重命名" Click="OnRenameSession"/>

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Input;
@@ -130,14 +131,40 @@ public partial class AgentWindow : FluentWindow
         InputBox.Height = Math.Clamp(height - e.VerticalChange, 64, 400);
     }
 
-    // 右键会话：在 ListBox 层定位鼠标所在项并“吞掉”事件（不切换/不聚焦会话），让右键菜单作用于该项
+    // 右键会话：在 ListBox 层定位鼠标所在项；仅当命中“会话行”时才让列表菜单弹出，
+    // 命中“分组标题”则放行其自身菜单，命中空白处则不弹菜单。
     private AgentSessionRow? _contextSession;
+    private bool _rightClickOnList;
+    private const string SessionDragFormat = "litssh.agent.sessionId";
+    private System.Windows.Point _dragStart;
+    private SidebarItemVM? _dragItem;
 
     private void OnSessionListRightClick(object sender, MouseButtonEventArgs e)
     {
+        _rightClickOnList = true;
         _contextSession = FindSidebarItem(e.OriginalSource as DependencyObject)?.Session;
         if (_contextSession is not null)
             e.Handled = true;   // 会话项：拦截，让列表菜单作用于该项；分组标题项：放行其自身菜单
+    }
+
+    // 列表菜单即将打开：鼠标右键空白处不弹菜单；键盘（上下文键/Shift+F10）则作用于当前会话
+    private void OnSessionListMenuOpening(object sender, System.Windows.Controls.ContextMenuEventArgs e)
+    {
+        if (_contextSession is null)
+        {
+            if (_rightClickOnList)
+                e.Handled = true;
+            else
+                _contextSession = _viewModel.SelectedSession;
+            if (_contextSession is null)
+                e.Handled = true;
+        }
+    }
+
+    private void OnSessionMenuClosed(object sender, RoutedEventArgs e)
+    {
+        _contextSession = null;
+        _rightClickOnList = false;
     }
 
     private static SidebarItemVM? FindSidebarItem(DependencyObject? node)
@@ -149,6 +176,53 @@ public partial class AgentWindow : FluentWindow
             node = System.Windows.Media.VisualTreeHelper.GetParent(node);
         }
         return null;
+    }
+
+    // 分组标题左键：折叠/展开
+    private void OnGroupHeaderClick(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is SidebarItemVM { IsHeader: true } header)
+            _viewModel.ToggleGroup(header.GroupName);
+    }
+
+    // 会话行：记录拖动起点
+    private void OnSessionRowMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _dragStart = e.GetPosition(null);
+        _dragItem = (sender as FrameworkElement)?.DataContext as SidebarItemVM;
+    }
+
+    // 会话行：按住左键拖动超过阈值 → 发起拖拽
+    private void OnSessionRowMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _dragItem?.Session is not { } session)
+            return;
+        var pos = e.GetPosition(null);
+        if (Math.Abs(pos.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(pos.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+        _dragItem = null;
+        DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(SessionDragFormat, session.Id), DragDropEffects.Move);
+    }
+
+    // 分组标题：拖入会话 → 移动到该分组
+    private void OnGroupHeaderDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(SessionDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void OnGroupHeaderDrop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(SessionDragFormat) &&
+            (sender as FrameworkElement)?.DataContext is SidebarItemVM { IsHeader: true } header &&
+            e.Data.GetData(SessionDragFormat) is long id)
+        {
+            var session = _viewModel.Sessions.FirstOrDefault(s => s.Id == id);
+            if (session is not null)
+                await _viewModel.MoveSessionToGroupAsync(session, header.GroupName);
+        }
+        e.Handled = true;
     }
 
     // 新建分组
@@ -189,7 +263,7 @@ public partial class AgentWindow : FluentWindow
     private void OnSessionMenuOpened(object sender, RoutedEventArgs e)
     {
         MoveGroupMenu.Items.Clear();
-        var session = _contextSession ?? _viewModel.SelectedSession;
+        var session = _contextSession;
         var current = session?.Group ?? string.Empty;
 
         void AddItem(string header, string group)
@@ -215,7 +289,7 @@ public partial class AgentWindow : FluentWindow
 
     private void OnDeleteSession(object sender, RoutedEventArgs e)
     {
-        var session = _contextSession ?? _viewModel.SelectedSession;
+        var session = _contextSession;
         if (session is null)
             return;
         var result = System.Windows.MessageBox.Show(
@@ -227,7 +301,7 @@ public partial class AgentWindow : FluentWindow
 
     private void OnArchiveSession(object sender, RoutedEventArgs e)
     {
-        var session = _contextSession ?? _viewModel.SelectedSession;
+        var session = _contextSession;
         if (session is not null)
             _ = _viewModel.ArchiveSessionAsync(session);
     }
@@ -257,7 +331,7 @@ public partial class AgentWindow : FluentWindow
 
     private void OnRenameSession(object sender, RoutedEventArgs e)
     {
-        var session = _contextSession ?? _viewModel.SelectedSession;
+        var session = _contextSession;
         if (session is null)
             return;
         var name = TextInputDialog.Prompt(this, "重命名会话", "会话名称:", session.Title);

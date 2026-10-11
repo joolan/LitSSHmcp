@@ -115,6 +115,40 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>侧栏扁平项：分组标题 + 会话（供带分组的列表渲染）。</summary>
     public ObservableCollection<SidebarItemVM> SidebarItems { get; } = new();
 
+    private readonly HashSet<string> _collapsedGroups = new(StringComparer.Ordinal);
+
+    /// <summary>从本机偏好读取已折叠的分组。</summary>
+    private void LoadCollapsedGroups()
+    {
+        _collapsedGroups.Clear();
+        try
+        {
+            var raw = UiPrefs.GetString("agent.collapsedGroups", string.Empty);
+            foreach (var g in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                _collapsedGroups.Add(g.Trim());
+        }
+        catch
+        {
+            // 读取失败忽略
+        }
+    }
+
+    private void SaveCollapsedGroups()
+    {
+        try { UiPrefs.SetString("agent.collapsedGroups", string.Join('\n', _collapsedGroups)); }
+        catch { /* ignore */ }
+    }
+
+    /// <summary>折叠/展开某分组。</summary>
+    public void ToggleGroup(string key)
+    {
+        key ??= string.Empty;
+        if (!_collapsedGroups.Remove(key))
+            _collapsedGroups.Add(key);
+        SaveCollapsedGroups();
+        RebuildSidebar();
+    }
+
     private SidebarItemVM? _selectedSidebarItem;
     /// <summary>侧栏选中项；选中会话项时联动 <see cref="SelectedSession"/>，标题项不可选。</summary>
     public SidebarItemVM? SelectedSidebarItem
@@ -168,7 +202,17 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 .ToList();
             if (items.Count == 0 && (!alwaysShow || filtering))
                 return;
-            SidebarItems.Add(new SidebarItemVM { IsHeader = true, GroupName = key, HeaderText = display, Count = items.Count });
+            var collapsed = _collapsedGroups.Contains(key);
+            SidebarItems.Add(new SidebarItemVM
+            {
+                IsHeader = true,
+                GroupName = key,
+                HeaderText = display,
+                Count = items.Count,
+                IsCollapsed = collapsed
+            });
+            if (collapsed)
+                return;
             foreach (var s in items)
                 SidebarItems.Add(new SidebarItemVM { Session = s });
         }
@@ -836,6 +880,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             var config = await _configService.LoadConfigAsync();
             _agentConfig = config.Agent ?? new AgentConfig();
             ReloadPromptTemplates();
+            LoadCollapsedGroups();
             // 裁剪放到后台，不阻塞首屏（避免历史库较大时卡在启动）。
             _ = PruneInBackgroundAsync();
 
@@ -2658,6 +2703,12 @@ public sealed class SidebarItemVM
 
     /// <summary>分组键（空串=未分组）；标题项用于右键重命名/删除分组。</summary>
     public string GroupName { get; init; } = string.Empty;
+
+    /// <summary>分组标题是否处于折叠状态。</summary>
+    public bool IsCollapsed { get; init; }
+
+    /// <summary>分组标题的展开/折叠指示符（会话项为空）。</summary>
+    public string Glyph => IsHeader ? (IsCollapsed ? "▸" : "▾") : string.Empty;
 
     public AgentSessionRow? Session { get; init; }
 }

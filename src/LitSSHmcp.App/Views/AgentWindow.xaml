@@ -97,12 +97,6 @@
                                         AllowDrop="True" DragOver="OnGroupHeaderDragOver" Drop="OnGroupHeaderDrop"
                                         MouseLeftButtonUp="OnGroupHeaderClick"
                                         PreviewMouseLeftButtonDown="OnGroupHeaderMouseDown" MouseMove="OnGroupHeaderMouseMove">
-                                    <Border.ContextMenu>
-                                        <ContextMenu Opened="OnGroupMenuOpened">
-                                            <MenuItem Header="重命名分组" Click="OnRenameGroup"/>
-                                            <MenuItem Header="删除分组（任务归入未分组）" Click="OnDeleteGroup"/>
-                                        </ContextMenu>
-                                    </Border.ContextMenu>
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="{Binding Glyph}" FontSize="11" Width="12" VerticalAlignment="Center"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>

@@ -147,10 +147,41 @@ public partial class AgentWindow : FluentWindow
     private void OnSessionListRightClick(object sender, MouseButtonEventArgs e)
     {
         _rightClickOnList = true;
-        _contextSession = FindSidebarItem(e.OriginalSource as DependencyObject)?.Session;
+        var item = FindSidebarItem(e.OriginalSource as DependencyObject);
+
+        // 分组标题：弹出分组菜单（未分组不可改名/删除）
+        if (item is { IsHeader: true })
+        {
+            _contextSession = null;
+            SetContextHighlight(null);
+            ShowGroupMenu(item);
+            e.Handled = true;
+            return;
+        }
+
+        _contextSession = item?.Session;
         SetContextHighlight(_contextSession);
-        if (_contextSession is not null)
-            e.Handled = true;   // 会话项：拦截，让列表菜单作用于该项；分组标题项：放行其自身菜单
+        e.Handled = true;   // 会话项/空白：交给列表菜单逻辑（空白处由 ContextMenuOpening 取消）
+    }
+
+    // 分组标题右键菜单（程序化创建：模板内的 ContextMenu 在该列表里不易触发）
+    private void ShowGroupMenu(SidebarItemVM header)
+    {
+        var canEdit = header.GroupName.Length > 0;
+        var menu = new System.Windows.Controls.ContextMenu
+        {
+            PlacementTarget = SessionList,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
+        };
+
+        var rename = new System.Windows.Controls.MenuItem { Header = "重命名分组", IsEnabled = canEdit, DataContext = header };
+        rename.Click += OnRenameGroup;
+        var remove = new System.Windows.Controls.MenuItem { Header = "删除分组（任务归入未分组）", IsEnabled = canEdit, DataContext = header };
+        remove.Click += OnDeleteGroup;
+
+        menu.Items.Add(rename);
+        menu.Items.Add(remove);
+        menu.IsOpen = true;
     }
 
     // 高亮右键命中的会话行（菜单打开期间保持悬浮态）
@@ -184,17 +215,6 @@ public partial class AgentWindow : FluentWindow
         SetContextHighlight(null);
         _contextSession = null;
         _rightClickOnList = false;
-    }
-
-    // 分组右键菜单即将打开：未分组（默认分组）不可重命名/删除
-    private void OnGroupMenuOpened(object sender, RoutedEventArgs e)
-    {
-        var menu = (System.Windows.Controls.ContextMenu)sender;
-        var header = (menu.PlacementTarget as FrameworkElement)?.DataContext as SidebarItemVM;
-        var isUngrouped = string.IsNullOrEmpty(header?.GroupName);
-        foreach (var obj in menu.Items)
-            if (obj is System.Windows.Controls.MenuItem mi)
-                mi.IsEnabled = !isUngrouped;
     }
 
     private static SidebarItemVM? FindSidebarItem(DependencyObject? node)

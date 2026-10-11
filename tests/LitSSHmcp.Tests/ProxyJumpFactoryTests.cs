@@ -8,11 +8,11 @@ namespace LitSSHmcp.Tests;
 /// <summary>ProxyJump（跳板机）工厂层校验：无效跳板在**连接前**即报错（不触网）。</summary>
 public class ProxyJumpFactoryTests
 {
-    private static SshServerConfig Server(string id, string? jump = null) => new()
+    private static SshServerConfig Server(string id, string? jump = null, string host = "10.0.0.1") => new()
     {
         Id = id,
         Name = id,
-        Host = "10.0.0.1",
+        Host = host,
         Port = 22,
         Username = "u",
         AuthType = AuthType.Password,
@@ -41,8 +41,19 @@ public class ProxyJumpFactoryTests
     [Fact]
     public void Multi_level_jump_throws()
     {
-        var jump = Server("jump", "another");
-        var server = Server("target", "jump");
+        var jump = Server("jump", "another", host: "10.0.0.2");
+        var server = Server("target", "jump", host: "10.0.0.1");
+        ServerConfigCache.Update(new[] { jump, server });
+        Assert.Throws<InvalidOperationException>(
+            () => SshClientFactory.Create(server, knownHosts: null, hostKeyMode: SshHostKeyMode.Off));
+    }
+
+    [Fact]
+    public void Same_host_jump_throws()
+    {
+        // 不同账号/配置可以指向同一 Host，但同一 Host 不能作为自己的跳板。
+        var jump = Server("jump", host: "10.0.0.9");
+        var server = Server("target", "jump", host: "10.0.0.9");
         ServerConfigCache.Update(new[] { jump, server });
         Assert.Throws<InvalidOperationException>(
             () => SshClientFactory.Create(server, knownHosts: null, hostKeyMode: SshHostKeyMode.Off));

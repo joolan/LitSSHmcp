@@ -268,16 +268,7 @@ class Program
         }
     }
 
-    static SshClient CreateSshClient(SshServerConfig server)
-    {
-        if (server.AuthType == AuthType.KeyFile && !string.IsNullOrEmpty(server.KeyFilePath))
-        {
-            var keyFile = string.IsNullOrEmpty(server.KeyFilePassphrase)
-                ? new PrivateKeyFile(server.KeyFilePath)
-                : new PrivateKeyFile(server.KeyFilePath, server.KeyFilePassphrase);
-            return new SshClient(server.Host, server.Port, server.Username, keyFile);
-        }
-
-        return new SshClient(server.Host, server.Port, server.Username, server.Password ?? string.Empty);
-    }
+    static SshClient CreateSshClient(SshServerConfig server) =>
+        // 复用连接工厂：自动支持 ProxyJump（跳板机）；CLI 不做主机密钥校验（保持原有行为）。
+        LitSSHmcp.Core.Services.SSH.SshClientFactory.Create(server, knownHosts: null, hostKeyMode: SshHostKeyMode.Off);
 }

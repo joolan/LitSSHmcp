@@ -1699,7 +1699,8 @@ public class SshService : ISshService
 
             // 1) 源机能力 + 免密探测
             var probe = await ExecuteCommandAsync(request.Source,
-                RemoteCopyCommandBuilder.BuildProbeCommand(request.TargetHost, request.TargetPort, request.Target.Username), ct, 30);
+                RemoteCopyCommandBuilder.BuildProbeCommand(request.TargetHost, request.TargetPort, request.Target.Username,
+                    ServerConfigCache.JumpEndpoint(request.Target.ProxyJumpServerId)), ct, 30);
             var probeOut = probe.Output ?? string.Empty;
             var hasRsync = probeOut.Contains("LITSSH_HAS_RSYNC", StringComparison.Ordinal);
             var hasTar = probeOut.Contains("LITSSH_HAS_TAR", StringComparison.Ordinal);
@@ -1832,7 +1833,8 @@ public class SshService : ISshService
             }
 
             // 5) 构建并执行（密码经 stdin 传给 sshpass 临时文件，不进 argv）
-            var command = RemoteCopyCommandBuilder.BuildDirectCommand(request, usePassword, useRsync, hasPv, result.TotalBytes, tarSkipOldFiles);
+            var command = RemoteCopyCommandBuilder.BuildDirectCommand(request, usePassword, useRsync, hasPv, result.TotalBytes, tarSkipOldFiles,
+                ServerConfigCache.JumpEndpoint(request.Target.ProxyJumpServerId));
             var lastPct = -1;
             var gate = new object();
             void Report(int pct)

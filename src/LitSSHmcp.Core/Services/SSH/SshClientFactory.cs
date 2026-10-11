@@ -75,6 +75,10 @@ public static class SshClientFactory
                 $"经跳板机连接失败：找不到跳板机（Id={server.ProxyJumpServerId}）；请检查配置。");
         if (string.Equals(jumpServer.Id, server.Id, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("经跳板机连接失败：跳板机不能是服务器自身。");
+        if (!string.IsNullOrWhiteSpace(server.Host) &&
+            string.Equals(jumpServer.Host?.Trim(), server.Host.Trim(), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "经跳板机连接失败：跳板机与目标主机相同（同一 Host 不能作为自己的跳板）。");
         if (!string.IsNullOrWhiteSpace(jumpServer.ProxyJumpServerId))
             throw new InvalidOperationException("经跳板机连接失败：暂不支持多级跳板（跳板机自身也配置了跳板机）。");
 

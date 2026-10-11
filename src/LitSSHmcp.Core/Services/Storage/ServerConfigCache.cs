@@ -23,4 +23,15 @@ public static class ServerConfigCache
 
     public static SshServerConfig? Find(string id) =>
         !string.IsNullOrWhiteSpace(id) && _byId.TryGetValue(id, out var server) ? server : null;
+
+    /// <summary>由跳板服务器 Id 生成 <c>user@host:port</c> 端点（供 rsync/ssh <c>-J</c> 用）；无效返回 null。</summary>
+    public static string? JumpEndpoint(string? jumpServerId)
+    {
+        if (string.IsNullOrWhiteSpace(jumpServerId))
+            return null;
+        var jump = Find(jumpServerId!);
+        return jump is null || string.IsNullOrWhiteSpace(jump.Host)
+            ? null
+            : $"{jump.Username}@{jump.Host}:{jump.Port}";
+    }
 }

@@ -135,26 +135,30 @@ public static class RemoteCopyCommandBuilder
         return i < 0 ? t : t[(i + 1)..];
     }
 
-    public static string BuildSshOptions(bool keyAuth, int port)
+    public static string BuildSshOptions(bool keyAuth, int port, string? proxyJump = null)
     {
         // 注意：不能用 accept-new（需 OpenSSH>=7.6，CentOS7 等旧客户端不支持）；用 no 兼容老版本。
         var opts = "-o StrictHostKeyChecking=no -o ConnectTimeout=10 -p " + port;
         opts += keyAuth
             ? " -o BatchMode=yes"
             : " -o PubkeyAuthentication=no -o PreferredAuthentications=password -o NumberOfPasswordPrompts=1";
+        // 目标在跳板后时，让源机的 ssh/rsync 也走 -J（值形如 user@host:port；由调用方从配置解析）。
+        if (!string.IsNullOrWhiteSpace(proxyJump))
+            opts += " -J " + proxyJump;
         return opts;
     }
 
     /// <summary>源机能力/免密探测：一次命令返回 rsync/tar/sshpass/pv 是否存在，以及免密是否可用。</summary>
-    public static string BuildProbeCommand(string targetHost, int targetPort, string targetUser)
+    public static string BuildProbeCommand(string targetHost, int targetPort, string targetUser, string? proxyJump = null)
     {
         var dest = ShellQuote(targetUser + "@" + targetHost);
+        var jump = string.IsNullOrWhiteSpace(proxyJump) ? string.Empty : " -J " + proxyJump;
         return string.Join("; ",
             "command -v rsync >/dev/null 2>&1 && echo LITSSH_HAS_RSYNC",
             "command -v tar >/dev/null 2>&1 && echo LITSSH_HAS_TAR",
             "command -v sshpass >/dev/null 2>&1 && echo LITSSH_HAS_SSHPASS",
             "command -v pv >/dev/null 2>&1 && echo LITSSH_HAS_PV",
-            "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 -p " + targetPort +
+            "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 -p " + targetPort + jump +
             " " + dest + " true >/dev/null 2>&1 && echo LITSSH_KEY_OK || echo LITSSH_KEY_FAIL");
     }
 
@@ -195,10 +199,10 @@ public static class RemoteCopyCommandBuilder
     /// - 无 rsync 时 tar|ssh（可选 pv 提供进度）；
     /// - usePassword 时用 sshpass+临时密码文件（密码经 stdin 写入，不进 argv）。
     /// </summary>
-    public static string BuildDirectCommand(RemoteCopyRequest req, bool usePassword, bool useRsync, bool hasPv, long totalBytes, bool tarSkipOldFiles = false)
+    public static string BuildDirectCommand(RemoteCopyRequest req, bool usePassword, bool useRsync, bool hasPv, long totalBytes, bool tarSkipOldFiles = false, string? proxyJump = null)
     {
         var dest = req.Target.Username + "@" + req.TargetHost;
-        var sshOpts = BuildSshOptions(!usePassword, req.TargetPort);
+        var sshOpts = BuildSshOptions(!usePassword, req.TargetPort, proxyJump);
         var sshCmd = "ssh " + sshOpts;
         var destQ = ShellQuote(dest);
         var auth = usePassword ? "sshpass -f \"$f\" " : "";
@@ -249,10 +253,10 @@ public static class RemoteCopyCommandBuilder
     /// </summary>
     public static string BuildRsyncSyncCommand(string sourceSpec, string targetHost, int targetPort, string targetUser,
         string targetDir, bool deleteExtra, bool usePassword,
-        IReadOnlyList<string>? includes = null, IReadOnlyList<string>? excludes = null)
+        IReadOnlyList<string>? includes = null, IReadOnlyList<string>? excludes = null, string? proxyJump = null)
     {
         var dest = targetUser + "@" + targetHost;
-        var sshOpts = BuildSshOptions(!usePassword, targetPort);
+        var sshOpts = BuildSshOptions(!usePassword, targetPort, proxyJump);
         var sshCmd = "ssh " + sshOpts;
         var destQ = ShellQuote(dest);
         var auth = usePassword ? "sshpass -f \"$f\" " : "";

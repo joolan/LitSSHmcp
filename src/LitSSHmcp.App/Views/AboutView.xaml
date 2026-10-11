@@ -23,10 +23,11 @@
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
                     <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 触发事件：对本机或远程按流水线执行 Git 提交推送、Webhook 通知（钉钉/企业微信/飞书/通用）、目录与数据库备份，支持定时与「同步任务事件」触发。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 触发事件 + 总览可视化：对本机或远程按流水线执行 Git 提交推送、Webhook 通知（钉钉/企业微信/飞书/通用）、目录与数据库备份，支持定时与「同步任务事件」触发；新增「总览」可视化调度、下次运行与动作流水线。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据库工作台：MySQL / PostgreSQL 对象浏览与 SQL 查询、表数据分页预览、导出 CSV；Redis 键浏览（SCAN + 按类型取值 + TTL）与命令执行；只读 / 写入模式强区分，写操作复用安全链与审计。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手增强：实时展示推理模型的「思考过程」（运行中展开、完成后折叠）；工具调用/结果 JSON 规范化（中文不再被转义成 \uXXXX、内嵌 JSON 展开），既易读又显著降低 token 消耗；新增上下文缓存命中观测、图片发送前压缩、结构化滚动摘要。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 技能选择器与预置技能包：内置一组运维技能（nginx 5xx / 磁盘满 / CPU·内存飙高 / MySQL / Redis / 容器 / systemd / 证书到期等），用斜杠 /技能 或输入区 + 菜单选择激活；未选择时只注入技能索引以省 token。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手大幅增强：思考过程（推理流）展示；工具调用/结果 JSON 规范化（中文不再被转义、内嵌 JSON 展开，省 token）；技能选择器 + 预置技能包；提示词模板；计划模式（缓存友好）；工具级审批策略；用量 / 成本面板；缓存命中观测、图片发送前压缩、结构化滚动摘要、冷启动收敛、转录分页与加载动画。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 平台运维：批量执行（多机并行）新增快速命令与「一键巡检」（写操作执行前确认）；快照趋势图（内存 / 磁盘 / Swap / 负载）；SSH 会话录像（asciicast）与倍速回放。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 凭据与连通性：SSH 密钥生成（ed25519 / rsa）与公钥一键复制、凭据轮换提醒、跳板机（ProxyJump）——终端 / SFTP / 命令 / 同步 / 拓扑 / MCP 工具 / 数据源隧道 / 端口转发全局支持。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 端口转发删除增加二次确认；AI 助手工具过程与思考过程在展开时按内容撑高，会话区仅保留单一滚动条。"/>
                 </StackPanel>
             </Border>
@@ -67,10 +68,15 @@
                     <TextBlock Text="桌面 App 核心功能" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 主页看板：快捷入口 + 服务器/数据源/应用统计，支持 AI 快捷提问（含附件）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器管理：表格增删改查与排序、右键菜单（连接/编辑/采集快照/快照历史/删除），独立「SSH 会话管理」窗口含命令会话与交互式终端（内置 SFTP 文件可视化上传/下载）。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源 / 应用管理：MySQL / PostgreSQL / Redis 与应用节点维护，密码本机 DPAPI 加密。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器连接增强：跳板机（ProxyJump，经另一台已配置服务器中转）、SSH 密钥生成（ed25519 / rsa，公钥一键复制）、凭据轮换提醒。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 批量执行 / 快速命令：多台服务器并行下发命令；内置快速命令（一键巡检、磁盘/inode/内存/端口/进程/大目录/日志/容器/网络）与「一键巡检」，写操作执行前确认。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源 / 应用管理 + 数据库工作台：维护数据源与应用；工作台支持 SQL 查询/对象浏览/表数据分页预览、Redis 键浏览、只读/写入模式与审计。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑：可视化编辑——拖动/缩放节点、拖拽创建关系、自动正交避障连线、网格吸附、撤销重做、导出图片。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 快照：整机态势采集 + 历史查看 + 趋势图（内存 / 磁盘 / Swap / 负载）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 终端录像：交互式终端会话以 asciicast 记录并支持倍速回放（合规/复盘）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 触发事件：本机/远程动作流水线（Git / Webhook / 目录与数据库备份），定时与同步事件触发，附「总览」编排可视化。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 审计日志：按服务器/数据源/会话筛选与关键字检索、复制、导出 CSV、哈希链完整性校验。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手：内置大模型智能体，内嵌 MCP 客户端调用全部工具（审批/过滤/审计与第三方客户端一致），支持流式输出、多模型热切换、多会话、只读模式、Markdown 渲染、任务计划与长期记忆；实时展示推理模型的「思考过程」，工具调用/结果自动规范化为可读中文（省 token）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手：内置大模型智能体，内嵌 MCP 客户端调用全部工具（审批/过滤/审计与第三方客户端一致），流式输出、多模型热切换、多会话、只读模式、Markdown 渲染、任务计划、长期记忆；思考过程展示、技能选择器、提示词模板、计划模式、工具级审批策略、用量/成本面板。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 工具说明：集中查看工具参数与路由并一键复制到提示词，与 docs/TOOLS.md 双向同步。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 外观：基于 WPF-UI（Fluent）的现代界面，支持深色 / 浅色 / 跟随系统主题与强调色。"/>
                 </StackPanel>

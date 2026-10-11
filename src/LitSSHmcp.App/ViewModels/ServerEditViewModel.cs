@@ -182,7 +182,11 @@ public class ServerEditViewModel : INotifyPropertyChanged
                     continue;
                 if (!string.IsNullOrWhiteSpace(s.ProxyJumpServerId))
                     continue;
-                JumpOptions.Add(new JumpOption(s.Id, string.IsNullOrWhiteSpace(s.Name) ? s.Host : s.Name));
+                // 主机与当前相同的服务器不能作为跳板（保存时还会以最终 Host 再校验一次）。
+                if (!string.IsNullOrWhiteSpace(Host) &&
+                    string.Equals(s.Host?.Trim(), Host.Trim(), StringComparison.OrdinalIgnoreCase))
+                    continue;
+                JumpOptions.Add(new JumpOption(s.Id, string.IsNullOrWhiteSpace(s.Name) ? (s.Host ?? string.Empty) : s.Name));
             }
             SelectedJumpOption = JumpOptions.FirstOrDefault(o => o.Id == ProxyJumpServerId) ?? JumpOptions[0];
         }
@@ -373,6 +377,13 @@ public class ServerEditViewModel : INotifyPropertyChanged
         {
             var config = await _configService.LoadConfigAsync();
             var server = BuildServerConfig();
+
+            if (!ValidateJump(config, server, out var jumpError))
+            {
+                StatusMessage = jumpError!;
+                return;
+            }
+
             // 留空=未修改，保留原密码/密钥口令/提权密码（编辑任意字段不应清空它们）
             server.Password = Coalesce(_editWindow.GetPassword(), _editingServer?.Password);
             server.KeyFilePassphrase = Coalesce(_editWindow.GetKeyPassword(), _editingServer?.KeyFilePassphrase);
@@ -419,6 +430,41 @@ public class ServerEditViewModel : INotifyPropertyChanged
 
     private static string? Coalesce(string? input, string? existing) =>
         string.IsNullOrEmpty(input) ? existing : input;
+
+    /// <summary>保存前校验跳板机配置（因为 Host 可被编辑，必须在保存时以最终 Host 复核）。</summary>
+    private static bool ValidateJump(AppConfig config, SshServerConfig server, out string? error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(server.ProxyJumpServerId))
+            return true;
+
+        if (string.Equals(server.ProxyJumpServerId, server.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            error = "跳板机不能是服务器自身。";
+            return false;
+        }
+
+        var jump = config.Servers.FirstOrDefault(s =>
+            string.Equals(s.Id, server.ProxyJumpServerId, StringComparison.OrdinalIgnoreCase));
+        if (jump is null)
+        {
+            error = "找不到所选的跳板机（可能已被删除）；请重新选择。";
+            return false;
+        }
+        if (!string.IsNullOrWhiteSpace(jump.ProxyJumpServerId))
+        {
+            error = "暂不支持多级跳板：所选跳板机自身也配置了跳板机。";
+            return false;
+        }
+        if (!string.IsNullOrWhiteSpace(server.Host) &&
+            string.Equals(jump.Host?.Trim(), server.Host.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            error = "跳板机与当前服务器主机（Host）相同，不能作为跳板；请改选其它服务器或修改主机地址。";
+            return false;
+        }
+
+        return true;
+    }
 
     private SshServerConfig BuildServerConfig()
     {

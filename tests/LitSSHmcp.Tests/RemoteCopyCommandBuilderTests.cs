@@ -166,6 +166,16 @@ public class RemoteCopyCommandBuilderTests
     }
 
     [Fact]
+    public void BuildSshOptions_includes_proxy_jump_when_provided()
+    {
+        var withJump = RemoteCopyCommandBuilder.BuildSshOptions(keyAuth: true, port: 22, proxyJump: "jump@10.0.0.9:2222");
+        Assert.Contains("-J jump@10.0.0.9:2222", withJump);
+
+        var withoutJump = RemoteCopyCommandBuilder.BuildSshOptions(keyAuth: true, port: 22);
+        Assert.DoesNotContain("-J", withoutJump);
+    }
+
+    [Fact]
     public void BuildTargetProbeCommand_reports_rsync_and_tar_markers()
     {
         var cmd = RemoteCopyCommandBuilder.BuildTargetProbeCommand();

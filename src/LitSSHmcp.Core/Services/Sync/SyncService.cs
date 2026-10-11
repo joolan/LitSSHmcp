@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
+using LitSSHmcp.Core.Services.Storage;
 using Renci.SshNet;
 using Renci.SshNet.Sftp;
 
@@ -156,7 +157,8 @@ public sealed class SyncService
         progress?.Report(new SyncProgress("服务器端 rsync 同步中…", 0, 0, 0));
         var cmd = RemoteCopyCommandBuilder.BuildRsyncSyncCommand(
             srcRoot.TrimEnd('/') + "/", tHost, tPort, targetServer.Username, dstRoot,
-            task.DeleteExtra, usePassword, task.IncludePatterns, task.ExcludePatterns);
+            task.DeleteExtra, usePassword, task.IncludePatterns, task.ExcludePatterns,
+            ServerConfigCache.JumpEndpoint(targetServer.ProxyJumpServerId));
 
         var exec = _ssh.ExecuteStreamingAsync(sourceServer, cmd, null, null,
             usePassword ? targetServer.Password : null, ct, 3600).GetAwaiter().GetResult();
@@ -175,7 +177,8 @@ public sealed class SyncService
     {
         usePassword = false;
 
-        var srcProbe = ExecRemote(source, RemoteCopyCommandBuilder.BuildProbeCommand(targetHost, targetPort, target.Username));
+        var srcProbe = ExecRemote(source, RemoteCopyCommandBuilder.BuildProbeCommand(targetHost, targetPort, target.Username,
+            ServerConfigCache.JumpEndpoint(target.ProxyJumpServerId)));
         var hasRsyncSrc = srcProbe.Contains("LITSSH_HAS_RSYNC", StringComparison.Ordinal);
         var hasSshpass = srcProbe.Contains("LITSSH_HAS_SSHPASS", StringComparison.Ordinal);
         var keyOk = srcProbe.Contains("LITSSH_KEY_OK", StringComparison.Ordinal);
@@ -318,7 +321,8 @@ public sealed class SyncService
 
                     var cmd = RemoteCopyCommandBuilder.BuildRsyncSyncCommand(
                         srcProbe, tHost, tPort, targetServer.Username, dstRoot,
-                        deleteExtra: false, usePassword, task.IncludePatterns, task.ExcludePatterns);
+                        deleteExtra: false, usePassword, task.IncludePatterns, task.ExcludePatterns,
+                        ServerConfigCache.JumpEndpoint(targetServer.ProxyJumpServerId));
                     var exec = _ssh.ExecuteStreamingAsync(sourceServer, cmd, null, null,
                         usePassword ? targetServer.Password : null, ct, 120).GetAwaiter().GetResult();
                     if (!exec.Success)

@@ -369,6 +369,21 @@ public class MainViewModel : INotifyPropertyChanged
         ShowSessionWindow();
     }
 
+    /// <summary>打开（或聚焦）本机 PowerShell 终端标签；它同时作为 AI 本地 CLI 的共享会话。</summary>
+    public LocalTerminalSessionViewModel ConnectLocalTerminal()
+    {
+        var existing = Sessions.OfType<LocalTerminalSessionViewModel>().FirstOrDefault();
+        if (existing == null)
+        {
+            existing = new LocalTerminalSessionViewModel();
+            Sessions.Add(existing);
+            StatusMessage = "已打开本机 PowerShell 终端";
+        }
+        SelectedSession = existing;
+        ShowSessionWindow();
+        return existing;
+    }
+
     // SSH 会话管理窗口（独立非模态窗口：多标签，每个服务器一个标签；不设 Owner/不置顶）
     private SshSessionWindow? _sessionWindow;
 
@@ -392,6 +407,8 @@ public class MainViewModel : INotifyPropertyChanged
             _floatWindows.Clear();
             foreach (var term in Sessions.OfType<TerminalSessionViewModel>().ToList())
                 _ = term.DisposeAsync();
+            foreach (var local in Sessions.OfType<LocalTerminalSessionViewModel>().ToList())
+                _ = local.DisposeAsync();
             Sessions.Clear();
             SelectedSession = null;
         };
@@ -457,6 +474,7 @@ public class MainViewModel : INotifyPropertyChanged
     {
         SessionViewModel s => s.Server.Name,
         TerminalSessionViewModel t => t.Server.Name,
+        LocalTerminalSessionViewModel l => l.Title,
         _ => string.Empty
     };
 
@@ -468,9 +486,10 @@ public class MainViewModel : INotifyPropertyChanged
         {
             SessionViewModel s => s.Server.Name,
             TerminalSessionViewModel t => t.Server.Name,
+            LocalTerminalSessionViewModel l => l.Title,
             _ => string.Empty
         };
-        var extra = session is TerminalSessionViewModel ? "终端连接将断开。" : string.Empty;
+        var extra = session is TerminalSessionViewModel or LocalTerminalSessionViewModel ? "终端连接将断开。" : string.Empty;
         var confirm = MessageBox.Show($"确定关闭会话「{name}」？{extra}",
             "关闭会话", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (confirm != MessageBoxResult.Yes)
@@ -488,6 +507,8 @@ public class MainViewModel : INotifyPropertyChanged
 
         if (session is TerminalSessionViewModel term)
             _ = term.DisposeAsync();
+        else if (session is LocalTerminalSessionViewModel local)
+            _ = local.DisposeAsync();
         Sessions.Remove(session);
         RebuildDockedSessions();
         if (ReferenceEquals(SelectedSession, session) || SelectedSession == session)

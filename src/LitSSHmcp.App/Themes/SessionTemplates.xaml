@@ -95,4 +95,9 @@
     <DataTemplate DataType="{x:Type vm:TerminalSessionViewModel}">
         <controls:TerminalTabView/>
     </DataTemplate>
+
+    <!-- 本机 PowerShell 终端标签内容（ConPTY，AI 与用户共享会话） -->
+    <DataTemplate DataType="{x:Type vm:LocalTerminalSessionViewModel}">
+        <controls:LocalTerminalTabView/>
+    </DataTemplate>
 </ResourceDictionary>

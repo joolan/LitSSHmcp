@@ -153,6 +153,12 @@ public partial class SshSessionWindow : FluentWindow
             terminal.FocusInput();
             return;
         }
+        var localTerminal = FindDescendant<LocalTerminalTabView>(host);
+        if (localTerminal is not null)
+        {
+            localTerminal.FocusInput();
+            return;
+        }
         var box = FindDescendant<TextBox>(host, t => !t.IsReadOnly && t.IsVisible);
         box?.Focus();
     }
@@ -227,6 +233,12 @@ public partial class SshSessionWindow : FluentWindow
             return;
 
         var menu = new System.Windows.Controls.ContextMenu();
+
+        var local = new System.Windows.Controls.MenuItem { Header = "本机 PowerShell 终端" };
+        local.Click += (_, _) => vm.ConnectLocalTerminal();
+        menu.Items.Add(local);
+        menu.Items.Add(new System.Windows.Controls.Separator());
+
         var servers = vm.Servers.Where(s => !s.Disabled).ToList();
         if (servers.Count == 0)
         {

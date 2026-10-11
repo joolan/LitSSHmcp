@@ -29,7 +29,7 @@ public sealed class TerminalView : Grid
     private int _cols = 80;
     private int _rows = 24;
     private int _scrollOffset;
-    private TerminalSessionViewModel? _session;
+    private ITerminalSession? _session;
 
     // 选区（视图坐标：行/列）
     private bool _selecting;
@@ -135,22 +135,22 @@ public sealed class TerminalView : Grid
     }
 
     public static readonly DependencyProperty SessionProperty = DependencyProperty.Register(
-        nameof(Session), typeof(TerminalSessionViewModel), typeof(TerminalView),
+        nameof(Session), typeof(ITerminalSession), typeof(TerminalView),
         new PropertyMetadata(null, OnSessionChanged));
 
-    public TerminalSessionViewModel? Session
+    public ITerminalSession? Session
     {
-        get => (TerminalSessionViewModel?)GetValue(SessionProperty);
+        get => (ITerminalSession?)GetValue(SessionProperty);
         set => SetValue(SessionProperty, value);
     }
 
     private static void OnSessionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is TerminalView view)
-            view.AttachSession(e.OldValue as TerminalSessionViewModel, e.NewValue as TerminalSessionViewModel);
+            view.AttachSession(e.OldValue as ITerminalSession, e.NewValue as ITerminalSession);
     }
 
-    private void AttachSession(TerminalSessionViewModel? oldSession, TerminalSessionViewModel? newSession)
+    private void AttachSession(ITerminalSession? oldSession, ITerminalSession? newSession)
     {
         if (oldSession is not null)
             oldSession.Model.Changed -= OnModelChanged;

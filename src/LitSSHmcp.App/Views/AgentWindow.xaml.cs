@@ -17,14 +17,14 @@ public partial class AgentWindow : FluentWindow
     private readonly IConfigService _configService;
 
     public AgentWindow(IConfigService configService, IContextStore store, string skillsDir,
-        Func<LocalTerminalSessionViewModel?>? localTerminalProvider = null)
+        Func<string, LocalTerminalSessionViewModel?>? localTerminalResolver = null)
     {
         InitializeComponent();
         _configService = configService;
 
         _viewModel = new AgentViewModel(configService, store, skillsDir, action => Dispatcher.Invoke(action))
         {
-            LocalTerminalProvider = localTerminalProvider
+            LocalTerminalResolver = localTerminalResolver
         };
         _viewModel.SettingsRequested += tab => Dispatcher.Invoke(() => OpenSettings(tab));
         _viewModel.TemporaryChatRequested += text => Dispatcher.Invoke(() => OpenTemporaryChat(text));

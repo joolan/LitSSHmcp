@@ -23,19 +23,22 @@ public delegate LocalApprovalDecision LocalApprovalHandler(string command, strin
 /// </summary>
 public sealed class LocalTerminalTool : IAgentTool
 {
-    private readonly Func<LocalTerminalSessionViewModel?> _terminal;
+    private readonly Func<string?> _sessionKey;
+    private readonly Func<string, LocalTerminalSessionViewModel?> _terminalResolver;
     private readonly LocalTerminalConfig _config;
     private readonly LocalApprovalHandler _approval;
     private readonly Action _persist;
     private readonly AITool _schema;
 
     public LocalTerminalTool(
-        Func<LocalTerminalSessionViewModel?> terminal,
+        Func<string?> sessionKey,
+        Func<string, LocalTerminalSessionViewModel?> terminalResolver,
         LocalTerminalConfig config,
         LocalApprovalHandler approval,
         Action persist)
     {
-        _terminal = terminal;
+        _sessionKey = sessionKey;
+        _terminalResolver = terminalResolver;
         _config = config;
         _approval = approval;
         _persist = persist;
@@ -75,7 +78,7 @@ public sealed class LocalTerminalTool : IAgentTool
             return $"已拒绝：命令 '{LocalCommandPolicy.FirstExecutable(command)}' 不在本机 CLI 白名单内。" +
                    $"允许的 CLI：{string.Join(", ", _config.AllowedCommands)}。若确需，请在「AI 助手设置 → 本机终端」中扩充白名单。";
 
-        var terminal = _terminal();
+        var terminal = _terminalResolver(_sessionKey() ?? "default");
         if (terminal is null)
             return "错误：本机终端不可用（无法创建共享会话）。";
 

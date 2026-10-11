@@ -19,9 +19,13 @@ public sealed class LocalTerminalSessionViewModel : INotifyPropertyChanged, IAsy
     private SessionLogger? _logger;
     private bool _started;
     private bool _disposed;
+    private readonly bool _isAi;
+    private readonly int _manualSeq;
 
-    public LocalTerminalSessionViewModel(int cols = 80, int rows = 24)
+    public LocalTerminalSessionViewModel(bool isAi = false, int manualSeq = 1, int cols = 80, int rows = 24)
     {
+        _isAi = isAi;
+        _manualSeq = manualSeq;
         Model = new TerminalModel(cols, rows);
         ReconnectCommand = new RelayCommand(_ => _ = ReconnectAsync());
     }
@@ -38,7 +42,14 @@ public sealed class LocalTerminalSessionViewModel : INotifyPropertyChanged, IAsy
         Host = "localhost"
     };
 
-    public string Title => string.IsNullOrWhiteSpace(_customTitle) ? "本机 PowerShell" : _customTitle!;
+    /// <summary>底层伪控制台进程 Id（0=未启动）；用于会话维度识别/存活性校验。</summary>
+    public int ProcessId => _pty?.ProcessId ?? 0;
+
+    public string Title => !string.IsNullOrWhiteSpace(_customTitle)
+        ? _customTitle!
+        : _isAi
+            ? $"本机 PowerShell [AI-{ProcessId}]"
+            : _manualSeq <= 1 ? "本机 PowerShell" : $"本机 PowerShell ({_manualSeq})";
 
     private string? _customTitle;
 
@@ -97,6 +108,7 @@ public sealed class LocalTerminalSessionViewModel : INotifyPropertyChanged, IAsy
                 _logger = new SessionLogger("local-powershell", "localhost", Model.Cols, Model.Rows);
             IsConnected = true;
             StatusMessage = "已连接";
+            OnPropertyChanged(nameof(Title));   // 标题含进程 Id，启动后刷新
         }
         catch (Exception ex)
         {

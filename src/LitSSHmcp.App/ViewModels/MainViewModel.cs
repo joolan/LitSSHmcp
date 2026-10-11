@@ -369,35 +369,75 @@ public class MainViewModel : INotifyPropertyChanged
         ShowSessionWindow();
     }
 
-    /// <summary>打开（或聚焦）本机 PowerShell 终端标签；它同时作为 AI 本地 CLI 的共享会话。</summary>
+    private readonly Dictionary<string, LocalTerminalSessionViewModel> _aiTerminals = new(StringComparer.Ordinal);
+    private int _manualLocalSeq;
+
+    /// <summary>手动打开一个新的本机 PowerShell 终端标签（可多次打开，互不影响）。</summary>
     public LocalTerminalSessionViewModel ConnectLocalTerminal()
     {
-        var vm = GetOrCreateLocalTerminal();
+        var vm = CreateLocalTerminal(isAi: false);
         SelectedSession = vm;
         ShowSessionWindow();
         return vm;
     }
 
-    /// <summary>取回（必要时创建并启动）共享本机终端，不强制显示窗口。</summary>
-    public LocalTerminalSessionViewModel GetOrCreateLocalTerminal()
+    private LocalTerminalSessionViewModel CreateLocalTerminal(bool isAi)
     {
-        var existing = Sessions.OfType<LocalTerminalSessionViewModel>().FirstOrDefault();
-        if (existing == null)
-        {
-            existing = new LocalTerminalSessionViewModel();
-            Sessions.Add(existing);
-        }
-        _ = existing.EnsureStartedAsync(existing.Model.Cols, existing.Model.Rows);
-        return existing;
+        var vm = new LocalTerminalSessionViewModel(isAi, ++_manualLocalSeq);
+        Sessions.Add(vm);
+        _ = vm.EnsureStartedAsync(vm.Model.Cols, vm.Model.Rows);
+        return vm;
     }
 
-    /// <summary>提供给 AI 助手的共享本机终端（确保在 UI 线程创建/启动，并让用户可见）。</summary>
-    private LocalTerminalSessionViewModel? LocalTerminalProvider()
+    /// <summary>
+    /// 按 AI 会话键解析共享本机终端：同一会话复用同一个终端；若记住的终端已不存在
+    /// （标签被关、进程退出/失效）则重建一个（标题带 [AI-进程Id] 便于区分）。
+    /// </summary>
+    public LocalTerminalSessionViewModel? ResolveSessionTerminal(string key)
     {
+        key ??= "default";
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is not null && !dispatcher.CheckAccess())
-            return dispatcher.Invoke(ConnectLocalTerminal);
-        return ConnectLocalTerminal();
+            return dispatcher.Invoke(() => ResolveSessionTerminal(key));
+
+        if (_aiTerminals.TryGetValue(key, out var existing))
+        {
+            if (IsTerminalAlive(existing))
+                return existing;
+
+            _aiTerminals.Remove(key);
+            if (Sessions.Contains(existing))
+            {
+                _ = existing.DisposeAsync();
+                Sessions.Remove(existing);
+                RebuildDockedSessions();
+            }
+        }
+
+        var created = CreateLocalTerminal(isAi: true);
+        _aiTerminals[key] = created;
+        SelectedSession = created;
+        ShowSessionWindow();
+        return created;
+    }
+
+    /// <summary>记住的终端是否仍然有效（在会话列表中、已连接、且其进程仍存在）。</summary>
+    private bool IsTerminalAlive(LocalTerminalSessionViewModel? vm)
+    {
+        if (vm is null || !Sessions.Contains(vm) || !vm.IsConnected)
+            return false;
+        var pid = vm.ProcessId;
+        if (pid <= 0)
+            return false;
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     // SSH 会话管理窗口（独立非模态窗口：多标签，每个服务器一个标签；不设 Owner/不置顶）
@@ -426,6 +466,7 @@ public class MainViewModel : INotifyPropertyChanged
             foreach (var local in Sessions.OfType<LocalTerminalSessionViewModel>().ToList())
                 _ = local.DisposeAsync();
             Sessions.Clear();
+            _aiTerminals.Clear();
             SelectedSession = null;
         };
         _sessionWindow.Show();
@@ -900,7 +941,7 @@ public class MainViewModel : INotifyPropertyChanged
             return _agentWindow;
         }
 
-        _agentWindow = new AgentWindow(_configService, AppServiceFactory.CreateAgentContextStore(), AppServiceFactory.BundledSkillsDir, LocalTerminalProvider) { Topmost = false };
+        _agentWindow = new AgentWindow(_configService, AppServiceFactory.CreateAgentContextStore(), AppServiceFactory.BundledSkillsDir, ResolveSessionTerminal) { Topmost = false };
         _agentWindow.Closed += (_, _) => _agentWindow = null;
         _agentWindow.Show();
         return _agentWindow;

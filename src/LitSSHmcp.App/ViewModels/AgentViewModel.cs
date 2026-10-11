@@ -84,10 +84,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ObservableCollection<AgentProviderConfig> Providers { get; } = new();
 
     /// <summary>
-    /// 共享本机终端提供者（由宿主 App 注入，须在 UI 线程创建/显示）。启用「本机终端」工具后，
-    /// AI 的 local 工具会通过它拿到用户可见的同一个 PowerShell 会话。
+    /// 按会话解析共享本机终端（由宿主 App 注入，须在 UI 线程创建/显示）。键=会话 Id（新建未落库为 "new"）。
+    /// 宿主负责进程存活校验与失效重建，保证同一会话始终操作同一个终端。
     /// </summary>
-    public Func<LocalTerminalSessionViewModel?>? LocalTerminalProvider { get; set; }
+    public Func<string, LocalTerminalSessionViewModel?>? LocalTerminalResolver { get; set; }
+
+    /// <summary>当前会话键（已落库=会话 Id；新建未落库="new"），用于按会话隔离本机终端。</summary>
+    public string CurrentSessionKey => _sessionId > 0 ? _sessionId.ToString() : "new";
 
     /// <summary>模型下拉列表 = 可用模型 + 末尾固定的“模型设置”入口。</summary>
     public ObservableCollection<AgentProviderConfig> ComboProviders { get; } = new();
@@ -1478,15 +1481,16 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    /// <summary>构建本机 CLI 工具（仅在「本机终端」启用且宿主提供了共享终端时）。</summary>
+    /// <summary>构建本机 CLI 工具（仅在「本机终端」启用且宿主提供了按会话解析的终端时）。</summary>
     private IAgentTool? BuildLocalTerminalTool()
     {
         var cfg = _agentConfig.LocalTerminal;
-        if (cfg is null || !cfg.Enabled || LocalTerminalProvider is null)
+        if (cfg is null || !cfg.Enabled || LocalTerminalResolver is null)
             return null;
 
         return new LocalTerminalTool(
-            () => LocalTerminalProvider?.Invoke(),
+            () => CurrentSessionKey,
+            key => LocalTerminalResolver?.Invoke(key),
             cfg,
             (command, cwd) =>
             {

@@ -38,6 +38,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private int _pageSize = 100;
     private int _pageIndex;
     private long? _totalRows;
+    private bool _paged;
+    private string? _pageBaseSql;
     private bool _busy;
     private bool _isWriteMode;
     private bool _isSnippetPanelOpen;
@@ -284,7 +286,17 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public int ObjectCategoryIndex
     {
         get => _objectCategoryIndex;
-        set { if (Set(ref _objectCategoryIndex, value)) { OnPropertyChanged(nameof(ObjectHeader)); _ = LoadTablesAsync(); } }
+        set
+        {
+            if (Set(ref _objectCategoryIndex, value))
+            {
+                OnPropertyChanged(nameof(ObjectHeader));
+                SelectedTable = null;      // 清空选中对象
+                Columns.Clear();
+                Indexes.Clear();
+                _ = LoadTablesAsync();
+            }
+        }
     }
 
     public string ObjectHeader => _objectCategoryIndex switch { 1 => "视图", 2 => "存储过程", _ => "表" };
@@ -299,7 +311,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public DataView? Results
     {
         get => _results;
-        set { Set(ref _results, value); RaiseCanExecute(); }
+        set { Set(ref _results, value); OnPropertyChanged(nameof(ShowPaging)); OnPropertyChanged(nameof(PageLabel)); RaiseCanExecute(); }
     }
 
     public int PageSize
@@ -312,8 +324,11 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     public long? TotalRows { get => _totalRows; set { if (Set(ref _totalRows, value)) { RaiseCanExecute(); OnPropertyChanged(nameof(PageLabel)); } } }
 
+    /// <summary>是否显示分页控件（仅表预览分页时）。</summary>
+    public bool ShowPaging => _paged && Results is not null;
+
     public string PageLabel =>
-        Results is null ? string.Empty
+        !ShowPaging ? string.Empty
         : TotalRows is long total
             ? $"第 {_pageIndex + 1} 页 · 共 {total} 行"
             : $"第 {_pageIndex + 1} 页";
@@ -521,6 +536,17 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     // ---------- 查询 ----------
 
+    /// <summary>SQL 补全候选：当前类别对象名 + 已加载列名（关键字由编辑器补充）。</summary>
+    public IReadOnlyList<string> GetCompletionWords()
+    {
+        var words = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in Tables)
+            words.Add(t.Name);
+        foreach (var c in Columns)
+            words.Add(c.Name);
+        return words.ToList();
+    }
+
     private async Task ExecuteAsync()
     {
         var ds = SelectedDatasource;
@@ -537,6 +563,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     private async Task ExecuteReadAsync(DataSourceConfig ds, string sql)
     {
+        _paged = false;
+        _pageBaseSql = null;
         if (IsRedisDb)
         {
             // Redis：driver 内部按只读白名单校验（非只读命令会被拒绝）
@@ -657,6 +685,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         tab.PageSize = _pageSize;
         tab.PageIndex = _pageIndex;
         tab.TotalRows = _totalRows;
+        tab.Paged = _paged;
+        tab.PageBaseSql = _pageBaseSql;
         tab.IsWriteMode = _isWriteMode;
         tab.StatusMessage = _statusMessage;
     }
@@ -668,6 +698,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         _pageSize = tab.PageSize;
         _pageIndex = tab.PageIndex;
         _totalRows = tab.TotalRows;
+        _paged = tab.Paged;
+        _pageBaseSql = tab.PageBaseSql;
         _isWriteMode = tab.IsWriteMode;
         _statusMessage = tab.StatusMessage;
 
@@ -676,6 +708,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(PageSize));
         OnPropertyChanged(nameof(TotalRows));
         OnPropertyChanged(nameof(PageLabel));
+        OnPropertyChanged(nameof(ShowPaging));
         OnPropertyChanged(nameof(IsWriteMode));
         OnPropertyChanged(nameof(ShowWriteBanner));
         OnPropertyChanged(nameof(ShowWriteExecute));
@@ -953,15 +986,12 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         var table = SelectedTable;
         if (ds is null || table is null) return;
 
-        var quoted = ds.Type.Equals("mysql", StringComparison.OrdinalIgnoreCase)
-            ? "`" + table.Name.Replace("`", "``") + "`"
-            : "\"" + (string.IsNullOrEmpty(table.Schema) ? "public" : table.Schema).Replace("\"", "\"\"") + "\"." +
-              "\"" + table.Name.Replace("\"", "\"\"") + "\"";
-
+        var quoted = QuoteObject(ds, table);
+        _paged = true;
+        _pageBaseSql = $"SELECT * FROM {quoted}";
         _pageIndex = 0;
         TotalRows = null;
-        SqlText = $"SELECT * FROM {quoted} LIMIT {PageSize} OFFSET 0";
-        await RunQueryAsync(ds, SqlText);
+        await RunPagedQueryAsync(ds);
 
         // 估算/统计行数（尽力而为）
         try
@@ -974,11 +1004,19 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         catch { /* 行数统计失败不影响预览 */ }
     }
 
+    private async Task RunPagedQueryAsync(DataSourceConfig ds)
+    {
+        if (string.IsNullOrWhiteSpace(_pageBaseSql))
+            return;
+        var sql = $"{_pageBaseSql} LIMIT {PageSize} OFFSET {(long)_pageIndex * PageSize}";
+        SqlText = sql;
+        await RunQueryAsync(ds, sql);
+    }
+
     private async Task ChangePageAsync(int delta)
     {
         var ds = SelectedDatasource;
-        var table = SelectedTable;
-        if (ds is null || table is null) return;
+        if (ds is null || !_paged || string.IsNullOrWhiteSpace(_pageBaseSql)) return;
 
         var target = _pageIndex + delta;
         if (target < 0) return;
@@ -986,12 +1024,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             return;
 
         _pageIndex = target;
-        var quoted = ds.Type.Equals("mysql", StringComparison.OrdinalIgnoreCase)
-            ? "`" + table.Name.Replace("`", "``") + "`"
-            : "\"" + (string.IsNullOrEmpty(table.Schema) ? "public" : table.Schema).Replace("\"", "\"\"") + "\"." +
-              "\"" + table.Name.Replace("\"", "\"\"") + "\"";
-        SqlText = $"SELECT * FROM {quoted} LIMIT {PageSize} OFFSET {(long)_pageIndex * PageSize}";
-        await RunQueryAsync(ds, SqlText);
+        await RunPagedQueryAsync(ds);
     }
 
     private async Task RunQueryAsync(DataSourceConfig ds, string sql)
@@ -1184,6 +1217,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         var driver = _registry.Get(ds.Type);
         if (driver is null) { StatusMessage = $"不支持的类型: {ds.Type}"; return; }
 
+        _paged = false;
+        _pageBaseSql = null;
         Busy = true;
         _cancelRequested = false;
         StatusMessage = "分析执行计划…";
@@ -1389,13 +1424,14 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             MaxRows = ds.MaxRows,
             TimeoutSeconds = ds.TimeoutSeconds,
             ReadOnly = ds.ReadOnly,
-            WriteApproval = ds.WriteApproval
+            WriteApproval = ds.WriteApproval,
+            UsePooling = ds.UsePooling
         };
     }
 
     private bool CanPage(int delta)
     {
-        if (Results is null || SelectedTable is null) return false;
+        if (Results is null || !_paged || string.IsNullOrWhiteSpace(_pageBaseSql)) return false;
         if (delta < 0) return _pageIndex > 0;
         return TotalRows is not long total || (long)(_pageIndex + delta) * PageSize < total;
     }

@@ -150,6 +150,8 @@
                                      DisplayMemberPath="Display" MouseDoubleClick="OnTableDoubleClick">
                                 <ListBox.ContextMenu>
                                     <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                        <MenuItem Header="预览选中表" Command="{Binding PreviewCommand}"/>
+                                        <Separator/>
                                         <MenuItem Header="生成 SELECT" Command="{Binding GenerateSelectCommand}"/>
                                         <MenuItem Header="生成 INSERT" Command="{Binding GenerateInsertCommand}"/>
                                         <MenuItem Header="生成 COUNT(*)" Command="{Binding GenerateCountCommand}"/>
@@ -290,9 +292,6 @@
                         <ui:Button DockPanel.Dock="Left" Content="⚠ 执行写入 (Ctrl+Enter)" Appearance="Danger" Padding="12,4"
                                    Command="{Binding ExecuteCommand}"
                                    Visibility="{Binding ShowWriteExecute, Converter={StaticResource BoolToVis}}"/>
-                        <ui:Button DockPanel.Dock="Left" Content="预览选中表" Padding="12,4" Margin="8,0,0,0"
-                                   Command="{Binding PreviewCommand}"
-                                   Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
                         <ui:Button DockPanel.Dock="Left" Content="导出 CSV" Padding="12,4" Margin="8,0,0,0"
                                    Command="{Binding ExportCsvCommand}"/>
                         <ui:Button DockPanel.Dock="Left" Content="导出 JSON" Padding="12,4" Margin="8,0,0,0"
@@ -307,13 +306,13 @@
                         </Border>
                         <ui:Button DockPanel.Dock="Right" Content="下一页 ▶" Padding="10,4" Margin="6,0,0,0"
                                    Command="{Binding NextPageCommand}"
-                                   Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
+                                   Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
                         <ui:Button DockPanel.Dock="Right" Content="◀ 上一页" Padding="10,4"
                                    Command="{Binding PrevPageCommand}"
-                                   Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
+                                   Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
                         <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0"
                                    Text="{Binding PageLabel}" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                   Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
+                                   Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
                     </DockPanel>
 
                     <DockPanel Grid.Row="2">

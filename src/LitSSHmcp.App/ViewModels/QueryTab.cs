@@ -29,6 +29,13 @@ public sealed class QueryTab : INotifyPropertyChanged
     public int PageSize { get; set; } = 100;
     public int PageIndex { get; set; }
     public long? TotalRows { get; set; }
+
+    /// <summary>是否处于分页预览（表预览）状态；仅此时显示分页控件。</summary>
+    public bool Paged { get; set; }
+
+    /// <summary>分页基准 SQL（不含 LIMIT/OFFSET）。</summary>
+    public string? PageBaseSql { get; set; }
+
     public bool IsWriteMode { get; set; }
     public string StatusMessage { get; set; } = string.Empty;
 

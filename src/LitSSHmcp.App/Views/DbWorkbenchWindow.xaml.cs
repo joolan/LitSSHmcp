@@ -5,6 +5,9 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using ICSharpCode.AvalonEdit.CodeCompletion;
+using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Editing;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Models;
@@ -27,10 +30,113 @@ public partial class DbWorkbenchWindow : FluentWindow
         // AvalonEdit 的 Text 不是依赖属性，无法绑定：这里在编辑器与 VM 之间做双向同步。
         _vm.PropertyChanged += OnVmPropertyChanged;
         SqlBox.TextChanged += OnEditorTextChanged;
+        SqlBox.TextArea.TextEntered += OnEditorTextEntered;
+        SqlBox.TextArea.TextEntering += OnEditorTextEntering;
         SqlBox.Text = _vm.SqlText ?? string.Empty;
 
         if (initial is not null)
+        {
+            _requestedId = initial.Id;
             _vm.RequestSelect(initial.Id);
+        }
+    }
+
+    private string? _requestedId;
+
+    /// <summary>当前或请求打开的数据源 Id（供“同一数据源只开一个窗口”去重）。</summary>
+    public string? CurrentDatasourceId => _vm.SelectedDatasource?.Id ?? _requestedId;
+
+    // ---------- SQL 补全 ----------
+
+    private CompletionWindow? _completionWindow;
+
+    private static readonly string[] SqlKeywords =
+    {
+        "SELECT", "FROM", "WHERE", "JOIN", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN", "OUTER JOIN", "ON",
+        "GROUP BY", "ORDER BY", "HAVING", "LIMIT", "OFFSET", "UNION", "UNION ALL", "WITH",
+        "INSERT INTO", "VALUES", "UPDATE", "SET", "DELETE", "CREATE", "ALTER", "DROP", "TRUNCATE",
+        "TABLE", "VIEW", "INDEX", "PRIMARY KEY", "FOREIGN KEY", "REFERENCES",
+        "AS", "AND", "OR", "NOT", "NULL", "IS NULL", "IN", "LIKE", "BETWEEN", "CASE", "WHEN", "THEN", "ELSE", "END",
+        "COUNT", "SUM", "AVG", "MIN", "MAX", "DISTINCT", "COALESCE", "CAST", "EXPLAIN", "DESC", "ASC"
+    };
+
+    private void OnEditorTextEntered(object? sender, TextCompositionEventArgs e)
+    {
+        if (e.Text.Length != 1)
+            return;
+        var ch = e.Text[0];
+        if (!char.IsLetterOrDigit(ch) && ch != '_')
+            return;
+
+        var doc = SqlBox.Document;
+        var caret = SqlBox.TextArea.Caret.Offset;
+        var start = caret;
+        while (start > 0)
+        {
+            var prev = doc.GetCharAt(start - 1);
+            if (char.IsLetterOrDigit(prev) || prev == '_' || prev == '.')
+                start--;
+            else
+                break;
+        }
+        var word = doc.GetText(start, caret - start);
+        if (word.Length < 2)
+        {
+            CloseCompletion();
+            return;
+        }
+        ShowCompletion(start, word);
+    }
+
+    private void OnEditorTextEntering(object? sender, TextCompositionEventArgs e)
+    {
+        if (e.Text.Length > 0 && _completionWindow is not null)
+        {
+            var ch = e.Text[0];
+            if (!char.IsLetterOrDigit(ch) && ch != '_' && ch != '.')
+                _completionWindow.CompletionList.RequestInsertion(e);
+        }
+    }
+
+    private void ShowCompletion(int startOffset, string prefix)
+    {
+        CloseCompletion();
+        var words = new List<string>(SqlKeywords);
+        words.AddRange(_vm.GetCompletionWords());
+
+        var window = new CompletionWindow(SqlBox.TextArea) { StartOffset = startOffset };
+        var list = window.CompletionList.CompletionData;
+        foreach (var w in words.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (w.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && !w.Equals(prefix, StringComparison.OrdinalIgnoreCase))
+                list.Add(new SqlCompletionData(w));
+        }
+        if (list.Count == 0)
+            return;
+
+        window.Closed += (_, _) => _completionWindow = null;
+        _completionWindow = window;
+        window.Show();
+    }
+
+    private void CloseCompletion()
+    {
+        _completionWindow?.Close();
+        _completionWindow = null;
+    }
+
+    private sealed class SqlCompletionData : ICompletionData
+    {
+        public SqlCompletionData(string text) => Text = text;
+
+        public System.Windows.Media.ImageSource? Image => null;
+        public string Text { get; }
+        public object Content => Text;
+        public object Description => Text;
+        public double Priority => 0;
+
+        public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
+            => textArea.Document.Replace(completionSegment, Text);
     }
 
     private bool _syncingSql;

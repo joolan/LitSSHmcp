@@ -53,21 +53,25 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
     public ICommand TestCommand { get; }
     public ICommand WorkbenchCommand { get; }
 
-    private DbWorkbenchWindow? _workbench;
+    private readonly List<DbWorkbenchWindow> _workbenches = new();
 
     private void OpenWorkbench(DataSourceConfig? target)
     {
-        if (_workbench is { IsLoaded: true })
+        // 同一数据源已打开则激活该窗口；否则新开一个工作台窗口（支持多窗口/多数据源并行）。
+        if (target is not null)
         {
-            if (target is not null)
-                _workbench.SelectDatasource(target);
-            _workbench.Activate();
-            return;
+            var existing = _workbenches.FirstOrDefault(w => w.IsLoaded && w.CurrentDatasourceId == target.Id);
+            if (existing is not null)
+            {
+                existing.Activate();
+                return;
+            }
         }
 
-        _workbench = new DbWorkbenchWindow(target) { Owner = Application.Current.MainWindow, Topmost = false };
-        _workbench.Closed += (_, _) => _workbench = null;
-        _workbench.Show();
+        var window = new DbWorkbenchWindow(target) { Owner = Application.Current.MainWindow, Topmost = false };
+        _workbenches.Add(window);
+        window.Closed += (_, _) => _workbenches.Remove(window);
+        window.Show();
     }
 
     private void RaiseCanExecuteChanged()

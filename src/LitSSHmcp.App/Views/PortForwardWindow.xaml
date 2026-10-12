@@ -39,6 +39,7 @@
                                         <ui:Button DockPanel.Dock="Right" Content="启动" Padding="10,3" Appearance="Primary" Margin="6,0,0,0"
                                                    IsEnabled="{Binding IsIdle}" Click="OnStart"/>
                                         <ui:Button DockPanel.Dock="Right" Content="开浏览器" Padding="10,3" Appearance="Primary" Margin="6,0,0,0"
+                                                   IsEnabled="{Binding IsIdle}"
                                                    Visibility="{Binding IsDynamic, Converter={StaticResource BoolToVis}}"
                                                    ToolTip="用此动态 SOCKS 代理打开 Chromium 系浏览器（全部流量走该服务器）" Click="OnOpenBrowser"/>
                                     </StackPanel>

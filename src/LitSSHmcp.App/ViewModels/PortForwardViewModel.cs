@@ -255,8 +255,9 @@ public sealed class PortForwardViewModel : INotifyPropertyChanged, IDisposable
         {
             row.IsRunning = false;
             row.IsError = false;
-            row.Status = "已停止";
+            row.Status = "正在停止…";
             await _service.StopAsync(row.Id);
+            row.Status = "已停止";
         }
         finally
         {

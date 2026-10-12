@@ -31,6 +31,13 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
     private AgentProviderConfig? _provider;
     private CancellationTokenSource? _cts;
 
+    // 流式输出节流：累积增量、按时间批量刷新，避免逐块触发富文本重渲染把 UI 压死。
+    private const int StreamFlushMs = 80;
+    private readonly StringBuilder _pendingDelta = new();
+    private readonly StringBuilder _pendingReasoning = new();
+    private DateTime _lastFlushUtc = DateTime.UtcNow;
+    private DateTime _lastReasoningFlushUtc = DateTime.UtcNow;
+
     public TemporaryChatViewModel(IConfigService configService, string? initialProviderId)
     {
         _configService = configService;
@@ -182,6 +189,8 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
         }
         finally
         {
+            FlushDelta(turn);
+            FlushReasoning(turn);
             turn.MarkDone(DateTime.UtcNow);
             IsBusy = false;
             _cts?.Dispose();
@@ -194,17 +203,50 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
         switch (e.Kind)
         {
             case AgentEventKind.AssistantText:
-                if (e.Text is { Length: > 0 } chunk)
-                    turn.AssistantText += chunk;
+                var chunk = e.Text ?? string.Empty;
+                if (chunk.Length == 0) break;
+                _pendingDelta.Append(chunk);
+                if ((DateTime.UtcNow - _lastFlushUtc).TotalMilliseconds >= StreamFlushMs)
+                    FlushDelta(turn);
                 break;
+
             case AgentEventKind.AssistantReasoning:
-                if (e.Text is { Length: > 0 } reasoningChunk)
-                    turn.ReasoningText += reasoningChunk;
+                var reasoningChunk = e.Text ?? string.Empty;
+                if (reasoningChunk.Length == 0) break;
+                _pendingReasoning.Append(reasoningChunk);
+                if ((DateTime.UtcNow - _lastReasoningFlushUtc).TotalMilliseconds >= StreamFlushMs)
+                    FlushReasoning(turn);
                 break;
+
             case AgentEventKind.Error:
+                FlushDelta(turn);
+                FlushReasoning(turn);
                 turn.Note = e.Text ?? "发生错误";
                 break;
+
+            case AgentEventKind.Done:
+                FlushDelta(turn);
+                FlushReasoning(turn);
+                break;
         }
+    }
+
+    private void FlushDelta(AgentTurn turn)
+    {
+        if (_pendingDelta.Length == 0)
+            return;
+        turn.AssistantText += _pendingDelta.ToString();
+        _pendingDelta.Clear();
+        _lastFlushUtc = DateTime.UtcNow;
+    }
+
+    private void FlushReasoning(AgentTurn turn)
+    {
+        if (_pendingReasoning.Length == 0)
+            return;
+        turn.ReasoningText += _pendingReasoning.ToString();
+        _pendingReasoning.Clear();
+        _lastReasoningFlushUtc = DateTime.UtcNow;
     }
 
     /// <summary>把文本 + 附件构造成模型输入（图片走 DataContent，文档文本内联；均只在内存，不落盘）。</summary>

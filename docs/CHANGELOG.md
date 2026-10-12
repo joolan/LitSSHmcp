@@ -214,6 +214,7 @@
 
 ### 修复
 
+- **临时聊天发送推理模型时界面卡死**：临时聊天此前对模型流式输出**逐块**刷新，每个增量都触发 Markdown 富文本**全量重渲染**，推理输出量大时把 UI 线程压死（界面无响应、「停止」也点不动）。现改为与主助手一致的**按时间批量刷新**（80ms 节流，结束时补刷），界面保持流畅、可随时停止。
 - **`nginx_tls` 有效配置被 su 交互式 PTY 的登录噪声污染**：`su` 通道机的 `effectiveConfig` 会混入登录 banner（`Last login…`）、命令行回显（`su - root -c '…'`）、`Password:` 提示与 ANSI 转义码（`sudo` 非 PTY 通道本就干净）。现按首个 `# configuration file` 头截断并剥离 ANSI/控制字符，得到干净的有效配置。
 - **`mysql_diagnostics` 报"格式错"**：`SHOW FULL PROCESSLIST` 解析用了错误列序（把 `Host` 当 `db`、把 `Command`（`Query`/`Daemon`/`Sleep`…）当 `Time`），`Convert.ToInt64("Daemon")` 抛 `FormatException` 导致整个诊断失败、只能绕道 `mysql_query`。现按正确列序（`Id,User,Host,db,Command,Time,State,Info`）取值，并以不抛异常的数值转换兜底；`byDatabase` 与"最长运行查询"统计同步修正。
 - **浅色主题主按钮（强调色底）文字发黑**：`Controls.xaml` 的全局隐式 `TextBlock` 样式设置了 `Foreground`，其优先级高于内容控件内部文本的继承值，导致 `ui:Button Appearance=Primary`（以及 ComboBox 等）内部文字被强制为浅色主题的深色前景。移除全局 `Foreground` setter（前景改由 `FluentWindow` 的 `WindowForeground` 继承，随主题变化），并为 `AccentButtonForeground`/`PointerOver`/`Pressed` 统一白色前景，修复"蓝底黑字"。

@@ -245,6 +245,21 @@ public partial class DbWorkbenchWindow : FluentWindow
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
 
+    /// <summary>点击「导出 ▾」/「更多 ▾」时打开其下拉菜单。</summary>
+    private void OnExportMenu(object sender, RoutedEventArgs e) => OpenButtonMenu(sender);
+
+    private void OnMoreMenu(object sender, RoutedEventArgs e) => OpenButtonMenu(sender);
+
+    private static void OpenButtonMenu(object sender)
+    {
+        if (sender is System.Windows.Controls.Button { ContextMenu: { } menu } button)
+        {
+            menu.PlacementTarget = button;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+    }
+
     // ---------- SQL 片段下拉 ----------
 
     private void OnToggleSnippetPanel(object sender, RoutedEventArgs e)

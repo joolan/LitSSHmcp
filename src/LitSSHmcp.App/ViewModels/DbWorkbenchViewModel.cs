@@ -224,6 +224,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             }
             OnPropertyChanged(nameof(CanWrite));
             OnPropertyChanged(nameof(ModeTitle));
+            OnPropertyChanged(nameof(WindowTitle));
             OnPropertyChanged(nameof(SqlHint));
             OnPropertyChanged(nameof(IsRedisDb));
             OnPropertyChanged(nameof(IsSqlDb));
@@ -274,6 +275,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             if (!Set(ref _isWriteMode, value)) return;
             Results = null;
             OnPropertyChanged(nameof(ModeTitle));
+            OnPropertyChanged(nameof(WindowTitle));
             OnPropertyChanged(nameof(SqlHint));
             OnPropertyChanged(nameof(ShowWriteBanner));
             OnPropertyChanged(nameof(ShowWriteExecute));
@@ -290,6 +292,13 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     public string ModeTitle => _isWriteMode ? "数据库工作台（写入）" : "数据库工作台（只读）";
 
+    /// <summary>窗口标题：数据库工作台 · 数据源 · 库（·写入）。</summary>
+    public string WindowTitle =>
+        "数据库工作台"
+        + (SelectedDatasource is null ? string.Empty : $" · {SelectedDatasource.Name}")
+        + (IsSqlDb && !string.IsNullOrWhiteSpace(SelectedDatabase) ? $" · {SelectedDatabase}" : string.Empty)
+        + (_isWriteMode ? "（写入）" : string.Empty);
+
     public string SqlHint => IsRedisDb
         ? (_isWriteMode
             ? "（Redis 命令写入：如 SET / DEL / EXPIRE；危险命令会被拦截）"
@@ -301,7 +310,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public string? SelectedDatabase
     {
         get => _selectedDatabase;
-        set { if (Set(ref _selectedDatabase, value)) { LoadSnippets(); _ = LoadTablesAsync(); RaiseCanExecute(); } }
+        set { if (Set(ref _selectedDatabase, value)) { LoadSnippets(); _ = LoadTablesAsync(); RaiseCanExecute(); OnPropertyChanged(nameof(WindowTitle)); } }
     }
 
     public DbTableInfo? SelectedTable
@@ -854,6 +863,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ShowWriteExecute));
         OnPropertyChanged(nameof(ShowReadExecute));
         OnPropertyChanged(nameof(ModeTitle));
+        OnPropertyChanged(nameof(WindowTitle));
         OnPropertyChanged(nameof(SqlHint));
         OnPropertyChanged(nameof(StatusMessage));
     }

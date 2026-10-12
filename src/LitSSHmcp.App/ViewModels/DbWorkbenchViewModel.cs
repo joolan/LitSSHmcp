@@ -73,7 +73,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         UseSnippetCommand = new RelayCommand(p => UseSnippet(p as DbSqlSnippet));
         FormatSqlCommand = new RelayCommand(_ => SqlText = SqlScriptFormatter.Format(SqlText), _ => !string.IsNullOrWhiteSpace(SqlText));
         ToggleHistoryPanelCommand = new RelayCommand(_ => IsHistoryPanelOpen = !IsHistoryPanelOpen);
-        UseHistoryCommand = new RelayCommand(p => { if (p is string s) SqlText = s; });
+        UseHistoryCommand = new RelayCommand(p => { if (p is string s) { SqlText = s; IsHistoryPanelOpen = false; } });
         ClearHistoryCommand = new RelayCommand(_ => { History.Clear(); PersistHistory(); OnPropertyChanged(nameof(HistoryCount)); OnPropertyChanged(nameof(HistoryButtonLabel)); });        DeleteSnippetCommand = new RelayCommand(p => DeleteSnippet(p as DbSqlSnippet));
         ScanKeysCommand = new RelayCommand(_ => _ = ScanKeysAsync(), _ => IsRedisDb && !Busy);
         UseKeyCommand = new RelayCommand(p => _ = UseKeyAsync(p as string), _ => IsRedisDb && !Busy);

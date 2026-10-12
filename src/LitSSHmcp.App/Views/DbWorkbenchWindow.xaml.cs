@@ -268,6 +268,31 @@ public partial class DbWorkbenchWindow : FluentWindow
     private void OnToggleHistoryPanel(object sender, RoutedEventArgs e)
         => _vm.IsHistoryPanelOpen = !_vm.IsHistoryPanelOpen;
 
+    /// <summary>点击历史下拉以外区域时关闭它（点历史按钮本身由 Click 切换，不在此处理）。</summary>
+    private void OnWindowPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!_vm.IsHistoryPanelOpen)
+            return;
+        var src = e.OriginalSource as DependencyObject;
+        if ((HistoryPopup.Child is DependencyObject content && IsDescendantOf(content, src)) ||
+            IsDescendantOf(HistoryButton, src))
+            return;
+        _vm.IsHistoryPanelOpen = false;
+    }
+
+    private static bool IsDescendantOf(DependencyObject ancestor, DependencyObject? node)
+    {
+        while (node is not null)
+        {
+            if (ReferenceEquals(node, ancestor))
+                return true;
+            node = node is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(node)
+                : LogicalTreeHelper.GetParent(node);
+        }
+        return false;
+    }
+
     private void OnUseSnippetClick(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: DbSqlSnippet snippet })

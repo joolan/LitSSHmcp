@@ -4,7 +4,8 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
         Title="{Binding WindowTitle}" Height="760" Width="1200" MinHeight="520" MinWidth="880"
-        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica"
+        PreviewMouseDown="OnWindowPreviewMouseDown">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <!-- 对象树节点：展开/选中双向绑定 + 展开时懒加载 -->
@@ -497,10 +498,6 @@
         </DockPanel>
 
         <DockPanel Grid.Row="2" Margin="12,8,12,12">
-            <ui:Button DockPanel.Dock="Right" Content="关闭" Width="80" IsCancel="True" Click="OnClose"/>
-            <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="16,0"
-                       Foreground="{DynamicResource AppTextSecondaryBrush}"
-                       Text="{Binding WindowTitle}"/>
             <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" TextWrapping="Wrap"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
         </DockPanel>

@@ -7,6 +7,12 @@
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <!-- 对象树节点：展开/选中双向绑定 + 展开时懒加载 -->
+        <Style x:Key="DbTreeItemStyle" TargetType="TreeViewItem">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+            <EventSetter Event="Expanded" Handler="OnObjectTreeExpanded"/>
+        </Style>
         <!-- 片段菜单行：无边框、悬停高亮（菜单观感） -->
         <Style x:Key="FlatMenuButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
@@ -133,72 +139,39 @@
 
                 <!-- 左：对象浏览 -->
                 <Grid Grid.Column="0">
-                    <!-- SQL：对象 / 列 / 索引 -->
-                    <Grid Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*" MinHeight="90"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*" MinHeight="90"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <DockPanel Grid.Row="0" Margin="0,0,0,4">
+                    <!-- SQL：对象树（表 / 视图 / 存储过程 → 列 / 索引） -->
+                    <DockPanel Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}">
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
                             <ui:Button DockPanel.Dock="Right" Content="刷新" Padding="8,2" Margin="4,0,0,0"
-                                       ToolTip="重新加载对象列表"
-                                       Command="{Binding RefreshObjectsCommand}"/>
-                            <ComboBox DockPanel.Dock="Left" Width="96" Margin="0,0,4,0" VerticalContentAlignment="Center"
-                                      SelectedIndex="{Binding ObjectCategoryIndex}">
-                                <ComboBoxItem Content="表"/>
-                                <ComboBoxItem Content="视图"/>
-                                <ComboBoxItem Content="存储过程"/>
-                            </ComboBox>
+                                       ToolTip="重新加载对象树" Command="{Binding RefreshObjectsCommand}"/>
                             <ui:TextBox FontWeight="Normal" Text="{Binding ObjectFilter, UpdateSourceTrigger=PropertyChanged}"
                                         PlaceholderText="搜索对象…"/>
                         </DockPanel>
-
-                        <GroupBox Grid.Row="1" Header="{Binding ObjectHeader}" Padding="4">
-                            <ListBox ItemsSource="{Binding TablesView}" SelectedItem="{Binding SelectedTable}"
-                                     DisplayMemberPath="Display" MouseDoubleClick="OnTableDoubleClick">
-                                <ListBox.ContextMenu>
-                                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                        <MenuItem Header="预览选中表" Command="{Binding PreviewCommand}"/>
-                                        <Separator/>
-                                        <MenuItem Header="生成 SELECT" Command="{Binding GenerateSelectCommand}"/>
-                                        <MenuItem Header="生成 INSERT" Command="{Binding GenerateInsertCommand}"/>
-                                        <MenuItem Header="生成 COUNT(*)" Command="{Binding GenerateCountCommand}"/>
-                                        <MenuItem Header="生成 CALL" Command="{Binding GenerateCallCommand}"/>
-                                        <Separator/>
-                                        <MenuItem Header="生成 CREATE TABLE (DDL)" Command="{Binding GenerateDdlCommand}"/>
-                                    </ContextMenu>
-                                </ListBox.ContextMenu>
-                            </ListBox>
-                        </GroupBox>
-
-                        <TextBlock Grid.Row="2" Text="列结构" FontWeight="SemiBold" Margin="2,8,0,4"/>
-                        <GroupBox Grid.Row="3" Header="列" Padding="4">
-                            <ListView ItemsSource="{Binding Columns}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                <ListView.View>
-                                    <GridView>
-                                        <GridViewColumn Header="列名" Width="112" DisplayMemberBinding="{Binding Name}"/>
-                                        <GridViewColumn Header="类型" Width="104" DisplayMemberBinding="{Binding Type}"/>
-                                        <GridViewColumn Header="可空" Width="40" DisplayMemberBinding="{Binding Nullable}"/>
-                                        <GridViewColumn Header="主键" Width="40" DisplayMemberBinding="{Binding PrimaryKey}"/>
-                                    </GridView>
-                                </ListView.View>
-                            </ListView>
-                        </GroupBox>
-
-                        <GroupBox Grid.Row="4" Header="索引" Padding="4" MaxHeight="150" Margin="0,8,0,0">
-                            <ListView ItemsSource="{Binding Indexes}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                <ListView.View>
-                                    <GridView>
-                                        <GridViewColumn Header="索引" Width="270" DisplayMemberBinding="{Binding Display}"/>
-                                    </GridView>
-                                </ListView.View>
-                            </ListView>
-                        </GroupBox>
-                    </Grid>
+                        <TreeView ItemsSource="{Binding ObjectTree}" BorderThickness="0" Background="Transparent"
+                                  ItemContainerStyle="{StaticResource DbTreeItemStyle}"
+                                  SelectedItemChanged="OnObjectTreeSelected"
+                                  MouseDoubleClick="OnObjectTreeDoubleClick"
+                                  PreviewMouseRightButtonDown="OnObjectTreeRightDown">
+                            <TreeView.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="预览选中表" Command="{Binding PreviewCommand}"/>
+                                    <Separator/>
+                                    <MenuItem Header="生成 SELECT" Command="{Binding GenerateSelectCommand}"/>
+                                    <MenuItem Header="生成 INSERT" Command="{Binding GenerateInsertCommand}"/>
+                                    <MenuItem Header="生成 COUNT(*)" Command="{Binding GenerateCountCommand}"/>
+                                    <MenuItem Header="生成 CALL" Command="{Binding GenerateCallCommand}"/>
+                                    <Separator/>
+                                    <MenuItem Header="生成 CREATE TABLE (DDL)" Command="{Binding GenerateDdlCommand}"/>
+                                </ContextMenu>
+                            </TreeView.ContextMenu>
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate ItemsSource="{Binding Children}"
+                                                          ItemContainerStyle="{StaticResource DbTreeItemStyle}">
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Margin="2,1"/>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
+                    </DockPanel>
 
                     <!-- Redis：键浏览 -->
                     <DockPanel Visibility="{Binding IsRedisDb, Converter={StaticResource BoolToVis}}">

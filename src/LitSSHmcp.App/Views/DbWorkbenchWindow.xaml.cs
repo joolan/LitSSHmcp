@@ -309,10 +309,39 @@ public partial class DbWorkbenchWindow : FluentWindow
         return false;
     }
 
-    private void OnTableDoubleClick(object sender, MouseButtonEventArgs e)
+    // ---------- 对象树 ----------
+
+    private void OnObjectTreeExpanded(object sender, RoutedEventArgs e)
     {
-        if (_vm.PreviewCommand.CanExecute(null))
-            _vm.PreviewCommand.Execute(null);
+        if ((sender as System.Windows.Controls.TreeViewItem)?.DataContext is DbTreeNode node)
+            _ = _vm.LoadNodeChildrenAsync(node);
+    }
+
+    private void OnObjectTreeSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
+    {
+        if (e.NewValue is DbTreeNode node)
+            _vm.OnTreeNodeSelected(node);
+    }
+
+    private void OnObjectTreeRightDown(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<System.Windows.Controls.TreeViewItem>(e.OriginalSource as DependencyObject) is { } item)
+        {
+            item.IsSelected = true;
+            _vm.OnTreeNodeSelected(item.DataContext as DbTreeNode);
+        }
+    }
+
+    private void OnObjectTreeDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<System.Windows.Controls.TreeViewItem>(e.OriginalSource as DependencyObject)
+                is { DataContext: DbTreeNode { Kind: DbTreeNodeKind.Table or DbTreeNodeKind.View } node })
+        {
+            _vm.OnTreeNodeSelected(node);
+            if (_vm.PreviewCommand.CanExecute(null))
+                _vm.PreviewCommand.Execute(null);
+            e.Handled = true;
+        }
     }
 
     private void OnKeyDoubleClick(object sender, MouseButtonEventArgs e)

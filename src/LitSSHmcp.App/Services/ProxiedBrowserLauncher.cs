@@ -96,7 +96,7 @@ public static class ProxiedBrowserLauncher
             .Append("--disable-quic ")
             .Append("--force-webrtc-ip-handling-policy=disable_non_proxied_udp ")
             .Append('"').Append(htmlPath).Append("\" ")
-            .Append("\"https://api.ipify.org\"");   // 顶层新标签页直接看出口 IP（iframe 会被跟踪防护拦）
+            .Append("\"https://ipinfo.io/json\"");   // 顶层新标签页直接看出口 IP（iframe 会被跟踪防护拦）
 
         var psi = new ProcessStartInfo(browserPath) { Arguments = args.ToString(), UseShellExecute = true };
         var process = Process.Start(psi) ?? throw new InvalidOperationException("无法启动浏览器进程。");
@@ -125,14 +125,14 @@ public static class ProxiedBrowserLauncher
                "<h2>本窗口已通过 SSH 服务器代理</h2>" +
                "<p>出口服务器：<b>" + name + "</b>（本机 SOCKS5 <code>127.0.0.1:" + socksPort + "</code>）</p>" +
                "<p>出口 IP（应为你服务器的出口 IP）：<b id=\"ip\">检测中…</b></p>" +
-               "<p>已在新标签页打开 <a href=\"https://api.ipify.org\" target=\"_blank\">api.ipify.org</a>；也可点 " +
+               "<p>已在新标签页打开 <a href=\"https://ipinfo.io/json\" target=\"_blank\">ipinfo.io/json</a>；也可点 " +
                "<a href=\"https://ifconfig.me/ip\" target=\"_blank\">ifconfig.me/ip</a> · " +
                "<a href=\"https://ipinfo.io/ip\" target=\"_blank\">ipinfo.io/ip</a> 核对。<br>" +
                "<span style=\"color:#666\">若显示的仍是本机 IP，说明代理未生效。</span></p>" +
                "<p style=\"color:#a00;margin-top:16px\">提示：SOCKS 覆盖 HTTP/HTTPS；QUIC/WebRTC 已尽量禁用，但仍可能有绕过（插件/原生 socket）。" +
                "需要强隔离请配合系统防火墙封 UDP 或使用 Windows Sandbox/虚拟机。</p>" +
                "<script>(async()=>{const el=document.getElementById('ip');" +
-               "const urls=['https://api.ipify.org?format=json','https://ipinfo.io/json','https://ifconfig.co/json','https://api.ipify.org'];" +
+               "const urls=['https://ipinfo.io/json','https://ifconfig.co/json','https://api.ipify.org?format=json'];" +
                "for(const u of urls){try{const r=await fetch(u,{cache:'no-store'});if(!r.ok)continue;const t=await r.text();let ip='';" +
                "try{const j=JSON.parse(t);ip=j.ip||j.ip_addr||j.query||'';}catch{ip=t.trim();}" +
                "if(ip){el.textContent=ip;el.style.color='#0a0';return;}}catch(e){}}" +

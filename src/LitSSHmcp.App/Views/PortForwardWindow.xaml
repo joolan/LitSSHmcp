@@ -5,6 +5,9 @@
         xmlns:models="clr-namespace:LitSSHmcp.Core.Models;assembly=LitSSHmcp.Core"
         Title="端口转发" Height="640" Width="900"
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </ui:FluentWindow.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -35,19 +38,9 @@
                                                    IsEnabled="{Binding IsRunning}" Click="OnStop"/>
                                         <ui:Button DockPanel.Dock="Right" Content="启动" Padding="10,3" Appearance="Primary" Margin="6,0,0,0"
                                                    IsEnabled="{Binding IsIdle}" Click="OnStart"/>
-                                        <ui:Button DockPanel.Dock="Right" Content="开浏览器" Padding="10,3" Margin="6,0,0,0"
-                                                   ToolTip="用此动态 SOCKS 代理打开 Chromium 系浏览器（全部流量走该服务器）" Click="OnOpenBrowser">
-                                            <ui:Button.Style>
-                                                <Style TargetType="ui:Button">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Type}" Value="{x:Static models:PortForwardType.Dynamic}">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </ui:Button.Style>
-                                        </ui:Button>
+                                        <ui:Button DockPanel.Dock="Right" Content="开浏览器" Padding="10,3" Appearance="Primary" Margin="6,0,0,0"
+                                                   Visibility="{Binding IsDynamic, Converter={StaticResource BoolToVis}}"
+                                                   ToolTip="用此动态 SOCKS 代理打开 Chromium 系浏览器（全部流量走该服务器）" Click="OnOpenBrowser"/>
                                     </StackPanel>
                                     <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" VerticalAlignment="Center"
                                                MinWidth="150" HorizontalAlignment="Right" Margin="12,0,12,0"

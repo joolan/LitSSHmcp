@@ -330,7 +330,14 @@ public sealed class PortForwardRow : INotifyPropertyChanged
     public string ServerId { get => _serverId; set { _serverId = value; OnPropertyChanged(); } }
 
     private PortForwardType _type = PortForwardType.Local;
-    public PortForwardType Type { get => _type; set { _type = value; OnPropertyChanged(); } }
+    public PortForwardType Type
+    {
+        get => _type;
+        set { _type = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsDynamic)); }
+    }
+
+    /// <summary>是否动态 SOCKS（用于显示“开浏览器”按钮）。</summary>
+    public bool IsDynamic => _type == PortForwardType.Dynamic;
 
     private string _bindHost = "127.0.0.1";
     public string BindHost { get => _bindHost; set { _bindHost = value; OnPropertyChanged(); } }

@@ -479,10 +479,35 @@
                             <DockPanel Visibility="{Binding ShowPlan, Converter={StaticResource BoolToVis}}">
                                 <ui:Button DockPanel.Dock="Top" Content="关闭计划" Padding="10,3" HorizontalAlignment="Left" Margin="0,0,0,4"
                                            Command="{Binding ClosePlanCommand}"/>
-                                <TextBox IsReadOnly="True" Text="{Binding PlanText}" FontFamily="Consolas" FontSize="12"
-                                         Background="#1E1E1E" Foreground="#DDDDDD" BorderThickness="0" Padding="8"
-                                         TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                         AcceptsReturn="True"/>
+                                <Grid>
+                                    <TreeView ItemsSource="{Binding PlanNodes}" BorderThickness="0" Background="Transparent"
+                                              Visibility="{Binding HasPlanTree, Converter={StaticResource BoolToVis}}">
+                                        <TreeView.ItemTemplate>
+                                            <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name}" FontFamily="Consolas" FontSize="12"/>
+                                                    <TextBlock Text="{Binding Detail}" Margin="8,0,0,0" FontFamily="Consolas"
+                                                               FontSize="11" VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                </StackPanel>
+                                            </HierarchicalDataTemplate>
+                                        </TreeView.ItemTemplate>
+                                    </TreeView>
+                                    <TextBox IsReadOnly="True" Text="{Binding PlanText}" FontFamily="Consolas" FontSize="12"
+                                             Background="#1E1E1E" Foreground="#DDDDDD" BorderThickness="0" Padding="8"
+                                             TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             AcceptsReturn="True">
+                                        <TextBox.Style>
+                                            <Style TargetType="TextBox">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasPlanTree}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBox.Style>
+                                    </TextBox>
+                                </Grid>
                             </DockPanel>
 
                             <DockPanel Visibility="{Binding ShowMessages, Converter={StaticResource BoolToVis}}">

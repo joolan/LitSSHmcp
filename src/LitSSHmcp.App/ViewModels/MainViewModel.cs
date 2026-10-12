@@ -942,9 +942,37 @@ public class MainViewModel : INotifyPropertyChanged
         }
 
         _agentWindow = new AgentWindow(_configService, AppServiceFactory.CreateAgentContextStore(), AppServiceFactory.BundledSkillsDir, ResolveSessionTerminal) { Topmost = false };
-        _agentWindow.Closed += (_, _) => _agentWindow = null;
+        _agentWindow.ViewModel.SessionRemoved += CloseSessionTerminal;
+        _agentWindow.Closed += (_, _) =>
+        {
+            if (_agentWindow is not null)
+                _agentWindow.ViewModel.SessionRemoved -= CloseSessionTerminal;
+            _agentWindow = null;
+        };
         _agentWindow.Show();
         return _agentWindow;
+    }
+
+    /// <summary>AI 会话被删除/归档时，关闭其对应的本机终端标签（避免孤儿终端）。</summary>
+    private void CloseSessionTerminal(long sessionId)
+    {
+        void Close()
+        {
+            if (!_aiTerminals.Remove(sessionId.ToString(), out var vm))
+                return;
+            _ = vm.DisposeAsync();
+            if (Sessions.Contains(vm))
+            {
+                Sessions.Remove(vm);
+                RebuildDockedSessions();
+            }
+        }
+
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+            dispatcher.Invoke(Close);
+        else
+            Close();
     }
 
     private void OpenAgent() => EnsureAgentWindow();

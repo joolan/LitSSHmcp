@@ -108,6 +108,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>请求打开设置窗口（参数为初始 Tab：null=助手设置 / "model"=大模型设置）。</summary>
     public event Action<string?>? SettingsRequested;
 
+    /// <summary>会话被删除/归档时触发（参数为会话 Id），供宿主清理该会话的本机终端等资源。</summary>
+    public event Action<long>? SessionRemoved;
+
     private void RebuildComboProviders()
     {
         ComboProviders.Clear();
@@ -1233,6 +1236,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     public async Task DeleteSessionAsync(AgentSessionRow? session)
     {
         if (session is null) return;
+        SessionRemoved?.Invoke(session.Id);
         var wasCurrent = session.Id == _sessionId;
         await _store.DeleteSessionAsync(session.Id);
         await ReloadSessionsAsync();
@@ -1274,6 +1278,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (session is null)
             return;
+        SessionRemoved?.Invoke(session.Id);
         var wasCurrent = session.Id == _sessionId;
         await _store.ArchiveSessionAsync(session.Id);
         await ReloadSessionsAsync();

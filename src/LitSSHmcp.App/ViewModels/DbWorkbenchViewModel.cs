@@ -41,6 +41,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private long? _totalRows;
     private bool _paged;
     private string? _pageBaseSql;
+    private bool _pageUpdatesEditor;
     private bool _busy;
     private bool _isWriteMode;
     private bool _isSnippetPanelOpen;
@@ -92,7 +93,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         OpenSqlFileCommand = new RelayCommand(_ => OpenSqlFile());
         SaveSqlFileCommand = new RelayCommand(_ => SaveSqlFile());
         GenerateDdlCommand = new RelayCommand(_ => GenerateDdl(), _ => IsSqlDb && SelectedTable is not null && Columns.Count > 0 && !Busy);
-        ClosePlanCommand = new RelayCommand(_ => SelectResultTab(ResultSetTabs.FirstOrDefault(t => t.Kind == ResultTabKind.Result) ?? ResultSetTabs.FirstOrDefault()));
+        ClosePlanCommand = new RelayCommand(_ => { PlanText = string.Empty; PlanNodes.Clear(); OnPropertyChanged(nameof(HasPlanTree)); RebuildResultTabs(); });
 
         _tabSeq = 1;
         Tabs.Add(new QueryTab { Title = "查询 1" });
@@ -348,6 +349,11 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     /// <summary>EXPLAIN 计划的可读文本（PG 为缩进文本计划）。</summary>
     public string PlanText { get => _planText; set => Set(ref _planText, value); }
 
+    /// <summary>EXPLAIN 计划树（PostgreSQL FORMAT JSON 解析）。</summary>
+    public ObservableCollection<SqlPlanNode> PlanNodes { get; } = new();
+
+    public bool HasPlanTree => PlanNodes.Count > 0;
+
     /// <summary>结果区当前子标签（结果集 / 消息 / 计划）。</summary>
     public ResultSetRef? SelectedResultTab
     {
@@ -480,21 +486,46 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         {
             var eff = Effective(ds, SelectedDatabase);
             Tables.Clear();
-            foreach (var t in await explorer.ListTablesAsync(eff, SelectedDatabase!))
-                Tables.Add(t);
+            var warnings = new List<string>();
+
+            try
+            {
+                foreach (var t in await explorer.ListTablesAsync(eff, SelectedDatabase!))
+                    Tables.Add(t);
+            }
+            catch (Exception ex)
+            {
+                warnings.Add("表: " + ex.Message);
+            }
 
             Views.Clear();
             Procedures.Clear();
             if (_registry.Get(ds.Type) is ISchemaObjectExplorer objExplorer)
             {
-                foreach (var v in await objExplorer.ListViewsAsync(eff, SelectedDatabase!))
-                    Views.Add(v);
-                foreach (var p in await objExplorer.ListProceduresAsync(eff, SelectedDatabase!))
-                    Procedures.Add(p);
+                try
+                {
+                    foreach (var v in await objExplorer.ListViewsAsync(eff, SelectedDatabase!))
+                        Views.Add(v);
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add("视图: " + ex.Message);
+                }
+                try
+                {
+                    foreach (var p in await objExplorer.ListProceduresAsync(eff, SelectedDatabase!))
+                        Procedures.Add(p);
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add("存储过程: " + ex.Message);
+                }
             }
 
             RebuildObjectTree();
-            StatusMessage = $"表 {Tables.Count} · 视图 {Views.Count} · 存储过程 {Procedures.Count}";
+            StatusMessage = warnings.Count == 0
+                ? $"表 {Tables.Count} · 视图 {Views.Count} · 存储过程 {Procedures.Count}"
+                : $"部分对象读取失败（{string.Join("；", warnings)}）";
         }
         catch (Exception ex)
         {
@@ -695,7 +726,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             ResultSetTabs.Add(t);
         if (Messages.Count > 0)
             ResultSetTabs.Add(new ResultSetRef { Kind = ResultTabKind.Messages, Label = "消息" });
-        if (PlanText.Length > 0)
+        if (PlanText.Length > 0 || PlanNodes.Count > 0)
             ResultSetTabs.Add(new ResultSetRef { Kind = ResultTabKind.Plan, Label = "计划" });
 
         var next = selectPlan
@@ -765,7 +796,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     private void PersistHistory() => WorkbenchHistoryStore.Save(History);
 
-    private void AddMessage(string message)    {
+    private void AddMessage(string message)
+    {
         Messages.Add($"{DateTime.Now:HH:mm:ss}  {message}");
         while (Messages.Count > 200)
             Messages.RemoveAt(0);
@@ -882,22 +914,55 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             return;
         }
 
-        // 逐条执行（只读），显示最后一条结果；任一条被拒/取消则停止。
+        // 单条可分页 SELECT：进入分页预览（不重写编辑器内容）。
+        if (statements.Count == 1)
+        {
+            var text = sql.Substring(statements[0].Start, statements[0].Length);
+            if (_sqlFilter.CheckReadOnly(text) == SqlFilterResult.Blocked)
+            {
+                StatusMessage = "只读模式仅允许单条 SELECT / SHOW / EXPLAIN / DESC / WITH 查询（写语句请切到写入模式）。";
+                return;
+            }
+            if (IsPageableSelect(text))
+            {
+                _paged = true;
+                _pageUpdatesEditor = false;
+                _pageBaseSql = text;
+                _pageIndex = 0;
+                TotalRows = null;
+                RecordHistory(text);
+                await RunPagedQueryAsync(ds);
+                return;
+            }
+            await RunQueryAsync(ds, text);
+            return;
+        }
+
+        // 多条语句：逐条执行（只读），显示最后一条结果；任一条被拒/取消则停止。
         for (var k = 0; k < statements.Count; k++)
         {
             var stmt = statements[k];
             var text = sql.Substring(stmt.Start, stmt.Length);
             if (_sqlFilter.CheckReadOnly(text) == SqlFilterResult.Blocked)
             {
-                StatusMessage = statements.Count > 1
-                    ? $"第 {k + 1} 条语句被只读策略拒绝（只读仅允许单条 SELECT/SHOW/EXPLAIN/DESC/WITH）。"
-                    : "只读模式仅允许单条 SELECT / SHOW / EXPLAIN / DESC / WITH 查询（写语句请切到写入模式）。";
+                StatusMessage = $"第 {k + 1} 条语句被只读策略拒绝（只读仅允许单条 SELECT/SHOW/EXPLAIN/DESC/WITH）。";
                 return;
             }
             await RunQueryAsync(ds, text);
             if (_cancelRequested)
                 return;
         }
+    }
+
+    /// <summary>是否可安全分页：单条 SELECT/WITH 且不含 LIMIT/OFFSET/FETCH（含则不改写、不分页）。</summary>
+    private static bool IsPageableSelect(string text)
+    {
+        var t = text.TrimStart();
+        if (!(t.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) ||
+              t.StartsWith("WITH", StringComparison.OrdinalIgnoreCase)))
+            return false;
+        return !System.Text.RegularExpressions.Regex.IsMatch(
+            text, @"\b(LIMIT|OFFSET|FETCH)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 
     /// <summary>从编辑器执行：有选区执行选区，否则执行光标所在语句（可含多条语句）。</summary>
@@ -1294,6 +1359,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
         var quoted = QuoteObject(ds, table);
         _paged = true;
+        _pageUpdatesEditor = true;
         _pageBaseSql = $"SELECT * FROM {quoted}";
         _pageIndex = 0;
         TotalRows = null;
@@ -1315,7 +1381,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(_pageBaseSql))
             return;
         var sql = $"{_pageBaseSql} LIMIT {PageSize} OFFSET {(long)_pageIndex * PageSize}";
-        SqlText = sql;
+        if (_pageUpdatesEditor)
+            SqlText = sql;
         await RunQueryAsync(ds, sql);
     }
 
@@ -1341,6 +1408,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         Busy = true;
         _cancelRequested = false;
         PlanText = string.Empty;
+        PlanNodes.Clear();
+        OnPropertyChanged(nameof(HasPlanTree));
         StatusMessage = "查询中…";
         var cts = new CancellationTokenSource();
         _queryCts = cts;
@@ -1535,7 +1604,33 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         try
         {
-            var result = await driver.ExplainAsync(Effective(ds, SelectedDatabase), sql, cts.Token);
+            var eff = Effective(ds, SelectedDatabase);
+            PlanNodes.Clear();
+            OnPropertyChanged(nameof(HasPlanTree));
+
+            // PostgreSQL：优先 EXPLAIN (FORMAT JSON) 解析为计划树（含成本）。
+            if (ds.Type.Equals("postgres", StringComparison.OrdinalIgnoreCase))
+            {
+                var normalized = sql.Trim().TrimEnd(';');
+                var jsonResult = await driver.QueryAsync(eff, $"EXPLAIN (FORMAT JSON) {normalized}", 100, cts.Token);
+                if (jsonResult.Success && jsonResult.Columns.Length >= 1 && jsonResult.Rows.Count > 0 &&
+                    jsonResult.Rows[0].TryGetValue(jsonResult.Columns[0], out var cell) && cell is string json)
+                {
+                    foreach (var n in SqlPlanParser.ParsePostgresJson(json))
+                        PlanNodes.Add(n);
+                }
+                if (PlanNodes.Count > 0)
+                {
+                    PlanText = string.Empty;
+                    ResultSetTabs.Clear();
+                    RebuildResultTabs(selectPlan: true);
+                    OnPropertyChanged(nameof(HasPlanTree));
+                    StatusMessage = "执行计划（计划树）";
+                    return;
+                }
+            }
+
+            var result = await driver.ExplainAsync(eff, sql, cts.Token);
             if (!result.Success)
             {
                 StatusMessage = "执行计划失败: " + result.Error;

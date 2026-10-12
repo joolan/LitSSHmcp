@@ -352,7 +352,7 @@ public class PostgresDriver : IDatasourceDriver, IDatabaseExplorer, ISchemaObjec
         using var session = await _connectionProvider.OpenAsync(ds, ct);
         await using var cmd = session.Connection.CreateCommand();
         cmd.CommandText =
-            "SELECT t.table_schema, t.table_name, c.reltuples::bigint " +
+            "SELECT t.table_schema, t.table_name, c.reltuples::bigint, obj_description(c.oid) " +
             "FROM information_schema.tables t " +
             "LEFT JOIN pg_namespace n ON n.nspname = t.table_schema " +
             "LEFT JOIN pg_class c ON c.relname = t.table_name AND c.relnamespace = n.oid " +
@@ -368,7 +368,8 @@ public class PostgresDriver : IDatasourceDriver, IDatabaseExplorer, ISchemaObjec
             {
                 Schema = reader.GetString(0),
                 Name = reader.GetString(1),
-                Rows = rows
+                Rows = rows,
+                Comment = reader.IsDBNull(3) || reader.GetString(3).Length == 0 ? null : reader.GetString(3)
             });
         }
         return list;
@@ -395,8 +396,14 @@ public class PostgresDriver : IDatasourceDriver, IDatabaseExplorer, ISchemaObjec
         }
 
         await using var cmd = session.Connection.CreateCommand();
-        cmd.CommandText = "SELECT column_name, data_type, is_nullable, column_default " +
-                          "FROM information_schema.columns WHERE table_schema=@s AND table_name=@t ORDER BY ordinal_position";
+        cmd.CommandText =
+            "SELECT cols.column_name, cols.data_type, cols.is_nullable, cols.column_default, " +
+            "(SELECT pg_catalog.col_description(c.oid, a.attnum) FROM pg_catalog.pg_attribute a " +
+            " JOIN pg_catalog.pg_class c ON c.oid = a.attrelid " +
+            " JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace " +
+            " WHERE n.nspname = @s AND c.relname = @t AND a.attname = cols.column_name) AS comment " +
+            "FROM information_schema.columns cols " +
+            "WHERE cols.table_schema=@s AND cols.table_name=@t ORDER BY cols.ordinal_position";
         cmd.Parameters.AddWithValue("@s", schemaName);
         cmd.Parameters.AddWithValue("@t", table);
         var list = new List<DbColumnInfo>();
@@ -410,10 +417,56 @@ public class PostgresDriver : IDatasourceDriver, IDatabaseExplorer, ISchemaObjec
                 Type = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
                 Nullable = !reader.IsDBNull(2) && reader.GetString(2).Equals("YES", StringComparison.OrdinalIgnoreCase),
                 PrimaryKey = pk.Contains(name),
-                Default = reader.IsDBNull(3) ? null : Convert.ToString(reader.GetValue(3))
+                Default = reader.IsDBNull(3) ? null : Convert.ToString(reader.GetValue(3)),
+                Comment = reader.IsDBNull(4) || reader.GetString(4).Length == 0 ? null : reader.GetString(4)
             });
         }
         return list;
+    }
+
+    public async Task<IReadOnlyList<DbForeignKeyInfo>> ListForeignKeysAsync(DataSourceConfig ds, string database, string table, string? schema = null, CancellationToken ct = default)
+    {
+        var schemaName = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText =
+            "SELECT tc.constraint_name, kcu.column_name, ccu.table_schema, ccu.table_name, ccu.column_name, kcu.ordinal_position " +
+            "FROM information_schema.table_constraints tc " +
+            "JOIN information_schema.key_column_usage kcu " +
+            "  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema " +
+            "JOIN information_schema.constraint_column_usage ccu " +
+            "  ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema " +
+            "WHERE tc.constraint_type='FOREIGN KEY' AND tc.table_schema=@s AND tc.table_name=@t " +
+            "ORDER BY tc.constraint_name, kcu.ordinal_position";
+        cmd.Parameters.AddWithValue("@s", schemaName);
+        cmd.Parameters.AddWithValue("@t", table);
+
+        var rows = new List<(string Name, string Col, string RefSchema, string RefTable, string RefCol, int Ord)>();
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                rows.Add((
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                    reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                    reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+                    Convert.ToInt32(reader.GetValue(5))));
+            }
+        }
+
+        return rows
+            .GroupBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new DbForeignKeyInfo
+            {
+                Name = g.Key,
+                Columns = g.OrderBy(x => x.Ord).Select(x => x.Col).ToArray(),
+                RefSchema = g.First().RefSchema,
+                RefTable = g.First().RefTable,
+                RefColumns = g.OrderBy(x => x.Ord).Select(x => x.RefCol).Distinct().ToArray()
+            })
+            .ToList();
     }
 
     private static string serverVersionOf(string? version)

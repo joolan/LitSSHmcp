@@ -13,6 +13,9 @@ public class DbTableInfo
     /// <summary>估算行数（information_schema.TABLE_ROWS，可能不精确；null = 未知）。</summary>
     public long? Rows { get; set; }
 
+    /// <summary>表注释（可能为空）。</summary>
+    public string? Comment { get; set; }
+
     /// <summary>展示名（PG: schema.name；MySQL: name）。</summary>
     public string Display => string.IsNullOrEmpty(Schema) ? Name : $"{Schema}.{Name}";
 }
@@ -24,6 +27,24 @@ public class DbColumnInfo
     public bool Nullable { get; set; }
     public bool PrimaryKey { get; set; }
     public string? Default { get; set; }
+
+    /// <summary>列注释（可能为空）。</summary>
+    public string? Comment { get; set; }
+}
+
+/// <summary>外键信息。</summary>
+public class DbForeignKeyInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public string[] Columns { get; set; } = Array.Empty<string>();
+    public string RefSchema { get; set; } = string.Empty;
+    public string RefTable { get; set; } = string.Empty;
+    public string[] RefColumns { get; set; } = Array.Empty<string>();
+
+    public string Display =>
+        string.Join(", ", Columns) + " → " +
+        (string.IsNullOrEmpty(RefSchema) ? RefTable : $"{RefSchema}.{RefTable}") +
+        (RefColumns.Length > 0 ? " (" + string.Join(", ", RefColumns) + ")" : string.Empty);
 }
 
 /// <summary>库中的一个对象（视图 / 存储过程）。</summary>
@@ -56,6 +77,7 @@ public interface ISchemaObjectExplorer
     Task<IReadOnlyList<DbObjectInfo>> ListViewsAsync(DataSourceConfig ds, string database, CancellationToken ct = default);
     Task<IReadOnlyList<DbObjectInfo>> ListProceduresAsync(DataSourceConfig ds, string database, CancellationToken ct = default);
     Task<IReadOnlyList<DbIndexInfo>> ListIndexesAsync(DataSourceConfig ds, string database, string table, string? schema = null, CancellationToken ct = default);
+    Task<IReadOnlyList<DbForeignKeyInfo>> ListForeignKeysAsync(DataSourceConfig ds, string database, string table, string? schema = null, CancellationToken ct = default);
 }
 
 /// <summary>

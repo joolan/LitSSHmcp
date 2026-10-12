@@ -250,6 +250,40 @@ public partial class DbWorkbenchWindow : FluentWindow
 
     private void OnMoreMenu(object sender, RoutedEventArgs e) => OpenButtonMenu(sender);
 
+    // ---- AI 分析 SQL：打开独立的临时聊天并预填提示词（与 AI 运维助手的临时聊天相互独立） ----
+    private TemporaryChatWindow? _sqlAiChat;
+
+    private void OnAnalyzeSql(object sender, RoutedEventArgs e)
+    {
+        var sql = _vm.SqlText?.Trim();
+        if (string.IsNullOrWhiteSpace(sql))
+            return;
+
+        var prompt =
+            "请分析下面这条 SQL 语句，评估：\n" +
+            "1) 执行性能（可优化点、索引建议、扫描方式）；\n" +
+            "2) 潜在风险（误操作、锁/长事务、全表扫描、数据安全）；\n" +
+            "3) 影响范围（读写量、涉及的表/行数）；\n" +
+            "4) 改进建议。若不确定表结构可先说明你的假设。\n\n```sql\n" + sql + "\n```";
+
+        if (_sqlAiChat is { IsLoaded: true })
+        {
+            _sqlAiChat.Activate();
+            _sqlAiChat.Prefill(prompt);
+            return;
+        }
+
+        var window = new TemporaryChatWindow(new LitSSHmcp.Core.Services.Storage.ConfigService(), null)
+        {
+            Owner = this,
+            Topmost = false
+        };
+        window.Closed += (_, _) => _sqlAiChat = null;
+        _sqlAiChat = window;
+        window.Show();
+        window.Prefill(prompt);
+    }
+
     private static void OpenButtonMenu(object sender)
     {
         if (sender is System.Windows.Controls.Button { ContextMenu: { } menu } button)

@@ -12,7 +12,8 @@ public enum DbTreeNodeKind
     View,
     Procedure,
     Column,
-    Index
+    Index,
+    ForeignKey
 }
 
 /// <summary>数据库工作台左栏对象树的一个节点（库 → 表/视图/过程 → 列/索引）。</summary>

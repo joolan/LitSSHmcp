@@ -351,6 +351,7 @@
                                     <ContextMenu>
                                         <MenuItem Header="导出 CSV" Command="{Binding ExportCsvCommand}"/>
                                         <MenuItem Header="导出 JSON" Command="{Binding ExportJsonCommand}"/>
+                                        <MenuItem Header="导出 Excel (.xlsx)" Command="{Binding ExportExcelCommand}"/>
                                     </ContextMenu>
                                 </ui:Button.ContextMenu>
                             </ui:Button>
@@ -361,6 +362,8 @@
                                     <ContextMenu>
                                         <MenuItem Header="执行计划 (EXPLAIN)" Command="{Binding ExplainCommand}"/>
                                         <MenuItem Header="刷新对象列表" Command="{Binding RefreshObjectsCommand}"/>
+                                        <Separator/>
+                                        <MenuItem Header="AI 分析此 SQL…" Click="OnAnalyzeSql"/>
                                     </ContextMenu>
                                 </ui:Button.ContextMenu>
                             </ui:Button>

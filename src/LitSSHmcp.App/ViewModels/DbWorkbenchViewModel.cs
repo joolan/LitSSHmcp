@@ -83,6 +83,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         SelectTabCommand = new RelayCommand(p => { if (p is QueryTab t) SelectedTab = t; });
         ExplainCommand = new RelayCommand(_ => _ = ExplainAsync(), _ => IsSqlDb && !string.IsNullOrWhiteSpace(SqlText) && !Busy);
         ExportJsonCommand = new RelayCommand(_ => ExportJson(), _ => Results is not null && !Busy);
+        ExportExcelCommand = new RelayCommand(_ => ExportExcel(), _ => Results is not null && !Busy);
         GenerateSelectCommand = new RelayCommand(_ => GenerateObjectSql("select"), _ => IsSqlDb && SelectedTable is not null && !Busy);
         GenerateInsertCommand = new RelayCommand(_ => GenerateObjectSql("insert"), _ => IsSqlDb && SelectedTable is not null && !Busy);
         GenerateCountCommand = new RelayCommand(_ => GenerateObjectSql("count"), _ => IsSqlDb && SelectedTable is not null && !Busy);
@@ -165,6 +166,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public ICommand SelectTabCommand { get; }
     public ICommand ExplainCommand { get; }
     public ICommand ExportJsonCommand { get; }
+    public ICommand ExportExcelCommand { get; }
     public ICommand GenerateSelectCommand { get; }
     public ICommand GenerateInsertCommand { get; }
     public ICommand GenerateCountCommand { get; }
@@ -546,7 +548,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
         var tableFolder = new DbTreeNode { Name = $"表 ({Tables.Count})", Key = "folder:tables", Kind = DbTreeNodeKind.Folder, HasChildren = true };
         foreach (var t in Tables.Where(t => Match(t.Display)))
-            tableFolder.Children.Add(new DbTreeNode { Name = t.Display, Key = "obj:" + t.Display, Kind = DbTreeNodeKind.Table, HasChildren = true, Tag = t });
+            tableFolder.Children.Add(new DbTreeNode { Name = t.Display + CommentSuffix(t.Comment), Key = "obj:" + t.Display, Kind = DbTreeNodeKind.Table, HasChildren = true, Tag = t });
 
         var viewFolder = new DbTreeNode { Name = $"视图 ({Views.Count})", Key = "folder:views", Kind = DbTreeNodeKind.Folder, HasChildren = true };
         foreach (var v in Views.Where(v => Match(v.Display)))
@@ -614,33 +616,57 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             return;
         if (_registry.Get(ds.Type) is not IDatabaseExplorer explorer)
             return;
+        var eff = Effective(ds, SelectedDatabase);
 
         try
         {
-            var cols = await explorer.ListColumnsAsync(Effective(ds, SelectedDatabase), SelectedDatabase!, table.Name, table.Schema);
+            var cols = await explorer.ListColumnsAsync(eff, SelectedDatabase!, table.Name, table.Schema);
             var colFolder = new DbTreeNode { Name = $"列 ({cols.Count})", Kind = DbTreeNodeKind.Folder, HasChildren = cols.Count > 0 };
             foreach (var c in cols)
                 colFolder.Children.Add(new DbTreeNode
                 {
-                    Name = c.Name + " : " + c.Type + (c.PrimaryKey ? "  PK" : string.Empty) + (c.Nullable ? string.Empty : "  NOT NULL"),
+                    Name = c.Name + " : " + c.Type + (c.PrimaryKey ? "  PK" : string.Empty) + (c.Nullable ? string.Empty : "  NOT NULL") + CommentSuffix(c.Comment),
                     Kind = DbTreeNodeKind.Column
                 });
             node.Children.Add(colFolder);
-
-            if (node.Kind == DbTreeNodeKind.Table && _registry.Get(ds.Type) is ISchemaObjectExplorer se)
-            {
-                var idx = await se.ListIndexesAsync(Effective(ds, SelectedDatabase), SelectedDatabase!, table.Name, table.Schema);
-                var idxFolder = new DbTreeNode { Name = $"索引 ({idx.Count})", Kind = DbTreeNodeKind.Folder, HasChildren = idx.Count > 0 };
-                foreach (var i in idx)
-                    idxFolder.Children.Add(new DbTreeNode { Name = i.Display, Kind = DbTreeNodeKind.Index });
-                node.Children.Add(idxFolder);
-            }
         }
         catch (Exception ex)
         {
-            StatusMessage = "读取子节点失败: " + ex.Message;
+            StatusMessage = "读取列失败: " + ex.Message;
+        }
+
+        if (node.Kind != DbTreeNodeKind.Table || _registry.Get(ds.Type) is not ISchemaObjectExplorer se)
+            return;
+
+        try
+        {
+            var idx = await se.ListIndexesAsync(eff, SelectedDatabase!, table.Name, table.Schema);
+            var idxFolder = new DbTreeNode { Name = $"索引 ({idx.Count})", Kind = DbTreeNodeKind.Folder, HasChildren = idx.Count > 0 };
+            foreach (var i in idx)
+                idxFolder.Children.Add(new DbTreeNode { Name = i.Display, Kind = DbTreeNodeKind.Index });
+            node.Children.Add(idxFolder);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "读取索引失败: " + ex.Message;
+        }
+
+        try
+        {
+            var fks = await se.ListForeignKeysAsync(eff, SelectedDatabase!, table.Name, table.Schema);
+            var fkFolder = new DbTreeNode { Name = $"外键 ({fks.Count})", Kind = DbTreeNodeKind.Folder, HasChildren = fks.Count > 0 };
+            foreach (var f in fks)
+                fkFolder.Children.Add(new DbTreeNode { Name = f.Display, Kind = DbTreeNodeKind.ForeignKey });
+            node.Children.Add(fkFolder);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "读取外键失败: " + ex.Message;
         }
     }
+
+    private static string CommentSuffix(string? comment) =>
+        string.IsNullOrWhiteSpace(comment) ? string.Empty : "  · " + comment;
 
     private async Task LoadIndexesAsync()
     {
@@ -1580,6 +1606,47 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>导出结果为 Excel 工作簿（.xlsx，数值保持为数字单元格）。</summary>
+    private void ExportExcel()
+    {
+        var view = Results;
+        var table = view?.Table;
+        if (view is null || table is null)
+            return;
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "导出查询结果",
+            Filter = "Excel 工作簿 (*.xlsx)|*.xlsx",
+            FileName = $"query-{DateTime.Now:yyyyMMdd-HHmmss}.xlsx"
+        };
+        if (dialog.ShowDialog() != true)
+            return;
+
+        try
+        {
+            var columns = table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
+            var rows = new List<IReadOnlyList<object?>>();
+            foreach (DataRowView row in view)
+            {
+                var values = new object?[columns.Count];
+                for (var i = 0; i < columns.Count; i++)
+                {
+                    var v = row[columns[i]];
+                    values[i] = v is DBNull ? null : v;
+                }
+                rows.Add(values);
+            }
+
+            using var fs = File.Create(dialog.FileName);
+            XlsxWriter.Write(fs, columns, rows, string.IsNullOrWhiteSpace(table.TableName) ? "Sheet1" : table.TableName);
+            StatusMessage = $"已导出 {rows.Count} 行到 {dialog.FileName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "导出失败: " + ex.Message;
+        }
+    }
+
     /// <summary>对当前 SQL 执行 EXPLAIN，并在结果区显示执行计划。</summary>
     private async Task ExplainAsync()
     {
@@ -1857,6 +1924,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExplainCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExportJsonCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ExportExcelCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (GenerateSelectCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (GenerateInsertCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (GenerateCountCommand as RelayCommand)?.RaiseCanExecuteChanged();

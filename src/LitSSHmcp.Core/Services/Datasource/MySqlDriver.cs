@@ -237,7 +237,7 @@ public class MySqlDriver : IDatasourceDriver, IDatabaseExplorer, ISchemaObjectEx
     {
         using var session = await _connectionProvider.OpenAsync(ds, ct);
         await using var cmd = session.Connection.CreateCommand();
-        cmd.CommandText = "SELECT TABLE_NAME, TABLE_ROWS FROM information_schema.TABLES " +
+        cmd.CommandText = "SELECT TABLE_NAME, TABLE_ROWS, TABLE_COMMENT FROM information_schema.TABLES " +
                           "WHERE TABLE_SCHEMA=@db AND TABLE_TYPE='BASE TABLE' ORDER BY TABLE_NAME";
         cmd.Parameters.AddWithValue("@db", database);
         var list = new List<DbTableInfo>();
@@ -247,7 +247,8 @@ public class MySqlDriver : IDatasourceDriver, IDatabaseExplorer, ISchemaObjectEx
             list.Add(new DbTableInfo
             {
                 Name = reader.GetString(0),
-                Rows = reader.IsDBNull(1) ? null : Convert.ToInt64(reader.GetValue(1))
+                Rows = reader.IsDBNull(1) ? null : Convert.ToInt64(reader.GetValue(1)),
+                Comment = reader.IsDBNull(2) || reader.GetString(2).Length == 0 ? null : reader.GetString(2)
             });
         }
         return list;
@@ -257,7 +258,7 @@ public class MySqlDriver : IDatasourceDriver, IDatabaseExplorer, ISchemaObjectEx
     {
         using var session = await _connectionProvider.OpenAsync(ds, ct);
         await using var cmd = session.Connection.CreateCommand();
-        cmd.CommandText = "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT " +
+        cmd.CommandText = "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, COLUMN_COMMENT " +
                           "FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=@db AND TABLE_NAME=@t ORDER BY ORDINAL_POSITION";
         cmd.Parameters.AddWithValue("@db", database);
         cmd.Parameters.AddWithValue("@t", table);
@@ -271,10 +272,50 @@ public class MySqlDriver : IDatasourceDriver, IDatabaseExplorer, ISchemaObjectEx
                 Type = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
                 Nullable = !reader.IsDBNull(2) && reader.GetString(2).Equals("YES", StringComparison.OrdinalIgnoreCase),
                 PrimaryKey = !reader.IsDBNull(3) && reader.GetString(3).Equals("PRI", StringComparison.OrdinalIgnoreCase),
-                Default = reader.IsDBNull(4) ? null : Convert.ToString(reader.GetValue(4))
+                Default = reader.IsDBNull(4) ? null : Convert.ToString(reader.GetValue(4)),
+                Comment = reader.IsDBNull(5) || reader.GetString(5).Length == 0 ? null : reader.GetString(5)
             });
         }
         return list;
+    }
+
+    public async Task<IReadOnlyList<DbForeignKeyInfo>> ListForeignKeysAsync(DataSourceConfig ds, string database, string table, string? schema = null, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        await using var cmd = session.Connection.CreateCommand();
+        cmd.CommandText = "SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, " +
+                          "REFERENCED_COLUMN_NAME, ORDINAL_POSITION FROM information_schema.KEY_COLUMN_USAGE " +
+                          "WHERE TABLE_SCHEMA=@db AND TABLE_NAME=@t AND REFERENCED_TABLE_NAME IS NOT NULL " +
+                          "ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION";
+        cmd.Parameters.AddWithValue("@db", database);
+        cmd.Parameters.AddWithValue("@t", table);
+
+        var rows = new List<(string Name, string Col, string RefSchema, string RefTable, string RefCol, int Ord)>();
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                rows.Add((
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                    reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                    reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+                    Convert.ToInt32(reader.GetValue(5))));
+            }
+        }
+
+        return rows
+            .GroupBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new DbForeignKeyInfo
+            {
+                Name = g.Key,
+                Columns = g.OrderBy(x => x.Ord).Select(x => x.Col).ToArray(),
+                RefSchema = g.First().RefSchema,
+                RefTable = g.First().RefTable,
+                RefColumns = g.OrderBy(x => x.Ord).Select(x => x.RefCol).ToArray()
+            })
+            .ToList();
     }
 
     public async Task<IReadOnlyList<DatasourceQueryResult>> QueryMultiAsync(DataSourceConfig ds, string sql, int maxRows, CancellationToken ct = default)

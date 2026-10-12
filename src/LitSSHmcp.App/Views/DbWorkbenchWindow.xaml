@@ -163,6 +163,8 @@
                                         <MenuItem Header="生成 INSERT" Command="{Binding GenerateInsertCommand}"/>
                                         <MenuItem Header="生成 COUNT(*)" Command="{Binding GenerateCountCommand}"/>
                                         <MenuItem Header="生成 CALL" Command="{Binding GenerateCallCommand}"/>
+                                        <Separator/>
+                                        <MenuItem Header="生成 CREATE TABLE (DDL)" Command="{Binding GenerateDdlCommand}"/>
                                     </ContextMenu>
                                 </ListBox.ContextMenu>
                             </ListBox>
@@ -269,6 +271,10 @@
                             <ui:Button DockPanel.Dock="Right" Content="{Binding SaveSnippetLabel}" Padding="8,2"
                                        Command="{Binding SaveSnippetCommand}"
                                        ToolTip="把输入框中的内容收藏为当前 数据源·库 的片段"/>
+                            <ui:Button DockPanel.Dock="Right" Content="打开 .sql" Padding="8,2" Margin="0,0,6,0"
+                                       Command="{Binding OpenSqlFileCommand}" ToolTip="打开 SQL 脚本文件到编辑器"/>
+                            <ui:Button DockPanel.Dock="Right" Content="保存 .sql" Padding="8,2" Margin="0,0,6,0"
+                                       Command="{Binding SaveSqlFileCommand}" ToolTip="把编辑器内容保存为 .sql 文件"/>
                         </DockPanel>
                         <Border CornerRadius="4">
                             <Border.Style>
@@ -354,44 +360,68 @@
                         <TextBlock DockPanel.Dock="Top" Text="{Binding RedisKeyInfo}" Margin="2,0,0,6"
                                    TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
                                    Visibility="{Binding HasRedisKeyInfo, Converter={StaticResource BoolToVis}}"/>
-                        <Grid DockPanel.Dock="Top" Margin="0,0,0,2">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="{Binding RowHeaderActualWidth, ElementName=ResultGrid}"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <ItemsControl x:Name="FilterRow" Grid.Column="1" ItemsSource="{Binding Columns, ElementName=ResultGrid}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBox Width="{Binding ActualWidth}" Tag="{Binding Header}" Margin="0,0,1,0"
-                                                 Padding="2,0" Height="22" TextChanged="OnColumnFilterChanged"
-                                                 ToolTip="按此列筛选（包含匹配）"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                        <DockPanel DockPanel.Dock="Bottom" Margin="0,4,0,0"
+                                   Visibility="{Binding HasMessages, Converter={StaticResource BoolToVis}}">
+                            <ui:Button DockPanel.Dock="Right" Content="清空" Padding="8,2" Margin="6,0,0,0"
+                                       Command="{Binding ClearMessagesCommand}"/>
+                            <ListBox ItemsSource="{Binding Messages}" MaxHeight="90" FontFamily="Consolas" FontSize="11"/>
+                        </DockPanel>
+
+                        <Grid>
+                            <Grid Visibility="{Binding ShowResultGrid, Converter={StaticResource BoolToVis}}">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <Grid Grid.Row="0" Margin="0,0,0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="{Binding RowHeaderActualWidth, ElementName=ResultGrid}"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ItemsControl x:Name="FilterRow" Grid.Column="1" ItemsSource="{Binding Columns, ElementName=ResultGrid}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBox Width="{Binding ActualWidth}" Tag="{Binding Header}" Margin="0,0,1,0"
+                                                         Padding="2,0" Height="22" TextChanged="OnColumnFilterChanged"
+                                                         ToolTip="按此列筛选（包含匹配）"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
+                                <DataGrid Grid.Row="1" x:Name="ResultGrid" ItemsSource="{Binding Results}" IsReadOnly="True"
+                                      AutoGenerateColumns="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                                      HeadersVisibility="All" GridLinesVisibility="All" SelectionUnit="Cell"
+                                      LoadingRow="OnResultLoadingRow" AutoGeneratedColumns="OnAutoGeneratedColumns"
+                                      SelectionMode="Extended" ClipboardCopyMode="IncludeHeader"
+                                      EnableRowVirtualization="True" EnableColumnVirtualization="True"
+                                      FontFamily="Consolas" FontSize="12" MouseDoubleClick="OnResultDoubleClick"
+                                      AutoGeneratingColumn="OnAutoGeneratingColumn"
+                                      PreviewMouseRightButtonDown="OnResultRightDown">
+                                    <DataGrid.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="复制单元格" Click="OnCopyCell"/>
+                                            <MenuItem Header="复制整行" Click="OnCopyRow"/>
+                                            <MenuItem Header="复制全部结果" Click="OnCopyAll"/>
+                                            <MenuItem Header="复制为 INSERT 语句" Click="OnCopyInsert"/>
+                                            <Separator/>
+                                            <MenuItem Header="查看完整内容…" Click="OnViewCell"/>
+                                        </ContextMenu>
+                                    </DataGrid.ContextMenu>
+                                </DataGrid>
+                            </Grid>
+
+                            <DockPanel Visibility="{Binding ShowPlan, Converter={StaticResource BoolToVis}}">
+                                <ui:Button DockPanel.Dock="Top" Content="关闭计划" Padding="10,3" HorizontalAlignment="Left" Margin="0,0,0,4"
+                                           Command="{Binding ClosePlanCommand}"/>
+                                <TextBox IsReadOnly="True" Text="{Binding PlanText}" FontFamily="Consolas" FontSize="12"
+                                         Background="#1E1E1E" Foreground="#DDDDDD" BorderThickness="0" Padding="8"
+                                         TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                         AcceptsReturn="True"/>
+                            </DockPanel>
                         </Grid>
-                        <DataGrid x:Name="ResultGrid" ItemsSource="{Binding Results}" IsReadOnly="True"
-                              AutoGenerateColumns="True" CanUserAddRows="False" CanUserDeleteRows="False"
-                              HeadersVisibility="All" GridLinesVisibility="All" SelectionUnit="Cell"
-                              LoadingRow="OnResultLoadingRow" AutoGeneratedColumns="OnAutoGeneratedColumns"
-                              SelectionMode="Extended" ClipboardCopyMode="IncludeHeader"
-                              EnableRowVirtualization="True" EnableColumnVirtualization="True"
-                              FontFamily="Consolas" FontSize="12" MouseDoubleClick="OnResultDoubleClick"
-                              AutoGeneratingColumn="OnAutoGeneratingColumn"
-                              PreviewMouseRightButtonDown="OnResultRightDown">
-                        <DataGrid.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="复制单元格" Click="OnCopyCell"/>
-                                <MenuItem Header="复制整行" Click="OnCopyRow"/>
-                                <MenuItem Header="复制全部结果" Click="OnCopyAll"/>
-                                <MenuItem Header="复制为 INSERT 语句" Click="OnCopyInsert"/>
-                                <Separator/>
-                                <MenuItem Header="查看完整内容…" Click="OnViewCell"/>
-                            </ContextMenu>
-                        </DataGrid.ContextMenu>
-                        </DataGrid>
                     </DockPanel>
                 </Grid>
             </Grid>

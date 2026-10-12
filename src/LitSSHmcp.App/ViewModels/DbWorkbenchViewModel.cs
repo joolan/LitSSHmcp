@@ -48,6 +48,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private string _redisKeyInfo = string.Empty;
     private string? _pendingSelectId;
     private string _objectFilter = string.Empty;
+    private string _planText = string.Empty;
+    private bool _showPlan;
     private CancellationTokenSource? _queryCts;
     private bool _cancelRequested;
     private QueryTab? _selectedTab;
@@ -85,6 +87,11 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         GenerateCallCommand = new RelayCommand(_ => GenerateObjectSql("call"), _ => IsSqlDb && SelectedTable is not null && !Busy);
         SelectResultCommand = new RelayCommand(p => { if (p is int i) SelectResult(i); });
         RefreshObjectsCommand = new RelayCommand(_ => _ = LoadTablesAsync(), _ => IsSqlDb && !Busy);
+        ClearMessagesCommand = new RelayCommand(_ => { Messages.Clear(); OnPropertyChanged(nameof(HasMessages)); });
+        OpenSqlFileCommand = new RelayCommand(_ => OpenSqlFile());
+        SaveSqlFileCommand = new RelayCommand(_ => SaveSqlFile());
+        GenerateDdlCommand = new RelayCommand(_ => GenerateDdl(), _ => IsSqlDb && SelectedTable is not null && Columns.Count > 0 && !Busy);
+        ClosePlanCommand = new RelayCommand(_ => ShowPlan = false);
 
         TablesView = CollectionViewSource.GetDefaultView(Tables);
         TablesView.Filter = o => o is DbTableInfo t &&
@@ -114,6 +121,11 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     /// <summary>Redis 模式下 SCAN 出的键名。</summary>
     public ObservableCollection<string> RedisKeys { get; } = new();
+
+    /// <summary>消息/错误面板（失败、警告等；供结果区“消息”标签）。</summary>
+    public ObservableCollection<string> Messages { get; } = new();
+
+    public bool HasMessages => Messages.Count > 0;
 
     /// <summary>查询标签（每个标签独立的 SQL/结果/分页/写模式）。</summary>
     public ObservableCollection<QueryTab> Tabs { get; } = new();
@@ -153,6 +165,11 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public ICommand GenerateCallCommand { get; }
     public ICommand SelectResultCommand { get; }
     public ICommand RefreshObjectsCommand { get; }
+    public ICommand ClearMessagesCommand { get; }
+    public ICommand OpenSqlFileCommand { get; }
+    public ICommand SaveSqlFileCommand { get; }
+    public ICommand GenerateDdlCommand { get; }
+    public ICommand ClosePlanCommand { get; }
 
     /// <summary>是否有可用片段（供面板提示）。</summary>
     public bool HasSnippets => Snippets.Count > 0;
@@ -324,7 +341,28 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     public string SqlText { get => _sqlText; set { if (Set(ref _sqlText, value)) RaiseCanExecute(); } }
 
-    public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
+    /// <summary>EXPLAIN 计划的可读文本（PG 为缩进文本计划）。</summary>
+    public string PlanText { get => _planText; set => Set(ref _planText, value); }
+
+    /// <summary>是否显示执行计划面板（替代结果网格）。</summary>
+    public bool ShowPlan
+    {
+        get => _showPlan;
+        set { if (Set(ref _showPlan, value)) OnPropertyChanged(nameof(ShowResultGrid)); }
+    }
+
+    /// <summary>是否显示结果网格（非计划面板时）。</summary>
+    public bool ShowResultGrid => !_showPlan;
+
+    public string StatusMessage
+    {
+        get => _statusMessage;
+        set
+        {
+            if (Set(ref _statusMessage, value) && LooksLikeError(value))
+                AddMessage(value);
+        }
+    }
 
     public DataView? Results
     {
@@ -563,6 +601,90 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         foreach (var c in Columns)
             words.Add(c.Name);
         return words.ToList();
+    }
+
+    private static bool LooksLikeError(string? text) =>
+        !string.IsNullOrEmpty(text) &&
+        (text.Contains("失败") || text.Contains("错误") || text.Contains("拒绝")
+         || text.Contains("异常") || text.Contains("不支持") || text.Contains("超时"));
+
+    private void AddMessage(string message)
+    {
+        Messages.Add($"{DateTime.Now:HH:mm:ss}  {message}");
+        while (Messages.Count > 200)
+            Messages.RemoveAt(0);
+        OnPropertyChanged(nameof(HasMessages));
+    }
+
+    private void OpenSqlFile()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "SQL 文件 (*.sql)|*.sql|所有文件 (*.*)|*.*" };
+        if (dialog.ShowDialog() != true)
+            return;
+        try
+        {
+            SqlText = File.ReadAllText(dialog.FileName);
+            StatusMessage = $"已打开 {dialog.FileName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "打开失败: " + ex.Message;
+        }
+    }
+
+    private void SaveSqlFile()
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "SQL 文件 (*.sql)|*.sql|所有文件 (*.*)|*.*",
+            FileName = "query.sql"
+        };
+        if (dialog.ShowDialog() != true)
+            return;
+        try
+        {
+            File.WriteAllText(dialog.FileName, SqlText ?? string.Empty, new UTF8Encoding(false));
+            StatusMessage = $"已保存到 {dialog.FileName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "保存失败: " + ex.Message;
+        }
+    }
+
+    /// <summary>用已加载的列/主键信息生成 CREATE TABLE SQL。</summary>
+    private void GenerateDdl()
+    {
+        var ds = SelectedDatasource;
+        var table = SelectedTable;
+        if (ds is null || table is null)
+            return;
+        if (Columns.Count == 0)
+        {
+            StatusMessage = "请先选择表并加载列结构。";
+            return;
+        }
+
+        var sb = new StringBuilder();
+        sb.Append("CREATE TABLE ").Append(QuoteObject(ds, table)).AppendLine(" (");
+        var lines = new List<string>();
+        foreach (var c in Columns)
+        {
+            var line = "  " + QuoteIdent(ds, c.Name) + " " + (string.IsNullOrWhiteSpace(c.Type) ? "?" : c.Type);
+            if (!c.Nullable)
+                line += " NOT NULL";
+            if (!string.IsNullOrWhiteSpace(c.Default))
+                line += " DEFAULT " + c.Default;
+            lines.Add(line);
+        }
+        var pks = Columns.Where(c => c.PrimaryKey).ToList();
+        if (pks.Count > 0)
+            lines.Add("  PRIMARY KEY (" + string.Join(", ", pks.Select(c => QuoteIdent(ds, c.Name))) + ")");
+        sb.Append(string.Join(",\n", lines));
+        sb.AppendLine();
+        sb.AppendLine(");");
+        SqlText = sb.ToString();
+        StatusMessage = "已生成 CREATE TABLE（可按需调整类型/约束）";
     }
 
     private async Task ExecuteAsync()
@@ -1052,6 +1174,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
         Busy = true;
         _cancelRequested = false;
+        ShowPlan = false;
         StatusMessage = "查询中…";
         var cts = new CancellationTokenSource();
         _queryCts = cts;
@@ -1258,6 +1381,19 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             ResultSetTabs.Clear();
             OnPropertyChanged(nameof(PageLabel));
             OnPropertyChanged(nameof(HasMultipleResults));
+
+            // 单列计划（PG 的 QUERY PLAN）→ 以等宽文本面板展示，保留缩进更易读。
+            if (result.Columns.Length == 1)
+            {
+                PlanText = string.Join("\n", result.Rows.Select(r =>
+                    r.TryGetValue(result.Columns[0], out var v) ? Convert.ToString(v) : string.Empty));
+                ShowPlan = true;
+            }
+            else
+            {
+                ShowPlan = false;
+            }
+
             StatusMessage = $"执行计划（{result.RowCount} 行，{result.DurationMs:F0} ms）";
         }
         catch (OperationCanceledException)
@@ -1465,6 +1601,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         (GenerateSelectCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (GenerateInsertCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (GenerateCountCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (GenerateDdlCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (GenerateCallCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PreviewCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (NextPageCommand as RelayCommand)?.RaiseCanExecuteChanged();

@@ -68,6 +68,10 @@
                                Content="{Binding SnippetButtonLabel}"
                                ToolTip="收藏的片段（随当前 数据源 · 库）；点击展开、选择后追加到输入框"
                                Click="OnToggleSnippetPanel"/>
+                    <ui:Button x:Name="HistoryButton" Padding="10,3" Margin="8,0,0,0"
+                               Content="{Binding HistoryButtonLabel}"
+                               ToolTip="查询历史（最近使用在前）；点击展开、选择后填入输入框"
+                               Click="OnToggleHistoryPanel"/>
                 </StackPanel>
             </Border>
 
@@ -122,7 +126,53 @@
                 </Border>
             </Popup>
 
-            <!-- 写入模式醒目提示 -->
+            <!-- 查询历史下拉 -->
+            <Popup x:Name="HistoryPopup" StaysOpen="True" AllowsTransparency="True"
+                   PlacementTarget="{Binding ElementName=HistoryButton}" Placement="Bottom"
+                   IsOpen="{Binding IsHistoryPanelOpen, Mode=TwoWay}">
+                <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="4" MinWidth="300" MaxWidth="600"
+                        Margin="0,4,0,0">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="12" ShadowDepth="1" Opacity="0.25"/>
+                    </Border.Effect>
+                    <StackPanel>
+                        <DockPanel Margin="10,6,10,4">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource FlatMenuButton}" Content="清空"
+                                    Padding="6,2" Command="{Binding ClearHistoryCommand}"/>
+                            <TextBlock Text="查询历史（最近使用在前）" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        </DockPanel>
+                        <Separator Margin="4,0,4,4"/>
+                        <TextBlock Text="（暂无历史）" FontSize="12" Padding="10,6" Foreground="{DynamicResource AppTextSecondaryBrush}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HistoryCount}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="340">
+                            <ItemsControl ItemsSource="{Binding History}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource FlatMenuButton}" HorizontalAlignment="Stretch"
+                                                Padding="10,5" ToolTip="{Binding}"
+                                                Command="{Binding DataContext.UseHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}">
+                                            <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" MaxWidth="560"
+                                                       HorizontalAlignment="Left"/>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+            </Popup>
             <Border DockPanel.Dock="Top" Visibility="{Binding ShowWriteBanner, Converter={StaticResource BoolToVis}}"
                     Background="#FDECEA" BorderBrush="#D13438" BorderThickness="1" CornerRadius="4"
                     Padding="10,6" Margin="0,0,0,8">
@@ -151,6 +201,7 @@
                                   ItemContainerStyle="{StaticResource DbTreeItemStyle}"
                                   SelectedItemChanged="OnObjectTreeSelected"
                                   MouseDoubleClick="OnObjectTreeDoubleClick"
+                                  ContextMenuOpening="OnObjectTreeMenuOpening"
                                   PreviewMouseRightButtonDown="OnObjectTreeRightDown">
                             <TreeView.ContextMenu>
                                 <ContextMenu>
@@ -254,6 +305,8 @@
                                        Command="{Binding OpenSqlFileCommand}" ToolTip="打开 SQL 脚本文件到编辑器"/>
                             <ui:Button DockPanel.Dock="Right" Content="保存 .sql" Padding="8,2" Margin="0,0,6,0"
                                        Command="{Binding SaveSqlFileCommand}" ToolTip="把编辑器内容保存为 .sql 文件"/>
+                            <ui:Button DockPanel.Dock="Right" Content="格式化" Padding="8,2" Margin="0,0,6,0"
+                                       Command="{Binding FormatSqlCommand}" ToolTip="美化 SQL（主要子句换行、关键字大写）"/>
                         </DockPanel>
                     </StackPanel>
 

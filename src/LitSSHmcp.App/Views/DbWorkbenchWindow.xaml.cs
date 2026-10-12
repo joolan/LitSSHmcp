@@ -265,6 +265,9 @@ public partial class DbWorkbenchWindow : FluentWindow
     private void OnToggleSnippetPanel(object sender, RoutedEventArgs e)
         => _vm.IsSnippetPanelOpen = !_vm.IsSnippetPanelOpen;
 
+    private void OnToggleHistoryPanel(object sender, RoutedEventArgs e)
+        => _vm.IsHistoryPanelOpen = !_vm.IsHistoryPanelOpen;
+
     private void OnUseSnippetClick(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: DbSqlSnippet snippet })
@@ -330,6 +333,14 @@ public partial class DbWorkbenchWindow : FluentWindow
             item.IsSelected = true;
             _vm.OnTreeNodeSelected(item.DataContext as DbTreeNode);
         }
+    }
+
+    /// <summary>仅在右键命中“表/视图/存储过程”对象节点时弹出菜单；空白处/文件夹/列/索引不弹。</summary>
+    private void OnObjectTreeMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        var item = FindAncestor<System.Windows.Controls.TreeViewItem>(e.OriginalSource as DependencyObject);
+        if (item?.DataContext is not DbTreeNode { Kind: DbTreeNodeKind.Table or DbTreeNodeKind.View or DbTreeNodeKind.Procedure })
+            e.Handled = true;
     }
 
     private void OnObjectTreeDoubleClick(object sender, MouseButtonEventArgs e)

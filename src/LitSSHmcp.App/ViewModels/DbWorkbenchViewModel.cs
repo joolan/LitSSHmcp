@@ -71,7 +71,10 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         ExportCsvCommand = new RelayCommand(_ => ExportCsv(), _ => Results is not null && !Busy);
         SaveSnippetCommand = new RelayCommand(_ => SaveSnippet(), _ => !string.IsNullOrWhiteSpace(SqlText));
         UseSnippetCommand = new RelayCommand(p => UseSnippet(p as DbSqlSnippet));
-        DeleteSnippetCommand = new RelayCommand(p => DeleteSnippet(p as DbSqlSnippet));
+        FormatSqlCommand = new RelayCommand(_ => SqlText = SqlScriptFormatter.Format(SqlText), _ => !string.IsNullOrWhiteSpace(SqlText));
+        ToggleHistoryPanelCommand = new RelayCommand(_ => IsHistoryPanelOpen = !IsHistoryPanelOpen);
+        UseHistoryCommand = new RelayCommand(p => { if (p is string s) SqlText = s; });
+        ClearHistoryCommand = new RelayCommand(_ => { History.Clear(); PersistHistory(); OnPropertyChanged(nameof(HistoryCount)); OnPropertyChanged(nameof(HistoryButtonLabel)); });        DeleteSnippetCommand = new RelayCommand(p => DeleteSnippet(p as DbSqlSnippet));
         ScanKeysCommand = new RelayCommand(_ => _ = ScanKeysAsync(), _ => IsRedisDb && !Busy);
         UseKeyCommand = new RelayCommand(p => _ = UseKeyAsync(p as string), _ => IsRedisDb && !Busy);
         AddTabCommand = new RelayCommand(_ => AddTab());
@@ -150,6 +153,10 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public ICommand SaveSnippetCommand { get; }
     public ICommand UseSnippetCommand { get; }
     public ICommand DeleteSnippetCommand { get; }
+    public ICommand FormatSqlCommand { get; }
+    public ICommand ToggleHistoryPanelCommand { get; }
+    public ICommand UseHistoryCommand { get; }
+    public ICommand ClearHistoryCommand { get; }
     public ICommand ScanKeysCommand { get; }
     public ICommand UseKeyCommand { get; }
     public ICommand AddTabCommand { get; }
@@ -195,6 +202,15 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     /// <summary>片段下拉是否展开。</summary>
     public bool IsSnippetPanelOpen { get => _isSnippetPanelOpen; set => Set(ref _isSnippetPanelOpen, value); }
+
+    /// <summary>查询历史（最近使用在前，最多 200 条，持久化到本机）。</summary>
+    public ObservableCollection<string> History { get; } = new();
+
+    public int HistoryCount => History.Count;
+    public string HistoryButtonLabel => $"历史 ({HistoryCount})";
+
+    private bool _isHistoryPanelOpen;
+    public bool IsHistoryPanelOpen { get => _isHistoryPanelOpen; set => Set(ref _isHistoryPanelOpen, value); }
 
     /// <summary>写入前的预览确认回调（由窗口提供，返回 true=执行）。为 null 时用 MessageBox 兜底。</summary>
     public Func<WritePreviewInfo, bool>? ConfirmWrite { get; set; }
@@ -385,6 +401,9 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         try
         {
             _config = await _configService.LoadConfigAsync();
+            History.Clear();
+            foreach (var h in WorkbenchHistoryStore.Load())
+                History.Add(h);
             Datasources.Clear();
             foreach (var ds in _config.DataSources)
             {
@@ -484,32 +503,37 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         finally { Busy = false; }
     }
 
-    /// <summary>按当前过滤关键字重建对象树（表/视图/存储过程三类）。</summary>
+    /// <summary>按当前过滤关键字重建对象树（表/视图/存储过程三类）；保留原有展开/折叠状态，默认展开“表”。</summary>
     private void RebuildObjectTree()
     {
+        var expanded = new Dictionary<string, bool>(StringComparer.Ordinal);
+        CaptureExpansion(ObjectTree, expanded);
+
         ObjectTree.Clear();
         var filter = _objectFilter?.Trim() ?? string.Empty;
         bool Match(string name) => filter.Length == 0 || name.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
-        var tableFolder = new DbTreeNode { Name = $"表 ({Tables.Count})", Kind = DbTreeNodeKind.Folder, HasChildren = true };
+        var tableFolder = new DbTreeNode { Name = $"表 ({Tables.Count})", Key = "folder:tables", Kind = DbTreeNodeKind.Folder, HasChildren = true };
         foreach (var t in Tables.Where(t => Match(t.Display)))
-            tableFolder.Children.Add(new DbTreeNode { Name = t.Display, Kind = DbTreeNodeKind.Table, HasChildren = true, Tag = t });
+            tableFolder.Children.Add(new DbTreeNode { Name = t.Display, Key = "obj:" + t.Display, Kind = DbTreeNodeKind.Table, HasChildren = true, Tag = t });
 
-        var viewFolder = new DbTreeNode { Name = $"视图 ({Views.Count})", Kind = DbTreeNodeKind.Folder, HasChildren = true };
+        var viewFolder = new DbTreeNode { Name = $"视图 ({Views.Count})", Key = "folder:views", Kind = DbTreeNodeKind.Folder, HasChildren = true };
         foreach (var v in Views.Where(v => Match(v.Display)))
             viewFolder.Children.Add(new DbTreeNode
             {
                 Name = v.Display,
+                Key = "obj:" + v.Display,
                 Kind = DbTreeNodeKind.View,
                 HasChildren = true,
                 Tag = new DbTableInfo { Schema = v.Schema, Name = v.Name }
             });
 
-        var procFolder = new DbTreeNode { Name = $"存储过程 ({Procedures.Count})", Kind = DbTreeNodeKind.Folder, HasChildren = true };
+        var procFolder = new DbTreeNode { Name = $"存储过程 ({Procedures.Count})", Key = "folder:procs", Kind = DbTreeNodeKind.Folder, HasChildren = true };
         foreach (var p in Procedures.Where(p => Match(p.Display)))
             procFolder.Children.Add(new DbTreeNode
             {
                 Name = p.Display,
+                Key = "obj:" + p.Display,
                 Kind = DbTreeNodeKind.Procedure,
                 Tag = new DbObjectInfo { Schema = p.Schema, Name = p.Name }
             });
@@ -517,6 +541,27 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         if (tableFolder.Children.Count > 0 || filter.Length == 0) ObjectTree.Add(tableFolder);
         if (viewFolder.Children.Count > 0 || filter.Length == 0) ObjectTree.Add(viewFolder);
         if (procFolder.Children.Count > 0 || filter.Length == 0) ObjectTree.Add(procFolder);
+
+        ApplyExpansion(ObjectTree, expanded);
+    }
+
+    private static void CaptureExpansion(IEnumerable<DbTreeNode> nodes, Dictionary<string, bool> into)
+    {
+        foreach (var n in nodes)
+        {
+            if (!string.IsNullOrEmpty(n.Key))
+                into[n.Key] = n.IsExpanded;
+            CaptureExpansion(n.Children, into);
+        }
+    }
+
+    private static void ApplyExpansion(IEnumerable<DbTreeNode> nodes, IReadOnlyDictionary<string, bool> expanded)
+    {
+        foreach (var n in nodes)
+        {
+            n.IsExpanded = expanded.TryGetValue(n.Key, out var v) ? v : n.Key == "folder:tables";
+            ApplyExpansion(n.Children, expanded);
+        }
     }
 
     /// <summary>对象节点被选中：同步“表/视图”到 SelectedTable（供预览/生成 SQL）。</summary>
@@ -701,8 +746,26 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         (text.Contains("失败") || text.Contains("错误") || text.Contains("拒绝")
          || text.Contains("异常") || text.Contains("不支持") || text.Contains("超时"));
 
-    private void AddMessage(string message)
+    /// <summary>记录一条查询历史（去重、置顶、限长、持久化）。</summary>
+    private void RecordHistory(string? sql)
     {
+        var text = sql?.Trim();
+        if (string.IsNullOrEmpty(text))
+            return;
+        var existing = History.FirstOrDefault(h => string.Equals(h, text, StringComparison.Ordinal));
+        if (existing is not null)
+            History.Remove(existing);
+        History.Insert(0, text);
+        while (History.Count > 200)
+            History.RemoveAt(History.Count - 1);
+        PersistHistory();
+        OnPropertyChanged(nameof(HistoryCount));
+        OnPropertyChanged(nameof(HistoryButtonLabel));
+    }
+
+    private void PersistHistory() => WorkbenchHistoryStore.Save(History);
+
+    private void AddMessage(string message)    {
         Messages.Add($"{DateTime.Now:HH:mm:ss}  {message}");
         while (Messages.Count > 200)
             Messages.RemoveAt(0);
@@ -1020,6 +1083,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             StatusMessage = result.Success
                 ? $"写入成功，影响 {result.RowsAffected} 行，{result.DurationMs:F0} ms"
                 : "写入失败: " + result.Error;
+            if (result.Success)
+                RecordHistory(sql);
             await AuditAsync(ds, sql,
                 result.Success ? CommandStatus.Executed : CommandStatus.Failed,
                 result.Success ? $"rowsAffected={result.RowsAffected}" : Truncate(result.Error, 500),
@@ -1313,6 +1378,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             StatusMessage = sets.Count > 1
                 ? $"返回 {sets.Count} 个结果集，共 {totalRows} 行，{ms:F0} ms{(truncated ? "（已截断）" : string.Empty)}"
                 : $"返回 {totalRows} 行，{ms:F0} ms{(truncated ? "（已截断）" : string.Empty)}";
+            if (!_paged)
+                RecordHistory(sql);
         }
         catch (OperationCanceledException)
         {

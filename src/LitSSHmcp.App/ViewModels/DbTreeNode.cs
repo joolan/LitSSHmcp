@@ -21,6 +21,9 @@ public sealed class DbTreeNode : INotifyPropertyChanged
     public string Name { get; set; } = string.Empty;
     public DbTreeNodeKind Kind { get; init; } = DbTreeNodeKind.Folder;
 
+    /// <summary>稳定标识（用于重建树时保留展开状态，不随名称/计数变化）。</summary>
+    public string Key { get; init; } = string.Empty;
+
     /// <summary>是否可能含子节点（显示展开箭头）；实际子节点在展开时懒加载。</summary>
     public bool HasChildren { get; init; }
 

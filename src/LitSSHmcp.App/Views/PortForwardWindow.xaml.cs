@@ -47,4 +47,10 @@ public partial class PortForwardWindow : FluentWindow
             return;
         _vm.Remove(row);
     }
+
+    private void OnOpenBrowser(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { } row && _vm.OpenBrowserCommand.CanExecute(row))
+            _vm.OpenBrowserCommand.Execute(row);
+    }
 }

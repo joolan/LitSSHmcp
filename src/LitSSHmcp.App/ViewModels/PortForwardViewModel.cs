@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
@@ -31,6 +32,9 @@ public sealed class PortForwardViewModel : INotifyPropertyChanged, IDisposable
 
         AddCommand = new RelayCommand(_ => Add());
         SaveCommand = new RelayCommand(_ => _ = SaveAsync());
+        OpenBrowserCommand = new RelayCommand(
+            p => { if (p is PortForwardRow r) _ = OpenBrowserAsync(r); },
+            p => p is PortForwardRow { Type: PortForwardType.Dynamic });
         _service.StateChanged += OnServiceStateChanged;
         Load();
     }
@@ -49,6 +53,73 @@ public sealed class PortForwardViewModel : INotifyPropertyChanged, IDisposable
 
     public ICommand AddCommand { get; }
     public ICommand SaveCommand { get; }
+    public ICommand OpenBrowserCommand { get; }
+
+    // ---- 用已有动态 SOCKS 转发打开代理浏览器 ----
+    private readonly Dictionary<string, (System.Diagnostics.Process Browser, string BaseDir)> _proxyBrowsers = new();
+
+    private async Task OpenBrowserAsync(PortForwardRow row)
+    {
+        if (row.Type != PortForwardType.Dynamic)
+        {
+            StatusMessage = "仅「动态 SOCKS」转发支持用此代理开浏览器。";
+            return;
+        }
+        if (!row.Validate(out var error))
+        {
+            StatusMessage = "定义不完整: " + error;
+            return;
+        }
+        var server = ServerList.FirstOrDefault(s => s.Id == row.ServerId);
+        if (server is null)
+        {
+            StatusMessage = "服务器不存在或已删除。";
+            return;
+        }
+        var browser = ProxiedBrowserLauncher.FindChromiumBrowser();
+        if (browser is null)
+        {
+            MessageBox.Show("未找到 Chromium 系浏览器（Edge / Chrome / Brave / Chromium）。",
+                "代理浏览器", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (!int.TryParse(row.BindPortText, out var port) || port <= 0)
+        {
+            StatusMessage = "监听端口无效。";
+            return;
+        }
+
+        var startedHere = false;
+        if (!row.IsRunning)
+        {
+            await StartAsync(row);
+            if (!row.IsRunning)
+            {
+                StatusMessage = "启动转发失败: " + row.Status;
+                return;
+            }
+            startedHere = true;
+        }
+
+        try
+        {
+            var launched = ProxiedBrowserLauncher.Launch(browser, port, server.Name);
+            _proxyBrowsers[row.Id] = (launched.Process, launched.BaseDir);
+            launched.Process.EnableRaisingEvents = true;
+            launched.Process.Exited += (_, _) =>
+            {
+                if (_proxyBrowsers.Remove(row.Id, out var entry))
+                    ProxiedBrowserLauncher.TryCleanup(entry.BaseDir);
+                if (startedHere)
+                    Application.Current?.Dispatcher.BeginInvoke(new Action(() => _ = StopAsync(row)));
+            };
+            StatusMessage = $"已用此代理打开浏览器（SOCKS 127.0.0.1:{port}）。";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "打开浏览器失败: " + ex.Message;
+        }
+    }
 
     private string _statusMessage = string.Empty;
     public string StatusMessage

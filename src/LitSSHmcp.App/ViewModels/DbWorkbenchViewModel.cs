@@ -49,13 +49,12 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private string? _pendingSelectId;
     private string _objectFilter = string.Empty;
     private string _planText = string.Empty;
-    private bool _showPlan;
+    private ResultSetRef? _selectedResultTab;
     private CancellationTokenSource? _queryCts;
     private bool _cancelRequested;
     private QueryTab? _selectedTab;
     private int _tabSeq;
     private int _objectCategoryIndex;
-    private int _selectedResultIndex;
 
     public DbWorkbenchViewModel(IConfigService? configService = null)
     {
@@ -85,13 +84,13 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         GenerateInsertCommand = new RelayCommand(_ => GenerateObjectSql("insert"), _ => IsSqlDb && SelectedTable is not null && !Busy);
         GenerateCountCommand = new RelayCommand(_ => GenerateObjectSql("count"), _ => IsSqlDb && SelectedTable is not null && !Busy);
         GenerateCallCommand = new RelayCommand(_ => GenerateObjectSql("call"), _ => IsSqlDb && SelectedTable is not null && !Busy);
-        SelectResultCommand = new RelayCommand(p => { if (p is int i) SelectResult(i); });
+        SelectResultTabCommand = new RelayCommand(p => { if (p is ResultSetRef t) SelectResultTab(t); });
         RefreshObjectsCommand = new RelayCommand(_ => _ = LoadTablesAsync(), _ => IsSqlDb && !Busy);
-        ClearMessagesCommand = new RelayCommand(_ => { Messages.Clear(); OnPropertyChanged(nameof(HasMessages)); });
+        ClearMessagesCommand = new RelayCommand(_ => { Messages.Clear(); RebuildResultTabs(); OnPropertyChanged(nameof(HasMessages)); });
         OpenSqlFileCommand = new RelayCommand(_ => OpenSqlFile());
         SaveSqlFileCommand = new RelayCommand(_ => SaveSqlFile());
         GenerateDdlCommand = new RelayCommand(_ => GenerateDdl(), _ => IsSqlDb && SelectedTable is not null && Columns.Count > 0 && !Busy);
-        ClosePlanCommand = new RelayCommand(_ => ShowPlan = false);
+        ClosePlanCommand = new RelayCommand(_ => SelectResultTab(ResultSetTabs.FirstOrDefault(t => t.Kind == ResultTabKind.Result) ?? ResultSetTabs.FirstOrDefault()));
 
         TablesView = CollectionViewSource.GetDefaultView(Tables);
         TablesView.Filter = o => o is DbTableInfo t &&
@@ -163,7 +162,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public ICommand GenerateInsertCommand { get; }
     public ICommand GenerateCountCommand { get; }
     public ICommand GenerateCallCommand { get; }
-    public ICommand SelectResultCommand { get; }
+    public ICommand SelectResultTabCommand { get; }
     public ICommand RefreshObjectsCommand { get; }
     public ICommand ClearMessagesCommand { get; }
     public ICommand OpenSqlFileCommand { get; }
@@ -353,15 +352,16 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     /// <summary>EXPLAIN 计划的可读文本（PG 为缩进文本计划）。</summary>
     public string PlanText { get => _planText; set => Set(ref _planText, value); }
 
-    /// <summary>是否显示执行计划面板（替代结果网格）。</summary>
-    public bool ShowPlan
+    /// <summary>结果区当前子标签（结果集 / 消息 / 计划）。</summary>
+    public ResultSetRef? SelectedResultTab
     {
-        get => _showPlan;
-        set { if (Set(ref _showPlan, value)) OnPropertyChanged(nameof(ShowResultGrid)); }
+        get => _selectedResultTab;
+        set => SelectResultTab(value);
     }
 
-    /// <summary>是否显示结果网格（非计划面板时）。</summary>
-    public bool ShowResultGrid => !_showPlan;
+    public bool ShowResultGrid => _selectedResultTab is null || _selectedResultTab.Kind == ResultTabKind.Result;
+    public bool ShowMessages => _selectedResultTab?.Kind == ResultTabKind.Messages;
+    public bool ShowPlan => _selectedResultTab?.Kind == ResultTabKind.Plan;
 
     public string StatusMessage
     {
@@ -569,13 +569,43 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             ? string.Join(", ", Enumerable.Range(1, count).Select(i => "$" + i))
             : string.Join(", ", Enumerable.Range(0, count).Select(_ => "?"));
 
-    private void SelectResult(int index)
+    /// <summary>切换结果区子标签（结果集 / 消息 / 计划）。</summary>
+    private void SelectResultTab(ResultSetRef? tab)
     {
-        if (index < 0 || index >= ResultSetTabs.Count) return;
-        _selectedResultIndex = index;
-        for (var i = 0; i < ResultSetTabs.Count; i++)
-            ResultSetTabs[i].IsSelected = i == index;
-        Results = ResultSetTabs[index].View;
+        _selectedResultTab = tab;
+        foreach (var t in ResultSetTabs)
+            t.IsSelected = ReferenceEquals(t, tab);
+        Results = tab is { Kind: ResultTabKind.Result } ? tab.View : null;
+        OnPropertyChanged(nameof(SelectedResultTab));
+        OnPropertyChanged(nameof(ShowResultGrid));
+        OnPropertyChanged(nameof(ShowMessages));
+        OnPropertyChanged(nameof(ShowPlan));
+        OnPropertyChanged(nameof(PageLabel));
+        RaiseCanExecute();
+    }
+
+    /// <summary>根据当前结果集/消息/计划重建结果区子标签，并选中第一个结果集（或计划）。</summary>
+    private void RebuildResultTabs(bool selectPlan = false)
+    {
+        var previousKind = _selectedResultTab?.Kind;
+        var previousIndex = _selectedResultTab?.Index ?? -1;
+
+        var resultTabs = ResultSetTabs.Where(t => t.Kind == ResultTabKind.Result).ToList();
+        ResultSetTabs.Clear();
+        foreach (var t in resultTabs)
+            ResultSetTabs.Add(t);
+        if (Messages.Count > 0)
+            ResultSetTabs.Add(new ResultSetRef { Kind = ResultTabKind.Messages, Label = "消息" });
+        if (PlanText.Length > 0)
+            ResultSetTabs.Add(new ResultSetRef { Kind = ResultTabKind.Plan, Label = "计划" });
+
+        var next = selectPlan
+            ? ResultSetTabs.FirstOrDefault(t => t.Kind == ResultTabKind.Plan)
+            : ResultSetTabs.FirstOrDefault(t => t.Kind == ResultTabKind.Result);
+        next ??= ResultSetTabs.FirstOrDefault(t => t.Kind == previousKind && t.Index == previousIndex);
+        next ??= ResultSetTabs.FirstOrDefault();
+        SelectResultTab(next);
+        OnPropertyChanged(nameof(HasMultipleResults));
     }
 
     private async Task LoadColumnsAsync()
@@ -623,6 +653,13 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         while (Messages.Count > 200)
             Messages.RemoveAt(0);
         OnPropertyChanged(nameof(HasMessages));
+
+        // 结果区若无“消息”子标签则补一个（不自动切换，避免打断查看结果）。
+        if (ResultSetTabs.All(t => t.Kind != ResultTabKind.Messages))
+        {
+            ResultSetTabs.Add(new ResultSetRef { Kind = ResultTabKind.Messages, Label = "消息" });
+            OnPropertyChanged(nameof(HasMultipleResults));
+        }
     }
 
     private void OpenSqlFile()
@@ -1184,7 +1221,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
         Busy = true;
         _cancelRequested = false;
-        ShowPlan = false;
+        PlanText = string.Empty;
         StatusMessage = "查询中…";
         var cts = new CancellationTokenSource();
         _queryCts = cts;
@@ -1201,23 +1238,20 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
                 StatusMessage = "查询失败: " + failure.Error;
                 Results = null;
                 ResultSetTabs.Clear();
-                OnPropertyChanged(nameof(HasMultipleResults));
+                RebuildResultTabs();
                 return;
             }
 
             ResultSetTabs.Clear();
-            _selectedResultIndex = 0;
             for (var i = 0; i < sets.Count; i++)
                 ResultSetTabs.Add(new ResultSetRef
                 {
                     Index = i,
-                    Label = $"结果 {i + 1}",
+                    Label = sets.Count > 1 ? $"结果 {i + 1}" : "结果",
                     View = BuildView(sets[i]),
-                    IsSelected = i == 0
+                    Kind = ResultTabKind.Result
                 });
-            Results = ResultSetTabs.Count > 0 ? ResultSetTabs[0].View : null;
-            OnPropertyChanged(nameof(PageLabel));
-            OnPropertyChanged(nameof(HasMultipleResults));
+            RebuildResultTabs();
 
             var totalRows = sets.Sum(s => s.RowCount);
             var truncated = sets.Any(s => s.Truncated);
@@ -1387,21 +1421,20 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
                 Results = null;
                 return;
             }
-            Results = BuildView(result);
             ResultSetTabs.Clear();
-            OnPropertyChanged(nameof(PageLabel));
-            OnPropertyChanged(nameof(HasMultipleResults));
-
-            // 单列计划（PG 的 QUERY PLAN）→ 以等宽文本面板展示，保留缩进更易读。
             if (result.Columns.Length == 1)
             {
+                // 单列文本计划（PG）：以等宽文本面板展示，保留缩进更易读。
                 PlanText = string.Join("\n", result.Rows.Select(r =>
                     r.TryGetValue(result.Columns[0], out var v) ? Convert.ToString(v) : string.Empty));
-                ShowPlan = true;
+                RebuildResultTabs(selectPlan: true);
             }
             else
             {
-                ShowPlan = false;
+                // 多列计划（MySQL）：作为“计划”结果集展示。
+                PlanText = string.Empty;
+                ResultSetTabs.Add(new ResultSetRef { Index = 0, Label = "计划", View = BuildView(result), Kind = ResultTabKind.Result });
+                RebuildResultTabs();
             }
 
             StatusMessage = $"执行计划（{result.RowCount} 行，{result.DurationMs:F0} ms）";

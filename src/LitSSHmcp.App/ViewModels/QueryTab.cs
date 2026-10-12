@@ -52,6 +52,9 @@ public sealed class ResultSetRef : INotifyPropertyChanged
     public string Label { get; init; } = string.Empty;
     public DataView? View { get; init; }
 
+    /// <summary>标签类型：结果集 / 消息 / 执行计划。</summary>
+    public ResultTabKind Kind { get; init; } = ResultTabKind.Result;
+
     private bool _isSelected;
     public bool IsSelected
     {
@@ -60,4 +63,12 @@ public sealed class ResultSetRef : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+/// <summary>结果区子标签类型。</summary>
+public enum ResultTabKind
+{
+    Result,
+    Messages,
+    Plan
 }

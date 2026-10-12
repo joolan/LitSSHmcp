@@ -372,8 +372,8 @@
                                         </Border.Style>
                                         <Border.InputBindings>
                                             <MouseBinding MouseAction="LeftClick"
-                                                          Command="{Binding DataContext.SelectResultCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                          CommandParameter="{Binding Index}"/>
+                                                          Command="{Binding DataContext.SelectResultTabCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          CommandParameter="{Binding}"/>
                                         </Border.InputBindings>
                                         <TextBlock Text="{Binding Label}"/>
                                     </Border>
@@ -383,12 +383,6 @@
                         <TextBlock DockPanel.Dock="Top" Text="{Binding RedisKeyInfo}" Margin="2,0,0,6"
                                    TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
                                    Visibility="{Binding HasRedisKeyInfo, Converter={StaticResource BoolToVis}}"/>
-                        <DockPanel DockPanel.Dock="Bottom" Margin="0,4,0,0"
-                                   Visibility="{Binding HasMessages, Converter={StaticResource BoolToVis}}">
-                            <ui:Button DockPanel.Dock="Right" Content="清空" Padding="8,2" Margin="6,0,0,0"
-                                       Command="{Binding ClearMessagesCommand}"/>
-                            <ListBox ItemsSource="{Binding Messages}" MaxHeight="90" FontFamily="Consolas" FontSize="11"/>
-                        </DockPanel>
 
                         <Grid>
                             <TextBlock Text="执行查询，或右键对象列表「预览选中表」查看结果"
@@ -402,6 +396,7 @@
                                                 <MultiDataTrigger.Conditions>
                                                     <Condition Binding="{Binding Results}" Value="{x:Null}"/>
                                                     <Condition Binding="{Binding ShowPlan}" Value="False"/>
+                                                    <Condition Binding="{Binding ShowMessages}" Value="False"/>
                                                 </MultiDataTrigger.Conditions>
                                                 <Setter Property="Visibility" Value="Visible"/>
                                             </MultiDataTrigger>
@@ -461,6 +456,13 @@
                                          Background="#1E1E1E" Foreground="#DDDDDD" BorderThickness="0" Padding="8"
                                          TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                          AcceptsReturn="True"/>
+                            </DockPanel>
+
+                            <DockPanel Visibility="{Binding ShowMessages, Converter={StaticResource BoolToVis}}">
+                                <ui:Button DockPanel.Dock="Top" Content="清空消息" Padding="10,3" HorizontalAlignment="Left" Margin="0,0,0,4"
+                                           Command="{Binding ClearMessagesCommand}"/>
+                                <ListBox ItemsSource="{Binding Messages}" FontFamily="Consolas" FontSize="11"
+                                         BorderThickness="0" Background="Transparent"/>
                             </DockPanel>
                         </Grid>
                     </DockPanel>

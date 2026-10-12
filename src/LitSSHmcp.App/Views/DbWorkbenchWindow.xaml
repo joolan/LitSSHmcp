@@ -41,24 +41,29 @@
         <ui:TitleBar Grid.Row="0" Title="{Binding ModeTitle}"/>
 
         <!-- 顶部工具条 + 模式 -->
-        <DockPanel Grid.Row="1" Margin="12,0,12,0" LastChildFill="True">
-            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                <TextBlock Text="数据源:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <ComboBox Width="200" DisplayMemberPath="Name"
-                          ItemsSource="{Binding Datasources}" SelectedItem="{Binding SelectedDatasource}"/>
-                <TextBlock Text="库:" VerticalAlignment="Center" Margin="12,0,6,0"
-                           Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
-                <ComboBox Width="180" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
-                          Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
-                <ui:Button Content="刷新" Padding="10,3" Margin="12,0,0,0" Command="{Binding RefreshCommand}"/>
-                <CheckBox x:Name="WriteModeToggle" Content="⚠ 写入模式" Margin="20,0,0,0" VerticalAlignment="Center"
-                          IsChecked="{Binding IsWriteMode, Mode=TwoWay}"
-                          ToolTip="默认只读。勾选后可执行写操作（UPDATE/INSERT/DELETE/DDL）；危险语句会被拦截，敏感语句执行前需确认。只读数据源无法开启。"/>
-                <ui:Button x:Name="SnippetButton" Padding="10,3" Margin="12,0,0,0"
-                           Content="{Binding SnippetButtonLabel}"
-                           ToolTip="收藏的片段（随当前 数据源 · 库）；点击展开、选择后追加到输入框"
-                           Click="OnToggleSnippetPanel"/>
-            </StackPanel>
+        <DockPanel Grid.Row="1" Margin="12,10,12,0" LastChildFill="True">
+            <Border DockPanel.Dock="Top" Style="{DynamicResource CardBorderStyle}" Padding="10,7" Margin="0,0,0,8">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="数据源:" VerticalAlignment="Center" Margin="0,0,6,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    <ComboBox Width="190" DisplayMemberPath="Name"
+                              ItemsSource="{Binding Datasources}" SelectedItem="{Binding SelectedDatasource}"/>
+                    <TextBlock Text="库:" VerticalAlignment="Center" Margin="12,0,6,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
+                    <ComboBox Width="170" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
+                              Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
+                    <ui:Button Icon="{ui:SymbolIcon ArrowSync24}" Content="刷新" Padding="10,3" Margin="12,0,0,0"
+                               Command="{Binding RefreshCommand}"/>
+                    <CheckBox x:Name="WriteModeToggle" Content="⚠ 写入模式" Margin="20,0,0,0" VerticalAlignment="Center"
+                              IsChecked="{Binding IsWriteMode, Mode=TwoWay}"
+                              ToolTip="默认只读。勾选后可执行写操作（UPDATE/INSERT/DELETE/DDL）；危险语句会被拦截，敏感语句执行前需确认。只读数据源无法开启。"/>
+                    <ui:Button x:Name="SnippetButton" Padding="10,3" Margin="12,0,0,0"
+                               Content="{Binding SnippetButtonLabel}"
+                               ToolTip="收藏的片段（随当前 数据源 · 库）；点击展开、选择后追加到输入框"
+                               Click="OnToggleSnippetPanel"/>
+                </StackPanel>
+            </Border>
 
             <!-- SQL 片段下拉（菜单样式） -->
             <Popup x:Name="SnippetPopup" StaysOpen="True" AllowsTransparency="True"
@@ -172,23 +177,23 @@
 
                         <TextBlock Grid.Row="2" Text="列结构" FontWeight="SemiBold" Margin="2,8,0,4"/>
                         <GroupBox Grid.Row="3" Header="列" Padding="4">
-                            <ListView ItemsSource="{Binding Columns}">
+                            <ListView ItemsSource="{Binding Columns}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                                 <ListView.View>
                                     <GridView>
-                                        <GridViewColumn Header="列名" Width="150" DisplayMemberBinding="{Binding Name}"/>
-                                        <GridViewColumn Header="类型" Width="130" DisplayMemberBinding="{Binding Type}"/>
-                                        <GridViewColumn Header="可空" Width="45" DisplayMemberBinding="{Binding Nullable}"/>
-                                        <GridViewColumn Header="主键" Width="45" DisplayMemberBinding="{Binding PrimaryKey}"/>
+                                        <GridViewColumn Header="列名" Width="112" DisplayMemberBinding="{Binding Name}"/>
+                                        <GridViewColumn Header="类型" Width="104" DisplayMemberBinding="{Binding Type}"/>
+                                        <GridViewColumn Header="可空" Width="40" DisplayMemberBinding="{Binding Nullable}"/>
+                                        <GridViewColumn Header="主键" Width="40" DisplayMemberBinding="{Binding PrimaryKey}"/>
                                     </GridView>
                                 </ListView.View>
                             </ListView>
                         </GroupBox>
 
                         <GroupBox Grid.Row="4" Header="索引" Padding="4" MaxHeight="150" Margin="0,8,0,0">
-                            <ListView ItemsSource="{Binding Indexes}">
+                            <ListView ItemsSource="{Binding Indexes}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                                 <ListView.View>
                                     <GridView>
-                                        <GridViewColumn Header="索引" Width="240" DisplayMemberBinding="{Binding Display}"/>
+                                        <GridViewColumn Header="索引" Width="270" DisplayMemberBinding="{Binding Display}"/>
                                     </GridView>
                                 </ListView.View>
                             </ListView>
@@ -218,8 +223,9 @@
                 <Grid Grid.Column="2">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*" MinHeight="60"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*" MinHeight="120"/>
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0">
@@ -276,59 +282,64 @@
                             <ui:Button DockPanel.Dock="Right" Content="保存 .sql" Padding="8,2" Margin="0,0,6,0"
                                        Command="{Binding SaveSqlFileCommand}" ToolTip="把编辑器内容保存为 .sql 文件"/>
                         </DockPanel>
-                        <Border CornerRadius="4">
-                            <Border.Style>
-                                <Style TargetType="Border">
-                                    <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
-                                    <Setter Property="BorderThickness" Value="1"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsWriteMode}" Value="True">
-                                            <Setter Property="BorderBrush" Value="#D13438"/>
-                                            <Setter Property="BorderThickness" Value="2"/>
-                                            <Setter Property="Background" Value="#FDECEA"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Border.Style>
-                            <avalonedit:TextEditor x:Name="SqlBox" Height="90" FontFamily="Consolas" FontSize="13"
-                                     ShowLineNumbers="True" SyntaxHighlighting="SQL" WordWrap="False"
-                                     BorderThickness="0" Background="Transparent" Padding="6" HorizontalScrollBarVisibility="Auto"
-                                     VerticalScrollBarVisibility="Auto"
-                                     PreviewKeyDown="OnSqlKeyDown"/>
-                        </Border>
+
+                        <DockPanel Margin="0,6,0,2" LastChildFill="False">
+                            <ui:Button DockPanel.Dock="Left" Content="执行 (Ctrl+Enter)" Appearance="Primary" Padding="12,4"
+                                       Command="{Binding ExecuteCommand}"
+                                       Visibility="{Binding ShowReadExecute, Converter={StaticResource BoolToVis}}"/>
+                            <ui:Button DockPanel.Dock="Left" Content="⚠ 执行写入 (Ctrl+Enter)" Appearance="Danger" Padding="12,4"
+                                       Command="{Binding ExecuteCommand}"
+                                       Visibility="{Binding ShowWriteExecute, Converter={StaticResource BoolToVis}}"/>
+                            <ui:Button DockPanel.Dock="Left" Content="导出 CSV" Padding="12,4" Margin="8,0,0,0"
+                                       Command="{Binding ExportCsvCommand}"/>
+                            <ui:Button DockPanel.Dock="Left" Content="导出 JSON" Padding="12,4" Margin="8,0,0,0"
+                                       Command="{Binding ExportJsonCommand}"/>
+                            <ui:Button DockPanel.Dock="Left" Content="执行计划" Padding="12,4" Margin="8,0,0,0"
+                                       Command="{Binding ExplainCommand}"
+                                       Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
+                            <Border DockPanel.Dock="Left" Margin="12,0,0,0" Padding="6,2" CornerRadius="3" Background="#D13438"
+                                    VerticalAlignment="Center"
+                                    Visibility="{Binding ShowWriteBanner, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="写入模式" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                            </Border>
+                            <ui:Button DockPanel.Dock="Right" Content="下一页 ▶" Padding="10,4" Margin="6,0,0,0"
+                                       Command="{Binding NextPageCommand}"
+                                       Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
+                            <ui:Button DockPanel.Dock="Right" Content="◀ 上一页" Padding="10,4"
+                                       Command="{Binding PrevPageCommand}"
+                                       Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0"
+                                       Text="{Binding PageLabel}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
+                        </DockPanel>
                     </StackPanel>
 
-                    <DockPanel Grid.Row="1" Margin="0,6,0,6" LastChildFill="False">
-                        <ui:Button DockPanel.Dock="Left" Content="执行 (Ctrl+Enter)" Appearance="Primary" Padding="12,4"
-                                   Command="{Binding ExecuteCommand}"
-                                   Visibility="{Binding ShowReadExecute, Converter={StaticResource BoolToVis}}"/>
-                        <ui:Button DockPanel.Dock="Left" Content="⚠ 执行写入 (Ctrl+Enter)" Appearance="Danger" Padding="12,4"
-                                   Command="{Binding ExecuteCommand}"
-                                   Visibility="{Binding ShowWriteExecute, Converter={StaticResource BoolToVis}}"/>
-                        <ui:Button DockPanel.Dock="Left" Content="导出 CSV" Padding="12,4" Margin="8,0,0,0"
-                                   Command="{Binding ExportCsvCommand}"/>
-                        <ui:Button DockPanel.Dock="Left" Content="导出 JSON" Padding="12,4" Margin="8,0,0,0"
-                                   Command="{Binding ExportJsonCommand}"/>
-                        <ui:Button DockPanel.Dock="Left" Content="执行计划" Padding="12,4" Margin="8,0,0,0"
-                                   Command="{Binding ExplainCommand}"
-                                   Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
-                        <Border DockPanel.Dock="Left" Margin="12,0,0,0" Padding="6,2" CornerRadius="3" Background="#D13438"
-                                VerticalAlignment="Center"
-                                Visibility="{Binding ShowWriteBanner, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="写入模式" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
-                        </Border>
-                        <ui:Button DockPanel.Dock="Right" Content="下一页 ▶" Padding="10,4" Margin="6,0,0,0"
-                                   Command="{Binding NextPageCommand}"
-                                   Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
-                        <ui:Button DockPanel.Dock="Right" Content="◀ 上一页" Padding="10,4"
-                                   Command="{Binding PrevPageCommand}"
-                                   Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
-                        <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0"
-                                   Text="{Binding PageLabel}" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                   Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
-                    </DockPanel>
+                    <Border Grid.Row="1" CornerRadius="4">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsWriteMode}" Value="True">
+                                        <Setter Property="BorderBrush" Value="#D13438"/>
+                                        <Setter Property="BorderThickness" Value="2"/>
+                                        <Setter Property="Background" Value="#FDECEA"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <avalonedit:TextEditor x:Name="SqlBox" FontFamily="Consolas" FontSize="13"
+                                 ShowLineNumbers="True" SyntaxHighlighting="SQL" WordWrap="False"
+                                 BorderThickness="0" Background="Transparent" Padding="6" HorizontalScrollBarVisibility="Auto"
+                                 VerticalScrollBarVisibility="Auto"
+                                 PreviewKeyDown="OnSqlKeyDown"/>
+                    </Border>
 
-                    <DockPanel Grid.Row="2">
+                    <GridSplitter Grid.Row="2" Height="6" HorizontalAlignment="Stretch" Background="Transparent"
+                                  ResizeBehavior="PreviousAndNext" ResizeDirection="Rows" Cursor="SizeNS"
+                                  ToolTip="拖动调整 SQL 输入区高度"/>
+
+                    <DockPanel Grid.Row="3">
                         <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding ResultSetTabs}" Margin="0,0,0,4"
                                       Visibility="{Binding HasMultipleResults, Converter={StaticResource BoolToVis}}">
                             <ItemsControl.ItemsPanel>
@@ -368,6 +379,24 @@
                         </DockPanel>
 
                         <Grid>
+                            <TextBlock Text="执行查询，或右键对象列表「预览选中表」查看结果"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="13">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Results}" Value="{x:Null}"/>
+                                                    <Condition Binding="{Binding ShowPlan}" Value="False"/>
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                             <Grid Visibility="{Binding ShowResultGrid, Converter={StaticResource BoolToVis}}">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>

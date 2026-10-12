@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Data;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Datasource;
@@ -46,6 +47,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private string _keyPattern = "*";
     private string _redisKeyInfo = string.Empty;
     private string? _pendingSelectId;
+    private string _objectFilter = string.Empty;
     private CancellationTokenSource? _queryCts;
     private bool _cancelRequested;
     private QueryTab? _selectedTab;
@@ -82,6 +84,11 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         GenerateCountCommand = new RelayCommand(_ => GenerateObjectSql("count"), _ => IsSqlDb && SelectedTable is not null && !Busy);
         GenerateCallCommand = new RelayCommand(_ => GenerateObjectSql("call"), _ => IsSqlDb && SelectedTable is not null && !Busy);
         SelectResultCommand = new RelayCommand(p => { if (p is int i) SelectResult(i); });
+        RefreshObjectsCommand = new RelayCommand(_ => _ = LoadTablesAsync(), _ => IsSqlDb && !Busy);
+
+        TablesView = CollectionViewSource.GetDefaultView(Tables);
+        TablesView.Filter = o => o is DbTableInfo t &&
+            (string.IsNullOrWhiteSpace(_objectFilter) || t.Display.Contains(_objectFilter, StringComparison.OrdinalIgnoreCase));
 
         _tabSeq = 1;
         Tabs.Add(new QueryTab { Title = "查询 1" });
@@ -95,6 +102,9 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public ObservableCollection<string> Databases { get; } = new();
     public ObservableCollection<DbTableInfo> Tables { get; } = new();
     public ObservableCollection<DbColumnInfo> Columns { get; } = new();
+
+    /// <summary>对象列表的过滤视图（受 <see cref="ObjectFilter"/> 控制）。</summary>
+    public ICollectionView TablesView { get; }
 
     /// <summary>当前选中表的索引（仅“表”类别）。</summary>
     public ObservableCollection<DbIndexInfo> Indexes { get; } = new();
@@ -142,6 +152,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public ICommand GenerateCountCommand { get; }
     public ICommand GenerateCallCommand { get; }
     public ICommand SelectResultCommand { get; }
+    public ICommand RefreshObjectsCommand { get; }
 
     /// <summary>是否有可用片段（供面板提示）。</summary>
     public bool HasSnippets => Snippets.Count > 0;
@@ -300,6 +311,13 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     }
 
     public string ObjectHeader => _objectCategoryIndex switch { 1 => "视图", 2 => "存储过程", _ => "表" };
+
+    /// <summary>对象列表过滤关键字。</summary>
+    public string ObjectFilter
+    {
+        get => _objectFilter;
+        set { if (Set(ref _objectFilter, value)) TablesView.Refresh(); }
+    }
 
     /// <summary>是否存在多个结果集（显示结果子标签）。</summary>
     public bool HasMultipleResults => ResultSetTabs.Count > 1;

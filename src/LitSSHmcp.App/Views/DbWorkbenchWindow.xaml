@@ -282,36 +282,6 @@
                             <ui:Button DockPanel.Dock="Right" Content="保存 .sql" Padding="8,2" Margin="0,0,6,0"
                                        Command="{Binding SaveSqlFileCommand}" ToolTip="把编辑器内容保存为 .sql 文件"/>
                         </DockPanel>
-
-                        <DockPanel Margin="0,6,0,2" LastChildFill="False">
-                            <ui:Button DockPanel.Dock="Left" Content="执行 (Ctrl+Enter)" Appearance="Primary" Padding="12,4"
-                                       Command="{Binding ExecuteCommand}"
-                                       Visibility="{Binding ShowReadExecute, Converter={StaticResource BoolToVis}}"/>
-                            <ui:Button DockPanel.Dock="Left" Content="⚠ 执行写入 (Ctrl+Enter)" Appearance="Danger" Padding="12,4"
-                                       Command="{Binding ExecuteCommand}"
-                                       Visibility="{Binding ShowWriteExecute, Converter={StaticResource BoolToVis}}"/>
-                            <ui:Button DockPanel.Dock="Left" Content="导出 CSV" Padding="12,4" Margin="8,0,0,0"
-                                       Command="{Binding ExportCsvCommand}"/>
-                            <ui:Button DockPanel.Dock="Left" Content="导出 JSON" Padding="12,4" Margin="8,0,0,0"
-                                       Command="{Binding ExportJsonCommand}"/>
-                            <ui:Button DockPanel.Dock="Left" Content="执行计划" Padding="12,4" Margin="8,0,0,0"
-                                       Command="{Binding ExplainCommand}"
-                                       Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
-                            <Border DockPanel.Dock="Left" Margin="12,0,0,0" Padding="6,2" CornerRadius="3" Background="#D13438"
-                                    VerticalAlignment="Center"
-                                    Visibility="{Binding ShowWriteBanner, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="写入模式" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
-                            </Border>
-                            <ui:Button DockPanel.Dock="Right" Content="下一页 ▶" Padding="10,4" Margin="6,0,0,0"
-                                       Command="{Binding NextPageCommand}"
-                                       Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
-                            <ui:Button DockPanel.Dock="Right" Content="◀ 上一页" Padding="10,4"
-                                       Command="{Binding PrevPageCommand}"
-                                       Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
-                            <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0"
-                                       Text="{Binding PageLabel}" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                       Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
-                        </DockPanel>
                     </StackPanel>
 
                     <Border Grid.Row="1" CornerRadius="4">
@@ -340,6 +310,35 @@
                                   ToolTip="拖动调整 SQL 输入区高度"/>
 
                     <DockPanel Grid.Row="3">
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
+                            <ui:Button DockPanel.Dock="Left" Content="执行 (Ctrl+Enter)" Appearance="Primary" Padding="12,4"
+                                       Command="{Binding ExecuteCommand}"
+                                       Visibility="{Binding ShowReadExecute, Converter={StaticResource BoolToVis}}"/>
+                            <ui:Button DockPanel.Dock="Left" Content="⚠ 执行写入 (Ctrl+Enter)" Appearance="Danger" Padding="12,4"
+                                       Command="{Binding ExecuteCommand}"
+                                       Visibility="{Binding ShowWriteExecute, Converter={StaticResource BoolToVis}}"/>
+                            <ui:Button DockPanel.Dock="Left" Content="导出 CSV" Padding="12,4" Margin="8,0,0,0"
+                                       Command="{Binding ExportCsvCommand}"/>
+                            <ui:Button DockPanel.Dock="Left" Content="导出 JSON" Padding="12,4" Margin="8,0,0,0"
+                                       Command="{Binding ExportJsonCommand}"/>
+                            <ui:Button DockPanel.Dock="Left" Content="执行计划" Padding="12,4" Margin="8,0,0,0"
+                                       Command="{Binding ExplainCommand}"
+                                       Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
+                            <Border DockPanel.Dock="Left" Margin="12,0,0,0" Padding="6,2" CornerRadius="3" Background="#D13438"
+                                    VerticalAlignment="Center"
+                                    Visibility="{Binding ShowWriteBanner, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="写入模式" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                            </Border>
+                            <ui:Button DockPanel.Dock="Right" Content="下一页 ▶" Padding="10,4" Margin="6,0,0,0"
+                                       Command="{Binding NextPageCommand}"
+                                       Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
+                            <ui:Button DockPanel.Dock="Right" Content="◀ 上一页" Padding="10,4"
+                                       Command="{Binding PrevPageCommand}"
+                                       Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0"
+                                       Text="{Binding PageLabel}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       Visibility="{Binding ShowPaging, Converter={StaticResource BoolToVis}}"/>
+                        </DockPanel>
                         <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding ResultSetTabs}" Margin="0,0,0,4"
                                       Visibility="{Binding HasMultipleResults, Converter={StaticResource BoolToVis}}">
                             <ItemsControl.ItemsPanel>

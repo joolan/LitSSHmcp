@@ -42,6 +42,7 @@
                         <MenuItem Header="连接（命令会话）" Click="OnConnectClick"/>
                         <MenuItem Header="打开终端（交互式）" Click="OnOpenTerminalClick"/>
                         <MenuItem Header="SFTP 文件管理" Click="OnSftpManagerClick"/>
+                        <MenuItem Header="打开代理浏览器 (SOCKS)…" Click="OnOpenProxiedBrowserClick"/>
                         <MenuItem Header="远程互传（服务器↔服务器）…" Click="OnRemoteCopyClick"/>
                         <MenuItem Header="编辑" Click="OnEditClick"/>
                         <Separator/>

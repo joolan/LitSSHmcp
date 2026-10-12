@@ -21,6 +21,8 @@ public partial class ServerManageView : UserControl
 
     private void OnSftpManagerClick(object sender, RoutedEventArgs e) => ViewModel?.OpenSftpManagerCommand.Execute(null);
 
+    private void OnOpenProxiedBrowserClick(object sender, RoutedEventArgs e) => ViewModel?.OpenProxiedBrowserCommand.Execute(null);
+
     private void OnRemoteCopyClick(object sender, RoutedEventArgs e) => ViewModel?.OpenRemoteCopyCommand.Execute(null);
 
     private void OnEditClick(object sender, RoutedEventArgs e) => ViewModel?.EditServerCommand.Execute(null);

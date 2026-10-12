@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -66,6 +67,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand OpenTriggerCommand { get; }
     public ICommand OpenSftpManagerCommand { get; }
     public ICommand OpenRemoteCopyCommand { get; }
+    public ICommand OpenProxiedBrowserCommand { get; }
     public ICommand AskAgentCommand { get; }
     public ICommand SnapshotRefreshCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
@@ -100,6 +102,7 @@ public class MainViewModel : INotifyPropertyChanged
         OpenTriggerCommand = new RelayCommand(_ => OpenTrigger());
         OpenSftpManagerCommand = new RelayCommand(_ => OpenSftpManager(SelectedServer), _ => SelectedServer != null);
         OpenRemoteCopyCommand = new RelayCommand(_ => OpenRemoteCopy(SelectedServer), _ => SelectedServer != null);
+        OpenProxiedBrowserCommand = new RelayCommand(_ => OpenProxiedBrowser(SelectedServer), _ => SelectedServer is { Disabled: false });
         AskAgentCommand = new RelayCommand(_ => AskAgent());
         SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
@@ -153,6 +156,7 @@ public class MainViewModel : INotifyPropertyChanged
             (OpenMonitorCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenSftpManagerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenRemoteCopyCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenProxiedBrowserCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ConnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenSnapshotHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -782,9 +786,75 @@ public class MainViewModel : INotifyPropertyChanged
         _portForwardWindow.Show();
     }
 
+    // ---- 代理浏览器（经 SSH 动态转发 SOCKS，浏览器全部流量走该服务器出口） ----
+    private readonly Dictionary<string, (Process Browser, string BaseDir)> _proxyBrowsers = new();
+
+    private async void OpenProxiedBrowser(SshServerConfig? server)
+    {
+        if (server is null)
+            return;
+        if (server.Disabled)
+        {
+            StatusMessage = $"服务器 {server.Name} 已禁用，无法建立代理。";
+            return;
+        }
+
+        var browser = ProxiedBrowserLauncher.FindChromiumBrowser();
+        if (browser is null)
+        {
+            MessageBox.Show(
+                "未找到 Chromium 系浏览器（Edge / Chrome / Brave / Chromium）。\n请安装其中之一后重试。",
+                "打开代理浏览器", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var port = ProxiedBrowserLauncher.GetFreeLoopbackPort();
+        var forwardId = Guid.NewGuid().ToString("N");
+        var config = new PortForwardConfig
+        {
+            Id = forwardId,
+            Name = $"代理浏览器 · {server.Name}",
+            ServerId = server.Id,
+            Type = PortForwardType.Dynamic,
+            BindHost = "127.0.0.1",
+            BindPort = port,
+            AutoStart = false
+        };
+
+        StatusMessage = $"正在为 {server.Name} 建立 SOCKS 代理…";
+        var (ok, message) = await _portForwardService.StartAsync(server, config);
+        if (!ok)
+        {
+            StatusMessage = "启动 SOCKS 代理失败";
+            MessageBox.Show("启动 SOCKS 代理失败：\n\n" + message, "代理浏览器", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        try
+        {
+            var launched = ProxiedBrowserLauncher.Launch(browser, port, server.Name);
+            _proxyBrowsers[forwardId] = (launched.Process, launched.BaseDir);
+            launched.Process.EnableRaisingEvents = true;
+            launched.Process.Exited += (_, _) => _ = StopProxiedBrowserAsync(forwardId);
+            StatusMessage = $"已打开代理浏览器：{server.Name}（SOCKS 127.0.0.1:{port}）";
+        }
+        catch (Exception ex)
+        {
+            await _portForwardService.StopAsync(forwardId);
+            StatusMessage = "打开浏览器失败: " + ex.Message;
+            MessageBox.Show("打开浏览器失败：\n\n" + ex.Message, "代理浏览器", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async Task StopProxiedBrowserAsync(string forwardId)
+    {
+        if (_proxyBrowsers.Remove(forwardId, out var entry))
+            ProxiedBrowserLauncher.TryCleanup(entry.BaseDir);
+        try { await _portForwardService.StopAsync(forwardId); } catch { /* ignore */ }
+    }
+
     // 文件/文件夹同步（单向）
     private SyncWindow? _syncWindow;
-
     private void OpenSync()
     {
         if (_syncWindow is { IsLoaded: true })

@@ -56,6 +56,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand NavigateServersCommand { get; }
     public ICommand NavigateDataSourcesCommand { get; }
     public ICommand NavigateApplicationsCommand { get; }
+    public ICommand NavigateRemoteDesktopsCommand { get; }
     public ICommand OpenSettingsCommand { get; }
     public ICommand OpenSessionManagerCommand { get; }
     public ICommand OpenTerminalCommand { get; }
@@ -91,6 +92,7 @@ public class MainViewModel : INotifyPropertyChanged
         NavigateServersCommand = new RelayCommand(_ => CurrentPage = MainPage.Servers);
         NavigateDataSourcesCommand = new RelayCommand(_ => NavigateDataSources());
         NavigateApplicationsCommand = new RelayCommand(_ => NavigateApplications());
+        NavigateRemoteDesktopsCommand = new RelayCommand(_ => NavigateRemoteDesktops());
         OpenSettingsCommand = new RelayCommand(_ => OpenSettings());
         OpenSessionManagerCommand = new RelayCommand(_ => ShowSessionWindow());
         OpenTerminalCommand = new RelayCommand(_ => ConnectTerminal(SelectedServer), _ => SelectedServer != null);
@@ -194,6 +196,14 @@ public class MainViewModel : INotifyPropertyChanged
     {
         get => _applicationCount;
         private set { _applicationCount = value; OnPropertyChanged(); }
+    }
+
+    private int _remoteDesktopCount;
+    /// <summary>远程桌面（RDP / VNC）连接总数。</summary>
+    public int RemoteDesktopCount
+    {
+        get => _remoteDesktopCount;
+        private set { _remoteDesktopCount = value; OnPropertyChanged(); }
     }
 
     private int _portForwardCount;
@@ -590,6 +600,7 @@ public class MainViewModel : INotifyPropertyChanged
             DatasourceCount = config.DataSources.Length;
             ApplicationCount = config.Applications.Length;
             PortForwardCount = config.PortForwards.Length;
+            RemoteDesktopCount = config.RemoteDesktops.Length;
             SyncTaskCount = config.SyncTasks.Length;
             SyncTaskEnabledCount = config.SyncTasks.Count(t => t.Enabled);
             PortForwardRunningCount = _portForwardService.ActiveIds.Count;
@@ -899,6 +910,7 @@ public class MainViewModel : INotifyPropertyChanged
         {
             var config = await _configService.LoadConfigAsync();
             PortForwardCount = config.PortForwards.Length;
+            RemoteDesktopCount = config.RemoteDesktops.Length;
             SyncTaskCount = config.SyncTasks.Length;
             SyncTaskEnabledCount = config.SyncTasks.Count(t => t.Enabled);
             TriggerCount = config.Triggers.Length;
@@ -997,6 +1009,21 @@ public class MainViewModel : INotifyPropertyChanged
         ApplicationPage ??= new ApplicationManageViewModel(_configService, Application.Current.MainWindow);
         ApplicationPage.RefreshCommand.Execute(null);
         CurrentPage = MainPage.Applications;
+    }
+
+    // 远程桌面（RDP / VNC）：主区域页面
+    private RemoteDesktopManageViewModel? _remoteDesktopPage;
+    public RemoteDesktopManageViewModel? RemoteDesktopPage
+    {
+        get => _remoteDesktopPage;
+        private set { _remoteDesktopPage = value; OnPropertyChanged(); }
+    }
+
+    private void NavigateRemoteDesktops()
+    {
+        RemoteDesktopPage ??= new RemoteDesktopManageViewModel(_configService);
+        RemoteDesktopPage.RefreshCommand.Execute(null);
+        CurrentPage = MainPage.RemoteDesktops;
     }
 
     // AI 运维助手(内嵌 MCP 客户端 + OpenAI 兼容大模型; 需先在「AI 助手设置」配置模型)
@@ -1184,7 +1211,8 @@ public enum MainPage
     Home,
     Servers,
     DataSources,
-    Applications
+    Applications,
+    RemoteDesktops
 }
 
 /// <summary>SSH 会话管理窗口的布局方式。</summary>

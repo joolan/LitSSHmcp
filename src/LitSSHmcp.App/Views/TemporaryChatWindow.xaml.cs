@@ -13,10 +13,10 @@ public partial class TemporaryChatWindow : FluentWindow
 {
     private readonly TemporaryChatViewModel _vm;
 
-    public TemporaryChatWindow(IConfigService configService, string? initialProviderId)
+    public TemporaryChatWindow(IConfigService configService, string? initialProviderId, string? initialAgentId = null)
     {
         InitializeComponent();
-        _vm = new TemporaryChatViewModel(configService, initialProviderId);
+        _vm = new TemporaryChatViewModel(configService, initialProviderId, initialAgentId);
         DataContext = _vm;
         WindowLayout.Attach(this, "agent-temp");
         _vm.Turns.CollectionChanged += (_, _) => ChatScroll.ScrollToEnd();
@@ -33,6 +33,14 @@ public partial class TemporaryChatWindow : FluentWindow
     {
         _vm.Input = text;
         Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()), System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    /// <summary>切换到指定智能体（按 Id；不存在则忽略）。MySQL「AI 分析」等入口复用已开窗口时用。</summary>
+    public void SelectAgent(string agentId)
+    {
+        var hit = _vm.Agents.FirstOrDefault(a => a.Id == agentId);
+        if (hit is not null)
+            _vm.SelectedAgent = hit;
     }
 
     private TemporaryChatViewModel Vm => _vm;

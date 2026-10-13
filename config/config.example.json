@@ -131,6 +131,12 @@
   "agent": {
     "enabled": true,
     "activeProviderId": "",
+    "activeAgentId": "chat",
+    "agents": [
+      { "id": "chat", "name": "通用聊天", "description": "日常问答与轻量运维咨询，跟随全局设置", "systemPrompt": "", "builtin": true, "responseStyle": null },
+      { "id": "ops", "name": "运维专家", "description": "服务器排障与变更操作：严格按'只读取证→定位→最小变更→验证'流程", "systemPrompt": "你是资深 Linux/SRE 运维专家。处理故障时先只读取证、给出根因假设与验证步骤，再提出最小变更方案并说明影响与回滚方式。", "builtin": true, "responseStyle": null },
+      { "id": "db", "name": "数据库分析", "description": "SQL/慢查询/性能分析：只做只读分析", "systemPrompt": "你是数据库性能分析专家。分析 SQL/慢查询/执行计划时先给出结论与证据，再给优化建议；默认只做只读分析，写操作必须由用户明确要求并经审批。", "builtin": true, "responseStyle": null }
+    ],
     "systemPrompt": "",
     "skillsDir": "",
     "workspaceDir": "C:\\Users\\<你>\\Documents\\LitSSH",

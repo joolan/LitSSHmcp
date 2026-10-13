@@ -25,6 +25,7 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
 
     private readonly IConfigService _configService;
     private readonly string? _initialProviderId;
+    private readonly string? _initialAgentId;
 
     private AgentConfig _config = new();
     private AgentSession? _session;
@@ -38,10 +39,11 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
     private DateTime _lastFlushUtc = DateTime.UtcNow;
     private DateTime _lastReasoningFlushUtc = DateTime.UtcNow;
 
-    public TemporaryChatViewModel(IConfigService configService, string? initialProviderId)
+    public TemporaryChatViewModel(IConfigService configService, string? initialProviderId, string? initialAgentId = null)
     {
         _configService = configService;
         _initialProviderId = initialProviderId;
+        _initialAgentId = initialAgentId;
         SendOrStopCommand = new RelayCommand(_ => { if (IsBusy) _cts?.Cancel(); else _ = SendAsync(); },
             _ => IsBusy || (!string.IsNullOrWhiteSpace(Input) || HasAttachments));
 
@@ -51,6 +53,46 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
     }
 
     public ObservableCollection<AgentProviderConfig> Providers { get; } = new();
+
+    /// <summary>可切换的智能体（临时聊天不持久化选择，仅当次窗口有效）。</summary>
+    public ObservableCollection<ChatAgentConfig> Agents { get; } = new();
+
+    private ChatAgentConfig? _selectedAgent;
+    public ChatAgentConfig? SelectedAgent
+    {
+        get => _selectedAgent;
+        set
+        {
+            if (IsBusy && !ReferenceEquals(_selectedAgent, value))
+            {
+                StatusMessage = "正在生成回复：请等它完成或点「停止」后再切换智能体。";
+                OnPropertyChanged(nameof(SelectedAgent));   // 还原下拉选中项
+                return;
+            }
+            if (!Set(ref _selectedAgent, value))
+                return;
+            ApplyAgentPrompt();
+        }
+    }
+
+    /// <summary>组出当前系统提示 = 临时聊天基础提示 + 可选智能体段（基础提示必须始终保留）。</summary>
+    private string BuildSystemPrompt() =>
+        SystemPromptBuilder.AppendAgent(TempSystemPrompt, _selectedAgent?.Name, _selectedAgent?.SystemPrompt, _selectedAgent?.ResponseStyle);
+
+    /// <summary>切换智能体：就地替换系统提示（保留历史；空闲时由 UI 保证）。</summary>
+    private void ApplyAgentPrompt()
+    {
+        if (_session is null)
+            return;
+        try
+        {
+            _session.SetSystemPrompt(BuildSystemPrompt());
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "切换智能体失败: " + ex.Message;
+        }
+    }
 
     /// <summary>模型下拉的分组视图（按厂家 GroupName 分组）。</summary>
     public ICollectionView ComboView { get; }
@@ -105,12 +147,24 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
             foreach (var p in AgentProviderGroupConfig.Flatten(_config.Providers))
                 Providers.Add(p);
 
+            Agents.Clear();
+            var agentList = _config.Agents ?? Array.Empty<ChatAgentConfig>();
+            foreach (var a in agentList)
+                Agents.Add(a);
+            // 智能体选择不持久化：默认 chat（无则第一个），调用方可传 initialAgentId 覆盖（如 MySQL 分析传 db）
+            var agentPick = Agents.FirstOrDefault(a => a.Id == _initialAgentId)
+                ?? Agents.FirstOrDefault(a => a.Id == "chat")
+                ?? Agents.FirstOrDefault();
+
             var pick = Providers.FirstOrDefault(p => p.Id == _initialProviderId)
                        ?? Providers.FirstOrDefault(p => p.Id == _config.ActiveProviderId)
                        ?? Providers.FirstOrDefault();
 
             if (pick is null)
                 StatusMessage = "没有启用的大模型：请先在「AI 助手设置」里添加并启用模型。";
+            // 先定智能体再定模型：SelectedProvider 会触发 RebuildSession（须已带上智能体段）
+            _selectedAgent = agentPick;
+            OnPropertyChanged(nameof(SelectedAgent));
             SelectedProvider = pick;
         }
         catch (Exception ex)
@@ -135,7 +189,7 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
             var client = ChatClientFactory.Create(SelectedProvider);
             _provider = SelectedProvider;
             _session = new AgentSession(client, SelectedProvider, Array.Empty<IAgentTool>(),
-                TempSystemPrompt, _config, history, recall: null, spill: null);
+                BuildSystemPrompt(), _config, history, recall: null, spill: null);
             StatusMessage = $"模型：{SelectedProvider.DisplayName}（临时，不保存）";
         }
         catch (Exception ex)

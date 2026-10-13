@@ -4,7 +4,7 @@ namespace LitSSHmcp.Core.Models;
 
 public class AppConfig
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     /// <summary>配置结构版本。缺失该字段的旧文件反序列化为 0，由 ConfigMigrator 迁移到当前版本。</summary>
     public int SchemaVersion { get; set; }
@@ -25,6 +25,9 @@ public class AppConfig
 
     /// <summary>端口转发定义（本地/远程/动态 SOCKS）。</summary>
     public PortForwardConfig[] PortForwards { get; set; } = Array.Empty<PortForwardConfig>();
+
+    /// <summary>远程桌面连接定义（RDP / VNC；可选经 SSH 隧道）。</summary>
+    public RemoteDesktopConfig[] RemoteDesktops { get; set; } = Array.Empty<RemoteDesktopConfig>();
 
     /// <summary>界面外观（主题）。</summary>
     public UiConfig Ui { get; set; } = new();
@@ -51,6 +54,12 @@ public class AgentConfig
 
     /// <summary>当前选用的模型 Id（即某厂家下某模型的 Id；空=用第一个启用的）。</summary>
     public string ActiveProviderId { get; set; } = string.Empty;
+
+    /// <summary>智能体列表（预置：chat/ops/db，均可编辑或删除；支持自定义新增）。</summary>
+    public ChatAgentConfig[] Agents { get; set; } = ChatAgentConfig.Defaults();
+
+    /// <summary>当前选用的智能体 Id（空=用列表第一个）。</summary>
+    public string ActiveAgentId { get; set; } = string.Empty;
 
     /// <summary>追加在"基础行为约定 + MCP server instructions + 技能"之后的额外系统提示。</summary>
     public string SystemPrompt { get; set; } = string.Empty;
@@ -521,3 +530,55 @@ public class FileTransferConfig
     public long MaxFileSizeBytes { get; set; } = 100 * 1024 * 1024; // 100MB
     public bool RequireApproval { get; set; } = true;
 }
+
+/// <summary>
+/// 智能体：一套可切换的角色设定（系统提示附加段 + 可选回答风格覆盖）。
+/// 只影响系统提示词**最末尾**的"当前智能体"段，不动工具集与稳定前缀（保持 prompt 缓存命中）。
+/// </summary>
+public class ChatAgentConfig
+{
+    /// <summary>稳定 Id（预置为 chat/ops/db；自定义用 GUID）。</summary>
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    public string Name { get; set; } = string.Empty;
+
+    public string Description { get; set; } = string.Empty;
+
+    /// <summary>系统提示附加段（追加到"## 当前智能体"下；为空=仅显示名称）。</summary>
+    public string SystemPrompt { get; set; } = string.Empty;
+
+    /// <summary>预置智能体（允许重置/不可彻底丢失；UI 标记"预置"）。自定义=false。</summary>
+    public bool Builtin { get; set; }
+
+    /// <summary>回答风格覆盖：concise / standard / detailed；空=跟随全局 agent.responseStyle。</summary>
+    public string? ResponseStyle { get; set; }
+
+    /// <summary>运行期注入系统提示的智能体上下文（非配置持久化项）。</summary>
+    public AgentPromptContext ToPromptContext() => new(Name, SystemPrompt, ResponseStyle);
+
+    /// <summary>三个预置智能体（chat/ops/db）。JSON 缺 Agents 字段时由属性初始化器补齐。</summary>
+    public static ChatAgentConfig[] Defaults() => new[]
+    {
+        new ChatAgentConfig
+        {
+            Id = "chat", Name = "通用聊天", Builtin = true,
+            Description = "日常问答与轻量运维咨询，跟随全局设置",
+            SystemPrompt = string.Empty,
+        },
+        new ChatAgentConfig
+        {
+            Id = "ops", Name = "运维专家", Builtin = true,
+            Description = "服务器排障与变更操作：严格按'只读取证→定位→最小变更→验证'流程，变更前说明影响与回滚",
+            SystemPrompt = "你是资深 Linux/SRE 运维专家。处理故障时先只读取证(快照/日志/进程/端口)、给出根因假设与验证步骤，再提出最小变更方案并说明影响与回滚方式；变更后必须做验证。",
+        },
+        new ChatAgentConfig
+        {
+            Id = "db", Name = "数据库分析", Builtin = true,
+            Description = "SQL/慢查询/性能分析：只做只读分析，写操作需用户明确要求",
+            SystemPrompt = "你是数据库性能分析专家。分析 SQL/慢查询/执行计划时先给出结论与证据(关键指标+采样片段)，再给优化建议(含索引/改写/架构层面)；默认只做只读分析，任何写操作(改表/改数据/加索引)必须由用户明确要求并经审批。",
+        },
+    };
+}
+
+/// <summary>注入系统提示的智能体上下文（AgentRuntime 消费；非持久化）。</summary>
+public sealed record AgentPromptContext(string Name, string SystemPrompt, string? ResponseStyle);

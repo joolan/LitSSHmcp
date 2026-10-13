@@ -537,7 +537,7 @@ public partial class AgentWindow : FluentWindow
             return;
         }
 
-        var window = new TemporaryChatWindow(_configService, _viewModel.SelectedProvider?.Id)
+        var window = new TemporaryChatWindow(_configService, _viewModel.SelectedProvider?.Id, _viewModel.SelectedAgent?.Id)
         {
             Owner = this,
             Topmost = false

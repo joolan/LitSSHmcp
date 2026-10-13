@@ -354,6 +354,80 @@
                         </Border>
                     </Grid>
                 </TabItem>
+                <!-- ===== Tab：智能体（可切换的角色设定：系统提示附加段 + 回答风格覆盖）===== -->
+                <TabItem Header="智能体">
+                    <Grid Margin="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="260"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" Style="{DynamicResource CardBorderStyle}">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="智能体列表（预置 3 个，均可编辑/删除）" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <ui:Button Content="添加" Padding="12,3" Click="OnAddAgent"/>
+                                    <TextBlock Text="(点「删除」移除所选)" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10" Margin="8,0,0,0"/>
+                                </StackPanel>
+                                <ListBox x:Name="AgentList" ItemsSource="{Binding Agents}" SelectedItem="{Binding SelectedAgent}"
+                                         Background="Transparent" BorderThickness="0">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                            <Setter Property="Padding" Value="8,6"/>
+                                            <Setter Property="Margin" Value="0,0,0,2"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                                    <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="6" Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding BuiltinText}" FontSize="10"
+                                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Description}" FontSize="10" TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </DockPanel>
+                        </Border>
+
+                        <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="Transparent"/>
+
+                        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                            <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,10">
+                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <TextBlock Text="智能体只改变系统提示最末尾的『当前智能体』段（角色设定 + 可选风格覆盖），不改动工具与技能；主窗口与临时聊天可在模型下拉旁切换，且按会话记忆。"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <TextBlock Text="名称:"/><ui:TextBox FontWeight="Normal" Text="{Binding SelectedAgent.Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="描述（列表展示，可空）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SelectedAgent.Description, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="系统提示附加段（追加到『## 当前智能体』下；预置通用聊天可留空）:"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding SelectedAgent.SystemPrompt, UpdateSourceTrigger=PropertyChanged}"
+                                                AcceptsReturn="True" TextWrapping="Wrap" MinHeight="140" VerticalScrollBarVisibility="Auto"
+                                                FontFamily="Consolas" Margin="0,0,0,6"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <TextBlock Text="回答风格覆盖:" VerticalAlignment="Center"/>
+                                        <ComboBox ItemsSource="{Binding AgentStyleOptions}" SelectedItem="{Binding SelectedAgent.ResponseStyle, Mode=TwoWay}"
+                                                  Width="130" Margin="6,0,16,0" ToolTip="空=跟随全局回答风格；选中后覆盖全局『回答风格』的篇幅规定（作用于该智能体）"/>
+                                        <TextBlock Text="(空=跟随全局 / concise / standard / detailed)" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <ui:Button Content="删除所选智能体" Padding="12,3" Click="OnRemoveAgent" HorizontalAlignment="Left"
+                                               ToolTip="删除后引用它的会话下次打开时回退到全局默认智能体"/>
+                                </StackPanel>
+                            </Border>
+                        </ScrollViewer>
+                    </Grid>
+                </TabItem>
                 <!-- ===== Tab：提示词模板（用户自定义斜杠快捷指令）===== -->
                 <TabItem Header="提示词模板">
                     <views:PromptTemplatesView/>

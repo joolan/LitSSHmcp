@@ -1,0 +1,136 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.RemoteDesktopEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="远程桌面连接" Height="720" Width="660" MinWidth="560"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="远程桌面连接"/>
+
+        <ScrollViewer Grid.Row="1" Margin="16,0,16,0" VerticalScrollBarVisibility="Auto">
+            <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="100"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="名称:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="协议:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ComboBox Grid.Row="1" Grid.Column="1" SelectedIndex="{Binding ProtocolIndex}" Margin="0,0,0,8"
+                              ToolTip="RDP: 用系统 mstsc 打开 Windows 远程桌面; VNC: 用本机 VNC 查看器打开">
+                        <ComboBoxItem Content="RDP（Windows 远程桌面）"/>
+                        <ComboBoxItem Content="VNC"/>
+                    </ComboBox>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="主机地址:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="2" Grid.Column="1" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                                ToolTip="目标 IP / 主机名; 经隧道时由 SSH 服务器代访"/>
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="端口:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="3" Grid.Column="1" Text="{Binding PortText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                                ToolTip="RDP 默认 3389, VNC 默认 5900（切换协议时自动带出）"/>
+
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="用户名:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="4" Grid.Column="1" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+
+                    <TextBlock Grid.Row="5" Grid.Column="0" Text="密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <PasswordBox FontWeight="Normal" Grid.Row="5" Grid.Column="1" x:Name="PasswordBox" Margin="0,0,0,8"
+                                 ToolTip="仅保存在本机(DPAPI加密), 不会暴露给 AI"/>
+
+                    <TextBlock Grid.Row="6" Grid.Column="0" Text="域:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="6" Grid.Column="1" Text="{Binding Domain, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                                ToolTip="RDP 可选, 如 CORP"/>
+
+                    <TextBlock Grid.Row="7" Grid.Column="0" Text="隧道服务器:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ComboBox Grid.Row="7" Grid.Column="1" SelectedIndex="{Binding TunnelServerIndex}" Margin="0,0,0,8"
+                              ItemsSource="{Binding TunnelServerOptions}"
+                              ToolTip="经该 SSH 服务器建立本地隧道后连接（访问只在堡垒机后可达的内网桌面）; 选(直连)则本机直连"/>
+
+                    <TextBlock Grid.Row="8" Grid.Column="0" Text="RDP 选项:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <StackPanel Grid.Row="8" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                        <CheckBox Content="全屏启动" IsChecked="{Binding Fullscreen}" VerticalAlignment="Center"
+                                  Visibility="{Binding IsRdp, Converter={StaticResource BoolToVis}}"/>
+                        <CheckBox Content="自动填充账号密码" IsChecked="{Binding UseLoginCredentials}" Margin="16,0,0,0" VerticalAlignment="Center"
+                                  ToolTip="勾选且已填用户名/密码时, 连接前自动登录"/>
+                    </StackPanel>
+
+                    <!-- 第 9 行按协议切换：RDP=分辨率；VNC=查看器路径 -->
+                    <TextBlock Grid.Row="9" Grid.Column="0" Text="VNC 查看器:" VerticalAlignment="Center" Margin="0,0,10,8"
+                               Visibility="{Binding IsVnc, Converter={StaticResource BoolToVis}}"/>
+                    <TextBlock Grid.Row="9" Grid.Column="0" Text="分辨率:" VerticalAlignment="Center" Margin="0,0,10,8"
+                               Visibility="{Binding IsRdp, Converter={StaticResource BoolToVis}}"/>
+
+                    <DockPanel Grid.Row="9" Grid.Column="1" Margin="0,0,0,8"
+                               Visibility="{Binding IsVnc, Converter={StaticResource BoolToVis}}">
+                        <ui:Button DockPanel.Dock="Right" Content="浏览…" Padding="10,4" Margin="6,0,0,0" Command="{Binding BrowseViewerCommand}"/>
+                        <ui:TextBox FontWeight="Normal" Text="{Binding ViewerPath, UpdateSourceTrigger=PropertyChanged}"
+                                    ToolTip="留空则自动探测 TigerVNC / TightVNC / RealVNC / UltraVNC"/>
+                    </DockPanel>
+
+                    <StackPanel Grid.Row="9" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8"
+                                Visibility="{Binding IsRdp, Converter={StaticResource BoolToVis}}">
+                        <ComboBox Width="150" ItemsSource="{Binding ResolutionOptions}" SelectedIndex="{Binding ResolutionIndex}"
+                                  ToolTip="自适应 = 按显示器/窗口"/>
+                        <ui:TextBox FontWeight="Normal" Width="60" Margin="6,0,0,0" Text="{Binding CustomWidthText, UpdateSourceTrigger=PropertyChanged}"
+                                    Visibility="{Binding IsCustomResolution, Converter={StaticResource BoolToVis}}" ToolTip="宽 640-7680"/>
+                        <TextBlock Text="×" VerticalAlignment="Center" Margin="4,0,4,0"
+                                   Visibility="{Binding IsCustomResolution, Converter={StaticResource BoolToVis}}"/>
+                        <ui:TextBox FontWeight="Normal" Width="60" Text="{Binding CustomHeightText, UpdateSourceTrigger=PropertyChanged}"
+                                    Visibility="{Binding IsCustomResolution, Converter={StaticResource BoolToVis}}" ToolTip="高 480-4320"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="9" Grid.Column="0" Text="VNC 查看器:" VerticalAlignment="Center" Margin="0,0,10,8"
+                               Visibility="{Binding IsVnc, Converter={StaticResource BoolToVis}}"/>
+                    <DockPanel Grid.Row="9" Grid.Column="1" Margin="0,0,0,8"
+                               Visibility="{Binding IsVnc, Converter={StaticResource BoolToVis}}">
+                        <ui:Button DockPanel.Dock="Right" Content="浏览…" Padding="10,4" Margin="6,0,0,0" Command="{Binding BrowseViewerCommand}"/>
+                        <ui:TextBox FontWeight="Normal" Text="{Binding ViewerPath, UpdateSourceTrigger=PropertyChanged}"
+                                    ToolTip="留空则自动探测 TigerVNC / TightVNC / RealVNC / UltraVNC"/>
+                    </DockPanel>
+
+                    <TextBlock Grid.Row="10" Grid.Column="0" Text="分组:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="10" Grid.Column="1" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+
+                    <TextBlock Grid.Row="11" Grid.Column="0" Text="标签:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="11" Grid.Column="1" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                                ToolTip="多个标签用逗号分隔"/>
+
+                    <TextBlock Grid.Row="12" Grid.Column="0" Text="描述:" VerticalAlignment="Top" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="12" Grid.Column="1" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+
+                    <TextBlock Grid.Row="13" Grid.Column="0" Grid.ColumnSpan="2"
+                               Text="提示: 密码仅人工录入并本机 DPAPI 加密保存; 连接会写入审计日志。RDP 使用系统 mstsc。"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10" TextWrapping="Wrap" Margin="0,4,0,4"/>
+                </Grid>
+            </Border>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="2" Margin="16,10,16,12">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="确定" Appearance="Primary" Width="90" Margin="0,0,8,0" IsDefault="True" Command="{Binding SaveCommand}"/>
+                <ui:Button Content="取消" Width="90" IsCancel="True" Command="{Binding CancelCommand}"/>
+            </StackPanel>
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

@@ -38,6 +38,12 @@
                     </GroupStyle>
                 </ComboBox.GroupStyle>
             </ComboBox>
+            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="14,0,4,0"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" Text="智能体:"/>
+            <ComboBox ItemsSource="{Binding Agents}" SelectedItem="{Binding SelectedAgent}"
+                      DisplayMemberPath="Name" Width="130" Height="32" VerticalContentAlignment="Center"
+                      HorizontalAlignment="Left" Padding="10,4"
+                      ToolTip="可切换角色设定（只影响系统提示尾部的智能体段）；本次窗口内有效，不保存"/>
         </DockPanel>
 
         <Border Grid.Row="2" Margin="12,0,12,0" Background="{DynamicResource AppSurfaceAltBrush}"

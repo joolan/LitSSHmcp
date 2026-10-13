@@ -1,0 +1,16 @@
+<UserControl x:Class="LitSSHmcp.App.Views.RemoteDesktopTabView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="{DynamicResource AppSurfaceBrush}">
+        <Grid x:Name="ContentHost"/>
+        <Border x:Name="OverlayHost" Background="{DynamicResource AppSurfaceBrush}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520">
+                <TextBlock x:Name="Overlay" Text="正在建立连接…" HorizontalAlignment="Center" TextAlignment="Center"
+                           TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                <TextBlock x:Name="OverlayDetail" Text="" HorizontalAlignment="Center" TextAlignment="Center"
+                           TextWrapping="Wrap" FontSize="11" Margin="0,8,0,0"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

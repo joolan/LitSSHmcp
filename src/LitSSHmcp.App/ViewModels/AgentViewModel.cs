@@ -108,6 +108,95 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>请求打开设置窗口（参数为初始 Tab：null=助手设置 / "model"=大模型设置）。</summary>
     public event Action<string?>? SettingsRequested;
 
+    /// <summary>智能体下拉列表 = 配置的智能体 + 末尾固定的“智能体设置”入口。</summary>
+    public ObservableCollection<ChatAgentConfig> ComboAgents { get; } = new();
+
+    private readonly ChatAgentConfig _agentSettingsEntry = new()
+    {
+        Id = "agent-settings-entry",
+        Name = "智能体设置…",
+        Description = "打开设置窗口的「智能体」标签页"
+    };
+
+    private ChatAgentConfig? _selectedAgent;
+    public ChatAgentConfig? SelectedAgent
+    {
+        get => _selectedAgent;
+        set
+        {
+            // 下拉末尾的“智能体设置”入口：打开设置窗口的智能体 Tab，并还原选择
+            if (ReferenceEquals(value, _agentSettingsEntry))
+            {
+                SettingsRequested?.Invoke("agents");
+                OnPropertyChanged(nameof(SelectedAgent));
+                return;
+            }
+
+            // 任务进行中禁止切换智能体（提示词热切换须在空闲时），并还原选中项
+            if (IsBusy && !_suppressSelection && !ReferenceEquals(_selectedAgent, value))
+            {
+                StatusMessage = "任务进行中：请等它完成或点「停止」后再切换智能体。";
+                OnPropertyChanged(nameof(SelectedAgent));
+                return;
+            }
+
+            var changed = !ReferenceEquals(_selectedAgent, value);
+            if (!Set(ref _selectedAgent, value)) return;
+            if (changed && !_suppressSelection)
+            {
+                _runtime?.SetActiveAgent(value?.ToPromptContext());
+                _ = PersistAgentSelectionAsync(value?.Id ?? string.Empty);
+                StatusMessage = value is null ? "已切到基础提示（无智能体）" : $"智能体：{value.Name}";
+            }
+        }
+    }
+
+    private void RebuildComboAgents()
+    {
+        ComboAgents.Clear();
+        foreach (var a in _agentConfig.Agents ?? Array.Empty<ChatAgentConfig>())
+            ComboAgents.Add(a);
+        ComboAgents.Add(_agentSettingsEntry);
+    }
+
+    /// <summary>按 Id 挑选智能体：指定 Id 无效则回退全局默认 → 第一个（空列表=无智能体，用基础提示）。</summary>
+    private ChatAgentConfig? PickAgent(string? preferredId)
+    {
+        var list = _agentConfig.Agents ?? Array.Empty<ChatAgentConfig>();
+        if (list.Length == 0)
+            return null;
+        if (!string.IsNullOrWhiteSpace(preferredId))
+        {
+            var hit = list.FirstOrDefault(a => string.Equals(a.Id, preferredId, StringComparison.Ordinal));
+            if (hit is not null)
+                return hit;
+        }
+        return list.FirstOrDefault(a => string.Equals(a.Id, _agentConfig.ActiveAgentId, StringComparison.Ordinal))
+            ?? list.FirstOrDefault();
+    }
+
+    /// <summary>记录当前会话使用的智能体（并更新全局默认），用于切换会话时恢复。</summary>
+    private async Task PersistAgentSelectionAsync(string agentId)
+    {
+        try
+        {
+            if (_sessionId > 0)
+                await _store.SetSessionAgentIdAsync(_sessionId, agentId);
+
+            if (!string.Equals(_agentConfig.ActiveAgentId, agentId, StringComparison.Ordinal))
+            {
+                _agentConfig.ActiveAgentId = agentId;
+                var cfg = await _configService.LoadConfigAsync();
+                (cfg.Agent ??= new AgentConfig()).ActiveAgentId = agentId;
+                await _configService.SaveConfigAsync(cfg);
+            }
+        }
+        catch
+        {
+            // 记录失败不影响主流程
+        }
+    }
+
     /// <summary>会话被删除/归档时触发（参数为会话 Id），供宿主清理该会话的本机终端等资源。</summary>
     public event Action<long>? SessionRemoved;
 
@@ -956,6 +1045,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 Providers.Add(p);
             RebuildComboProviders();
             SelectedProvider = PickProvider(_agentConfig.ActiveProviderId);
+            RebuildComboAgents();
+            SelectedAgent = PickAgent(_agentConfig.ActiveAgentId);
 
             LoadingText = "正在加载会话…";
             await ReloadGroupsAsync();
@@ -1035,9 +1126,14 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             var session = Sessions.FirstOrDefault(s => s.Id == id);
             _suppressSelection = true;
             SelectedProvider = PickProvider(session?.ProviderId ?? _agentConfig.ActiveProviderId);
+            var storedAgentId = await _store.GetSessionAgentIdAsync(id);
+            SelectedAgent = PickAgent(storedAgentId);
             _suppressSelection = false;
             if (SelectedProvider is not null && !string.Equals(session?.ProviderId, SelectedProvider.Id, StringComparison.Ordinal))
                 _ = PersistProviderSelectionAsync(SelectedProvider.Id);
+            // 会话记忆的智能体已被删除/从未记录：回退后写回，保持会话与实际一致
+            if (SelectedAgent is not null && !string.Equals(storedAgentId, SelectedAgent.Id, StringComparison.Ordinal))
+                _ = PersistAgentSelectionAsync(SelectedAgent.Id);
 
             var (turns, history, hasUser) = await BuildTranscriptAsync(id);
             foreach (var turn in turns)
@@ -1470,7 +1566,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             StatusMessage = "正在连接 MCP 服务器…";
             var localTools = BuildLocalTerminalTool() is { } lt ? new[] { lt } : null;
             _runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history, UpdatePlan,
-                _activeSkillIds.Count == 0 ? null : _activeSkillIds, _planMode, extraTools: localTools);
+                _activeSkillIds.Count == 0 ? null : _activeSkillIds, _planMode, SelectedAgent?.ToPromptContext(),
+                extraTools: localTools);
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "");
@@ -1542,6 +1639,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             _runtime.ResetSession(SelectedProvider, history);
             _runtime.SetActiveSkills(_activeSkillIds.Count == 0 ? null : _activeSkillIds);
+            _runtime.SetActiveAgent(SelectedAgent?.ToPromptContext());
             _runtime.SetPlanMode(_planMode);
             _runtime.SetToolPolicy(_toolPolicy);
             await RestoreSummaryFromStoreAsync();
@@ -1570,9 +1668,14 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             foreach (var p in AgentProviderGroupConfig.Flatten(_agentConfig.Providers))
                 Providers.Add(p);
             RebuildComboProviders();
+            RebuildComboAgents();
             var session = Sessions.FirstOrDefault(s => s.Id == _sessionId);
             SelectedProvider = PickProvider(session?.ProviderId ?? _agentConfig.ActiveProviderId);
+            // 设置保存后：保持当前智能体 id（设置里可能改了名称/提示词）；已删除则回退全局 → 第一个
+            SelectedAgent = PickAgent(_selectedAgent?.Id);
             _suppressSelection = false;
+            if (_runtime is not null)
+                _runtime.SetActiveAgent(SelectedAgent?.ToPromptContext());
 
             if (SelectedProvider is null)
             {
@@ -1974,6 +2077,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             _sessionTitled = true;
             if (SelectedProvider is not null)
                 await PersistProviderSelectionAsync(SelectedProvider.Id);
+            if (SelectedAgent is not null)
+                await PersistAgentSelectionAsync(SelectedAgent.Id);
             await PersistActiveSkillsAsync();
             await PersistPlanModeAsync();
             await PersistToolPolicyAsync();

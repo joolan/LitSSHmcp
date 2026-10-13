@@ -132,6 +132,8 @@ public partial class MainWindow : FluentWindow
 
     private void OnHomePortForwardClick(object sender, MouseButtonEventArgs e) => ViewModel.OpenPortForwardCommand.Execute(null);
 
+    private void OnHomeRemoteDesktopClick(object sender, MouseButtonEventArgs e) => ViewModel.NavigateRemoteDesktopsCommand.Execute(null);
+
     private void OnHomeSyncClick(object sender, MouseButtonEventArgs e) => ViewModel.OpenSyncCommand.Execute(null);
 
     private void OnHomeTriggerClick(object sender, MouseButtonEventArgs e) => ViewModel.OpenTriggerCommand.Execute(null);

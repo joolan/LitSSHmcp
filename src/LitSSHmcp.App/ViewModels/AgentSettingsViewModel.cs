@@ -19,6 +19,39 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
 
     public ObservableCollection<AgentProviderEdit> Providers { get; } = new();
 
+    /// <summary>智能体列表（“智能体”标签页可编辑/新增/删除）。</summary>
+    public ObservableCollection<ChatAgentEdit> Agents { get; } = new();
+
+    private ChatAgentEdit? _selectedAgent;
+    public ChatAgentEdit? SelectedAgent
+    {
+        get => _selectedAgent;
+        set => Set(ref _selectedAgent, value);
+    }
+
+    private string _activeAgentId = string.Empty;
+
+    /// <summary>回答风格覆盖选项（首项=跟随全局）。</summary>
+    public IReadOnlyList<string> AgentStyleOptions { get; } = new[] { "", "concise", "standard", "detailed" };
+
+    public void AddAgent()
+    {
+        var a = new ChatAgentEdit { Name = "新智能体", Description = string.Empty, SystemPrompt = string.Empty };
+        Agents.Add(a);
+        SelectedAgent = a;
+        StatusMessage = "已添加智能体（点右下角「保存」生效）";
+    }
+
+    /// <summary>删除所选智能体（调用方负责弹窗确认）。</summary>
+    public void RemoveSelectedAgent()
+    {
+        if (SelectedAgent is null) return;
+        var idx = Agents.IndexOf(SelectedAgent);
+        Agents.Remove(SelectedAgent);
+        SelectedAgent = Agents.Count > 0 ? Agents[Math.Max(0, Math.Min(idx, Agents.Count - 1))] : null;
+        StatusMessage = "已移除智能体（点右下角「保存」生效）";
+    }
+
     /// <summary>已归档的会话（“归档记录”标签页）。</summary>
     public ObservableCollection<AgentSessionRow> ArchivedSessions { get; } = new();
 
@@ -371,6 +404,13 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             _activeProviderId = agent.ActiveProviderId ?? string.Empty;
             SelectedProvider = Providers.FirstOrDefault();
 
+            Agents.Clear();
+            var agentList = agent.Agents is { Length: > 0 } ? agent.Agents : ChatAgentConfig.Defaults();
+            foreach (var a in agentList)
+                Agents.Add(ChatAgentEdit.From(a));
+            _activeAgentId = agent.ActiveAgentId ?? string.Empty;
+            SelectedAgent = Agents.FirstOrDefault(a => a.Id == _activeAgentId) ?? Agents.FirstOrDefault();
+
             SystemPrompt = agent.SystemPrompt;
             SkillsDir = agent.SkillsDir;
             WorkspaceDir = agent.WorkspaceDir;
@@ -433,6 +473,10 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent ??= new AgentConfig();
             config.Agent.Providers = Providers.Select(p => p.ToModel()).ToArray();
             config.Agent.ActiveProviderId = _activeProviderId ?? string.Empty;
+            config.Agent.Agents = Agents.Select(a => a.ToModel()).ToArray();
+            // 当前智能体被删除时回退到第一个（空列表由运行时优雅回退到无智能体提示）
+            var activeAgent = Agents.FirstOrDefault(a => a.Id == _activeAgentId) ?? Agents.FirstOrDefault();
+            config.Agent.ActiveAgentId = activeAgent?.Id ?? string.Empty;
             config.Agent.SystemPrompt = SystemPrompt ?? string.Empty;
             config.Agent.SkillsDir = SkillsDir ?? string.Empty;
             config.Agent.WorkspaceDir = WorkspaceDir ?? string.Empty;
@@ -688,4 +732,55 @@ public class GroupOption : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+/// <summary>设置界面里可编辑的智能体条目（名称/描述/系统提示附加段/回答风格覆盖）。</summary>
+public class ChatAgentEdit : INotifyPropertyChanged
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    private string _name = string.Empty;
+    public string Name { get => _name; set => Set(ref _name, value); }
+
+    private string _description = string.Empty;
+    public string Description { get => _description; set => Set(ref _description, value); }
+
+    private string _systemPrompt = string.Empty;
+    public string SystemPrompt { get => _systemPrompt; set => Set(ref _systemPrompt, value); }
+
+    private string _responseStyle = string.Empty;
+    public string ResponseStyle { get => _responseStyle; set => Set(ref _responseStyle, value); }
+
+    private bool _builtin;
+    public bool Builtin { get => _builtin; set => Set(ref _builtin, value); }
+
+    public string BuiltinText => Builtin ? "预置" : "自定义";
+
+    public static ChatAgentEdit From(ChatAgentConfig a) => new()
+    {
+        Id = string.IsNullOrWhiteSpace(a.Id) ? Guid.NewGuid().ToString("N") : a.Id,
+        Name = a.Name ?? string.Empty,
+        Description = a.Description ?? string.Empty,
+        SystemPrompt = a.SystemPrompt ?? string.Empty,
+        ResponseStyle = a.ResponseStyle ?? string.Empty,
+        Builtin = a.Builtin
+    };
+
+    public ChatAgentConfig ToModel() => new()
+    {
+        Id = string.IsNullOrWhiteSpace(Id) ? Guid.NewGuid().ToString("N") : Id,
+        Name = Name?.Trim() ?? string.Empty,
+        Description = Description?.Trim() ?? string.Empty,
+        SystemPrompt = SystemPrompt ?? string.Empty,
+        ResponseStyle = string.IsNullOrWhiteSpace(ResponseStyle) ? null : ResponseStyle.Trim(),
+        Builtin = Builtin
+    };
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
 }

@@ -58,6 +58,9 @@ public partial class App : Application
 
         // 端口转发：退出时统一停止活动隧道并断开 SSH 连接
         Exit += (_, _) => AppServiceFactory.DisposePortForwardService();
+
+        // 远程桌面：退出时拆除活动隧道（查看器进程由用户自行关闭）
+        Exit += (_, _) => AppServiceFactory.DisposeRemoteDesktopService();
     }
 
     private static SyncScheduler? _syncScheduler;

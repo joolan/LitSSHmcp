@@ -120,4 +120,25 @@ public class MainWindowXamlTests
         });
         Assert.Null(ex);
     }
+
+    [Fact]
+    public void Remote_desktop_and_about_views_parse_xaml()
+    {
+        var ex = RunSta(() =>
+        {
+            _ = new RemoteDesktopManageView();
+            _ = new AboutView();
+        });
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void Tunnel_mark_shows_check_only_when_tunnel_configured()
+    {
+        var conv = LitSSHmcp.App.Controls.TunnelMarkConverter.Instance;
+        Assert.Equal("√", conv.Convert("server-1", typeof(string), null, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(string.Empty, conv.Convert("", typeof(string), null, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(string.Empty, conv.Convert("   ", typeof(string), null, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(string.Empty, conv.Convert(null, typeof(string), null, System.Globalization.CultureInfo.InvariantCulture));
+    }
 }

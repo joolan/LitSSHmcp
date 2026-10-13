@@ -3,6 +3,7 @@ using LitSSHmcp.Core.Services.Datasource;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Snapshot;
 using LitSSHmcp.Core.Services.Snapshot.Collectors;
+using LitSSHmcp.Core.Services.RemoteDesktop;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Topology;
@@ -39,6 +40,31 @@ public static class AppServiceFactory
     /// <summary>App 退出时停止全部端口转发并断开连接（最多等待数秒）。</summary>
     public static void DisposePortForwardService()
         => Interlocked.Exchange(ref _portForwardService, null)?.Dispose();
+
+    private static RemoteDesktopService? _remoteDesktopService;
+
+    /// <summary>
+    /// 远程桌面（RDP / VNC）连接服务（进程级单例）：连接时按需复用 <see cref="PortForwardService"/> 建立 SSH 隧道，
+    /// 查看器退出后自动拆除隧道。App 退出时由 DisposeRemoteDesktopService 统一断开隧道。
+    /// </summary>
+    public static RemoteDesktopService RemoteDesktopService
+    {
+        get
+        {
+            if (_remoteDesktopService is null)
+            {
+                Interlocked.CompareExchange(
+                    ref _remoteDesktopService,
+                    new RemoteDesktopService(PortForwardService, new AuditLogService(new SecurityOptionsProvider())),
+                    null);
+            }
+            return _remoteDesktopService!;
+        }
+    }
+
+    /// <summary>App 退出时拆除远程桌面的活动隧道。</summary>
+    public static void DisposeRemoteDesktopService()
+        => Interlocked.Exchange(ref _remoteDesktopService, null)?.Dispose();
 
 
     public static ISshService CreateSshService()

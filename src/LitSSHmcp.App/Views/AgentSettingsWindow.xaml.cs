@@ -18,15 +18,34 @@ public partial class AgentSettingsWindow : FluentWindow
         DataContext = _viewModel;
         LitSSHmcp.App.Services.WindowLayout.Attach(this, "agent-settings");
 
-        if (string.Equals(initialTab, "model", StringComparison.OrdinalIgnoreCase) && Tabs.Items.Count > 1)
-            Tabs.SelectedIndex = 1;
-        else if (string.Equals(initialTab, "archive", StringComparison.OrdinalIgnoreCase) && Tabs.Items.Count > 2)
-            Tabs.SelectedIndex = 2;
+        if (!string.IsNullOrWhiteSpace(initialTab))
+        {
+            // 按 Tab Header 文本定位（不依赖索引，避免插入新 Tab 后错位）
+            var target = initialTab.Trim().ToLowerInvariant() switch
+            {
+                "model" => "大模型设置",
+                "archive" => "归档记录",
+                "agents" or "agent" => "智能体",
+                _ => null
+            };
+            if (target is not null)
+            {
+                for (var i = 0; i < Tabs.Items.Count; i++)
+                {
+                    if (Tabs.Items[i] is TabItem { Header: string header } &&
+                        string.Equals(header, target, StringComparison.Ordinal))
+                    {
+                        Tabs.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
 
         // 切到「归档记录」时刷新列表
         Tabs.SelectionChanged += (_, _) =>
         {
-            if (Tabs.SelectedIndex == 2)
+            if (Tabs.SelectedItem is TabItem { Header: string header } && header == "归档记录")
                 _ = _viewModel.LoadArchivedAsync();
         };
 
@@ -57,6 +76,20 @@ public partial class AgentSettingsWindow : FluentWindow
     }
 
     private void OnAdd(object sender, RoutedEventArgs e) => _viewModel.AddProvider();
+
+    private void OnAddAgent(object sender, RoutedEventArgs e) => _viewModel.AddAgent();
+
+    private void OnRemoveAgent(object sender, RoutedEventArgs e)
+    {
+        var agent = _viewModel.SelectedAgent;
+        if (agent is null)
+            return;
+        var result = System.Windows.MessageBox.Show(
+            $"确定删除智能体「{agent.Name}」？引用它的会话下次打开时回退到全局默认智能体。",
+            "删除智能体", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (result == System.Windows.MessageBoxResult.Yes)
+            _viewModel.RemoveSelectedAgent();
+    }
 
     private void OnAddModel(object sender, RoutedEventArgs e) => _viewModel.AddModel();
 

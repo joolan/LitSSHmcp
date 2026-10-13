@@ -23,7 +23,7 @@ public sealed class AgentRuntime : IAsyncDisposable
 
     private readonly AgentConfig _config;
     private string _prompt;
-    private readonly Func<IEnumerable<string>?, string> _promptBuilder;
+    private readonly Func<IEnumerable<string>?, AgentPromptContext?, string> _promptBuilder;
     private readonly string? _readOnlyNote;
     private readonly List<IAgentTool> _baseTools;
     private readonly List<IAgentTool> _subTools;
@@ -31,6 +31,7 @@ public sealed class AgentRuntime : IAsyncDisposable
     private readonly Func<string, CancellationToken, Task<string?>>? _recall;
     private readonly SpillStore? _spill;
     private List<string> _activeSkillIds = new();
+    private AgentPromptContext? _activeAgent;
     private bool _planMode;
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
 
@@ -43,7 +44,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         AgentProviderConfig provider,
         AgentMemoryService? memory,
         AgentConfig config,
-        Func<IEnumerable<string>?, string> promptBuilder,
+        Func<IEnumerable<string>?, AgentPromptContext?, string> promptBuilder,
+        AgentPromptContext? initialAgent,
         List<IAgentTool> baseTools,
         List<IAgentTool> subTools,
         Action<IReadOnlyList<PlanItem>>? onPlan,
@@ -57,7 +59,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         _config = config;
         _readOnlyNote = config.ReadOnly ? ReadOnlyNote : null;
         _promptBuilder = promptBuilder;
-        _prompt = ApplyReadOnlyNote(promptBuilder(null));
+        _activeAgent = initialAgent;
+        _prompt = ApplyReadOnlyNote(promptBuilder(null, initialAgent));
         _baseTools = baseTools;
         _subTools = subTools;
         _onPlan = onPlan;
@@ -86,7 +89,7 @@ public sealed class AgentRuntime : IAsyncDisposable
     private string ApplyReadOnlyNote(string prompt) => _readOnlyNote is null ? prompt : prompt + _readOnlyNote;
 
     private string BuildPrompt() =>
-        ApplyReadOnlyNote(_promptBuilder(_activeSkillIds.Count == 0 ? null : _activeSkillIds));
+        ApplyReadOnlyNote(_promptBuilder(_activeSkillIds.Count == 0 ? null : _activeSkillIds, _activeAgent));
 
     /// <summary>
     /// 切换激活技能：重算系统提示并就地替换当前会话的第一条 System 消息（不重连 MCP、不丢历史）。
@@ -95,6 +98,17 @@ public sealed class AgentRuntime : IAsyncDisposable
     public void SetActiveSkills(IEnumerable<string>? activeSkillIds)
     {
         _activeSkillIds = activeSkillIds?.ToList() ?? new();
+        _prompt = BuildPrompt();
+        Session.SetSystemPrompt(_prompt);
+    }
+
+    /// <summary>
+    /// 切换当前智能体（缓存友好）：智能体段位于系统提示词**最末尾**，切换只使尾部前缀缓存失效，
+    /// 其前的稳定前缀（基础约定/技能/MCP 说明）保持命中。不改工具集、不重连 MCP、不丢历史。
+    /// </summary>
+    public void SetActiveAgent(AgentPromptContext? agent)
+    {
+        _activeAgent = agent;
         _prompt = BuildPrompt();
         Session.SetSystemPrompt(_prompt);
     }
@@ -142,6 +156,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         Action<IReadOnlyList<PlanItem>>? onPlan = null,
         IReadOnlyCollection<string>? activeSkillIds = null,
         bool planMode = false,
+        AgentPromptContext? activeAgent = null,
         CancellationToken ct = default,
         IEnumerable<IAgentTool>? extraTools = null)
     {
@@ -177,7 +192,7 @@ public sealed class AgentRuntime : IAsyncDisposable
 
         // 系统提示按"激活技能"动态构建（未选技能=仅注入索引）；切换技能时用同一定义重算。
         var skillFiles = skillsDir is null ? null : SkillRegistry.ListReferenceFiles(skillsDir);
-        Func<IEnumerable<string>?, string> promptBuilder = activeSkills => SystemPromptBuilder.Build(
+        Func<IEnumerable<string>?, AgentPromptContext?, string> promptBuilder = (activeSkills, agent) => SystemPromptBuilder.Build(
             host.ServerInstructions,
             SkillRegistry.Load(config.SkillsDir, bundledSkillsDir, availableGroups, activeSkills?.ToList()),
             config.SystemPrompt,
@@ -185,7 +200,10 @@ public sealed class AgentRuntime : IAsyncDisposable
             spillTools: spill is not null,
             subAgent: config.EnableSubAgent,
             responseStyle: config.ResponseStyle,
-            availableGroups: availableGroups);
+            availableGroups: availableGroups,
+            agentName: agent?.Name,
+            agentPrompt: agent?.SystemPrompt,
+            agentStyle: agent?.ResponseStyle);
 
         var memory = await TryCreateMemoryAsync(config, provider, ct);
         Func<string, CancellationToken, Task<string?>>? recall =
@@ -203,7 +221,7 @@ public sealed class AgentRuntime : IAsyncDisposable
             subTools = subTools.Where(t => t.ReadOnly).ToList();
         }
 
-        var runtime = new AgentRuntime(host, provider, memory, config, promptBuilder, baseTools, subTools, onPlan, recall, spill, history);
+        var runtime = new AgentRuntime(host, provider, memory, config, promptBuilder, activeAgent, baseTools, subTools, onPlan, recall, spill, history);
         if (activeSkillIds is { Count: > 0 })
             runtime.SetActiveSkills(activeSkillIds);
         if (planMode)

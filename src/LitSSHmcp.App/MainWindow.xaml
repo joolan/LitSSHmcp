@@ -49,6 +49,10 @@
                                    HorizontalAlignment="Center" ToolTip="应用管理"
                                    Appearance="{Binding CurrentPage, Converter={StaticResource PageAppearance}, ConverterParameter=Applications}"
                                    Command="{Binding NavigateApplicationsCommand}"/>
+                        <ui:Button Icon="{ui:SymbolIcon Desktop24}" Width="44" Height="44" Margin="0,0,0,4"
+                                   HorizontalAlignment="Center" ToolTip="远程桌面（RDP / VNC）"
+                                   Appearance="{Binding CurrentPage, Converter={StaticResource PageAppearance}, ConverterParameter=RemoteDesktops}"
+                                   Command="{Binding NavigateRemoteDesktopsCommand}"/>
                         <Separator Margin="10,4,10,8"/>
                         <ui:Button Icon="{ui:SymbolIcon Share24}" Appearance="Transparent" Width="44" Height="44" Margin="0,0,0,4"
                                    HorizontalAlignment="Center" ToolTip="资产拓扑（独立窗口）" Command="{Binding OpenTopologyCommand}"/>
@@ -117,6 +121,16 @@
                                         <TextBlock FontSize="11" Foreground="{DynamicResource AppSuccessBrush}">
                                             <Run Text="运行中 "/>
                                             <Run Text="{Binding PortForwardRunningCount, Mode=OneWay}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                        Cursor="Hand" ToolTip="打开远程桌面（RDP / VNC）" MouseLeftButtonUp="OnHomeRemoteDesktopClick">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding RemoteDesktopCount}" FontSize="30" FontWeight="SemiBold"/>
+                                        <TextBlock Text="远程桌面" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}">
+                                            <Run Text="RDP / VNC"/>
                                         </TextBlock>
                                     </StackPanel>
                                 </Border>
@@ -211,6 +225,12 @@
                 <Grid x:Name="ApplicationsView"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Applications}">
                     <views:ApplicationManageView DataContext="{Binding ApplicationPage}"/>
+                </Grid>
+
+                <!-- 远程桌面（RDP / VNC） -->
+                <Grid x:Name="RemoteDesktopsView"
+                      Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=RemoteDesktops}">
+                    <views:RemoteDesktopManageView DataContext="{Binding RemoteDesktopPage}"/>
                 </Grid>
             </Grid>
         </Grid>

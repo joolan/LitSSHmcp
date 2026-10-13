@@ -259,21 +259,18 @@ public partial class DbWorkbenchWindow : FluentWindow
         if (string.IsNullOrWhiteSpace(sql))
             return;
 
-        var prompt =
-            "请分析下面这条 SQL 语句，评估：\n" +
-            "1) 执行性能（可优化点、索引建议、扫描方式）；\n" +
-            "2) 潜在风险（误操作、锁/长事务、全表扫描、数据安全）；\n" +
-            "3) 影响范围（读写量、涉及的表/行数）；\n" +
-            "4) 改进建议。若不确定表结构可先说明你的假设。\n\n```sql\n" + sql + "\n```";
+        // 只预填 SQL 代码块（完整分析要求由「数据库分析」智能体的系统提示承担），并切到该智能体
+        var prompt = "```sql\n" + sql + "\n```";
 
         if (_sqlAiChat is { IsLoaded: true })
         {
             _sqlAiChat.Activate();
+            _sqlAiChat.SelectAgent("db");
             _sqlAiChat.Prefill(prompt);
             return;
         }
 
-        var window = new TemporaryChatWindow(new LitSSHmcp.Core.Services.Storage.ConfigService(), null)
+        var window = new TemporaryChatWindow(new LitSSHmcp.Core.Services.Storage.ConfigService(), null, initialAgentId: "db")
         {
             Owner = this,
             Topmost = false

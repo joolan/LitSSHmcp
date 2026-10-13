@@ -1,0 +1,10 @@
+<UserControl x:Class="LitSSHmcp.App.Controls.RdpHostView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wfi="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration">
+    <Grid>
+        <wfi:WindowsFormsHost x:Name="FormsHost"/>
+        <TextBlock x:Name="Overlay" Text="未连接" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+    </Grid>
+</UserControl>

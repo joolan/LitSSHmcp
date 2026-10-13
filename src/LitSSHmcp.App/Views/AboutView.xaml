@@ -18,17 +18,17 @@
                 </Border>
             </StackPanel>
             <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,12"
-                       Text="Windows 平台下的 SSH / 数据库运维 MCP 服务器，并配套桌面管理端（App）。让 AI 智能体安全地通过 SSH 管理远程服务器，并贯通 MySQL / PostgreSQL / Redis 数据源与资产拓扑，支撑跨服务器 / 应用 / 容器 / 数据库的全链路故障排查。"/>
+                       Text="Windows 平台下的 SSH / 数据库运维 MCP 服务器，并配套桌面管理端（App）。让 AI 智能体安全地通过 SSH 管理远程服务器，贯通 MySQL / PostgreSQL / Redis 数据源与资产拓扑，并支持远程桌面（RDP / VNC），支撑跨服务器 / 应用 / 容器 / 数据库的全链路故障排查。"/>
 
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
                     <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 触发事件 + 总览可视化：对本机或远程按流水线执行 Git 提交推送、Webhook 通知（钉钉/企业微信/飞书/通用）、目录与数据库备份，支持定时与「同步任务事件」触发；新增「总览」可视化调度、下次运行与动作流水线。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据库工作台：MySQL / PostgreSQL 对象浏览与 SQL 查询、表数据分页预览、导出 CSV；Redis 键浏览（SCAN + 按类型取值 + TTL）与命令执行；只读 / 写入模式强区分，写操作复用安全链与审计。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手大幅增强：思考过程（推理流）展示；工具调用/结果 JSON 规范化（中文不再被转义、内嵌 JSON 展开，省 token）；技能选择器 + 预置技能包；提示词模板；计划模式（缓存友好）；工具级审批策略；用量 / 成本面板；缓存命中观测、图片发送前压缩、结构化滚动摘要、冷启动收敛、转录分页与加载动画。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 平台运维：批量执行（多机并行）新增快速命令与「一键巡检」（写操作执行前确认）；快照趋势图（内存 / 磁盘 / Swap / 负载）；SSH 会话录像（asciicast）与倍速回放。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 凭据与连通性：SSH 密钥生成（ed25519 / rsa）与公钥一键复制、凭据轮换提醒、跳板机（ProxyJump）——终端 / SFTP / 命令 / 同步 / 拓扑 / MCP 工具 / 数据源隧道 / 端口转发全局支持。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 端口转发删除增加二次确认；AI 助手工具过程与思考过程在展开时按内容撑高，会话区仅保留单一滚动条。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程桌面（RDP / VNC，独立功能）：左侧导航直达，连接可经 SSH 隧道访问内网桌面（密码仅本机 DPAPI 加密）；内嵌多标签窗口（RDP 用系统 ActiveX 控件、VNC 用 noVNC over SSH 隧道），标签支持拖出分离 / 收回、关闭需二次确认；列表按分组归组，右键 / 双击连接，也可交由系统 mstsc 等外部客户端打开。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 助手「智能体」体系：内置通用聊天 / 运维专家 / 数据库分析三个智能体（可增删改），系统提示按智能体追加「当前智能体」段并支持回答风格覆盖（缓存友好：切换只使尾部前缀失效）；主窗口与临时聊天均可切换、按会话记忆；系统提示新增软件变更护栏（不擅自安装 / 升级 / 卸载软件包、不改系统级配置）；数据库工作台「AI 分析此 SQL」只预填 SQL 代码块并自动切到数据库分析智能体。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机 PowerShell 终端 + AI 本地 CLI：ConPTY 真实本机终端；AI 可经 local_shell 在硬白名单内执行本机 CLI（每次人工审批并可记忆、超时与进程树清理、输出实时回显），默认关闭。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP Resources（只读上下文）：向任意 MCP 客户端暴露服务器清单 / 数据源清单 / 使用指南 / 资产拓扑 / 最新快照概览，供浏览与挂载为上下文（不含密码、按启用工具分组裁剪）；AI 任务 / 会话支持分组、拖拽排序、折叠与归档。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据库工作台（执行体验）：Ctrl+Enter 执行选区 / 单条 / 全部，AvalonEdit 语法高亮与 schema 感知补全，多标签查询、执行计划（计划树）、多结果集、查询历史、Ctrl+F 查找替换。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 平台运维与凭据：批量执行新增快速命令与「一键巡检」（写操作执行前确认）；快照趋势图（内存 / 磁盘 / Swap / 负载）；SSH 会话录像（asciicast）与倍速回放；SSH 密钥生成与公钥复制、凭据轮换提醒、跳板机（ProxyJump）全局支持。"/>
                 </StackPanel>
             </Border>
 
@@ -70,6 +70,8 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 主页看板：快捷入口 + 服务器/数据源/应用统计，支持 AI 快捷提问（含附件）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器管理：表格增删改查与排序、右键菜单（连接/编辑/采集快照/快照历史/删除），独立「SSH 会话管理」窗口含命令会话与交互式终端（内置 SFTP 文件可视化上传/下载）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器连接增强：跳板机（ProxyJump，经另一台已配置服务器中转）、SSH 密钥生成（ed25519 / rsa，公钥一键复制）、凭据轮换提醒。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程桌面：RDP / VNC 连接管理（密码仅本机 DPAPI 加密、可经 SSH 隧道访问内网桌面），内嵌多标签查看器（标签可分离 / 收回）与外部客户端打开。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机终端：ConPTY 真实本机 PowerShell 终端；AI 本地 CLI 在白名单内执行本机命令（人工审批、超时与进程树清理）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 批量执行 / 快速命令：多台服务器并行下发命令；内置快速命令（一键巡检、磁盘/inode/内存/端口/进程/大目录/日志/容器/网络）与「一键巡检」，写操作执行前确认。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源 / 应用管理 + 数据库工作台：维护数据源与应用；工作台支持 SQL 查询/对象浏览/表数据分页预览、Redis 键浏览、只读/写入模式与审计。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑：可视化编辑——拖动/缩放节点、拖拽创建关系、自动正交避障连线、网格吸附、撤销重做、导出图片。"/>
@@ -77,7 +79,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 终端录像：交互式终端会话以 asciicast 记录并支持倍速回放（合规/复盘）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 触发事件：本机/远程动作流水线（Git / Webhook / 目录与数据库备份），定时与同步事件触发，附「总览」编排可视化。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 审计日志：按服务器/数据源/会话筛选与关键字检索、复制、导出 CSV、哈希链完整性校验。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手：内置大模型智能体，内嵌 MCP 客户端调用全部工具（审批/过滤/审计与第三方客户端一致），流式输出、多模型热切换、多会话、只读模式、Markdown 渲染、任务计划、长期记忆；思考过程展示、技能选择器、提示词模板、计划模式、工具级审批策略、用量/成本面板。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手：内置大模型智能体，内嵌 MCP 客户端调用全部工具（审批/过滤/审计与第三方客户端一致），流式输出、多模型热切换、多会话、只读模式、Markdown 渲染、任务计划、长期记忆；思考过程展示、技能选择器、提示词模板、计划模式、工具级审批策略、用量/成本面板；智能体体系（通用聊天 / 运维专家 / 数据库分析，可自定义、按会话记忆）与系统提示软件变更护栏。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 工具说明：集中查看工具参数与路由并一键复制到提示词，与 docs/TOOLS.md 双向同步。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 外观：基于 WPF-UI（Fluent）的现代界面，支持深色 / 浅色 / 跟随系统主题与强调色。"/>
                 </StackPanel>
@@ -87,7 +89,7 @@
                 <StackPanel>
                     <TextBlock Text="技术栈" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                               Text=".NET 8（桌面 App 与 MCP 服务器）· .NET 10（CLI）· WPF + WPF-UI（Fluent）· Microsoft.Extensions.AI + ModelContextProtocol SDK · OpenAI 兼容大模型（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等）· SSH.NET · MySQL / PostgreSQL / Redis 驱动 · SQLite（审计 / 快照 / 会话 / 拓扑）· DPAPI（凭据加密）。"/>
+                               Text=".NET 8（桌面 App 与 MCP 服务器）· .NET 10（CLI）· WPF + WPF-UI（Fluent）· Microsoft.Extensions.AI + ModelContextProtocol SDK · OpenAI 兼容大模型（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等）· SSH.NET · MySQL / PostgreSQL / Redis 驱动 · SQLite（审计 / 快照 / 会话 / 拓扑）· DPAPI（凭据加密）· AvalonEdit（SQL 编辑器）· RDP ActiveX / WebView2 + noVNC（远程桌面查看器）。"/>
                 </StackPanel>
             </Border>
 

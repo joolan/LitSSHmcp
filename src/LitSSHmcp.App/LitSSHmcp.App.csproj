@@ -22,9 +22,15 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\docs\TOOLS.md" Link="docs\TOOLS.md" LogicalName="LitSSHmcp.App.docs.TOOLS.md" />
   </ItemGroup>
+  <!-- 内嵌 VNC（noVNC，MPL-2.0）静态资源：随 App 输出到 novnc/，由 VncWebHost 在本机回环上提供 -->
+  <ItemGroup>
+    <None Include="Assets\novnc\**\*" Link="novnc\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="AvalonEdit" Version="6.3.0.90" />
     <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
 

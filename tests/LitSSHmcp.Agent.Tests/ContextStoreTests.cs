@@ -42,6 +42,21 @@ public class ContextStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Session_remembers_last_used_agent()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("会话");
+        Assert.Equal(string.Empty, await store.GetSessionAgentIdAsync(id));
+
+        await store.SetSessionAgentIdAsync(id, "ops");
+        Assert.Equal("ops", await store.GetSessionAgentIdAsync(id));
+
+        await store.SetSessionAgentIdAsync(id, string.Empty);
+        Assert.Equal(string.Empty, await store.GetSessionAgentIdAsync(id));
+    }
+
+    [Fact]
     public async Task Groups_add_assign_rename_delete()
     {
         var store = NewStore();

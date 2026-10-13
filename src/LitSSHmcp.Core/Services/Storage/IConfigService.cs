@@ -106,6 +106,9 @@ public class ConfigService : IConfigService
         foreach (var ds in config.DataSources)
             ds.Password = _protector.Protect(ds.Password);
 
+        foreach (var rd in config.RemoteDesktops ?? Array.Empty<RemoteDesktopConfig>())
+            rd.Password = _protector.Protect(rd.Password);
+
         foreach (var provider in config.Agent?.Providers ?? Array.Empty<AgentProviderGroupConfig>())
             provider.ApiKey = _protector.Protect(provider.ApiKey);
 
@@ -128,6 +131,9 @@ public class ConfigService : IConfigService
         foreach (var ds in config.DataSources)
             ds.Password = _protector.Unprotect(ds.Password);
 
+        foreach (var rd in config.RemoteDesktops ?? Array.Empty<RemoteDesktopConfig>())
+            rd.Password = _protector.Unprotect(rd.Password);
+
         foreach (var provider in config.Agent?.Providers ?? Array.Empty<AgentProviderGroupConfig>())
             provider.ApiKey = _protector.Unprotect(provider.ApiKey);
 
@@ -148,6 +154,7 @@ public class ConfigService : IConfigService
         }
 
         return config.DataSources.Any(ds => HasPlaintext(ds.Password)) ||
+               (config.RemoteDesktops ?? Array.Empty<RemoteDesktopConfig>()).Any(rd => HasPlaintext(rd.Password)) ||
                (config.Agent?.Providers ?? Array.Empty<AgentProviderGroupConfig>()).Any(p => HasPlaintext(p.ApiKey)) ||
                (config.Agent?.Memory is not null && HasPlaintext(config.Agent.Memory.ApiKey)) ||
                (config.Triggers ?? Array.Empty<TriggerConfig>()).Any(t => (t?.Actions ?? Array.Empty<TriggerAction>()).Any(a => HasPlaintext(a.Secret)));

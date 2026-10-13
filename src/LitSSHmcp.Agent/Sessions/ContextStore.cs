@@ -50,6 +50,12 @@ public interface IContextStore
     /// <summary>保存（或清空传空串）会话激活的技能 Id。</summary>
     Task SetSessionActiveSkillsAsync(long id, string activeSkillsJson, CancellationToken ct = default);
 
+    /// <summary>读取会话记忆的智能体 Id（无则空串=回退全局默认）。</summary>
+    Task<string> GetSessionAgentIdAsync(long id, CancellationToken ct = default);
+
+    /// <summary>保存会话记忆的智能体 Id。</summary>
+    Task SetSessionAgentIdAsync(long id, string agentId, CancellationToken ct = default);
+
     /// <summary>读取会话是否处于计划模式。</summary>
     Task<bool> GetSessionPlanModeAsync(long id, CancellationToken ct = default);
 
@@ -210,6 +216,18 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         {
             await using var alter = connection.CreateCommand();
             alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN ActiveSkills TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // 兼容旧库：补 AgentId 列（会话记忆的智能体 Id；''=回退全局默认）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN AgentId TEXT NOT NULL DEFAULT '';";
             await alter.ExecuteNonQueryAsync(ct);
         }
         catch
@@ -403,6 +421,21 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     public Task SetSessionActiveSkillsAsync(long id, string activeSkillsJson, CancellationToken ct = default) =>
         ExecAsync("UPDATE agent_sessions SET ActiveSkills=@v WHERE Id=@id;",
             new() { ["@v"] = activeSkillsJson ?? string.Empty, ["@id"] = id }, ct);
+
+    public async Task<string> GetSessionAgentIdAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT AgentId FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : string.Empty;
+    }
+
+    public Task SetSessionAgentIdAsync(long id, string agentId, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET AgentId=@v WHERE Id=@id;",
+            new() { ["@v"] = agentId ?? string.Empty, ["@id"] = id }, ct);
 
     public async Task<bool> GetSessionPlanModeAsync(long id, CancellationToken ct = default)
     {

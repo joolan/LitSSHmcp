@@ -110,6 +110,18 @@ public class ConfigMigratorTests
         // 幂等：再迁一次不再修改
         Assert.False(ConfigMigrator.Migrate(config));
     }
+
+    [Fact]
+    public void Null_remote_desktops_is_filled()
+    {
+        var config = new AppConfig { RemoteDesktops = null!, SchemaVersion = AppConfig.CurrentSchemaVersion };
+
+        var changed = ConfigMigrator.Migrate(config);
+
+        Assert.True(changed);
+        Assert.NotNull(config.RemoteDesktops);
+        Assert.Empty(config.RemoteDesktops);
+    }
 }
 
 public class ProviderFlattenTests

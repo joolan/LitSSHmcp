@@ -192,7 +192,8 @@ public partial class RemoteDesktopSessionWindow : FluentWindow
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        if (!_allowClose && _vm.Sessions.Count > 0)
+        // 应用级退出（退出程序）时跳过二次确认，保证 Shutdown 不被中断
+        if (!AppShutdown.IsShuttingDown && !_allowClose && _vm.Sessions.Count > 0)
         {
             var result = MessageBox.Show(this,
                 $"确定关闭「远程桌面」窗口？当前 {_vm.Sessions.Count} 个连接将断开。",

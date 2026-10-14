@@ -18,29 +18,7 @@ public partial class AgentSettingsWindow : FluentWindow
         DataContext = _viewModel;
         LitSSHmcp.App.Services.WindowLayout.Attach(this, "agent-settings");
 
-        if (!string.IsNullOrWhiteSpace(initialTab))
-        {
-            // 按 Tab Header 文本定位（不依赖索引，避免插入新 Tab 后错位）
-            var target = initialTab.Trim().ToLowerInvariant() switch
-            {
-                "model" => "大模型设置",
-                "archive" => "归档记录",
-                "agents" or "agent" => "智能体",
-                _ => null
-            };
-            if (target is not null)
-            {
-                for (var i = 0; i < Tabs.Items.Count; i++)
-                {
-                    if (Tabs.Items[i] is TabItem { Header: string header } &&
-                        string.Equals(header, target, StringComparison.Ordinal))
-                    {
-                        Tabs.SelectedIndex = i;
-                        break;
-                    }
-                }
-            }
-        }
+        SelectTab(initialTab);
 
         // 切到「归档记录」时刷新列表
         Tabs.SelectionChanged += (_, _) =>
@@ -59,6 +37,35 @@ public partial class AgentSettingsWindow : FluentWindow
     }
 
     private bool _syncingApiKey;
+
+    /// <summary>按 Tab 键值（model/archive/agents/mcp…）定位到对应 Tab：按 Header 文本匹配（不依赖索引，避免插入新 Tab 后错位）。
+    /// 窗口已打开被再次请求时也用它切换。</summary>
+    public void SelectTab(string? tabKey)
+    {
+        if (string.IsNullOrWhiteSpace(tabKey))
+            return;
+
+        var target = tabKey.Trim().ToLowerInvariant() switch
+        {
+            "model" => "大模型设置",
+            "archive" => "归档记录",
+            "agents" or "agent" => "智能体",
+            "mcp" or "mcpServers" => "MCP 服务器",
+            _ => null
+        };
+        if (target is null)
+            return;
+
+        for (var i = 0; i < Tabs.Items.Count; i++)
+        {
+            if (Tabs.Items[i] is TabItem { Header: string header } &&
+                string.Equals(header, target, StringComparison.Ordinal))
+            {
+                Tabs.SelectedIndex = i;
+                break;
+            }
+        }
+    }
 
     private void SyncApiKeyBox()
     {
@@ -92,6 +99,46 @@ public partial class AgentSettingsWindow : FluentWindow
     }
 
     private void OnAddModel(object sender, RoutedEventArgs e) => _viewModel.AddModel();
+
+    private void OnAddMcp(object sender, RoutedEventArgs e) => _viewModel.AddMcpServer();
+
+    private void OnValidateMcp(object sender, RoutedEventArgs e) => _ = _viewModel.ValidateMcpServerAsync(_viewModel.SelectedMcpServer);
+
+    private void OnToggleMcp(object sender, RoutedEventArgs e)
+    {
+        var server = _viewModel.SelectedMcpServer;
+        if (server is null)
+            return;
+
+        if (server.Enabled)
+        {
+            if (server.Builtin)
+            {
+                var result = System.Windows.MessageBox.Show(
+                    "停用内置 LitSSH MCP 后，AI 将没有本机服务器/数据源等运维工具（只能用工作区文档、技能与外部 MCP）。确定停用？",
+                    "停用内置 MCP", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+                if (result != System.Windows.MessageBoxResult.Yes)
+                    return;
+            }
+            _viewModel.DisableMcpServer(server);
+            return;
+        }
+
+        // 外部：启用前必须连接校验通过（VM 内完成，失败保持停用）
+        _ = _viewModel.EnableMcpServerAsync(server);
+    }
+
+    private void OnRemoveMcp(object sender, RoutedEventArgs e)
+    {
+        var server = _viewModel.SelectedMcpServer;
+        if (server is null || server.Builtin)
+            return;
+        var result = System.Windows.MessageBox.Show(
+            $"确定删除外部 MCP「{server.Name}」？删除后其工具不再提供（点「保存」生效）。",
+            "删除 MCP 服务器", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (result == System.Windows.MessageBoxResult.Yes)
+            _viewModel.RemoveSelectedMcpServer();
+    }
 
     private void OnRemoveModel(object sender, RoutedEventArgs e)
     {

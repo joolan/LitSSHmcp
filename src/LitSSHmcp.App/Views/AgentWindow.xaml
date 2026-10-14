@@ -461,6 +461,7 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
@@ -496,17 +497,27 @@
                                 <ComboBoxItem Content="计划模式"/>
                             </ComboBox>
 
+                            <!-- 连接器：查看已配置的 MCP 服务器并快速启用/停用 -->
+                            <ui:Button Grid.Column="2" Padding="10,4" Height="34" Margin="8,0,0,0" HorizontalAlignment="Left"
+                                       VerticalContentAlignment="Center" Click="OnConnectorsClick"
+                                       ToolTip="连接器：查看已配置的 MCP 服务器（内置 LitSSH MCP + 外部 MCP）并启用/停用；改完立即重建连接生效">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="PlugConnected24" FontSize="15" Margin="0,0,6,0"/>
+                                    <TextBlock Text="连接器" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </ui:Button>
+
                             <!-- 上下文占用：环形进度，悬浮看详情 -->
-                            <Border Grid.Column="2" Width="22" Height="22" Background="Transparent" Margin="12,0,8,0"
+                            <Border Grid.Column="3" Width="22" Height="22" Background="Transparent" Margin="12,0,8,0"
                                     VerticalAlignment="Center" ToolTip="{Binding ContextInfoTooltip}">
                                 <controls:ContextRing Percent="{Binding ContextPercent}"/>
                             </Border>
 
-                            <ui:Button Grid.Column="4" Content="取消编辑" Padding="10,4" Margin="0,0,8,0"
+                            <ui:Button Grid.Column="5" Content="取消编辑" Padding="10,4" Margin="0,0,8,0"
                                        Command="{Binding CancelEditCommand}" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}"/>
 
                             <!-- 模型连接状态点 -->
-                            <Ellipse Grid.Column="5" Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,8,0"
+                            <Ellipse Grid.Column="6" Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,8,0"
                                      ToolTip="{Binding StatusMessage}">
                                 <Ellipse.Style>
                                     <Style TargetType="Ellipse">
@@ -526,11 +537,11 @@
                                 </Ellipse.Style>
                             </Ellipse>
 
-                            <ComboBox Grid.Column="6" ItemsSource="{Binding ComboAgents}" SelectedItem="{Binding SelectedAgent}"
+                            <ComboBox Grid.Column="7" ItemsSource="{Binding ComboAgents}" SelectedItem="{Binding SelectedAgent}"
                                       DisplayMemberPath="Name" Width="124" Height="34" Margin="0,0,8,0" VerticalContentAlignment="Center"
                                       Padding="10,4"
                                       ToolTip="智能体：可切换的角色设定（只影响系统提示尾部的『当前智能体』段）；末项打开设置"/>
-                            <ComboBox Grid.Column="7" ItemsSource="{Binding ComboView}" SelectedItem="{Binding SelectedProvider}"
+                            <ComboBox Grid.Column="8" ItemsSource="{Binding ComboView}" SelectedItem="{Binding SelectedProvider}"
                                       DisplayMemberPath="Name" Width="180" Height="34" Margin="0,0,8,0" VerticalContentAlignment="Center"
                                       Padding="10,4"
                                       ToolTip="{Binding StatusMessage}">
@@ -546,7 +557,7 @@
                                 </ComboBox.GroupStyle>
                             </ComboBox>
 
-                            <ui:Button Grid.Column="8" Appearance="Primary" Width="42" Height="34" Padding="0"
+                            <ui:Button Grid.Column="9" Appearance="Primary" Width="42" Height="34" Padding="0"
                                        Command="{Binding SendOrStopCommand}" ToolTip="{Binding SendButtonText}">
                                 <Grid>
                                     <ui:SymbolIcon Symbol="Send24" FontSize="16">

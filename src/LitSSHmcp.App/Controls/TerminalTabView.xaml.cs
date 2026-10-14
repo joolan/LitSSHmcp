@@ -115,6 +115,9 @@ public partial class TerminalTabView : UserControl
     {
         if (e.Key == System.Windows.Input.Key.Enter)
         {
+            // Shift+Enter=换行（多行命令）；Enter=发送
+            if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Shift) != 0)
+                return;
             SendBoxText();
             e.Handled = true;
         }
@@ -125,7 +128,40 @@ public partial class TerminalTabView : UserControl
         var text = SendBox.Text;
         if (string.IsNullOrEmpty(text))
             return;
+        // 多行内容整段下发：统一换行为 \r，远端 shell 按行顺序执行（与粘贴脚本一致，保留跨行引号等结构）
+        text = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Replace('\n', '\r');
         Vm?.SendInput(text + "\r");
         SendBox.Text = string.Empty;
+    }
+
+    // ---- AI 分析命令：打开独立的临时聊天并预填（与数据库工作台「AI 分析此 SQL」同一模式） ----
+    private Views.TemporaryChatWindow? _aiChat;
+
+    private void OnAiAnalyze(object sender, RoutedEventArgs e)
+    {
+        var command = SendBox.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(command))
+            return;
+
+        // 只预填命令代码块（分析要求由「运维专家」智能体的系统提示承担），并切到该智能体
+        var prompt = "```bash\n" + command + "\n```";
+
+        if (_aiChat is { IsLoaded: true })
+        {
+            _aiChat.Activate();
+            _aiChat.SelectAgent("ops");
+            _aiChat.Prefill(prompt);
+            return;
+        }
+
+        var window = new Views.TemporaryChatWindow(new LitSSHmcp.Core.Services.Storage.ConfigService(), null, initialAgentId: "ops")
+        {
+            Owner = Window.GetWindow(this),
+            Topmost = false
+        };
+        window.Closed += (_, _) => _aiChat = null;
+        _aiChat = window;
+        window.Show();
+        window.Prefill(prompt);
     }
 }

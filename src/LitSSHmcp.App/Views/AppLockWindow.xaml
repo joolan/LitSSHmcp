@@ -1,0 +1,42 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.AppLockWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="LitSSH 应用锁" Height="360" Width="430" MinWidth="400"
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        ShowInTaskbar="True"
+        ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="LitSSH 应用锁" ShowMaximize="False" ShowMinimize="False"/>
+
+        <StackPanel Grid.Row="1" Margin="20,8,20,0">
+            <TextBlock x:Name="HeaderText" Text="设置应用锁密码" FontSize="16" FontWeight="SemiBold"/>
+            <TextBlock x:Name="HintText" TextWrapping="Wrap" Margin="0,6,0,12" FontSize="12"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+
+            <ui:Button x:Name="HelloButton" Content="使用 Windows Hello 解锁" HorizontalAlignment="Stretch"
+                       Click="OnHello" Margin="0,0,0,12" Visibility="Collapsed"/>
+
+            <TextBlock x:Name="PasswordLabel" Text="密码（至少 6 位）" FontSize="12" Margin="0,0,0,4"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            <PasswordBox FontWeight="Normal" x:Name="PasswordBox" Margin="0,0,0,10" KeyDown="OnBoxKeyDown"/>
+
+            <TextBlock x:Name="ConfirmLabel" Text="确认密码" FontSize="12" Margin="0,0,0,4"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            <PasswordBox FontWeight="Normal" x:Name="ConfirmBox" Margin="0,0,0,10" KeyDown="OnBoxKeyDown"/>
+
+            <TextBlock x:Name="ErrorText" Text="" Foreground="OrangeRed" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,6"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,10,20,14">
+            <ui:Button x:Name="SecondaryButton" Content="暂不启用" Padding="14,5" Click="OnSecondary"/>
+            <ui:Button x:Name="PrimaryButton" Content="启用应用锁" Appearance="Primary" Padding="14,5" Margin="8,0,0,0" Click="OnPrimary"/>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

@@ -57,12 +57,29 @@ public partial class AgentWindow : FluentWindow
 
     private void OnOpenSettings(object sender, RoutedEventArgs e) => OpenSettings(null);
 
+    private AgentSettingsWindow? _settingsWindow;
+
     private void OpenSettings(string? tab)
     {
-        new AgentSettingsWindow(_configService, tab) { Owner = this }.ShowDialog();
-        _ = _viewModel.ReloadProvidersAsync();
-        _ = _viewModel.ReloadSessionsAsync();
-        _viewModel.ReloadPromptTemplates();
+        // 非模态单实例：Owner 仍为 AI 助手窗口（居中其上、随其关闭），
+        // 但不再 ShowDialog 模态锁死——设置打开期间可同时操作 AI 助手与主程序页面。
+        if (_settingsWindow is { IsLoaded: true })
+        {
+            _settingsWindow.SelectTab(tab);
+            _settingsWindow.Activate();
+            return;
+        }
+
+        _settingsWindow = new AgentSettingsWindow(_configService, tab) { Owner = this };
+        _settingsWindow.Closed += (_, _) =>
+        {
+            _settingsWindow = null;
+            // 关闭后重载（原 ShowDialog 返回时机）
+            _ = _viewModel.ReloadProvidersAsync();
+            _ = _viewModel.ReloadSessionsAsync();
+            _viewModel.ReloadPromptTemplates();
+        };
+        _settingsWindow.Show();
     }
 
     // 输入区「＋」更多：左键打开其右键菜单
@@ -73,6 +90,112 @@ public partial class AgentWindow : FluentWindow
             menu.PlacementTarget = element;
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
             menu.IsOpen = true;
+        }
+    }
+
+    // 「连接器」按钮：弹出 MCP 服务器清单，勾选启用/停用（改完立即保存 + 重建连接）
+    private async void OnConnectorsClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement element)
+            return;
+
+        try
+        {
+            await _viewModel.RefreshConnectorsAsync();
+        }
+        catch (Exception ex)
+        {
+            _viewModel.StatusMessage = "读取 MCP 连接器失败: " + ex.Message;
+            return;
+        }
+
+        var menu = new System.Windows.Controls.ContextMenu
+        {
+            PlacementTarget = element,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Top,
+            MinWidth = 280,
+            StaysOpen = true
+        };
+
+        BuildConnectorMenuItems(menu);
+        menu.Closed += (_, _) => element.ContextMenu = null;
+        element.ContextMenu = menu;
+        menu.IsOpen = true;
+    }
+
+    private void BuildConnectorMenuItems(System.Windows.Controls.ContextMenu menu)
+    {
+        menu.Items.Clear();
+        menu.Items.Add(new System.Windows.Controls.MenuItem { Header = "MCP 连接器", IsEnabled = false });
+        menu.Items.Add(new System.Windows.Controls.Separator());
+
+        if (_viewModel.Connectors.Count == 0)
+            menu.Items.Add(new System.Windows.Controls.MenuItem { Header = "（无，请在「AI 助手设置 → MCP 服务器」添加）", IsEnabled = false });
+
+        foreach (var item in _viewModel.Connectors)
+        {
+            var mi = new System.Windows.Controls.MenuItem
+            {
+                Header = $"{item.DisplayName}  ·  {item.StatusText}",
+                IsCheckable = true,
+                IsChecked = item.IsEnabled,
+                IsEnabled = true,
+                StaysOpenOnClick = true,
+                Tag = item,
+                ToolTip = item.Builtin
+                    ? "内置 LitSSH MCP：本机服务器/数据源/命令等运维工具（停用后 AI 无法操作本机）"
+                    : $"外部 MCP（{item.Transport}）：第三方工具不经过本程序的审批/过滤/审计"
+            };
+            mi.Click += OnConnectorToggle;
+            menu.Items.Add(mi);
+        }
+
+        menu.Items.Add(new System.Windows.Controls.Separator());
+        var openSettings = new System.Windows.Controls.MenuItem { Header = "打开「AI 助手设置 → MCP 服务器」…" };
+        openSettings.Click += (_, _) => { menu.IsOpen = false; OpenSettings("mcp"); };
+        menu.Items.Add(openSettings);
+    }
+
+    private async void OnConnectorToggle(object sender, RoutedEventArgs e)
+    {
+        if ((sender as System.Windows.Controls.MenuItem)?.Tag is not McpConnectorItem item)
+            return;
+        if ((sender as System.Windows.Controls.MenuItem)?.Parent is not System.Windows.Controls.ContextMenu menu)
+            return;
+
+        // 勾选框已被 WPF 切换；内置停用需二次确认（与设置页一致）
+        if (item.Builtin && item.IsEnabled)
+        {
+            var confirm = System.Windows.MessageBox.Show(
+                "停用内置 LitSSH MCP 后，AI 将无法操作本机服务器、数据源等（需要时可在「AI 助手设置 → MCP 服务器」重新启用）。确定停用？",
+                "停用内置连接器",
+                System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
+            if (confirm != System.Windows.MessageBoxResult.OK)
+            {
+                if (sender is System.Windows.Controls.MenuItem mi0)
+                    mi0.IsChecked = true;
+                return;
+            }
+        }
+
+        if (sender is System.Windows.Controls.MenuItem mi)
+            mi.IsEnabled = false;
+        foreach (System.Windows.Controls.MenuItem other in menu.Items.OfType<System.Windows.Controls.MenuItem>())
+            other.IsEnabled = false;
+
+        try
+        {
+            var result = await _viewModel.ToggleConnectorAsync(item);
+            _viewModel.StatusMessage = result;
+        }
+        catch (Exception ex)
+        {
+            _viewModel.StatusMessage = "切换连接器失败: " + ex.Message;
+        }
+        finally
+        {
+            try { await _viewModel.RefreshConnectorsAsync(); } catch { /* 忽略刷新失败 */ }
+            BuildConnectorMenuItems(menu);
         }
     }
 

@@ -469,6 +469,42 @@ public class AgentSessionTests
         Assert.Equal(TokenEstimator.Estimate(new ChatMessage(ChatRole.System, "SYS")), breakdown.SystemPrompt);
     }
 
+    [Fact]
+    public async Task SendAsync_notifies_round_boundary_once_per_user_message()
+    {
+        var final = new ChatMessage(ChatRole.Assistant, "done");
+        var client = new FakeChatClient(new ChatResponse(new List<ChatMessage> { final }));
+
+        var notifier = new FakeTool("mcp_approval_round", "ok");
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig(), roundNotifier: notifier);
+
+        await session.SendAsync("第一条", new SyncProgress(_ => { }));
+        var firstRound = notifier.LastArgs?["roundId"]?.ToString();
+        Assert.False(string.IsNullOrEmpty(firstRound));
+
+        await session.SendAsync("第二条", new SyncProgress(_ => { }));
+        var secondRound = notifier.LastArgs?["roundId"]?.ToString();
+        Assert.False(string.IsNullOrEmpty(secondRound));
+        Assert.NotEqual(firstRound, secondRound);   // 每条用户消息 = 新轮次
+    }
+
+    [Fact]
+    public async Task SendAsync_survives_round_notifier_failure()
+    {
+        var client = new FakeChatClient(new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+        var notifier = new FakeTool("mcp_approval_round", "ok",
+            invoke: _ => throw new InvalidOperationException("boom"));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig(), roundNotifier: notifier);
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        // 轮次信号失败不影响对话（降级 = 多弹审批，不误放行）
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Done);
+    }
+
     private sealed class UsageEmittingChatClient : IChatClient
     {
         private readonly UsageDetails _usage;

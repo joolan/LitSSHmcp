@@ -21,8 +21,12 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += (_, args) => { SafeLog(args.Exception); args.SetObserved(); };
 
         // 异步读取配置并应用主题：**不能**在 UI 线程同步等待（GetAwaiter().GetResult() 会死锁，
-        // 导致 OnStartup 不返回、StartupUri 主窗口永不创建——表现为"双击没反应"）。
+        // 导致 OnStartup 不返回、主窗口永不创建——表现为"双击没反应"）。
         _ = ApplyThemeAsync();
+
+        // 启动门卫：未配置应用锁先弹「设置密码」窗口（可「暂不启用」跳过）；
+        // 已配置则必须解锁（密码或 Windows Hello）后才创建主窗口——未解锁不实例化任何会话/凭据 UI。
+        _ = ShowMainWindowThroughLockAsync();
 
         // 跟随系统模式下，系统主题变化时自动重应用
         try
@@ -65,6 +69,65 @@ public partial class App : Application
 
     private static SyncScheduler? _syncScheduler;
     private static TriggerScheduler? _triggerScheduler;
+
+    /// <summary>
+    /// 启动门卫：未配置应用锁先弹「设置密码」窗口（可「暂不启用」跳过，下次启动仍会提示）；
+    /// 已配置则必须解锁后才创建主窗口。直接关闭锁窗口 = 退出程序。
+    /// </summary>
+    private async Task ShowMainWindowThroughLockAsync()
+    {
+        // 门卫阶段显式管理退出：OnLastWindowClose 下锁窗口一关（解锁成功/取消）窗口数即为 0，
+        // WPF 会直接 Shutdown，主窗口根本来不及创建。
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+        var configService = new ConfigService();
+        bool configured;
+        try
+        {
+            var config = await configService.LoadConfigAsync().ConfigureAwait(false);
+            configured = Core.Services.Security.AppLockService.IsConfigured(config.AppLock);
+        }
+        catch
+        {
+            configured = false;   // 配置读不了：不拦（避免把自己锁死在损坏状态）
+        }
+
+        var tcs = new TaskCompletionSource<bool>();
+        await Dispatcher.InvokeAsync(() =>
+        {
+            var mode = configured
+                ? Views.AppLockWindowMode.Unlock
+                : Views.AppLockWindowMode.SetPassword;
+            var lockWindow = new Views.AppLockWindow(new Core.Services.Security.AppLockService(configService), mode, relock: false);
+            lockWindow.Unlocked += (_, _) => tcs.TrySetResult(true);    // 解锁 / 设置成功 → 进入
+            lockWindow.Skipped += (_, _) => tcs.TrySetResult(false);    // 暂不启用 → 也进入（保持未锁定）
+            lockWindow.Closed += (_, _) => tcs.TrySetCanceled();        // 直接关闭 → 退出
+            lockWindow.Show();
+        });
+
+        try
+        {
+            await tcs.Task;
+        }
+        catch (OperationCanceledException)
+        {
+            Shutdown();
+            return;
+        }
+
+        await Dispatcher.InvokeAsync(CreateMainWindow);
+    }
+
+    private void CreateMainWindow()
+    {
+        // 主窗口真正关闭（「退出程序」）即连同所有独立窗口一起退出；
+        // 托盘「最小化到托盘」走 Closing 取消，不触发。
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
+        var mainWindow = new MainWindow();
+        MainWindow = mainWindow;
+        mainWindow.Show();
+        AppLockMonitor.Attach(this, mainWindow);   // 跟随 Windows 锁屏：回来时重新上锁
+    }
 
     private static readonly HashSet<string> _shownErrors = new();
 

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.Agent;
 
@@ -33,9 +34,10 @@ public static class SkillRegistry
     /// 生成注入系统提示的技能文本。<paramref name="activeSkillIds"/> 为空表示"索引模式"（只列索引）。
     /// </summary>
     public static string Load(string? skillsDir, string? bundledSkillsDir = null,
-        IReadOnlySet<string>? availableGroups = null, IReadOnlyCollection<string>? activeSkillIds = null)
+        IReadOnlySet<string>? availableGroups = null, IReadOnlyCollection<string>? activeSkillIds = null,
+        string? stableDir = null)
     {
-        var dir = ResolveDir(skillsDir, bundledSkillsDir);
+        var dir = ResolveDir(skillsDir, bundledSkillsDir, stableDir);
         if (dir is null)
             return string.Empty;
 
@@ -435,12 +437,74 @@ public static class SkillRegistry
         }
     }
 
-    public static string? ResolveDir(string? skillsDir, string? bundledSkillsDir = null)
+    /// <summary>
+    /// 稳定的技能根目录（<c>%APPDATA%\LitSSH\skills</c>）：跨重编译 / 升级保留，用户安装的技能放这里。
+    /// </summary>
+    public static string StableDir => Path.Combine(ConfigPaths.AppDataDir, "skills");
+
+    /// <summary>
+    /// 解析技能根目录，优先级：显式配置 → 稳定目录（不存在则由随包目录迁移而来）→ 随包 <c>skills/</c>。
+    /// <paramref name="stableDir"/> 供测试隔离，默认 <see cref="StableDir"/>。
+    /// </summary>
+    public static string? ResolveDir(string? skillsDir, string? bundledSkillsDir = null, string? stableDir = null)
     {
-        if (!string.IsNullOrWhiteSpace(skillsDir) && Directory.Exists(skillsDir))
-            return skillsDir;
+        // 显式配置优先（与工作区目录一致：路径不存在则创建，便于直接在设置里指定新目录）
+        if (!string.IsNullOrWhiteSpace(skillsDir))
+        {
+            try
+            {
+                Directory.CreateDirectory(skillsDir!);
+                return skillsDir;
+            }
+            catch
+            {
+                // 配置的目录不可用（无权限/非法路径）→ 继续按默认回退
+            }
+        }
+
+        var stable = EnsureStableDir(bundledSkillsDir, stableDir ?? StableDir);
+        if (stable is not null)
+            return stable;
+
         if (!string.IsNullOrWhiteSpace(bundledSkillsDir) && Directory.Exists(bundledSkillsDir))
             return bundledSkillsDir;
         return null;
+    }
+
+    /// <summary>
+    /// 取稳定目录；首次使用时把随包技能复制过去（用户已装的技能不会随 bin 目录清理而丢失）。
+    /// 两者都不可用时返回 null。
+    /// </summary>
+    private static string? EnsureStableDir(string? bundledSkillsDir, string stable)
+    {
+        try
+        {
+            if (Directory.Exists(stable))
+                return stable;
+            if (string.IsNullOrWhiteSpace(bundledSkillsDir) || !Directory.Exists(bundledSkillsDir))
+                return null;
+            if (Path.GetFullPath(bundledSkillsDir).TrimEnd(Path.DirectorySeparatorChar)
+                    .Equals(stable.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+                return stable;
+
+            CopyDirectory(bundledSkillsDir, stable);
+            return Directory.Exists(stable) ? stable : null;
+        }
+        catch
+        {
+            return null;   // 迁移失败退回随包目录
+        }
+    }
+
+    private static void CopyDirectory(string source, string target)
+    {
+        Directory.CreateDirectory(target);
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var rel = Path.GetRelativePath(source, file);
+            var dest = Path.Combine(target, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.Copy(file, dest, overwrite: false);
+        }
     }
 }

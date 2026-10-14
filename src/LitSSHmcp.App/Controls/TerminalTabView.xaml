@@ -49,8 +49,13 @@
 
         <DockPanel DockPanel.Dock="Bottom" Margin="6,4,6,6">
             <ui:Button DockPanel.Dock="Right" Content="发送" Padding="16,4" Appearance="Primary" Margin="6,0,0,0" Click="OnSendInput"/>
+            <ui:Button DockPanel.Dock="Right" Content="AI 分析" Padding="12,4" Margin="6,0,0,0"
+                       ToolTip="把下方输入框的命令交给「运维专家」智能体分析（打开临时聊天，可修改后再发送）"
+                       Click="OnAiAnalyze"/>
             <ui:TextBox FontWeight="Normal" x:Name="SendBox" KeyDown="OnSendBoxKeyDown"
-                        PlaceholderText="在此输入或粘贴内容，按回车 / 点「发送」直接下发到该 SSH 终端"/>
+                        AcceptsReturn="True" TextWrapping="Wrap" MinHeight="30" MaxHeight="120"
+                        VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" Padding="5"
+                        PlaceholderText="在此输入或粘贴内容（可多行），Enter 发送、Shift+Enter 换行；或点「AI 分析」交给运维专家解读"/>
         </DockPanel>
 
         <Grid Margin="6">

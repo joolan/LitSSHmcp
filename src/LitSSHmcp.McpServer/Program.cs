@@ -60,6 +60,8 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSingleton<IAuditLogService, AuditLogService>();
 builder.Services.AddSingleton<DesktopApprovalService>();
 builder.Services.AddSingleton<CliApprovalChannel>();
+builder.Services.AddSingleton<ApprovalRoundTracker>();
+builder.Services.AddSingleton<ApprovalExemptionRegistry>();
 builder.Services.AddSingleton<IApprovalService, ApprovalService>();
 builder.Services.AddSingleton<ITopologyStore, TopologyStore>();
 builder.Services.AddSingleton<ISnapshotStore, SnapshotStore>();
@@ -122,6 +124,8 @@ if (enabledToolGroups.Contains(ToolGroups.Java)) mcp = mcp.WithTools<JavaTools>(
 if (enabledToolGroups.Contains(ToolGroups.Topology)) mcp = mcp.WithTools<TopologyTools>();
 if (enabledToolGroups.Contains(ToolGroups.App)) mcp = mcp.WithTools<AppTools>();
 if (enabledToolGroups.Contains(ToolGroups.Guide)) mcp = mcp.WithTools<UsageGuideTools>().WithTools<HealthTools>();
+// 内部工具：审批轮次边界（不随分组停用；Agent 端会把它从模型可见工具中过滤掉）
+mcp = mcp.WithTools<ApprovalRoundTools>();
 
 // MCP 资源：只读数据（供客户端“浏览/挂载”为上下文），按启用分组裁剪，与工具/说明保持一致。
 if (enabledToolGroups.Contains(ToolGroups.Ssh)) mcp = mcp.WithResources<SshResources>().WithResources<SnapshotResources>();

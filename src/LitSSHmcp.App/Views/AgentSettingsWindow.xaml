@@ -14,6 +14,9 @@
         <ui:TitleBar Grid.Row="0" Title="AI 助手设置"/>
 
         <Grid Grid.Row="1" Margin="14,0,14,12">
+            <Grid.Resources>
+                <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+            </Grid.Resources>
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -33,7 +36,7 @@
                                 </DockPanel>
 
                                 <TextBlock Text="系统附加提示（可选）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SystemPrompt, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="60" FontFamily="Consolas" Margin="0,0,0,6"/>
-                                <TextBlock Text="技能根目录（空=用内置 skills/，含预置运维技能；其下每个子目录一个技能，含 SKILL.md）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SkillsDir, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                <TextBlock Text="技能根目录（空=用 %APPDATA%\LitSSH\skills 稳定目录，首次自动把随包 skills/ 复制过去；其下每个子目录一个技能，含 SKILL.md；该绝对路径会注入系统提示）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SkillsDir, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
                                 <TextBlock Text="工作区目录（Agent 文档工具 ops_doc_* 只能在此读写；空=我的文档\LitSSH）:"/><ui:TextBox FontWeight="Normal" Text="{Binding WorkspaceDir, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
                                 <TextBlock Text="MCP 服务器 exe 路径（空=自动探测 App 目录 mcp/）:"/><ui:TextBox FontWeight="Normal" Text="{Binding McpServerPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
 
@@ -423,6 +426,128 @@
                                     </StackPanel>
                                     <ui:Button Content="删除所选智能体" Padding="12,3" Click="OnRemoveAgent" HorizontalAlignment="Left"
                                                ToolTip="删除后引用它的会话下次打开时回退到全局默认智能体"/>
+                                </StackPanel>
+                            </Border>
+                        </ScrollViewer>
+                    </Grid>
+                </TabItem>
+                <!-- ===== Tab：MCP 服务器（内置可停用；外部可增删，启用前必须连接校验通过）===== -->
+                <TabItem Header="MCP 服务器">
+                    <Grid Margin="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" Style="{DynamicResource CardBorderStyle}">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="MCP 服务器列表（内置置顶，仅可启停）" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <ui:Button Content="添加外部" Padding="12,3" Click="OnAddMcp"/>
+                                    <TextBlock Text="(内置不可删)" VerticalAlignment="Center" FontSize="10" Margin="8,0,0,0"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                </StackPanel>
+                                <ListBox ItemsSource="{Binding McpServers}" SelectedItem="{Binding SelectedMcpServer}"
+                                         Background="Transparent" BorderThickness="0">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                            <Setter Property="Padding" Value="8,6"/>
+                                            <Setter Property="Margin" Value="0,0,0,2"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                                    <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="6" Padding="5,1" Margin="6,0,0,0"
+                                                            VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding TypeText}" FontSize="10"
+                                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding EnabledText}" FontSize="10"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </DockPanel>
+                        </Border>
+
+                        <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="Transparent"/>
+
+                        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                            <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,10">
+                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <TextBlock Text="外部 MCP 由第三方实现：其工具**不经过本程序的审批/过滤/审计**（只读模式仅按其自报的 annotations.readOnlyHint 过滤）。启用前必须「校验连接」通过；校验失败也可保存（保持停用）。保存后关闭本窗口即重建连接。"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                    </DockPanel>
+
+                                    <TextBlock Text="名称:"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding SelectedMcpServer.Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <TextBlock Text="类型:" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding SelectedMcpServer.TypeText}" Margin="6,0,16,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="传输:" VerticalAlignment="Center"/>
+                                        <ComboBox ItemsSource="{Binding McpTransportOptions}"
+                                                  SelectedItem="{Binding SelectedMcpServer.Transport, Mode=TwoWay}"
+                                                  Width="110" Margin="6,0,16,0" IsEnabled="{Binding SelectedMcpServer.IsExternal}"
+                                                  ToolTip="stdio=本机子进程（command/args/env）；http=远程 SSE / Streamable HTTP（url/headers）"/>
+                                        <TextBlock Text="状态:" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding SelectedMcpServer.EnabledText}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </StackPanel>
+
+                                    <!-- 内置条目：只说明来路，配置见「助手设置 → MCP 服务器 exe 路径」 -->
+                                    <StackPanel Visibility="{Binding SelectedMcpServer.Builtin, Converter={StaticResource BoolToVis}}" Margin="0,0,0,6">
+                                        <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                   Text="内置 LitSSH MCP：本机 stdio 子进程，exe 路径在「助手设置 → MCP 服务器 exe 路径」配置；此处只能启用/停用（停用后 AI 将没有本机服务器/数据源等运维工具）。"/>
+                                    </StackPanel>
+
+                                    <!-- stdio（外部） -->
+                                    <StackPanel Visibility="{Binding SelectedMcpServer.ShowStdio, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="command（可执行文件，绝对路径或 PATH 中的命令名）:"/>
+                                        <ui:TextBox FontWeight="Normal" Text="{Binding SelectedMcpServer.Command, UpdateSourceTrigger=PropertyChanged}"
+                                                    PlaceholderText="例：npx 或 C:\tools\mcp\server.exe" Margin="0,0,0,6"/>
+                                        <TextBlock Text="args（每行一个参数）:"/>
+                                        <ui:TextBox FontWeight="Normal" Text="{Binding SelectedMcpServer.ArgsText, UpdateSourceTrigger=PropertyChanged}"
+                                                    AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" FontFamily="Consolas" Margin="0,0,0,6"
+                                                    PlaceholderText="例：&#10;-y&#10;@modelcontextprotocol/server-filesystem&#10;C:\data"/>
+                                        <TextBlock Text="env（每行 KEY=VALUE，值按当前 Windows 用户 DPAPI 加密保存）:"/>
+                                        <ui:TextBox FontWeight="Normal" Text="{Binding SelectedMcpServer.EnvText, UpdateSourceTrigger=PropertyChanged}"
+                                                    AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" FontFamily="Consolas" Margin="0,0,0,6"
+                                                    PlaceholderText="例：API_KEY=xxxx"/>
+                                    </StackPanel>
+
+                                    <!-- http（外部） -->
+                                    <StackPanel Visibility="{Binding SelectedMcpServer.ShowHttp, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="url（http:// 或 https:// 端点，支持 SSE / Streamable HTTP）:"/>
+                                        <ui:TextBox FontWeight="Normal" Text="{Binding SelectedMcpServer.Url, UpdateSourceTrigger=PropertyChanged}"
+                                                    PlaceholderText="例：https://mcp.example.com/mcp" Margin="0,0,0,6"/>
+                                        <TextBlock Text="headers（每行 Name: Value，值按当前 Windows 用户 DPAPI 加密保存）:"/>
+                                        <ui:TextBox FontWeight="Normal" Text="{Binding SelectedMcpServer.HeadersText, UpdateSourceTrigger=PropertyChanged}"
+                                                    AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" FontFamily="Consolas" Margin="0,0,0,6"
+                                                    PlaceholderText="例：Authorization: Bearer xxxx"/>
+                                    </StackPanel>
+
+                                    <Separator Margin="0,8,0,8"/>
+                                    <TextBlock Text="{Binding SelectedMcpServer.ValidationText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:Button Content="校验连接" Padding="12,4" Click="OnValidateMcp" Margin="0,0,8,0"
+                                                   ToolTip="连接一次并列出工具数（15 秒超时），不改变启用状态"/>
+                                        <ui:Button Content="{Binding SelectedMcpServer.EnableButtonText}" Padding="12,4" Click="OnToggleMcp" Margin="0,0,8,0"
+                                                   ToolTip="外部 MCP 启用前必须校验通过；内置 MCP 直接启停"/>
+                                        <ui:Button Content="删除" Padding="12,4" Click="OnRemoveMcp"
+                                                   Visibility="{Binding SelectedMcpServer.IsExternal, Converter={StaticResource BoolToVis}}"
+                                                   ToolTip="删除所选外部 MCP（内置不可删）"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
                         </ScrollViewer>

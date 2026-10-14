@@ -200,3 +200,68 @@ public class SkillTests : IDisposable
         Assert.Equal("见 mcp_usage_guide", ToolDescriptions.Compact(null));
     }
 }
+
+/// <summary>技能根目录解析：显式配置 → 稳定目录（首次由随包目录迁移）→ 随包目录。</summary>
+public class SkillRootResolutionTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "litssh-skillroot-" + Guid.NewGuid().ToString("N"));
+    private string Bundled => Path.Combine(_root, "bundled");
+    private string Stable => Path.Combine(_root, "stable");
+
+    public SkillRootResolutionTests()
+    {
+        Directory.CreateDirectory(Path.Combine(Bundled, "litssh-mcp-ops-skill"));
+        File.WriteAllText(Path.Combine(Bundled, "litssh-mcp-ops-skill", "SKILL.md"), "OPS");
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, true); } catch { }
+    }
+
+    [Fact]
+    public void Configured_dir_wins_and_is_created()
+    {
+        var configured = Path.Combine(_root, "custom-skills");
+        Assert.Equal(configured, SkillRegistry.ResolveDir(configured, Bundled, Stable));
+        Assert.True(Directory.Exists(configured));
+    }
+
+    [Fact]
+    public void Bundled_skills_are_migrated_to_stable_dir()
+    {
+        var dir = SkillRegistry.ResolveDir(null, Bundled, Stable);
+
+        Assert.Equal(Stable, dir);
+        Assert.True(File.Exists(Path.Combine(Stable, "litssh-mcp-ops-skill", "SKILL.md")));
+        // 迁移不删除随包目录
+        Assert.True(File.Exists(Path.Combine(Bundled, "litssh-mcp-ops-skill", "SKILL.md")));
+    }
+
+    [Fact]
+    public void Existing_stable_dir_wins_and_is_not_overwritten()
+    {
+        Directory.CreateDirectory(Path.Combine(Stable, "my-skill"));
+        File.WriteAllText(Path.Combine(Stable, "my-skill", "SKILL.md"), "MINE");
+
+        var dir = SkillRegistry.ResolveDir(null, Bundled, Stable);
+
+        Assert.Equal(Stable, dir);
+        Assert.True(File.Exists(Path.Combine(Stable, "my-skill", "SKILL.md")));
+        Assert.False(Directory.Exists(Path.Combine(Stable, "litssh-mcp-ops-skill")));   // 不覆盖已有稳定目录
+    }
+
+    [Fact]
+    public void Returns_null_when_nothing_available()
+    {
+        Assert.Null(SkillRegistry.ResolveDir(null, null, Stable));
+        Assert.Null(SkillRegistry.ResolveDir(null, Path.Combine(_root, "missing"), Stable));
+    }
+
+    [Fact]
+    public void Skill_tools_descriptions_carry_root_path()
+    {
+        var tools = SkillTools.Create(Bundled);
+        Assert.Contains(tools, t => t.Tool.Description is not null && t.Tool.Description.Contains(Bundled, StringComparison.OrdinalIgnoreCase));
+    }
+}

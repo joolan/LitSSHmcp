@@ -12,17 +12,20 @@ public sealed class ApprovalRequest
     public string? FilePath { get; set; }
     public int TimeoutSeconds { get; set; } = 120;
     public bool TopMost { get; set; } = true;
+    public List<string>? SessionGrantedTools { get; set; }
 }
 
 /// <summary>
 /// 审批子进程宿主：以独立进程显示审批对话框，通过退出码回传结果。
-/// 退出码：0=允许，1=拒绝，2=超时。
+/// 退出码：0=允许(仅本次)，1=拒绝，2=超时，3=允许且本轮次内放行，4=允许且整个会话放行。
 /// </summary>
 public static class ApprovalRequestHost
 {
     public const int ExitAllow = 0;
     public const int ExitDeny = 1;
     public const int ExitTimeout = 2;
+    public const int ExitAllowRound = 3;
+    public const int ExitAllowSession = 4;
 
     public const string ArgumentName = "--approval-request";
 
@@ -61,11 +64,17 @@ public static class ApprovalRequestHost
                     request.Command,
                     request.FilePath,
                     request.TimeoutSeconds,
-                    request.TopMost);
+                    request.TopMost,
+                    request.SessionGrantedTools);
 
                 var result = dialog.ShowDialog();
                 code = result == DialogResult.OK
-                    ? ExitAllow
+                    ? dialog.Scope switch
+                    {
+                        ApprovalScope.Round => ExitAllowRound,
+                        ApprovalScope.Session => ExitAllowSession,
+                        _ => ExitAllow
+                    }
                     : dialog.TimedOut ? ExitTimeout : ExitDeny;
             }
             catch

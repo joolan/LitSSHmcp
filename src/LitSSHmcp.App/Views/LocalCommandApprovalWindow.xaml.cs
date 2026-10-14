@@ -4,21 +4,45 @@ using Wpf.Ui.Controls;
 
 namespace LitSSHmcp.App.Views;
 
-/// <summary>AI 请求在本机终端执行命令时的人工审批对话框。</summary>
+/// <summary>
+/// AI 请求在本机终端执行命令时的人工审批对话框。
+/// 支持三档放行范围（仅本次 / 本轮次内全部命令 / 本次会话全部命令），默认仅本次；
+/// 「总是允许」仍为配置级永久记忆。
+/// </summary>
 public partial class LocalCommandApprovalWindow : FluentWindow
 {
     public LocalApprovalDecision Decision { get; private set; } = LocalApprovalDecision.Deny;
 
-    public LocalCommandApprovalWindow(string command, string workingDirectory)
+    public LocalCommandApprovalWindow(string command, string workingDirectory, bool sessionAllGranted = false)
     {
         InitializeComponent();
         CommandText.Text = command ?? string.Empty;
         CwdText.Text = string.IsNullOrWhiteSpace(workingDirectory) ? string.Empty : "工作目录：" + workingDirectory;
+
+        if (sessionAllGranted)
+        {
+            SessionHint.Text = "已设置：本次 AI 会话期间允许全部命令（本弹窗不会再出现；重启或新会话即失效）";
+            SessionHint.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void OnRoundChecked(object sender, RoutedEventArgs e)
+    {
+        if (RoundBox.IsChecked == true)
+            SessionBox.IsChecked = false;   // 二选一
+    }
+
+    private void OnSessionChecked(object sender, RoutedEventArgs e)
+    {
+        if (SessionBox.IsChecked == true)
+            RoundBox.IsChecked = false;   // 二选一
     }
 
     private void OnAllow(object sender, RoutedEventArgs e)
     {
-        Decision = LocalApprovalDecision.Allow;
+        Decision = SessionBox.IsChecked == true ? LocalApprovalDecision.AllowSession
+            : RoundBox.IsChecked == true ? LocalApprovalDecision.AllowRound
+            : LocalApprovalDecision.Allow;
         Close();
     }
 
@@ -35,13 +59,13 @@ public partial class LocalCommandApprovalWindow : FluentWindow
     }
 
     /// <summary>在 UI 线程弹出审批对话框并返回用户选择（非 UI 线程会切到 UI 线程）。</summary>
-    public static LocalApprovalDecision Prompt(string command, string workingDirectory)
+    public static LocalApprovalDecision Prompt(string command, string workingDirectory, bool sessionAllGranted = false)
     {
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is not null && !dispatcher.CheckAccess())
-            return dispatcher.Invoke(() => Prompt(command, workingDirectory));
+            return dispatcher.Invoke(() => Prompt(command, workingDirectory, sessionAllGranted));
 
-        var window = new LocalCommandApprovalWindow(command, workingDirectory) { Topmost = true };
+        var window = new LocalCommandApprovalWindow(command, workingDirectory, sessionAllGranted) { Topmost = true };
         window.ShowDialog();
         return window.Decision;
     }

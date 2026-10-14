@@ -154,6 +154,11 @@
     "readOnly": false,
     "allowedToolGroups": [],
     "mcpServerPath": "",
+    "mcpServers": [
+      { "id": "litssh", "name": "LitSSH MCP（内置）", "builtin": true, "enabled": true, "transport": "stdio", "command": "", "args": [], "env": [], "url": "", "headers": [], "lastError": "", "lastValidatedAt": "", "lastToolCount": 0 },
+      { "id": "ext-fs", "name": "文件系统（示例·stdio）", "builtin": false, "enabled": false, "transport": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\data"], "env": ["API_KEY=enc:xxxx (DPAPI密文, 由「AI 助手设置 → MCP 服务器」保存时自动生成)"], "url": "", "headers": [], "lastError": "", "lastValidatedAt": "", "lastToolCount": 0 },
+      { "id": "ext-http", "name": "远程服务（示例·http）", "builtin": false, "enabled": false, "transport": "http", "command": "", "args": [], "env": [], "url": "https://mcp.example.com/mcp", "headers": ["Authorization: Bearer enc:xxxx (DPAPI密文)"], "lastError": "", "lastValidatedAt": "", "lastToolCount": 0 }
+    ],
     "maxToolIterations": 20,
     "retentionMaxSessions": 50,
     "retentionMaxMessages": 200,

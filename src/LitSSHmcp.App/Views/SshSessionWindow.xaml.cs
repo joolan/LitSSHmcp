@@ -79,7 +79,8 @@ public partial class SshSessionWindow : FluentWindow
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        if (DataContext is MainViewModel { HasSessions: true } vm)
+        // 应用级退出（退出程序）时跳过二次确认，保证 Shutdown 不被中断
+        if (!AppShutdown.IsShuttingDown && DataContext is MainViewModel { HasSessions: true } vm)
         {
             var result = System.Windows.MessageBox.Show(
                 $"确定关闭 SSH 会话管理？当前 {vm.Sessions.Count} 个会话将断开。",

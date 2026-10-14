@@ -52,6 +52,92 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
         StatusMessage = "已移除智能体（点右下角「保存」生效）";
     }
 
+    /// <summary>MCP 服务器列表（首条为内置 LitSSH MCP，只能启停；其余为可增删的外部 MCP）。</summary>
+    public ObservableCollection<McpServerEdit> McpServers { get; } = new();
+
+    private McpServerEdit? _selectedMcpServer;
+    public McpServerEdit? SelectedMcpServer
+    {
+        get => _selectedMcpServer;
+        set => Set(ref _selectedMcpServer, value);
+    }
+
+    /// <summary>传输方式选项（MCP 编辑区下拉）。</summary>
+    public IReadOnlyList<string> McpTransportOptions { get; } = new[] { "stdio", "http" };
+
+    public void AddMcpServer()
+    {
+        var edit = new McpServerEdit { Name = "新 MCP 服务器", Transport = "stdio" };
+        McpServers.Add(edit);
+        SelectedMcpServer = edit;
+        StatusMessage = "已添加外部 MCP 服务器：填好配置后先「校验连接」，通过才能「启用」，最后点右下角「保存」。";
+    }
+
+    /// <summary>删除所选外部 MCP（内置不可删；调用方负责弹窗确认）。</summary>
+    public void RemoveSelectedMcpServer()
+    {
+        var server = SelectedMcpServer;
+        if (server is null || server.Builtin)
+            return;
+        var idx = McpServers.IndexOf(server);
+        McpServers.Remove(server);
+        SelectedMcpServer = McpServers.Count > 0 ? McpServers[Math.Max(0, Math.Min(idx, McpServers.Count - 1))] : null;
+        StatusMessage = "已移除（点右下角「保存」生效）";
+    }
+
+    /// <summary>连接校验（<c>initialize + tools/list</c>，15 秒超时）；只记录结果，不改变启用状态。</summary>
+    public async Task ValidateMcpServerAsync(McpServerEdit? edit)
+    {
+        if (edit is null)
+            return;
+        StatusMessage = $"正在连接「{edit.Name}」…";
+        var result = await McpServerValidator.ValidateAsync(edit.ToModel(), McpServerPath);
+        edit.ApplyValidation(result);
+        StatusMessage = result.Ok
+            ? $"「{edit.Name}」连接成功 · {result.ToolCount} 个工具"
+            : $"「{edit.Name}」连接失败: {result.Error}";
+    }
+
+    /// <summary>
+    /// 启用外部 MCP：**必须先连接校验通过**；失败则保持停用（配置仍可保存，即"停用态"）。
+    /// 内置 MCP 不做校验（其 exe 缺失会在运行时给出明确提示）。
+    /// </summary>
+    public async Task<bool> EnableMcpServerAsync(McpServerEdit? edit)
+    {
+        if (edit is null)
+            return false;
+
+        if (!edit.Builtin)
+        {
+            StatusMessage = $"正在校验「{edit.Name}」以启用…";
+            var result = await McpServerValidator.ValidateAsync(edit.ToModel(), McpServerPath);
+            edit.ApplyValidation(result);
+            if (!result.Ok)
+            {
+                edit.Enabled = false;
+                StatusMessage = $"启用「{edit.Name}」失败: {result.Error}（已保持停用，可修正后重新校验；配置可保存）";
+                return false;
+            }
+        }
+
+        edit.Enabled = true;
+        StatusMessage = edit.Builtin
+            ? $"已启用内置 MCP（点右下角「保存」生效）"
+            : $"已启用「{edit.Name}」· {edit.LastToolCount} 个工具（点右下角「保存」生效）";
+        return true;
+    }
+
+    /// <summary>停用所选服务器（内置停用后 AI 将没有本机运维工具）。</summary>
+    public void DisableMcpServer(McpServerEdit? edit)
+    {
+        if (edit is null)
+            return;
+        edit.Enabled = false;
+        StatusMessage = edit.Builtin
+            ? "已停用内置 MCP：AI 将没有本机服务器/数据源等运维工具（点「保存」生效）"
+            : $"已停用「{edit.Name}」（点右下角「保存」生效）";
+    }
+
     /// <summary>已归档的会话（“归档记录”标签页）。</summary>
     public ObservableCollection<AgentSessionRow> ArchivedSessions { get; } = new();
 
@@ -411,6 +497,11 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             _activeAgentId = agent.ActiveAgentId ?? string.Empty;
             SelectedAgent = Agents.FirstOrDefault(a => a.Id == _activeAgentId) ?? Agents.FirstOrDefault();
 
+            McpServers.Clear();
+            foreach (var m in AgentMcpServerConfig.Normalize(agent.McpServers))
+                McpServers.Add(McpServerEdit.From(m));
+            SelectedMcpServer = McpServers.FirstOrDefault();
+
             SystemPrompt = agent.SystemPrompt;
             SkillsDir = agent.SkillsDir;
             WorkspaceDir = agent.WorkspaceDir;
@@ -477,6 +568,7 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             // 当前智能体被删除时回退到第一个（空列表由运行时优雅回退到无智能体提示）
             var activeAgent = Agents.FirstOrDefault(a => a.Id == _activeAgentId) ?? Agents.FirstOrDefault();
             config.Agent.ActiveAgentId = activeAgent?.Id ?? string.Empty;
+            config.Agent.McpServers = AgentMcpServerConfig.Normalize(McpServers.Select(m => m.ToModel()).ToArray());
             config.Agent.SystemPrompt = SystemPrompt ?? string.Empty;
             config.Agent.SkillsDir = SkillsDir ?? string.Empty;
             config.Agent.WorkspaceDir = WorkspaceDir ?? string.Empty;
@@ -782,5 +874,151 @@ public class ChatAgentEdit : INotifyPropertyChanged
         if (EqualityComparer<T>.Default.Equals(field, value)) return;
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+}
+
+/// <summary>MCP 服务器编辑项（“MCP 服务器”标签页）；内置条目只允许启停。</summary>
+public class McpServerEdit : INotifyPropertyChanged
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    /// <summary>内置 LitSSH MCP（传输配置固定，UI 只读）。</summary>
+    public bool Builtin { get; set; }
+
+    private string _name = string.Empty;
+    public string Name { get => _name; set => Set(ref _name, value); }
+
+    private bool _enabled;
+    public bool Enabled
+    {
+        get => _enabled;
+        set
+        {
+            if (!Set(ref _enabled, value)) return;
+            OnPropertyChanged(nameof(EnabledText));
+            OnPropertyChanged(nameof(EnableButtonText));
+        }
+    }
+
+    private string _transport = "stdio";
+    public string Transport
+    {
+        get => _transport;
+        set
+        {
+            if (!Set(ref _transport, value)) return;
+            OnPropertyChanged(nameof(IsHttp));
+            OnPropertyChanged(nameof(ShowStdio));
+            OnPropertyChanged(nameof(ShowHttp));
+        }
+    }
+
+    private string _command = string.Empty;
+    public string Command { get => _command; set => Set(ref _command, value); }
+
+    /// <summary>启动参数（UI 多行文本，每行一个）。</summary>
+    private string _argsText = string.Empty;
+    public string ArgsText { get => _argsText; set => Set(ref _argsText, value); }
+
+    /// <summary>环境变量（UI 多行文本，每行 <c>KEY=VALUE</c>，值落盘为 DPAPI 密文）。</summary>
+    private string _envText = string.Empty;
+    public string EnvText { get => _envText; set => Set(ref _envText, value); }
+
+    private string _url = string.Empty;
+    public string Url { get => _url; set => Set(ref _url, value); }
+
+    /// <summary>附加请求头（UI 多行文本，每行 <c>Name: Value</c>）。</summary>
+    private string _headersText = string.Empty;
+    public string HeadersText { get => _headersText; set => Set(ref _headersText, value); }
+
+    private string _lastError = string.Empty;
+    public string LastError { get => _lastError; set => Set(ref _lastError, value); }
+
+    private string _lastValidatedAt = string.Empty;
+    public string LastValidatedAt { get => _lastValidatedAt; set => Set(ref _lastValidatedAt, value); }
+
+    private int _lastToolCount;
+    public int LastToolCount { get => _lastToolCount; set => Set(ref _lastToolCount, value); }
+
+    public bool IsHttp => string.Equals(Transport, "http", StringComparison.OrdinalIgnoreCase);
+    public bool ShowStdio => !Builtin && !IsHttp;
+    public bool ShowHttp => !Builtin && IsHttp;
+    public bool IsExternal => !Builtin;
+
+    public string EnabledText => Enabled ? "启用中" : "已停用";
+
+    /// <summary>启停按钮文案（同一按钮按状态切换语义）。</summary>
+    public string EnableButtonText => Enabled ? "停用" : "启用";
+    public string TypeText => Builtin ? "内置" : "外部";
+    public string TransportText => Builtin ? "stdio（本机子进程）" : Transport;
+
+    public string ValidationText
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(LastValidatedAt))
+                return "尚未校验";
+            return string.IsNullOrEmpty(LastError)
+                ? $"上次校验 {LastValidatedAt} · {LastToolCount} 个工具"
+                : $"上次校验 {LastValidatedAt} 失败: {LastError}";
+        }
+    }
+
+    public void ApplyValidation(McpValidationResult result)
+    {
+        LastError = result.Ok ? string.Empty : result.Error ?? "连接失败";
+        LastToolCount = result.Ok ? result.ToolCount : 0;
+        LastValidatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+        OnPropertyChanged(nameof(ValidationText));
+    }
+
+    public static McpServerEdit From(AgentMcpServerConfig m) => new()
+    {
+        Id = string.IsNullOrWhiteSpace(m.Id) ? Guid.NewGuid().ToString("N") : m.Id,
+        Name = m.Name ?? string.Empty,
+        Builtin = m.Builtin,
+        Enabled = m.Enabled,
+        Transport = string.Equals(m.Transport, "http", StringComparison.OrdinalIgnoreCase) ? "http" : "stdio",
+        Command = m.Command ?? string.Empty,
+        ArgsText = string.Join(Environment.NewLine, m.Args ?? Array.Empty<string>()),
+        EnvText = string.Join(Environment.NewLine, m.Env ?? Array.Empty<string>()),
+        Url = m.Url ?? string.Empty,
+        HeadersText = string.Join(Environment.NewLine, m.Headers ?? Array.Empty<string>()),
+        LastError = m.LastError ?? string.Empty,
+        LastValidatedAt = m.LastValidatedAt ?? string.Empty,
+        LastToolCount = m.LastToolCount,
+    };
+
+    public AgentMcpServerConfig ToModel() => new()
+    {
+        Id = string.IsNullOrWhiteSpace(Id) ? Guid.NewGuid().ToString("N") : Id,
+        Name = string.IsNullOrWhiteSpace(Name) ? (Builtin ? "LitSSH MCP（内置）" : "MCP 服务器") : Name.Trim(),
+        Builtin = Builtin,
+        Enabled = Enabled,
+        Transport = Builtin ? "stdio" : (IsHttp ? "http" : "stdio"),
+        Command = Command?.Trim() ?? string.Empty,
+        Args = SplitLines(ArgsText),
+        Env = SplitLines(EnvText),
+        Url = Url?.Trim() ?? string.Empty,
+        Headers = SplitLines(HeadersText),
+        LastError = LastError ?? string.Empty,
+        LastValidatedAt = LastValidatedAt ?? string.Empty,
+        LastToolCount = LastToolCount,
+    };
+
+    private static string[] SplitLines(string? text) =>
+        (text ?? string.Empty)
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+    private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        field = value;
+        OnPropertyChanged(name);
+        return true;
     }
 }

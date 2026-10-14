@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器当前注册 **53 个工具**，按用途分为 14 组。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
+MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
 
 > **⚠ 同步约定（唯一事实来源）**：本文件是 MCP 工具说明的**唯一事实来源**。以下三处必须与本文件**双向同步**，工具发生任何变动（新增/改名/删除、参数变化、描述与路由变化）时缺一不可：
 > 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`get_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
@@ -174,7 +174,7 @@ MCP 服务器当前注册 **53 个工具**，按用途分为 14 组。本文档�
 - 成功/失败统一以 `success` 字段为主，配合 `status` 细分错误类型。常见 `status`：`blocked`（命中禁止规则，**不要重试**）、`rejected`（用户拒绝）、`approval_timeout`（审批超时）、`approval_unavailable`（审批通道不可用，如无桌面且未启用 CLI）、`path_not_allowed`、`file_transfer_disabled`、`file_not_found`、`file_too_large`、`*_not_found`（ID 不存在，错误里会回显可用 ID）、`readonly_statement`（只读语句用错写工具）、`not_readonly_statement`（写语句用错只读工具）、`not_readonly`（Redis 非只读命令用错 `redis_read`）、`sudo_not_configured`、`auth_failed`、`host_key_mismatch`（主机密钥变化，可能是安全事件，先人工核对指纹）、`timeout`、`rate_limited`（被限流，应退避重试）、`connection_error`；
 - `serverId` / `datasourceId` 支持 **ID / 名称 / 主机名**（忽略大小写）三种写法；传错时错误信息回显可用 ID；
 - 命令输出超过 2 万字符会被截断并置 `truncated: true`、`outputChars` 记录原始长度；审计库中单条结果截断到 4000 字符；
-- 敏感操作（敏感命令、敏感 SQL、Redis 写命令、文件传输）需人工确认，默认同时启用**桌面弹窗 + CLI 带外审批**两条通道（`security.approval.channels`，默认 `["desktop","cli"]`，超时默认 45 秒）；AI 侧表现为 `status: "rejected"` / `"approval_timeout"` / `"approval_unavailable"`；第一期 Redis 写命令**一律**确认（不按敏感度分级）；**审批模式**（`security.approval.mode`）：`manual`（默认，所有触发审批的操作都需人工确认）、`auto-approve`（危险：所有触发审批的操作自动放行）、`auto-reject`（触发审批时直接拒绝），可在桌面 App「安全设置 → 审批模式」切换；三种模式都**不影响**被命令过滤器硬拒绝（`blocked`）的操作；
+- 敏感操作（敏感命令、敏感 SQL、Redis 写命令、文件传输）需人工确认，默认同时启用**桌面弹窗 + CLI 带外审批**两条通道（`security.approval.channels`，默认 `["desktop","cli"]`，超时默认 45 秒）；AI 侧表现为 `status: "rejected"` / `"approval_timeout"` / `"approval_unavailable"`；桌面弹窗可勾选放行范围（默认仅本次；「本轮次内放行该工具」到下一条用户消息自动失效、恢复正常审批；「整个会话放行该工具（不建议）」到连接断开为止）；第一期 Redis 写命令**一律**确认（不按敏感度分级）；**审批模式**（`security.approval.mode`）：`manual`（默认，所有触发审批的操作都需人工确认）、`auto-approve`（危险：所有触发审批的操作自动放行）、`auto-reject`（触发审批时直接拒绝），可在桌面 App「安全设置 → 审批模式」切换；三种模式都**不影响**被命令过滤器硬拒绝（`blocked`）的操作；
 - 每个工具带 MCP 注解 `ReadOnly` / `Destructive` / `Idempotent` / `OpenWorld`，只读工具与破坏性工具易于在客户端区分；
 - 工具名遵循「工具命名约定」（`<域>_<动作>[_<对象>]`）；
 - 任何工具的入参、出参都**不包含密码**；
@@ -492,3 +492,8 @@ MCP 服务器当前注册 **53 个工具**，按用途分为 14 组。本文档�
 - **参数**：`limit`（默认 50，上限 500）
 - **返回**：`{ success, error, count, sessions: [{ sessionId, clientName, clientVersion, startedAt, lastSeenAt }] }` —— 按最近活动倒序
 - **场景**：审计记录都带 `sessionId`，用它能看出"是哪个 AI 客户端、哪次连接"产生的；再配合 `ssh_get_command_history` / `datasource_get_sql_history` 的 `sessionId` 参数下钻
+
+### `mcp_approval_round`
+- **参数**：`roundId`（本轮次标识，由助手生成的随机串）
+- **返回**：`ok` —— 标记新的对话轮次开始
+- **场景**：内部工具，由 LitSSH 桌面助手在每条用户消息开始时自动调用，作为审批弹窗「本轮次内放行该工具」授权的失效边界（下一条消息即恢复审批）；其它 MCP 客户端无需调用

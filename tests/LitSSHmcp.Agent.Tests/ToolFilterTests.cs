@@ -25,6 +25,7 @@ public class ToolFilterTests
     [InlineData("topology_get_overview", "topology")]
     [InlineData("app_health_snapshot", "app")]
     [InlineData("mcp_usage_guide", "guide")]
+    [InlineData("mcp_approval_round", "guide")]
     [InlineData("unknown_tool", null)]
     public void GroupOf_maps_tool_names(string tool, string? expected)
     {

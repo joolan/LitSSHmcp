@@ -4,6 +4,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.App.Services;
+using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.Core.Services.Storage;
 using Wpf.Ui.Controls;
 using TextBox = System.Windows.Controls.TextBox;
 
@@ -15,6 +17,9 @@ public partial class MainWindow : FluentWindow
 
     private System.Windows.Forms.NotifyIcon? _tray;
     private bool _allowClose;
+
+    /// <summary>最小化到托盘时被隐藏的独立窗口快照（恢复时按快照再显示；托盘期间新弹出的窗口不受影响）。</summary>
+    private readonly List<Window> _trayHiddenWindows = new();
 
     public MainWindow()
     {
@@ -202,6 +207,9 @@ public partial class MainWindow : FluentWindow
             case Views.CloseChoice.Exit:
                 _allowClose = true;
                 DisposeTray();
+                // 置退出标记后由 OnMainWindowClose 触发 Application.Shutdown：连同所有独立窗口一起退出，
+                // 各窗口 OnClosing 见标记后跳过「还有活动会话」等二次确认，避免退出被中断。
+                AppShutdown.IsShuttingDown = true;
                 return; // 允许关闭
             case Views.CloseChoice.MinimizeToTray:
                 e.Cancel = true;
@@ -216,6 +224,18 @@ public partial class MainWindow : FluentWindow
     private void MinimizeToTray()
     {
         EnsureTray();
+
+        // 快照式：把此刻已打开的独立窗口一并隐藏（AI 助手/会话管理/拓扑/设置等），
+        // 恢复时按快照再显示；托盘期间新弹出的窗口（如审批弹窗）不进快照、照常显示。
+        _trayHiddenWindows.Clear();
+        foreach (Window window in Application.Current.Windows)
+        {
+            if (ReferenceEquals(window, this) || !window.IsVisible)
+                continue;
+            _trayHiddenWindows.Add(window);
+            try { window.Hide(); } catch { /* 个别窗口隐藏失败不影响整体 */ }
+        }
+
         Hide();
         try
         {
@@ -251,8 +271,53 @@ public partial class MainWindow : FluentWindow
         _tray.DoubleClick += (_, _) => RestoreFromTray();
     }
 
-    private void RestoreFromTray()
+    private async void RestoreFromTray()
     {
+        // 主界面本来就可见（仅最小化到任务栏等）：只激活，不解锁也不做窗口恢复
+        if (IsVisible)
+        {
+            Activate();
+            return;
+        }
+
+        // 已设置应用锁：恢复主界面前先解锁（未设置密码则直接恢复）
+        try
+        {
+            var configService = new ConfigService();
+            var config = await configService.LoadConfigAsync();
+            if (AppLockService.IsConfigured(config.AppLock))
+            {
+                var lockWindow = new Views.AppLockWindow(new AppLockService(configService), Views.AppLockWindowMode.Unlock, relock: true)
+                {
+                    Owner = this
+                };
+                var unlocked = false;
+                lockWindow.Unlocked += (_, _) => unlocked = true;
+                lockWindow.ShowDialog();   // 模态：解锁前不恢复主界面（relock 模式下不可点 X 绕过）
+                if (!unlocked)
+                    return;   // 未解锁（点「退出程序」时进程已在退出）
+            }
+        }
+        catch
+        {
+            // 解锁窗口异常时不把用户挡在外面，直接恢复
+        }
+
+        // 先按快照恢复先前隐藏的独立窗口（已关闭的跳过），再显示主窗口并置前
+        foreach (var window in _trayHiddenWindows)
+        {
+            try
+            {
+                if (window.IsLoaded)
+                    window.Show();
+            }
+            catch
+            {
+                // 窗口已销毁：跳过
+            }
+        }
+        _trayHiddenWindows.Clear();
+
         Show();
         WindowState = WindowState.Normal;
         Activate();
@@ -263,6 +328,7 @@ public partial class MainWindow : FluentWindow
     {
         _allowClose = true;
         DisposeTray();
+        AppShutdown.IsShuttingDown = true;
         Application.Current.Shutdown();
     }
 

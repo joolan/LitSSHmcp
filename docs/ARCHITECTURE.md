@@ -38,7 +38,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 | 项目 | 目标框架 | 职责 | 关键依赖 |
 |------|---------|------|---------|
 | `LitSSHmcp.Core` | net8.0 | 数据模型 + 全部业务服务（不含任何入口逻辑） | SSH.NET 2026.0.0、MySqlConnector 2.4.0、Npgsql 8.0.5、Microsoft.Data.Sqlite、System.Security.Cryptography.ProtectedData |
-| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、53 个工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
+| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、54 个工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理界面（服务器/数据源/应用/资产拓扑可视化编辑/安全设置/审计/工具说明/工具分组） | WPF、Core |
 | `LitSSHmcp.Cli` | net10.0 | 终端 SSH 工具（`litssh list/connect/run`） | Core |
 | `LitSSHmcp.Tests` | net8.0 | Core 单元测试（安全过滤/路径策略/配置迁移/加密/驱动协议等） | Core、xunit |
@@ -64,7 +64,7 @@ LitSSHmcp/
 │   └── config.example.json       # 配置文件示例
 ├── src/
 │   ├── LitSSHmcp.Core/           # 模型 + 业务服务（SSH/Datasource/Topology/Security/Storage）
-│   ├── LitSSHmcp.McpServer/      # MCP 服务器（Program.cs + Tools/ 17 个工具类）
+│   ├── LitSSHmcp.McpServer/      # MCP 服务器（Program.cs + Tools/ 18 个工具类）
 │   ├── LitSSHmcp.Agent/          # AI 运维助手（MCP 客户端 + 大模型对话循环 + 技能）
 │   ├── LitSSHmcp.App/            # WPF 管理界面（Views/ + ViewModels/）
 │   └── LitSSHmcp.Cli/            # CLI
@@ -79,7 +79,7 @@ LitSSHmcp/
 
 - `Program.cs` 用 `Host.CreateApplicationBuilder` 组装依赖注入，然后：
   - `.WithStdioServerTransport()` —— JSON-RPC 走 stdin/stdout；
-  - `.WithTools<T>()` 注册 17 个工具类，共 53 个工具（详见 [TOOLS.md](TOOLS.md)）；每个工具带 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` 注解；
+  - `.WithTools<T>()` 注册 18 个工具类，共 54 个工具（详见 [TOOLS.md](TOOLS.md)）；每个工具带 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` 注解；
   - **工具分组**：启动时读取 `config.json` 的 `tools.enabledGroups`（`AppConfig.Tools` + `ToolGroups.ResolveEnabled`，留空=全部），按分组**条件注册** `WithTools<T>()`，可只暴露部分工具以降低 AI 上下文占用与误选；未知分组忽略并启动告警（见 [TOOLS.md](TOOLS.md)「工具分组」）；
   - **工具清单单一来源**：`mcp_usage_guide` 的工具清单由 `[McpServerTool]`/`[Description]` 反射生成（不手写）；`tests/LitSSHmcp.McpServer.Tests` 校验"已注册工具 ↔ `docs/TOOLS.md` ↔ 指南"一致；
   - **MCP 协议增强**：`initialize` 返回 **Server Instructions**（会话级行为约定，见 `Services/McpServerInstructions.cs`）；文件上传/下载通过注入的 `IProgress<ProgressNotificationValue>` 向前端推送 `notifications/progress`；
@@ -146,6 +146,7 @@ LitSSHmcp/
 - **审计防篡改与永久归档**：`AuditChain`（HMAC-SHA256 哈希链，密钥 DPAPI 保护于 `audit.db.key`；无密钥时退化为 SHA-256）+ 历史归档表 `AuditLogsHistory`/`SqlAuditLogsHistory`——超过 `security.audit.retentionDays` 的活动记录**移动**到历史表（永久保留，链不删除、Id 不变）；`IAuditLogService.VerifyChainAsync()` 校验整链完整性，App「审计日志」提供“校验完整性/含归档”。`Category`/`Decision` 一并纳入哈希链（审计格式版本 v5；版本落后时启动重建）。
 - **带外审批**：`ApprovalService` 按 `security.approval.channels` 启用 `desktop`（`DesktopApprovalService` 弹窗）与 `cli`（写 `%APPDATA%\LitSSH\approvals\pending-<id>.json` 等待决策文件，操作员用 `litssh approve/deny <id>` 决定）；共享 `ApprovalFileStore` 文件格式。审批前先看 `security.approval.mode`：`auto-approve`/`auto-reject` 直接放行/拒绝（不弹窗、不等 CLI）。
 - `PathPolicy`：文件传输路径白名单校验（本地 `GetFullPath` 规范化 + 前缀匹配；远程 POSIX 规范化并拒绝 `..` 穿越）。
+- `AppLockService`（`AppLockService.cs`）：**应用锁（启动密码门卫）**——设置/修改/关闭密码、**PBKDF2-SHA256（210k 迭代）常数时间校验**（`CryptographicOperations.FixedTimeEquals`）；哈希与盐存 `config.json` 的 `appLock` 节点并纳入 DPAPI `enc:` 加密通道（`ConfigService.EncryptSecrets/DecryptSecrets`），明文密码绝不落盘。定位是**防他人随手操作的门卫**（不是凭据金库，凭据仍由 DPAPI(CurrentUser) 保护）。
 
 ### 4.4 拓扑（`Services/Topology` + `Models/TopologyModels.cs`）
 
@@ -177,9 +178,9 @@ LitSSHmcp/
 
 - **定位**：App 内置的大模型运维智能体，让用户"配置模型即可用自然语言运维"，无需依赖第三方 AI 客户端配置 MCP。
 - **技术栈**：`Microsoft.Extensions.AI`（`IChatClient` 抽象）+ 官方 `ModelContextProtocol`（**客户端**）+ OpenAI 兼容端点连接器（`Microsoft.Extensions.AI.OpenAI`，覆盖 DeepSeek/Qwen/Kimi/GLM/硅基流动/Ollama）。
-- **通道**：`McpToolHost` 以 **stdio 子进程**启动本机 `LitSSHmcp.McpServer`（发布包内置 `mcp/LitSSHmcp.McpServer.exe`，`AgentPaths` 自动探测/可配置），`McpClient.ListToolsAsync()` 得到工具（`McpClientTool : AIFunction`）。**所有操作经 MCP 工具**，故审批/过滤器/审计哈希链/工具分组开关原样生效。
+- **通道（多 MCP 宿主）**：`McpToolHost` 持有一个 `McpClient`，两类来源——① **内置** LitSSH MCP：`ForBuiltin(launch)` 以 **stdio 子进程**启动本机 `LitSSHmcp.McpServer`（发布包内置 `mcp/LitSSHmcp.McpServer.exe`，`AgentPaths` 自动探测/可配置），**可在 `agent.mcpServers` 中停用**（停用则跳过 exe 解析，缺 exe 不再阻断助手启动）；② **外部 MCP**（`agent.mcpServers` 中 `builtin=false` 且 `enabled=true` 的条目）：`McpToolHost.Create(cfg)` 按 `transport` 走 **stdio**（`command`/`args`/`env`）或 **http**（`HttpClientTransport`，SSE / Streamable HTTP 自动探测，`url`/`headers`）。`AgentRuntime.StartAsync` 顺序连接：内置在前、外部在后，**单个外部连接失败只降级为 `McpWarnings`（不阻断会话）**，全部宿主由 `AgentRuntime.Hosts` 持有并在 Dispose 时一并关停。工具装配：内置工具**原名保留**，外部工具**仅在与既有工具重名时**加服务器前缀（`<serverId>_<tool>`，冲突再加序号）并把映射写入系统提示；`availableGroups`（能力边界段）只统计**内置**工具，外部工具不计入。`McpServerValidator.ValidateAsync` 提供**启用前连接校验**（`initialize` + `tools/list`，15 秒超时，返回工具数 / 错误）。**所有内置操作经 MCP 工具**，故审批/过滤器/审计哈希链/工具分组开关原样生效；**外部工具不经本程序审批/过滤**，仅按其自报 `annotations.readOnlyHint` 参与只读过滤（系统提示写明该安全边界）。
 - **对话循环**：`AgentSession` 手动驱动"模型→工具调用→结果回灌"循环（`FunctionCallContent`/`FunctionResultContent`），可约束最大轮数、裁剪上下文、推送工具轨迹事件。
-- **技能**：`SkillRegistry` 加载 markdown 技能（默认内置 `litssh-mcp-ops-skill`，可配置目录；技能文档保持通用）——**默认只注入顶层 `SKILL.md`**，`references/` 与 `*.template.md` 不默认注入，改由本地工具 **`skill_list` / `skill_read`**（`SkillTools`，限定技能目录内）按需读取，降低每轮系统提示体积；`SystemPromptBuilder` 拼装"基础约定 + MCP `server instructions` + 技能 + 技能参考文件清单 + 用户附加提示 + 本地工具(工作区文档/计划)说明"注入系统提示。内置**工作区文档工具** `ops_doc_read/write/append/patch/list`（`WorkspaceTools`）与**计划工具** `update_plan`（`PlanTools`，单代理内规划器），均为本地非 MCP。发送模型前可用 `ToolDescriptions.Compact` 精简 MCP 工具描述（`agent.compactToolDescriptions`，默认开）。
+- **技能**：`SkillRegistry` 加载 markdown 技能（**根目录解析顺序 `ResolveDir`**：显式 `agent.skillsDir` → **稳定目录 `%APPDATA%\LitSSH\skills`**（不存在则由随包 `skills/` **一次性复制**过去，用户新装技能不随 bin 清理丢失）→ 随包 `skills/`；`Load` 另接受 `stableDir` 供测试隔离；技能文档保持通用）——**其绝对路径注入系统提示 `## 技能目录` 段**（并说明"每子目录一个技能、新技能下次会话生效"），`skill_list` / `skill_read` 描述里也带该根路径，模型装技能不再猜目录；**默认只注入顶层 `SKILL.md`**，`references/` 与 `*.template.md` 不默认注入，改由本地工具 **`skill_list` / `skill_read`**（`SkillTools`，限定技能目录内）按需读取，降低每轮系统提示体积；`SystemPromptBuilder` 拼装"基础约定 + MCP `server instructions` + 技能 + 技能参考文件清单 + 用户附加提示 + 本地工具(工作区文档/计划)说明"注入系统提示。内置**工作区文档工具** `ops_doc_read/write/append/patch/list`（`WorkspaceTools`）与**计划工具** `update_plan`（`PlanTools`，单代理内规划器），均为本地非 MCP。发送模型前可用 `ToolDescriptions.Compact` 精简 MCP 工具描述（`agent.compactToolDescriptions`，默认开）。
 - **大结果落盘**：`SpillStore` 把超过 `toolResultMaxChars` 的工具结果写入 `spillDir`（默认 `%APPDATA%\LitSSH\spills`，按 `spillRetentionDays` 清理），上下文只保留预览 + `spill://<handle>`；`SpillTools` 提供 `spill_list`/`spill_read`(分页)/`spill_grep`。`AgentSession.BuildToolResultContextText` 负责落盘或退回截断。
 - **子代理隔离**：`SubAgents`（`run_subagent`）把独立只读取证任务交给一个**隔离的 `AgentSession`**（仅 MCP/技能/落盘只读工具，无工作区写与计划，防副作用与递归），只把结论摘要作为工具结果返回主上下文；受 `agent.enableSubAgent` 控制。
 - **Prompt Caching 指引**：系统提示（含技能）与工具定义为**每轮不变的稳定前缀**，可变内容（用户消息/工具结果/摘要）在后，利于 OpenAI/DeepSeek 等 **provider 端前缀缓存**（前缀 ≥1024 tokens 才生效）；保持系统提示、技能、工具分组稳定即可持续命中；修改后首轮会重建缓存。
@@ -195,19 +196,20 @@ LitSSHmcp/
 - **会话记录与重启恢复**：`agent_messages` 除 `user`/`assistant` 外新增 `role="tool"` 行（紧凑 JSON：tool/args/result/ok/ms）。`AgentViewModel.BuildTranscriptAsync` 是**唯一解析入口**（加载会话、切模型、编辑/重发共用同一历史重建）：UI 还原工具步骤（可展开/重试），模型在该轮 user 之后得到一条文本轨迹（不伪造 function_call 配对）；视觉模型下从最新往回**最多重建 3 张历史图片**，其余只留文本标记。`agent_sessions` 新增 `Plan` 列持久化任务计划。`PersistTranscriptAsync` 按 user→tool…→assistant 顺序落库（结果截断 20000 字符）。
 - **技能加载（两段式）**：`SkillRegistry` 对 ≤800 字符的小技能全文内联；大技能**内联 preamble + 前置 `##` 完整章节（累计 ≤4000 字符）**，其余章节只列标题 + `skill_read` 提示（首个章节即超预算时退回纯索引）；`references/` 与 `*.template.md` 不注入。
 - **上下文**：独立 SQLite `%APPDATA%\LitSSH\agent.db`（`agent_sessions`/`agent_messages`/`agent_memory`）。
-- **配置**：`AppConfig.Agent`（多 provider、active、systemPrompt、skillsDir、workspaceDir、contextLimit、readOnly、allowedToolGroups、memory、mcpServerPath、maxToolIterations）；API Key 纳入 DPAPI `enc:` 加密。
-- **UI**：`Views/AgentWindow`（按"用户指令(时间)/工具过程/回答(时间与耗时)"的轮次展示 + `Controls/MarkdownBox` Markdown 渲染 + 工具过程可折叠 + 任务计划面板）+ `Views/AgentSettingsWindow`（模型/分组/记忆/参数），主菜单「AI 运维助手」打开（非模态独立窗口）。
+- **配置**：`AppConfig.Agent`（多 provider、active、systemPrompt、skillsDir、workspaceDir、contextLimit、readOnly、allowedToolGroups、memory、mcpServerPath、**mcpServers**、agents/activeAgentId、maxToolIterations）；API Key 与 **MCP 外部服务器的 `env` / `headers` 值**纳入 DPAPI `enc:` 加密（`ConfigService.EncryptSecrets/DecryptSecrets` 按 `KEY=VALUE` / `Name: Value` 的分隔符后取值处理）。`mcpServers` 首条固定为内置 `litssh`（`Builtin=true`，`Normalize` 负责回填/置顶），其余为外部条目（`transport`=stdio|http，含 `enabled`/`lastError`/`lastValidatedAt`/`lastToolCount` 校验记录）。
+- **UI**：`Views/AgentWindow`（按"用户指令(时间)/工具过程/回答(时间与耗时)"的轮次展示 + `Controls/MarkdownBox` Markdown 渲染 + 工具过程可折叠 + 任务计划面板；输入区「计划/执行模式」旁有**「连接器」按钮**——弹出 MCP 清单可勾选启停，勾选即 `AgentViewModel.ToggleConnectorAsync` 保存配置并重建运行时，状态来自 `AgentRuntime.McpHostStatuses`）+ `Views/AgentSettingsWindow`（六个 Tab：**助手设置 / 大模型设置 / 归档记录 / 智能体 / MCP 服务器 / 提示词模板**；**非模态单实例**——`AgentWindow.OpenSettings` 用 `Show()` 打开、已打开时 `SelectTab` + `Activate`，Owner 为 AI 助手窗口、关闭后重载 provider/会话/模板；MCP 页左侧服务器列表 + 右侧编辑表单，含「校验连接」「启用/停用」「删除」，Tab 定位按 Header 文本），主菜单「AI 运维助手」打开（非模态独立窗口）。
 
 ## 5. WPF 管理界面（LitSSHmcp.App）
 
 - MVVM：`Views/`（窗口）+ `ViewModels/`（`INotifyPropertyChanged` + `RelayCommand`）。
+- **启动门卫（应用锁）**：`App.xaml` **不再使用 `StartupUri`**——`App.OnStartup` 经 `ShowMainWindowThroughLockAsync` 创建主窗口：未配置 `appLock` 先弹 `Views/AppLockWindow`（SetPassword 模式，可「暂不启用」跳过、下次启动仍提示）；已配置则**必须解锁（密码 / `Services/WindowsHelloService`（`UserConsentVerifier`，Hello 不可用自动隐藏））后才 `new MainWindow()`**——未解锁不实例化任何会话/凭据 UI，直接关闭锁窗口=退出。`Services/AppLockMonitor` 订阅 `SystemEvents.SessionSwitch`：Windows 锁屏（Win+L）回来时**模态重锁**（relock 模式，拦截关闭、只能解锁或显式退出）。设置/修改/验证密码走 `Views/AppLockPasswordDialog`（设置 → 安全设置 → 应用锁；修改/关闭前先验证旧密码，失败递进延迟 1s~5s）；解锁/设置结果写审计（`app_lock_set`/`app_lock_unlock`，Gate 类，`Tool=app_lock`）。**托盘恢复也过门卫**：`MainWindow.RestoreFromTray`（双击托盘 / 菜单「显示主界面」）在已配置 `appLock` 时先弹模态解锁窗口（relock 模式），解锁后才 `Show()` 主窗口（主界面本就可见时只激活、不解锁）；**最小化到托盘时快照式隐藏所有可见的独立顶层窗口**（`_trayHiddenWindows`，恢复时按快照逐个 `Show`、已关闭的跳过；托盘期间新弹出的窗口如审批弹窗不进快照、照常显示）。
 - 窗口清单：
-  - `MainWindow` / `MainViewModel`：主界面壳层。左侧图标导航栏 + 右侧**主区域页面宿主**（按 `MainPage` 切换）：**主页**（服务器列表 + 会话标签）、**SSH 服务器管理**（`ServerManageView`）、**数据源管理**（`DatasourceManageView`）、**应用管理**（`ApplicationManageView`）、**远程桌面**（`RemoteDesktopManageView`，RDP / VNC 连接管理，连接在 `RemoteDesktopSessionWindow` 内嵌多标签窗口打开）。资产拓扑/审计日志仍为独立窗口；**关闭主窗口**时弹「最小化到托盘 / 退出程序」（WinForms `NotifyIcon`，后台继续运行、双击托盘图标恢复）；
+  - `MainWindow` / `MainViewModel`：主界面壳层。左侧图标导航栏 + 右侧**主区域页面宿主**（按 `MainPage` 切换）：**主页**（服务器列表 + 会话标签）、**SSH 服务器管理**（`ServerManageView`）、**数据源管理**（`DatasourceManageView`）、**应用管理**（`ApplicationManageView`）、**远程桌面**（`RemoteDesktopManageView`，RDP / VNC 连接管理，连接在 `RemoteDesktopSessionWindow` 内嵌多标签窗口打开）。资产拓扑/审计日志仍为独立窗口；**关闭主窗口**时弹「最小化到托盘 / 退出程序」（无「取消」按钮；WinForms `NotifyIcon`，后台继续运行、双击托盘图标恢复，已启用应用锁时恢复前先解锁）；**「退出程序」= 整个应用退出**：`ShutdownMode.OnMainWindowClose` + `Services/AppShutdown.IsShuttingDown` 标记——主窗口关闭即 `Application.Shutdown` 连同所有独立窗口一起退出，各窗口 `OnClosing`（`SshSessionWindow`/`RemoteDesktopSessionWindow` 的「还有活动会话」确认、分离窗口的「收回主窗口」）见标记后跳过，保证退出不被中断；
   - `ServerEditWindow` / `ServerEditViewModel`：服务器新增/编辑；  - `DatasourceManageView` / `DatasourceManageViewModel`：数据源增删改、连通性测试与**打开数据库工作台**（主区域页面，不再弹窗）；工作台为独立窗口 `DbWorkbenchWindow` / `DbWorkbenchViewModel`（SQL 数据源：对象浏览 / SQL 查询 / 分页；Redis：键浏览 `IRedisKeyExplorer` + 命令输入；两者：**片段**（按「数据源·库」收藏与追加，`Services/DbSqlSnippetStore`）/ 结果复制 / 导出 CSV，复用 `IDatabaseExplorer`、`IRedisKeyExplorer` 与驱动 `QueryAsync`），顶部**只读/写入模式**开关（默认只读，强视觉区分）；写操作经 `SqlFilterService.CheckWrite` 拦截 + 敏感语句确认 + `AuditLogService` 审计，只读数据源禁写；
   - （原「拓扑关系管理」窗口已并入下方「资产拓扑」可视化编辑器，不再单独提供）
   - `ApplicationManageView` / `ApplicationManageViewModel`：应用(`app:`)节点维护（含 Docker 容器名 `ContainerName`；主区域页面，不再弹窗）；
   - `AuditWindow` / `AuditViewModel`：命令/SQL 审计查看、CSV 导出、**含归档**（永久保留的历史表）、**校验完整性**（哈希链）；**非模态独立窗口**（不置顶，可与主界面同时操作）；
-  - `AppSettingsWindow`（底部 **设置** 入口，多 Tab）：`AppearanceSettingsView` / `AppearanceSettingsViewModel`（全局 **界面主题/强调色**，写入 `ui.theme`/`ui.accent`）；`TerminalSettingsView`（终端记录 / 本机终端等）、`SnippetEditorView`（命令片段）；`SecuritySettingsView` / `SecuritySettingsViewModel`（**MCP 全局开关**、命令/SQL 过滤、文件传输、主机密钥、发现路径、限流、审计策略、**审批通道**、**审批模式**、**查询结果脱敏**）；`ToolGroupsView` / `ToolGroupsViewModel`（勾选 `tools.enabledGroups`）；`ConfigTransferView` / `ConfigTransferViewModel`（配置导入/导出）；`McpToolsView`（**MCP 工具说明**）；`AboutView`（**关于**：简介、最近更新亮点、开源许可、MCP 核心能力、桌面 App 核心功能与技术栈，版本号取自程序集）；
+  - `AppSettingsWindow`（底部 **设置** 入口，多 Tab）：`AppearanceSettingsView` / `AppearanceSettingsViewModel`（全局 **界面主题/强调色**，写入 `ui.theme`/`ui.accent`）；`TerminalSettingsView`（终端记录 / 本机终端等）、`SnippetEditorView`（命令片段）；`SecuritySettingsView` / `SecuritySettingsViewModel`（**应用锁**设置入口：状态展示 + 设置/修改密码 + 关闭应用锁，Hello 可用性提示；以及 **MCP 全局开关**、命令/SQL 过滤、文件传输、主机密钥、发现路径、限流、审计策略、**审批通道**、**审批模式**、**查询结果脱敏**）；`ToolGroupsView` / `ToolGroupsViewModel`（勾选 `tools.enabledGroups`）；`ConfigTransferView` / `ConfigTransferViewModel`（配置导入/导出）；`McpToolsView`（**MCP 工具说明**）；`AboutView`（**关于**：简介、最近更新亮点、开源许可、MCP 核心能力、桌面 App 核心功能与技术栈，版本号取自程序集）；
   - `TopologyWindow` / `TopologyViewModel`：资产拓扑可视化 + 自动发现入口；**非模态独立窗口**（不置顶，可与主界面同时操作）。`runsOn` 的应用**与数据库**都内嵌在所属服务器区块内（一眼看出服务器上运行了哪些服务/库），节点标题附带端口（如 `订单库 :3306`），`connectsTo`/`canAccess` 以带类型标注的连线绘制，数据库运行在所连服务器上时省略冗余 `canAccess`，自动发现的关系用虚线区分；鼠标悬浮任一节点显示详情（主机/端口/账号/类型/描述/标签，密码等敏感信息不展示）。连线绘制在**服务器区块之上、叶子节点之下**，采用**避障正交路由**（Hanan 栅格 + A*，不直穿其它节点；端点从四边中点择优；源/目标所在服务器区块对其子节点透明，可进入 `runsOn` 嵌套区块；回退 Z 形），拐角圆角化，起点圆点、终点箭头；交叉处过桥。**可交互编辑**：拖动/缩放节点（拖服务器带动子节点；位置按「起点 + 总位移」绝对推导、往返不漂移；**四角手柄 + 四边内侧直接拉伸**，最小尺寸 80×36）、选中节点从边中点端口**拖拽建边**（自动推断类型并做逻辑校验，含 `runsOn` 每节点唯一）、**点选连线删除**（手动关系删 `config.Relations`；自动发现边清理 `TopologyEdges`）、拖动连线**端点锚点**指定接边位置、**网格吸附**、**Ctrl+Z/Y 撤销重做**、「重新自动布局」；手动布局存 `%APPDATA%\LitSSH\topology-layout.json`。画布支持**无限平移/缩放**（滚轮缩放、适应窗口、`Ctrl+0` 重置；右上角**「更多操作 ▾」**下拉含 ＋/－/适应/100%/刷新/**导出图片…**）；关系属性面板可拖动；拖动节点进出服务器时按**几何落点**自动增删 `runsOn`（完全落入=建立、拖出=弹窗确认删除、部分重叠=禁止回退），落点判定见 `TopologyViewModel.EndNodeDragAsync`。`runsOn` 托管的子节点用**点线边框**渲染；画布有**网格背景**且移动/缩放吸附 10px；调整大小与其它节点接触时就地停住、被挡后以当前几何**重锚**（反向拖动无死区），服务器缩小时托管子节点自动收紧、**不参与** `ServerOverlapInvalid` 校验；手动锚点通过 `FixedFromSide/ToSide` 固定侧向、移动/拖动过程（快路由）也不漂移；拖动过程跳过过桥计算并跳过吸附后未位移的重算以降低卡顿。画布网格用独立 `GridLayer`（`DrawingBrush.Transform` 跟随缩放/平移，任何缩放/平移后边缘都有网格）；空白处**左键按住即可平移**（不再用中/右键）；指针悬停节点四边/四角切换缩放光标（**四边按下即可拉伸该侧**）、节点上切换移动光标；节点**右键菜单**打开 `NodeRelationsWindow` 列出该节点相关关系并可编辑（`RelationRules` 校验）/删除（列表用节点名、当前节点红色加粗、悬浮显示 ID）。解除 `runsOn` 后由 `RelocateOrphanedStandalone` 将残留的独立节点移到就近空白处；同走廊连线不再分道错位（`LaneGap=0`，连接点可重叠）。
   - `McpToolsView`（设置窗口 Tab「MCP 工具说明」）：展示 MCP 接入配置 + 意图路由表 + 全部工具的参数/用法。内容来自 `docs/TOOLS.md`（以 `EmbeddedResource` 嵌入 `LitSSHmcp.App.csproj`），因此**与 MCP 服务器端工具注解共享唯一事实来源**：工具变动时须同步 ① `src/LitSSHmcp.McpServer/Tools/*.cs` 的 `[McpServerTool]`/`[Description]` 注解（`mcp_usage_guide` 清单由其反射生成，无需手改）② `docs/TOOLS.md` ③ `Program.cs` 的 `WithTools<T>()`；三者一致性由 `tests/LitSSHmcp.McpServer.Tests` 守门。左侧按 **`概览与接入` + 14 个工具分组**展示，分组标题为 `## <中文名>（<分组键>）`，分组键与「工具分组设置」的 `tools.enabledGroups`（`ToolGroups.All`）保持一致；`### \`工具名\`` 计为工具，其它 `###` 子标题并入章节内容。
   - `SyncWindow` / `SyncViewModel`：文件/文件夹**单向同步**任务编辑（方向联动、调度三选一、`SyncFileFilter` 文件过滤 glob、远程↔远程「使用内网地址」）。本地↔远程走 Core `SyncService`（SFTP 按 `size+mtime` 比对、临时文件 + rename 原子落盘）；远程↔远程走**服务器端 `rsync` 直连**（`RemoteCopyCommandBuilder.BuildRsyncSyncCommand`，`SyncService.CheckRemoteRemote` 校验两端 rsync 与认证：源机免密优先，否则 `sshpass`+目标密码，失败时给出源机免密配置命令）。`App/Services/SyncScheduler`（轮询 + 指数退避重试，仅 App 运行期执行）；`Core/Services/Sync/SyncStateStore` 落盘上次运行时间/结果（`sync-state.json`）；结果经 `Views/ResultDialog` 模态展示（正文可复制）。配置 `syncTasks`（schemaVersion 2）。
@@ -293,7 +295,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 | 全局开关 | `security.enabled=false` 时拒绝所有工具调用（call-tool 请求中间件，热生效） | `McpGlobalSwitch` + `McpServerOptions.Filters` |
 | 命令执行 | 黑名单直接拒绝 / 敏感命令确认 | `CommandFilterService` + `ApprovalService` |
 | 防挂起 | `ssh_execute_command` 先拦“会挂起/需交互”的命令（`tail -f`/`docker logs -f`/`journalctl -f`/`vi`/`top`/`sudo`/`ping`无`-c` 等）返回 `blocking_command` 并给替代写法；`timeoutSeconds` 可调(默认60) | `ToolSupport.BlockingCommandHint` + `CommandTools`/`SudoTools` |
-| 授权确认 | 多通道（`security.approval.channels`，默认 `["desktop","cli"]`）任一通道给出结论即生效；超时返回 `approval_timeout`、全体弃权返回 `approval_unavailable`、任一通道拒绝即 `rejected`（fail-closed）；desktop 通道支持 `style=process`（独立子进程弹窗，规避宿主隐藏窗口，原生带超时的消息框）/`dialog`/`native`，cli 通道写待决文件由 `litssh approve/deny` 决定 | `ApprovalService` + `ApprovalDialog` / `ApprovalRequestHost` / `CliApprovalChannel` |
+| 授权确认 | 多通道（`security.approval.channels`，默认 `["desktop","cli"]`）任一通道给出结论即生效；超时返回 `approval_timeout`、全体弃权返回 `approval_unavailable`、任一通道拒绝即 `rejected`（fail-closed）；desktop 通道支持 `style=process`（独立子进程弹窗，规避宿主隐藏窗口，原生带超时的消息框）/`dialog`/`native`，cli 通道写待决文件由 `litssh approve/deny` 决定；弹窗支持三档**放行范围**（仅本次 / 本轮次内 / 整个会话，勾选互斥）：`ApprovalExemptionRegistry` 按 工具名×轮次 / 工具名×会话 登记，`ApprovalService` **预检命中即自动放行**（工具调用点零改动）；轮次边界由 Agent 每条用户消息开始时经内部工具 `mcp_approval_round` 通报（模型不可见，信号缺失只多弹窗不误放行）；`process` 样式退出码 0/3/4 回传 仅本次/本轮次/会话 范围 | `ApprovalService` + `DesktopApprovalService` / `ApprovalDialog` / `ApprovalRequestHost` / `CliApprovalChannel` / `ApprovalExemptionRegistry` / `ApprovalRoundTracker` / `ApprovalRoundTools` |
 | 文件传输 | 开关 + 本地/远程路径白名单（`..` 穿越拦截）+ 大小上限 + 人工确认 | `FileTransferTools` + `PathPolicy` + `SshService` |
 | SQL | 只读工具只放行真正只读的语句（数据修改型 CTE、`EXPLAIN ANALYZE <DML>` 会被判为写操作）；写工具拦截危险语句、敏感语句用户确认 | `SqlFilterService` |
 | Redis | 只读白名单放行；危险/阻塞命令硬拒绝；其余写命令一律用户确认（第一期） | `RedisCommandPolicy` + `RedisTools` |
@@ -305,7 +307,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 | 审计 | 命令、SQL（含被拒绝/被驳回）全部落 SQLite（WAL + 索引）；原文开关/字面量脱敏/超期清理见 `security.audit` | `AuditLogService` + `SqlRedactor` |
 | 配置热更新 | commandFilter/sqlFilter/fileTransfer 改动按文件 mtime 即时生效，无需重启 | `SecurityOptionsProvider` |
 | 日志 | MCP 日志走 stderr（不污染 stdout 协议流）+ 本机文件 | `Program.cs` + `FileLoggerProvider` |
-| 工具风险提示 | 53 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
+| 工具风险提示 | 54 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
 
 ## 9. 扩展点
 
@@ -348,7 +350,7 @@ dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publi
 2. **stdout 是协议流**：`initialize` → `notifications/initialized` → `tools/list` / `tools/call` 按 JSON-RPC 换行分帧；日志只应出现在 stderr；
 3. **中文请求体要以 UTF-8 字节写入 stdin**：PowerShell 字符串直接写管道可能按本地代码页编码，导致服务端解析失败。建议向 `$p.StandardInput.BaseStream.Write(UTF8 bytes)`。
 
-验收基线：`initialize` 成功、`tools/list` 返回 53 个工具、`mcp_usage_guide`/`datasource_list` 响应正常、`mysql_query`/`redis_read` 等错误路径返回结构化 `error`。上述 stdio 冒烟现已固化为 `tests/LitSSHmcp.McpServer.Tests` 的集成测试（真实启动服务器进程，用 `LITSSH_DATA_DIR` 指向临时目录隔离）。
+验收基线：`initialize` 成功、`tools/list` 返回 54 个工具、`mcp_usage_guide`/`datasource_list` 响应正常、`mysql_query`/`redis_read` 等错误路径返回结构化 `error`。上述 stdio 冒烟现已固化为 `tests/LitSSHmcp.McpServer.Tests` 的集成测试（真实启动服务器进程，用 `LITSSH_DATA_DIR` 指向临时目录隔离）。
 
 ### Windows 编码注意
 

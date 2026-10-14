@@ -11,7 +11,11 @@ public enum LocalApprovalDecision
 {
     Deny,
     Allow,
-    AlwaysAllow
+    AlwaysAllow,
+    /// <summary>本轮次内允许全部命令（发送下一条用户消息后恢复审批）。</summary>
+    AllowRound,
+    /// <summary>本次 AI 会话期间允许全部命令（不建议；重启/新会话即失效）。</summary>
+    AllowSession
 }
 
 /// <summary>请求人工审批（由 App 提供对话框实现）。</summary>
@@ -28,6 +32,7 @@ public sealed class LocalTerminalTool : IAgentTool
     private readonly LocalTerminalConfig _config;
     private readonly LocalApprovalHandler _approval;
     private readonly Action _persist;
+    private readonly LocalApprovalExemptionRegistry? _exemptions;
     private readonly AITool _schema;
 
     public LocalTerminalTool(
@@ -35,13 +40,15 @@ public sealed class LocalTerminalTool : IAgentTool
         Func<string, LocalTerminalSessionViewModel?> terminalResolver,
         LocalTerminalConfig config,
         LocalApprovalHandler approval,
-        Action persist)
+        Action persist,
+        LocalApprovalExemptionRegistry? exemptions = null)
     {
         _sessionKey = sessionKey;
         _terminalResolver = terminalResolver;
         _config = config;
         _approval = approval;
         _persist = persist;
+        _exemptions = exemptions;
         _schema = AIFunctionFactory.Create(
             (string command) => command,
             Name,
@@ -92,16 +99,27 @@ public sealed class LocalTerminalTool : IAgentTool
         var autoApproved = _config.AutoApprovedCommands.Any(rule =>
             string.Equals(rule, command, StringComparison.Ordinal) ||
             command.StartsWith(rule + " ", StringComparison.Ordinal));
+        if (!autoApproved && _exemptions?.IsApproved(ApprovalRoundContext.CurrentRoundId) == true)
+            autoApproved = true;   // 命中弹窗勾选的「本轮次内/本次会话 允许全部命令」授权
         if (!autoApproved)
         {
             var decision = _approval(command, terminal.Subtitle);
-            if (decision == LocalApprovalDecision.Deny)
-                return "用户拒绝执行该命令。";
-            if (decision == LocalApprovalDecision.AlwaysAllow)
+            switch (decision)
             {
-                _config.AutoApprovedCommands = _config.AutoApprovedCommands
-                    .Append(command).Distinct(StringComparer.Ordinal).ToArray();
-                _persist();
+                case LocalApprovalDecision.Deny:
+                    return "用户拒绝执行该命令。";
+                case LocalApprovalDecision.AlwaysAllow:
+                    _config.AutoApprovedCommands = _config.AutoApprovedCommands
+                        .Append(command).Distinct(StringComparer.Ordinal).ToArray();
+                    _persist();
+                    break;
+                case LocalApprovalDecision.AllowRound:
+                    // 轮次信号缺失时登记失败 → 降级为仅本次放行（只会多弹窗，不会误放行）
+                    _exemptions?.GrantRoundAll(ApprovalRoundContext.CurrentRoundId);
+                    break;
+                case LocalApprovalDecision.AllowSession:
+                    _exemptions?.GrantSessionAll();
+                    break;
             }
         }
 

@@ -115,8 +115,21 @@ public class ConfigService : IConfigService
         if (config.Agent?.Memory is not null)
             config.Agent.Memory.ApiKey = _protector.Protect(config.Agent.Memory.ApiKey);
 
+        foreach (var server in config.Agent?.McpServers ?? Array.Empty<AgentMcpServerConfig>())
+        {
+            if (server is null) continue;
+            server.Env = ProtectLineValues(server.Env, '=');
+            server.Headers = ProtectLineValues(server.Headers, ':');
+        }
+
         foreach (var action in (config.Triggers ?? Array.Empty<TriggerConfig>()).SelectMany(t => t?.Actions ?? Array.Empty<TriggerAction>()))
             action.Secret = _protector.Protect(action.Secret);
+
+        if (config.AppLock is not null)
+        {
+            config.AppLock.PasswordHash = _protector.Protect(config.AppLock.PasswordHash);
+            config.AppLock.Salt = _protector.Protect(config.AppLock.Salt);
+        }
     }
 
     private void DecryptSecrets(AppConfig config)
@@ -140,8 +153,21 @@ public class ConfigService : IConfigService
         if (config.Agent?.Memory is not null)
             config.Agent.Memory.ApiKey = _protector.Unprotect(config.Agent.Memory.ApiKey);
 
+        foreach (var server in config.Agent?.McpServers ?? Array.Empty<AgentMcpServerConfig>())
+        {
+            if (server is null) continue;
+            server.Env = UnprotectLineValues(server.Env, '=');
+            server.Headers = UnprotectLineValues(server.Headers, ':');
+        }
+
         foreach (var action in (config.Triggers ?? Array.Empty<TriggerConfig>()).SelectMany(t => t?.Actions ?? Array.Empty<TriggerAction>()))
             action.Secret = _protector.Unprotect(action.Secret);
+
+        if (config.AppLock is not null)
+        {
+            config.AppLock.PasswordHash = _protector.Unprotect(config.AppLock.PasswordHash);
+            config.AppLock.Salt = _protector.Unprotect(config.AppLock.Salt);
+        }
     }
 
     private bool ContainsPlaintextSecrets(AppConfig config)
@@ -153,6 +179,13 @@ public class ConfigService : IConfigService
             if (HasPlaintext(server.SudoPassword)) return true;
         }
 
+        foreach (var mcp in config.Agent?.McpServers ?? Array.Empty<AgentMcpServerConfig>())
+        {
+            if (mcp is null) continue;
+            if (HasPlaintextLine(mcp.Env, '=')) return true;
+            if (HasPlaintextLine(mcp.Headers, ':')) return true;
+        }
+
         return config.DataSources.Any(ds => HasPlaintext(ds.Password)) ||
                (config.RemoteDesktops ?? Array.Empty<RemoteDesktopConfig>()).Any(rd => HasPlaintext(rd.Password)) ||
                (config.Agent?.Providers ?? Array.Empty<AgentProviderGroupConfig>()).Any(p => HasPlaintext(p.ApiKey)) ||
@@ -161,6 +194,53 @@ public class ConfigService : IConfigService
     }
 
     private bool HasPlaintext(string? value) => !string.IsNullOrEmpty(value) && !_protector.IsProtected(value);
+
+    /// <summary>行内"分隔符之后的值"是否为明文（未加 enc: 前缀）。</summary>
+    private bool HasPlaintextLine(string[]? lines, char separator)
+    {
+        foreach (var line in lines ?? Array.Empty<string>())
+        {
+            var i = line?.IndexOf(separator) ?? -1;
+            if (i < 0) continue;
+            var value = line![(i + 1)..].Trim();
+            if (value.Length > 0 && !_protector.IsProtected(value))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>把行内分隔符之后的值加 DPAPI 保护（如 <c>KEY=VALUE</c> / <c>Name: Value</c>）。</summary>
+    private string[] ProtectLineValues(string[]? lines, char separator)
+        => TransformLineValues(lines, separator, _protector.Protect);
+
+    private string[] UnprotectLineValues(string[]? lines, char separator)
+        => TransformLineValues(lines, separator, _protector.Unprotect);
+
+    private static string[] TransformLineValues(string[]? lines, char separator, Func<string, string?> transform)
+    {
+        var result = new List<string>();
+        foreach (var line in lines ?? Array.Empty<string>())
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+            var i = line.IndexOf(separator);
+            if (i < 0)
+            {
+                result.Add(line);
+                continue;
+            }
+            var value = line[(i + 1)..].Trim();
+            var changed = value.Length > 0 ? transform(value) : null;
+            if (string.IsNullOrEmpty(changed) || changed == value)
+            {
+                result.Add(line);
+                continue;
+            }
+            // 冒号后补一个空格保持 "Name: value" 习惯；等号后不加（KEY=VALUE）
+            result.Add(line[..(i + 1)] + (separator == ':' ? " " : string.Empty) + changed);
+        }
+        return result.ToArray();
+    }
 
     private AppConfig CreateDefaultConfig()
     {

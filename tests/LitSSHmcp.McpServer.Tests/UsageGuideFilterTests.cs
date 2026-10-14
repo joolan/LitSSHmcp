@@ -44,7 +44,7 @@ public class UsageGuideFilterTests
         using var doc = JsonDocument.Parse(json);
 
         // 与 ToolCatalogConsistencyTests.ExpectedToolCount 一致：全量不裁剪
-        Assert.Equal(53, doc.RootElement.GetProperty("tools").GetArrayLength());
+        Assert.Equal(54, doc.RootElement.GetProperty("tools").GetArrayLength());
         Assert.False(doc.RootElement.TryGetProperty("disabled_groups", out _));
     }
 }

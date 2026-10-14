@@ -22,6 +22,7 @@ public sealed class AgentSession
     private string _systemPrompt;
     private readonly SpillStore? _spill;
     private readonly int? _maxIterationsOverride;
+    private readonly IAgentTool? _roundNotifier;
 
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
     private bool _planMode;
@@ -53,7 +54,8 @@ public sealed class AgentSession
         IEnumerable<ChatMessage>? history = null,
         Func<string, CancellationToken, Task<string?>>? recall = null,
         SpillStore? spill = null,
-        int? maxIterationsOverride = null)
+        int? maxIterationsOverride = null,
+        IAgentTool? roundNotifier = null)
     {
         _client = client;
         _provider = provider;
@@ -64,6 +66,7 @@ public sealed class AgentSession
         _systemPrompt = systemPrompt;
         _spill = spill;
         _maxIterationsOverride = maxIterationsOverride;
+        _roundNotifier = roundNotifier;
         Messages.Add(new ChatMessage(ChatRole.System, systemPrompt));
         if (history is not null)
             Messages.AddRange(history);
@@ -87,6 +90,23 @@ public sealed class AgentSession
 
     /// <summary>设置计划模式（运行期标志）：不改系统提示/工具集，仅每轮附提示并拦截写工具。</summary>
     public void SetPlanMode(bool planMode) => _planMode = planMode;
+
+    /// <summary>通报 MCP 服务端「新的对话轮次开始」（审批「本轮次内放行」授权的跨进程失效边界）。</summary>
+    private async Task NotifyRoundStartAsync(string roundId, CancellationToken ct)
+    {
+        if (_roundNotifier is null)
+            return;
+
+        try
+        {
+            await _roundNotifier.InvokeAsync(
+                new Dictionary<string, object?> { ["roundId"] = roundId }, ct);
+        }
+        catch
+        {
+            // 轮次信号失败不影响对话（降级方向 = 多弹审批，不会误放行）
+        }
+    }
 
     private bool IsDenied(string toolName) =>
         _toolPolicy is not null && _toolPolicy.TryGetValue(toolName, out var policy) && policy == AgentToolPolicy.Deny;
@@ -112,6 +132,13 @@ public sealed class AgentSession
 
         // 发送前修复历史里可能残留的孤儿 tool_calls（如上次中断），避免服务端拒绝整段请求。
         RepairOrphanToolCalls();
+
+        // 审批轮次边界：每条用户消息 = 新一轮——进程内工具（本机终端审批）读 ApprovalRoundContext，
+        // MCP 服务端经内部工具通报（失效上一轮的「本轮次授权」）。
+        // 通知失败只会导致后续审批多弹窗（fail-safe），绝不影响对话本身。
+        var roundId = Guid.NewGuid().ToString("N")[..8];
+        ApprovalRoundContext.CurrentRoundId = roundId;
+        await NotifyRoundStartAsync(roundId, ct);
 
         // 上下文管理：在加入本轮用户消息之前，按轮边界裁剪历史（必要时滚动摘要），保证后续 tool 配对完整。
         await CompactIfNeededAsync(ct);

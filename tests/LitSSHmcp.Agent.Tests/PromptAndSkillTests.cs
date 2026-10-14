@@ -22,6 +22,27 @@ public class SystemPromptBuilderTests
         Assert.Contains("LitSSH 运维助手", prompt);
         Assert.DoesNotContain("## MCP 服务器约定", prompt);
         Assert.DoesNotContain("## 运维技能", prompt);
+        Assert.DoesNotContain("## 技能目录", prompt);
+    }
+
+    [Fact]
+    public void Build_injects_skills_root_section()
+    {
+        var prompt = SystemPromptBuilder.Build(null, "SKILL_INDEX", null, skillsRoot: @"C:\data\skills");
+
+        Assert.Contains("## 技能目录", prompt);
+        Assert.Contains(@"C:\data\skills", prompt);
+        Assert.Contains("重新打开/新建会话", prompt);
+        // 技能目录说明在技能索引之前（同为稳定前缀）
+        Assert.True(prompt.IndexOf("## 技能目录", StringComparison.Ordinal)
+                    < prompt.IndexOf("## 运维技能", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Build_skills_root_section_shown_even_without_skills()
+    {
+        var prompt = SystemPromptBuilder.Build(null, null, null, skillsRoot: @"C:\data\skills");
+        Assert.Contains("## 技能目录", prompt);
     }
 
     [Fact]
@@ -120,8 +141,13 @@ public class SkillRegistryTests : IDisposable
         Directory.CreateDirectory(bundled);
         File.WriteAllText(Path.Combine(bundled, "s.md"), "BUNDLED");
 
-        Assert.Contains("BUNDLED", SkillRegistry.Load(null, bundled, null, new[] { "s" }));
-        Assert.Equal(string.Empty, SkillRegistry.Load(null, null));
+        // 稳定目录测试隔离（不写真实 %APPDATA%\LitSSH\skills）
+        var stable = Path.Combine(_dir, "stable");
+        Assert.Contains("BUNDLED", SkillRegistry.Load(null, bundled, null, new[] { "s" }, stable));
+        Assert.True(File.Exists(Path.Combine(stable, "s.md")));   // 首次使用把随包技能复制到稳定目录
+
+        var emptyStable = Path.Combine(_dir, "stable-none");
+        Assert.Equal(string.Empty, SkillRegistry.Load(null, null, null, null, emptyStable));
     }
 
     public void Dispose()

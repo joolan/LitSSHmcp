@@ -9,6 +9,20 @@
 
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
             <StackPanel>
+                <TextBlock Text="应用锁（启动密码门卫）" FontWeight="Bold" Margin="0,0,0,4"/>
+                <TextBlock x:Name="AppLockStatusText" Text="状态：加载中…" TextWrapping="Wrap" Margin="0,0,0,6"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           ToolTip="每次启动需输入密码（或 Windows Hello）才能进入主界面，防止他人拿到电脑后直接操作；跟随 Windows 锁屏，系统解锁回来时重新上锁。密码哈希加密存储，明文不落盘。定位是防随手操作的门卫，不是凭据金库。"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <Button x:Name="AppLockSetButton" Content="设置密码…" Padding="10,4" Margin="0,0,8,0" Click="OnAppLockSetPassword"
+                            ToolTip="首次设置，或在验证旧密码后修改"/>
+                    <Button x:Name="AppLockDisableButton" Content="关闭应用锁" Padding="10,4" Margin="0,0,8,0" Click="OnAppLockDisable"
+                            ToolTip="需先验证当前密码"/>
+                    <TextBlock x:Name="AppLockHelloText" Text="" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                </StackPanel>
+                <Separator Margin="0,4,0,8"/>
+
                 <CheckBox Content="启用 MCP 服务（关闭后拒绝所有工具调用）" IsChecked="{Binding McpEnabled}"
                           FontWeight="SemiBold" Margin="0,4,0,10"
                           ToolTip="全局开关：关闭后 MCP 将拒绝所有工具调用；按配置文件热生效，无需重启"/>

@@ -144,17 +144,23 @@ public class ApprovalService : IApprovalService
     private readonly DesktopApprovalService _desktop;
     private readonly CliApprovalChannel _cli;
     private readonly ILogger<ApprovalService>? _logger;
+    private readonly ApprovalRoundTracker? _roundTracker;
+    private readonly ApprovalExemptionRegistry? _exemptions;
 
     public ApprovalService(
         ISecurityOptionsProvider securityOptions,
         DesktopApprovalService desktop,
         CliApprovalChannel cli,
-        ILogger<ApprovalService>? logger = null)
+        ILogger<ApprovalService>? logger = null,
+        ApprovalRoundTracker? roundTracker = null,
+        ApprovalExemptionRegistry? exemptions = null)
     {
         _securityOptions = securityOptions;
         _desktop = desktop;
         _cli = cli;
         _logger = logger;
+        _roundTracker = roundTracker;
+        _exemptions = exemptions;
     }
 
     public async Task<ApprovalOutcome> RequestApprovalAsync(
@@ -180,6 +186,14 @@ public class ApprovalService : IApprovalService
                 _logger?.LogInformation("审批模式=自动拒绝：已自动拒绝敏感操作 server={Server} op={Operation}", serverName, operation);
                 return ApprovalOutcome.AutoRejected;
         }
+        // 预检：用户在弹窗勾选的「本轮次/整个会话」授权命中则直接放行（不再弹窗、不再等通道）。
+        var exemptTool = AuditContext.CurrentTool;
+        if (_exemptions is not null && _exemptions.IsApproved(exemptTool, _roundTracker?.CurrentRoundId))
+        {
+            _logger?.LogInformation("敏感操作命中已有授权(工具={Tool}), 自动放行", exemptTool);
+            return ApprovalOutcome.Approved;
+        }
+
         // 默认同时开 desktop + cli：无桌面(服务会话/CI/headless)时 desktop 必然失败,
         // 若只配 desktop, 这类环境 100% 走到"拒绝", 是成功率的最大杀手。
         var channels = options.Channels is { Length: > 0 } ? options.Channels : new[] { "desktop", "cli" };

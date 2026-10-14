@@ -6,22 +6,36 @@ namespace LitSSHmcp.McpServer.Services;
 
 /// <summary>
 /// 敏感操作授权确认对话框：强制置顶、无操作超时自动拒绝、自绘外观。
+/// 支持三档放行范围（仅本次 / 本轮次内 / 整个会话），默认仅本次。
 /// </summary>
 internal sealed class ApprovalDialog : Form
 {
     private static readonly Color HeaderBack = Color.FromArgb(31, 42, 68);
     private static readonly Color AllowBack = Color.FromArgb(30, 142, 62);
+    private static readonly Color DangerText = Color.FromArgb(178, 52, 52);
     private static readonly Color TextPrimary = Color.FromArgb(40, 40, 40);
     private static readonly Color TextMuted = Color.FromArgb(120, 120, 120);
+    private static readonly Color CmdBack = Color.FromArgb(248, 249, 251);
+    private static readonly Color Border = Color.FromArgb(210, 215, 222);
+    private static readonly Color BadgeBack = Color.FromArgb(255, 243, 224);
+    private static readonly Color BadgeText = Color.FromArgb(150, 88, 10);
 
     private readonly System.Windows.Forms.Timer _timer = new();
     private readonly Label _countdown = new();
+    private readonly CheckBox _chkRound = new();
+    private readonly CheckBox _chkSession = new();
     private readonly string _command;
     private readonly bool _topMost;
     private int _remaining;
 
     /// <summary>是否为超时自动拒绝。</summary>
     public bool TimedOut { get; private set; }
+
+    /// <summary>用户选择的放行范围（弹窗关闭后读取）。</summary>
+    public ApprovalScope Scope =>
+        _chkSession.Checked ? ApprovalScope.Session :
+        _chkRound.Checked ? ApprovalScope.Round :
+        ApprovalScope.Once;
 
     private const int SW_SHOW = 5;
     private static readonly IntPtr HWND_TOPMOST = new(-1);
@@ -44,26 +58,27 @@ internal sealed class ApprovalDialog : Form
         string command,
         string? filePath,
         int timeoutSeconds,
-        bool topMost)
+        bool topMost,
+        IReadOnlyList<string>? sessionGrantedTools = null)
     {
         _command = command;
         _topMost = topMost;
 
-        Text = "LitSSH MCP - 操作确认";
+        Text = "LitSSH MCP - 敏感操作审批";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterScreen;
         MinimizeBox = false;
         MaximizeBox = false;
         ShowIcon = false;
         TopMost = topMost;
-        ClientSize = new Size(640, 500);
-        MinimumSize = new Size(640, 500);
+        ClientSize = new Size(680, 560);
+        MinimumSize = new Size(680, 560);
         Font = new Font("Microsoft YaHei UI", 9F);
         BackColor = Color.White;
 
-        Controls.Add(BuildBody(serverName, operation, filePath));
+        Controls.Add(BuildBody(serverName, operation, filePath, sessionGrantedTools));
         Controls.Add(BuildFooter(timeoutSeconds));
-        Controls.Add(BuildHeader());
+        Controls.Add(BuildHeader(serverName));
 
         Shown += (_, _) =>
         {
@@ -113,7 +128,7 @@ internal sealed class ApprovalDialog : Form
         }
     }
 
-    private Panel BuildHeader()
+    private Panel BuildHeader(string serverName)
     {
         var header = new TableLayoutPanel
         {
@@ -122,7 +137,7 @@ internal sealed class ApprovalDialog : Form
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             BackColor = HeaderBack,
-            Padding = new Padding(18, 10, 18, 10)
+            Padding = new Padding(18, 12, 18, 12)
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -131,15 +146,15 @@ internal sealed class ApprovalDialog : Form
 
         var title = new Label
         {
-            Text = "操作确认",
+            Text = "敏感操作审批",
             ForeColor = Color.White,
-            Font = new Font("Microsoft YaHei UI", 16F, FontStyle.Bold),
+            Font = new Font("Microsoft YaHei UI", 15F, FontStyle.Bold),
             AutoSize = true,
             Margin = new Padding(0)
         };
         var subtitle = new Label
         {
-            Text = "即将执行敏感操作，请确认后放行",
+            Text = $"服务器：{serverName}",
             ForeColor = Color.FromArgb(198, 208, 226),
             Font = new Font("Microsoft YaHei UI", 8.5F),
             AutoSize = true,
@@ -151,36 +166,11 @@ internal sealed class ApprovalDialog : Form
         return header;
     }
 
-    private Panel BuildBody(string serverName, string operation, string? filePath)
+    private Panel BuildBody(string serverName, string operation, string? filePath, IReadOnlyList<string>? sessionGrantedTools)
     {
         var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(18, 14, 18, 8) };
 
-        var table = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            BackColor = Color.White
-        };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-
-        AddRow(table, "服务器:", serverName);
-        AddRow(table, "操作类型:", operation);
-        if (!string.IsNullOrEmpty(filePath))
-            AddRow(table, "文件/目标:", filePath!);
-
-        table.RowCount++;
-        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
-        var cmdLabel = new Label
-        {
-            Text = "内容:",
-            ForeColor = TextPrimary,
-            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
-            Margin = new Padding(0, 4, 0, 0),
-            AutoSize = true
-        };
-        table.Controls.Add(cmdLabel, 0, table.RowCount - 1);
-
+        // 命令框（Fill，须最先加入以便其余 Dock 控件先占位）
         var cmdBox = new TextBox
         {
             Text = _command,
@@ -188,41 +178,158 @@ internal sealed class ApprovalDialog : Form
             ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
             Dock = DockStyle.Fill,
-            Font = new Font("Consolas", 9F),
-            BackColor = Color.FromArgb(248, 249, 251),
+            Font = new Font("Consolas", 9.5F),
+            BackColor = CmdBack,
             BorderStyle = BorderStyle.FixedSingle
         };
-        table.Controls.Add(cmdBox, 1, table.RowCount - 1);
-        table.RowStyles[table.RowCount - 1] = new RowStyle(SizeType.Percent, 100);
 
-        body.Controls.Add(table);
+        // 放行范围区（底部）
+        var scope = BuildScopePanel(sessionGrantedTools);
+
+        // 命令区标题行：标签 + 复制按钮
+        var cmdHeader = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 2,
+            Height = 26,
+            Margin = new Padding(0, 6, 0, 0)
+        };
+        cmdHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        cmdHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var cmdLabel = new Label
+        {
+            Text = "即将执行的内容",
+            ForeColor = TextPrimary,
+            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(0)
+        };
+        var copy = new Button
+        {
+            Text = "复制",
+            Width = 56,
+            Height = 22,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(238, 238, 238),
+            ForeColor = TextPrimary,
+            Margin = new Padding(0, 2, 0, 0)
+        };
+        copy.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
+        copy.Click += (_, _) =>
+        {
+            try { Clipboard.SetText(_command); } catch { /* ignore */ }
+        };
+        cmdHeader.Controls.Add(cmdLabel, 0, 0);
+        cmdHeader.Controls.Add(copy, 1, 0);
+
+        // 元信息行：操作类型徽章 + 文件/目标
+        var meta = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            WrapContents = false,
+            Margin = new Padding(0, 0, 0, 2)
+        };
+        meta.Controls.Add(new Label
+        {
+            Text = operation,
+            AutoSize = true,
+            BackColor = BadgeBack,
+            ForeColor = BadgeText,
+            Font = new Font("Microsoft YaHei UI", 8.5F, FontStyle.Bold),
+            Padding = new Padding(8, 3, 8, 3),
+            Margin = new Padding(0, 0, 8, 0)
+        });
+        if (!string.IsNullOrEmpty(filePath))
+        {
+            meta.Controls.Add(new Label
+            {
+                Text = $"目标：{filePath}",
+                AutoSize = true,
+                ForeColor = TextMuted,
+                MaximumSize = new Size(480, 0),
+                Margin = new Padding(0, 4, 0, 0)
+            });
+        }
+
+        // 加入顺序 = 反向 Dock：Fill 最先入列最后布局
+        body.Controls.Add(cmdBox);
+        body.Controls.Add(scope);
+        body.Controls.Add(cmdHeader);
+        body.Controls.Add(meta);
         return body;
     }
 
-    private void AddRow(TableLayoutPanel table, string label, string value)
+    private Panel BuildScopePanel(IReadOnlyList<string>? sessionGrantedTools)
     {
-        table.RowCount++;
-        table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-
-        var key = new Label
+        var panel = new TableLayoutPanel
         {
-            Text = label,
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            ColumnCount = 1,
+            Padding = new Padding(0, 10, 0, 0)
+        };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        var caption = new Label
+        {
+            Text = "放行范围（默认仅允许一次）",
             ForeColor = TextPrimary,
             Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
-            Margin = new Padding(0, 0, 0, 6),
-            AutoSize = true
-        };
-        var val = new Label
-        {
-            Text = value,
-            ForeColor = TextPrimary,
-            Margin = new Padding(0, 0, 0, 6),
             AutoSize = true,
-            MaximumSize = new Size(470, 0)
+            Margin = new Padding(0, 0, 0, 6)
         };
 
-        table.Controls.Add(key, 0, table.RowCount - 1);
-        table.Controls.Add(val, 1, table.RowCount - 1);
+        _chkRound.Text = "本轮次内自动放行该工具（发送下一条用户消息后恢复审批）";
+        _chkRound.AutoSize = true;
+        _chkRound.ForeColor = TextPrimary;
+        _chkRound.Margin = new Padding(4, 2, 0, 2);
+
+        _chkSession.Text = "整个助手运行期间自动放行该工具（不建议）";
+        _chkSession.AutoSize = true;
+        _chkSession.ForeColor = DangerText;
+        _chkSession.Margin = new Padding(4, 2, 0, 2);
+
+        // 二选一：勾一个自动取消另一个
+        _chkRound.CheckedChanged += (_, _) =>
+        {
+            if (_chkRound.Checked)
+                _chkSession.Checked = false;
+        };
+        _chkSession.CheckedChanged += (_, _) =>
+        {
+            if (_chkSession.Checked)
+                _chkRound.Checked = false;
+        };
+
+        panel.Controls.Add(caption, 0, 0);
+        panel.RowCount = 1;
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.Controls.Add(_chkRound, 0, panel.RowCount);
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.RowCount++;
+        panel.Controls.Add(_chkSession, 0, panel.RowCount);
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.RowCount++;
+
+        if (sessionGrantedTools is { Count: > 0 })
+        {
+            var hint = new Label
+            {
+                Text = "已有会话级授权：" + string.Join("、", sessionGrantedTools),
+                ForeColor = TextMuted,
+                Font = new Font("Microsoft YaHei UI", 8F),
+                AutoSize = true,
+                MaximumSize = new Size(620, 0),
+                Margin = new Padding(4, 6, 0, 0)
+            };
+            panel.Controls.Add(hint, 0, panel.RowCount);
+            panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            panel.RowCount++;
+        }
+
+        return panel;
     }
 
     private Panel BuildFooter(int timeoutSeconds)
@@ -231,7 +338,7 @@ internal sealed class ApprovalDialog : Form
 
         _countdown.TextAlign = ContentAlignment.MiddleLeft;
         _countdown.Dock = DockStyle.Left;
-        _countdown.Width = 240;
+        _countdown.Width = 260;
         _countdown.ForeColor = TextMuted;
 
         var buttons = new FlowLayoutPanel
@@ -266,28 +373,13 @@ internal sealed class ApprovalDialog : Form
         };
         reject.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
 
-        var copy = new Button
-        {
-            Text = "复制内容",
-            Width = 104,
-            Height = 32,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(238, 238, 238),
-            ForeColor = TextPrimary
-        };
-        copy.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
-        copy.Click += (_, _) =>
-        {
-            try { Clipboard.SetText(_command); } catch { /* ignore */ }
-        };
-
         buttons.Controls.Add(allow);
         buttons.Controls.Add(reject);
-        buttons.Controls.Add(copy);
 
         footer.Controls.Add(_countdown);
         footer.Controls.Add(buttons);
 
+        // 保险丝：Enter = 拒绝（防误触回车直接放行）
         AcceptButton = reject;
         CancelButton = reject;
 

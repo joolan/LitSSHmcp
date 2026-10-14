@@ -40,6 +40,28 @@ public class AppConfig
 
     /// <summary>触发事件（手动/定时/同步完成后按动作流水线执行 git、webhook、备份；App 运行期内生效）。</summary>
     public TriggerConfig[] Triggers { get; set; } = Array.Empty<TriggerConfig>();
+
+    /// <summary>应用锁（启动密码门卫）：防止他人拿到电脑后直接打开本程序操作。</summary>
+    public AppLockConfig AppLock { get; set; } = new();
+}
+
+/// <summary>
+/// 应用锁配置。定位是「防随手操作」的启动门卫（PBKDF2 哈希校验 + 可选 Windows Hello 快捷解锁），
+/// 不是凭据金库——凭据本身仍由 DPAPI(CurrentUser) 保护。
+/// </summary>
+public class AppLockConfig
+{
+    /// <summary>是否启用应用锁（已设置密码后为 true）。</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>PBKDF2-SHA256 密码哈希（base64，32 字节）。经 DPAPI 加密落盘，明文密码绝不落盘。</summary>
+    public string? PasswordHash { get; set; }
+
+    /// <summary>随机盐（base64，16 字节）。经 DPAPI 加密落盘。</summary>
+    public string? Salt { get; set; }
+
+    /// <summary>KDF 迭代次数（默认 210_000，OWASP 对 PBKDF2-SHA256 的建议；随硬件升级可提高）。</summary>
+    public int Iterations { get; set; } = 210_000;
 }
 
 /// <summary>
@@ -58,13 +80,19 @@ public class AgentConfig
     /// <summary>智能体列表（预置：chat/ops/db，均可编辑或删除；支持自定义新增）。</summary>
     public ChatAgentConfig[] Agents { get; set; } = ChatAgentConfig.Defaults();
 
+    /// <summary>
+    /// MCP 服务器列表：首条为内置 LitSSH MCP（Builtin=true，只能启停，传输配置固定为本机 stdio），
+    /// 其余为用户自定义外部 MCP（stdio / http）。启用前必须通过连接校验。
+    /// </summary>
+    public AgentMcpServerConfig[] McpServers { get; set; } = AgentMcpServerConfig.Defaults();
+
     /// <summary>当前选用的智能体 Id（空=用列表第一个）。</summary>
     public string ActiveAgentId { get; set; } = string.Empty;
 
     /// <summary>追加在"基础行为约定 + MCP server instructions + 技能"之后的额外系统提示。</summary>
     public string SystemPrompt { get; set; } = string.Empty;
 
-    /// <summary>技能目录（含 *.md）；空=使用 App 内置的 litssh-mcp-ops-skill。</summary>
+    /// <summary>技能目录（其下每个子目录一个技能）；空=用稳定目录 %APPDATA%\LitSSH\skills（首次自动复制随包 skills/）。</summary>
     public string SkillsDir { get; set; } = string.Empty;
 
     /// <summary>工作区目录（Agent 的文档读写工具 ops_doc_* 只能在此目录内读写）；空=默认「我的文档\LitSSH」。</summary>
@@ -582,3 +610,89 @@ public class ChatAgentConfig
 
 /// <summary>注入系统提示的智能体上下文（AgentRuntime 消费；非持久化）。</summary>
 public sealed record AgentPromptContext(string Name, string SystemPrompt, string? ResponseStyle);
+
+/// <summary>
+/// AI 助手的一条 MCP 服务器。
+/// <list type="bullet">
+/// <item><see cref="Builtin"/>=true：内置 LitSSH MCP（本机 stdio 启动，路径见 <see cref="AgentConfig.McpServerPath"/>），不可改配置，只能启停。</item>
+/// <item>外部 MCP：<see cref="Transport"/> = "stdio"（<see cref="Command"/>/<see cref="Args"/>/<see cref="Env"/>）
+/// 或 "http"（<see cref="Url"/>/<see cref="Headers"/>，支持 SSE / Streamable HTTP）。</item>
+/// </list>
+/// 启用前须先连接校验（<c>initialize + tools/list</c>）通过；<see cref="LastError"/> / <see cref="LastToolCount"/> 仅记录最近一次校验结果供 UI 展示。
+/// </summary>
+public class AgentMcpServerConfig
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>是否内置 LitSSH MCP（内置条目固定在第一位，配置不可改）。</summary>
+    public bool Builtin { get; set; }
+
+    public bool Enabled { get; set; }
+
+    /// <summary>传输方式：stdio | http。</summary>
+    public string Transport { get; set; } = "stdio";
+
+    /// <summary>stdio：可执行文件（绝对路径，或 PATH 中的命令名）。</summary>
+    public string Command { get; set; } = string.Empty;
+
+    /// <summary>stdio：启动参数。</summary>
+    public string[] Args { get; set; } = Array.Empty<string>();
+
+    /// <summary>stdio：环境变量，元素格式 <c>KEY=VALUE</c>（VALUE 落盘为 DPAPI 密文 enc:，加载后为明文）。</summary>
+    public string[] Env { get; set; } = Array.Empty<string>();
+
+    /// <summary>http：服务端点 URL（支持 SSE / Streamable HTTP）。</summary>
+    public string Url { get; set; } = string.Empty;
+
+    /// <summary>http：附加请求头，元素格式 <c>Name: Value</c>（VALUE 落盘为 DPAPI 密文 enc:，加载后为明文）。</summary>
+    public string[] Headers { get; set; } = Array.Empty<string>();
+
+    /// <summary>最近一次连接校验的结果（空=成功；否则为错误信息）。仅 UI 展示。</summary>
+    public string LastError { get; set; } = string.Empty;
+
+    /// <summary>最近一次连接校验时间（ISO 8601；空=从未校验）。</summary>
+    public string LastValidatedAt { get; set; } = string.Empty;
+
+    /// <summary>最近一次校验发现的工具数。</summary>
+    public int LastToolCount { get; set; }
+
+    /// <summary>内置 LitSSH MCP 默认条目。</summary>
+    public static AgentMcpServerConfig BuiltinDefault() => new()
+    {
+        Id = "litssh",
+        Name = "LitSSH MCP（内置）",
+        Builtin = true,
+        Enabled = true,
+        Transport = "stdio",
+    };
+
+    public static AgentMcpServerConfig[] Defaults() => new[] { BuiltinDefault() };
+
+    /// <summary>
+    /// 规范化服务器列表：保证恰好一条内置条目且位于第一位（旧配置缺该字段时补齐/回填）。
+    /// </summary>
+    public static AgentMcpServerConfig[] Normalize(AgentMcpServerConfig[]? servers)
+    {
+        var list = (servers ?? Array.Empty<AgentMcpServerConfig>())
+            .Where(s => s is not null)
+            .ToList();
+        var builtin = list.FirstOrDefault(s => s.Builtin) ?? list.FirstOrDefault(s => s.Id == BuiltinDefault().Id);
+        if (builtin is null)
+        {
+            builtin = BuiltinDefault();
+            list.Insert(0, builtin);
+        }
+        else
+        {
+            builtin.Builtin = true;
+            if (!ReferenceEquals(list[0], builtin))
+            {
+                list.Remove(builtin);
+                list.Insert(0, builtin);
+            }
+        }
+        return list.ToArray();
+    }
+}

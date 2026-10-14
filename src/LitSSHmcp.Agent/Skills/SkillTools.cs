@@ -17,13 +17,13 @@ public static class SkillTools
 
         var list = new LocalFunction(
             "skill_list",
-            "列出可用的技能文件(相对技能目录的路径)",
+            $"列出可用的技能文件(相对技能目录的路径); 技能根目录: {root}",
             """{"type":"object","properties":{}}""",
             _ => ListFiles(root));
 
         var read = new LocalFunction(
             "skill_read",
-            "读取技能文件全文(如 SKILL.md 或 references/ssh-workarounds.md); path 相对技能目录, 只读",
+            $"读取技能文件全文(如 SKILL.md 或 references/ssh-workarounds.md); path 相对技能目录({root}), 只读",
             """{"type":"object","properties":{"path":{"type":"string","description":"相对技能目录的文件路径, 如 SKILL.md、references/ssh-workarounds.md"}},"required":["path"]}""",
             args => Read(root, ArgumentReader.ReadString(args, "path")));
 

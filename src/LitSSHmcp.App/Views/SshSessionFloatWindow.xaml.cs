@@ -57,7 +57,8 @@ public partial class SshSessionFloatWindow : FluentWindow
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        if (!_suppressDock)
+        // 应用级退出时不再触发「收回主窗口」（主窗口也在关闭中）
+        if (!_suppressDock && !AppShutdown.IsShuttingDown)
             DockRequested?.Invoke(_session); // 直接关窗（Alt+F4/系统关闭）默认收回主窗口
 
         if (_session is INotifyPropertyChanged inpc)

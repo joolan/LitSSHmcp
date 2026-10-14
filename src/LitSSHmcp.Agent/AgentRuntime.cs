@@ -1,8 +1,12 @@
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
+using ModelContextProtocol.Client;
 
 namespace LitSSHmcp.Agent;
+
+/// <summary>一台 MCP 服务器的连接状态快照（供连接器列表展示：工具数 / 连接错误）。</summary>
+public sealed record McpHostStatus(string ServerId, string Name, bool Builtin, bool Connected, int ToolCount, string? Error);
 
 /// <summary>
 /// 一次运行中的 AI 运维助手：持有 MCP 工具宿主 + 对话会话 + 可选的长期记忆。调用方负责在切换配置/关闭时 Dispose。
@@ -10,11 +14,18 @@ namespace LitSSHmcp.Agent;
 /// </summary>
 public sealed class AgentRuntime : IAsyncDisposable
 {
-    public McpToolHost Host { get; }
+    /// <summary>本次运行持有的全部 MCP 宿主（内置 + 启用的外部，按连接顺序）。</summary>
+    public IReadOnlyList<McpToolHost> Hosts { get; }
     public AgentSession Session { get; private set; }
     public AgentProviderConfig Provider { get; private set; }
     public AgentMemoryService? Memory { get; }
     public int ToolCount => Session.ToolCount;
+
+    /// <summary>启用但未能连接的外部 MCP（名称 + 原因）；为空=全部正常。</summary>
+    public IReadOnlyList<string> McpWarnings { get; }
+
+    /// <summary>各 MCP 服务器的连接状态（内置 + 启用的外部，按配置顺序；停用的不列出）。</summary>
+    public IReadOnlyList<McpHostStatus> McpHostStatuses { get; }
 
     /// <summary>本次会话实际暴露的 MCP 工具能力域（供 UI 技能选择器判定可用性）。</summary>
     public IReadOnlySet<string> AvailableGroups =>
@@ -27,6 +38,7 @@ public sealed class AgentRuntime : IAsyncDisposable
     private readonly string? _readOnlyNote;
     private readonly List<IAgentTool> _baseTools;
     private readonly List<IAgentTool> _subTools;
+    private readonly IAgentTool? _roundNotifier;
     private readonly Action<IReadOnlyList<PlanItem>>? _onPlan;
     private readonly Func<string, CancellationToken, Task<string?>>? _recall;
     private readonly SpillStore? _spill;
@@ -40,7 +52,9 @@ public sealed class AgentRuntime : IAsyncDisposable
         + "如用户要求写操作，说明当前处于只读模式并给出替代建议。";
 
     private AgentRuntime(
-        McpToolHost host,
+        IReadOnlyList<McpToolHost> hosts,
+        IReadOnlyList<string> mcpWarnings,
+        IReadOnlyList<McpHostStatus> mcpHostStatuses,
         AgentProviderConfig provider,
         AgentMemoryService? memory,
         AgentConfig config,
@@ -48,12 +62,15 @@ public sealed class AgentRuntime : IAsyncDisposable
         AgentPromptContext? initialAgent,
         List<IAgentTool> baseTools,
         List<IAgentTool> subTools,
+        IAgentTool? roundNotifier,
         Action<IReadOnlyList<PlanItem>>? onPlan,
         Func<string, CancellationToken, Task<string?>>? recall,
         SpillStore? spill,
         IEnumerable<ChatMessage>? history)
     {
-        Host = host;
+        Hosts = hosts;
+        McpWarnings = mcpWarnings;
+        McpHostStatuses = mcpHostStatuses;
         Provider = provider;
         Memory = memory;
         _config = config;
@@ -63,6 +80,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         _prompt = ApplyReadOnlyNote(promptBuilder(null, initialAgent));
         _baseTools = baseTools;
         _subTools = subTools;
+        _roundNotifier = roundNotifier;
         _onPlan = onPlan;
         _recall = recall;
         _spill = spill;
@@ -141,7 +159,8 @@ public sealed class AgentRuntime : IAsyncDisposable
             tools.Add(SubAgents.Create(client, provider, _config, _subTools, _readOnlyNote));
         if (_onPlan is not null)
             tools.Add(PlanTools.Create(_onPlan));
-        var session = new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill);
+        var session = new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill,
+            roundNotifier: _roundNotifier);
         session.SetToolPolicy(_toolPolicy);
         session.SetPlanMode(_planMode);
         return session;
@@ -160,29 +179,123 @@ public sealed class AgentRuntime : IAsyncDisposable
         CancellationToken ct = default,
         IEnumerable<IAgentTool>? extraTools = null)
     {
-        var launch = AgentPaths.ResolveLaunch(config.McpServerPath)
-            ?? throw new InvalidOperationException(
-                "未找到 MCP 服务器(LitSSHmcp.McpServer.exe): 请将服务器放到 App 的 mcp/ 目录, 或在「AI 助手设置」中指定路径。");
+        var servers = AgentMcpServerConfig.Normalize(config.McpServers);
+        var builtin = servers.FirstOrDefault(s => s.Builtin);
+        var hosts = new List<McpToolHost>();
+        var externalHosts = new List<(AgentMcpServerConfig Server, McpToolHost Host)>();
+        var mcpWarnings = new List<string>();
+        var infoById = new Dictionary<string, ExternalMcpServerInfo>(StringComparer.Ordinal);
+        var serverInstructions = new List<string>();
+        McpToolHost? builtinHost = null;
 
-        var host = new McpToolHost(launch);
         try
         {
-            await host.ConnectAsync(ct);
+            // 1) 内置 LitSSH MCP：默认启用；停用则**跳过 exe 解析**（缺 exe 不再导致整个助手不可用）
+            if (builtin is { Enabled: true })
+            {
+                var launch = AgentPaths.ResolveLaunch(config.McpServerPath)
+                    ?? throw new InvalidOperationException(
+                        "未找到 MCP 服务器(LitSSHmcp.McpServer.exe): 请将服务器放到 App 的 mcp/ 目录, 或在「AI 助手设置」中指定路径。");
+                var host = McpToolHost.ForBuiltin(launch);
+                try
+                {
+                    await host.ConnectAsync(ct);
+                }
+                catch
+                {
+                    await host.DisposeAsync();
+                    throw;
+                }
+                builtinHost = host;
+                hosts.Add(host);
+                if (!string.IsNullOrWhiteSpace(host.ServerInstructions))
+                    serverInstructions.Add(host.ServerInstructions!.Trim());
+            }
+
+            // 2) 外部 MCP：单个连接失败只降级为警告（不阻断会话启动）
+            foreach (var server in servers.Where(s => s is { Builtin: false, Enabled: true }))
+            {
+                McpToolHost? host = null;
+                try
+                {
+                    host = McpToolHost.Create(server);
+                    await host.ConnectAsync(ct);
+                    hosts.Add(host);
+                    externalHosts.Add((server, host));
+                    if (!string.IsNullOrWhiteSpace(host.ServerInstructions))
+                        serverInstructions.Add($"[{server.Name}] {host.ServerInstructions!.Trim()}");
+                }
+                catch (Exception ex)
+                {
+                    if (ct.IsCancellationRequested)
+                        throw;
+                    try { if (host is not null) await host.DisposeAsync(); } catch { /* 忽略关停失败 */ }
+                    var error = Shorten(ex.Message);
+                    mcpWarnings.Add($"{server.Name}: {error}");
+                    infoById[server.Id] = new ExternalMcpServerInfo(server.Name, 0, Array.Empty<string>(), error);
+                }
+            }
         }
         catch
         {
-            await host.DisposeAsync();
+            foreach (var h in hosts)
+            {
+                try { await h.DisposeAsync(); } catch { /* 忽略关停失败 */ }
+            }
             throw;
         }
 
-        var mcpTools = ToolFilter.Apply(host.Tools, config)
-            .Select(t => (IAgentTool)new McpAgentTool(t, config.CompactToolDescriptions)).ToList();
-        // 本次会话实际暴露的 MCP 工具域（经服务端分组 + Agent 只读/分组 两层过滤后的交集），注入系统提示做"能力边界"护栏。
-        var availableGroups = mcpTools
+        // 工具装配：内置在前（工具名原样保留），外部按重名冲突加服务器前缀
+        var usedNames = new HashSet<string>(StringComparer.Ordinal);
+        var builtinTools = new List<IAgentTool>();
+        // 内部轮次通知工具：在 ToolFilter 过滤前单独捕获引用（过滤后模型不可见，但会话仍可程序化调用）
+        McpClientTool? roundTool = builtinHost?.Tools.FirstOrDefault(t => t.Name == ToolFilter.InternalRoundTool);
+        IAgentTool? roundNotifier = roundTool is null ? null : new McpAgentTool(roundTool);
+        if (builtinHost is not null)
+        {
+            foreach (var tool in ToolFilter.Apply(builtinHost.Tools, config))
+            {
+                usedNames.Add(tool.Name);
+                builtinTools.Add(new McpAgentTool(tool, config.CompactToolDescriptions));
+            }
+        }
+
+        var mcpTools = new List<IAgentTool>(builtinTools);
+        foreach (var (server, host) in externalHosts)
+        {
+            var renamed = new List<string>();
+            var count = 0;
+            foreach (var tool in ToolFilter.Apply(host.Tools, config))
+            {
+                var name = tool.Name;
+                if (!usedNames.Add(name))
+                {
+                    name = PrefixToolName(server.Id, tool.Name, usedNames);
+                    renamed.Add($"`{name}` → 原名 `{tool.Name}`");
+                }
+                count++;
+                mcpTools.Add(new McpAgentTool(tool, config.CompactToolDescriptions, name));
+            }
+            infoById[server.Id] = new ExternalMcpServerInfo(server.Name, count, renamed, null);
+        }
+
+        // 外部 MCP 摘要按配置顺序（含连接失败的），供系统提示渲染
+        var externalInfos = servers
+            .Where(s => s is { Builtin: false, Enabled: true })
+            .Select(s => infoById.TryGetValue(s.Id, out var info) ? info : null)
+            .Where(info => info is not null)
+            .Select(info => info!)
+            .ToList();
+
+        // 本次会话实际暴露的**内置** MCP 工具域（经服务端分组 + Agent 只读/分组 两层过滤后的交集），注入系统提示做"能力边界"护栏；
+        // 外部 MCP 工具不计入（其分组由第三方自定，且可能被重名改写）。
+        var availableGroups = builtinTools
             .Select(t => t.ToolGroup)
             .Where(g => g is not null)
             .Select(g => g!)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var serverInstructionsText = serverInstructions.Count == 0 ? null : string.Join("\n\n", serverInstructions);
+
         var workspaceTools = WorkspaceTools.Create(WorkspaceTools.ResolveDir(config.WorkspaceDir)).ToList();
         var skillsDir = SkillRegistry.ResolveDir(config.SkillsDir, bundledSkillsDir);
         var skillTools = skillsDir is null ? new List<IAgentTool>() : SkillTools.Create(skillsDir).ToList();
@@ -193,7 +306,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         // 系统提示按"激活技能"动态构建（未选技能=仅注入索引）；切换技能时用同一定义重算。
         var skillFiles = skillsDir is null ? null : SkillRegistry.ListReferenceFiles(skillsDir);
         Func<IEnumerable<string>?, AgentPromptContext?, string> promptBuilder = (activeSkills, agent) => SystemPromptBuilder.Build(
-            host.ServerInstructions,
+            serverInstructionsText,
             SkillRegistry.Load(config.SkillsDir, bundledSkillsDir, availableGroups, activeSkills?.ToList()),
             config.SystemPrompt,
             skillFiles: skillFiles,
@@ -203,7 +316,10 @@ public sealed class AgentRuntime : IAsyncDisposable
             availableGroups: availableGroups,
             agentName: agent?.Name,
             agentPrompt: agent?.SystemPrompt,
-            agentStyle: agent?.ResponseStyle);
+            agentStyle: agent?.ResponseStyle,
+            skillsRoot: skillsDir,
+            externalMcp: externalInfos,
+            builtinMcpDisabled: builtin is { Enabled: false });
 
         var memory = await TryCreateMemoryAsync(config, provider, ct);
         Func<string, CancellationToken, Task<string?>>? recall =
@@ -221,7 +337,20 @@ public sealed class AgentRuntime : IAsyncDisposable
             subTools = subTools.Where(t => t.ReadOnly).ToList();
         }
 
-        var runtime = new AgentRuntime(host, provider, memory, config, promptBuilder, activeAgent, baseTools, subTools, onPlan, recall, spill, history);
+        // 连接器状态快照：内置 + 启用的外部（按配置顺序），供会话窗口「连接器」列表展示工具数/错误
+        var hostStatuses = new List<McpHostStatus>();
+        if (builtin is { Enabled: true } && builtinHost is not null)
+        {
+            var name = string.IsNullOrWhiteSpace(builtin.Name) ? "LitSSH MCP" : builtin.Name;
+            hostStatuses.Add(new McpHostStatus(builtin.Id, name, true, true, builtinTools.Count, null));
+        }
+        foreach (var s in servers.Where(x => x is { Builtin: false, Enabled: true }))
+        {
+            if (infoById.TryGetValue(s.Id, out var info))
+                hostStatuses.Add(new McpHostStatus(s.Id, s.Name, false, info.Error is null, info.ToolCount, info.Error));
+        }
+
+        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, spill, history);
         if (activeSkillIds is { Count: > 0 })
             runtime.SetActiveSkills(activeSkillIds);
         if (planMode)
@@ -307,5 +436,30 @@ public sealed class AgentRuntime : IAsyncDisposable
         });
     }
 
-    public ValueTask DisposeAsync() => Host.DisposeAsync();
+    /// <summary>外部工具与既有工具重名时加服务器前缀（冲突则再加序号），并登记到已用名集合。</summary>
+    private static string PrefixToolName(string serverId, string toolName, HashSet<string> used)
+    {
+        var prefix = string.IsNullOrWhiteSpace(serverId) ? "mcp" : serverId.Trim();
+        var candidate = $"{prefix}_{toolName}";
+        for (var i = 2; used.Contains(candidate); i++)
+            candidate = $"{prefix}_{toolName}_{i}";
+        used.Add(candidate);
+        return candidate;
+    }
+
+    private static string Shorten(string? message)
+    {
+        var text = (message ?? string.Empty).Replace("\r", " ").Replace("\n", " ").Trim();
+        if (text.Length == 0)
+            text = "连接失败";
+        return text.Length > 200 ? text[..200] + "…" : text;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var host in Hosts)
+        {
+            try { await host.DisposeAsync(); } catch { /* 关停子进程失败忽略 */ }
+        }
+    }
 }

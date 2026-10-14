@@ -124,6 +124,12 @@ public static class ConfigMigrator
             changed = true;
         }
 
+        if (config.AppLock == null)
+        {
+            config.AppLock = new AppLockConfig();
+            changed = true;
+        }
+
         if (config.PortForwards == null)
         {
             config.PortForwards = Array.Empty<PortForwardConfig>();

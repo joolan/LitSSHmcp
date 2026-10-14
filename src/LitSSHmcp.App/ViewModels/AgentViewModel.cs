@@ -28,6 +28,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private AgentConfig _agentConfig = new();
     private AgentRuntime? _runtime;
+    /// <summary>本机终端审批的「本轮次/本次会话」豁免登记表（随本会话窗口生命周期，重启即失效）。</summary>
+    private readonly LocalApprovalExemptionRegistry _localExemptions = new();
     private CancellationTokenSource? _cts;
     private bool _suppressSelection;
     private AgentTurn? _editingTurn;
@@ -110,6 +112,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     /// <summary>智能体下拉列表 = 配置的智能体 + 末尾固定的“智能体设置”入口。</summary>
     public ObservableCollection<ChatAgentConfig> ComboAgents { get; } = new();
+
+    /// <summary>会话窗口「连接器」列表：配置的全部 MCP 服务器（内置置顶），含连接状态。</summary>
+    public ObservableCollection<McpConnectorItem> Connectors { get; } = new();
 
     private readonly ChatAgentConfig _agentSettingsEntry = new()
     {
@@ -1549,6 +1554,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         OnPropertyChanged(nameof(PlanModeIndex));
     }
 
+    /// <summary>状态栏里的外部 MCP 连接失败提示（为空=全部正常）。</summary>
+    private string McpWarningSuffix()
+    {
+        var count = _runtime?.McpWarnings.Count ?? 0;
+        return count == 0 ? string.Empty : $" · {count} 个外部 MCP 未连接";
+    }
+
     private async Task EnsureRuntimeAsync(IEnumerable<ChatMessage>? history)
     {
         if (SelectedProvider is null)
@@ -1570,7 +1582,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 extraTools: localTools);
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
-                            + (_agentConfig.ReadOnly ? " · 只读模式" : "");
+                            + (_agentConfig.ReadOnly ? " · 只读模式" : "")
+                            + McpWarningSuffix();
             ModelStatus = "ready";
             RefreshContextInfo();
             ReloadSkillCatalog();
@@ -1597,10 +1610,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             (command, cwd) =>
             {
                 var decision = LocalApprovalDecision.Deny;
-                _uiInvoke(() => decision = LitSSHmcp.App.Views.LocalCommandApprovalWindow.Prompt(command, cwd));
+                _uiInvoke(() => decision = LitSSHmcp.App.Views.LocalCommandApprovalWindow.Prompt(
+                    command, cwd, _localExemptions.SessionAllGranted));
                 return decision;
             },
-            PersistLocalTerminalConfig);
+            PersistLocalTerminalConfig,
+            _localExemptions);
     }
 
     /// <summary>把「总是允许」的命令写回配置（后台，不阻塞工具调用）。</summary>
@@ -1644,7 +1659,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             _runtime.SetToolPolicy(_toolPolicy);
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
-                            + (_agentConfig.ReadOnly ? " · 只读模式" : "");
+                            + (_agentConfig.ReadOnly ? " · 只读模式" : "")
+                            + McpWarningSuffix();
             ModelStatus = "ready";
             RefreshContextInfo();
             ReloadSkillCatalog();
@@ -1688,6 +1704,101 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             StatusMessage = "重载失败: " + ex.Message;
         }
+    }
+
+    /// <summary>按配置与当前运行时状态刷新「连接器」列表（每次打开菜单时调用）。</summary>
+    public async Task RefreshConnectorsAsync()
+    {
+        var config = await _configService.LoadConfigAsync();
+        var servers = AgentMcpServerConfig.Normalize((config.Agent ?? new AgentConfig()).McpServers);
+        var statusById = new Dictionary<string, McpHostStatus>(StringComparer.Ordinal);
+        foreach (var status in _runtime?.McpHostStatuses ?? Array.Empty<McpHostStatus>())
+            statusById[status.ServerId] = status;
+
+        Connectors.Clear();
+        foreach (var server in servers)
+        {
+            var item = new McpConnectorItem
+            {
+                Id = server.Id,
+                Name = string.IsNullOrWhiteSpace(server.Name) ? server.Id : server.Name,
+                Builtin = server.Builtin,
+                Transport = server.Transport,
+                IsEnabled = server.Enabled
+            };
+            item.StatusText = FormatConnectorStatus(server, statusById);
+            Connectors.Add(item);
+        }
+    }
+
+    private static string FormatConnectorStatus(AgentMcpServerConfig server, Dictionary<string, McpHostStatus> statusById)
+    {
+        if (!server.Enabled)
+            return "已停用";
+        if (!statusById.TryGetValue(server.Id, out var status))
+            return "未连接";   // 运行时尚未建立（如未选模型）
+        if (status.Error is not null)
+            return "未连接: " + (status.Error.Length > 60 ? status.Error[..60] + "…" : status.Error);
+        return $"已连接 · {status.ToolCount} 个工具";
+    }
+
+    /// <summary>
+    /// 启用 / 停用一台 MCP 服务器并**立即保存 + 重建连接**（等效于设置页「保存并关闭」）。
+    /// 外部服务器启用前必须连接校验通过（与设置页同一规则）；内置停用由调用方先弹窗确认。
+    /// </summary>
+    /// <returns>结果描述（供菜单展示 / 状态栏）。</returns>
+    public async Task<string> ToggleConnectorAsync(McpConnectorItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (IsBusy)
+            return "任务进行中：请先等它完成或点「停止」，再切换连接器。";
+
+        var config = await _configService.LoadConfigAsync();
+        var agent = config.Agent ??= new AgentConfig();
+        var servers = AgentMcpServerConfig.Normalize(agent.McpServers).ToList();
+        var server = servers.FirstOrDefault(s => string.Equals(s.Id, item.Id, StringComparison.Ordinal));
+        if (server is null)
+            return "配置中找不到该连接器（可能已被删除）。";
+
+        if (server.Enabled)
+        {
+            server.Enabled = false;
+            server.LastError = string.Empty;
+            agent.McpServers = servers.ToArray();
+            await _configService.SaveConfigAsync(config);
+            _agentConfig = agent;
+            await EnsureRuntimeAsync(await LoadHistoryFromStoreAsync());
+            return server.Builtin
+                ? "已停用内置 MCP：AI 没有本机服务器/数据源等运维工具了"
+                : $"已停用「{server.Name}」";
+        }
+
+        if (!server.Builtin)
+        {
+            item.StatusText = "校验中…";
+            var result = await McpServerValidator.ValidateAsync(server, agent.McpServerPath);
+            if (!result.Ok)
+            {
+                server.LastError = result.Error ?? "校验失败";
+                agent.McpServers = servers.ToArray();
+                await _configService.SaveConfigAsync(config);
+                _agentConfig = agent;
+                StatusMessage = $"启用「{server.Name}」失败: {server.LastError}（已保持停用）";
+                return StatusMessage;
+            }
+            server.LastValidatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+            server.LastToolCount = result.ToolCount;
+            server.LastError = string.Empty;
+        }
+
+        server.Enabled = true;
+        agent.McpServers = servers.ToArray();
+        await _configService.SaveConfigAsync(config);
+        _agentConfig = agent;
+        await EnsureRuntimeAsync(await LoadHistoryFromStoreAsync());
+        return server.Builtin
+            ? "已启用内置 MCP"
+            : $"已启用「{server.Name}」· {server.LastToolCount} 个工具";
     }
 
     private async Task SwitchProviderAsync()

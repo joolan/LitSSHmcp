@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace LitSSHmcp.McpServer.Services;
@@ -67,12 +68,20 @@ public class DesktopApprovalService : IApprovalService
 {
     private readonly ISecurityOptionsProvider _securityOptions;
     private readonly ILogger<DesktopApprovalService>? _logger;
+    private readonly ApprovalRoundTracker? _roundTracker;
+    private readonly ApprovalExemptionRegistry? _exemptions;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public DesktopApprovalService(ISecurityOptionsProvider securityOptions, ILogger<DesktopApprovalService>? logger = null)
+    public DesktopApprovalService(
+        ISecurityOptionsProvider securityOptions,
+        ILogger<DesktopApprovalService>? logger = null,
+        ApprovalRoundTracker? roundTracker = null,
+        ApprovalExemptionRegistry? exemptions = null)
     {
         _securityOptions = securityOptions;
         _logger = logger;
+        _roundTracker = roundTracker;
+        _exemptions = exemptions;
     }
 
     public async Task<ApprovalOutcome> RequestApprovalAsync(
@@ -93,6 +102,11 @@ public class DesktopApprovalService : IApprovalService
         var operation = operationLabel ?? (filterResult == CommandFilterResult.Sensitive ? "敏感命令" : "文件传输");
         var style = string.IsNullOrWhiteSpace(options.Style) ? "dialog" : options.Style.Trim().ToLowerInvariant();
 
+        // 审批发生在工具调用的异步流内，工具名在调用线程可见（AsyncLocal）；先取出供授权登记用。
+        var toolName = AuditContext.CurrentTool;
+        if (string.IsNullOrWhiteSpace(toolName))
+            toolName = null;
+
         try
         {
             await _gate.WaitAsync(ct).ConfigureAwait(false);
@@ -104,15 +118,17 @@ public class DesktopApprovalService : IApprovalService
 
         try
         {
-            switch (style)
+            var (outcome, scope) = style switch
             {
-                case "native":
-                    return ShowNative(serverName, operation, command, filePath, options);
-                case "process":
-                    return await RequestViaChildProcessAsync(serverName, operation, command, filePath, options, ct).ConfigureAwait(false);
-                default:
-                    return await RequestInProcessAsync(serverName, operation, command, filePath, options, ct).ConfigureAwait(false);
-            }
+                "native" => (ShowNative(serverName, operation, command, filePath, options), ApprovalScope.Once),
+                "process" => await RequestViaChildProcessAsync(serverName, operation, command, filePath, options, ct).ConfigureAwait(false),
+                _ => await RequestInProcessAsync(serverName, operation, command, filePath, options, ct).ConfigureAwait(false)
+            };
+
+            if (outcome == ApprovalOutcome.Approved)
+                RecordGrant(toolName, scope);
+
+            return outcome;
         }
         finally
         {
@@ -120,10 +136,37 @@ public class DesktopApprovalService : IApprovalService
         }
     }
 
-    private async Task<ApprovalOutcome> RequestInProcessAsync(
+    /// <summary>
+    /// 登记用户勾选的授权范围：会话级直接登记；轮次级要求当前轮次 ID 已知
+    /// （轮次信号缺失时降级为仅本次放行，fail-safe——只会多弹窗，不会误放行）。
+    /// </summary>
+    private void RecordGrant(string? toolName, ApprovalScope scope)
+    {
+        if (scope == ApprovalScope.Once || _exemptions is null || toolName is null)
+            return;
+
+        if (scope == ApprovalScope.Session)
+        {
+            _exemptions.GrantSession(toolName);
+            _logger?.LogWarning("用户授权: 工具 {Tool} 在本次会话期间自动放行", toolName);
+            return;
+        }
+
+        var roundId = _roundTracker?.CurrentRoundId;
+        if (roundId is null)
+        {
+            _logger?.LogWarning("用户选择了本轮次授权, 但当前轮次未知(未收到 mcp_approval_round), 降级为仅本次放行 tool={Tool}", toolName);
+            return;
+        }
+
+        _exemptions.GrantRound(toolName, roundId);
+        _logger?.LogInformation("用户授权: 工具 {Tool} 在本轮次(Round={Round})内自动放行", toolName, roundId);
+    }
+
+    private async Task<(ApprovalOutcome Outcome, ApprovalScope Scope)> RequestInProcessAsync(
         string serverName, string operation, string command, string? filePath, ApprovalConfig options, CancellationToken ct)
     {
-        var tcs = new TaskCompletionSource<ApprovalOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<(ApprovalOutcome, ApprovalScope)>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var thread = new Thread(() =>
         {
@@ -132,19 +175,20 @@ public class DesktopApprovalService : IApprovalService
                 var sw = Stopwatch.StartNew();
                 _logger?.LogInformation("显示自绘授权弹窗(进程内): 服务器={Server} 操作={Operation}", serverName, operation);
 
-                using var dialog = new ApprovalDialog(serverName, operation, command, filePath, options.TimeoutSeconds, options.TopMost);
+                using var dialog = new ApprovalDialog(serverName, operation, command, filePath, options.TimeoutSeconds, options.TopMost,
+                    _exemptions?.SessionGrantedTools);
                 var result = dialog.ShowDialog();
                 sw.Stop();
 
-                _logger?.LogInformation("自绘授权弹窗关闭: 结果={Result} 耗时={ElapsedMs}ms", result, sw.ElapsedMilliseconds);
+                _logger?.LogInformation("自绘授权弹窗关闭: 结果={Result} 耗时={ElapsedMs}ms 范围={Scope}", result, sw.ElapsedMilliseconds, dialog.Scope);
                 tcs.TrySetResult(result == DialogResult.OK
-                    ? ApprovalOutcome.Approved
-                    : dialog.TimedOut ? ApprovalOutcome.Timeout : ApprovalOutcome.Rejected);
+                    ? (ApprovalOutcome.Approved, dialog.Scope)
+                    : dialog.TimedOut ? (ApprovalOutcome.Timeout, ApprovalScope.Once) : (ApprovalOutcome.Rejected, ApprovalScope.Once));
             }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "自绘授权弹窗失败，回退原生");
-                tcs.TrySetResult(SafeNative(serverName, operation, command, filePath, options));
+                tcs.TrySetResult((SafeNative(serverName, operation, command, filePath, options), ApprovalScope.Once));
             }
         })
         {
@@ -156,18 +200,18 @@ public class DesktopApprovalService : IApprovalService
         thread.Start();
 
         // 客户端取消时立刻把结果交还给调用方，不等弹窗自己关（弹窗带超时，会自行收尾）。
-        await using var reg = ct.Register(() => tcs.TrySetResult(ApprovalOutcome.Unavailable));
+        await using var reg = ct.Register(() => tcs.TrySetResult((ApprovalOutcome.Unavailable, ApprovalScope.Once)));
         return await tcs.Task.ConfigureAwait(false);
     }
 
-    private async Task<ApprovalOutcome> RequestViaChildProcessAsync(
+    private async Task<(ApprovalOutcome Outcome, ApprovalScope Scope)> RequestViaChildProcessAsync(
         string serverName, string operation, string command, string? filePath, ApprovalConfig options, CancellationToken ct)
     {
         var exePath = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
         {
             _logger?.LogWarning("无法定位可执行文件，审批子进程不可用，回退原生");
-            return SafeNative(serverName, operation, command, filePath, options);
+            return (SafeNative(serverName, operation, command, filePath, options), ApprovalScope.Once);
         }
 
         var request = new ApprovalRequest
@@ -177,7 +221,8 @@ public class DesktopApprovalService : IApprovalService
             Command = command,
             FilePath = filePath,
             TimeoutSeconds = options.TimeoutSeconds,
-            TopMost = options.TopMost
+            TopMost = options.TopMost,
+            SessionGrantedTools = _exemptions?.SessionGrantedTools.ToList()
         };
 
         var requestFile = Path.Combine(Path.GetTempPath(), $"litssh-approval-{Guid.NewGuid():N}.json");
@@ -208,7 +253,7 @@ public class DesktopApprovalService : IApprovalService
             if (process == null)
             {
                 _logger?.LogWarning("审批子进程启动失败，回退原生");
-                return SafeNative(serverName, operation, command, filePath, options);
+                return (SafeNative(serverName, operation, command, filePath, options), ApprovalScope.Once);
             }
 
             // 子进程输出必须持续排空，否则缓冲区写满会把子进程卡死。
@@ -229,21 +274,25 @@ public class DesktopApprovalService : IApprovalService
                 _logger?.LogWarning(ct.IsCancellationRequested
                     ? "审批等待被客户端取消，按不可用处理"
                     : "审批子进程超时未退出，按超时处理");
-                return ct.IsCancellationRequested ? ApprovalOutcome.Unavailable : ApprovalOutcome.Timeout;
+                return ct.IsCancellationRequested
+                    ? (ApprovalOutcome.Unavailable, ApprovalScope.Once)
+                    : (ApprovalOutcome.Timeout, ApprovalScope.Once);
             }
 
             _logger?.LogInformation("审批子进程退出: code={Code}", process.ExitCode);
             return process.ExitCode switch
             {
-                ApprovalRequestHost.ExitAllow => ApprovalOutcome.Approved,
-                ApprovalRequestHost.ExitTimeout => ApprovalOutcome.Timeout,
-                _ => ApprovalOutcome.Rejected
+                ApprovalRequestHost.ExitAllow => (ApprovalOutcome.Approved, ApprovalScope.Once),
+                ApprovalRequestHost.ExitAllowRound => (ApprovalOutcome.Approved, ApprovalScope.Round),
+                ApprovalRequestHost.ExitAllowSession => (ApprovalOutcome.Approved, ApprovalScope.Session),
+                ApprovalRequestHost.ExitTimeout => (ApprovalOutcome.Timeout, ApprovalScope.Once),
+                _ => (ApprovalOutcome.Rejected, ApprovalScope.Once)
             };
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "审批子进程方式失败，回退原生");
-            return SafeNative(serverName, operation, command, filePath, options);
+            return (SafeNative(serverName, operation, command, filePath, options), ApprovalScope.Once);
         }
         finally
         {

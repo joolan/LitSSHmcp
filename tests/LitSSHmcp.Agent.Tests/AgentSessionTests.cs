@@ -44,6 +44,25 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public async Task Turn_budget_wall_clock_stops_loop_with_error()
+    {
+        // 单轮墙钟预算：工具耗时(1.2s)超过预算(1s)后，第 2 轮模型调用前停止本轮并报 Error。
+        var call = new FunctionCallContent("c1", "slow", new Dictionary<string, object?>());
+        var assistantWithCall = new ChatMessage(ChatRole.Assistant, new AIContent[] { call });
+        var client = new FakeChatClient(new ChatResponse(new List<ChatMessage> { assistantWithCall }));
+        var tool = new FakeTool("slow", "ok", delayMs: 1200);
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new[] { tool }, "sys", new AgentConfig { Budget = new AgentBudgetConfig { MaxTurnSeconds = 1 } });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.NotNull(tool.LastArgs);                                          // 首轮工具照常执行
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Error && e.Text!.Contains("预算超限"));
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Done);      // 未正常结束
+    }
+
+    [Fact]
     public async Task Denied_tool_is_blocked_without_invoking()
     {
         var call = new FunctionCallContent("c1", "echo", new Dictionary<string, object?> { ["x"] = "y" });

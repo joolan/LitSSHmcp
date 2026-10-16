@@ -1561,6 +1561,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         return count == 0 ? string.Empty : $" · {count} 个外部 MCP 未连接";
     }
 
+    /// <summary>状态栏里的长期记忆禁用提示（已启用但配置不全/初始化失败时显示原因，为空=正常）。</summary>
+    private string MemoryWarningSuffix()
+    {
+        var reason = _runtime?.MemoryDisabledReason;
+        return reason is null ? string.Empty : $" · ⚠ 记忆未生效({reason})";
+    }
+
     private async Task EnsureRuntimeAsync(IEnumerable<ChatMessage>? history)
     {
         if (SelectedProvider is null)
@@ -1577,13 +1584,25 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             ModelStatus = "connecting";
             StatusMessage = "正在连接 MCP 服务器…";
             var localTools = BuildLocalTerminalTool() is { } lt ? new[] { lt } : null;
+            // 资产图谱快照注入系统提示（仅 topology 工具组启用时；由 AgentRuntime 按 availableGroups 再过滤）
+            string? assetGraph = null;
+            try
+            {
+                var fullConfig = await _configService.LoadConfigAsync();
+                assetGraph = Core.Services.Topology.AssetGraphPromptFormatter.Format(fullConfig);
+            }
+            catch
+            {
+                // 资产渲染失败不阻断会话启动
+            }
             _runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history, UpdatePlan,
                 _activeSkillIds.Count == 0 ? null : _activeSkillIds, _planMode, SelectedAgent?.ToPromptContext(),
-                extraTools: localTools);
+                extraTools: localTools, assetGraph: assetGraph);
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "")
-                            + McpWarningSuffix();
+                            + McpWarningSuffix()
+                            + MemoryWarningSuffix();
             ModelStatus = "ready";
             RefreshContextInfo();
             ReloadSkillCatalog();
@@ -1660,7 +1679,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "")
-                            + McpWarningSuffix();
+                            + McpWarningSuffix()
+                            + MemoryWarningSuffix();
             ModelStatus = "ready";
             RefreshContextInfo();
             ReloadSkillCatalog();
@@ -2175,10 +2195,39 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         await RunTurnAsync(turn, contents);
     }
 
+    /// <summary>会话成本预算检查：达到 agent.budget.maxSessionCost 上限时返回阻止原因（null=可继续；未配置/未填价格时放行）。</summary>
+    private string? SessionCostBudgetBlock()
+    {
+        var limit = _agentConfig.Budget?.MaxSessionCost ?? 0;
+        if (limit <= 0)
+            return null;
+        var session = _runtime?.Session;
+        var provider = SelectedProvider;
+        if (session is null || provider is null)
+            return null;
+        if (provider.InputPricePerMTok <= 0 && provider.OutputPricePerMTok <= 0)
+            return null;   // 模型未填价格无法判定成本
+        var cost = session.SessionInputTokens / 1_000_000.0 * provider.InputPricePerMTok
+                   + session.SessionOutputTokens / 1_000_000.0 * provider.OutputPricePerMTok;
+        return cost >= limit
+            ? $"会话估算成本已达预算上限 ¥{cost:F4} ≥ ¥{limit:F4}，已阻止发送（AI 助手设置 → 上下文与输出 → 会话成本上限可调整）"
+            : null;
+    }
+
     private async Task RunTurnAsync(AgentTurn turn, IReadOnlyList<AIContent>? contents = null)
     {
         if (_runtime is null)
             return;
+
+        // 会话成本预算：达到上限后阻止新的发送（防止失控烧钱）
+        var budgetBlock = SessionCostBudgetBlock();
+        if (budgetBlock is not null)
+        {
+            turn.Note = budgetBlock;
+            StatusMessage = budgetBlock;
+            ShowNotice(budgetBlock, seconds: 6);
+            return;
+        }
 
         // 懒建会话：点“新建任务”不写库；首次真正发送消息时才落库并出现在侧栏。
         if (_sessionId <= 0)
@@ -2214,10 +2263,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         _pendingReasoning.Clear();
         _lastReasoningFlushUtc = DateTime.MinValue;
         var progress = new SyncProgress(e => OnAgentEvent(e, turn, assistantText), _uiInvoke);
+        var turnSucceeded = false;
 
         try
         {
             await _runtime.Session.SendAsync(contents ?? new AIContent[] { new TextContent(turn.UserText) }, progress, _cts.Token);
+            turnSucceeded = true;
             StatusMessage = "完成";
         }
         catch (OperationCanceledException)
@@ -2251,7 +2302,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             await _store.TouchSessionAsync(_sessionId);
             try
             {
-                if (_runtime is not null)
+                // 质量门：仅成功轮入库 raw 记忆（取消/失败轮不污染召回）
+                if (_runtime is not null && turnSucceeded)
                     await _runtime.IndexTurnAsync(turn.UserText, assistantText.ToString());
             }
             catch
@@ -2392,6 +2444,15 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 pending?.Complete(e.ToolSuccess && !denied, denied ? "（审批未通过）\n" + body : body, e.DurationMs);
                 break;
 
+            case AgentEventKind.MemoryRecall:
+                // 记忆召回可见性：以"信息步骤"展示本轮注入的记忆（不参与重试/落库/模型轨迹）
+                FlushDelta(turn);
+                FlushReasoning(turn);
+                var recallStep = new AgentStep("记忆召回", string.Empty, isInfo: true);
+                recallStep.Complete(true, e.Text ?? string.Empty, 0);
+                turn.Steps.Add(recallStep);
+                break;
+
             case AgentEventKind.Error:
                 FlushDelta(turn);
                 FlushReasoning(turn);
@@ -2526,7 +2587,11 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             if (!string.IsNullOrEmpty(turn.ReasoningText))
                 messages.Add(("reasoning", turn.ReasoningText));
             foreach (var step in turn.Steps)
+            {
+                if (step.IsInfo)
+                    continue;   // 信息步骤（记忆召回等）不落库为工具轨迹
                 messages.Add(("tool", AgentTranscript.Serialize(step)));
+            }
             if (!string.IsNullOrEmpty(turn.AssistantText))
                 messages.Add(("assistant", turn.AssistantText));
         }
@@ -2931,18 +2996,22 @@ public class AgentTurn : INotifyPropertyChanged
 /// <summary>一次工具调用（可展开看完整入参/结果，带耗时与重试）。</summary>
 public sealed class AgentStep : INotifyPropertyChanged
 {
-    public AgentStep(string tool, string argsJson, bool destructive = false, string? callId = null)
+    public AgentStep(string tool, string argsJson, bool destructive = false, string? callId = null, bool isInfo = false)
     {
         Tool = tool;
         ArgsJson = argsJson;
         _displayArgs = string.IsNullOrWhiteSpace(argsJson) ? string.Empty : ToolResultFormatter.Format(argsJson, pretty: true);
         Destructive = destructive;
         CallId = callId;
+        IsInfo = isInfo;
     }
 
     public string Tool { get; }
     public string ArgsJson { get; }
     public bool Destructive { get; }
+
+    /// <summary>信息类步骤（如"记忆召回"）：仅展示，不参与重试、不落库为工具轨迹。</summary>
+    public bool IsInfo { get; }
 
     /// <summary>模型侧的工具调用 Id（并行执行时用于把结果精确回填到对应步骤）。</summary>
     public string? CallId { get; }
@@ -2974,8 +3043,10 @@ public sealed class AgentStep : INotifyPropertyChanged
     private long _durationMs;
     public long DurationMs { get => _durationMs; private set { _durationMs = value; Raise(); Raise(nameof(Tail)); } }
 
-    public string Label => $"调用 {Tool}";
-    public string Tail => IsRunning ? (Destructive ? "调用中…（可能等待人工审批）" : "调用中…") : $"{DurationMs} ms";
+    public string Label => IsInfo ? Tool : $"调用 {Tool}";
+    public string Tail => IsRunning
+        ? (Destructive ? "调用中…（可能等待人工审批）" : "调用中…")
+        : (IsInfo ? "已注入本轮上下文" : $"{DurationMs} ms");
     public string Detail => (_displayArgs.Length == 0 ? string.Empty : "入参: " + _displayArgs + "\n\n") + (_displayResult.Length > 0 ? "结果:\n" + _displayResult : string.Empty);
     public Visibility RetryVisibility => !IsRunning && !Success ? Visibility.Visible : Visibility.Collapsed;
 

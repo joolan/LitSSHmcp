@@ -138,6 +138,76 @@ public static class RedisCommandPolicy
         return tokens.Length == 0 ? string.Empty : tokens[0].ToUpperInvariant();
     }
 
+    /// <summary>
+    /// 可能**返回海量数据**或**阻塞服务端**的只读命令（数据库工作台执行前二次确认用）。
+    /// 与 <see cref="Classify"/> 正交：这些命令仍是只读、不拦死，只提示风险（KEYS 会同步遍历整个键空间，
+    /// HGETALL/SMEMBERS 等对超大 key 会一次返回全部元素）。MCP 侧 redis_read 语义不变。
+    /// </summary>
+    public static bool IsBulkRisk(string? commandLine)
+    {
+        var tokens = SplitTokens(commandLine);
+        if (tokens.Length == 0) return false;
+
+        var name = tokens[0].ToUpperInvariant();
+
+        // 全键空间遍历：服务端同步 O(N)，百万键时会卡住整个实例
+        if (name == "KEYS") return true;
+
+        // 单键无界读取：超大 hash/set/list 可能有百万级元素
+        switch (name)
+        {
+            case "HGETALL":
+            case "HKEYS":
+            case "HVALS":
+            case "SMEMBERS":
+            case "SORT":
+                return true;
+            // 多键无界聚合
+            case "SUNION":
+            case "SINTER":
+            case "SDIFF":
+                return true;
+            // 参数过多的 MGET（>63 个键）
+            case "MGET":
+                return tokens.Length > 64;
+            // 拉到末尾的范围读：stop == -1，或 start>=0 且 stop 为负（如 0 -100 → 返回近全长）
+            case "LRANGE":
+            case "ZRANGE":
+            case "ZREVRANGE":
+                return tokens.Length >= 4 && IsUnboundedRange(tokens[2], LastValueToken(tokens));
+            // 无 LIMIT 的分数/字典范围读
+            case "ZRANGEBYSCORE":
+            case "ZREVRANGEBYSCORE":
+                return !tokens.Skip(1).Any(t => t.Equals("LIMIT", StringComparison.OrdinalIgnoreCase));
+            // 无 COUNT 的整段流读取
+            case "XRANGE":
+            case "XREVRANGE":
+                return !tokens.Any(t => t.Equals("COUNT", StringComparison.OrdinalIgnoreCase));
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>最后一个参数值（跳过 ZRANGE 的 WITHSCORES 修饰）。</summary>
+    private static string LastValueToken(string[] tokens)
+        => tokens.Length >= 5 && tokens[^1].Equals("WITHSCORES", StringComparison.OrdinalIgnoreCase)
+            ? tokens[^2]
+            : tokens[^1];
+
+    /// <summary>
+    /// LRANGE/ZRANGE/ZREVRANGE 的 start/stop 是否无界：
+    /// 两端均为负下标时长度有界（如 -5 -1 → 5 个）；
+    /// stop == -1 拉到末尾，或 start>=0 且 stop 为负下标（如 0 -100 → 在大集合上仍接近全量）。
+    /// </summary>
+    private static bool IsUnboundedRange(string startToken, string stopToken)
+    {
+        if (!long.TryParse(stopToken, out var stop) || !long.TryParse(startToken, out var start))
+            return false;
+        if (start < 0 && stop < 0)
+            return false;   // 两端都是相对下标：返回条数有界（stop - start + 1）
+        return stop == -1 || (start >= 0 && stop < 0);
+    }
+
     private static string[] SplitTokens(string? commandLine)
     {
         if (string.IsNullOrWhiteSpace(commandLine)) return Array.Empty<string>();

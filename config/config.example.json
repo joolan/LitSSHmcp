@@ -160,6 +160,10 @@
       { "id": "ext-http", "name": "远程服务（示例·http）", "builtin": false, "enabled": false, "transport": "http", "command": "", "args": [], "env": [], "url": "https://mcp.example.com/mcp", "headers": ["Authorization: Bearer enc:xxxx (DPAPI密文)"], "lastError": "", "lastValidatedAt": "", "lastToolCount": 0 }
     ],
     "maxToolIterations": 20,
+    "budget": {
+      "maxTurnSeconds": 0,
+      "maxSessionCost": 0
+    },
     "retentionMaxSessions": 50,
     "retentionMaxMessages": 200,
     "retentionDays": 90,
@@ -168,7 +172,8 @@
       "endpoint": "https://api.openai.com/v1",
       "model": "text-embedding-3-small",
       "apiKey": "",
-      "topK": 5
+      "topK": 5,
+      "recallThreshold": 0.15
     },
     "providers": [
       {
@@ -260,6 +265,12 @@
         "\\bshutdown\\b",
         "\\bkill\\b"
       ]
+    },
+    "scriptRules": {
+      "enabled": true,
+      "extraBlockedPatterns": [],
+      "extraSensitivePatterns": [],
+      "disabledBuiltinRuleLabels": []
     },
     "fileTransfer": {
       "enabled": true,

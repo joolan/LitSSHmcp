@@ -156,8 +156,12 @@ public sealed class AgentSession
             {
                 var memory = await _recall(userText, ct);
                 if (!string.IsNullOrWhiteSpace(memory))
+                {
                     Messages.Insert(Messages.Count - 1, new ChatMessage(ChatRole.System,
                         "以下是与本次请求可能相关的历史/文档记忆(仅供参考, 以实际工具结果为准):\n" + memory));
+                    // 召回可见性：推送给 UI 以"记忆召回"步骤展示本轮注入了什么（不影响模型上下文）
+                    progress?.Report(new AgentEvent(AgentEventKind.MemoryRecall, Text: memory));
+                }
             }
             catch
             {
@@ -175,8 +179,18 @@ public sealed class AgentSession
 
         var maxIterations = Math.Max(1, _maxIterationsOverride ?? _config.MaxToolIterations);
         var consecutiveFailures = 0;   // 跨模型轮次累计：连续工具失败达到阈值即熔断
+        // 运行预算：单轮墙钟上限（agent.budget.maxTurnSeconds，0=不限）——每轮模型调用前检查，超限停止本轮。
+        var turnBudgetSeconds = _config.Budget?.MaxTurnSeconds ?? 0;
+        var turnSw = System.Diagnostics.Stopwatch.StartNew();
         for (var iteration = 0; iteration < maxIterations; iteration++)
         {
+            if (turnBudgetSeconds > 0 && turnSw.Elapsed.TotalSeconds >= turnBudgetSeconds)
+            {
+                progress?.Report(new AgentEvent(AgentEventKind.Error,
+                    Text: $"运行预算超限：本轮墙钟 {turnSw.Elapsed.TotalSeconds:F0}s ≥ 上限 {turnBudgetSeconds}s，已停止本轮（可在 AI 助手设置调整「单轮墙钟预算」）"));
+                return;
+            }
+
             // 本轮请求发出前的估算值：与真实 usage 对比得到校准比值
             var estimatedBeforeRequest = TokenEstimator.Estimate(Messages);
 

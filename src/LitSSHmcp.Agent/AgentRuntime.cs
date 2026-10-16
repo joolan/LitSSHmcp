@@ -24,6 +24,9 @@ public sealed class AgentRuntime : IAsyncDisposable
     /// <summary>启用但未能连接的外部 MCP（名称 + 原因）；为空=全部正常。</summary>
     public IReadOnlyList<string> McpWarnings { get; }
 
+    /// <summary>长期记忆被禁用的原因（已启用但配置不全/初始化失败时非空；未启用时为 null）。</summary>
+    public string? MemoryDisabledReason { get; }
+
     /// <summary>各 MCP 服务器的连接状态（内置 + 启用的外部，按配置顺序；停用的不列出）。</summary>
     public IReadOnlyList<McpHostStatus> McpHostStatuses { get; }
 
@@ -57,6 +60,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         IReadOnlyList<McpHostStatus> mcpHostStatuses,
         AgentProviderConfig provider,
         AgentMemoryService? memory,
+        string? memoryDisabledReason,
         AgentConfig config,
         Func<IEnumerable<string>?, AgentPromptContext?, string> promptBuilder,
         AgentPromptContext? initialAgent,
@@ -73,6 +77,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         McpHostStatuses = mcpHostStatuses;
         Provider = provider;
         Memory = memory;
+        MemoryDisabledReason = memoryDisabledReason;
         _config = config;
         _readOnlyNote = config.ReadOnly ? ReadOnlyNote : null;
         _promptBuilder = promptBuilder;
@@ -177,7 +182,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         bool planMode = false,
         AgentPromptContext? activeAgent = null,
         CancellationToken ct = default,
-        IEnumerable<IAgentTool>? extraTools = null)
+        IEnumerable<IAgentTool>? extraTools = null,
+        string? assetGraph = null)
     {
         var servers = AgentMcpServerConfig.Normalize(config.McpServers);
         var builtin = servers.FirstOrDefault(s => s.Builtin);
@@ -296,12 +302,21 @@ public sealed class AgentRuntime : IAsyncDisposable
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var serverInstructionsText = serverInstructions.Count == 0 ? null : string.Join("\n\n", serverInstructions);
 
-        var workspaceTools = WorkspaceTools.Create(WorkspaceTools.ResolveDir(config.WorkspaceDir)).ToList();
+        var workspaceRoot = WorkspaceTools.ResolveDir(config.WorkspaceDir);
+        var workspaceTools = WorkspaceTools.Create(workspaceRoot).ToList();
         var skillsDir = SkillRegistry.ResolveDir(config.SkillsDir, bundledSkillsDir);
         var skillTools = skillsDir is null ? new List<IAgentTool>() : SkillTools.Create(skillsDir).ToList();
 
         var spill = TryCreateSpill(config);
         var spillTools = spill is null ? new List<IAgentTool>() : SpillTools.Create(spill).ToList();
+
+        // 记忆先于工具装配：memory != null 时注册 ops_memory_*（否则不暴露，提示词同步不注入该段）
+        var (memory, memoryDisabledReason) = await TryCreateMemoryAsync(config, provider, ct);
+        var memoryTools = memory is null ? new List<IAgentTool>() : MemoryTools.Create(memory).ToList();
+        // 脚本复用登记（写 MANIFEST + 可选同步记忆）；工作区可用即注册
+        var scriptTools = ScriptTools.Create(workspaceRoot, memory).ToList();
+        Func<string, CancellationToken, Task<string?>>? recall =
+            memory is null ? null : (query, token) => memory.RecallAsync(query, ct: token);
 
         // 系统提示按"激活技能"动态构建（未选技能=仅注入索引）；切换技能时用同一定义重算。
         var skillFiles = skillsDir is null ? null : SkillRegistry.ListReferenceFiles(skillsDir);
@@ -319,14 +334,14 @@ public sealed class AgentRuntime : IAsyncDisposable
             agentStyle: agent?.ResponseStyle,
             skillsRoot: skillsDir,
             externalMcp: externalInfos,
-            builtinMcpDisabled: builtin is { Enabled: false });
+            builtinMcpDisabled: builtin is { Enabled: false },
+            memoryTools: memory is not null,
+            scriptTools: true,
+            assetGraph: availableGroups.Contains(ToolGroups.Topology) ? assetGraph : null);
 
-        var memory = await TryCreateMemoryAsync(config, provider, ct);
-        Func<string, CancellationToken, Task<string?>>? recall =
-            memory is null ? null : (query, token) => memory.RecallAsync(query, token);
-
-        // 主代理基础工具 = MCP + 工作区文档 + 技能参考 + 落盘读取 + 宿主注入的本地工具（不含子代理/计划，它们依赖 client/回调，按会话构建）
+        // 主代理基础工具 = MCP + 工作区文档 + 技能参考 + 落盘读取 + 记忆/脚本登记 + 宿主注入的本地工具（不含子代理/计划，它们依赖 client/回调，按会话构建）
         var baseTools = mcpTools.Concat(workspaceTools).Concat(skillTools).Concat(spillTools)
+            .Concat(memoryTools).Concat(scriptTools)
             .Concat(extraTools ?? Enumerable.Empty<IAgentTool>()).ToList();
         // 子代理只给只读类工具(MCP/技能/落盘)，不给工作区写工具与计划, 避免副作用与递归
         var subTools = mcpTools.Concat(skillTools).Concat(spillTools).ToList();
@@ -350,12 +365,12 @@ public sealed class AgentRuntime : IAsyncDisposable
                 hostStatuses.Add(new McpHostStatus(s.Id, s.Name, false, info.Error is null, info.ToolCount, info.Error));
         }
 
-        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, spill, history);
+        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, spill, history);
         if (activeSkillIds is { Count: > 0 })
             runtime.SetActiveSkills(activeSkillIds);
         if (planMode)
             runtime.SetPlanMode(true);
-        runtime.StartWorkspaceIndexing(WorkspaceTools.ResolveDir(config.WorkspaceDir));
+        runtime.StartWorkspaceIndexing(workspaceRoot);
         return runtime;
     }
 
@@ -376,14 +391,18 @@ public sealed class AgentRuntime : IAsyncDisposable
         }
     }
 
-    /// <summary>把一轮对话（用户+助手）加入长期记忆（无记忆时为空操作）。</summary>
+    /// <summary>把一轮对话（用户+助手）加入长期记忆（无记忆时为空操作；内容经质量门压缩，同源保留上限）。</summary>
     public async Task IndexTurnAsync(string userText, string assistantText, CancellationToken ct = default)
     {
         if (Memory is null)
             return;
         try
         {
-            await Memory.IndexAsync("会话", $"用户: {userText}\n助手: {assistantText}", ct);
+            var content = MemoryQuality.BuildRawContent(userText, assistantText);
+            if (content is null)
+                return;
+            await Memory.IndexAsync("会话", content, ct);
+            await Memory.PruneRawAsync("会话", RawPerSourceLimit, ct);
         }
         catch
         {
@@ -391,20 +410,31 @@ public sealed class AgentRuntime : IAsyncDisposable
         }
     }
 
-    private static async Task<AgentMemoryService?> TryCreateMemoryAsync(AgentConfig config, AgentProviderConfig provider, CancellationToken ct)
+    /// <summary>同源("会话")raw 片段保留条数上限。</summary>
+    public const int RawPerSourceLimit = 200;
+
+    /// <summary>
+    /// 尝试创建长期记忆服务。返回 (服务, 禁用原因)：
+    /// 未启用 → (null, null)；已启用但配置不全/初始化失败 → (null, 原因)，由 UI 展示（不再静默）。
+    /// </summary>
+    private static async Task<(AgentMemoryService? Memory, string? Reason)> TryCreateMemoryAsync(AgentConfig config, AgentProviderConfig provider, CancellationToken ct)
     {
         if (config.Memory?.Enabled != true)
-            return null;
+            return (null, null);
+        if (string.IsNullOrWhiteSpace(config.Memory.Model))
+            return (null, "已启用但未填写 Embeddings 模型名");
         try
         {
             var embedder = EmbeddingClientFactory.Create(config.Memory, provider.ApiKey);
-            var memory = new AgentMemoryService(new AgentMemoryStore(), embedder, config.Memory.TopK);
+            var memory = new AgentMemoryService(new AgentMemoryStore(), embedder, config.Memory.TopK,
+                config.Memory.RecallThreshold);
             await memory.InitializeAsync(ct);
-            return memory;
+            return (memory, null);
         }
-        catch
+        catch (Exception ex)
         {
-            return null;   // 配置不全/端点不可用则静默禁用记忆
+            var msg = ex.Message.Length <= 120 ? ex.Message : ex.Message[..120] + "…";
+            return (null, "Embeddings 初始化失败: " + msg);
         }
     }
 

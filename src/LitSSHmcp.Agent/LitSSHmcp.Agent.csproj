@@ -4,6 +4,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- SCME0001: OpenAI SDK 的 JsonPatch 机制（prompt_cache_key 注入用）标记为评估期 API，官方用途允许 -->
+    <NoWarn>$(NoWarn);SCME0001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

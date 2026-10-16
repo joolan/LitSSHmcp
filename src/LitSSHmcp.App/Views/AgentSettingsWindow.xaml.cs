@@ -20,11 +20,16 @@ public partial class AgentSettingsWindow : FluentWindow
 
         SelectTab(initialTab);
 
-        // 切到「归档记录」时刷新列表
+        // 切到「归档记录」时刷新列表；切到「记忆管理」时刷新记忆明细
         Tabs.SelectionChanged += (_, _) =>
         {
-            if (Tabs.SelectedItem is TabItem { Header: string header } && header == "归档记录")
-                _ = _viewModel.LoadArchivedAsync();
+            if (Tabs.SelectedItem is TabItem { Header: string header })
+            {
+                if (header == "归档记录")
+                    _ = _viewModel.LoadArchivedAsync();
+                else if (header == "记忆管理")
+                    _ = _viewModel.LoadMemoryEntriesAsync();
+            }
         };
 
         // API Key 用 PasswordBox 展示为圆点：随选中模型同步，输入时回写 VM
@@ -32,11 +37,18 @@ public partial class AgentSettingsWindow : FluentWindow
         {
             if (e.PropertyName == nameof(AgentSettingsViewModel.SelectedProvider))
                 SyncApiKeyBox();
+            else if (e.PropertyName == nameof(AgentSettingsViewModel.MemoryApiKey))
+                SyncMemoryApiKeyBox();   // 加载/重新加载后把 VM 值同步进圆点框
         };
-        Loaded += (_, _) => SyncApiKeyBox();
+        Loaded += (_, _) =>
+        {
+            SyncApiKeyBox();
+            SyncMemoryApiKeyBox();
+        };
     }
 
     private bool _syncingApiKey;
+    private bool _syncingMemoryKey;
 
     /// <summary>按 Tab 键值（model/archive/agents/mcp…）定位到对应 Tab：按 Header 文本匹配（不依赖索引，避免插入新 Tab 后错位）。
     /// 窗口已打开被再次请求时也用它切换。</summary>
@@ -49,6 +61,7 @@ public partial class AgentSettingsWindow : FluentWindow
         {
             "model" => "大模型设置",
             "archive" => "归档记录",
+            "memory" or "memories" or "memoryManage" => "记忆管理",
             "agents" or "agent" => "智能体",
             "mcp" or "mcpServers" => "MCP 服务器",
             _ => null
@@ -82,6 +95,20 @@ public partial class AgentSettingsWindow : FluentWindow
             provider.ApiKey = ApiKeyBox.Password;
     }
 
+    private void SyncMemoryApiKeyBox()
+    {
+        _syncingMemoryKey = true;
+        MemoryApiKeyBox.Password = _viewModel.MemoryApiKey ?? string.Empty;
+        _syncingMemoryKey = false;
+    }
+
+    private void OnMemoryApiKeyChanged(object sender, RoutedEventArgs e)
+    {
+        if (_syncingMemoryKey)
+            return;
+        _viewModel.MemoryApiKey = MemoryApiKeyBox.Password;
+    }
+
     private void OnAdd(object sender, RoutedEventArgs e) => _viewModel.AddProvider();
 
     private void OnAddAgent(object sender, RoutedEventArgs e) => _viewModel.AddAgent();
@@ -103,6 +130,45 @@ public partial class AgentSettingsWindow : FluentWindow
     private void OnAddMcp(object sender, RoutedEventArgs e) => _viewModel.AddMcpServer();
 
     private void OnValidateMcp(object sender, RoutedEventArgs e) => _ = _viewModel.ValidateMcpServerAsync(_viewModel.SelectedMcpServer);
+
+    private void OnTestEmbeddings(object sender, RoutedEventArgs e) => _ = _viewModel.TestEmbeddingsAsync();
+
+    private void OnMemoryStats(object sender, RoutedEventArgs e) => _ = _viewModel.LoadMemoryStatsAsync();
+
+    private void OnReloadMemories(object sender, RoutedEventArgs e) => _ = _viewModel.LoadMemoryEntriesAsync();
+
+    private void OnDeleteMemory(object sender, RoutedEventArgs e)
+    {
+        var entry = _viewModel.SelectedMemoryEntry;
+        if (entry is null)
+        {
+            System.Windows.MessageBox.Show("请先在列表中选中一条记忆，再点「删除选中」。", "删除记忆",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            return;
+        }
+        var keyText = string.IsNullOrEmpty(entry.Key) ? "会话片段" : entry.Key;
+        var preview = entry.Content.Length <= 80 ? entry.Content : entry.Content[..80] + "…";
+        var result = System.Windows.MessageBox.Show(
+            $"确定删除这条记忆？\n\n[{entry.Kind}:{keyText}]\n{preview}\n\n删除后 AI 不再召回该经验，不可恢复。",
+            "删除记忆", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (result == System.Windows.MessageBoxResult.Yes)
+            _ = _viewModel.DeleteMemoryEntryAsync(entry);
+    }
+
+    private void OnClearMemory(object sender, RoutedEventArgs e)
+    {
+        // 清空是破坏性操作（换 Embeddings 模型场景）：两次独立确认，防止误触
+        var r1 = System.Windows.MessageBox.Show(
+            "将删除记忆库全部条目（含会话片段/任务复盘/脚本/资产经验），用于更换 Embeddings 模型或向量维度等场景。\n\n此操作不可恢复！确定继续？",
+            "清空记忆库（1/2）", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (r1 != System.Windows.MessageBoxResult.Yes)
+            return;
+        var r2 = System.Windows.MessageBox.Show(
+            "再次确认：清空后所有历史向量与结构化经验将永久删除，且无法找回。之后请用「测试 Embeddings」验证新模型，并让 AI 重新登记脚本/经验。\n\n最终确认清空？",
+            "清空记忆库（2/2）", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (r2 == System.Windows.MessageBoxResult.Yes)
+            _ = _viewModel.ClearAllMemoryAsync();
+    }
 
     private void OnToggleMcp(object sender, RoutedEventArgs e)
     {

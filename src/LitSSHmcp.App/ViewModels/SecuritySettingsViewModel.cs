@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.ViewModels;
@@ -13,6 +14,10 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     private string _blockedCommands = string.Empty;
     private string _sensitiveCommands = string.Empty;
     private string _sensitivePatterns = string.Empty;
+    private bool _scriptRulesEnabled = true;
+    private string _scriptExtraBlockedPatterns = string.Empty;
+    private string _scriptExtraSensitivePatterns = string.Empty;
+    private string _scriptDisabledRuleLabels = string.Empty;
     private string _sqlBlockedPatterns = string.Empty;
     private string _sqlSensitivePatterns = string.Empty;
     private bool _fileTransferEnabled = true;
@@ -57,6 +62,13 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     public string BlockedCommands { get => _blockedCommands; set => Set(ref _blockedCommands, value); }
     public string SensitiveCommands { get => _sensitiveCommands; set => Set(ref _sensitiveCommands, value); }
     public string SensitivePatterns { get => _sensitivePatterns; set => Set(ref _sensitivePatterns, value); }
+    public bool ScriptRulesEnabled { get => _scriptRulesEnabled; set => Set(ref _scriptRulesEnabled, value); }
+    public string ScriptExtraBlockedPatterns { get => _scriptExtraBlockedPatterns; set => Set(ref _scriptExtraBlockedPatterns, value); }
+    public string ScriptExtraSensitivePatterns { get => _scriptExtraSensitivePatterns; set => Set(ref _scriptExtraSensitivePatterns, value); }
+    public string ScriptDisabledRuleLabels { get => _scriptDisabledRuleLabels; set => Set(ref _scriptDisabledRuleLabels, value); }
+
+    /// <summary>内置脚本规则标签提示（设置页展示，供"禁用的内置规则标签"参照）。</summary>
+    public string BuiltinScriptRuleLabelsHint => string.Join(" / ", ScriptRiskAnalyzer.BuiltinRuleLabels);
     public string SqlBlockedPatterns { get => _sqlBlockedPatterns; set => Set(ref _sqlBlockedPatterns, value); }
     public string SqlSensitivePatterns { get => _sqlSensitivePatterns; set => Set(ref _sqlSensitivePatterns, value); }
     public bool FileTransferEnabled { get => _fileTransferEnabled; set => Set(ref _fileTransferEnabled, value); }
@@ -109,6 +121,10 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             BlockedCommands = Join(s.CommandFilter.BlockedCommands);
             SensitiveCommands = Join(s.CommandFilter.SensitiveCommands);
             SensitivePatterns = Join(s.CommandFilter.SensitivePatterns);
+            ScriptRulesEnabled = s.ScriptRules.Enabled;
+            ScriptExtraBlockedPatterns = Join(s.ScriptRules.ExtraBlockedPatterns);
+            ScriptExtraSensitivePatterns = Join(s.ScriptRules.ExtraSensitivePatterns);
+            ScriptDisabledRuleLabels = Join(s.ScriptRules.DisabledBuiltinRuleLabels);
             SqlBlockedPatterns = Join(s.SqlFilter.BlockedPatterns);
             SqlSensitivePatterns = Join(s.SqlFilter.SensitivePatterns);
 
@@ -168,6 +184,11 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             s.CommandFilter.BlockedCommands = Split(BlockedCommands);
             s.CommandFilter.SensitiveCommands = Split(SensitiveCommands);
             s.CommandFilter.SensitivePatterns = Split(SensitivePatterns);
+            s.ScriptRules ??= new ScriptRiskConfig();
+            s.ScriptRules.Enabled = ScriptRulesEnabled;
+            s.ScriptRules.ExtraBlockedPatterns = Split(ScriptExtraBlockedPatterns);
+            s.ScriptRules.ExtraSensitivePatterns = Split(ScriptExtraSensitivePatterns);
+            s.ScriptRules.DisabledBuiltinRuleLabels = Split(ScriptDisabledRuleLabels);
             s.SqlFilter.BlockedPatterns = Split(SqlBlockedPatterns);
             s.SqlFilter.SensitivePatterns = Split(SqlSensitivePatterns);
 

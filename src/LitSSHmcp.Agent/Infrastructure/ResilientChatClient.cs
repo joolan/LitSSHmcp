@@ -22,10 +22,18 @@ public sealed class ResilientChatClient : DelegatingChatClient
         _maxRetries = Math.Max(0, maxRetries);
     }
 
+    /// <summary>
+    /// OpenAI 官方 <c>prompt_cache_key</c>（请求顶层字段，用于前缀缓存分组路由）：
+    /// 由 <see cref="ChatClientFactory"/> 按 provider 计算并设置，null=不注入（非官方端点）。
+    /// 注意：值须跨会话/重启稳定，变化会打散缓存分组。
+    /// </summary>
+    public string? PromptCacheKey { get; set; }
+
     public override async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
         var list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
+        options = ApplyCacheKey(options);
         await _gate.WaitAsync(cancellationToken);
         try
         {
@@ -56,6 +64,7 @@ public sealed class ResilientChatClient : DelegatingChatClient
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
+        options = ApplyCacheKey(options);
         await _gate.WaitAsync(cancellationToken);
         try
         {
@@ -104,6 +113,25 @@ public sealed class ResilientChatClient : DelegatingChatClient
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// 若设置了 <see cref="PromptCacheKey"/> 且调用方未自带 RawRepresentationFactory，
+    /// 则给 options 装一个 factory：用官方 JsonPatch 机制向请求体注入顶层 prompt_cache_key
+    /// （AdditionalProperties 不会进请求体；其余字段仍由 M.E.AI 正常回填）。
+    /// </summary>
+    private ChatOptions? ApplyCacheKey(ChatOptions? options)
+    {
+        if (PromptCacheKey is null || options is null || options.RawRepresentationFactory is not null)
+            return options;
+        var key = PromptCacheKey;
+        options.RawRepresentationFactory = _ =>
+        {
+            var raw = new OpenAI.Chat.ChatCompletionOptions();
+            raw.Patch.Set("$.prompt_cache_key"u8, key);
+            return raw;
+        };
+        return options;
     }
 
     private CancellationTokenSource CreateTimeout(CancellationToken ct)

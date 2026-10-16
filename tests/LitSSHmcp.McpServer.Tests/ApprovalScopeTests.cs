@@ -184,6 +184,7 @@ public class ApprovalScopeTests : IDisposable
         public bool Enabled { get; set; } = true;
         public CommandFilterConfig CommandFilter { get; set; } = new();
         public SqlFilterConfig SqlFilter { get; set; } = new();
+        public ScriptRiskConfig ScriptRisk { get; set; } = new();
         public FileTransferConfig FileTransfer { get; set; } = new();
         public SshHostKeyConfig SshHostKey { get; set; } = new();
         public DiscoveryConfig Discovery { get; set; } = new();

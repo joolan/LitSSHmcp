@@ -25,3 +25,6 @@ appliesTo: [datasource, redis, ssh]
 ## 注意
 - 危险命令（`FLUSHALL`/`KEYS`/`CONFIG REWRITE`/阻塞类）会被直接拒绝或强确认；优先 `SCAN` 而非 `KEYS`。
 - 写/管理命令一律弹桌面确认。
+
+## 深入（按需 skill_read）
+内存持续增长 runbook：`references/memory-runbook.md`（增长速率量化、大key/过期键/碎片归因、处置与验证）。

@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
         Title="{Binding WindowTitle}" Height="760" Width="1200" MinHeight="520" MinWidth="880"
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica"
         PreviewMouseDown="OnWindowPreviewMouseDown">
@@ -60,6 +61,13 @@
                                Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
                     <ComboBox Width="170" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
                               Visibility="{Binding IsSqlDb, Converter={StaticResource BoolToVis}}"/>
+                    <TextBlock Text="DB:" VerticalAlignment="Center" Margin="12,0,6,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               Visibility="{Binding IsRedisDb, Converter={StaticResource BoolToVis}}"/>
+                    <ComboBox Width="60" VerticalContentAlignment="Center"
+                              ItemsSource="{Binding RedisDatabases}" SelectedItem="{Binding SelectedRedisDb}"
+                              Visibility="{Binding IsRedisDb, Converter={StaticResource BoolToVis}}"
+                              ToolTip="Redis DB 索引（切换后自动重新扫描）"/>
                     <ui:Button Icon="{ui:SymbolIcon ArrowSync24}" Content="刷新" Padding="10,3" Margin="12,0,0,0"
                                Command="{Binding RefreshCommand}"/>
                     <CheckBox x:Name="WriteModeToggle" Content="⚠ 写入模式" Margin="20,0,0,0" VerticalAlignment="Center"
@@ -195,9 +203,35 @@
                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
                             <ui:Button DockPanel.Dock="Right" Content="刷新" Padding="8,2" Margin="4,0,0,0"
                                        ToolTip="重新加载对象树" Command="{Binding RefreshObjectsCommand}"/>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding ObjectFilterHint}"
+                                       Margin="8,0,0,0" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                             <ui:TextBox FontWeight="Normal" Text="{Binding ObjectFilter, UpdateSourceTrigger=PropertyChanged}"
-                                        PlaceholderText="搜索对象…"/>
+                                        PlaceholderText="搜索对象…（前缀命中优先）"/>
                         </DockPanel>
+
+                        <!-- 选中对象条：库 · 表名 · 列数/行数 + 备注，右侧快捷预览/生成 SELECT -->
+                        <Border DockPanel.Dock="Top" Margin="0,0,0,4" Padding="6,4" CornerRadius="4"
+                                Background="{DynamicResource AppSurfaceAltBrush}"
+                                Visibility="{Binding HasSelectedObject, Converter={StaticResource BoolToVis}}">
+                            <DockPanel LastChildFill="True">
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:Button Content="预览" Padding="8,2" Margin="4,0,0,0"
+                                               Command="{Binding PreviewCommand}" ToolTip="预览前 100 行"/>
+                                    <ui:Button Content="生成 SELECT" Padding="8,2" Margin="4,0,0,0"
+                                               Command="{Binding GenerateSelectCommand}"/>
+                                </StackPanel>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding SelectedObjectBar}" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding SelectedObjectBar}"/>
+                                    <TextBlock Text="{Binding SelectedObjectComment}" FontSize="11"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               Visibility="{Binding HasSelectedComment, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
                         <TreeView ItemsSource="{Binding ObjectTree}" BorderThickness="0" Background="Transparent"
                                   ItemContainerStyle="{StaticResource DbTreeItemStyle}"
                                   SelectedItemChanged="OnObjectTreeSelected"
@@ -206,6 +240,8 @@
                                   PreviewMouseRightButtonDown="OnObjectTreeRightDown">
                             <TreeView.ContextMenu>
                                 <ContextMenu>
+                                    <MenuItem Header="刷新对象" Command="{Binding RefreshObjectsCommand}"/>
+                                    <Separator/>
                                     <MenuItem Header="预览选中表" Command="{Binding PreviewCommand}"/>
                                     <Separator/>
                                     <MenuItem Header="生成 SELECT" Command="{Binding GenerateSelectCommand}"/>
@@ -214,30 +250,122 @@
                                     <MenuItem Header="生成 CALL" Command="{Binding GenerateCallCommand}"/>
                                     <Separator/>
                                     <MenuItem Header="生成 CREATE TABLE (DDL)" Command="{Binding GenerateDdlCommand}"/>
+                                    <Separator/>
+                                    <MenuItem Header="复制对象名" Click="OnCopyObjectName"/>
                                 </ContextMenu>
                             </TreeView.ContextMenu>
                             <TreeView.ItemTemplate>
                                 <HierarchicalDataTemplate ItemsSource="{Binding Children}"
                                                           ItemContainerStyle="{StaticResource DbTreeItemStyle}">
-                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Margin="2,1"/>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="2,1"
+                                                ToolTip="{Binding Tooltip}">
+                                        <ui:SymbolIcon Width="14" Height="14" FontSize="14" VerticalAlignment="Center"
+                                                       Margin="0,0,5,0">
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Symbol" Value="Table24"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Kind}" Value="Folder">
+                                                            <Setter Property="Symbol" Value="Folder24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Kind}" Value="View">
+                                                            <Setter Property="Symbol" Value="Eye24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Kind}" Value="Procedure">
+                                                            <Setter Property="Symbol" Value="Braces24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Kind}" Value="Column">
+                                                            <Setter Property="Symbol" Value="Textbox24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Kind}" Value="Index">
+                                                            <Setter Property="Symbol" Value="ArrowSort24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Kind}" Value="ForeignKey">
+                                                            <Setter Property="Symbol" Value="Link24"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding Detail}" VerticalAlignment="Center" FontSize="11"
+                                                   Margin="6,0,0,0"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
                                 </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
                         </TreeView>
                     </DockPanel>
 
-                    <!-- Redis：键浏览 -->
+                    <!-- Redis：键浏览（分批 SCAN + 时间预算，百万级键不卡死） -->
                     <DockPanel Visibility="{Binding IsRedisDb, Converter={StaticResource BoolToVis}}">
                         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4">
-                            <TextBlock Text="键（SCAN）" FontWeight="SemiBold" Margin="2,0,0,4"/>
+                            <TextBlock Text="键（SCAN，分批加载）" FontWeight="SemiBold" Margin="2,0,0,4"/>
                             <DockPanel>
-                                <ui:Button DockPanel.Dock="Right" Content="扫描" Padding="10,3" Margin="6,0,0,0"
-                                           Command="{Binding ScanKeysCommand}"/>
+                                <ui:Button DockPanel.Dock="Right" Content="扫描" Padding="8,3" Margin="6,0,0,0"
+                                           Command="{Binding ScanKeysCommand}" ToolTip="从头扫描（每次最多 2 秒 / 20 批，之后可「继续」）"/>
+                                <ui:Button DockPanel.Dock="Right" Content="继续" Padding="8,3" Margin="4,0,0,0"
+                                           Command="{Binding ScanMoreCommand}" ToolTip="继续上次未完成的扫描（再给 2 秒预算）"/>
+                                <ui:Button DockPanel.Dock="Right" Content="停止" Padding="8,3" Margin="4,0,0,0"
+                                           Command="{Binding StopScanCommand}" ToolTip="停止当前扫描 / 补全（Esc）"/>
                                 <ui:TextBox Text="{Binding KeyPattern, UpdateSourceTrigger=PropertyChanged}"
                                             PlaceholderText="MATCH 模式，如 user:*" KeyDown="OnKeyPatternKeyDown"/>
                             </DockPanel>
+                            <DockPanel Margin="0,4,0,0">
+                                <ui:Button DockPanel.Dock="Right" Content="补全类型/TTL/大小" Padding="8,3" Margin="6,0,0,0"
+                                           Command="{Binding LoadKeyMetaCommand}"
+                                           ToolTip="对已加载的键分批执行 TYPE/TTL/MEMORY USAGE（每批 50、10 秒预算）。MEMORY USAGE 会消耗 Redis CPU，键很多时分多次点。"/>
+                                <ComboBox DockPanel.Dock="Right" Width="72" Margin="6,0,0,0" VerticalContentAlignment="Center"
+                                          ItemsSource="{Binding RedisKeyTypeOptions}" SelectedItem="{Binding RedisKeyTypeFilter}"
+                                          ToolTip="按类型过滤（本地过滤；需先补全类型）"/>
+                                <ui:TextBox Text="{Binding RedisKeyFilter, UpdateSourceTrigger=PropertyChanged}"
+                                            PlaceholderText="本地过滤键名…（不回服务端）"/>
+                            </DockPanel>
+                            <ProgressBar Height="4" Margin="0,4,0,0" IsIndeterminate="{Binding IsScanning}"
+                                         Visibility="{Binding HasScanProgress, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="{Binding ScanProgress}" Margin="2,2,0,0" FontSize="11"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       Visibility="{Binding HasScanProgress, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
-                        <GroupBox Header="键（双击查看值）" Padding="4">
-                            <ListBox ItemsSource="{Binding RedisKeys}" MouseDoubleClick="OnKeyDoubleClick"/>
+                        <GroupBox Header="键（双击查看值 · 类型/TTL/大小可「补全」）" Padding="4">
+                            <ListView x:Name="RedisKeyList"
+                                      ItemsSource="{Binding RedisKeysView}"
+                                      SelectedItem="{Binding SelectedRedisKey}"
+                                      MouseDoubleClick="OnKeyDoubleClick"
+                                      PreviewMouseRightButtonDown="OnRedisKeyRightDown"
+                                      PreviewKeyDown="OnRedisKeyListKeyDown"
+                                      controls:GridViewSort.Enabled="True">
+                                <ListView.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="查看值"
+                                                  Command="{Binding UseKeyCommand}"
+                                                  CommandParameter="{Binding SelectedRedisKey}"/>
+                                        <MenuItem Header="补全类型/TTL/大小"
+                                                  Command="{Binding LoadKeyMetaCommand}"/>
+                                        <Separator/>
+                                        <MenuItem Header="复制键名"
+                                                  Command="{Binding CopyKeyCommand}"
+                                                  CommandParameter="{Binding SelectedRedisKey}"/>
+                                        <MenuItem Header="生成 GET 到输入框"
+                                                  Command="{Binding KeyToEditorCommand}"
+                                                  CommandParameter="{Binding SelectedRedisKey}"/>
+                                        <Separator/>
+                                        <MenuItem Header="删除键（写入模式）"
+                                                  Command="{Binding DeleteKeyCommand}"
+                                                  CommandParameter="{Binding SelectedRedisKey}"/>
+                                    </ContextMenu>
+                                </ListView.ContextMenu>
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="键" Width="230" DisplayMemberBinding="{Binding Key}"/>
+                                        <GridViewColumn Header="类型" Width="70" DisplayMemberBinding="{Binding TypeDisplay}"/>
+                                        <GridViewColumn Header="TTL" Width="90" DisplayMemberBinding="{Binding TtlDisplay}"/>
+                                        <GridViewColumn Header="大小/元素数" Width="110" DisplayMemberBinding="{Binding SizeDisplay}"/>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
                         </GroupBox>
                     </DockPanel>
                 </Grid>

@@ -63,7 +63,17 @@
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="单个工具结果注入上限(字符):" VerticalAlignment="Center"/>
-                                    <ui:TextBox FontWeight="Normal" Text="{Binding ToolResultMaxChars, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,0,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding ToolResultMaxChars, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,16,0"/>
+                                    <TextBlock Text="最大工具轮数:" VerticalAlignment="Center"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding MaxToolIterations, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Text="单轮墙钟预算(秒, 0=不限):" VerticalAlignment="Center"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding BudgetMaxTurnSeconds, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,16,0"
+                                                ToolTip="一条用户消息的完整工具循环超过该墙钟时间即停止本轮并提示，防止失控调用"/>
+                                    <TextBlock Text="会话成本上限(¥, 0=不限):" VerticalAlignment="Center"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding BudgetMaxSessionCost, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,0,0"
+                                                ToolTip="当前会话累计估算成本（按模型入/出价）达到上限后阻止发送；仅当所选模型已填价格时生效"/>
                                 </StackPanel>
                                 <CheckBox Content="自动摘要（裁剪旧轮次时压缩成摘要，按轮边界裁剪以保持工具配对）" IsChecked="{Binding AutoSummarize, Mode=TwoWay}" Margin="0,0,0,6"/>
                                 <CheckBox Content="精简工具描述（发送给模型时截短 MCP 工具描述以省 token，详见 mcp_usage_guide）" IsChecked="{Binding CompactToolDescriptions, Mode=TwoWay}" Margin="0,0,0,6"/>
@@ -94,7 +104,7 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
-                                <TextBlock Text="长期记忆 / RAG（Embeddings + 本地向量检索，可选）" FontWeight="SemiBold" Margin="0,12,0,6"/>
+                                <TextBlock Text="长期记忆 / RAG（远程 Embeddings 向量化，向量存本机 SQLite 并本地检索，可选）" FontWeight="SemiBold" Margin="0,12,0,6"/>
                                 <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="{DynamicResource AppRadiusS}" Padding="8" Margin="0,0,0,8">
                                     <DockPanel>
                                         <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="14" Margin="0,0,6,0"
@@ -104,13 +114,22 @@
                                     </DockPanel>
                                 </Border>
                                 <CheckBox Content="启用长期记忆（历史会话 + 工作区文档向量检索）" IsChecked="{Binding MemoryEnabled}" Margin="0,0,0,4"/>
+                                <TextBlock Text="{Binding MemoryConfigWarning}" TextWrapping="Wrap" Margin="0,0,0,6" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource AppWarningBrush}"
+                                           Visibility="{Binding HasMemoryConfigWarning, Converter={StaticResource BoolToVis}}"/>
                                 <TextBlock Text="Embeddings Endpoint（如 https://api.openai.com/v1）:"/><ui:TextBox FontWeight="Normal" Text="{Binding MemoryEndpoint, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
                                 <TextBlock Text="Embeddings 模型名（如 text-embedding-3-small / bge-m3）:"/><ui:TextBox FontWeight="Normal" Text="{Binding MemoryModel, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-                                <TextBlock Text="Embeddings API Key（留空复用对话模型 Key；本机加密存储）:"/><ui:TextBox FontWeight="Normal" Text="{Binding MemoryApiKey, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                                <TextBlock Text="Embeddings API Key（留空复用对话模型 Key；本机加密存储）:"/><PasswordBox FontWeight="Normal" x:Name="MemoryApiKeyBox" PasswordChar="●" Margin="0,0,0,6" PasswordChanged="OnMemoryApiKeyChanged"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="召回条数 TopK:" VerticalAlignment="Center"/>
                                     <ui:TextBox FontWeight="Normal" Text="{Binding MemoryTopK, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"/>
+                                    <ui:Button Content="测试 Embeddings" Padding="12,3" Margin="16,0,8,0" Click="OnTestEmbeddings"
+                                               ToolTip="用当前页填写的端点/模型/Key 发起一次向量化请求（无需先保存）；Key 留空复用当前启用对话模型的 Key"/>
+                                    <ui:Button Content="查看记忆统计" Padding="12,3" Click="OnMemoryStats"
+                                               ToolTip="读取本机 agent.db 记忆库：总条数、按类别分布、已过时条数与库文件位置"/>
                                 </StackPanel>
+                                <TextBlock Text="{Binding MemoryStatsText}" TextWrapping="Wrap" Margin="0,0,0,6"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}" FontFamily="Consolas" FontSize="11"/>
 
                                 <TextBlock Text="会话保留策略（0 = 不限）" FontWeight="SemiBold" Margin="0,12,0,6"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
@@ -351,6 +370,54 @@
                                                 <ui:Button Content="删除" Padding="10,3" Click="OnDeleteArchived"/>
                                             </StackPanel>
                                         </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </Grid>
+                </TabItem>
+                <!-- ===== Tab：记忆管理（浏览/按类别过滤/删除/清空；更换 Embeddings 模型前清空旧向量）===== -->
+                <TabItem Header="记忆管理">
+                    <Grid Margin="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Margin="0,0,0,8" LastChildFill="False">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <TextBlock Text="类别:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox ItemsSource="{Binding MemoryKindFilters}" SelectedItem="{Binding MemoryKindFilter, Mode=TwoWay}"
+                                          Width="110" Margin="0,0,12,0"
+                                          ToolTip="全部=不限；task=任务复盘 / script=脚本经验 / asset=资产经验 / raw=会话与文档片段"/>
+                                <ui:Button Content="刷新" Padding="12,4" Margin="0,0,8,0" Click="OnReloadMemories"/>
+                                <ui:Button Content="删除选中" Padding="12,4" Margin="0,0,8,0" Click="OnDeleteMemory"/>
+                                <ui:Button Content="清空全部记忆" Padding="12,4" Click="OnClearMemory"
+                                           ToolTip="删除记忆库全部条目（含会话片段/任务复盘/脚本/资产经验）。更换 Embeddings 模型或向量维度时必须清空，否则历史向量不可检索。需二次确认"/>
+                            </StackPanel>
+                            <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       Text="记忆是 AI 的长期经验库（本机 agent.db）。删除单条用于纠错；更换 Embeddings 模型前请「清空全部」，否则旧维度向量无法检索。"/>
+                        </DockPanel>
+                        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}">
+                            <ListBox ItemsSource="{Binding MemoryEntries}" SelectedItem="{Binding SelectedMemoryEntry, Mode=TwoWay}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="Padding" Value="10,7"/>
+                                        <Setter Property="Margin" Value="0,0,0,2"/>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel ToolTip="{Binding Content}">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontFamily="Microsoft YaHei"/>
+                                            <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        </StackPanel>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>

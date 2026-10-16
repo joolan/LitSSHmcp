@@ -74,7 +74,9 @@ builder.Services.AddSingleton<ISnapshotCollector, NginxTlsSnapshotCollector>();
 builder.Services.AddSingleton<ISnapshotCollector, SystemdHealthSnapshotCollector>();
 builder.Services.AddSingleton<ISnapshotCollector, SecurityAuditSnapshotCollector>();
 builder.Services.AddSingleton<ISecurityOptionsProvider, SecurityOptionsProvider>();
-builder.Services.AddSingleton<ICommandFilterService, CommandFilterService>();
+        builder.Services.AddSingleton<ICommandFilterService, CommandFilterService>();
+        // 脚本内容风险扫描(服务端权威): 上传/执行脚本前的规则分析, 报告附在审批弹窗
+        builder.Services.AddSingleton<ScriptRiskAnalyzer>();
 builder.Services.AddSingleton<ISqlFilterService, SqlFilterService>();
 builder.Services.AddSingleton<IGuardedCommandService, GuardedCommandService>();
 builder.Services.AddSingleton(new McpSessionTracker(sessionId));
@@ -83,7 +85,12 @@ builder.Services.AddSingleton<ITargetLimiter, TargetLimiter>();
 
 builder.Services.AddSingleton<IMySqlConnectionProvider, MySqlConnectionProvider>();
 builder.Services.AddSingleton<IPostgresConnectionProvider, PostgresConnectionProvider>();
-builder.Services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
+// Redis: 裸 provider 供"测试连接/健康检查"用（每次新建连接，反映真实连通性）；
+// redis_read/redis_execute/redis_diagnostics 注入 RedisSessionCache 复用连接与 SSH 隧道
+// （每调用新建连接时隧道模式多花 1~3s，且 SELECT 切库只对当次连接生效——下一调用又回默认库）。
+builder.Services.AddSingleton<RedisConnectionProvider>();
+builder.Services.AddSingleton<IRedisConnectionProvider>(sp => sp.GetRequiredService<RedisConnectionProvider>());
+builder.Services.AddSingleton(sp => new RedisSessionCache(sp.GetRequiredService<RedisConnectionProvider>()));
 
 // 数据源驱动: 新增数据源类型只需在此多注册一个 IDatasourceDriver 实现(驱动自报 Type),
 // DatasourceDriverRegistry 以 IEnumerable<IDatasourceDriver> 注入并自动建立索引。

@@ -28,3 +28,6 @@ appliesTo: [ssh, command, service, docker, topology]
 ## 注意
 - 发布/回滚均为变更操作：遵循"先只读取证 → 最小变更 → 变更后验证"，并说明影响与回滚点。
 - 涉及重启/切版本前，确认无正在进行的批量任务。
+
+## 深入（按需 skill_read）
+CI/CD 快速回滚 runbook：`references/ci-cd-rollback-runbook.md`（决策门槛、按发布形态回滚对照表、回滚后验证清单）。

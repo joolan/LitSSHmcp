@@ -59,7 +59,8 @@ internal sealed class ApprovalDialog : Form
         string? filePath,
         int timeoutSeconds,
         bool topMost,
-        IReadOnlyList<string>? sessionGrantedTools = null)
+        IReadOnlyList<string>? sessionGrantedTools = null,
+        string? riskReport = null)
     {
         _command = command;
         _topMost = topMost;
@@ -71,12 +72,14 @@ internal sealed class ApprovalDialog : Form
         MaximizeBox = false;
         ShowIcon = false;
         TopMost = topMost;
-        ClientSize = new Size(680, 560);
-        MinimumSize = new Size(680, 560);
+        // 有风险报告时加宽为左右分栏（左命令右风险），无报告时保持原尺寸
+        var hasRisk = !string.IsNullOrWhiteSpace(riskReport);
+        ClientSize = new Size(hasRisk ? 860 : 680, 560);
+        MinimumSize = new Size(hasRisk ? 860 : 680, 560);
         Font = new Font("Microsoft YaHei UI", 9F);
         BackColor = Color.White;
 
-        Controls.Add(BuildBody(serverName, operation, filePath, sessionGrantedTools));
+        Controls.Add(BuildBody(serverName, operation, filePath, sessionGrantedTools, riskReport));
         Controls.Add(BuildFooter(timeoutSeconds));
         Controls.Add(BuildHeader(serverName));
 
@@ -166,11 +169,11 @@ internal sealed class ApprovalDialog : Form
         return header;
     }
 
-    private Panel BuildBody(string serverName, string operation, string? filePath, IReadOnlyList<string>? sessionGrantedTools)
+    private Panel BuildBody(string serverName, string operation, string? filePath, IReadOnlyList<string>? sessionGrantedTools, string? riskReport)
     {
         var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(18, 14, 18, 8) };
 
-        // 命令框（Fill，须最先加入以便其余 Dock 控件先占位）
+        // 命令框
         var cmdBox = new TextBox
         {
             Text = _command,
@@ -183,28 +186,51 @@ internal sealed class ApprovalDialog : Form
             BorderStyle = BorderStyle.FixedSingle
         };
 
+        // 内容区：无风险报告=单栏命令；有报告=左右分栏（左命令右风险）
+        Control contentArea;
+        if (string.IsNullOrWhiteSpace(riskReport))
+        {
+            contentArea = cmdBox;
+        }
+        else
+        {
+            var split = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical,
+                FixedPanel = FixedPanel.Panel2,
+                SplitterDistance = 430,
+                Panel1MinSize = 260,
+                Panel2MinSize = 260,
+                BackColor = Border
+            };
+
+            var riskHeader = BuildSectionHeader("脚本风险分析（服务端规则扫描）");
+            var riskBox = new TextBox
+            {
+                Text = riskReport,
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical,
+                Dock = DockStyle.Fill,
+                Font = new Font("Consolas", 9F),
+                BackColor = CmdBack,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            var riskPanel = new Panel { Dock = DockStyle.Fill };
+            riskPanel.Controls.Add(riskBox);
+            riskPanel.Controls.Add(riskHeader);   // Fill 先入列，Top 后布局
+
+            split.Panel1.Controls.Add(cmdBox);
+            split.Panel2.Controls.Add(riskPanel);
+            contentArea = split;
+        }
+
         // 放行范围区（底部）
         var scope = BuildScopePanel(sessionGrantedTools);
 
         // 命令区标题行：标签 + 复制按钮
-        var cmdHeader = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            ColumnCount = 2,
-            Height = 26,
-            Margin = new Padding(0, 6, 0, 0)
-        };
-        cmdHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        cmdHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var cmdLabel = new Label
-        {
-            Text = "即将执行的内容",
-            ForeColor = TextPrimary,
-            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(0)
-        };
+        var cmdHeaderRow = BuildSectionHeader("即将执行的内容");
         var copy = new Button
         {
             Text = "复制",
@@ -220,8 +246,7 @@ internal sealed class ApprovalDialog : Form
         {
             try { Clipboard.SetText(_command); } catch { /* ignore */ }
         };
-        cmdHeader.Controls.Add(cmdLabel, 0, 0);
-        cmdHeader.Controls.Add(copy, 1, 0);
+        cmdHeaderRow.Controls.Add(copy, 1, 0);
 
         // 元信息行：操作类型徽章 + 文件/目标
         var meta = new FlowLayoutPanel
@@ -254,11 +279,35 @@ internal sealed class ApprovalDialog : Form
         }
 
         // 加入顺序 = 反向 Dock：Fill 最先入列最后布局
-        body.Controls.Add(cmdBox);
+        body.Controls.Add(contentArea);
         body.Controls.Add(scope);
-        body.Controls.Add(cmdHeader);
+        body.Controls.Add(cmdHeaderRow);
         body.Controls.Add(meta);
         return body;
+    }
+
+    /// <summary>内容区标题行（左标题 label + 右侧按钮位预留）。</summary>
+    private static TableLayoutPanel BuildSectionHeader(string title)
+    {
+        var header = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 2,
+            Height = 26,
+            Margin = new Padding(0, 6, 0, 0)
+        };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.Controls.Add(new Label
+        {
+            Text = title,
+            ForeColor = TextPrimary,
+            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(0)
+        }, 0, 0);
+        return header;
     }
 
     private Panel BuildScopePanel(IReadOnlyList<string>? sessionGrantedTools)

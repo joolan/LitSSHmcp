@@ -37,6 +37,7 @@ public class DockerCommandDefaultsTests
         public bool Enabled => _config.Security.Enabled;
         public Core.Models.CommandFilterConfig CommandFilter => _config.Security.CommandFilter;
         public Core.Models.SqlFilterConfig SqlFilter => _config.Security.SqlFilter;
+        public Core.Models.ScriptRiskConfig ScriptRisk => _config.Security.ScriptRules;
         public Core.Models.FileTransferConfig FileTransfer => _config.Security.FileTransfer;
         public Core.Models.SshHostKeyConfig SshHostKey => _config.Security.SshHostKey;
         public Core.Models.DiscoveryConfig Discovery => _config.Security.Discovery;

@@ -390,6 +390,9 @@ public sealed class RedisCommandResultDto
     public string? Name { get; set; }
     public string[]? Command { get; set; }
 
+    /// <summary>命令实际生效的 Redis DB 索引（db 参数或数据源默认库），便于确认没操作错库。</summary>
+    public int? Db { get; set; }
+
     /// <summary>命令结果的 JSON 文本（标量为 JSON 字面量如 <c>"hello"</c>/<c>42</c>，数组为 JSON 数组）。</summary>
     public string? Result { get; set; }
 

@@ -22,7 +22,8 @@ public static class SystemPromptBuilder
         IReadOnlyList<string>? skillFiles = null, bool spillTools = false, bool subAgent = false, string? responseStyle = null,
         IReadOnlyCollection<string>? availableGroups = null, string? agentName = null, string? agentPrompt = null,
         string? agentStyle = null, string? skillsRoot = null,
-        IReadOnlyList<ExternalMcpServerInfo>? externalMcp = null, bool builtinMcpDisabled = false)
+        IReadOnlyList<ExternalMcpServerInfo>? externalMcp = null, bool builtinMcpDisabled = false,
+        bool memoryTools = false, bool scriptTools = false, string? assetGraph = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine(BasePrompt);
@@ -58,6 +59,31 @@ public static class SystemPromptBuilder
             sb.AppendLine("处理多步任务时, 先用 update_plan 提交完整计划(每行 '- [ ] 步骤'); 之后每完成一步就再次调用 update_plan 并把已完成项标为 '- [x]'。简单单步问题不必使用。");
         }
 
+        if (memoryTools)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## 经验记忆(ops_memory_*)");
+            sb.AppendLine("- 工具: ops_memory_list(查询) / ops_memory_save(写入或合并) / ops_memory_update(修正或标过时) / ops_memory_delete(删除)。");
+            sb.AppendLine("- **先查后做**: 开始排查/处置前先 ops_memory_list(kind=task, 或 assetId=当前资产) 查同类经验; 命中则优先沿用已验证路径, 但结论仍以本次工具实际结果为准, 记忆仅供参考。");
+            sb.AppendLine("- **成功后记**: 任务成功解决且值得复用时用 ops_memory_save: kind=task, key=任务语义键(如 `磁盘满:ssh:web01`), content=现象→根因→**验证成功的解决路径**, assetIds=涉及资产(id 用 ssh:/ds:/app: 前缀)。");
+            sb.AppendLine("- **保持更新**: 同 key 再次成功会自动频次+1 并覆盖为最新路径; 旧路径已失效时用 ops_memory_update 标 status=superseded(不再召回)。资产经验 kind=asset, 脚本经验 kind=script。");
+            sb.AppendLine("- **内容质量**: 只记**重要且可复用**的内容(根因/最佳路径/坑); 不记一次性问答、不贴原始长日志(日志只记 应用/路径 + 关键行摘要 ≤3 行); 结构 = 现象→根因→处置→验证。");
+            sb.AppendLine("- **资产关联必填**: 涉及具体服务器/数据源/应用时 assetIds 必须填写; 纯知识性经验(如配置语法)可留空。");
+            sb.AppendLine("- **凭据绝不入库**: 密码/密钥/令牌等敏感信息一律不写入记忆(会被质量门拒绝); 记录\"用了哪个凭据别名/哪台机器\"即可。");
+        }
+
+        if (scriptTools)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## 可复用脚本(scripts/)与脚本安全");
+            sb.AppendLine($"- 目录约定: `{ScriptTools.LocalDir}/`(本机 PowerShell/Python)、`{ScriptTools.RemoteDir}/`(服务器 shell/Python), 台账 `{ScriptTools.ManifestPath}`。");
+            sb.AppendLine("- **先查再写**: 沉淀或复用前先 ops_doc_read(\"" + ScriptTools.ManifestPath + "\") 查是否已有同类脚本; 有则直接复用并核对兼容性。");
+            sb.AppendLine("- **预判沉淀**: 本地 shell 任务若会重复出现, 优先做成脚本落盘而非一次性命令; 复杂远程任务走「本地生成→上传→执行→验证→清理」闭环(按技能 script-deploy-verify 执行)。");
+            sb.AppendLine("- **完成后登记**: ops_script_register(path, summary, compat, deployedTo, verified) 更新台账并同步记忆; 重复登记同一 path 会合并已部署资产。");
+            sb.AppendLine("- **兼容性必须声明**: python 区分 2.7/3.x(2.7 禁 f-string/注解), shell 标 POSIX sh 或 bash4+; 不确定目标环境先探测(`python --version`/`cat /etc/os-release`)。");
+            sb.AppendLine("- **脚本永不免审**: 本地或远程脚本执行前必须完成风险分析(规则扫描+摘要)并取得用户同意, 走审批流程; 未审脚本、内容被改过的脚本一律先审再执行。");
+        }
+
         if (spillTools || subAgent)
         {
             sb.AppendLine();
@@ -66,6 +92,14 @@ public static class SystemPromptBuilder
                 sb.AppendLine("- 工具结果若提示已落盘为 `spill://…`, 用 `spill_read`/`spill_grep` 分段读取, **不要重复调用原工具**。");
             if (subAgent)
                 sb.AppendLine("- 复杂的**只读**取证(大日志/多步排查)可委派 `run_subagent` 在隔离上下文完成, 只返回摘要, 避免大输出占用主上下文。");
+        }
+
+        if (!string.IsNullOrWhiteSpace(assetGraph))
+        {
+            sb.AppendLine();
+            sb.AppendLine("## 资产清单(拓扑快照)");
+            sb.AppendLine("以下是会话启动时的配置资产快照(ID 可直接作为工具参数); 状态/详情以工具实际查询为准:");
+            sb.AppendLine(assetGraph.Trim());
         }
 
         if (!string.IsNullOrWhiteSpace(serverInstructions))

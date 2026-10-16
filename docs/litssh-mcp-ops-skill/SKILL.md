@@ -1,6 +1,6 @@
 ---
 name: litssh-mcp-ops-skill
-description: Use when operating or troubleshooting servers and applications through the LitSSH MCP server (LitSSHmcp) — SSH command execution, server snapshots, Docker containers, systemd services, Java/JVM diagnostics, log files, MySQL/PostgreSQL/Redis, topology and app health. Triggers on tools like ssh_execute_command, ssh_snapshot_get/ssh_snapshot_refresh, docker_ps, service_status, java_threads, log_tail/log_grep/log_find, app_health_snapshot, mysql_diagnostics, and on requests such as 服务器排查, 整机态势/快照, 应用日志, 容器起不来, JVM/CPU 飙高, 数据库连不上. Also gives SSH-based workarounds for capabilities the MCP does not expose directly. Maintains an ops asset/app-topology ledger (OPS_ASSETS.md) in the workspace — creating and correcting it while operating so servers/apps/log paths/dependencies stay accurate.
+description: Use when operating or troubleshooting servers and applications through the LitSSH MCP server (LitSSHmcp) — SSH command execution, server snapshots, Docker containers, systemd services, Java/JVM diagnostics, log files, MySQL/PostgreSQL/Redis, topology and app health. Triggers on tools like ssh_execute_command, ssh_snapshot_get/ssh_snapshot_refresh, docker_ps, service_status, java_threads, log_tail/log_grep/log_find, app_health_snapshot, mysql_diagnostics, and on requests such as 服务器排查, 整机态势/快照, 应用日志, 容器起不来, JVM/CPU 飙高, 数据库连不上. Also gives SSH-based workarounds for capabilities the MCP does not expose directly. Maintains an ops asset/app-topology ledger (OPS_ASSETS.md) in the workspace — creating and correcting it while operating so servers/apps/log paths/dependencies stay accurate. Uses structured ops memory (ops_memory_* — 自动召回 + list/save/update, 查后做、成后记) and reusable remote scripts (scripts/ + ops_script_register, 永不免审) to accumulate verified ops paths across sessions.
 ---
 
 # LitSSH MCP 服务器运维排障
@@ -14,6 +14,7 @@ description: Use when operating or troubleshooting servers and applications thro
 ## 0. 开始前
 
 0. **资产档案按需读取**：需要既有的服务器/应用/日志路径/拓扑信息时，才读工作区 `OPS_ASSETS.md`（见第 9 节）；本次确认/纠正了新事实再**增量更新**，**不必每轮都读写**。
+   **先查记忆再动手**：每轮用户消息会**自动召回**相关记忆注入上下文（格式 `[kind:key ×freq] 内容`，`×freq` 越高 = 越多环境验证过；`superseded` 条目不再出现）——先看有没有现成路径；没有或想按类别翻阅时用 `ops_memory_list(kind=task|asset|script, assetId?)`。用过脚本再查 `scripts/MANIFEST.md`（见第 10 节）。
 1. 不确定有哪些工具 / 怎么用 → 调 `mcp_usage_guide`；MCP 自身异常 → `mcp_self_check`。
 2. 拿到准确的标识：
    - 服务器：`ssh_list_servers` → 取 `id`（用 `id` 最稳，也可传名称/主机名）。
@@ -25,6 +26,7 @@ description: Use when operating or troubleshooting servers and applications thro
 
 - 敏感命令（`rm/chmod/systemctl restart/docker run|exec|restart` 等）会触发**人工审批**，可能返回：`rejected`（人工拒绝，**不要重试**）、`approval_timeout`（超时，提示用户后可重试）、`approval_unavailable`（无可用审批通道）。
 - 危险命令返回 `blocked`（**不会执行，不要改写绕过**）。
+- **脚本永不免审**：上传脚本（`.sh/.py/.ps1` 等）与执行脚本文件（`bash x.sh`、`python3 a.py`、`./x.sh`）前，服务端会扫描内容并把报告放进审批弹窗；命中危险模式返回 `blocked`/`blocked_script`——**按报告修脚本，不要改扩展名或拆命令绕过**（`bash -c "…"` 内联形态没有脚本门，但其内容按普通命令扫描）。
 - 审批模式（`security.approval.mode`）可被设为 `auto-approve` / `auto-reject`：若返回 `rejected` 且提示“审批模式(自动拒绝)”，说明是服务器配置，**本次会话不要反复重试**。
 - 结果统一含 `success` + `status` + `error`，并回显 `serverId/serverName/host`。常见 `status`：`blocked` / `rejected` / `approval_timeout` / `approval_unavailable` / `server_not_found` / `server_ambiguous` / `server_disabled` / `datasource_not_found` / `datasource_ambiguous` / `app_not_found` / `path_not_allowed` / `readonly_statement` / `not_readonly_statement` / `auth_failed` / `host_key_mismatch` / `timeout` / `rate_limited` / `connection_error` / `pid_not_found` / `pid_ambiguous` / `log_path_ambiguous`。
 - `host_key_mismatch` 可能是安全事件：先人工核对 SSH 指纹，**不要**自动忽略。
@@ -133,3 +135,19 @@ description: Use when operating or troubleshooting servers and applications thro
 - **内容结构**：服务器 / 数据源 / 应用（含端口、部署路径、**日志路径**）/ 拓扑关系 / 待确认存疑 / 更新日志（表格）；**结构可按实际环境扩展/精简**（如域名证书、Cron、MQ、备份、K8s 等）。
 - **核心规则**（细则见 `references/asset-ledger.md`）：① 以 MCP 实时数据为准纠正；② 存稳定的 `id`；③ 只记事实带证据；④ **绝不存密钥**；⑤ 合并去重；⑥ 冲突不硬猜（放“待确认”并问用户）；⑦ 不覆盖用户手写内容；⑧ **可按实际调整文档结构/内容，但必须注明调整原因**（在更新日志以 `类型=结构` 记录：改了什么 + 为什么 + 影响）。
 - **文档过大可拆分**：条目/日志很多时，拆成“主索引 `OPS_ASSETS.md` + 子文件”（如 `ops/asset-changelog.md` 单独放更新日志、`ops/asset-apps.md` 等）；主文档保留摘要与相对链接，同一事实只存一处，拆分同样要注明原因。
+
+## 10. 经验记忆与脚本复用（跨会话积累）
+
+**目标**：把“每次重新摸索”变成“查一下照着走”。记忆由**模型主动调用**工具写入（SQLite），工作区 `scripts/` 存可复用脚本，二者都随工作区沉淀。
+
+- **查后做**：相关记忆**每轮自动召回**注入上下文（`[kind:key ×freq] 内容`，`×freq` 越高 = 越多环境验证过）；主动翻阅/按类别筛选用 `ops_memory_list(kind, assetId?, limit)`。
+- **成后记**（只记可复用的，失败教训也可）：
+  - `ops_memory_save(kind, key, content, assetIds?, tags?)` — `kind`：`task`（已验证操作路径/排障步骤）、`script`（脚本用途与要点）、`asset`（服务器/应用事实，文档之外的机器可读补充）。
+  - 同 `kind+key` 再次保存 = 合并更新（频次+1、资产合并）；**路径改进时**用 `ops_memory_update(key, content, status="superseded")` 让旧记录退役，不要原地抹掉历史。
+  - `ops_memory_list(kind, limit)` / `ops_memory_delete(key)`（按 kind 管理，删除同 key 最新一条）。
+  - 记一条 = 一段话可直接照做的事实（含关键参数/输出特征），不记流水账；**绝密钥/口令/私钥路径**。
+- **脚本复用闭环**（详见 `docs/skills/script-deploy-verify/SKILL.md`）：
+  - 工作区约定：`scripts/local/`（源）、`scripts/remote/`（远端副本/说明）、`scripts/MANIFEST.md`（台账：路径/用途/适用环境/已部署资产/哈希）。
+  - 写完或验证通过后 `ops_script_register(path, purpose, ...)` 登记台账并同步 `kind=script` 记忆。
+  - 上传/执行走 `ssh_upload_file` + `ssh_execute_command`（照常审批，见第 1 节脚本门）；执行前先做解释器兼容性探测（`python3` vs `python2.7`、`/bin/sh` 是否 dash）。
+  - **已有等价脚本就复用**：先读 `MANIFEST.md` + `ops_memory_list(kind="script")`，再决定新写。

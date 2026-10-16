@@ -18,6 +18,8 @@ namespace LitSSHmcp.McpServer.Tools;
 /// Redis 工具组（第一期:只读诊断/只读命令 + 写命令审批）。
 /// 安全模型与 MySQL 一致: 密码只在本机, AI 只用 datasourceId 引用; 命令经
 /// <see cref="RedisCommandPolicy"/> 分类(只读白名单/危险拒绝/写操作审批)并全部写入审计。
+/// 连接经 <see cref="RedisSessionCache"/> 复用（同 数据源+DB 一条连接/隧道，空闲 30s 释放），
+/// 并提供 db 参数显式指定库（比在命令里发 SELECT 更可靠、可审计）。
 /// </summary>
 [McpServerToolType]
 public class RedisTools
@@ -25,20 +27,20 @@ public class RedisTools
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(30);
 
     private readonly IConfigService _configService;
-    private readonly IRedisConnectionProvider _connectionProvider;
+    private readonly RedisSessionCache _connections;
     private readonly IApprovalService _approvalService;
     private readonly IAuditLogService _auditLogService;
     private readonly ISecurityOptionsProvider _securityOptions;
 
     public RedisTools(
         IConfigService configService,
-        IRedisConnectionProvider connectionProvider,
+        RedisSessionCache connections,
         IApprovalService approvalService,
         IAuditLogService auditLogService,
         ISecurityOptionsProvider securityOptions)
     {
         _configService = configService;
-        _connectionProvider = connectionProvider;
+        _connections = connections;
         _approvalService = approvalService;
         _auditLogService = auditLogService;
         _securityOptions = securityOptions;
@@ -48,14 +50,19 @@ public class RedisTools
     [Description("Redis整体诊断: 内存/客户端/命中率/键空间/慢日志/主从/持久化。问'缓存慢/内存涨/命中率低'时优先用; 看具体key用redis_read")]
     public async Task<DiagnosticsResultDto> RedisDiagnostics(
         [Description("数据源标识: ID/名称, 可用datasource_list列出(type=redis)")] string datasourceId,
+        [Description("Redis DB 索引(0..15, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
         CancellationToken cancellationToken = default)
     {
         var (ds, status, error) = await ResolveAsync(datasourceId);
         if (ds == null) return DiagnosticsResultDto.Fail(status!, error!);
 
+        var (withDb, dbError) = ApplyDb(ds, db);
+        if (withDb == null) return DiagnosticsResultDto.Fail("invalid_db", dbError!);
+        ds = withDb;
+
         try
         {
-            var driver = new RedisDriver(_connectionProvider);
+            var driver = new RedisDriver(_connections);
             var result = await driver.DiagnoseAsync(ds, cancellationToken);
 
             await AuditAsync(ds, SqlOperation.Diagnostics, "-- redis diagnostics",
@@ -83,15 +90,20 @@ public class RedisTools
     }
 
     [McpServerTool(Name = "redis_read", UseStructuredContent = true, OutputSchemaType = typeof(RedisCommandResultDto), ReadOnly = true, OpenWorld = true)]
-    [Description("在Redis数据源执行只读命令(GET/HGETALL/INFO/SLOWLOG等白名单)。写命令用redis_execute, 整体体检用redis_diagnostics; 含空格的值用引号, 如 HGETALL user:1")]
+    [Description("在Redis数据源执行只读命令(GET/HGETALL/INFO/SLOWLOG等白名单)。写命令用redis_execute, 整体体检用redis_diagnostics; 含空格的值用引号, 如 HGETALL user:1; 切库用db参数(不要发SELECT)")]
     public async Task<RedisCommandResultDto> RedisRead(
         [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
         [Description("Redis命令, 如 GET key / HGETALL user:1 / SLOWLOG GET 10")] string command,
+        [Description("Redis DB 索引(0..15, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
         [Description("数组返回的最大元素数(默认200, 上限1000), 超出截断")] int maxItems = 200,
         CancellationToken cancellationToken = default)
     {
         var (ds, status, error) = await ResolveAsync(datasourceId);
         if (ds == null) return RedisCommandResultDto.Fail(status!, error!);
+
+        var (withDb, dbError) = ApplyDb(ds, db);
+        if (withDb == null) return RedisCommandResultDto.Fail("invalid_db", dbError!);
+        ds = withDb;
 
         var args = Parse(command, out var parseError);
         if (args == null)
@@ -128,7 +140,7 @@ public class RedisTools
             using var _ = session;
             using var timeout = CreateTimeout(ds, cancellationToken);
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var reply = await session.Client.ExecuteAsync(args, timeout.Token);
+            var reply = await session.ExecuteAsync(args, timeout.Token);
             stopwatch.Stop();
 
             if (reply.IsError)
@@ -151,6 +163,7 @@ public class RedisTools
                 DatasourceId = ds.Id,
                 Name = ds.Name,
                 Command = args,
+                Db = EffectiveDb(ds),
                 Result = JsonSerializer.Serialize(formatted.Value),
                 Truncated = formatted.Truncated,
                 DurationMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 2),
@@ -166,14 +179,19 @@ public class RedisTools
     }
 
     [McpServerTool(Name = "redis_execute", UseStructuredContent = true, OutputSchemaType = typeof(RedisCommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("在Redis数据源执行写/管理命令(SET/DEL/EXPIRE/CONFIG SET等)。危险命令拒绝、其余一律桌面确认; 只读用redis_read")]
+    [Description("在Redis数据源执行写/管理命令(SET/DEL/EXPIRE/CONFIG SET等)。危险命令拒绝、其余一律桌面确认; 只读用redis_read; 切库用db参数(不要发SELECT)")]
     public async Task<RedisCommandResultDto> RedisExecute(
         [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
         [Description("要执行的Redis写命令, 含空格的值用引号包裹, 如 SET session:1 'abc' EX 60")] string command,
+        [Description("Redis DB 索引(0..15, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
         CancellationToken cancellationToken = default)
     {
         var (ds, status, error) = await ResolveAsync(datasourceId);
         if (ds == null) return RedisCommandResultDto.Fail(status!, error!);
+
+        var (withDb, dbError) = ApplyDb(ds, db);
+        if (withDb == null) return RedisCommandResultDto.Fail("invalid_db", dbError!);
+        ds = withDb;
 
         var args = Parse(command, out var parseError);
         if (args == null)
@@ -230,7 +248,7 @@ public class RedisTools
             using var _ = session;
             using var timeout = CreateTimeout(ds, cancellationToken);
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var reply = await session.Client.ExecuteAsync(args, timeout.Token);
+            var reply = await session.ExecuteAsync(args, timeout.Token);
             stopwatch.Stop();
 
             if (reply.IsError)
@@ -251,6 +269,7 @@ public class RedisTools
                 DatasourceId = ds.Id,
                 Name = ds.Name,
                 Command = args,
+                Db = EffectiveDb(ds),
                 Result = JsonSerializer.Serialize(RedisValueFormatter.Format(reply, 100).Value),
                 DurationMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 2)
             };
@@ -276,11 +295,48 @@ public class RedisTools
         return (ds, null, null);
     }
 
+    /// <summary>
+    /// 应用 db 参数：克隆数据源并把 DefaultDatabase 设为指定索引（连接层会 SELECT，
+    /// 连接缓存按「数据源+DB」分开复用）。不传 db 则保持数据源默认库。
+    /// </summary>
+    private static (DataSourceConfig? Ds, string? Error) ApplyDb(DataSourceConfig ds, int? db)
+    {
+        if (db is null)
+            return (ds, null);
+        if (db < 0 || db > 63)
+            return (null, $"db 必须在 0..63 之间（Redis 默认 0..15），收到 {db}。");
+
+        var clone = new DataSourceConfig
+        {
+            Id = ds.Id,
+            Name = ds.Name,
+            Type = ds.Type,
+            Host = ds.Host,
+            Port = ds.Port,
+            Username = ds.Username,
+            Password = ds.Password,
+            DefaultDatabase = db.Value.ToString(),
+            AccessMode = ds.AccessMode,
+            TunnelServerId = ds.TunnelServerId,
+            Description = ds.Description,
+            MaxRows = ds.MaxRows,
+            TimeoutSeconds = ds.TimeoutSeconds,
+            ReadOnly = ds.ReadOnly,
+            WriteApproval = ds.WriteApproval,
+            UsePooling = ds.UsePooling
+        };
+        return (clone, null);
+    }
+
+    /// <summary>命令实际生效的 DB（DefaultDatabase 为空视为 0，与连接层 SELECT 行为一致）。</summary>
+    private static int EffectiveDb(DataSourceConfig ds)
+        => int.TryParse(ds.DefaultDatabase?.Trim(), out var db) && db >= 0 ? db : 0;
+
     private async Task<(IRedisSession? Session, string? Error)> OpenSessionAsync(DataSourceConfig ds)
     {
         try
         {
-            return (await _connectionProvider.OpenAsync(ds), null);
+            return (await _connections.OpenAsync(ds), null);
         }
         catch (Exception ex)
         {

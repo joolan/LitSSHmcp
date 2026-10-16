@@ -25,3 +25,6 @@ appliesTo: [datasource, mysql, ssh]
 ## 注意
 - 只读查询用 `mysql_query`；任何写/改结构用 `mysql_execute`（无 WHERE 的 UPDATE/DELETE、DROP 等会被拒绝）。
 - 结果最多 1000 行；大结果走落盘句柄。凭据不会出现在任何返回里。
+
+## 深入（按需 skill_read）
+慢查询深度排查 runbook：`references/slow-query-runbook.md`（慢日志/digest 定位、mysql_explain 归因、处置与验证闭环）。

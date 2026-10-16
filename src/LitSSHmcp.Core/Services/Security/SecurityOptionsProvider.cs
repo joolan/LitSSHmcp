@@ -15,6 +15,7 @@ public interface ISecurityOptionsProvider
 
     CommandFilterConfig CommandFilter { get; }
     SqlFilterConfig SqlFilter { get; }
+    ScriptRiskConfig ScriptRisk { get; }
     FileTransferConfig FileTransfer { get; }
     SshHostKeyConfig SshHostKey { get; }
     DiscoveryConfig Discovery { get; }
@@ -34,6 +35,7 @@ public sealed class SecurityOptionsProvider : ISecurityOptionsProvider
     private bool _enabled = true;
     private CommandFilterConfig _commandFilter = new();
     private SqlFilterConfig _sqlFilter = new();
+    private ScriptRiskConfig _scriptRisk = new();
     private FileTransferConfig _fileTransfer = new();
     private SshHostKeyConfig _sshHostKey = new();
     private DiscoveryConfig _discovery = new();
@@ -65,6 +67,11 @@ public sealed class SecurityOptionsProvider : ISecurityOptionsProvider
     public SqlFilterConfig SqlFilter
     {
         get { EnsureFresh(); return _sqlFilter; }
+    }
+
+    public ScriptRiskConfig ScriptRisk
+    {
+        get { EnsureFresh(); return _scriptRisk; }
     }
 
     public FileTransferConfig FileTransfer
@@ -172,6 +179,7 @@ public sealed class SecurityOptionsProvider : ISecurityOptionsProvider
         _enabled = config.Security?.Enabled ?? true;
         _commandFilter = config.Security?.CommandFilter ?? new CommandFilterConfig();
         _sqlFilter = config.Security?.SqlFilter ?? new SqlFilterConfig();
+        _scriptRisk = config.Security?.ScriptRules ?? new ScriptRiskConfig();
         _fileTransfer = config.Security?.FileTransfer ?? new FileTransferConfig();
         _sshHostKey = config.Security?.SshHostKey ?? new SshHostKeyConfig();
         _discovery = config.Security?.Discovery ?? new DiscoveryConfig();

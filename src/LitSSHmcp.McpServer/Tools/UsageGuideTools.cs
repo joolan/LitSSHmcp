@@ -183,6 +183,7 @@ public class UsageGuideTools
             "mysql_execute 用于 INSERT/UPDATE/DELETE/DDL, 会触发安全策略与用户审批",
             "redis_read 只允许只读白名单命令, 结果已JSON化并截断超长字符串/超大数组; 非白名单命令会提示改用 redis_execute",
             "redis_execute 的写命令一律弹桌面确认, 危险命令(清库/关服/换主从/加载模块/阻塞连接类)直接拒绝",
+            "Redis 切库用 redis_read/redis_execute/redis_diagnostics 的 db 参数(0..15, 返回里的 db 字段回显实际库); 不要在命令里发 SELECT(跨调用不保证同一连接); 连接与SSH隧道按 数据源+DB 复用(空闲30s释放)",
             "数据源 accessMode=sshTunnel 时数据库只能经指定SSH服务器访问, MCP会自动建隧道(Redis同样适用)",
             "凭据由用户通过管理界面或配置文件录入, 任何工具都不会返回密码"
         });

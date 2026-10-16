@@ -391,11 +391,11 @@ public partial class DbWorkbenchWindow : FluentWindow
         }
     }
 
-    /// <summary>仅在右键命中“表/视图/存储过程”对象节点时弹出菜单；空白处/文件夹/列/索引不弹。</summary>
+    /// <summary>仅在右键命中“表/视图/存储过程”对象节点或分类文件夹时弹出菜单；空白处/列/索引/外键不弹。</summary>
     private void OnObjectTreeMenuOpening(object sender, ContextMenuEventArgs e)
     {
         var item = FindAncestor<System.Windows.Controls.TreeViewItem>(e.OriginalSource as DependencyObject);
-        if (item?.DataContext is not DbTreeNode { Kind: DbTreeNodeKind.Table or DbTreeNodeKind.View or DbTreeNodeKind.Procedure })
+        if (item?.DataContext is not DbTreeNode { Kind: DbTreeNodeKind.Folder or DbTreeNodeKind.Table or DbTreeNodeKind.View or DbTreeNodeKind.Procedure })
             e.Handled = true;
     }
 
@@ -411,11 +411,36 @@ public partial class DbWorkbenchWindow : FluentWindow
         }
     }
 
+    /// <summary>右键菜单：复制当前选中对象名（PG 为 schema.name）。</summary>
+    private void OnCopyObjectName(object sender, RoutedEventArgs e)
+    {
+        var name = _vm.SelectedTable?.Display;
+        if (!string.IsNullOrEmpty(name))
+            SafeSetClipboard(name);
+    }
+
     private void OnKeyDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is System.Windows.Controls.ListBox { SelectedItem: string key } &&
-            _vm.UseKeyCommand.CanExecute(key))
-            _vm.UseKeyCommand.Execute(key);
+        if (sender is System.Windows.Controls.ListView { SelectedItem: RedisKeyRow row } &&
+            _vm.UseKeyCommand.CanExecute(row))
+            _vm.UseKeyCommand.Execute(row);
+    }
+
+    /// <summary>右键先选中行，保证右键菜单作用在点中的那一行。</summary>
+    private void OnRedisKeyRightDown(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<System.Windows.Controls.ListViewItem>(e.OriginalSource as DependencyObject) is { } item)
+            item.IsSelected = true;
+    }
+
+    /// <summary>键列表里 Esc 停止扫描/补全。</summary>
+    private void OnRedisKeyListKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape)
+            return;
+        if (_vm.CancelCommand.CanExecute(null))
+            _vm.CancelCommand.Execute(null);
+        e.Handled = true;
     }
 
     private void OnKeyPatternKeyDown(object sender, KeyEventArgs e)

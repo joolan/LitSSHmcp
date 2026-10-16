@@ -22,6 +22,7 @@ public class SudoTools
     private readonly IApprovalService _approvalService;
     private readonly IAuditLogService _auditLogService;
     private readonly ISecurityOptionsProvider _securityOptions;
+    private readonly ScriptRiskAnalyzer _scriptRisk;
 
     public SudoTools(
         IConfigService configService,
@@ -29,7 +30,8 @@ public class SudoTools
         ICommandFilterService commandFilter,
         IApprovalService approvalService,
         IAuditLogService auditLogService,
-        ISecurityOptionsProvider securityOptions)
+        ISecurityOptionsProvider securityOptions,
+        ScriptRiskAnalyzer scriptRisk)
     {
         _configService = configService;
         _sshService = sshService;
@@ -37,6 +39,7 @@ public class SudoTools
         _approvalService = approvalService;
         _auditLogService = auditLogService;
         _securityOptions = securityOptions;
+        _scriptRisk = scriptRisk;
     }
 
     [McpServerTool(Name = "ssh_execute_sudo", UseStructuredContent = true, OutputSchemaType = typeof(CommandResultDto), Destructive = true, OpenWorld = true)]
@@ -92,13 +95,50 @@ public class SudoTools
                 "blocked_command", command, server.Id, server.Name, server.Host);
         }
 
+        // —— 脚本执行安全门: 提权执行脚本同样先预读内容做服务端扫描, 危险模式硬拒, 报告附审批 ——
+        string? riskReport = null;
+        var isScript = ScriptExecForm.TryParse(command, out _, out var scriptPath);
+        if (isScript)
+        {
+            var probe = await _sshService.ExecuteCommandAsync(
+                server, $"cat {ShellQuote.Single(scriptPath)}", cancellationToken, 30);
+            var report = probe.Success
+                ? _scriptRisk.Analyze(scriptPath, probe.Output)
+                : _scriptRisk.Analyze(scriptPath, null) with
+                {
+                    Level = ScriptRiskLevel.Suspicious,
+                    Note = $"无法预读脚本内容({TrimOneLine(probe.Error)}), 按未审脚本处理"
+                };
+
+            if (report.Level == ScriptRiskLevel.Blocked)
+            {
+                await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+                {
+                    ServerId = server.Id,
+                    ServerName = server.Name,
+                    Command = $"SUDO: {command}",
+                    Status = CommandStatus.Blocked,
+                    Category = AuditCategory.Gate,
+                    Decision = "blocked"
+                });
+                return CommandResultDto.Fail("blocked",
+                    $"提权脚本被安全策略禁止执行。服务端扫描发现危险模式(sha256={report.Sha256}):\n" +
+                    string.Join("\n", report.Findings.Where(f => f.Level == ScriptRiskLevel.Blocked)
+                        .Select(f => $"L{f.Line} [{f.Rule}] {f.Excerpt}")),
+                    "blocked_script", command, server.Id, server.Name, server.Host);
+            }
+
+            riskReport = ScriptRiskAnalyzer.FormatReport(report);
+        }
+
         var outcome = await _approvalService.RequestApprovalAsync(
             ToolSupport.ServerLabel(server),
             $"提权执行: {command}",
             CommandFilterResult.Sensitive,
             null,
-            "sudo 提权",
-            cancellationToken);
+            isScript ? "sudo 提权(脚本)" : "sudo 提权",
+            cancellationToken,
+            riskReport: riskReport);
 
         if (outcome != ApprovalOutcome.Approved)
         {
@@ -159,6 +199,12 @@ public class SudoTools
             DurationMs = result.Duration.TotalMilliseconds,
             Escalation = result.Escalation
         };
+    }
+
+    private static string TrimOneLine(string? text)
+    {
+        var t = (text ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return t.Length == 0 ? "未知原因" : (t.Length > 120 ? t[..120] + "…" : t);
     }
 
     [McpServerTool(Name = "ssh_get_sudo_status", UseStructuredContent = true, OutputSchemaType = typeof(SudoStatusDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]

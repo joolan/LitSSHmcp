@@ -2304,9 +2304,12 @@ public class TopologyViewModel : INotifyPropertyChanged
         var info = node.Info;
         AppendInfo(sb, info, "host", "主机");
         AppendInfo(sb, info, "port", "端口");
+        AppendInfo(sb, info, "ports", "监听端口");
         AppendInfo(sb, info, "username", "账号");
         AppendInfo(sb, info, "datasourceType", "数据库类型");
         AppendInfo(sb, info, "applicationType", "应用类型");
+        AppendInfo(sb, info, "type", "类型");
+        AppendInfo(sb, info, "path", "路径");
         AppendInfo(sb, info, "defaultDatabase", "默认库");
         AppendInfo(sb, info, "accessMode", "访问模式");
         AppendInfo(sb, info, "description", "描述");

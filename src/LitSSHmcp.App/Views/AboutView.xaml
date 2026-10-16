@@ -23,9 +23,13 @@
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
                     <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程桌面（RDP / VNC，独立功能）：左侧导航直达，连接可经 SSH 隧道访问内网桌面（密码仅本机 DPAPI 加密）；内嵌多标签窗口（RDP 用系统 ActiveX 控件、VNC 用 noVNC over SSH 隧道），标签支持拖出分离 / 收回、关闭需二次确认；列表按分组归组，右键 / 双击连接，也可交由系统 mstsc 等外部客户端打开。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 助手「智能体」体系：内置通用聊天 / 运维专家 / 数据库分析三个智能体（可增删改），系统提示按智能体追加「当前智能体」段并支持回答风格覆盖（缓存友好：切换只使尾部前缀失效）；主窗口与临时聊天均可切换、按会话记忆；系统提示新增软件变更护栏（不擅自安装 / 升级 / 卸载软件包、不改系统级配置）；数据库工作台「AI 分析此 SQL」只预填 SQL 代码块并自动切到数据库分析智能体。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 应用锁（启动密码门卫）：PBKDF2-SHA256 校验、哈希盐经 DPAPI 落盘（明文绝不落盘），支持 Windows Hello 快捷解锁；跟随 Windows 锁屏自动重锁；双击托盘恢复主界面前先解锁；退出即连同所有独立窗口整体退出。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据库工作台 · Redis 键浏览（百万级键不卡死）：分批 SCAN（每批 500、单次 2 秒时间预算、可「继续扫描」续扫）+ DBSIZE 进度；键值有界读取（hash/set 走 HSCAN/SSCAN、string 超 64KB 截断）；补全类型/TTL/大小（10 秒预算可续跑）；顶部 Redis DB 切换；KEYS/HGETALL/SMEMBERS 等大结果集命令执行前警告；切数据源刷新保留当前数据源与库。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据库工作台 · 对象树体验：按类型显示图标（表/视图/存储过程/列/索引/外键），选中对象面包屑条（库·表名·列数·估算行数 + 备注 + 预览/生成 SELECT），搜索前缀命中优先并显示「匹配 x / y」，列节点两段式（列名 + 类型·PK·NOT NULL），表/列备注悬浮提示，右键刷新对象/复制对象名。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 助手「智能体」体系：内置通用聊天 / 运维专家 / 数据库分析三个智能体（可增删改），系统提示按智能体追加「当前智能体」段并支持回答风格覆盖（缓存友好：切换只使尾部前缀失效）；主窗口与临时聊天均可切换、按会话记忆；结构化经验记忆（ops_memory_*，写入敏感词门禁 + 每轮自动召回）、记忆管理与统计、运行预算上限；系统提示含软件变更护栏与脚本安全门（服务端扫描权威、脚本永不免审）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 服务器管理与审批放行：AI 助手可接入外部 MCP（stdio / http，DPAPI 加密 env/header，启用前必须校验连接），内置 LitSSH MCP 置顶可启停，会话窗口「连接器」一键启停重建；桌面审批弹窗支持三档放行范围（仅一次 / 本轮次内 / 本次会话期间），脚本风险报告左右分栏展示。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机 PowerShell 终端 + AI 本地 CLI：ConPTY 真实本机终端；AI 可经 local_shell 在硬白名单内执行本机 CLI（每次人工审批并可记忆、超时与进程树清理、输出实时回显），默认关闭。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程桌面（RDP / VNC）：左侧导航直达，连接可经 SSH 隧道访问内网桌面（密码仅本机 DPAPI 加密）；内嵌多标签窗口（RDP 用系统 ActiveX 控件、VNC 用 noVNC over SSH 隧道），标签支持拖出分离 / 收回、关闭需二次确认；列表按分组归组，右键 / 双击连接，也可交由系统 mstsc 等外部客户端打开。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP Resources（只读上下文）：向任意 MCP 客户端暴露服务器清单 / 数据源清单 / 使用指南 / 资产拓扑 / 最新快照概览，供浏览与挂载为上下文（不含密码、按启用工具分组裁剪）；AI 任务 / 会话支持分组、拖拽排序、折叠与归档。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据库工作台（执行体验）：Ctrl+Enter 执行选区 / 单条 / 全部，AvalonEdit 语法高亮与 schema 感知补全，多标签查询、执行计划（计划树）、多结果集、查询历史、Ctrl+F 查找替换。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 平台运维与凭据：批量执行新增快速命令与「一键巡检」（写操作执行前确认）；快照趋势图（内存 / 磁盘 / Swap / 负载）；SSH 会话录像（asciicast）与倍速回放；SSH 密钥生成与公钥复制、凭据轮换提醒、跳板机（ProxyJump）全局支持。"/>
@@ -73,7 +77,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程桌面：RDP / VNC 连接管理（密码仅本机 DPAPI 加密、可经 SSH 隧道访问内网桌面），内嵌多标签查看器（标签可分离 / 收回）与外部客户端打开。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机终端：ConPTY 真实本机 PowerShell 终端；AI 本地 CLI 在白名单内执行本机命令（人工审批、超时与进程树清理）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 批量执行 / 快速命令：多台服务器并行下发命令；内置快速命令（一键巡检、磁盘/inode/内存/端口/进程/大目录/日志/容器/网络）与「一键巡检」，写操作执行前确认。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源 / 应用管理 + 数据库工作台：维护数据源与应用；工作台支持 SQL 查询/对象浏览/表数据分页预览、Redis 键浏览、只读/写入模式与审计。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源 / 应用管理 + 数据库工作台：维护数据源与应用；工作台支持 SQL 查询/对象浏览/表数据分页预览、Redis 键浏览（分批扫描、补全类型/TTL/大小、DB 切换、大结果集警告）、只读/写入模式与审计。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑：可视化编辑——拖动/缩放节点、拖拽创建关系、自动正交避障连线、网格吸附、撤销重做、导出图片。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 快照：整机态势采集 + 历史查看 + 趋势图（内存 / 磁盘 / Swap / 负载）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 终端录像：交互式终端会话以 asciicast 记录并支持倍速回放（合规/复盘）。"/>

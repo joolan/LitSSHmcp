@@ -35,6 +35,20 @@
                 <TextBlock Text="敏感正则:" Margin="0,0,0,2"/>
                 <TextBox Text="{Binding SensitivePatterns, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="50" FontFamily="Consolas" Margin="0,0,0,8"/>
 
+                <TextBlock Text="脚本风险规则 (执行/上传脚本时的权威扫描; 在命令过滤之外生效)" FontWeight="Bold" Margin="0,4,0,4"
+                           ToolTip="脚本(如 x.sh/a.py)执行或上传时逐行扫描: 命令过滤的禁止/敏感规则 + 下方脚本专用规则。命中禁止规则直接硬拒绝不进审批; 命中可疑规则进审批并展示。保存后热生效。"/>
+                <CheckBox Content="启用脚本专用内置规则（fork炸弹/curl|sh/反弹shell/SSH凭据/eval 等）" IsChecked="{Binding ScriptRulesEnabled}" Margin="0,0,0,4"
+                          ToolTip="关闭后仅保留命令过滤扫描与下方自定义规则；内置规则标签可在 config.json 的 security.scriptRules.disabledBuiltinRuleLabels 中按需禁用单条"/>
+                <TextBlock Text="追加危险规则 (正则, 每行一条; 命中=硬拒绝):" Margin="0,0,0,2"/>
+                <TextBox Text="{Binding ScriptExtraBlockedPatterns, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="40" FontFamily="Consolas" Margin="0,0,0,4"/>
+                <TextBlock Text="追加可疑规则 (正则, 每行一条; 命中=进审批):" Margin="0,0,0,2"/>
+                <TextBox Text="{Binding ScriptExtraSensitivePatterns, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="40" FontFamily="Consolas" Margin="0,0,0,4"/>
+                <TextBlock Text="禁用的内置规则标签 (每行一个, 精确匹配; 如 eval 动态执行):" Margin="0,0,0,2"/>
+                <TextBox Text="{Binding ScriptDisabledRuleLabels, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="40" FontFamily="Consolas" Margin="0,0,0,2"/>
+                <TextBlock Text="{Binding BuiltinScriptRuleLabelsHint}" TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           ToolTip="内置脚本规则标签全集（可填入上方禁用框按需关闭单条）"/>
+
                 <TextBlock Text="SQL 过滤 (正则, 每行一条)" FontWeight="Bold" Margin="0,8,0,4"/>
                 <TextBlock Text="禁止模式:" Margin="0,0,0,2"/>
                 <TextBox Text="{Binding SqlBlockedPatterns, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="60" FontFamily="Consolas" Margin="0,0,0,8"/>

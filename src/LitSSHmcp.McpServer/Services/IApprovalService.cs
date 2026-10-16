@@ -28,13 +28,27 @@ public enum ApprovalOutcome
 
 public interface IApprovalService
 {
+    /// <param name="riskReport">
+    /// 可选的脚本风险报告（服务端规则扫描结果），会附加展示在审批界面的命令详情区；
+    /// 仅影响展示，不参与执行与豁免判定。
+    /// </param>
     Task<ApprovalOutcome> RequestApprovalAsync(
         string serverName,
         string command,
         CommandFilterResult filterResult,
         string? filePath = null,
         string? operationLabel = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        string? riskReport = null);
+}
+
+/// <summary>审批展示文本拼接（命令 + 风险报告），桌面与带外 CLI 通道共用。</summary>
+public static class ApprovalDisplay
+{
+    public static string Combine(string command, string? riskReport) =>
+        string.IsNullOrWhiteSpace(riskReport)
+            ? command
+            : command + "\n\n" + riskReport;
 }
 
 /// <summary>审批结果 → 工具返回的 (status, error) 文案，全仓统一出口。</summary>
@@ -90,13 +104,18 @@ public class DesktopApprovalService : IApprovalService
         CommandFilterResult filterResult,
         string? filePath = null,
         string? operationLabel = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? riskReport = null)
     {
         if (!OperatingSystem.IsWindows())
         {
             _logger?.LogWarning("非 Windows 环境，无法显示桌面授权弹窗");
             return ApprovalOutcome.Unavailable;
         }
+
+        // 风险报告：进程内弹窗分栏展示（左命令右风险）；原生/子进程通道为单栏文本，拼接后展示。
+        // 均不影响执行与豁免判定。
+        var displayCommand = ApprovalDisplay.Combine(command, riskReport);
 
         var options = _securityOptions.Approval;
         var operation = operationLabel ?? (filterResult == CommandFilterResult.Sensitive ? "敏感命令" : "文件传输");
@@ -120,9 +139,9 @@ public class DesktopApprovalService : IApprovalService
         {
             var (outcome, scope) = style switch
             {
-                "native" => (ShowNative(serverName, operation, command, filePath, options), ApprovalScope.Once),
-                "process" => await RequestViaChildProcessAsync(serverName, operation, command, filePath, options, ct).ConfigureAwait(false),
-                _ => await RequestInProcessAsync(serverName, operation, command, filePath, options, ct).ConfigureAwait(false)
+                "native" => (ShowNative(serverName, operation, displayCommand, filePath, options), ApprovalScope.Once),
+                "process" => await RequestViaChildProcessAsync(serverName, operation, displayCommand, filePath, options, ct).ConfigureAwait(false),
+                _ => await RequestInProcessAsync(serverName, operation, command, filePath, options, ct, riskReport).ConfigureAwait(false)
             };
 
             if (outcome == ApprovalOutcome.Approved)
@@ -164,7 +183,7 @@ public class DesktopApprovalService : IApprovalService
     }
 
     private async Task<(ApprovalOutcome Outcome, ApprovalScope Scope)> RequestInProcessAsync(
-        string serverName, string operation, string command, string? filePath, ApprovalConfig options, CancellationToken ct)
+        string serverName, string operation, string command, string? filePath, ApprovalConfig options, CancellationToken ct, string? riskReport = null)
     {
         var tcs = new TaskCompletionSource<(ApprovalOutcome, ApprovalScope)>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -176,7 +195,7 @@ public class DesktopApprovalService : IApprovalService
                 _logger?.LogInformation("显示自绘授权弹窗(进程内): 服务器={Server} 操作={Operation}", serverName, operation);
 
                 using var dialog = new ApprovalDialog(serverName, operation, command, filePath, options.TimeoutSeconds, options.TopMost,
-                    _exemptions?.SessionGrantedTools);
+                    _exemptions?.SessionGrantedTools, riskReport);
                 var result = dialog.ShowDialog();
                 sw.Stop();
 
@@ -188,7 +207,7 @@ public class DesktopApprovalService : IApprovalService
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "自绘授权弹窗失败，回退原生");
-                tcs.TrySetResult((SafeNative(serverName, operation, command, filePath, options), ApprovalScope.Once));
+                tcs.TrySetResult((SafeNative(serverName, operation, ApprovalDisplay.Combine(command, riskReport), filePath, options), ApprovalScope.Once));
             }
         })
         {

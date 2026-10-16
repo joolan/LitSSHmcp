@@ -11,11 +11,23 @@ public interface IRedisSession : IDisposable
     RedisClient Client { get; }
     string AccessMode { get; }
     string? ViaTunnelServer { get; }
+
+    /// <summary>
+    /// 在本会话上执行一条命令（并发调用会被串行化）。缓存会话实现会在命令抛异常时使会话失效
+    /// ——超时/取消可能停在回复半途，连接流已不可信，必须丢弃重连。
+    /// </summary>
+    Task<RedisValue> ExecuteAsync(IReadOnlyList<string> args, CancellationToken ct = default);
 }
 
 public interface IRedisConnectionProvider
 {
     Task<IRedisSession> OpenAsync(DataSourceConfig ds, CancellationToken ct = default);
+
+    /// <summary>
+    /// 打开**可长期复用**的会话：握手成功后立即归还限流租约（不长期占用该数据源的并发额度与调用配额）。
+    /// 供连接缓存使用；普通调用仍用 <see cref="OpenAsync"/>（租约会话全程持有，天然限制单次调用时长）。
+    /// </summary>
+    Task<IRedisSession> OpenSharedAsync(DataSourceConfig ds, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -43,7 +55,13 @@ public class RedisConnectionProvider : IRedisConnectionProvider
         _targetLimiter = targetLimiter;
     }
 
-    public async Task<IRedisSession> OpenAsync(DataSourceConfig ds, CancellationToken ct = default)
+    public Task<IRedisSession> OpenAsync(DataSourceConfig ds, CancellationToken ct = default)
+        => OpenCoreAsync(ds, releaseLeaseAfterOpen: false, ct);
+
+    public Task<IRedisSession> OpenSharedAsync(DataSourceConfig ds, CancellationToken ct = default)
+        => OpenCoreAsync(ds, releaseLeaseAfterOpen: true, ct);
+
+    private async Task<IRedisSession> OpenCoreAsync(DataSourceConfig ds, bool releaseLeaseAfterOpen, CancellationToken ct)
     {
         if (!_targetLimiter.TryAcquire($"ds:{ds.Id}", out var lease, out var limitReason))
             throw new InvalidOperationException(
@@ -80,6 +98,13 @@ public class RedisConnectionProvider : IRedisConnectionProvider
             {
                 client.Dispose();
                 throw;
+            }
+
+            if (releaseLeaseAfterOpen)
+            {
+                // 复用型会话不长期占用目标并发额度/调用配额（额度由每次新建连接时消耗）
+                lease?.Dispose();
+                lease = null;
             }
 
             return new RedisSession(client, tunnel, ds, lease);
@@ -123,6 +148,9 @@ public class RedisConnectionProvider : IRedisConnectionProvider
         public RedisClient Client { get; }
         public string AccessMode { get; }
         public string? ViaTunnelServer { get; }
+
+        public Task<RedisValue> ExecuteAsync(IReadOnlyList<string> args, CancellationToken ct = default)
+            => Client.ExecuteAsync(args, ct);
 
         public RedisSession(RedisClient client, SshTunnel? tunnel, DataSourceConfig ds, IDisposable? lease)
         {

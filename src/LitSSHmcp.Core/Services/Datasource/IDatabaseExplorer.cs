@@ -97,11 +97,41 @@ public interface IDatabaseExplorer
 /// </summary>
 public interface IRedisKeyExplorer
 {
-    /// <summary>按 MATCH 模式 SCAN 键名，最多返回 limit 个。</summary>
+    /// <summary>从 cursor 起 SCAN 一批键（单次往返）；<see cref="RedisScanPage.Cursor"/> 为 "0" 表示已遍历完成。</summary>
+    Task<RedisScanPage> ScanKeysPageAsync(DataSourceConfig ds, string match, string cursor, int count, CancellationToken ct = default);
+
+    /// <summary>按 MATCH 模式 SCAN 键名，最多返回 limit 个（分批接口的便捷封装，仅适合小键空间/联调）。</summary>
     Task<IReadOnlyList<string>> ScanKeysAsync(DataSourceConfig ds, string match, int limit, CancellationToken ct = default);
 
-    /// <summary>读取单个键的类型、生存时间与值（按类型自动选择 GET/HGETALL/LRANGE/SMEMBERS/ZRANGE/XRANGE）。</summary>
+    /// <summary>批量读取键的类型 / 生存时间 / 大小（逐键 TYPE + TTL + MEMORY USAGE，一次会话完成）。</summary>
+    Task<IReadOnlyList<RedisKeyMeta>> GetKeysMetaAsync(DataSourceConfig ds, IReadOnlyList<string> keys, CancellationToken ct = default);
+
+    /// <summary>读取单个键的类型、生存时间与值（按类型自动选择，值读取**有界**：超量截断）。</summary>
     Task<RedisKeyValue> GetKeyValueAsync(DataSourceConfig ds, string key, int maxRows = 200, CancellationToken ct = default);
+}
+
+/// <summary>一次 SCAN 的返回页（键 + 续扫游标）。</summary>
+public sealed class RedisScanPage
+{
+    public IReadOnlyList<string> Keys { get; init; } = Array.Empty<string>();
+
+    /// <summary>下一批游标；"0" 表示键空间已遍历完成。</summary>
+    public string Cursor { get; init; } = "0";
+}
+
+/// <summary>单个键的元信息（类型 / 生存时间 / 内存占用）。</summary>
+public sealed class RedisKeyMeta
+{
+    public string Key { get; init; } = string.Empty;
+
+    /// <summary>键类型：string / hash / list / set / zset / stream / none。</summary>
+    public string Type { get; init; } = string.Empty;
+
+    /// <summary>生存时间（秒）：-1=永不过期，-2=键不存在。</summary>
+    public long TtlSeconds { get; init; } = -2;
+
+    /// <summary>内存占用字节；服务端不支持 MEMORY USAGE 或读取失败时为 null。</summary>
+    public long? SizeBytes { get; init; }
 }
 
 /// <summary>单个 Redis 键的读取结果（类型 / 生存时间 / 值表）。</summary>
@@ -115,6 +145,9 @@ public sealed class RedisKeyValue
 
     /// <summary>生存时间（秒）：-1=永不过期，-2=键不存在，>=0=剩余秒数。</summary>
     public long TtlSeconds { get; set; } = -2;
+
+    /// <summary>该键的元素总数（string 为字节数；HLEN/SCARD/ZCARD/LLEN/XLEN）；未知时为 null。</summary>
+    public long? TotalCount { get; set; }
 
     /// <summary>值表（列 + 行）；键不存在或类型不支持时为 null。</summary>
     public DatasourceQueryResult? Data { get; set; }

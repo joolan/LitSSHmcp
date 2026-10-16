@@ -23,3 +23,6 @@ appliesTo: [ssh, command, topology]
 ## 注意
 - 续期/替换证书属变更操作，需用户明确要求；自动续期先确认 cron/timer 是否正常。
 - 不要忽略 `host_key_mismatch`（可能与证书问题混淆，属 SSH 层安全事件）。
+
+## 深入（按需 skill_read）
+证书周期巡检 runbook：`references/inspection-runbook.md`（批量探测、到期阈值分级、续期计划与复测）。

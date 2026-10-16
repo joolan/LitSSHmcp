@@ -12,7 +12,8 @@ namespace LitSSHmcp.Core.Services.Datasource;
 /// </summary>
 public class RedisDriver : IDatasourceDriver, IRedisKeyExplorer
 {
-    private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(30);
+    /// <summary>数据源未配置 TimeoutSeconds 时的兜底命令超时。</summary>
+    private static readonly TimeSpan DefaultCommandTimeout = TimeSpan.FromSeconds(30);
 
     private readonly IRedisConnectionProvider _connectionProvider;
 
@@ -29,14 +30,14 @@ public class RedisDriver : IDatasourceDriver, IRedisKeyExplorer
         try
         {
             using var session = await _connectionProvider.OpenAsync(ds, ct);
-            using var timeout = CreateTimeout(ct);
+            using var timeout = CreateTimeout(ds, ct);
 
-            var pong = await session.Client.ExecuteAsync(new[] { "PING" }, timeout.Token);
+            var pong = await session.ExecuteAsync(new[] { "PING" }, timeout.Token);
             if (pong.IsError)
                 throw new InvalidOperationException($"PING 失败: {pong.ErrorMessage}");
 
             string? version = null;
-            var info = await session.Client.ExecuteAsync(new[] { "INFO", "server" }, timeout.Token);
+            var info = await session.ExecuteAsync(new[] { "INFO", "server" }, timeout.Token);
             if (!info.IsError && ParseInfo(info.ToDisplayString()).TryGetValue("redis_version", out var parsed))
                 version = $"redis {parsed}";
 
@@ -83,9 +84,9 @@ public class RedisDriver : IDatasourceDriver, IRedisKeyExplorer
             }
 
             using var session = await _connectionProvider.OpenAsync(ds, ct);
-            using var timeout = CreateTimeout(ct);
+            using var timeout = CreateTimeout(ds, ct);
 
-            var reply = await session.Client.ExecuteAsync(args, timeout.Token);
+            var reply = await session.ExecuteAsync(args, timeout.Token);
             stopwatch.Stop();
 
             if (reply.IsError)
@@ -140,9 +141,9 @@ public class RedisDriver : IDatasourceDriver, IRedisKeyExplorer
             }
 
             using var session = await _connectionProvider.OpenAsync(ds, ct);
-            using var timeout = CreateTimeout(ct);
+            using var timeout = CreateTimeout(ds, ct);
 
-            var reply = await session.Client.ExecuteAsync(args, timeout.Token);
+            var reply = await session.ExecuteAsync(args, timeout.Token);
             stopwatch.Stop();
 
             if (reply.IsError)
@@ -187,8 +188,8 @@ public class RedisDriver : IDatasourceDriver, IRedisKeyExplorer
         try
         {
             using var session = await _connectionProvider.OpenAsync(ds, ct);
-            using var timeout = CreateTimeout(ct);
-            var client = session.Client;
+            using var timeout = CreateTimeout(ds, ct);
+            var client = session;
 
             var data = new Dictionary<string, object?>();
 
@@ -306,44 +307,134 @@ public class RedisDriver : IDatasourceDriver, IRedisKeyExplorer
         }
     }
 
-    private static CancellationTokenSource CreateTimeout(CancellationToken ct)
+    /// <summary>命令超时：优先用数据源的 TimeoutSeconds（与 SQL 驱动一致），未配置则兜底 30s。</summary>
+    private static CancellationTokenSource CreateTimeout(DataSourceConfig ds, CancellationToken ct)
     {
+        var seconds = ds.TimeoutSeconds is > 0 ? ds.TimeoutSeconds!.Value : (int)DefaultCommandTimeout.TotalSeconds;
         var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(CommandTimeout);
+        cts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, seconds)));
         return cts;
+    }
+
+    /// <summary>执行单条命令（带数据源超时）。</summary>
+    private static async Task<RedisValue> ExecAsync(IRedisSession session, DataSourceConfig ds,
+        IReadOnlyList<string> args, CancellationToken ct)
+    {
+        using var timeout = CreateTimeout(ds, ct);
+        return await session.ExecuteAsync(args, timeout.Token);
     }
 
     // ---------- 键浏览（工作台 Redis 模式） ----------
 
+    /// <summary>SCAN 单批 COUNT 的上下限（太大拖慢单次往返，太小往返过多）。</summary>
+    private const int MinScanCount = 50;
+    private const int MaxScanCount = 1000;
+
+    /// <summary>键值预览中 string 的最大下载字节数（超出用 GETRANGE 截断，避免拉爆内存/隧道）。</summary>
+    private const int MaxStringPreviewBytes = 64 * 1024;
+
+    public async Task<RedisScanPage> ScanKeysPageAsync(DataSourceConfig ds, string match, string cursor,
+        int count, CancellationToken ct = default)
+    {
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+        var pattern = string.IsNullOrWhiteSpace(match) ? "*" : match.Trim();
+        var reply = await ExecAsync(session, ds, new[]
+        {
+            "SCAN", string.IsNullOrEmpty(cursor) ? "0" : cursor,
+            "MATCH", pattern,
+            "COUNT", Math.Clamp(count, MinScanCount, MaxScanCount).ToString(CultureInfo.InvariantCulture)
+        }, ct);
+
+        if (reply.IsError)
+            throw new InvalidOperationException(reply.ErrorMessage);
+
+        var items = reply.Items ?? Array.Empty<RedisValue>();
+        if (items.Count < 2)
+            return new RedisScanPage { Keys = Array.Empty<string>(), Cursor = "0" };
+
+        var next = items[0].ToDisplayString();
+        var keys = new List<string>();
+        foreach (var key in items[1].Items ?? Array.Empty<RedisValue>())
+            keys.Add(key.ToDisplayString());
+
+        return new RedisScanPage { Keys = keys, Cursor = string.IsNullOrEmpty(next) ? "0" : next };
+    }
+
     public async Task<IReadOnlyList<string>> ScanKeysAsync(DataSourceConfig ds, string match, int limit, CancellationToken ct = default)
     {
+        limit = Math.Max(1, limit);
         var keys = new List<string>();
-        using var session = await _connectionProvider.OpenAsync(ds, ct);
-        using var timeout = CreateTimeout(ct);
-
-        var pattern = string.IsNullOrWhiteSpace(match) ? "*" : match.Trim();
         var cursor = "0";
+        var stopwatch = Stopwatch.StartNew();
+
+        // 便捷封装：命中少的模式可能需要遍历整个键空间，因此加 10s 预算兜底
+        // （大键空间请用 ScanKeysPageAsync 分批 + 游标续扫，由界面控制预算与取消）。
         do
         {
-            var reply = await session.Client.ExecuteAsync(
-                new[] { "SCAN", cursor, "MATCH", pattern, "COUNT", "200" }, timeout.Token);
-            if (reply.IsError)
-                throw new InvalidOperationException(reply.ErrorMessage);
+            var page = await ScanKeysPageAsync(ds, match, cursor, 500, ct);
+            keys.AddRange(page.Keys);
+            cursor = page.Cursor;
+        } while (cursor != "0" && keys.Count < limit && stopwatch.Elapsed < TimeSpan.FromSeconds(10));
 
-            var items = reply.Items ?? Array.Empty<RedisValue>();
-            if (items.Count < 2)
-                break;
+        return keys.Count > limit
+            ? keys.OrderBy(k => k, StringComparer.Ordinal).Take(limit).ToList()
+            : keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
+    }
 
-            cursor = items[0].ToDisplayString();
-            foreach (var key in items[1].Items ?? Array.Empty<RedisValue>())
-            {
-                keys.Add(key.ToDisplayString());
-                if (keys.Count >= Math.Max(1, limit))
-                    return keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
-            }
-        } while (cursor != "0");
+    public async Task<IReadOnlyList<RedisKeyMeta>> GetKeysMetaAsync(DataSourceConfig ds, IReadOnlyList<string> keys,
+        CancellationToken ct = default)
+    {
+        var result = new List<RedisKeyMeta>(keys.Count);
+        if (keys.Count == 0)
+            return result;
 
-        return keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
+        using var session = await _connectionProvider.OpenAsync(ds, ct);
+
+        foreach (var key in keys)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var typeReply = await ExecAsync(session, ds, new[] { "TYPE", key }, ct);
+            var type = typeReply.IsError ? "unknown" : typeReply.ToDisplayString();
+
+            var ttlReply = await ExecAsync(session, ds, new[] { "TTL", key }, ct);
+            var ttl = ttlReply.IsError
+                ? -2
+                : ttlReply.Kind == RedisValueKind.Integer
+                    ? ttlReply.Integer
+                    : ParseLong(ttlReply.ToDisplayString());
+
+            // MEMORY USAGE 不带 SAMPLES（默认采样），避免 SAMPLES 0 对超大集合做 O(N) 精确统计
+            long? size = null;
+            var usage = await ExecAsync(session, ds, new[] { "MEMORY", "USAGE", key }, ct);
+            if (!usage.IsError && usage.Kind == RedisValueKind.Integer)
+                size = usage.Integer;
+
+            result.Add(new RedisKeyMeta { Key = key, Type = type, TtlSeconds = ttl, SizeBytes = size });
+        }
+
+        return result;
+    }
+
+    /// <summary>读取键的元素总数（HLEN/SCARD/ZCARD/LLEN/XLEN/STRLEN）；不支持的类型返回 null。</summary>
+    private static async Task<long?> ReadTotalAsync(IRedisSession session, DataSourceConfig ds, string type, string key,
+        CancellationToken ct)
+    {
+        var command = type switch
+        {
+            "string" => "STRLEN",
+            "hash" => "HLEN",
+            "set" => "SCARD",
+            "zset" => "ZCARD",
+            "list" => "LLEN",
+            "stream" => "XLEN",
+            _ => null
+        };
+        if (command is null)
+            return null;
+
+        var reply = await ExecAsync(session, ds, new[] { command, key }, ct);
+        return reply.IsError ? null : reply.Kind == RedisValueKind.Integer ? reply.Integer : null;
     }
 
     public async Task<RedisKeyValue> GetKeyValueAsync(DataSourceConfig ds, string key, int maxRows = 200, CancellationToken ct = default)
@@ -351,9 +442,11 @@ public class RedisDriver : IDatasourceDriver, IRedisKeyExplorer
         var stopwatch = Stopwatch.StartNew();
         try
         {
+            maxRows = Math.Clamp(maxRows, 1, 5000);
+
             using var session = await _connectionProvider.OpenAsync(ds, ct);
-            using var timeout = CreateTimeout(ct);
-            var client = session.Client;
+            using var timeout = CreateTimeout(ds, ct);
+            var client = session; // 经 IRedisSession.ExecuteAsync（缓存会话串行化 + 失效管理）
 
             var typeReply = await client.ExecuteAsync(new[] { "TYPE", key }, timeout.Token);
             if (typeReply.IsError)
@@ -372,50 +465,49 @@ public class RedisDriver : IDatasourceDriver, IRedisKeyExplorer
             if (type == "none")
                 return new RedisKeyValue { Success = true, Type = type, TtlSeconds = ttl, Data = null };
 
-            var top = Math.Max(0, maxRows - 1).ToString(CultureInfo.InvariantCulture);
-            var args = type switch
-            {
-                "string" => new[] { "GET", key },
-                "hash" => new[] { "HGETALL", key },
-                "list" => new[] { "LRANGE", key, "0", top },
-                "set" => new[] { "SMEMBERS", key },
-                "zset" => new[] { "ZRANGE", key, "0", top, "WITHSCORES" },
-                "stream" => new[] { "XRANGE", key, "-", "+", "COUNT", maxRows.ToString(CultureInfo.InvariantCulture) },
-                _ => Array.Empty<string>()
-            };
+            var total = await ReadTotalAsync(client, ds, type, key, timeout.Token);
 
-            if (args.Length == 0)
+            if (type is not ("string" or "hash" or "list" or "set" or "zset" or "stream"))
                 return new RedisKeyValue
                 {
                     Success = true,
                     Type = type,
                     TtlSeconds = ttl,
+                    TotalCount = total,
                     Error = $"键 {key} 的类型为 {type}，暂不支持在此预览（可用命令输入框手动读取）。"
                 };
 
-            var reply = await client.ExecuteAsync(args, timeout.Token);
-            if (reply.IsError)
-                return new RedisKeyValue { Success = false, Type = type, TtlSeconds = ttl, Error = reply.ErrorMessage };
-
             var (columns, rows, truncated) = type switch
             {
-                "hash" => PairTable(reply, "field", "value", maxRows),
-                "zset" => PairTable(reply, "member", "score", maxRows),
-                _ => ToTable(reply, maxRows)
+                "hash" => await ReadHashBoundedAsync(client, key, maxRows, timeout.Token),
+                "set" => await ReadSetBoundedAsync(client, key, maxRows, timeout.Token),
+                "string" => await ReadStringBoundedAsync(client, key, maxRows, timeout.Token),
+                "zset" => PairTable(
+                    await client.ExecuteAsync(new[] { "ZRANGE", key, "0", (maxRows - 1).ToString(CultureInfo.InvariantCulture), "WITHSCORES" }, timeout.Token),
+                    "member", "score", maxRows),
+                "list" => ToTable(
+                    await client.ExecuteAsync(new[] { "LRANGE", key, "0", (maxRows - 1).ToString(CultureInfo.InvariantCulture) }, timeout.Token),
+                    maxRows),
+                _ => await ReadStreamBoundedAsync(client, key, maxRows, timeout.Token)
             };
+
             stopwatch.Stop();
             return new RedisKeyValue
             {
                 Success = true,
                 Type = type,
                 TtlSeconds = ttl,
+                TotalCount = total,
                 Data = new DatasourceQueryResult
                 {
                     Success = true,
                     Columns = columns,
                     Rows = rows,
                     RowCount = rows.Count,
-                    Truncated = truncated,
+                    Truncated = truncated ||
+                                (total is long totalCount &&
+                                 (type is "list" or "zset" or "stream") &&
+                                 totalCount > rows.Count),
                     DurationMs = stopwatch.Elapsed.TotalMilliseconds
                 }
             };
@@ -424,6 +516,112 @@ public class RedisDriver : IDatasourceDriver, IRedisKeyExplorer
         {
             return new RedisKeyValue { Success = false, Error = ex.Message };
         }
+    }
+
+    /// <summary>hash 用 HSCAN 分批读取前 maxRows 个 field（不再 HGETALL 全量拉回）。</summary>
+    private static async Task<(string[] Columns, List<Dictionary<string, object?>> Rows, bool Truncated)> ReadHashBoundedAsync(
+        IRedisSession client, string key, int maxRows, CancellationToken ct)
+    {
+        var rows = new List<Dictionary<string, object?>>();
+        var cursor = "0";
+        var iterations = 0;
+
+        while (iterations++ < 500)
+        {
+            var page = await client.ExecuteAsync(new[] { "HSCAN", key, cursor, "COUNT", "200" }, ct);
+            if (page.IsError)
+                throw new InvalidOperationException(page.ErrorMessage);
+
+            var items = page.Items ?? Array.Empty<RedisValue>();
+            if (items.Count < 2)
+                break;
+
+            cursor = items[0].ToDisplayString();
+            var flat = items[1].Items ?? Array.Empty<RedisValue>();
+            for (var i = 0; i + 1 < flat.Count; i += 2)
+            {
+                if (rows.Count >= maxRows)
+                    return (new[] { "field", "value" }, rows, cursor != "0");
+                rows.Add(new Dictionary<string, object?>
+                {
+                    ["field"] = flat[i].ToDisplayString(),
+                    ["value"] = RedisValueFormatter.ToCompactString(flat[i + 1])
+                });
+            }
+
+            if (cursor == "0")
+                break;
+        }
+
+        return (new[] { "field", "value" }, rows, cursor != "0");
+    }
+
+    /// <summary>set 用 SSCAN 分批读取前 maxRows 个成员（不再 SMEMBERS 全量拉回）。</summary>
+    private static async Task<(string[] Columns, List<Dictionary<string, object?>> Rows, bool Truncated)> ReadSetBoundedAsync(
+        IRedisSession client, string key, int maxRows, CancellationToken ct)
+    {
+        var rows = new List<Dictionary<string, object?>>();
+        var cursor = "0";
+        var iterations = 0;
+
+        while (iterations++ < 500)
+        {
+            var page = await client.ExecuteAsync(new[] { "SSCAN", key, cursor, "COUNT", "200" }, ct);
+            if (page.IsError)
+                throw new InvalidOperationException(page.ErrorMessage);
+
+            var items = page.Items ?? Array.Empty<RedisValue>();
+            if (items.Count < 2)
+                break;
+
+            cursor = items[0].ToDisplayString();
+            foreach (var member in items[1].Items ?? Array.Empty<RedisValue>())
+            {
+                if (rows.Count >= maxRows)
+                    return (new[] { "value" }, rows, cursor != "0");
+                rows.Add(new Dictionary<string, object?> { ["value"] = RedisValueFormatter.ToCompactString(member) });
+            }
+
+            if (cursor == "0")
+                break;
+        }
+
+        return (new[] { "value" }, rows, cursor != "0");
+    }
+
+    /// <summary>string 先 STRLEN 判断，超过 64KB 只取前 64KB（GETRANGE），避免拉回整段大 value。</summary>
+    private static async Task<(string[] Columns, List<Dictionary<string, object?>> Rows, bool Truncated)> ReadStringBoundedAsync(
+        IRedisSession client, string key, int maxRows, CancellationToken ct)
+    {
+        var lengthReply = await client.ExecuteAsync(new[] { "STRLEN", key }, ct);
+        var length = lengthReply.IsError ? 0 : lengthReply.Kind == RedisValueKind.Integer ? lengthReply.Integer : 0;
+
+        if (length <= MaxStringPreviewBytes)
+        {
+            var reply = await client.ExecuteAsync(new[] { "GET", key }, ct);
+            if (reply.IsError)
+                throw new InvalidOperationException(reply.ErrorMessage);
+            var (columns, rows, _) = ToTable(reply, maxRows);
+            return (columns, rows, false);
+        }
+
+        var ranged = await client.ExecuteAsync(
+            new[] { "GETRANGE", key, "0", (MaxStringPreviewBytes - 1).ToString(CultureInfo.InvariantCulture) }, ct);
+        if (ranged.IsError)
+            throw new InvalidOperationException(ranged.ErrorMessage);
+        var (rangeColumns, rangeRows, _) = ToTable(ranged, maxRows);
+        return (rangeColumns, rangeRows, true);
+    }
+
+    /// <summary>stream 用 XRANGE + COUNT 限定返回条数（服务端已限流）。</summary>
+    private static async Task<(string[] Columns, List<Dictionary<string, object?>> Rows, bool Truncated)> ReadStreamBoundedAsync(
+        IRedisSession client, string key, int maxRows, CancellationToken ct)
+    {
+        var reply = await client.ExecuteAsync(
+            new[] { "XRANGE", key, "-", "+", "COUNT", maxRows.ToString(CultureInfo.InvariantCulture) }, ct);
+        if (reply.IsError)
+            throw new InvalidOperationException(reply.ErrorMessage);
+        return ToTable(reply, maxRows);
     }
 
     /// <summary>把平坦的 [a,b,a,b] 数组按两列（如 field/value、member/score）输出。</summary>

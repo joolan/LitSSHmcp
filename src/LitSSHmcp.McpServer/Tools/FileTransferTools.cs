@@ -4,6 +4,7 @@
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
+using System.Text;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.SSH;
@@ -22,27 +23,31 @@ public class FileTransferTools
     private readonly IApprovalService _approvalService;
     private readonly IAuditLogService _auditLogService;
     private readonly ISecurityOptionsProvider _securityOptions;
+    private readonly ScriptRiskAnalyzer _scriptRisk;
 
     public FileTransferTools(
         IConfigService configService,
         ISshService sshService,
         IApprovalService approvalService,
         IAuditLogService auditLogService,
-        ISecurityOptionsProvider securityOptions)
+        ISecurityOptionsProvider securityOptions,
+        ScriptRiskAnalyzer scriptRisk)
     {
         _configService = configService;
         _sshService = sshService;
         _approvalService = approvalService;
         _auditLogService = auditLogService;
         _securityOptions = securityOptions;
+        _scriptRisk = scriptRisk;
     }
 
     [McpServerTool(Name = "ssh_upload_file", UseStructuredContent = true, OutputSchemaType = typeof(FileTransferResultDto), Destructive = true, OpenWorld = true)]
-    [Description("上传本地文件到SSH服务器。需要人工确认(可返回status=rejected/approval_timeout/approval_unavailable); 路径必须在白名单内, 越界返回path_not_allowed并在错误里给出允许的路径; 文件过大返回file_too_large")]
+    [Description("上传本地文件到SSH服务器。需要人工确认(可返回status=rejected/approval_timeout/approval_unavailable); 路径必须在白名单内, 越界返回path_not_allowed并在错误里给出允许的路径; 文件过大返回file_too_large; 上传脚本文件(.sh/.py/.ps1等)会先做服务端风险扫描并在审批弹窗展示, 扫描出危险模式直接status=blocked_script")]
     public async Task<FileTransferResultDto> UploadFile(
         [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
         [Description("本地文件路径(本机Windows路径, 必须在security.fileTransfer.allowedLocalPaths内)")] string localPath,
         [Description("服务器上的目标文件路径(含文件名, 必须在allowedRemotePaths内), 如 /var/log/app/data.json")] string remotePath,
+        [Description("助手对该操作的风险评估摘要(可选), 展示在审批弹窗并标注『助手评估(仅供参考)』; 服务端扫描才是权威")] string? riskNote = null,
         IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -73,6 +78,38 @@ public class FileTransferTools
                 $"文件大小超过限制。当前: {FormatFileSize(fileInfo.Length)}, 最大允许: {FormatFileSize(ft.MaxFileSizeBytes)}",
                 null, null, null, server.Id, server.Name, server.Host);
 
+        // —— 脚本上传安全门: 本地内容服务端规则扫描(权威), 危险模式硬拒, 报告附审批 ——
+        string? riskReport = null;
+        if (ScriptRiskAnalyzer.IsScriptFile(localPath))
+        {
+            var report = _scriptRisk.Analyze(Path.GetFileName(localPath), ReadLocalText(localPath));
+            if (report.Level == ScriptRiskLevel.Blocked)
+            {
+                await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+                {
+                    ServerId = server.Id,
+                    ServerName = server.Name,
+                    Command = $"UPLOAD: {localPath} -> {remotePath}",
+                    Status = CommandStatus.Blocked,
+                    Category = AuditCategory.Gate,
+                    Decision = "blocked",
+                    IsFileTransfer = true,
+                    FilePath = remotePath,
+                    FileSize = fileInfo.Length
+                });
+                return FileTransferResultDto.Fail("blocked_script",
+                    $"脚本内容扫描未通过, 服务端规则发现危险模式(sha256={report.Sha256}):\n" +
+                    string.Join("\n", report.Findings.Where(f => f.Level == ScriptRiskLevel.Blocked)
+                        .Select(f => $"L{f.Line} [{f.Rule}] {f.Excerpt}")),
+                    "script_risk", null, null, server.Id, server.Name, server.Host);
+            }
+            riskReport = ScriptRiskAnalyzer.FormatReport(report, riskNote);
+        }
+        else if (!string.IsNullOrWhiteSpace(riskNote))
+        {
+            riskReport = $"【助手评估(仅供参考, 未经服务端扫描)】{riskNote.Trim()}";
+        }
+
         if (ft.RequireApproval)
         {
             var outcome = await _approvalService.RequestApprovalAsync(
@@ -81,7 +118,8 @@ public class FileTransferTools
                 CommandFilterResult.Sensitive,
                 $"{localPath} -> {remotePath}",
                 "文件上传",
-                cancellationToken);
+                cancellationToken,
+                riskReport: riskReport);
 
             if (outcome != ApprovalOutcome.Approved)
             {
@@ -133,13 +171,14 @@ public class FileTransferTools
     }
 
     [McpServerTool(Name = "ssh_upload_files", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
-    [Description("批量/目录上传: 用**一条 SFTP 连接**上传多个本地文件或整个本地目录(可递归, 保持子目录结构)到服务器目录, 避免每个文件重复建连。localPaths 每行一个(文件或目录); **整批一次人工确认**; 受 allowedLocalPaths/allowedRemotePaths 白名单、单文件大小与 maxFiles 上限约束")]
+    [Description("批量/目录上传: 用**一条 SFTP 连接**上传多个本地文件或整个本地目录(可递归, 保持子目录结构)到服务器目录, 避免每个文件重复建连。localPaths 每行一个(文件或目录); **整批一次人工确认**; 受 allowedLocalPaths/allowedRemotePaths 白名单、单文件大小与 maxFiles 上限约束; 批内脚本文件(.sh/.py/.ps1等)会做服务端风险扫描并在审批弹窗展示, 任一脚本命中危险模式整批 status=blocked_script")]
     public async Task<BatchTransferResultDto> UploadFiles(
         [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
         [Description("本地源路径, 每行一个(文件或目录); 目录会被展开")] string localPaths,
         [Description("服务器上的目标目录(必须在security.fileTransfer.allowedRemotePaths内); 目录内文件按相对路径还原")] string remoteDirectory,
         [Description("是否递归上传子目录, 默认 false")] bool recursive = false,
         [Description("最多上传文件数(默认 200, 1~5000)")] int maxFiles = 200,
+        [Description("助手对该操作的风险评估摘要(可选), 展示在审批弹窗并标注『助手评估(仅供参考)』; 服务端扫描才是权威")] string? riskNote = null,
         CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
@@ -165,6 +204,55 @@ public class FileTransferTools
             return BatchTransferResultDto.Fail("path_not_allowed",
                 $"远程目录不在允许范围内: {remoteDirectory}", server.Id, server.Name, server.Host);
 
+        // —— 脚本上传安全门(批量): 聚合扫描批内全部脚本, 任一脚本危险模式 → 整批硬拒 ——
+        string? riskReport = null;
+        var scriptFiles = CollectScriptFiles(paths, recursive);
+        if (scriptFiles.Count > 0)
+        {
+            var blockedParts = new List<string>();
+            var reportParts = new List<string>();
+            foreach (var (scriptPath, report) in ScanScripts(scriptFiles))
+            {
+                if (report.Level == ScriptRiskLevel.Blocked)
+                {
+                    blockedParts.Add($"【{report.FileName} sha256={report.Sha256}】\n" +
+                        string.Join("\n", report.Findings.Where(f => f.Level == ScriptRiskLevel.Blocked)
+                            .Select(f => $"  L{f.Line} [{f.Rule}] {f.Excerpt}")));
+                }
+                else
+                {
+                    reportParts.Add(ScriptRiskAnalyzer.FormatReport(report));
+                }
+            }
+
+            if (blockedParts.Count > 0)
+            {
+                await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+                {
+                    ServerId = server.Id,
+                    ServerName = server.Name,
+                    Command = $"UPLOAD_BATCH: {paths.Count} path(s) -> {remoteDirectory}",
+                    Status = CommandStatus.Blocked,
+                    Category = AuditCategory.Gate,
+                    Decision = "blocked",
+                    IsFileTransfer = true,
+                    FilePath = remoteDirectory
+                });
+                return BatchTransferResultDto.Fail("blocked_script",
+                    $"批内 {blockedParts.Count} 个脚本内容扫描未通过(整批拒绝):\n" + string.Join("\n", blockedParts),
+                    server.Id, server.Name, server.Host);
+            }
+
+            riskReport = $"【脚本风险分析(服务端规则扫描), 共 {scriptFiles.Count} 个脚本】\n" +
+                string.Join("\n", reportParts.Take(10)) +
+                (reportParts.Count > 10 ? $"\n… 另有 {reportParts.Count - 10} 个脚本未展示" : "") +
+                (string.IsNullOrWhiteSpace(riskNote) ? "" : $"\n助手评估(仅供参考, 非权威): {riskNote.Trim()}");
+        }
+        else if (!string.IsNullOrWhiteSpace(riskNote))
+        {
+            riskReport = $"【助手评估(仅供参考, 未经服务端扫描)】{riskNote.Trim()}";
+        }
+
         if (ft.RequireApproval)
         {
             var outcome = await _approvalService.RequestApprovalAsync(
@@ -173,7 +261,8 @@ public class FileTransferTools
                 CommandFilterResult.Sensitive,
                 string.Join("; ", paths.Take(5)) + (paths.Count > 5 ? " ..." : ""),
                 "批量文件上传",
-                cancellationToken);
+                cancellationToken,
+                riskReport: riskReport);
 
             if (outcome != ApprovalOutcome.Approved)
             {
@@ -455,6 +544,65 @@ public class FileTransferTools
             ? new List<string>()
             : text.Split(new[] { '\n', '\r', ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+
+    /// <summary>读取本地文件文本供风险扫描(最多读到扫描上限+1字符, 读失败返回 null → 按未审脚本处理)。</summary>
+    private static string? ReadLocalText(string path)
+    {
+        try
+        {
+            using var fs = File.OpenRead(path);
+            using var sr = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            var buffer = new char[ScriptRiskAnalyzer.MaxAnalyzeChars + 1];
+            var read = 0;
+            while (read < buffer.Length)
+            {
+                var n = sr.Read(buffer, read, buffer.Length - read);
+                if (n <= 0)
+                    break;
+                read += n;
+            }
+            return new string(buffer, 0, read);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>收集批量上传路径中的脚本文件(文件按扩展名直接判; 目录按递归标志展开, 上限 500 个)。</summary>
+    private List<string> CollectScriptFiles(IReadOnlyList<string> paths, bool recursive)
+    {
+        const int maxScripts = 500;
+        var result = new List<string>();
+        foreach (var p in paths)
+        {
+            if (File.Exists(p))
+            {
+                if (ScriptRiskAnalyzer.IsScriptFile(p))
+                    result.Add(p);
+            }
+            else if (Directory.Exists(p))
+            {
+                try
+                {
+                    var option = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+                    result.AddRange(Directory.EnumerateFiles(p, "*", option)
+                        .Where(ScriptRiskAnalyzer.IsScriptFile)
+                        .Take(maxScripts));
+                }
+                catch
+                {
+                    // 目录不可枚举(权限/中断): 交给后续上传流程报错
+                }
+            }
+            if (result.Count >= maxScripts)
+                break;
+        }
+        return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private IEnumerable<(string Path, ScriptRiskReport Report)> ScanScripts(IEnumerable<string> scriptFiles) =>
+        scriptFiles.Select(p => (p, _scriptRisk.Analyze(Path.GetFileName(p), ReadLocalText(p))));
 
     private static string TransferFailureStatus(FileTransferResult result) =>
         result.Message.Contains("限流", StringComparison.Ordinal) ? "rate_limited"

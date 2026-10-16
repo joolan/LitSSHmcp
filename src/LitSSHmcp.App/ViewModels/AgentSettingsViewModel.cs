@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.CompilerServices;
 using LitSSHmcp.Agent;
 using LitSSHmcp.App.Services;
@@ -344,6 +345,12 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     private string _maxToolIterations = "20";
     public string MaxToolIterations { get => _maxToolIterations; set => Set(ref _maxToolIterations, value); }
 
+    private string _budgetMaxTurnSeconds = "0";
+    public string BudgetMaxTurnSeconds { get => _budgetMaxTurnSeconds; set => Set(ref _budgetMaxTurnSeconds, value); }
+
+    private string _budgetMaxSessionCost = "0";
+    public string BudgetMaxSessionCost { get => _budgetMaxSessionCost; set => Set(ref _budgetMaxSessionCost, value); }
+
     private bool _readOnly;
     public bool ReadOnly { get => _readOnly; set => Set(ref _readOnly, value); }
 
@@ -351,19 +358,49 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     public ObservableCollection<GroupOption> ToolGroupOptions { get; } = new();
 
     private bool _memoryEnabled;
-    public bool MemoryEnabled { get => _memoryEnabled; set => Set(ref _memoryEnabled, value); }
+    public bool MemoryEnabled
+    {
+        get => _memoryEnabled;
+        set
+        {
+            if (_memoryEnabled == value) return;
+            _memoryEnabled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(MemoryConfigWarning));
+            OnPropertyChanged(nameof(HasMemoryConfigWarning));
+        }
+    }
 
     private string _memoryEndpoint = string.Empty;
     public string MemoryEndpoint { get => _memoryEndpoint; set => Set(ref _memoryEndpoint, value); }
 
     private string _memoryModel = string.Empty;
-    public string MemoryModel { get => _memoryModel; set => Set(ref _memoryModel, value); }
+    public string MemoryModel
+    {
+        get => _memoryModel;
+        set
+        {
+            if (_memoryModel == value) return;
+            _memoryModel = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(MemoryConfigWarning));
+            OnPropertyChanged(nameof(HasMemoryConfigWarning));
+        }
+    }
 
     private string _memoryApiKey = string.Empty;
     public string MemoryApiKey { get => _memoryApiKey; set => Set(ref _memoryApiKey, value); }
 
     private string _memoryTopK = "5";
     public string MemoryTopK { get => _memoryTopK; set => Set(ref _memoryTopK, value); }
+
+    /// <summary>记忆配置警告（启用但缺模型名时提示；运行时会静默禁用——此处提前可见）。</summary>
+    public string MemoryConfigWarning =>
+        MemoryEnabled && string.IsNullOrWhiteSpace(MemoryModel)
+            ? "已启用长期记忆但未填写 Embeddings 模型名：运行时将禁用记忆（不注册 ops_memory_* 工具、不召回历史）。请填写模型名（如 text-embedding-3-small）。"
+            : string.Empty;
+
+    public bool HasMemoryConfigWarning => MemoryConfigWarning.Length > 0;
 
     private string _retentionMaxSessions = "50";
     public string RetentionMaxSessions { get => _retentionMaxSessions; set => Set(ref _retentionMaxSessions, value); }
@@ -478,6 +515,170 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>记忆统计展示（"查看记忆统计"按钮填充）。</summary>
+    private string _memoryStatsText = string.Empty;
+    public string MemoryStatsText
+    {
+        get => _memoryStatsText;
+        set => Set(ref _memoryStatsText, value);
+    }
+
+    /// <summary>测试 Embeddings 连通性（用当前页填写的端点/模型/Key，无需先保存；Key 留空复用当前启用对话模型的 Key）。</summary>
+    public async Task TestEmbeddingsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(MemoryModel))
+        {
+            StatusMessage = "请先填写 Embeddings 模型名（如 text-embedding-3-small）";
+            return;
+        }
+
+        StatusMessage = "正在测试 Embeddings…";
+        try
+        {
+            var cfg = new AgentMemoryConfig
+            {
+                Enabled = true,
+                Endpoint = MemoryEndpoint ?? string.Empty,
+                Model = MemoryModel,
+                ApiKey = string.IsNullOrWhiteSpace(MemoryApiKey) ? null : MemoryApiKey
+            };
+            var generator = EmbeddingClientFactory.Create(cfg, ResolveFallbackApiKey());
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var result = await generator.GenerateAsync(new[] { "Embeddings 连通性测试 ping" });
+            sw.Stop();
+            StatusMessage = $"Embeddings 连通正常 · {cfg.Model} · 维度 {result[0].Vector.Length}（{sw.ElapsedMilliseconds} ms）";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "Embeddings 测试失败: " + ChatErrorClassifier.Describe(ex);
+        }
+    }
+
+    /// <summary>查看记忆库统计（agent.db 的 agent_memory 表；不受"是否已保存"影响，读当前磁盘库）。</summary>
+    public async Task LoadMemoryStatsAsync()
+    {
+        try
+        {
+            var store = new AgentMemoryStore();
+            var stats = await store.GetStatsAsync();
+            var dbPath = ConfigPaths.AgentDb;
+            var size = File.Exists(dbPath) ? new FileInfo(dbPath).Length : 0;
+            var sizeText = size >= 1024 * 1024 ? $"{size / 1024.0 / 1024.0:F1} MB" : $"{Math.Max(1, size / 1024)} KB";
+
+            MemoryStatsText = stats.Total == 0
+                ? $"记忆库为空（共 0 条）· {dbPath}"
+                : $"共 {stats.Total} 条 · " +
+                  string.Join(" / ", stats.ByKind
+                      .OrderByDescending(kv => kv.Value)
+                      .Select(kv => $"{(string.IsNullOrEmpty(kv.Key) ? "会话片段" : kv.Key)} {kv.Value}")) +
+                  $" · 已过时(superseded) {stats.Superseded} 条 · 库 {sizeText} · {dbPath}";
+            StatusMessage = stats.Total == 0 ? "记忆库为空（启用记忆并对话/登记脚本后开始积累）" : "已显示记忆统计";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "读取记忆统计失败: " + ex.Message;
+        }
+    }
+
+    /// <summary>Key 留空时复用对话模型 Key：优先当前启用模型，回退第一个启用模型（与运行时 TryCreateMemoryAsync 一致）。</summary>
+    private string? ResolveFallbackApiKey()
+    {
+        var active = Providers.FirstOrDefault(p => p.Id == _activeProviderId)
+                     ?? Providers.FirstOrDefault(p => p.Enabled)
+                     ?? Providers.FirstOrDefault();
+        return active?.ToModel().ApiKey;
+    }
+
+    // ===== 记忆管理（浏览/按类别过滤/单条删除/清空全部；清空用于更换 Embeddings 模型等场景） =====
+
+    /// <summary>记忆管理列表（含 raw 会话片段；"助手设置"里的统计按钮只给数字，这里给可操作明细）。</summary>
+    public ObservableCollection<MemoryEntry> MemoryEntries { get; } = new();
+
+    private MemoryEntry? _selectedMemoryEntry;
+    public MemoryEntry? SelectedMemoryEntry
+    {
+        get => _selectedMemoryEntry;
+        set => Set(ref _selectedMemoryEntry, value);
+    }
+
+    /// <summary>类别过滤选项（"全部"= 不限；raw=会话/文档片段，其余为结构化类别）。</summary>
+    public IReadOnlyList<string> MemoryKindFilters { get; } =
+        new[] { "全部", "task", "script", "asset", "raw" };
+
+    private string _memoryKindFilter = "全部";
+    public string MemoryKindFilter
+    {
+        get => _memoryKindFilter;
+        set
+        {
+            if (_memoryKindFilter == value) return;
+            _memoryKindFilter = value;
+            OnPropertyChanged();
+            _ = LoadMemoryEntriesAsync();   // 切换过滤即时刷新
+        }
+    }
+
+    /// <summary>加载记忆列表（读当前磁盘 agent.db，不受"是否已保存"影响；单次最多 500 条）。</summary>
+    public async Task LoadMemoryEntriesAsync()
+    {
+        try
+        {
+            var store = new AgentMemoryStore();
+            var kind = string.IsNullOrEmpty(MemoryKindFilter) || MemoryKindFilter == "全部"
+                ? null
+                : MemoryKindFilter;
+            var records = await store.ListAsync(kind, null, 500, includeRaw: true);
+            MemoryEntries.Clear();
+            foreach (var r in records)
+                MemoryEntries.Add(MemoryEntry.From(r));
+            StatusMessage = MemoryEntries.Count == 0 ? "记忆库为空" : $"已加载 {MemoryEntries.Count} 条记忆";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "读取记忆列表失败: " + ex.Message;
+        }
+    }
+
+    /// <summary>删除选中的一条记忆（含 raw；确认在视图层完成）。</summary>
+    public async Task DeleteMemoryEntryAsync(MemoryEntry? entry)
+    {
+        if (entry is null)
+            return;
+        try
+        {
+            var store = new AgentMemoryStore();
+            var ok = await store.DeleteByIdAsync(entry.Id);
+            if (ok)
+                MemoryEntries.Remove(entry);
+            StatusMessage = ok
+                ? $"已删除 [{entry.Kind}:{(string.IsNullOrEmpty(entry.Key) ? "会话片段" : entry.Key)}]"
+                : "未找到该条目（可能已被删除），已刷新列表";
+            if (!ok)
+                await LoadMemoryEntriesAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "删除记忆失败: " + ex.Message;
+        }
+    }
+
+    /// <summary>清空整个记忆库（含 raw；换 Embeddings 模型/维度前使用，需视图层二次确认）。</summary>
+    public async Task ClearAllMemoryAsync()
+    {
+        try
+        {
+            var store = new AgentMemoryStore();
+            await store.ClearAsync();
+            MemoryEntries.Clear();
+            MemoryStatsText = string.Empty;
+            StatusMessage = "记忆库已清空。换新 Embeddings 模型后历史向量不可复用，请重新积累或让 AI 用 ops_memory_save/ops_script_register 重新登记。";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "清空记忆库失败: " + ex.Message;
+        }
+    }
+
     public async void Load()
     {
         try
@@ -518,6 +719,8 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             EnableSubAgent = agent.EnableSubAgent;
             ResponseStyle = string.IsNullOrWhiteSpace(agent.ResponseStyle) ? "concise" : agent.ResponseStyle;
             MaxToolIterations = agent.MaxToolIterations.ToString();
+            BudgetMaxTurnSeconds = (agent.Budget?.MaxTurnSeconds ?? 0).ToString();
+            BudgetMaxSessionCost = (agent.Budget?.MaxSessionCost ?? 0).ToString();
             ReadOnly = agent.ReadOnly;
 
             ToolGroupOptions.Clear();
@@ -585,6 +788,9 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent.EnableSubAgent = EnableSubAgent;
             config.Agent.ResponseStyle = string.IsNullOrWhiteSpace(ResponseStyle) ? "concise" : ResponseStyle;
             config.Agent.MaxToolIterations = (int)Math.Max(1, ParseLong(MaxToolIterations, 20));
+            config.Agent.Budget ??= new AgentBudgetConfig();
+            config.Agent.Budget.MaxTurnSeconds = (int)Math.Max(0, ParseLong(BudgetMaxTurnSeconds, 0));
+            config.Agent.Budget.MaxSessionCost = Math.Max(0, ParseDouble(BudgetMaxSessionCost, 0));
             config.Agent.ReadOnly = ReadOnly;
 
             var checkedGroups = ToolGroupOptions.Where(o => o.IsChecked).Select(o => o.Key).ToArray();
@@ -625,6 +831,9 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
 
     private static long ParseLong(string? text, long fallback) =>
         long.TryParse(text?.Trim(), out var v) && v >= 0 ? v : fallback;
+
+    private static double ParseDouble(string? text, double fallback) =>
+        double.TryParse(text?.Trim(), out var v) && v >= 0 ? v : fallback;
 
     private static string GroupLabel(string key) => key switch
     {
@@ -1021,4 +1230,37 @@ public class McpServerEdit : INotifyPropertyChanged
         OnPropertyChanged(name);
         return true;
     }
+}
+
+/// <summary>记忆管理列表行（展示用；数据源为 agent.db 的 agent_memory 表）。</summary>
+public sealed class MemoryEntry
+{
+    public long Id { get; init; }
+    public string Kind { get; init; } = string.Empty;
+    public string Key { get; init; } = string.Empty;
+    public string Content { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public string UpdatedAt { get; init; } = string.Empty;
+    public int Freq { get; init; }
+    public string AssetIds { get; init; } = string.Empty;
+    public string Tags { get; init; } = string.Empty;
+
+    public string Title => $"[{Kind}:{(string.IsNullOrEmpty(Key) ? "会话片段" : Key)}] ×{Freq} · {Status}";
+    public string Meta => $"更新 {UpdatedAt}" +
+                          (string.IsNullOrEmpty(AssetIds) ? string.Empty : $" · 资产 {AssetIds}") +
+                          (string.IsNullOrEmpty(Tags) ? string.Empty : $" · 标签 {Tags}");
+    public string Preview => Content.Length <= 160 ? Content : Content[..160] + "…";
+
+    public static MemoryEntry From(MemoryRecord r) => new()
+    {
+        Id = r.Id,
+        Kind = r.Kind,
+        Key = r.Key,
+        Content = r.Content,
+        Status = r.Status,
+        UpdatedAt = r.UpdatedAt,
+        Freq = r.Freq,
+        AssetIds = r.AssetIds,
+        Tags = r.Tags,
+    };
 }

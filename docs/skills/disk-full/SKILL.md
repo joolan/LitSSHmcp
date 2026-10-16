@@ -22,3 +22,6 @@ appliesTo: [ssh, command, log]
 ## 注意
 - 删除文件属破坏性操作：先列清单让用户确认，禁止 `rm -rf` 通配大目录。
 - 不要动 `/proc`、系统关键文件；`/var/lib/docker` 清理优先用 docker 原生命令（`docker system prune` 等，需确认）。
+
+## 深入（按需 skill_read）
+磁盘周期巡检 runbook：`references/inspection-runbook.md`（批量采集、阈值分级报告、巡检对比与预警）。

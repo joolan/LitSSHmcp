@@ -118,6 +118,23 @@ public static class AppServiceFactory
         return new DatasourceDriverRegistry(drivers);
     }
 
+    /// <summary>
+    /// 数据库工作台专用驱动注册表：Redis 走 <see cref="RedisSessionCache"/> 复用连接与 SSH 隧道
+    /// （工作台会高频开关连接：分批 SCAN、键元信息、取值各一次调用）。
+    /// 测试连接 / 拓扑发现等仍用 <see cref="CreateDriverRegistry"/>（每次新建连接，反映真实连通性）。
+    /// </summary>
+    public static IDatasourceDriverRegistry CreateWorkbenchDriverRegistry(IConfigService configService)
+    {
+        var security = new SecurityOptionsProvider();
+        var knownHosts = new FileSshKnownHostsStore();
+        var limiter = new TargetLimiter(security);
+        var mysql = new MySqlConnectionProvider(configService, knownHosts, security, limiter);
+        var postgres = new PostgresConnectionProvider(configService, knownHosts, security, limiter);
+        var redis = new RedisSessionCache(new RedisConnectionProvider(configService, knownHosts, security, limiter));
+        var drivers = new IDatasourceDriver[] { new MySqlDriver(mysql), new PostgresDriver(postgres), new RedisDriver(redis) };
+        return new DatasourceDriverRegistry(drivers);
+    }
+
     public static ITopologyService CreateTopologyService(IConfigService configService)
     {
         var security = new SecurityOptionsProvider();

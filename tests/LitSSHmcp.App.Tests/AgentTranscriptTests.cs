@@ -83,4 +83,30 @@ public class AgentTranscriptTests
         var parsed = AgentTranscript.Deserialize(json)!;
         Assert.True(parsed.Result!.Length <= AgentTranscript.ResultMaxChars + 20);
     }
+
+    [Fact]
+    public void BuildTrace_skips_info_steps()
+    {
+        var tool = new AgentStep("ssh_execute_command", "{\"command\":\"df -h\"}");
+        tool.Complete(true, "ok", 10);
+        var recall = new AgentStep("记忆召回", string.Empty, isInfo: true);
+        recall.Complete(true, "- [task:reboot-web ×2] 重启后检查证书", 0);
+
+        var trace = AgentTranscript.BuildTrace(new[] { recall, tool });
+
+        Assert.Contains("ssh_execute_command", trace);
+        Assert.DoesNotContain("记忆召回", trace);   // 信息步骤不进模型恢复轨迹
+    }
+
+    [Fact]
+    public void Info_step_shows_plain_label_and_context_note()
+    {
+        var step = new AgentStep("记忆召回", string.Empty, isInfo: true);
+        step.Complete(true, "- [script:nginx-reload] nginx -t 后 reload", 0);
+
+        Assert.Equal("记忆召回", step.Label);                    // 不带"调用"前缀
+        Assert.Equal("已注入本轮上下文", step.Tail);              // 不显示耗时
+        Assert.Contains("nginx -t", step.Result);
+        Assert.Equal(System.Windows.Visibility.Collapsed, step.RetryVisibility);  // 成功不提供重试
+    }
 }

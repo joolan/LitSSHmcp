@@ -1,4 +1,4 @@
-# LitSSH MCP 发布脚本
+﻿# LitSSH MCP 发布脚本
 # 生成「App(含内置 MCP 服务器)」与「独立 MCP 服务器」两类产物。
 # 用法:
 #   powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.2.0

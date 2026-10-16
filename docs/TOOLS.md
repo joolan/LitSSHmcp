@@ -215,15 +215,17 @@ MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档�
 ## 命令执行组（command）
 
 ### `ssh_execute_command`
-- **参数**：`serverId`（服务器标识）、`command`（Shell命令）、`timeoutSeconds`（可选，命令超时秒数，1-3600，默认 60；超时返回 `status=timeout`）
-- **返回**：`{ success, status, reason, error, command, output, truncated, outputChars, exitCode, durationMs }`（`output` 为命令输出，超 2 万字符截断并置 `truncated: true`；被拒绝/禁止时 `status` 为 `rejected`/`blocked`/`approval_timeout`/`approval_unavailable`）
+- **参数**：`serverId`（服务器标识）、`command`（Shell命令）、`timeoutSeconds`（可选，命令超时秒数，1-3600，默认 60；超时返回 `status=timeout`）、`riskNote`（可选，助手对该操作的风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」；服务端扫描才是权威）
+- **返回**：`{ success, status, reason, error, command, output, truncated, outputChars, exitCode, durationMs }`（`output` 为命令输出，超 2 万字符截断并置 `truncated: true`；被拒绝/禁止时 `status` 为 `rejected`/`blocked`/`approval_timeout`/`approval_unavailable`；脚本扫描硬拒时 `status=blocked`、`reason=blocked_script`）
 - **防挂起**：会持续输出/需交互的命令（`tail -f`、`docker logs -f`、`journalctl -f`、`vi/vim/less/top/watch`、普通通道的 `sudo/su`、`ping` 不带 `-c`、`nc/telnet`、`docker exec -it`、`docker attach` 等）**不会执行**，直接返回 `status=blocking_command` 并给出替代写法（如 `tail -n`/`--tail`/`--no-pager`/用 `ssh_execute_sudo`）。启动常驻进程请用 `nohup ... &`/`setsid`/`systemctl`/`docker -d`，不要前台跑。
-- **安全链路**：挂起/交互拦截 → 黑名单直接拒绝 → 敏感命令人工确认 → 执行 → 写审计（sudo 提权命令用 `ssh_execute_sudo`）
+- **脚本安全门**：识别"执行脚本文件"形态（`bash x.sh`、`python3 /opt/a.py`、`powershell -File a.ps1`、`./x.sh`；`bash -c "…"` 内联形态不走此门）时，执行前先 `cat` 预读远端内容做**服务端规则扫描**（命令过滤规则 + 脚本专用规则：fork炸弹/`curl|sh`/写裸盘/反弹shell/SSH凭据/清历史/crontab等）：命中危险模式**直接 `status=blocked` 不进审批**；扫描报告（结论/命中行/sha256/助手评估）附在审批弹窗，**脚本形态一律需人工同意**（即使命令行本身无敏感词）。探测读取本身写审计（`category=probe`）。脚本专用内置规则可在 `security.scriptRules` 按标签禁用单条或整体关闭，并可追加自定义危险/可疑正则（安全设置页可编辑，保存后热生效）。
+- **安全链路**：挂起/交互拦截 → 黑名单直接拒绝 → 脚本内容扫描(危险硬拒) → 敏感命令/脚本人工确认 → 执行 → 写审计（sudo 提权命令用 `ssh_execute_sudo`）
 
 ### `ssh_execute_sudo`
 - **参数**：`serverId`、`command`
 - **返回**：同 `ssh_execute_command`，并额外带 `escalation` —— 本次实际提权机制：`direct`（未提权/已是目标用户）、`sudo`、`su`、`auto:sudo`、`auto:su`、`auto:failed`（用于排障与向用户说明“到底用了 sudo 还是 su”）；未配置提权时返回 `status: "sudo_not_configured"`
 - **说明**：判断需要 root 权限时**直接用本工具**（无需预检），不要先 `ssh_execute_command` 失败再提权；总是需要人工确认。具体走 `sudo` 还是 `su` 由服务器配置（`SudoType`）决定，工具会自动选择（含 `Auto` 先 sudo 失败回退 su），客户端无需也不应预先判断。
+- **脚本安全门**：提权执行脚本文件同样先预读内容做服务端规则扫描，危险模式返回 `status=blocked`，扫描报告附审批弹窗。
 - **安全**：返回给客户端的 `output`/`error` 一律把服务器口令（SSH 密码 / 密钥口令 / 提权密码）脱敏为 `******`；任何路径（含异常）都不会把密码暴露给 AI。
 
 ### `ssh_get_sudo_status`
@@ -235,20 +237,22 @@ MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档�
 - **参数**：`serverId`（可选，不传查全部）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `docker_logs`）、`category`（可选，事件类型：`exec`=执行 / `gate`=审批拦截 / `probe`=只读探测 / `meta`=列表元数据 / `transfer`=文件传输）
 - **返回**：`{ success, status, error, count, hasMore, records: [...] }`（每条记录含 `sessionId`/`tool`/`category`/`decision`；`result` 已截断到 4000 字符；`hasMore: true` 表示还有更早记录，配合 `offset` 翻页）
 
-**命令类错误约定**：`{ success: false, error, status, errorKind }`，`status` 可能值：`blocked`、`blocking_command`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`sudo_not_configured`、`file_not_found`、`auth_failed`、`host_key_mismatch`、`timeout`、`rate_limited`、`connection_error`、`failed`。
+**命令类错误约定**：`{ success: false, error, status, errorKind }`，`status` 可能值：`blocked`、`blocking_command`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`sudo_not_configured`、`file_not_found`、`auth_failed`、`host_key_mismatch`、`timeout`、`rate_limited`、`connection_error`、`failed`；`blocked_script`：脚本内容扫描命中危险模式（`ssh_upload_*` 上传扫描为 `status=blocked_script`；`ssh_execute_command`/`ssh_execute_sudo` 执行侧为 `status=blocked` + `reason=blocked_script`）。
 
 ## 文件传输组（fileTransfer）
 
 上传/下载受 `fileTransfer.enabled` 开关与 `allowedLocalPaths` / `allowedRemotePaths` 白名单约束（越界返回 `path_not_allowed`，禁用返回 `file_transfer_disabled`），路径会做规范化并拦截 `..` 穿越。上传/下载过程中会通过 MCP `notifications/progress` 推送进度（字节数/百分比）。
 
 ### `ssh_upload_files`
-- **参数**：`serverId`、`localPaths`（每行一个：文件或目录）、`remoteDirectory`（远程目标目录，须在 `allowedRemotePaths` 内）、`recursive`（默认 false，目录递归子目录）、`maxFiles`（默认 200，1~5000）
+- **参数**：`serverId`、`localPaths`（每行一个：文件或目录）、`remoteDirectory`（远程目标目录，须在 `allowedRemotePaths` 内）、`recursive`（默认 false，目录递归子目录）、`maxFiles`（默认 200，1~5000）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
 - **返回**：结构同 `ssh_download_files`（`remoteDirectory` 字段替换 `localDirectory`）
 - **说明**：**用一条 SFTP 连接**批量上传（避免"上传文件夹"时每个文件重复建连/认证）；`localPaths` 中的目录会被展开（`recursive=true` 递归），**按相对路径保留子目录结构**（远程自动逐级建目录）；**整批一次人工确认**；每个源路径须在 `allowedLocalPaths` 内；每文件受 `fileTransfer.maxFileSizeBytes` 约束、总数受 `maxFiles` 约束（超出置 `truncated=true`）。
+- **脚本安全门**：批内全部脚本文件（`.sh/.bash/.zsh/.py/.ps1/.pl`，目录按递归标志展开，上限 500 个）逐个做服务端规则扫描，报告聚合附审批弹窗；**任一脚本命中危险模式整批拒绝**（`status=blocked_script`）。
 
 ### `ssh_upload_file`
-- **参数**：`serverId`、`localPath`（本地路径，须在 `allowedLocalPaths` 内）、`remotePath`（远程路径，须在 `allowedRemotePaths` 内）
+- **参数**：`serverId`、`localPath`（本地路径，须在 `allowedLocalPaths` 内）、`remotePath`（远程路径，须在 `allowedRemotePaths` 内）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
 - **返回**：`{ success, message, bytesTransferred, durationMs, ... }`；越界返回 `path_not_allowed` 并附允许路径；超过 `fileTransfer.maxFileSizeBytes` 返回 `file_too_large`
+- **脚本安全门**：上传脚本文件时先读本地内容做服务端规则扫描（结论/命中行/sha256 附审批弹窗）；命中危险模式直接 `status=blocked_script` 不进审批。
 
 ### `ssh_download_file`
 - **参数**：`serverId`、`remotePath`（须在 `allowedRemotePaths` 内）、`localPath`（须在 `allowedLocalPaths` 内）
@@ -336,24 +340,26 @@ MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档�
 
 所有 Redis 工具都要求数据源 `type = redis`（桌面 App"添加数据源"→类型选 Redis，端口默认 6379），入参只有 `datasourceId`，**不含密码**。连接自动选择直连或经 SSH 隧道（复用 MySQL 的隧道/限流/密钥校验链路），Redis 6+ ACL 用户名填在"用户名"字段，无 ACL 留空（只发 AUTH 密码，密码不会落到跳板机）。命令按内置策略 `RedisCommandPolicy` 分三档：只读白名单 / 写（需审批）/ 禁止（直接拒绝）。
 
+**连接复用与切库**：三个 Redis 工具共用连接缓存（同一「数据源+DB」复用一条连接与 SSH 隧道，空闲 30s 释放），不再每次调用新建连接/隧道。**切库请用 `db` 参数**（0..15，不传用数据源默认库），返回里的 `db` 字段回显实际生效的库；在命令里发 `SELECT` 不可靠（跨调用不保证同一连接）。
+
 ### `redis_read`（只读）
-- **参数**：`datasourceId`、`command`（只读命令，如 `GET key` / `HGETALL user:1` / `SLOWLOG GET 10`）、`maxItems`（数组返回最大元素数，默认 200，上限 1000）
-- **返回**：`{ success, datasourceId, name, command, result, truncated, durationMs, accessMode, viaTunnelServer }`；`result` 为**命令结果的 JSON 文本**（标量如 `"hello"`/`42`，数组为 JSON 数组），超长字符串/超大数组会截断（`truncated: true`）
-- **限制**：不在只读白名单内的命令返回 `status: "not_readonly"` 并提示改用 `redis_execute`；禁止类命令返回 `status: "blocked"`
+- **参数**：`datasourceId`、`command`（只读命令，如 `GET key` / `HGETALL user:1` / `SLOWLOG GET 10`）、`db`（可选，Redis DB 索引 0..15）、`maxItems`（数组返回最大元素数，默认 200，上限 1000）
+- **返回**：`{ success, datasourceId, name, command, db, result, truncated, durationMs, accessMode, viaTunnelServer }`；`result` 为**命令结果的 JSON 文本**（标量如 `"hello"`/`42`，数组为 JSON 数组），超长字符串/超大数组会截断（`truncated: true`）
+- **限制**：不在只读白名单内的命令返回 `status: "not_readonly"` 并提示改用 `redis_execute`；禁止类命令返回 `status: "blocked"`；`db` 越界返回 `status: "invalid_db"`
 - **审计**：只读命令同样写 SQL 审计（`operation = Query`，SQL 列记录命令原文）
 
 ### `redis_execute`（写/管理）
-- **参数**：`datasourceId`、`command`（如 `SET session:1 'abc' EX 60` / `DEL k` / `HSET user:1 name tom` / `CONFIG SET maxmemory 1gb`；含空格的值用引号包裹）
-- **返回**：`{ success, datasourceId, name, command, result, durationMs }`（`result` 为命令结果的 JSON 文本）
+- **参数**：`datasourceId`、`command`（如 `SET session:1 'abc' EX 60` / `DEL k` / `HSET user:1 name tom` / `CONFIG SET maxmemory 1gb`；含空格的值用引号包裹）、`db`（可选，Redis DB 索引 0..15）
+- **返回**：`{ success, datasourceId, name, command, db, result, durationMs }`（`result` 为命令结果的 JSON 文本）
 - **安全链路**：禁止类命令（`SHUTDOWN`/`FLUSHALL`/`FLUSHDB`/`DEBUG`/`SWAPDB`/`REPLICAOF`/`SUBSCRIBE`/`BLPOP`/`MODULE LOAD` 等）直接拒绝 → **其余写操作一律弹桌面确认**（第一期不做敏感度分级，全部要求审批）→ 执行 → 写审计
 - **提示**：只读命令传入会返回 `status: "readonly_statement"`，提示改用 `redis_read`
 
 ### `redis_diagnostics`
-- **参数**：`datasourceId`
+- **参数**：`datasourceId`、`db`（可选，Redis DB 索引 0..15；影响 `DBSIZE` 与 keyspace 摘要所在库）
 - **返回**：`{ success, datasourceId, name, summary, data, durationMs, error }` —— 内含 `INFO`（server/memory/clients/stats/keyspace）、`DBSIZE`、`CLIENT LIST`、`SLOWLOG GET`、`CONFIG` 关键项与 keyspace 摘要
 - **场景**：用户问"Redis 正不正常 / 缓存为什么慢 / 内存涨 / 命中率低 / 有没有卡"时**优先用它**做整体诊断，再按需下钻
 
-**Redis 错误约定**：`{ success: false, status, error }`，`status` 可能值：`datasource_not_found`、`unsupported_type`、`blocked`、`not_readonly`、`readonly_statement`、`rejected`、`approval_timeout`、`approval_unavailable`、`invalid_command`、`redis_error`（Redis 返回的错误）、`connection_error`。
+**Redis 错误约定**：`{ success: false, status, error }`，`status` 可能值：`datasource_not_found`、`unsupported_type`、`blocked`、`not_readonly`、`readonly_statement`、`rejected`、`approval_timeout`、`approval_unavailable`、`invalid_command`、`invalid_db`（db 参数越界）、`redis_error`（Redis 返回的错误）、`connection_error`。
 
 ## Docker 容器组（docker）
 

@@ -169,10 +169,13 @@ public class ApprovalService : IApprovalService
         CommandFilterResult filterResult,
         string? filePath = null,
         string? operationLabel = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? riskReport = null)
     {
         var options = _securityOptions.Approval;
         var operation = operationLabel ?? (filterResult == CommandFilterResult.Sensitive ? "敏感命令" : "文件传输");
+        // 展示用命令 = 命令 + 风险报告；桌面通道内部会再次 Combine(带 null 幂等)
+        var displayCommand = ApprovalDisplay.Combine(command, riskReport);
 
         // 审批模式：manual(默认) / auto-approve(危险) / auto-reject。
         // 仅影响“需人工确认”的敏感操作；被命令过滤器判为 Blocked 的仍是硬拒绝（在调用本服务前已拦截）。
@@ -202,7 +205,7 @@ public class ApprovalService : IApprovalService
         {
             ServerName = serverName,
             Operation = operation,
-            Command = command,
+            Command = displayCommand,
             FilePath = filePath,
             TimeoutSeconds = options.TimeoutSeconds,
             TopMost = options.TopMost
@@ -213,7 +216,7 @@ public class ApprovalService : IApprovalService
 
         var pending = new List<Task<ApprovalOutcome?>>();
         if (channels.Any(c => c.Equals("desktop", StringComparison.OrdinalIgnoreCase)))
-            pending.Add(AsChannelTask(_desktop.RequestApprovalAsync(serverName, command, filterResult, filePath, operationLabel, cts.Token)));
+            pending.Add(AsChannelTask(_desktop.RequestApprovalAsync(serverName, command, filterResult, filePath, operationLabel, cts.Token, riskReport)));
         if (channels.Any(c => c.Equals("cli", StringComparison.OrdinalIgnoreCase)))
             pending.Add(_cli.RequestAsync(context, cts.Token));
 

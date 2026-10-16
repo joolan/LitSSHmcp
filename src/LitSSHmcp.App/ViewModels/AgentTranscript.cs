@@ -41,13 +41,15 @@ public static class AgentTranscript
 
     /// <summary>
     /// 把一轮的工具步骤拼成紧凑文本轨迹（每轮总量上限 <see cref="TraceTurnMaxChars"/>）；用于重启恢复后
-    /// 让模型看到"本轮做过什么"的证据，且不伪造 function_call 配对。
+    /// 让模型看到"本轮做过什么"的证据，且不伪造 function_call 配对。信息步骤（<see cref="AgentStep.IsInfo"/>，如记忆召回）不计入。
     /// </summary>
     public static string BuildTrace(IEnumerable<AgentStep> steps)
     {
         var sb = new StringBuilder();
         foreach (var step in steps)
         {
+            if (step.IsInfo)
+                continue;
             if (sb.Length >= TraceTurnMaxChars)
                 break;
             var args = Truncate(step.ArgsJson, TraceArgChars);

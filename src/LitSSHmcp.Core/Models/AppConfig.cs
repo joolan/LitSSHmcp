@@ -143,8 +143,11 @@ public class AgentConfig
     /// <summary>允许的工具分组（空=全部，仍受 tools.enabledGroups 约束）。</summary>
     public string[] AllowedToolGroups { get; set; } = Array.Empty<string>();
 
-    /// <summary>长期记忆/RAG（Embeddings + 本地向量检索）配置。</summary>
+    /// <summary>长期记忆/RAG（远程 Embeddings 向量化 + 本地 SQLite 向量库存储/检索）配置。</summary>
     public AgentMemoryConfig Memory { get; set; } = new();
+
+    /// <summary>运行预算（单轮墙钟上限 / 会话成本上限；防失控烧钱，默认不限）。</summary>
+    public AgentBudgetConfig Budget { get; set; } = new();
 
     /// <summary>MCP 服务器 exe 路径；空=自动探测（App 目录 mcp/LitSSHmcp.McpServer.exe / publish）。</summary>
     public string McpServerPath { get; set; } = string.Empty;
@@ -352,6 +355,19 @@ public class AgentProviderConfig
     public double OutputPricePerMTok { get; set; }
 }
 
+/// <summary>运行预算：限制单轮工具循环的墙钟时间与单会话累计成本，防止失控调用烧钱。</summary>
+public class AgentBudgetConfig
+{
+    /// <summary>单轮（一条用户消息的完整工具循环）墙钟上限（秒）；超限停止本轮并提示。0=不限。</summary>
+    public int MaxTurnSeconds { get; set; }
+
+    /// <summary>
+    /// 单会话累计估算成本上限（货币单位与模型价格一致，默认 ¥）；达到后阻止新的发送。
+    /// 仅当所选模型已填入入/出价格时才可判定；0=不限。
+    /// </summary>
+    public double MaxSessionCost { get; set; }
+}
+
 /// <summary>长期记忆：用 OpenAI 兼容 embeddings 端点把历史会话/工作区文档向量化并本地检索。</summary>
 public class AgentMemoryConfig
 {
@@ -365,6 +381,9 @@ public class AgentMemoryConfig
 
     /// <summary>每次召回的记忆条数。</summary>
     public int TopK { get; set; } = 5;
+
+    /// <summary>召回相似度阈值（余弦, 0~1; 越高越严格）。默认 0.15。</summary>
+    public double RecallThreshold { get; set; } = 0.15;
 }
 
 /// <summary>
@@ -425,6 +444,10 @@ public class SecurityConfig
 
     public CommandFilterConfig CommandFilter { get; set; } = new();
     public SqlFilterConfig SqlFilter { get; set; } = new();
+
+    /// <summary>脚本内容风险扫描规则（执行/上传脚本时的权威扫描；内置规则可禁用、可追加自定义正则）。</summary>
+    public ScriptRiskConfig ScriptRules { get; set; } = new();
+
     public FileTransferConfig FileTransfer { get; set; } = new();
     public SshHostKeyConfig SshHostKey { get; set; } = new();
     public DiscoveryConfig Discovery { get; set; } = new();

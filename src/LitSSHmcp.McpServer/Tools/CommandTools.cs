@@ -22,6 +22,7 @@ public class CommandTools
     private readonly IApprovalService _approvalService;
     private readonly IAuditLogService _auditLogService;
     private readonly ISecurityOptionsProvider _securityOptions;
+    private readonly ScriptRiskAnalyzer _scriptRisk;
 
     public CommandTools(
         IConfigService configService,
@@ -29,7 +30,8 @@ public class CommandTools
         ICommandFilterService commandFilter,
         IApprovalService approvalService,
         IAuditLogService auditLogService,
-        ISecurityOptionsProvider securityOptions)
+        ISecurityOptionsProvider securityOptions,
+        ScriptRiskAnalyzer scriptRisk)
     {
         _configService = configService;
         _sshService = sshService;
@@ -37,14 +39,16 @@ public class CommandTools
         _approvalService = approvalService;
         _auditLogService = auditLogService;
         _securityOptions = securityOptions;
+        _scriptRisk = scriptRisk;
     }
 
     [McpServerTool(Name = "ssh_execute_command", UseStructuredContent = true, OutputSchemaType = typeof(CommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("在SSH服务器执行Shell命令(查日志/进程/磁盘/网络等)。危险命令返回status=blocked, 敏感命令需人工确认(可能返回rejected/approval_timeout/approval_unavailable); SQL用mysql_*/postgres_*, Redis用redis_*; 输出最多2万字符, 超出置truncated=true; 超时可用timeoutSeconds调整(默认60s, 超时返回status=timeout); 会挂起/需交互的命令(如 tail -f、docker logs -f、journalctl -f、vi/top/less、sudo、ping不带-c)会直接返回status=blocking_command并给出替代写法——不要用前台方式启动常驻进程, 请用 nohup ... & / setsid / systemctl / docker -d")]
+    [Description("在SSH服务器执行Shell命令(查日志/进程/磁盘/网络等)。危险命令返回status=blocked, 敏感命令需人工确认(可能返回rejected/approval_timeout/approval_unavailable); SQL用mysql_*/postgres_*, Redis用redis_*; 输出最多2万字符, 超出置truncated=true; 超时可用timeoutSeconds调整(默认60s, 超时返回status=timeout); 会挂起/需交互的命令(如 tail -f、docker logs -f、journalctl -f、vi/top/less、sudo、ping不带-c)会直接返回status=blocking_command并给出替代写法——不要用前台方式启动常驻进程, 请用 nohup ... & / setsid / systemctl / docker -d; 执行脚本文件(如 bash x.sh、python3 x.py、./x.sh)会先预读内容做服务端风险扫描并在审批弹窗展示, 扫描出危险模式直接status=blocked")]
     public async Task<CommandResultDto> ExecuteCommand(
         [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
         [Description("要执行的Shell命令(单条), 如 'df -h'、'tail -n 100 /var/log/app.log'")] string command,
         [Description("命令超时秒数(1-3600, 默认60); 超时返回 status=timeout")] int timeoutSeconds = 60,
+        [Description("助手对该操作的风险评估摘要(可选), 会展示在审批弹窗中并标注为『助手评估(仅供参考)』; 服务端规则扫描才是权威")] string? riskNote = null,
         CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
@@ -88,10 +92,63 @@ public class CommandTools
                 "blocked_command", command, server.Id, server.Name, server.Host);
         }
 
+        // —— 脚本执行安全门: 永不信任脚本 —— 执行前预读远端内容做服务端规则扫描,
+        //    报告附在审批弹窗; 命中危险模式直接硬拒; 脚本形态一律进审批(即使命令行本身无敏感词)。
+        string? riskReport = null;
+        var isScript = ScriptExecForm.TryParse(command, out _, out var scriptPath);
+        if (isScript && filterResult != CommandFilterResult.Blocked)
+        {
+            var probe = await _sshService.ExecuteCommandAsync(
+                server, $"cat {ShellQuote.Single(scriptPath)}", cancellationToken, 30);
+            var report = probe.Success
+                ? _scriptRisk.Analyze(scriptPath, probe.Output)
+                : _scriptRisk.Analyze(scriptPath, null) with
+                {
+                    Level = ScriptRiskLevel.Suspicious,
+                    Note = $"无法预读脚本内容({TrimOneLine(probe.Error)}), 按未审脚本处理"
+                };
+
+            await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+            {
+                ServerId = server.Id,
+                ServerName = server.Name,
+                Command = $"PROBE: cat {scriptPath}",
+                Result = $"{report.LevelText}, {report.Findings.Count} 处命中, sha256={report.Sha256}",
+                Status = probe.Success ? CommandStatus.Executed : CommandStatus.Failed,
+                Category = AuditCategory.Probe
+            });
+
+            if (report.Level == ScriptRiskLevel.Blocked)
+            {
+                await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
+                {
+                    ServerId = server.Id,
+                    ServerName = server.Name,
+                    Command = command,
+                    Status = CommandStatus.Blocked,
+                    Category = AuditCategory.Gate,
+                    Decision = "blocked"
+                });
+                return CommandResultDto.Fail("blocked",
+                    $"脚本被安全策略禁止执行。服务端扫描发现危险模式(sha256={report.Sha256}):\n" +
+                    string.Join("\n", report.Findings.Where(f => f.Level == ScriptRiskLevel.Blocked)
+                        .Select(f => $"L{f.Line} [{f.Rule}] {f.Excerpt}")),
+                    "blocked_script", command, server.Id, server.Name, server.Host);
+            }
+
+            riskReport = ScriptRiskAnalyzer.FormatReport(report, riskNote);
+            filterResult = CommandFilterResult.Sensitive;   // 脚本一律需人工同意
+        }
+        else if (!string.IsNullOrWhiteSpace(riskNote))
+        {
+            riskReport = $"【助手评估(仅供参考, 未经服务端扫描)】{riskNote.Trim()}";
+        }
+
         if (filterResult == CommandFilterResult.Sensitive)
         {
             var outcome = await _approvalService.RequestApprovalAsync(
-                ToolSupport.ServerLabel(server), command, filterResult, null, null, cancellationToken);
+                ToolSupport.ServerLabel(server), command, filterResult, null,
+                isScript ? "脚本执行" : null, cancellationToken, riskReport: riskReport);
 
             if (outcome != ApprovalOutcome.Approved)
             {
@@ -153,6 +210,12 @@ public class CommandTools
             ExitCode = result.ExitCode,
             DurationMs = result.Duration.TotalMilliseconds
         };
+    }
+
+    private static string TrimOneLine(string? text)
+    {
+        var t = (text ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return t.Length == 0 ? "未知原因" : (t.Length > 120 ? t[..120] + "…" : t);
     }
 
     [McpServerTool(Name = "ssh_get_command_history", UseStructuredContent = true, OutputSchemaType = typeof(CommandHistoryDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]

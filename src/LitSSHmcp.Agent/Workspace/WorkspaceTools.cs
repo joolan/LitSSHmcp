@@ -57,7 +57,8 @@ public static class WorkspaceTools
 
         var write = new LocalFunction(
             "ops_doc_write",
-            "写入/覆盖工作区文档; 用于维护资产档案(共享区)与任务产出文档(本会话目录)",
+            "写入/覆盖工作区文档; 用于维护资产档案(共享区)与任务产出文档(本会话目录)" +
+            (shared is null ? string.Empty : "; 脚本类文件(.sh/.py/.ps1等)直接写入共享区会自动在文件头标记『未审阅』(建议改经 ops_promote 提升以桌面确认)"),
             "{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"description\":\"要写入的完整文本内容\"}," +
             PathProp(pathDoc + "; 省略则写 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"content\"]}",
             async (args, ct) => await Write(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty, ct));
@@ -97,6 +98,31 @@ public static class WorkspaceTools
     private static string PathProp(string description) =>
         "\"path\":{\"type\":\"string\",\"description\":\"" + description + "\"}";
 
+    private const string UnreviewedStampPrefix = "# 未审阅:";
+
+    /// <summary>
+    /// 提升审阅策略的另一半（评估报告 §10.D.1 待办 #9 / §5.1 行 185，M1 实现时定）：
+    /// 脚本类产物经 <c>ops_promote</c> 提升走**桌面确认**；若 AI 直接经 <c>shared/</c> 前缀把脚本类文件
+    /// 写进共享区（绕过提升命令的旁路），则按报告的备选方案**打"未审阅"标记**——文件头部注入注释行
+    /// （含来源会话），读取方与后续执行审批可据此识别未审阅产物。仅会话模式（双根）生效；
+    /// 单根=旧会话共享区现状行为不打标，避免全量噪音。内容已带标记或非脚本类/非跨根写入则原样返回。
+    /// </summary>
+    private static string MaybeStampUnreviewed(string root, string? shared, string full, string content)
+    {
+        if (shared is null)
+            return content;                                       // 单根模式: 现状行为
+        if (PathGuard.IsUnder(root, full))
+            return content;                                       // 会话目录内写入: 产出地, 无需标记
+        if (!PathGuard.IsUnder(shared, full))
+            return content;                                       // 理论不可达(Resolve 已约束), 防御性放行
+        if (!ScriptRiskAnalyzer.IsScriptFile(full))
+            return content;                                       // 仅脚本类产物
+        if (content.StartsWith(UnreviewedStampPrefix, StringComparison.Ordinal))
+            return content;                                       // 已标记, 不重复
+        var session = LocalAudit.AmbientSessionId ?? "unknown";
+        return $"{UnreviewedStampPrefix} 由 AI 直接写入共享区(未经 ops_promote 桌面确认), 来源会话 {session}\n{content}";
+    }
+
     private static string Read(string root, string? shared, string? path)
     {
         var full = Resolve(root, shared, path);
@@ -113,6 +139,7 @@ public static class WorkspaceTools
     private static async Task<string> Write(string root, string? shared, string? path, string content, CancellationToken ct = default)
     {
         var full = Resolve(root, shared, path);
+        content = MaybeStampUnreviewed(root, shared, full, content);
         if (content.Length > MaxWriteChars)
             return $"(内容过长 {content.Length} 字符, 超过上限 {MaxWriteChars}, 未写入)";
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
@@ -126,6 +153,8 @@ public static class WorkspaceTools
     private static async Task<string> Append(string root, string? shared, string? path, string content, CancellationToken ct = default)
     {
         var full = Resolve(root, shared, path);
+        if (!File.Exists(full))
+            content = MaybeStampUnreviewed(root, shared, full, content);   // 新建文件才打标, 追加既有文件保留原头部
         if (content.Length > MaxWriteChars)
             return $"(内容过长 {content.Length} 字符, 超过上限 {MaxWriteChars}, 未追加)";
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);

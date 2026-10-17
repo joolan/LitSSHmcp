@@ -9,6 +9,7 @@ namespace LitSSHmcp.Agent.Tests;
 /// （此前 Agent 项目零审计调用，"谁把什么文件写进共享脚本库"无据可查）。
 /// 读/list 为只读不记，避免噪音。
 /// </summary>
+[Collection("local-audit")]   // AmbientSessionId/OverrideSink 是进程级静态状态: 与 UnreviewedStampTests 等审计测试类串行
 public class WorkspaceToolsAuditTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "litssh-audit-ws-" + Guid.NewGuid().ToString("N"));

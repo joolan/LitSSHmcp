@@ -83,6 +83,12 @@ public interface IContextStore
     /// <summary>保存会话归属用户（由宿主在会话建立时写入，不接受工具/前端传入）。</summary>
     Task SetSessionOwnerUserIdAsync(long id, string ownerUserId, CancellationToken ct = default);
 
+    /// <summary>读取会话级连接器子集（D8 启用层：连接器 Id 的 JSON 数组；空串=继承全局默认启用集合）。</summary>
+    Task<string> GetSessionEnabledMcpAsync(long id, CancellationToken ct = default);
+
+    /// <summary>保存会话级连接器子集（空串=继承；首条消息后锁定不再变化）。</summary>
+    Task SetSessionEnabledMcpAsync(long id, string enabledMcpJson, CancellationToken ct = default);
+
     /// <summary>列出已定义的分组名（按名称排序）。</summary>
     Task<List<string>> ListGroupsAsync(CancellationToken ct = default);
 
@@ -149,9 +155,10 @@ public class ContextStore : IContextStore
     /// agent.db 结构版本（写入 PRAGMA user_version；既有库无版本视为 0，初始化时补齐并盖章）。
     /// v4（历史上无版本号的基线库）：会话 + 分组 + 排序 + 工具策略等既有列。
     /// v5：会话表新增 WorkspaceDir（会话级工作目录）与 OwnerUserId（会话归属用户，评估报告 D1）。
+    /// v6：会话表新增 EnabledMcp（会话级连接器子集，D8 启用层；''=继承全局默认集合）。
     /// 仅追加列（非破坏性），版本仅用于后续迁移分支判断。
     /// </summary>
-    private const int AgentDbFormatVersion = 5;
+    private const int AgentDbFormatVersion = 6;
 
     private readonly string _dbPath;
 
@@ -372,7 +379,19 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
             // 列已存在
         }
 
-        // 结构版本盖章（旧库 0 → 5；后续 v6 迁移以 user_version 判断是否需要执行）
+        // v6：会话级连接器子集（D8 启用层；''=继承全局默认启用集合，首条消息后锁定）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN EnabledMcp TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // 结构版本盖章（旧库 0 → 6；后续迁移以 user_version 判断是否需要执行）
         try
         {
             await using var version = connection.CreateCommand();
@@ -572,6 +591,20 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     public Task SetSessionOwnerUserIdAsync(long id, string ownerUserId, CancellationToken ct = default) =>
         ExecAsync("UPDATE agent_sessions SET OwnerUserId=@v WHERE Id=@id;",
             new() { ["@v"] = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim(), ["@id"] = id }, ct);
+
+    public async Task<string> GetSessionEnabledMcpAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT EnabledMcp FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : string.Empty;
+    }
+
+    public Task SetSessionEnabledMcpAsync(long id, string enabledMcpJson, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET EnabledMcp=@v WHERE Id=@id;",
+            new() { ["@v"] = enabledMcpJson ?? string.Empty, ["@id"] = id }, ct);
 
     public async Task<List<string>> ListGroupsAsync(CancellationToken ct = default)
     {

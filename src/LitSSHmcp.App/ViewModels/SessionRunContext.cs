@@ -64,6 +64,9 @@ public sealed class SessionRunContext
     /// <summary>会话工作目录镜像（装配期烧入工具闭包；切换会话时刷新）。null = 共享工作区。</summary>
     public string? WorkspaceDir { get; set; }
 
+    /// <summary>装配该运行时时的会话级连接器子集快照（D8 启用层；null=继承全局默认启用集合，运行中不可变）。</summary>
+    public IReadOnlyCollection<string>? McpSubset { get; set; }
+
     /// <summary>装配该运行时时的配置代际（配置重载后 +1，旧代际运行时下次装配重建）。</summary>
     public int RuntimeVersion { get; set; } = -1;
 

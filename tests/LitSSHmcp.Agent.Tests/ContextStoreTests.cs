@@ -270,22 +270,41 @@ public class ContextStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Schema_v5_is_stamped_and_reinit_is_idempotent()
+    public async Task Session_enabled_mcp_subset_roundtrip()
+    {
+        // D8 启用层：会话级连接器子集（v6 列 EnabledMcp；''=继承全局默认集合）
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("会话");
+
+        Assert.Equal(string.Empty, await store.GetSessionEnabledMcpAsync(id));
+
+        await store.SetSessionEnabledMcpAsync(id, @"[""litssh"",""ext1""]");
+        Assert.Equal(@"[""litssh"",""ext1""]", await store.GetSessionEnabledMcpAsync(id));
+
+        await store.SetSessionEnabledMcpAsync(id, string.Empty);
+        Assert.Equal(string.Empty, await store.GetSessionEnabledMcpAsync(id));
+    }
+
+    [Fact]
+    public async Task Schema_v6_is_stamped_and_reinit_is_idempotent()
     {
         var store = NewStore();
         await store.InitializeAsync();
         var id = await store.CreateSessionAsync("s");
 
-        Assert.Equal(5, await ReadUserVersionAsync());
+        Assert.Equal(6, await ReadUserVersionAsync());
 
         // 重复初始化：列已存在、版本已盖章，不应抛错且数据保留
         await store.InitializeAsync();
-        Assert.Equal(5, await ReadUserVersionAsync());
+        Assert.Equal(6, await ReadUserVersionAsync());
         Assert.Single(await store.ListSessionsAsync());
 
         await store.SetSessionWorkspaceDirAsync(id, @"D:\ws");
+        await store.SetSessionEnabledMcpAsync(id, @"[""litssh""]");
         await store.InitializeAsync();
         Assert.Equal(@"D:\ws", await store.GetSessionWorkspaceDirAsync(id));
+        Assert.Equal(@"[""litssh""]", await store.GetSessionEnabledMcpAsync(id));
     }
 
     private async Task<long> ReadUserVersionAsync()

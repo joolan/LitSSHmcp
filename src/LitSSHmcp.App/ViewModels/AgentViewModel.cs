@@ -680,6 +680,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// </summary>
     private string? _sessionWorkspaceDir;
 
+    /// <summary>
+    /// 本会话连接器子集（D8 启用层，评估报告 §6）：null = 继承全局默认启用集合；
+    /// 加载会话时从 agent_sessions.EnabledMcp 读回，首条消息（工作目录分配）后锁定，装配期烧入 ctx.Runtime。
+    /// </summary>
+    private IReadOnlyCollection<string>? _sessionMcpSubset;
+
     /// <summary>当前生效的工作区根：会话目录（已分配）或共享工作区（未分配）。</summary>
     public string CurrentWorkspaceRoot =>
         !string.IsNullOrWhiteSpace(_sessionWorkspaceDir)
@@ -932,6 +938,11 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             case SlashCommands.Skills:
                 Input = string.Empty;
                 CloseSlashPalette();
+                if (SessionSubsetLocked)
+                {
+                    StatusMessage = "首条消息后锁定：技能子集改动将在下个会话生效。";
+                    return true;
+                }
                 ReloadSkillCatalog();
                 SkillsPickerRequested?.Invoke();
                 return true;
@@ -1034,6 +1045,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         _uiInvoke(() =>
         {
             RaiseBusyChanged();
+            OnPropertyChanged(nameof(SessionSubsetLocked));   // 运行起止会切换启用层锁定（D8）
             // 侧栏所有会话行徽章刷新（后台会话状态/停止入口的启用态都靠它）
             foreach (var item in SidebarItems)
                 item.RefreshState();
@@ -1072,6 +1084,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         try { ctx.Cts.Cancel(); } catch (ObjectDisposedException) { }
         StatusMessage = $"已请求停止会话 {sessionId} 的任务…";
     }
+
+    /// <summary>
+    /// D8 启用层锁定（与工作目录同一锁定原则）：会话已启动（已落库 / 工作目录已分配 / 已有轮次）或运行中
+    /// → 连接器/技能子集不可再改，改动下个会话生效。
+    /// </summary>
+    public bool SessionSubsetLocked =>
+        !McpSubsetPolicy.EnableLayerEditable(_sessionId, _sessionWorkspaceDir, Turns.Count, CurrentContext.IsBusy);
 
     private string _statusMessage = "加载中…";
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
@@ -1233,6 +1252,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         SyncLocalAuditSession();
         // 需求 D：先取会话工作目录（附件/历史解析与运行时装配都依赖它；空=旧会话回退共享区）
         _sessionWorkspaceDir = await _store.GetSessionWorkspaceDirAsync(id);
+        // D8 启用层：读回本会话连接器子集（空=继承全局默认启用集合）
+        _sessionMcpSubset = McpSubsetPolicy.ParseSubset(await _store.GetSessionEnabledMcpAsync(id));
         var ctx = CurrentContext;
         ctx.WorkspaceDir = _sessionWorkspaceDir;
         _editingTurn = null;
@@ -1300,6 +1321,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             // 切换会话 = 换闸门：忙碌/状态文案随当前上下文重算（含“切到后台运行中会话”的早退路径）
             RaiseBusyChanged();
             OnPropertyChanged(nameof(SessionStateText));
+            OnPropertyChanged(nameof(SessionSubsetLocked));   // 启用层锁定随会话工作目录/轮次重算（D8）
         }
     }
 
@@ -1460,6 +1482,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         _sessionId = 0;
         _sessionWorkspaceDir = null;   // 未分配：新任务回退共享工作区，首条消息时再分配独立目录（需求 D）
+        _sessionMcpSubset = null;      // D8 启用层：新任务回到“继承全局默认启用集合”态
         CurrentContext.WorkspaceDir = null;
         SyncLocalAuditSession();
         _sessionTitled = false;
@@ -1477,6 +1500,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         RefreshContextInfo();
         RaiseBusyChanged();   // 换到草稿上下文：闸门与状态文案重算（如删除了运行中的当前会话）
         OnPropertyChanged(nameof(SessionStateText));
+        OnPropertyChanged(nameof(SessionSubsetLocked));   // 草稿未启动：启用层回到可编辑（D8）
     }
 
     private Task DeleteSessionAsync() => DeleteSessionAsync(SelectedSession);
@@ -1675,6 +1699,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>应用技能选择（技能选择窗口回调）：更新 chip、持久化到会话、并热更新运行时系统提示。</summary>
     public void ApplySkillSelection(IReadOnlyList<string> skillIds)
     {
+        if (SessionSubsetLocked)
+        {
+            // D8 启用层：与连接器子集同一锁定原则，首条消息后技能子集也不可再改
+            StatusMessage = "首条消息后锁定：技能子集改动将在下个会话生效。";
+            return;
+        }
         _activeSkillIds = skillIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         RebuildActiveSkillChips();
         _ = PersistActiveSkillsAsync();
@@ -1772,6 +1802,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         // 装配目标 = 当前会话上下文；把闭包要烧的值先落到 ctx（运行期间切换会话不再改写这些值）
         var ctx = CurrentContext;
         ctx.WorkspaceDir = _sessionWorkspaceDir;
+        ctx.McpSubset = _sessionMcpSubset;   // D8 启用层：会话级连接器子集随装配烧定
 
         if (ctx.Runtime is not null)
         {
@@ -1810,7 +1841,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 _activeSkillIds.Count == 0 ? null : _activeSkillIds, _planMode, SelectedAgent?.ToPromptContext(),
                 extraTools: localTools, assetGraph: assetGraph,
                 sessionWorkspaceDir: string.IsNullOrWhiteSpace(ctx.WorkspaceDir) ? null : ctx.WorkspaceDir,
-                ownerUserId: ownerUserId);
+                ownerUserId: ownerUserId,
+                enabledMcpIds: _sessionMcpSubset);
             ctx.RuntimeVersion = _poolVersion;
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {ctx.Runtime!.ToolCount} 个工具"
@@ -1973,11 +2005,14 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    /// <summary>按配置与当前运行时状态刷新「连接器」列表（每次打开菜单时调用）。</summary>
+    /// <summary>按配置与本会话启用子集刷新「连接器」列表（每次打开菜单时调用；勾选值=本会话是否生效）。</summary>
     public async Task RefreshConnectorsAsync()
     {
         var config = await _configService.LoadConfigAsync();
         var servers = AgentMcpServerConfig.Normalize((config.Agent ?? new AgentConfig()).McpServers);
+        // D8 启用层：本会话生效集合 = 全局启用 ∧ 会话子集（null 子集=继承全局启用集合）
+        var effectiveIds = McpSubsetPolicy.EffectiveServers(servers, _sessionMcpSubset)
+            .Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
         var statusById = new Dictionary<string, McpHostStatus>(StringComparer.Ordinal);
         foreach (var status in _runtime?.McpHostStatuses ?? Array.Empty<McpHostStatus>())
             statusById[status.ServerId] = status;
@@ -1991,17 +2026,20 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 Name = string.IsNullOrWhiteSpace(server.Name) ? server.Id : server.Name,
                 Builtin = server.Builtin,
                 Transport = server.Transport,
-                IsEnabled = server.Enabled
+                GlobalEnabled = server.Enabled,
+                IsEnabled = server.Enabled && effectiveIds.Contains(server.Id)
             };
-            item.StatusText = FormatConnectorStatus(server, statusById);
+            item.StatusText = FormatConnectorStatus(server, item.IsEnabled, statusById);
             Connectors.Add(item);
         }
     }
 
-    private static string FormatConnectorStatus(AgentMcpServerConfig server, Dictionary<string, McpHostStatus> statusById)
+    private static string FormatConnectorStatus(AgentMcpServerConfig server, bool sessionOn, Dictionary<string, McpHostStatus> statusById)
     {
         if (!server.Enabled)
-            return "已停用";
+            return "全局已停用";   // 配置层：会话不能反向开启（两级模型，设置窗口才管全局）
+        if (!sessionOn)
+            return "本会话已停用";
         if (!statusById.TryGetValue(server.Id, out var status))
             return "未连接";   // 运行时尚未建立（如未选模型）
         if (status.Error is not null)
@@ -2010,62 +2048,45 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     /// <summary>
-    /// 启用 / 停用一台 MCP 服务器并**立即保存 + 重建连接**（等效于设置页「保存并关闭」）。
-    /// 外部服务器启用前必须连接校验通过（与设置页同一规则）；内置停用由调用方先弹窗确认。
+    /// 会话窗口勾选 / 取消一台连接器：**只改本会话启用子集（D8 启用层）**，不写全局配置——
+    /// 全局增删改/启停与外部启用前校验都在「AI 助手设置 → MCP 服务器」（配置层，会话不可改）。
+    /// 首条消息后锁定（见 <see cref="SessionSubsetLocked"/>）：改动下个会话生效。
     /// </summary>
     /// <returns>结果描述（供菜单展示 / 状态栏）。</returns>
-    public async Task<string> ToggleConnectorAsync(McpConnectorItem item)
+    public async Task<string> ToggleSessionConnectorAsync(McpConnectorItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        if (IsBusy)
-            return "任务进行中：请先等它完成或点「停止」，再切换连接器。";
+        if (SessionSubsetLocked)
+            return "首条消息后锁定：连接器子集改动将在下个会话生效（全局配置见「AI 助手设置 → MCP 服务器」）。";
+        if (!item.GlobalEnabled)
+            return $"「{item.Name}」全局已停用：请在「AI 助手设置 → MCP 服务器」启用。";
 
         var config = await _configService.LoadConfigAsync();
-        var agent = config.Agent ??= new AgentConfig();
-        var servers = AgentMcpServerConfig.Normalize(agent.McpServers).ToList();
-        var server = servers.FirstOrDefault(s => string.Equals(s.Id, item.Id, StringComparison.Ordinal));
-        if (server is null)
+        var servers = AgentMcpServerConfig.Normalize((config.Agent ?? new AgentConfig()).McpServers);
+        if (!servers.Any(s => string.Equals(s.Id, item.Id, StringComparison.Ordinal)))
             return "配置中找不到该连接器（可能已被删除）。";
 
-        if (server.Enabled)
-        {
-            server.Enabled = false;
-            server.LastError = string.Empty;
-            agent.McpServers = servers.ToArray();
-            await _configService.SaveConfigAsync(config);
-            _agentConfig = agent;
+        // 当前子集材料化（null=继承 → 以全局启用集合为基线），再翻转目标项
+        var baseline = McpSubsetPolicy.EffectiveServers(servers, _sessionMcpSubset)
+            .Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        if (baseline.Contains(item.Id))
+            baseline.Remove(item.Id);
+        else
+            baseline.Add(item.Id);
+
+        // 翻转后与全局启用集合一致 → 回到继承态（null），后续全局新增自动进入本会话
+        var globalOn = servers.Where(s => s.Enabled).Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        _sessionMcpSubset = baseline.SetEquals(globalOn) ? null : baseline.ToArray();
+
+        if (_sessionId > 0)
+            await _store.SetSessionEnabledMcpAsync(_sessionId, McpSubsetPolicy.SerializeSubset(_sessionMcpSubset));
+        if (_runtime is not null)
             await EnsureRuntimeAsync(await LoadHistoryFromStoreAsync());
-            return server.Builtin
-                ? "已停用内置 MCP：AI 没有本机服务器/数据源等运维工具了"
-                : $"已停用「{server.Name}」";
-        }
 
-        if (!server.Builtin)
-        {
-            item.StatusText = "校验中…";
-            var result = await McpServerValidator.ValidateAsync(server, agent.McpServerPath);
-            if (!result.Ok)
-            {
-                server.LastError = result.Error ?? "校验失败";
-                agent.McpServers = servers.ToArray();
-                await _configService.SaveConfigAsync(config);
-                _agentConfig = agent;
-                StatusMessage = $"启用「{server.Name}」失败: {server.LastError}（已保持停用）";
-                return StatusMessage;
-            }
-            server.LastValidatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
-            server.LastToolCount = result.ToolCount;
-            server.LastError = string.Empty;
-        }
-
-        server.Enabled = true;
-        agent.McpServers = servers.ToArray();
-        await _configService.SaveConfigAsync(config);
-        _agentConfig = agent;
-        await EnsureRuntimeAsync(await LoadHistoryFromStoreAsync());
-        return server.Builtin
-            ? "已启用内置 MCP"
-            : $"已启用「{server.Name}」· {server.LastToolCount} 个工具";
+        var on = baseline.Contains(item.Id);
+        if (item.Builtin)
+            return on ? "本会话已启用内置 MCP" : "本会话已停用内置 MCP（仅本会话，AI 无法操作本机工具）";
+        return on ? $"本会话已启用「{item.Name}」" : $"本会话已停用「{item.Name}」（仅本会话，全局配置不变）";
     }
 
     private async Task SwitchProviderAsync()
@@ -2476,8 +2497,11 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir), owner, _sessionId);
         await _store.SetSessionOwnerUserIdAsync(_sessionId, owner);
         await _store.SetSessionWorkspaceDirAsync(_sessionId, dir);
+        // D8 启用层：会话建立即把首条消息前选好的连接器子集落库（null=继承，存空串）；之后随工作目录一起锁定
+        await _store.SetSessionEnabledMcpAsync(_sessionId, McpSubsetPolicy.SerializeSubset(_sessionMcpSubset));
         _sessionWorkspaceDir = dir;
         CurrentContext.WorkspaceDir = dir;   // 池元素同步（装配闭包与后台运行读它，不读显示态字段）
+        OnPropertyChanged(nameof(SessionSubsetLocked));   // 工作目录已分配 → 启用层锁定（D8，与工作目录同一原则）
 
         if (SelectedProvider is not null)
             await PersistProviderSelectionAsync(SelectedProvider.Id);

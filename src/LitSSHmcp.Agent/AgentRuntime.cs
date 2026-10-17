@@ -195,9 +195,11 @@ public sealed class AgentRuntime : IAsyncDisposable
         IEnumerable<IAgentTool>? extraTools = null,
         string? assetGraph = null,
         string? sessionWorkspaceDir = null,
-        string? ownerUserId = null)
+        string? ownerUserId = null,
+        IReadOnlyCollection<string>? enabledMcpIds = null)
     {
-        var servers = AgentMcpServerConfig.Normalize(config.McpServers);
+        // D8 启用层：会话级连接器子集只在全局启用集合内收窄（null=继承全局默认集合；全局停用恒出局）
+        var servers = McpSubsetPolicy.EffectiveServers(AgentMcpServerConfig.Normalize(config.McpServers), enabledMcpIds);
         var builtin = servers.FirstOrDefault(s => s.Builtin);
         var hosts = new List<McpToolHost>();
         var externalHosts = new List<(AgentMcpServerConfig Server, McpToolHost Host)>();
@@ -353,7 +355,7 @@ public sealed class AgentRuntime : IAsyncDisposable
             agentStyle: agent?.ResponseStyle,
             skillsRoot: skillsDir,
             externalMcp: externalInfos,
-            builtinMcpDisabled: builtin is { Enabled: false },
+            builtinMcpDisabled: builtin is not { Enabled: true },   // 全局停用或本会话子集排除（D8 例外：会话级整体关闭）
             memoryTools: memory is not null,
             scriptTools: true,
             assetGraph: availableGroups.Contains(ToolGroups.Topology) ? assetGraph : null,

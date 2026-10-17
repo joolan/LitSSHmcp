@@ -23,6 +23,9 @@ public static class ConfigPaths
     /// <summary>带外审批（CLI/IPC）待决/决策文件目录。</summary>
     public static string ApprovalsDir => Path.Combine(AppDataDir, "approvals");
 
+    /// <summary>目标级跨进程状态（评估报告 §4.3/M2-1）：限流槽位/速率窗口 + 写互斥锁文件。</summary>
+    public static string TargetStateDir => Path.Combine(AppDataDir, "target-state");
+
     /// <summary>资产拓扑可视化编辑器的布局（节点位置/尺寸、端点锚点）。</summary>
     public static string TopologyLayoutFile => Path.Combine(AppDataDir, "topology-layout.json");
 

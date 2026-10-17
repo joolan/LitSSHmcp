@@ -225,7 +225,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
 
             var securityOptions = new LitSSHmcp.Core.Services.Security.SecurityOptionsProvider();
             var knownHosts = new LitSSHmcp.Core.Services.SSH.FileSshKnownHostsStore();
-            var targetLimiter = new LitSSHmcp.Core.Services.Security.TargetLimiter(securityOptions);
+            var targetLimiter = new LitSSHmcp.Core.Services.Security.TargetLimiter(securityOptions, ConfigPaths.TargetStateDir);
             var mysql = new MySqlConnectionProvider(_configService, knownHosts, securityOptions, targetLimiter);
             var postgres = new PostgresConnectionProvider(_configService, knownHosts, securityOptions, targetLimiter);
             var redis = new RedisConnectionProvider(_configService, knownHosts, securityOptions, targetLimiter);

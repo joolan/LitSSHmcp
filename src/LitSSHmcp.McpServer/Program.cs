@@ -90,7 +90,11 @@ builder.Services.AddSingleton<ISqlFilterService, SqlFilterService>();
 builder.Services.AddSingleton<IGuardedCommandService, GuardedCommandService>();
 builder.Services.AddSingleton(new McpSessionTracker(sessionId));
 builder.Services.AddSingleton<ISshKnownHostsStore, FileSshKnownHostsStore>();
-builder.Services.AddSingleton<ITargetLimiter, TargetLimiter>();
+// 限流跨进程共享（§4.3/M2-1）: App 与各 MCP 子进程在 ConfigPaths.TargetStateDir 上共享槽位/速率窗口
+builder.Services.AddSingleton<ITargetLimiter>(sp => new TargetLimiter(
+    sp.GetRequiredService<ISecurityOptionsProvider>(), ConfigPaths.TargetStateDir));
+// 目标级写互斥（§4.3/M2-1）: 写类工具按目标跨进程串行, 读类自由并行
+builder.Services.AddSingleton<ITargetWriteMutex>(_ => new FileTargetWriteMutex(ConfigPaths.TargetStateDir));
 
 builder.Services.AddSingleton<IMySqlConnectionProvider, MySqlConnectionProvider>();
 builder.Services.AddSingleton<IPostgresConnectionProvider, PostgresConnectionProvider>();
@@ -123,6 +127,8 @@ var mcp = builder.Services
         options.Filters.Request.CallToolFilters.Add(McpGlobalSwitch.CreateFilter());
         // 会话跟踪：从 initialize 后的请求上下文取客户端信息写入会话表
         options.Filters.Request.CallToolFilters.Add(McpSessionFilter.CreateFilter());
+        // 目标级写互斥（§4.3/M2-1）：写类工具按目标跨进程串行，读类自由并行
+        options.Filters.Request.CallToolFilters.Add(McpWriteGateFilter.CreateFilter());
     })
     .WithStdioServerTransport();
 

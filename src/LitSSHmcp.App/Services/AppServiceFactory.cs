@@ -71,7 +71,7 @@ public static class AppServiceFactory
     {
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
-        var limiter = new TargetLimiter(security);
+        var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
         return new SshService(knownHosts, security, limiter);
     }
 
@@ -89,7 +89,7 @@ public static class AppServiceFactory
     {
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
-        var limiter = new TargetLimiter(security);
+        var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
         var ssh = new SshService(knownHosts, security, limiter);
         var store = new SnapshotStore();
         var configService = new ConfigService();
@@ -110,7 +110,7 @@ public static class AppServiceFactory
     {
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
-        var limiter = new TargetLimiter(security);
+        var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
         var mysql = new MySqlConnectionProvider(configService, knownHosts, security, limiter);
         var postgres = new PostgresConnectionProvider(configService, knownHosts, security, limiter);
         var redis = new RedisConnectionProvider(configService, knownHosts, security, limiter);
@@ -127,7 +127,7 @@ public static class AppServiceFactory
     {
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
-        var limiter = new TargetLimiter(security);
+        var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
         var mysql = new MySqlConnectionProvider(configService, knownHosts, security, limiter);
         var postgres = new PostgresConnectionProvider(configService, knownHosts, security, limiter);
         var redis = new RedisSessionCache(new RedisConnectionProvider(configService, knownHosts, security, limiter));
@@ -139,7 +139,7 @@ public static class AppServiceFactory
     {
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
-        var limiter = new TargetLimiter(security);
+        var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
         var ssh = new SshService(knownHosts, security, limiter);
         var registry = CreateDriverRegistry(configService);
         var store = new TopologyStore();

@@ -454,7 +454,7 @@ public static class DatabaseBackupAction
             var outFile = Path.Combine(destDir, fileName);
             var configService = new ConfigService();
             var security = new SecurityOptionsProvider();
-            var limiter = new TargetLimiter(security);
+            var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
             var provider = new MySqlConnectionProvider(configService, new FileSshKnownHostsStore(), security, limiter);
 
             using var session = await provider.OpenAsync(ds, ct);
@@ -561,7 +561,7 @@ public static class DatabaseBackupAction
             var outFile = Path.Combine(destDir, fileName);
             var configService = new ConfigService();
             var security = new SecurityOptionsProvider();
-            var limiter = new TargetLimiter(security);
+            var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
             var provider = new PostgresConnectionProvider(configService, new FileSshKnownHostsStore(), security, limiter);
 
             using var session = await provider.OpenAsync(ds, ct);

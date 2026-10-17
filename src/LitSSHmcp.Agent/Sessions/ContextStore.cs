@@ -71,6 +71,18 @@ public interface IContextStore
     /// <summary>设置会话所属分组（空串=未分组）。</summary>
     Task SetSessionGroupAsync(long id, string group, CancellationToken ct = default);
 
+    /// <summary>读取会话级工作目录（两层工作区：jobs/&lt;user&gt;/&lt;session&gt;/；空串=未分配，运行时按配置解析）。</summary>
+    Task<string> GetSessionWorkspaceDirAsync(long id, CancellationToken ct = default);
+
+    /// <summary>锁定并保存会话级工作目录（会话首次启动时解析一次，之后不再变化）。</summary>
+    Task SetSessionWorkspaceDirAsync(long id, string workspaceDir, CancellationToken ct = default);
+
+    /// <summary>读取会话归属用户（评估报告 D1 归因：Web 登录用户 Id；"local"=桌面未登录）。</summary>
+    Task<string> GetSessionOwnerUserIdAsync(long id, CancellationToken ct = default);
+
+    /// <summary>保存会话归属用户（由宿主在会话建立时写入，不接受工具/前端传入）。</summary>
+    Task SetSessionOwnerUserIdAsync(long id, string ownerUserId, CancellationToken ct = default);
+
     /// <summary>列出已定义的分组名（按名称排序）。</summary>
     Task<List<string>> ListGroupsAsync(CancellationToken ct = default);
 
@@ -133,6 +145,14 @@ public sealed record AgentMessageRow(string Role, string Content, string Timesta
 
 public class ContextStore : IContextStore
 {
+    /// <summary>
+    /// agent.db 结构版本（写入 PRAGMA user_version；既有库无版本视为 0，初始化时补齐并盖章）。
+    /// v4（历史上无版本号的基线库）：会话 + 分组 + 排序 + 工具策略等既有列。
+    /// v5：会话表新增 WorkspaceDir（会话级工作目录）与 OwnerUserId（会话归属用户，评估报告 D1）。
+    /// 仅追加列（非破坏性），版本仅用于后续迁移分支判断。
+    /// </summary>
+    private const int AgentDbFormatVersion = 5;
+
     private readonly string _dbPath;
 
     public ContextStore() : this(null) { }
@@ -327,6 +347,48 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         {
             // 列已存在
         }
+
+        // v5：会话级工作目录（''=未分配；首次启动时解析并锁定，评估报告需求 D）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN WorkspaceDir TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // v5：会话归属用户（默认 local=桌面未登录；Web 登录会话由宿主写入，评估报告 D1）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN OwnerUserId TEXT NOT NULL DEFAULT 'local';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // 结构版本盖章（旧库 0 → 5；后续 v6 迁移以 user_version 判断是否需要执行）
+        try
+        {
+            await using var version = connection.CreateCommand();
+            version.CommandText = "PRAGMA user_version;";
+            var current = Convert.ToInt64(await version.ExecuteScalarAsync(ct) ?? 0L);
+            if (current < AgentDbFormatVersion)
+            {
+                await using var stamp = connection.CreateCommand();
+                stamp.CommandText = $"PRAGMA user_version = {AgentDbFormatVersion};";
+                await stamp.ExecuteNonQueryAsync(ct);
+            }
+        }
+        catch
+        {
+            // 盖章失败不影响库可用（列迁移已幂等完成）
+        }
     }
 
     public async Task<long> CreateSessionAsync(string title, CancellationToken ct = default)
@@ -482,6 +544,34 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     public Task SetSessionGroupAsync(long id, string group, CancellationToken ct = default) =>
         ExecAsync("UPDATE agent_sessions SET \"Group\"=@v WHERE Id=@id;",
             new() { ["@v"] = group ?? string.Empty, ["@id"] = id }, ct);
+
+    public async Task<string> GetSessionWorkspaceDirAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT WorkspaceDir FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : string.Empty;
+    }
+
+    public Task SetSessionWorkspaceDirAsync(long id, string workspaceDir, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET WorkspaceDir=@v WHERE Id=@id;",
+            new() { ["@v"] = workspaceDir ?? string.Empty, ["@id"] = id }, ct);
+
+    public async Task<string> GetSessionOwnerUserIdAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT OwnerUserId FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : "local";
+    }
+
+    public Task SetSessionOwnerUserIdAsync(long id, string ownerUserId, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET OwnerUserId=@v WHERE Id=@id;",
+            new() { ["@v"] = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim(), ["@id"] = id }, ct);
 
     public async Task<List<string>> ListGroupsAsync(CancellationToken ct = default)
     {

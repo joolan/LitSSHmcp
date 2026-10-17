@@ -248,6 +248,55 @@ public class ContextStoreTests : IDisposable
         Assert.Equal(string.Empty, await store.GetSessionPlanAsync(id));
     }
 
+    [Fact]
+    public async Task Session_workspace_dir_and_owner_roundtrip()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("s");
+
+        // v5 默认值：工作目录未分配（''），归属 local（桌面未登录，评估报告 D1）
+        Assert.Equal(string.Empty, await store.GetSessionWorkspaceDirAsync(id));
+        Assert.Equal("local", await store.GetSessionOwnerUserIdAsync(id));
+
+        await store.SetSessionWorkspaceDirAsync(id, @"C:\LitSSH\jobs\web-user-2\abc123");
+        await store.SetSessionOwnerUserIdAsync(id, "web-user-2");
+        Assert.Equal(@"C:\LitSSH\jobs\web-user-2\abc123", await store.GetSessionWorkspaceDirAsync(id));
+        Assert.Equal("web-user-2", await store.GetSessionOwnerUserIdAsync(id));
+
+        // 空白归属回退 local（防脏数据）
+        await store.SetSessionOwnerUserIdAsync(id, "   ");
+        Assert.Equal("local", await store.GetSessionOwnerUserIdAsync(id));
+    }
+
+    [Fact]
+    public async Task Schema_v5_is_stamped_and_reinit_is_idempotent()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("s");
+
+        Assert.Equal(5, await ReadUserVersionAsync());
+
+        // 重复初始化：列已存在、版本已盖章，不应抛错且数据保留
+        await store.InitializeAsync();
+        Assert.Equal(5, await ReadUserVersionAsync());
+        Assert.Single(await store.ListSessionsAsync());
+
+        await store.SetSessionWorkspaceDirAsync(id, @"D:\ws");
+        await store.InitializeAsync();
+        Assert.Equal(@"D:\ws", await store.GetSessionWorkspaceDirAsync(id));
+    }
+
+    private async Task<long> ReadUserVersionAsync()
+    {
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA user_version;";
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync() ?? 0L);
+    }
+
     public void Dispose()
     {
         try { File.Delete(_dbPath); } catch { /* ignore */ }

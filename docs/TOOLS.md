@@ -241,16 +241,16 @@ MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档�
 
 ## 文件传输组（fileTransfer）
 
-上传/下载受 `fileTransfer.enabled` 开关与 `allowedLocalPaths` / `allowedRemotePaths` 白名单约束（越界返回 `path_not_allowed`，禁用返回 `file_transfer_disabled`），路径会做规范化并拦截 `..` 穿越。上传/下载过程中会通过 MCP `notifications/progress` 推送进度（字节数/百分比）。
+上传/下载受 `fileTransfer.enabled` 开关与 `allowedLocalPaths` / `allowedRemotePaths` 白名单约束（越界返回 `path_not_allowed`，禁用返回 `file_transfer_disabled`），路径会做规范化并拦截 `..` 穿越。**上传源对称约束**（需求 D6）：宿主注入了会话工作目录（`LITSSH_SESSION_WORKSPACE_DIR`）时，上传源还须位于该会话目录之内（与"下载落点限会话目录"对称，`PathGuard` 物理解析防链接逃逸），否则 `path_not_allowed`；共享工作区文件可先经 `ops_doc_read`/`ops_doc_write` 复制到会话目录再上传。上传/下载过程中会通过 MCP `notifications/progress` 推送进度（字节数/百分比）。
 
 ### `ssh_upload_files`
 - **参数**：`serverId`、`localPaths`（每行一个：文件或目录）、`remoteDirectory`（远程目标目录，须在 `allowedRemotePaths` 内）、`recursive`（默认 false，目录递归子目录）、`maxFiles`（默认 200，1~5000）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
 - **返回**：结构同 `ssh_download_files`（`remoteDirectory` 字段替换 `localDirectory`）
-- **说明**：**用一条 SFTP 连接**批量上传（避免"上传文件夹"时每个文件重复建连/认证）；`localPaths` 中的目录会被展开（`recursive=true` 递归），**按相对路径保留子目录结构**（远程自动逐级建目录）；**整批一次人工确认**；每个源路径须在 `allowedLocalPaths` 内；每文件受 `fileTransfer.maxFileSizeBytes` 约束、总数受 `maxFiles` 约束（超出置 `truncated=true`）。
+- **说明**：**用一条 SFTP 连接**批量上传（避免"上传文件夹"时每个文件重复建连/认证）；`localPaths` 中的目录会被展开（`recursive=true` 递归），**按相对路径保留子目录结构**（远程自动逐级建目录）；**整批一次人工确认**；每个源路径须在 `allowedLocalPaths` 内（会话已分配工作目录时还须在该会话目录内，见上方"上传源对称约束"）；每文件受 `fileTransfer.maxFileSizeBytes` 约束、总数受 `maxFiles` 约束（超出置 `truncated=true`）。
 - **脚本安全门**：批内全部脚本文件（`.sh/.bash/.zsh/.py/.ps1/.pl`，目录按递归标志展开，上限 500 个）逐个做服务端规则扫描，报告聚合附审批弹窗；**任一脚本命中危险模式整批拒绝**（`status=blocked_script`）。
 
 ### `ssh_upload_file`
-- **参数**：`serverId`、`localPath`（本地路径，须在 `allowedLocalPaths` 内）、`remotePath`（远程路径，须在 `allowedRemotePaths` 内）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
+- **参数**：`serverId`、`localPath`（本地路径，须在 `allowedLocalPaths` 内；会话已分配工作目录时源还须在该会话目录内，见"上传源对称约束"）、`remotePath`（远程路径，须在 `allowedRemotePaths` 内）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
 - **返回**：`{ success, message, bytesTransferred, durationMs, ... }`；越界返回 `path_not_allowed` 并附允许路径；超过 `fileTransfer.maxFileSizeBytes` 返回 `file_too_large`
 - **脚本安全门**：上传脚本文件时先读本地内容做服务端规则扫描（结论/命中行/sha256 附审批弹窗）；命中危险模式直接 `status=blocked_script` 不进审批。
 

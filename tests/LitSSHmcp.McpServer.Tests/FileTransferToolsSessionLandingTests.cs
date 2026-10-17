@@ -146,6 +146,50 @@ public class FileTransferToolsSessionLandingTests : IDisposable
         Assert.Equal(inRoot, ssh.LastUploadLocalPath);
     }
 
+    [Fact]
+    public async Task Upload_source_outside_session_dir_rejected_when_session_assigned()
+    {
+        // §5.2 需求 D6 对称约束: 会话已分配时上传源限定在本会话工作目录内(允许根之内也不行)
+        var inSession = Path.Combine(_sessionUnderRoot, "ok.txt");
+        File.WriteAllText(inSession, "x");
+        var sibling = Path.Combine(_root, "LitSSH", "scripts", "note.txt");   // 允许根内但会话目录外
+        Directory.CreateDirectory(Path.GetDirectoryName(sibling)!);
+        File.WriteAllText(sibling, "x");
+
+        SessionWorkspace.Current = _sessionUnderRoot;
+        var (tools, ssh) = MakeTools(MakeConfig(_root));
+
+        var denied = await tools.UploadFile("srv1", sibling, "/var/log/note.txt");
+        Assert.False(denied.Success);
+        Assert.Equal("path_not_allowed", denied.Status);
+        Assert.Contains("会话工作目录", denied.Error);
+        Assert.Null(ssh.LastUploadLocalPath);                       // 未触达传输层
+
+        var deniedBatch = await tools.UploadFiles("srv1", sibling, "/var/log/");
+        Assert.Equal("path_not_allowed", deniedBatch.Status);
+        Assert.Contains("会话工作目录", deniedBatch.Error);
+
+        var ok = await tools.UploadFile("srv1", inSession, "/var/log/ok.txt");
+        Assert.True(ok.Success);
+        Assert.Equal(inSession, ssh.LastUploadLocalPath);
+    }
+
+    [Fact]
+    public async Task Upload_source_constraint_inactive_without_session_dir()
+    {
+        // 共享区模式(旧会话/直连 MCP): 现状行为——仅白名单约束, 不做会话目录限定
+        var sharedFile = Path.Combine(_root, "LitSSH", "scripts", "x.sh");
+        Directory.CreateDirectory(Path.GetDirectoryName(sharedFile)!);
+        File.WriteAllText(sharedFile, "#!/bin/bash\necho hi");
+
+        SessionWorkspace.Current = null;
+        var (tools, ssh) = MakeTools(MakeConfig(_root));
+
+        var ok = await tools.UploadFile("srv1", sharedFile, "/var/log/x.sh");
+        Assert.True(ok.Success);
+        Assert.Equal(sharedFile, ssh.LastUploadLocalPath);
+    }
+
     private sealed class StubSsh : ISshService
     {
         public string? LastDownloadLocalPath { get; private set; }

@@ -7,6 +7,7 @@ using Xunit;
 
 namespace LitSSHmcp.App.Tests;
 
+[Collection("local-audit")]   // OverrideSink 是进程级静态替身: 与 PromoteToolTests 等审计测试类串行, 防相互覆盖
 public class LocalTerminalToolTests
 {
     /// <summary>

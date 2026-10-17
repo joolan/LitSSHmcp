@@ -28,6 +28,7 @@ bash --version | head -1; ls -l /bin/sh; sh --version 2>&1 | head -1 || true
 
 ## 3. 上传（ssh_upload_file，需审批）
 - `ssh_upload_file(serverId, localPath="scripts/local/x.sh", remotePath="/tmp/x.sh")`（须在 `allowedRemotePaths` 白名单内）。
+- **会话已分配工作目录时**，上传源必须在本会话工作目录内（对称约束）：共享区脚本先 `ops_doc_read path="scripts/local/x.sh"` → `ops_doc_write path="x.sh"`（落会话目录）→ 从会话目录上传。
 - **脚本永不免审**：上传时服务端会扫描内容并把报告（结论/命中行/sha256）放进审批弹窗；命中危险模式直接 `status=blocked_script`。
 - 被拦 = 规则判定真的危险：**改写脚本消除风险点**，不要改扩展名/拆分命令绕过检测。
 

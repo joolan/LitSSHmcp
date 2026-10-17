@@ -1365,6 +1365,22 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private Task DeleteSessionAsync() => DeleteSessionAsync(SelectedSession);
 
+    /// <summary>删除会话时清理其工作目录（§5.3.5 附件/产出随会话删除）；越界/失败不影响会话删除，仅返回未删。</summary>
+    private (bool Removed, int Files) CleanupSessionWorkspace(string? sessionDir)
+    {
+        if (string.IsNullOrWhiteSpace(sessionDir)) return (false, 0);
+        try
+        {
+            var (removed, files, _) = WorkspaceLayout.TryRemoveSessionDir(
+                WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir), sessionDir);
+            return (removed, files);
+        }
+        catch
+        {
+            return (false, 0);
+        }
+    }
+
     /// <summary>删除指定会话；若删除的是当前会话才切换到其他会话，否则保持当前显示。</summary>
     public async Task DeleteSessionAsync(AgentSessionRow? session)
     {
@@ -1374,8 +1390,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         // 会话删除入审计（§10.A.1 本地工具补审计三类之一）；FilePath=该会话工作目录（§5.3.5 清理范围, M1-7 落实）
         var sessionDir = await _store.GetSessionWorkspaceDirAsync(session.Id);
         await _store.DeleteSessionAsync(session.Id);
+        // 附件/会话产出随会话删除清理（§5.3.5）：仅限共享区 jobs/ 内的会话目录（PathGuard 物理判定）
+        var (removedDir, cleanedFiles) = CleanupSessionWorkspace(sessionDir);
         await LocalAudit.LogAsync("session_delete", $"SESSION_DELETE: {session.Title}",
-            CommandStatus.Executed, filePath: string.IsNullOrWhiteSpace(sessionDir) ? null : sessionDir);
+            CommandStatus.Executed,
+            result: removedDir ? $"已清理会话目录({cleanedFiles} 个文件)" : null,
+            filePath: string.IsNullOrWhiteSpace(sessionDir) ? null : sessionDir);
         await ReloadSessionsAsync();
 
         var next = Sessions.FirstOrDefault();
@@ -1619,7 +1639,15 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             ModelStatus = "connecting";
             StatusMessage = "正在连接 MCP 服务器…";
-            var localTools = BuildLocalTerminalTool() is { } lt ? new[] { lt } : null;
+            var extra = new List<IAgentTool>();
+            if (BuildLocalTerminalTool() is { } lt) extra.Add(lt);
+            // 需求 D/§10.D.1：提升命令——会话目录 → 共享工作区归档（脚本类须桌面确认, 全量记审计）
+            extra.Add(new Services.PromoteTool(
+                () => _sessionWorkspaceDir,
+                () => WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir),
+                RequestLocalApprovalAsync,
+                () => CurrentSessionKey));
+            var localTools = extra.Count > 0 ? extra.ToArray() : null;
             // 资产图谱快照注入系统提示（仅 topology 工具组启用时；由 AgentRuntime 按 availableGroups 再过滤）
             string? assetGraph = null;
             try

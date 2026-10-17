@@ -33,4 +33,11 @@ public class SqlAuditLog
 
     /// <summary>产生该记录的 MCP 工具名（如 mysql_query / redis_execute），由请求过滤器自动填充。</summary>
     public string? Tool { get; set; }
+
+    /// <summary>
+    /// 产生该记录的操作用户（Web/登录用户 Id）；桌面未登录会话为 "local"（评估报告 D1 归因）。
+    /// 由宿主 spawn 子进程时经环境变量注入（<c>AuditContext.CurrentUserId</c>），绝不接受工具参数传入（防伪造 §10.A.5）。
+    /// 已纳入哈希链 payload（v6）。
+    /// </summary>
+    public string? UserId { get; set; }
 }

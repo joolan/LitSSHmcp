@@ -32,6 +32,11 @@ if (OperatingSystem.IsWindows() &&
 // 审计记录据此区分"是哪个会话产生的"。格式便于按时间排序：yyyyMMdd-HHmmss-<8hex>。
 var sessionId = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..8]}";
 
+// 操作用户归因（评估报告 D1 / §10.A.5）：身份只能由宿主 spawn 子进程时经环境变量注入，
+// 子进程不自行决定、也不接受工具/前端参数（防伪造）。未注入 = 桌面未登录会话，归因 "local"。
+var ownerUserId = Environment.GetEnvironmentVariable("LITSSH_OWNER_USER_ID");
+AuditContext.CurrentUserId = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim();
+
 // 读取工具分组配置(留空=全部)。在注册 MCP 工具前先算好, 以便只暴露启用的分组。
 // 配置损坏/权限问题时不能让进程直接崩溃退出(客户端会收到一个无法解释的断连), 记下错误、按"全部启用"继续,
 // 具体的配置错误会在 mcp_self_check / 各工具调用时以结构化错误返回。

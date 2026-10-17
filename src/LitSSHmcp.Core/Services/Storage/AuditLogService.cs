@@ -18,9 +18,10 @@ public class AuditLogService : IAuditLogService
     /// v3：新增 Tool（产生记录的 MCP 工具名）并纳入哈希链。
     /// v4：新增 Category（执行/审批/探测/列表/传输）与 Decision（审批决策），并纳入哈希链。
     /// v5：SQL/Redis 审计同样新增 Category 与 Decision，并纳入哈希链。
+    /// v6：新增 UserId（操作用户归因：Web 登录用户 Id / 桌面未登录 "local"），并纳入哈希链 payload。
     /// 版本落后时启动会重建审计表（测试阶段允许；避免旧链与新算法不一致导致校验失败）。
     /// </summary>
-    private const int AuditFormatVersion = 5;
+    private const int AuditFormatVersion = 6;
 
     private readonly string _dbPath;
     private readonly string _lockPath;
@@ -124,7 +125,8 @@ public class AuditLogService : IAuditLogService
                 SessionId TEXT,
                 Tool TEXT,
                 Category TEXT,
-                Decision TEXT
+                Decision TEXT,
+                UserId TEXT
             )";
         await cmd.ExecuteNonQueryAsync();
 
@@ -149,7 +151,8 @@ public class AuditLogService : IAuditLogService
                 SessionId TEXT,
                 Tool TEXT,
                 Category TEXT,
-                Decision TEXT
+                Decision TEXT,
+                UserId TEXT
             )";
         await cmd.ExecuteNonQueryAsync();
 
@@ -176,7 +179,8 @@ public class AuditLogService : IAuditLogService
                 SessionId TEXT,
                 Tool TEXT,
                 Category TEXT,
-                Decision TEXT
+                Decision TEXT,
+                UserId TEXT
             )";
         await cmd.ExecuteNonQueryAsync();
 
@@ -198,7 +202,8 @@ public class AuditLogService : IAuditLogService
                 SessionId TEXT,
                 Tool TEXT,
                 Category TEXT,
-                Decision TEXT
+                Decision TEXT,
+                UserId TEXT
             )";
         await cmd.ExecuteNonQueryAsync();
 
@@ -236,6 +241,11 @@ public class AuditLogService : IAuditLogService
         EnsureColumn(connection, "SqlAuditLogsHistory", "Category", "TEXT");
         EnsureColumn(connection, "SqlAuditLogs", "Decision", "TEXT");
         EnsureColumn(connection, "SqlAuditLogsHistory", "Decision", "TEXT");
+        // v6：操作用户归因（活动表/历史表必须同序追加，保证 `INSERT ... SELECT *` 仍可用）
+        EnsureColumn(connection, "AuditLogs", "UserId", "TEXT");
+        EnsureColumn(connection, "AuditLogsHistory", "UserId", "TEXT");
+        EnsureColumn(connection, "SqlAuditLogs", "UserId", "TEXT");
+        EnsureColumn(connection, "SqlAuditLogsHistory", "UserId", "TEXT");
 
         // MCP 会话表：SessionId -> 客户端名称/版本/首末活动时间
         cmd.CommandText = @"
@@ -276,8 +286,8 @@ public class AuditLogService : IAuditLogService
             {
                 insert.Transaction = tx;
                 insert.CommandText = @"
-                    INSERT INTO AuditLogs (ServerId, ServerName, Command, Result, Status, Timestamp, ExitCode, IsFileTransfer, FilePath, FileSize, SessionId, Tool, Category, Decision)
-                    VALUES (@ServerId, @ServerName, @Command, @Result, @Status, @Timestamp, @ExitCode, @IsFileTransfer, @FilePath, @FileSize, @SessionId, @Tool, @Category, @Decision);
+                    INSERT INTO AuditLogs (ServerId, ServerName, Command, Result, Status, Timestamp, ExitCode, IsFileTransfer, FilePath, FileSize, SessionId, Tool, Category, Decision, UserId)
+                    VALUES (@ServerId, @ServerName, @Command, @Result, @Status, @Timestamp, @ExitCode, @IsFileTransfer, @FilePath, @FileSize, @SessionId, @Tool, @Category, @Decision, @UserId);
                     SELECT last_insert_rowid();";
                 insert.Parameters.AddWithValue("@ServerId", log.ServerId);
                 insert.Parameters.AddWithValue("@ServerName", log.ServerName);
@@ -293,6 +303,7 @@ public class AuditLogService : IAuditLogService
                 insert.Parameters.AddWithValue("@Tool", (log.Tool ?? AuditContext.CurrentTool) ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@Category", CategoryName(log));
                 insert.Parameters.AddWithValue("@Decision", log.Decision ?? (object)DBNull.Value);
+                insert.Parameters.AddWithValue("@UserId", ResolveUserId(log.UserId));
                 id = (long)(await insert.ExecuteScalarAsync())!;
             }
 
@@ -321,8 +332,8 @@ public class AuditLogService : IAuditLogService
             {
                 insert.Transaction = tx;
                 insert.CommandText = @"
-                    INSERT INTO SqlAuditLogs (DataSourceId, DataSourceName, Operation, Sql, Status, Result, RowsAffected, DurationMs, Timestamp, SessionId, Tool, Category, Decision)
-                    VALUES (@DataSourceId, @DataSourceName, @Operation, @Sql, @Status, @Result, @RowsAffected, @DurationMs, @Timestamp, @SessionId, @Tool, @Category, @Decision);
+                    INSERT INTO SqlAuditLogs (DataSourceId, DataSourceName, Operation, Sql, Status, Result, RowsAffected, DurationMs, Timestamp, SessionId, Tool, Category, Decision, UserId)
+                    VALUES (@DataSourceId, @DataSourceName, @Operation, @Sql, @Status, @Result, @RowsAffected, @DurationMs, @Timestamp, @SessionId, @Tool, @Category, @Decision, @UserId);
                     SELECT last_insert_rowid();";
                 insert.Parameters.AddWithValue("@DataSourceId", log.DataSourceId);
                 insert.Parameters.AddWithValue("@DataSourceName", log.DataSourceName);
@@ -337,6 +348,7 @@ public class AuditLogService : IAuditLogService
                 insert.Parameters.AddWithValue("@Tool", (log.Tool ?? AuditContext.CurrentTool) ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@Category", log.Category.ToString());
                 insert.Parameters.AddWithValue("@Decision", log.Decision ?? (object)DBNull.Value);
+                insert.Parameters.AddWithValue("@UserId", ResolveUserId(log.UserId));
                 id = (long)(await insert.ExecuteScalarAsync())!;
             }
 
@@ -678,12 +690,12 @@ public class AuditLogService : IAuditLogService
     {
         await using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
-        cmd.CommandText = "SELECT ServerId, ServerName, Command, Result, Status, Timestamp, ExitCode, IsFileTransfer, FilePath, FileSize, SessionId, Tool, Category, Decision FROM AuditLogs WHERE Id = @Id";
+        cmd.CommandText = "SELECT ServerId, ServerName, Command, Result, Status, Timestamp, ExitCode, IsFileTransfer, FilePath, FileSize, SessionId, Tool, Category, Decision, UserId FROM AuditLogs WHERE Id = @Id";
         cmd.Parameters.AddWithValue("@Id", id);
         if (await ReadPayloadAsync(cmd, commandSource: true) is { } live)
             return live;
 
-        cmd.CommandText = "SELECT ServerId, ServerName, Command, Result, Status, Timestamp, ExitCode, IsFileTransfer, FilePath, FileSize, SessionId, Tool, Category, Decision FROM AuditLogsHistory WHERE Id = @Id";
+        cmd.CommandText = "SELECT ServerId, ServerName, Command, Result, Status, Timestamp, ExitCode, IsFileTransfer, FilePath, FileSize, SessionId, Tool, Category, Decision, UserId FROM AuditLogsHistory WHERE Id = @Id";
         cmd.Parameters["@Id"].Value = id;
         return await ReadPayloadAsync(cmd, commandSource: true);
     }
@@ -692,12 +704,12 @@ public class AuditLogService : IAuditLogService
     {
         await using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
-        cmd.CommandText = "SELECT DataSourceId, DataSourceName, Operation, Sql, Status, Result, RowsAffected, DurationMs, Timestamp, SessionId, Tool, Category, Decision FROM SqlAuditLogs WHERE Id = @Id";
+        cmd.CommandText = "SELECT DataSourceId, DataSourceName, Operation, Sql, Status, Result, RowsAffected, DurationMs, Timestamp, SessionId, Tool, Category, Decision, UserId FROM SqlAuditLogs WHERE Id = @Id";
         cmd.Parameters.AddWithValue("@Id", id);
         if (await ReadPayloadAsync(cmd, commandSource: false) is { } live)
             return live;
 
-        cmd.CommandText = "SELECT DataSourceId, DataSourceName, Operation, Sql, Status, Result, RowsAffected, DurationMs, Timestamp, SessionId, Tool, Category, Decision FROM SqlAuditLogsHistory WHERE Id = @Id";
+        cmd.CommandText = "SELECT DataSourceId, DataSourceName, Operation, Sql, Status, Result, RowsAffected, DurationMs, Timestamp, SessionId, Tool, Category, Decision, UserId FROM SqlAuditLogsHistory WHERE Id = @Id";
         cmd.Parameters["@Id"].Value = id;
         return await ReadPayloadAsync(cmd, commandSource: false);
     }
@@ -785,7 +797,8 @@ public class AuditLogService : IAuditLogService
         SessionId = reader.FieldCount > 11 && !reader.IsDBNull(11) ? reader.GetString(11) : null,
         Tool = reader.FieldCount > 12 && !reader.IsDBNull(12) ? reader.GetString(12) : null,
         Category = ReadCategory(reader),
-        Decision = reader.FieldCount > 14 && !reader.IsDBNull(14) ? reader.GetString(14) : null
+        Decision = reader.FieldCount > 14 && !reader.IsDBNull(14) ? reader.GetString(14) : null,
+        UserId = reader.FieldCount > 15 && !reader.IsDBNull(15) ? reader.GetString(15) : null
     };
 
     /// <summary>读取 Category；缺失(旧库)时按 IsFileTransfer 回退。</summary>
@@ -818,6 +831,16 @@ public class AuditLogService : IAuditLogService
         Tool = reader.FieldCount > 11 && !reader.IsDBNull(11) ? reader.GetString(11) : null,
         Category = reader.FieldCount > 12 && !reader.IsDBNull(12) &&
                    Enum.TryParse<AuditCategory>(reader.GetString(12), ignoreCase: true, out var cat) ? cat : AuditCategory.Exec,
-        Decision = reader.FieldCount > 13 && !reader.IsDBNull(13) ? reader.GetString(13) : null
+        Decision = reader.FieldCount > 13 && !reader.IsDBNull(13) ? reader.GetString(13) : null,
+        UserId = reader.FieldCount > 14 && !reader.IsDBNull(14) ? reader.GetString(14) : null
     };
+
+    /// <summary>
+    /// 归因用户：显式指定 &gt; 宿主注入的当前上下文 &gt; "local"（桌面未登录，评估报告 D1）。
+    /// 本方法不接受工具/前端传入——调用方只能传宿主注入或上下文值，防伪造（§10.A.5）。
+    /// </summary>
+    private static string ResolveUserId(string? explicitUserId) =>
+        !string.IsNullOrWhiteSpace(explicitUserId) ? explicitUserId! :
+        !string.IsNullOrWhiteSpace(AuditContext.CurrentUserId) ? AuditContext.CurrentUserId! :
+        "local";
 }

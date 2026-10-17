@@ -29,17 +29,43 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly Action<Action> _uiBeginInvoke;
 
     private AgentConfig _agentConfig = new();
-    private AgentRuntime? _runtime;
     /// <summary>本机终端审批的「本轮次/本次会话」豁免登记表（随本会话窗口生命周期，重启即失效）。</summary>
     private readonly LocalApprovalExemptionRegistry _localExemptions = new();
-    private CancellationTokenSource? _cts;
     private bool _suppressSelection;
     private AgentTurn? _editingTurn;
-    private readonly StringBuilder _pendingDelta = new();
-    private DateTime _lastFlushUtc = DateTime.MinValue;
-    private readonly StringBuilder _pendingReasoning = new();
-    private DateTime _lastReasoningFlushUtc = DateTime.MinValue;
     private const int StreamFlushMs = 150;
+
+    // ---- runtime 池（评估报告 §4.1 路线 1）：每会话一个运行上下文（状态机 + 独立 runtime + 权威镜像） ----
+
+    /// <summary>池元素只在 UI 线程增删（AgentViewModel 单线程亲和），普通字典即可。</summary>
+    private readonly Dictionary<long, SessionRunContext> _contexts = new();
+
+    /// <summary>当前显示会话的运行上下文（“未保存的新任务”= 会话 0 草稿上下文）。</summary>
+    private SessionRunContext CurrentContext => GetContext(_sessionId);
+
+    private SessionRunContext GetContext(long sessionId)
+    {
+        if (!_contexts.TryGetValue(sessionId, out var ctx))
+        {
+            ctx = new SessionRunContext(sessionId);
+            ctx.StateChanged += OnContextStateChanged;
+            _contexts[sessionId] = ctx;
+        }
+        return ctx;
+    }
+
+    /// <summary>当前会话的运行时（原单实例字段改派生属性：读写自动落到当前会话上下文，读点零改动）。</summary>
+    private AgentRuntime? _runtime
+    {
+        get => CurrentContext.Runtime;
+        set => CurrentContext.Runtime = value;
+    }
+
+    /// <summary>配置代际：设置/连接器重载后 +1；旧代际的池内运行时下次激活时重建。</summary>
+    private int _poolVersion;
+
+    /// <summary>测试连接进行中（会话闸门的另一半：与运行状态无关的 UI 占用）。</summary>
+    private bool _connectionTesting;
 
     public AgentViewModel(IConfigService configService, IContextStore store, string bundledSkillsDir, Action<Action>? uiInvoke = null, Action<Action>? uiBeginInvoke = null)
     {
@@ -49,12 +75,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         _uiInvoke = uiInvoke ?? (action => action());
         _uiBeginInvoke = uiBeginInvoke ?? _uiInvoke;
         SendCommand = new RelayCommand(_ => _ = SendAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(Input));
-        StopCommand = new RelayCommand(_ => _cts?.Cancel(), _ => IsBusy);
-        SendOrStopCommand = new RelayCommand(_ => { if (IsBusy) _cts?.Cancel(); else _ = SendAsync(); },
+        StopCommand = new RelayCommand(_ => CurrentContext.Cts?.Cancel(), _ => IsBusy);
+        SendOrStopCommand = new RelayCommand(_ => { if (IsBusy) CurrentContext.Cts?.Cancel(); else _ = SendAsync(); },
             _ => IsBusy || !string.IsNullOrWhiteSpace(Input));
         NewSessionCommand = new RelayCommand(_ => _ = NewSessionAsync(), _ => !IsBusy);
         DeleteSessionCommand = new RelayCommand(_ => _ = DeleteSessionAsync(), _ => !IsBusy && SelectedSession != null);
-        ClearCommand = new RelayCommand(_ => { Turns.Clear(); _editingTurn = null; RefreshContextInfo(); });
+        ClearCommand = new RelayCommand(_ => { Turns.Clear(); CurrentContext.LiveTurns = Turns.ToList(); _editingTurn = null; RefreshContextInfo(); });
         ContinueCommand = new RelayCommand(_ => _ = SendTextAsync("请继续"), _ => !IsBusy);
         RegenerateCommand = new RelayCommand(p => _ = RegenerateAsync(p as AgentTurn), p => !IsBusy && p is AgentTurn);
         RetryStepCommand = new RelayCommand(p => _ = RetryStepAsync(p as AgentStep), p => !IsBusy && p is AgentStep);
@@ -712,14 +738,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => _selectedSession;
         set
         {
-            // 任务进行中禁止切换会话（同一时间只允许一个任务），并提示用户
-            if (IsBusy && !_suppressSelection && !ReferenceEquals(_selectedSession, value))
-            {
-                StatusMessage = "当前会话任务进行中：同一时间只能有一个任务；请等它完成或点「停止」后再切换会话。";
-                OnPropertyChanged(nameof(SelectedSession));   // 还原列表选中项
-                return;
-            }
-
+            // 多会话并行（评估报告 §4.1）：任务进行中允许自由切换——每会话独立 runtime 与状态机，
+            // 后台会话继续执行，当前会话闸门只约束正在显示的这个会话。
             var changed = !ReferenceEquals(_selectedSession, value);
             if (!Set(ref _selectedSession, value)) return;
             (DeleteSessionCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -989,18 +1009,39 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    private bool _isBusy;
-    public bool IsBusy
+    /// <summary>
+    /// 会话级闸门的派生视图：当前会话处于排队/执行/待审批（会话状态机），或测试连接进行中。
+    /// 各命令的 CanExecute 仍按“当前会话”判定；后台运行中的其他会话各自持有状态，不占用这里。
+    /// </summary>
+    public bool IsBusy => _connectionTesting || CurrentContext.IsBusy;
+
+    /// <summary>IsBusy 派生量变化（状态机切换 / 测试连接起止）：统一发通知。</summary>
+    private void RaiseBusyChanged()
     {
-        get => _isBusy;
-        set
-        {
-            if (!Set(ref _isBusy, value)) return;
-            OnPropertyChanged(nameof(SendButtonText));
-            foreach (var cmd in new[] { SendCommand, StopCommand, SendOrStopCommand, NewSessionCommand, DeleteSessionCommand, ContinueCommand, RegenerateCommand, RetryStepCommand, TestConnectionCommand })
-                (cmd as RelayCommand)?.RaiseCanExecuteChanged();
-        }
+        OnPropertyChanged(nameof(IsBusy));
+        OnPropertyChanged(nameof(SendButtonText));
+        foreach (var cmd in new[] { SendCommand, StopCommand, SendOrStopCommand, NewSessionCommand, DeleteSessionCommand, ContinueCommand, RegenerateCommand, RetryStepCommand, TestConnectionCommand })
+            (cmd as RelayCommand)?.RaiseCanExecuteChanged();
     }
+
+    private void OnContextStateChanged(SessionRunContext ctx)
+    {
+        // 状态可能在工具线程包装里变化（审批等待）：统一收口到 UI 线程刷新闸门与徽章
+        _uiInvoke(RaiseBusyChanged);
+        if (ReferenceEquals(ctx, CurrentContext))
+            OnPropertyChanged(nameof(SessionStateText));
+    }
+
+    /// <summary>当前会话的状态文案（侧栏/状态栏徽章用；Idle/Done=空）。</summary>
+    public string SessionStateText => CurrentContext.State switch
+    {
+        SessionRunState.Queued => "排队中",
+        SessionRunState.Running => "执行中",
+        SessionRunState.WaitingApproval => "待审批",
+        SessionRunState.Stopped => "已停止",
+        SessionRunState.Failed => "上轮失败",
+        _ => string.Empty
+    };
 
     private string _statusMessage = "加载中…";
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
@@ -1128,10 +1169,23 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     public async Task ReloadSessionsAsync()
     {
         var list = await _store.ListSessionsAsync();
+        // 后台会话轮结束也会触发本刷新：先保住当前选中，避免正在显示的会话被列表重建清掉选中
+        var keepId = _selectedSession?.Id;
         Sessions.Clear();
         foreach (var s in list)
             Sessions.Add(s);
         ApplySessionFilter();
+        if (keepId is { } id)
+        {
+            var again = Sessions.FirstOrDefault(s => s.Id == id);
+            if (!ReferenceEquals(again, _selectedSession))
+            {
+                _suppressSelection = true;
+                SelectedSession = again;
+                _suppressSelection = false;
+                SyncSidebarSelection();
+            }
+        }
     }
 
     private void ApplySessionFilter()
@@ -1149,9 +1203,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         SyncLocalAuditSession();
         // 需求 D：先取会话工作目录（附件/历史解析与运行时装配都依赖它；空=旧会话回退共享区）
         _sessionWorkspaceDir = await _store.GetSessionWorkspaceDirAsync(id);
+        var ctx = CurrentContext;
+        ctx.WorkspaceDir = _sessionWorkspaceDir;
         _editingTurn = null;
-        Turns.Clear();
-        Plan.Clear();
         IsLoading = true;
         LoadingText = "正在加载会话…";
 
@@ -1170,13 +1224,37 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             if (SelectedAgent is not null && !string.Equals(storedAgentId, SelectedAgent.Id, StringComparison.Ordinal))
                 _ = PersistAgentSelectionAsync(SelectedAgent.Id);
 
+            if (ctx.IsBusy)
+            {
+                // 该会话正在后台运行（§4.1）：不读库重建、不动它的 runtime——
+                // 直接采纳权威镜像恢复上屏，运行继续写这些对象，切回后无缝衔接。
+                Turns.Clear();
+                foreach (var turn in ctx.LiveTurns)
+                    Turns.Add(turn);
+                Plan.Clear();
+                foreach (var item in ctx.PlanItems)
+                    Plan.Add(item);
+                _sessionTitled = ctx.LiveTurns.Any(t => !string.IsNullOrEmpty(t.UserText) || t.StorageText is not null);
+                ResetTranscriptWindow();
+                await RestoreActiveSkillsAsync(id);
+                await RestorePlanModeAsync(id);
+                await RestoreToolPolicyAsync(id);
+                ReloadSkillCatalog();
+                IsLoading = false;
+                RefreshContextInfo();
+                StatusMessage = $"该会话任务进行中（{SessionStateText}）：进度已恢复显示";
+                return;
+            }
+
             var (turns, history, hasUser) = await BuildTranscriptAsync(id);
             foreach (var turn in turns)
                 Turns.Add(turn);
+            ctx.LiveTurns = Turns.ToList();   // 权威镜像与可见集合对齐（运行期间以此为准）
             _sessionTitled = hasUser;
             ResetTranscriptWindow();
 
             RestorePlan(await _store.GetSessionPlanAsync(id));
+            ctx.PlanItems = Plan.ToList();
             await RestoreActiveSkillsAsync(id);
             await RestorePlanModeAsync(id);
             await RestoreToolPolicyAsync(id);
@@ -1189,6 +1267,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         finally
         {
             IsLoading = false;
+            // 切换会话 = 换闸门：忙碌/状态文案随当前上下文重算（含“切到后台运行中会话”的早退路径）
+            RaiseBusyChanged();
+            OnPropertyChanged(nameof(SessionStateText));
         }
     }
 
@@ -1349,10 +1430,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         _sessionId = 0;
         _sessionWorkspaceDir = null;   // 未分配：新任务回退共享工作区，首条消息时再分配独立目录（需求 D）
+        CurrentContext.WorkspaceDir = null;
         SyncLocalAuditSession();
         _sessionTitled = false;
         Turns.Clear();
         Plan.Clear();
+        CurrentContext.LiveTurns = Turns.ToList();
+        CurrentContext.PlanItems = Plan.ToList();
         _editingTurn = null;
         _activeSkillIds = new();
         IsPlanMode = false;
@@ -1361,9 +1445,30 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         SelectedSession = null;
         SyncSidebarSelection();
         RefreshContextInfo();
+        RaiseBusyChanged();   // 换到草稿上下文：闸门与状态文案重算（如删除了运行中的当前会话）
+        OnPropertyChanged(nameof(SessionStateText));
     }
 
     private Task DeleteSessionAsync() => DeleteSessionAsync(SelectedSession);
+
+    /// <summary>从 runtime 池摘除某会话：取消其运行、断开状态回调并释放独立 runtime（§4.1 池生命周期）。</summary>
+    private async Task RemoveContextAsync(long sessionId)
+    {
+        if (!_contexts.TryGetValue(sessionId, out var ctx))
+            return;
+        _contexts.Remove(sessionId);
+        ctx.StateChanged -= OnContextStateChanged;
+        try { ctx.Cts?.Cancel(); } catch { /* 忽略 */ }
+        try
+        {
+            if (ctx.Runtime is not null)
+                await ctx.Runtime.DisposeAsync();
+        }
+        catch { /* 释放失败忽略 */ }
+        ctx.Runtime = null;
+        try { ctx.Cts?.Dispose(); } catch { /* 忽略 */ }
+        ctx.Cts = null;
+    }
 
     /// <summary>删除会话时清理其工作目录（§5.3.5 附件/产出随会话删除）；越界/失败不影响会话删除，仅返回未删。</summary>
     private (bool Removed, int Files) CleanupSessionWorkspace(string? sessionDir)
@@ -1386,6 +1491,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (session is null) return;
         SessionRemoved?.Invoke(session.Id);
+        await RemoveContextAsync(session.Id);   // 池生命周期：删除即停即释放
         var wasCurrent = session.Id == _sessionId;
         // 会话删除入审计（§10.A.1 本地工具补审计三类之一）；FilePath=该会话工作目录（§5.3.5 清理范围, M1-7 落实）
         var sessionDir = await _store.GetSessionWorkspaceDirAsync(session.Id);
@@ -1395,7 +1501,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         await LocalAudit.LogAsync("session_delete", $"SESSION_DELETE: {session.Title}",
             CommandStatus.Executed,
             result: removedDir ? $"已清理会话目录({cleanedFiles} 个文件)" : null,
-            filePath: string.IsNullOrWhiteSpace(sessionDir) ? null : sessionDir);
+            filePath: string.IsNullOrWhiteSpace(sessionDir) ? null : sessionDir,
+            sessionId: $"agent-{session.Id}");   // UI 动作显式归因（其他会话可能正在运行 §4.1）
         await ReloadSessionsAsync();
 
         var next = Sessions.FirstOrDefault();
@@ -1436,6 +1543,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (session is null)
             return;
         SessionRemoved?.Invoke(session.Id);
+        await RemoveContextAsync(session.Id);   // 池生命周期：归档即停即释放
         var wasCurrent = session.Id == _sessionId;
         await _store.ArchiveSessionAsync(session.Id);
         await ReloadSessionsAsync();
@@ -1473,8 +1581,10 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (session.Id == _sessionId)
         {
             Turns.Clear();
+            CurrentContext.LiveTurns = Turns.ToList();
             _editingTurn = null;
             Plan.Clear();
+            CurrentContext.PlanItems.Clear();
             _ = PersistPlanAsync();
             OnPropertyChanged(nameof(IsEditing));
             RefreshContextInfo();
@@ -1629,10 +1739,14 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (SelectedProvider is null)
             return;
 
-        if (_runtime is not null)
+        // 装配目标 = 当前会话上下文；把闭包要烧的值先落到 ctx（运行期间切换会话不再改写这些值）
+        var ctx = CurrentContext;
+        ctx.WorkspaceDir = _sessionWorkspaceDir;
+
+        if (ctx.Runtime is not null)
         {
-            await _runtime.DisposeAsync();
-            _runtime = null;
+            await ctx.Runtime.DisposeAsync();
+            ctx.Runtime = null;
         }
 
         try
@@ -1640,13 +1754,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             ModelStatus = "connecting";
             StatusMessage = "正在连接 MCP 服务器…";
             var extra = new List<IAgentTool>();
-            if (BuildLocalTerminalTool() is { } lt) extra.Add(lt);
+            if (BuildLocalTerminalTool(ctx) is { } lt) extra.Add(lt);
             // 需求 D/§10.D.1：提升命令——会话目录 → 共享工作区归档（脚本类须桌面确认, 全量记审计）
             extra.Add(new Services.PromoteTool(
-                () => _sessionWorkspaceDir,
+                () => ctx.WorkspaceDir,
                 () => WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir),
-                RequestLocalApprovalAsync,
-                () => CurrentSessionKey));
+                (cmd, dir, ct) => RequestLocalApprovalAsync(ctx, cmd, dir, ct),
+                () => ctx.SessionKey));
             var localTools = extra.Count > 0 ? extra.ToArray() : null;
             // 资产图谱快照注入系统提示（仅 topology 工具组启用时；由 AgentRuntime 按 availableGroups 再过滤）
             string? assetGraph = null;
@@ -1660,21 +1774,23 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 // 资产渲染失败不阻断会话启动
             }
             // 需求 D/D1：会话工作目录与归属用户随运行时装配（根与提示词在装配期烧定；归因经 spawn 注入 MCP 子进程）
-            var ownerUserId = _sessionId > 0 ? await _store.GetSessionOwnerUserIdAsync(_sessionId) : "local";
-            _runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history, UpdatePlan,
+            var ownerUserId = ctx.SessionId > 0 ? await _store.GetSessionOwnerUserIdAsync(ctx.SessionId) : "local";
+            ctx.Runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history,
+                items => UpdatePlanFor(ctx, items),
                 _activeSkillIds.Count == 0 ? null : _activeSkillIds, _planMode, SelectedAgent?.ToPromptContext(),
                 extraTools: localTools, assetGraph: assetGraph,
-                sessionWorkspaceDir: string.IsNullOrWhiteSpace(_sessionWorkspaceDir) ? null : _sessionWorkspaceDir,
+                sessionWorkspaceDir: string.IsNullOrWhiteSpace(ctx.WorkspaceDir) ? null : ctx.WorkspaceDir,
                 ownerUserId: ownerUserId);
+            ctx.RuntimeVersion = _poolVersion;
             await RestoreSummaryFromStoreAsync();
-            StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
+            StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {ctx.Runtime!.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "")
                             + McpWarningSuffix()
                             + MemoryWarningSuffix();
             ModelStatus = "ready";
             RefreshContextInfo();
             ReloadSkillCatalog();
-            _runtime.SetToolPolicy(_toolPolicy);
+            ctx.Runtime!.SetToolPolicy(_toolPolicy);
         }
         catch (Exception ex)
         {
@@ -1683,18 +1799,18 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    /// <summary>构建本机 CLI 工具（仅在「本机终端」启用且宿主提供了按会话解析的终端时）。</summary>
-    private IAgentTool? BuildLocalTerminalTool()
+    /// <summary>构建本机 CLI 工具（仅在「本机终端」启用且宿主提供了按会话解析的终端时）；闭包绑定 <paramref name="ctx"/> 会话，运行中切换显示不串号。</summary>
+    private IAgentTool? BuildLocalTerminalTool(SessionRunContext ctx)
     {
         var cfg = _agentConfig.LocalTerminal;
         if (cfg is null || !cfg.Enabled || LocalTerminalResolver is null)
             return null;
 
         return new LocalTerminalTool(
-            () => CurrentSessionKey,
+            () => ctx.SessionKey,
             key => LocalTerminalResolver?.Invoke(key),
             cfg,
-            RequestLocalApprovalAsync,
+            (cmd, dir, ct) => RequestLocalApprovalAsync(ctx, cmd, dir, ct),
             PersistLocalTerminalConfig,
             _localExemptions);
     }
@@ -1702,18 +1818,19 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>
     /// 本机终端审批：用 BeginInvoke 把弹窗投递到 UI 线程，工具线程只 await TaskCompletionSource。
     /// 旧实现是 Dispatcher.Invoke + ShowDialog 同步阻塞——UI 线程被审批占用期间所有 Dispatcher 操作排队，
-    /// 且工具线程无法被取消（评估报告 §4.2）。
+    /// 且工具线程无法被取消（评估报告 §4.2）。弹窗期间该会话状态机进 WaitingApproval（§4.1）。
     /// </summary>
-    private Task<LocalApprovalDecision> RequestLocalApprovalAsync(string command, string workingDirectory, CancellationToken ct)
+    private Task<LocalApprovalDecision> RequestLocalApprovalAsync(SessionRunContext ctx, string command, string workingDirectory, CancellationToken ct)
     {
         var tcs = new TaskCompletionSource<LocalApprovalDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
+        ctx.SetState(SessionRunState.WaitingApproval);
 
         void Show()
         {
             try
             {
                 var decision = LitSSHmcp.App.Views.LocalCommandApprovalWindow.Prompt(
-                    command, workingDirectory, _localExemptions.SessionAllGranted, CurrentSessionKey);
+                    command, workingDirectory, _localExemptions.SessionAllGranted, ctx.SessionKey);
                 tcs.TrySetResult(decision);
             }
             catch (Exception)
@@ -1725,6 +1842,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         // 弹窗带 Topmost，取消后用户仍可能点选——TrySetResult 保证只有第一个结果生效（取消优先）。
         var registration = ct.Register(() => tcs.TrySetResult(LocalApprovalDecision.Deny));
         _ = tcs.Task.ContinueWith(_ => registration.Dispose(), TaskContinuationOptions.ExecuteSynchronously);
+        // 审批结束回到执行态（取消/异常同样恢复；终态 Done/Failed 由本轮收尾覆盖）
+        _ = tcs.Task.ContinueWith(_ => ctx.SetState(SessionRunState.Running),
+            CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         _uiBeginInvoke(Show);
         return tcs.Task;
     }
@@ -1749,14 +1869,16 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         });
     }
 
-    /// <summary>切换会话/模型：复用已连接的 MCP 宿主，仅重建对话会话（不重连 MCP）。</summary>
+    /// <summary>切换会话/模型：复用该会话已连接的 MCP 宿主，仅重建对话会话（不重连 MCP）。</summary>
     private async Task ResetRuntimeAsync(IEnumerable<ChatMessage>? history)
     {
         if (SelectedProvider is null)
             return;
 
-        // 工作区根不同的运行时不能复用（根在装配期烧进工具与提示词，运行中不可变）：须重建
-        if (_runtime is null || RuntimeRootMismatched)
+        var ctx = CurrentContext;
+        // 复用条件（§4.1 池）：有本会话运行时 + 根一致（根在装配期烧进工具与提示词，运行中不可变）
+        // + 配置代际未变（设置/连接器重载后旧池元素须重建）
+        if (ctx.Runtime is null || RuntimeRootMismatched || ctx.RuntimeVersion != _poolVersion)
         {
             await EnsureRuntimeAsync(history);
             return;
@@ -1764,13 +1886,14 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         try
         {
-            _runtime.ResetSession(SelectedProvider, history);
-            _runtime.SetActiveSkills(_activeSkillIds.Count == 0 ? null : _activeSkillIds);
-            _runtime.SetActiveAgent(SelectedAgent?.ToPromptContext());
-            _runtime.SetPlanMode(_planMode);
-            _runtime.SetToolPolicy(_toolPolicy);
+            var rt = ctx.Runtime!;
+            rt.ResetSession(SelectedProvider, history);
+            rt.SetActiveSkills(_activeSkillIds.Count == 0 ? null : _activeSkillIds);
+            rt.SetActiveAgent(SelectedAgent?.ToPromptContext());
+            rt.SetPlanMode(_planMode);
+            rt.SetToolPolicy(_toolPolicy);
             await RestoreSummaryFromStoreAsync();
-            StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
+            StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {rt.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "")
                             + McpWarningSuffix()
                             + MemoryWarningSuffix();
@@ -1788,6 +1911,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public async Task ReloadProvidersAsync()
     {
+        _poolVersion++;   // 配置代际：池内旧运行时下次激活时重建（设置/连接器已变）
         try
         {
             var config = await _configService.LoadConfigAsync();
@@ -2116,7 +2240,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             var absolute = System.IO.Path.GetFullPath(System.IO.Path.Combine(workspaceRoot, relative));
             // 附件落盘入审计（§10.A.1 本地工具补审计三类之一；FilePath=绝对路径, 供 M1-7 随会话删除追溯）
             await LocalAudit.LogAsync("attachment_persist", $"ATTACH: {attachment.Name} -> {relative}",
-                CommandStatus.Executed, filePath: absolute);
+                CommandStatus.Executed, filePath: absolute,
+                sessionId: _sessionId > 0 ? $"agent-{_sessionId}" : null);   // 显式归因（别的会话可能正在运行 §4.1）
 
             if (attachment.IsImage)
             {
@@ -2226,6 +2351,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 for (var i = Turns.Count - 1; i > idx; i--)
                     Turns.RemoveAt(i);
+                CurrentContext.LiveTurns = Turns.ToList();   // 编辑截断同步权威镜像
                 ResetTranscriptWindow();
                 RebuildSessionHistoryUpTo(idx);
 
@@ -2273,6 +2399,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             if (Plan.Count > 0)
             {
                 Plan.Clear();   // 新指令 = 新任务：清掉上一轮残留的计划(模型如需会重新 update_plan)
+                CurrentContext.PlanItems.Clear();
                 _ = PersistPlanAsync();
             }
         }
@@ -2298,6 +2425,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         foreach (var imagePath in imagePaths)
             turn.Images.Add(imagePath);
         Turns.Add(turn);
+        CurrentContext.LiveTurns.Add(turn);   // 权威镜像与可见集合同步（运行后以其为准）
         await RunTurnAsync(turn, contents);
     }
 
@@ -2319,6 +2447,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         await _store.SetSessionOwnerUserIdAsync(_sessionId, owner);
         await _store.SetSessionWorkspaceDirAsync(_sessionId, dir);
         _sessionWorkspaceDir = dir;
+        CurrentContext.WorkspaceDir = dir;   // 池元素同步（装配闭包与后台运行读它，不读显示态字段）
 
         if (SelectedProvider is not null)
             await PersistProviderSelectionAsync(SelectedProvider.Id);
@@ -2354,8 +2483,16 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private async Task RunTurnAsync(AgentTurn turn, IReadOnlyList<AIContent>? contents = null)
     {
-        if (_runtime is null)
+        var ctx = CurrentContext;
+        if (ctx.Runtime is null)
             return;
+        if (ctx.IsBusy)
+        {
+            // 双触发防线（回车连点等）：会话闸门已占用时不再开第二轮（AgentSession 还有硬闸兜底）
+            turn.Note = "上一轮仍在进行中，请稍候。";
+            turn.MarkDone(DateTime.UtcNow);
+            return;
+        }
 
         // 会话成本预算：达到上限后阻止新的发送（防止失控烧钱）
         var budgetBlock = SessionCostBudgetBlock();
@@ -2372,6 +2509,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             var title = BuildSessionTitle(turn.UserText, turn.Images.Count > 0, turn.UserText.Contains("📎"));
             await CreateSessionWithWorkspaceAsync(title, titled: true);
+            ctx = CurrentContext;   // 草稿 → 落库会话：上下文可能已换
         }
         else if (_sessionTitled is false)
         {
@@ -2381,21 +2519,31 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             await ReloadSessionsAsync();
         }
 
-        IsBusy = true;
-        _cts = new CancellationTokenSource();
+        // 运行期固定引用：本轮只属于 ctx（其间显示层可随意切换会话）
+        var runtime = ctx.Runtime;
+        if (runtime is null)
+            return;
+
+        // 状态机（§4.1）：排队 → 执行中 → （待审批由审批包装置位）→ 完成/失败/停止
+        ctx.SetState(SessionRunState.Queued);
+        RaiseBusyChanged();
+        var cts = new CancellationTokenSource();
+        ctx.Cts = cts;
+        ctx.ResetBuffers();
         var assistantText = new StringBuilder();
-        _pendingDelta.Clear();
-        _lastFlushUtc = DateTime.MinValue;
-        _pendingReasoning.Clear();
-        _lastReasoningFlushUtc = DateTime.MinValue;
-        var progress = new SyncProgress(e => OnAgentEvent(e, turn, assistantText), _uiInvoke);
+        var progress = new SyncProgress(e => OnAgentEvent(e, turn, assistantText, ctx), _uiInvoke);
         var turnSucceeded = false;
+        // 归因作用域：本轮派生的工具线程/续延（本地工具审计）都挂到本会话，不随显示切换串号（§4.1）
+        using var auditScope = LocalAudit.BeginRunScope(ctx.AuditId);
 
         try
         {
-            await _runtime.Session.SendAsync(contents ?? new AIContent[] { new TextContent(turn.UserText) }, progress, _cts.Token);
+            ctx.SetState(SessionRunState.Running);
+            RaiseBusyChanged();
+            await runtime.Session.SendAsync(contents ?? new AIContent[] { new TextContent(turn.UserText) }, progress, cts.Token);
             turnSucceeded = true;
-            StatusMessage = "完成";
+            if (ReferenceEquals(ctx, CurrentContext))
+                StatusMessage = "完成";
         }
         catch (OperationCanceledException)
         {
@@ -2405,18 +2553,33 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             var reason = ChatErrorClassifier.Describe(ex);
             turn.Note = reason;
-            StatusMessage = reason;
+            if (ReferenceEquals(ctx, CurrentContext))
+                StatusMessage = reason;
         }
         finally
         {
-            FlushDelta(turn);
-            FlushReasoning(turn);
+            auditScope.Dispose();
+            FlushDelta(turn, ctx);
+            FlushReasoning(turn, ctx);
             turn.MarkDone(DateTime.UtcNow);
-            IsBusy = false;
-            _cts?.Dispose();
-            _cts = null;
-            await PersistTranscriptAsync();
-            await PersistSummaryAsync();
+            ctx.SetState(turnSucceeded ? SessionRunState.Done
+                : (cts.IsCancellationRequested ? SessionRunState.Stopped : SessionRunState.Failed));
+            if (ReferenceEquals(ctx.Cts, cts))
+            {
+                ctx.Cts = null;
+                cts.Dispose();
+            }
+            // 落库/摘要/触达一律按**运行所属会话**（ctx），杜绝后台完成的轮写进当前显示的会话；
+            // 会话可能已被并行删除（删除即停），落库失败一律吞掉，绝不让收尾半途抛出
+            try
+            {
+                await PersistTranscriptAsync(ctx);
+                await PersistSummaryAsync(ctx);
+            }
+            catch
+            {
+                // 落库失败忽略（会话已删除/磁盘故障）
+            }
             try
             {
                 await _store.PruneAsync(_agentConfig.RetentionMaxSessions, _agentConfig.RetentionMaxMessages, _agentConfig.RetentionDays, CancellationToken.None);
@@ -2425,22 +2588,36 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 // 裁剪失败忽略
             }
-            await _store.TouchSessionAsync(_sessionId);
+            try
+            {
+                await _store.TouchSessionAsync(ctx.SessionId);
+            }
+            catch
+            {
+                // 触达时间失败忽略（会话可能已删除）
+            }
             try
             {
                 // 质量门：仅成功轮入库 raw 记忆（取消/失败轮不污染召回）
-                if (_runtime is not null && turnSucceeded)
-                    await _runtime.IndexTurnAsync(turn.UserText, assistantText.ToString());
+                if (ctx.Runtime is not null && turnSucceeded)
+                    await ctx.Runtime.IndexTurnAsync(turn.UserText, assistantText.ToString());
             }
             catch
             {
                 // 记忆写入失败忽略
             }
             await ReloadSessionsAsync();
-            _suppressSelection = true;
-            SelectedSession = Sessions.FirstOrDefault(s => s.Id == _sessionId);
-            _suppressSelection = false;
-            RefreshContextInfo();
+            if (ReferenceEquals(ctx, CurrentContext))
+            {
+                _suppressSelection = true;
+                SelectedSession = Sessions.FirstOrDefault(s => s.Id == ctx.SessionId);
+                _suppressSelection = false;
+                SyncSidebarSelection();
+                RefreshContextInfo();
+            }
+            // 终态（Done/Failed/Stopped）保留到下一轮开始：不占用闸门（IsBusy 只认排队/执行/待审批），
+            // 同时让状态文案可见（“已停止/上轮失败”）。
+            RaiseBusyChanged();
         }
     }
 
@@ -2509,7 +2686,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (SelectedProvider is null)
             return;
 
-        IsBusy = true;
+        _connectionTesting = true;
+        RaiseBusyChanged();
         try
         {
             var client = ChatClientFactory.Create(SelectedProvider);
@@ -2527,11 +2705,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         finally
         {
-            IsBusy = false;
+            _connectionTesting = false;
+            RaiseBusyChanged();
         }
     }
 
-    private void OnAgentEvent(AgentEvent e, AgentTurn turn, StringBuilder assistantText)
+    private void OnAgentEvent(AgentEvent e, AgentTurn turn, StringBuilder assistantText, SessionRunContext ctx)
     {
         switch (e.Kind)
         {
@@ -2539,28 +2718,28 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 var chunk = e.Text ?? string.Empty;
                 if (chunk.Length == 0) break;
                 assistantText.Append(chunk);
-                _pendingDelta.Append(chunk);
-                if ((DateTime.UtcNow - _lastFlushUtc).TotalMilliseconds >= StreamFlushMs)
-                    FlushDelta(turn);
+                ctx.PendingDelta.Append(chunk);
+                if ((DateTime.UtcNow - ctx.LastFlushUtc).TotalMilliseconds >= StreamFlushMs)
+                    FlushDelta(turn, ctx);
                 break;
 
             case AgentEventKind.AssistantReasoning:
                 var reasoningChunk = e.Text ?? string.Empty;
                 if (reasoningChunk.Length == 0) break;
-                _pendingReasoning.Append(reasoningChunk);
-                if ((DateTime.UtcNow - _lastReasoningFlushUtc).TotalMilliseconds >= StreamFlushMs)
-                    FlushReasoning(turn);
+                ctx.PendingReasoning.Append(reasoningChunk);
+                if ((DateTime.UtcNow - ctx.LastReasoningFlushUtc).TotalMilliseconds >= StreamFlushMs)
+                    FlushReasoning(turn, ctx);
                 break;
 
             case AgentEventKind.ToolCall:
-                FlushDelta(turn);
-                FlushReasoning(turn);
+                FlushDelta(turn, ctx);
+                FlushReasoning(turn, ctx);
                 turn.Steps.Add(new AgentStep(e.ToolName ?? "工具", e.ArgumentsJson ?? string.Empty, e.Destructive, e.CallId));
                 break;
 
             case AgentEventKind.ToolResult:
-                FlushDelta(turn);
-                FlushReasoning(turn);
+                FlushDelta(turn, ctx);
+                FlushReasoning(turn, ctx);
                 var body = Truncate(e.Text, 20000);
                 var denied = LooksApprovalDenied(e.Text);
                 var pending = e.CallId is null
@@ -2572,65 +2751,77 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             case AgentEventKind.MemoryRecall:
                 // 记忆召回可见性：以"信息步骤"展示本轮注入的记忆（不参与重试/落库/模型轨迹）
-                FlushDelta(turn);
-                FlushReasoning(turn);
+                FlushDelta(turn, ctx);
+                FlushReasoning(turn, ctx);
                 var recallStep = new AgentStep("记忆召回", string.Empty, isInfo: true);
                 recallStep.Complete(true, e.Text ?? string.Empty, 0);
                 turn.Steps.Add(recallStep);
                 break;
 
             case AgentEventKind.Error:
-                FlushDelta(turn);
-                FlushReasoning(turn);
+                FlushDelta(turn, ctx);
+                FlushReasoning(turn, ctx);
                 turn.Note = e.Text ?? "错误";
                 break;
 
             case AgentEventKind.Done:
-                FlushDelta(turn);
-                FlushReasoning(turn);
+                FlushDelta(turn, ctx);
+                FlushReasoning(turn, ctx);
                 break;
         }
     }
 
-    private void FlushDelta(AgentTurn turn)
+    private void FlushDelta(AgentTurn turn, SessionRunContext ctx)
     {
-        if (_pendingDelta.Length == 0)
+        if (ctx.PendingDelta.Length == 0)
             return;
-        turn.AssistantText += _pendingDelta.ToString();
-        _pendingDelta.Clear();
-        _lastFlushUtc = DateTime.UtcNow;
+        turn.AssistantText += ctx.PendingDelta.ToString();
+        ctx.PendingDelta.Clear();
+        ctx.LastFlushUtc = DateTime.UtcNow;
     }
 
-    private void FlushReasoning(AgentTurn turn)
+    private void FlushReasoning(AgentTurn turn, SessionRunContext ctx)
     {
-        if (_pendingReasoning.Length == 0)
+        if (ctx.PendingReasoning.Length == 0)
             return;
-        turn.ReasoningText += _pendingReasoning.ToString();
-        _pendingReasoning.Clear();
-        _lastReasoningFlushUtc = DateTime.UtcNow;
+        turn.ReasoningText += ctx.PendingReasoning.ToString();
+        ctx.PendingReasoning.Clear();
+        ctx.LastReasoningFlushUtc = DateTime.UtcNow;
     }
 
-    private void UpdatePlan(IReadOnlyList<PlanItem> items) => _uiInvoke(() =>
+    /// <summary>
+    /// update_plan 路由（§4.1 进度按会话）：运行时装配期把会话 ctx 烧进回调——
+    /// 计划先写该会话的权威镜像；当前正好显示该会话时同步可见计划面板并持久化。
+    /// </summary>
+    private void UpdatePlanFor(SessionRunContext ctx, IReadOnlyList<PlanItem> items) => _uiInvoke(() =>
     {
-        Plan.Clear();
+        ctx.PlanItems.Clear();
         foreach (var item in items)
-            Plan.Add(new PlanItemVM(item));
-        _ = PersistPlanAsync();
+            ctx.PlanItems.Add(new PlanItemVM(item));
+        if (ReferenceEquals(ctx, CurrentContext))
+        {
+            Plan.Clear();
+            foreach (var item in ctx.PlanItems)
+                Plan.Add(item);
+            _ = PersistPlanAsync(ctx);
+        }
     });
 
     private sealed record StoredPlanItem(string Text, bool Done);
 
-    /// <summary>把当前任务计划持久化到会话行（跨重启恢复）。</summary>
-    private async Task PersistPlanAsync()
+    /// <summary>把任务计划持久化到会话行（跨重启恢复）；<paramref name="ctx"/> 缺省=当前会话。</summary>
+    private async Task PersistPlanAsync(SessionRunContext? ctx = null)
     {
-        if (_sessionId <= 0)
+        ctx ??= CurrentContext;
+        if (ctx.SessionId <= 0)
             return;
         try
         {
-            var json = Plan.Count == 0
+            IEnumerable<PlanItemVM> source = ReferenceEquals(ctx, CurrentContext) ? Plan : ctx.PlanItems;
+            var json = !source.Any()
                 ? string.Empty
-                : JsonSerializer.Serialize(Plan.Select(p => new StoredPlanItem(p.Text, p.Done)).ToList());
-            await _store.SetSessionPlanAsync(_sessionId, json);
+                : JsonSerializer.Serialize(source.Select(p => new StoredPlanItem(p.Text, p.Done)).ToList());
+            await _store.SetSessionPlanAsync(ctx.SessionId, json);
         }
         catch
         {
@@ -2638,17 +2829,23 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    /// <summary>恢复持久化的任务计划（无效 JSON 时视为无计划）。</summary>
+    /// <summary>恢复持久化的任务计划（无效 JSON 时视为无计划）；镜像到当前会话上下文。</summary>
     private void RestorePlan(string? json)
     {
         Plan.Clear();
         if (string.IsNullOrWhiteSpace(json))
+        {
+            CurrentContext.PlanItems = Plan.ToList();
             return;
+        }
         try
         {
             var items = JsonSerializer.Deserialize<List<StoredPlanItem>>(json);
             if (items is null)
+            {
+                CurrentContext.PlanItems = Plan.ToList();
                 return;
+            }
             foreach (var item in items)
                 Plan.Add(new PlanItemVM(new PlanItem(item.Done, item.Text)));
         }
@@ -2656,6 +2853,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             // 损坏的计划 JSON 忽略
         }
+        CurrentContext.PlanItems = Plan.ToList();
     }
 
     private static bool LooksApprovalDenied(string? text) =>
@@ -2680,14 +2878,15 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    /// <summary>把当前滚动摘要持久化（每轮结束、手动压缩、清空上下文后调用）。</summary>
-    private async Task PersistSummaryAsync()
+    /// <summary>把该会话滚动摘要持久化（每轮结束、手动压缩、清空上下文后调用）；<paramref name="ctx"/> 缺省=当前会话。</summary>
+    private async Task PersistSummaryAsync(SessionRunContext? ctx = null)
     {
-        if (_sessionId <= 0)
+        ctx ??= CurrentContext;
+        if (ctx.SessionId <= 0)
             return;
         try
         {
-            await _store.SetSessionSummaryAsync(_sessionId, _runtime?.Session.Summary ?? string.Empty);
+            await _store.SetSessionSummaryAsync(ctx.SessionId, ctx.Runtime?.Session.Summary ?? string.Empty);
         }
         catch
         {
@@ -2703,10 +2902,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         _runtime.Session.ReplaceHistory(BuildHistoryFromTurns(Turns, turnIndex, from));
     }
 
-    private async Task PersistTranscriptAsync()
+    /// <summary>把该会话的权威轮次列表落库（<paramref name="ctx"/> 缺省=当前会话；轮结束按运行所属会话调用）。</summary>
+    private async Task PersistTranscriptAsync(SessionRunContext? ctx = null)
     {
+        ctx ??= CurrentContext;
+        IEnumerable<AgentTurn> turns = ReferenceEquals(ctx, CurrentContext) ? Turns : ctx.LiveTurns;
         var messages = new List<(string Role, string Content)>();
-        foreach (var turn in Turns)
+        foreach (var turn in turns)
         {
             if (!string.IsNullOrEmpty(turn.UserText) || string.IsNullOrEmpty(turn.StorageText) is false)
                 messages.Add(("user", turn.StorageText ?? turn.UserText));
@@ -2721,7 +2923,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             if (!string.IsNullOrEmpty(turn.AssistantText))
                 messages.Add(("assistant", turn.AssistantText));
         }
-        await _store.ReplaceMessagesAsync(_sessionId, messages);
+        await _store.ReplaceMessagesAsync(ctx.SessionId, messages);
     }
 
     private void RefreshContextInfo()
@@ -2936,9 +3138,22 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        _cts?.Cancel();
-        if (_runtime is not null)
-            await _runtime.DisposeAsync();
+        // 窗口关闭：停掉池内所有会话的运行并释放各自 runtime（含 MCP 子进程）
+        foreach (var ctx in _contexts.Values)
+        {
+            try { ctx.Cts?.Cancel(); } catch { /* 忽略 */ }
+        }
+        foreach (var ctx in _contexts.Values)
+        {
+            try
+            {
+                if (ctx.Runtime is not null)
+                    await ctx.Runtime.DisposeAsync();
+            }
+            catch { /* 释放失败忽略 */ }
+            ctx.Runtime = null;
+        }
+        _contexts.Clear();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

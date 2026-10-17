@@ -637,4 +637,62 @@ public class AgentSessionTests
         public object? GetService(Type serviceType, object? serviceKey = null) => null;
         public void Dispose() { }
     }
+
+    /// <summary>阻塞在模型调用上的客户端：用于确定性地制造“turn 进行中”窗口。</summary>
+    private sealed class BlockingChatClient : IChatClient
+    {
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            _entered.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "ok") });
+        }
+
+        public Task Entered => _entered.Task;
+        public void Release() => _release.TrySetResult();
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            // 主循环走流式通道：在这里阻塞，制造“turn 进行中”窗口
+            _entered.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            yield return new ChatResponseUpdate(ChatRole.Assistant, new AIContent[] { new TextContent("ok") });
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public void Dispose() { }
+    }
+
+    [Fact]
+    public async Task SendAsync_rejects_concurrent_turn_and_recovers_after_finish()
+    {
+        // §4.2 重入保护：同一会话 turn 进行中再次 SendAsync 直接拒绝（历史是裸 List，不能并发写）
+        var client = new BlockingChatClient();
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig());
+
+        var first = session.SendAsync("a", null);
+        // 诊断：第一轮必须到达模型调用（否则失败并带出真实异常），避免无声挂死
+        var winner = await Task.WhenAny(client.Entered, Task.Delay(TimeSpan.FromSeconds(10)));
+        if (winner != client.Entered)
+            Assert.Fail(first.IsFaulted
+                ? "第一轮在到达模型调用前抛出: " + first.Exception!.GetBaseException()
+                : "第一轮 10 秒内未到达模型调用（疑似卡在前置步骤）");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => session.SendAsync("b", null));
+        Assert.Contains("并发", ex.Message);
+
+        client.Release();
+        await first.WaitAsync(TimeSpan.FromSeconds(10));   // 第一轮正常收尾，重入闸复位
+
+        // 收尾后可再次发送（闸复位）
+        var second = session.SendAsync("c", null);
+        await second.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(2, session.Messages.Count(m => m.Role == ChatRole.User));   // 被拒的 "b" 未入历史
+    }
 }

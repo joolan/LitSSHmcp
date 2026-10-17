@@ -17,8 +17,41 @@ public static class LocalAudit
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static bool _ready;
 
-    /// <summary>活动 Agent 会话归因（如 agent-42）；null = 无会话（新建任务尚未发送）。</summary>
-    public static string? AmbientSessionId { get; set; }
+    /// <summary>
+    /// 进程级活动会话归因（UI 线程操作的缺省值，如设置页/未在任务中的 UI 动作）。
+    /// 由桌面 Agent 按当前显示会话设置；null = 无会话。
+    /// </summary>
+    private static string? _fallbackSessionId;
+
+    /// <summary>
+    /// 运行流内的会话归因（评估报告 §4.1 并行会话）：每轮运行经 <see cref="BeginRunScope"/> 注入，
+    /// 随执行流（工具线程/续延）传播且互不串号；空 = 回退进程级缺省。
+    /// </summary>
+    private static readonly AsyncLocal<string?> RunScopeSessionId = new();
+
+    /// <summary>活动 Agent 会话归因（如 agent-42）；null = 无会话（新建任务尚未发送）。运行流内优先取 <see cref="BeginRunScope"/> 的值。</summary>
+    public static string? AmbientSessionId
+    {
+        get => RunScopeSessionId.Value ?? _fallbackSessionId;
+        set => _fallbackSessionId = value;
+    }
+
+    /// <summary>
+    /// 在本轮运行的执行流上绑定会话归因：作用于本流派生的工具线程/续延，
+    /// 不影响其他线程与后续 UI 动作（UI 侧归因继续走 <see cref="AmbientSessionId"/> 的进程级缺省）。
+    /// </summary>
+    public static IDisposable BeginRunScope(string? sessionId)
+    {
+        var previous = RunScopeSessionId.Value;
+        RunScopeSessionId.Value = sessionId;
+        return new RunScope(() => RunScopeSessionId.Value = previous);
+    }
+
+    private sealed class RunScope(Action onDispose) : IDisposable
+    {
+        private Action? _onDispose = onDispose;
+        public void Dispose() => Interlocked.Exchange(ref _onDispose, null)?.Invoke();
+    }
 
     /// <summary>
     /// 测试替身：非 null 时所有记录转投此处，**绝不触碰真实 audit.db**
@@ -26,7 +59,8 @@ public static class LocalAudit
     /// </summary>
     public static Func<CommandAuditLog, Task>? OverrideSink { get; set; }
 
-    /// <summary>写一条本地工具审计。类别固定 Local；<paramref name="decision"/> 仅拒绝/审批语义时传。</summary>
+    /// <summary>写一条本地工具审计。类别固定 Local；<paramref name="decision"/> 仅拒绝/审批语义时传；
+    /// <paramref name="sessionId"/> 非空时优先于环境归因（UI 侧动作在其他会话运行期间显式指定，防串号 §4.1）。</summary>
     public static async Task LogAsync(
         string tool,
         string command,
@@ -34,7 +68,8 @@ public static class LocalAudit
         string? result = null,
         string? filePath = null,
         string? decision = null,
-        int? exitCode = null)
+        int? exitCode = null,
+        string? sessionId = null)
     {
         var log = new CommandAuditLog
         {
@@ -48,7 +83,7 @@ public static class LocalAudit
             Decision = decision,
             ExitCode = exitCode,
             Category = AuditCategory.Local,
-            SessionId = AmbientSessionId
+            SessionId = sessionId ?? AmbientSessionId
         };
 
         var sink = OverrideSink;

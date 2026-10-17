@@ -183,7 +183,8 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
         await LitSSHmcp.Core.Services.Storage.LocalAudit.LogAsync(
             "session_delete", $"SESSION_DELETE(archive): {session.Title}", CommandStatus.Executed,
             result: removedDir ? $"已清理会话目录({cleanedFiles} 个文件)" : null,
-            filePath: string.IsNullOrWhiteSpace(sessionDir) ? null : sessionDir);
+            filePath: string.IsNullOrWhiteSpace(sessionDir) ? null : sessionDir,
+            sessionId: $"agent-{session.Id}");   // UI 动作显式归因（主窗口可能有会话在跑 §4.1）
         ArchivedSessions.Remove(session);
         StatusMessage = $"已删除归档会话: {session.Title}";
     }

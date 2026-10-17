@@ -644,8 +644,25 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string SendButtonText => IsBusy ? "停止" : "发送";
 
-    /// <summary>工作区目录（AI 文档工具 ops_doc_* 的根目录）。</summary>
-    public string WorkspaceDir => WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir);
+    /// <summary>
+    /// 本会话工作目录（需求 D）：加载会话/新建会话时填充，首条消息分配后锁定，运行期代码层不再变更。
+    /// 空 = 未分配（旧会话），回退共享工作区（现状行为，向后兼容）。
+    /// </summary>
+    private string? _sessionWorkspaceDir;
+
+    /// <summary>当前生效的工作区根：会话目录（已分配）或共享工作区（未分配）。</summary>
+    public string CurrentWorkspaceRoot =>
+        !string.IsNullOrWhiteSpace(_sessionWorkspaceDir)
+            ? _sessionWorkspaceDir!
+            : WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir);
+
+    /// <summary>工作区目录（打开文件夹按钮：优先本会话工作目录，未分配则共享工作区）。</summary>
+    public string WorkspaceDir => CurrentWorkspaceRoot;
+
+    /// <summary>运行时装配的工作区根与当前会话工作区根是否一致（不一致须重建运行时，根在装配期烧定）。</summary>
+    private bool RuntimeRootMismatched =>
+        _runtime is not null &&
+        !string.Equals(_runtime.WorkspaceRoot, CurrentWorkspaceRoot, StringComparison.OrdinalIgnoreCase);
     public ICommand NewSessionCommand { get; }
     public ICommand DeleteSessionCommand { get; }
     public ICommand ClearCommand { get; }
@@ -1122,6 +1139,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private async Task LoadSessionAsync(long id)
     {
         _sessionId = id;
+        // 需求 D：先取会话工作目录（附件/历史解析与运行时装配都依赖它；空=旧会话回退共享区）
+        _sessionWorkspaceDir = await _store.GetSessionWorkspaceDirAsync(id);
         _editingTurn = null;
         Turns.Clear();
         Plan.Clear();
@@ -1598,9 +1617,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 // 资产渲染失败不阻断会话启动
             }
+            // 需求 D/D1：会话工作目录与归属用户随运行时装配（根与提示词在装配期烧定；归因经 spawn 注入 MCP 子进程）
+            var ownerUserId = _sessionId > 0 ? await _store.GetSessionOwnerUserIdAsync(_sessionId) : "local";
             _runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history, UpdatePlan,
                 _activeSkillIds.Count == 0 ? null : _activeSkillIds, _planMode, SelectedAgent?.ToPromptContext(),
-                extraTools: localTools, assetGraph: assetGraph);
+                extraTools: localTools, assetGraph: assetGraph,
+                sessionWorkspaceDir: string.IsNullOrWhiteSpace(_sessionWorkspaceDir) ? null : _sessionWorkspaceDir,
+                ownerUserId: ownerUserId);
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {_runtime.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "")
@@ -1690,7 +1713,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (SelectedProvider is null)
             return;
 
-        if (_runtime is null)
+        // 工作区根不同的运行时不能复用（根在装配期烧进工具与提示词，运行中不可变）：须重建
+        if (_runtime is null || RuntimeRootMismatched)
         {
             await EnsureRuntimeAsync(history);
             return;
@@ -2037,7 +2061,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private AttachmentBuild BuildAttachmentPrompt(string text, IReadOnlyList<AgentAttachment> attachments)
     {
         var vision = SelectedProvider?.SupportsVision == true;
-        var workspaceRoot = WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir);
+        var workspaceRoot = CurrentWorkspaceRoot;      // 需求 D：附件落盘随会话工作目录（未分配=共享区）
         var display = new StringBuilder(text);
         var persisted = new StringBuilder(text);
         var model = new StringBuilder(text);
@@ -2129,7 +2153,17 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>发送一轮对话；<paramref name="fixedText"/> 非空时使用该文本（用于"继续"）。</summary>
     private async Task SendTextAsync(string? fixedText)
     {
-        if (_runtime is null)
+        // 懒建会话提前到附件落盘与运行时装配之前：新会话首条消息即分配独立工作目录（需求 D，
+        // 会话创建即分配、首条消息后锁定），保证附件与运行时都用上会话目录而不是共享区。
+        if (_sessionId <= 0)
+        {
+            var seed = (fixedText ?? Input)?.Trim();
+            if (!string.IsNullOrEmpty(seed) || Attachments.Count > 0)
+                await CreateSessionWithWorkspaceAsync(BuildSessionTitle(seed ?? string.Empty,
+                    Attachments.Any(a => a.IsImage), Attachments.Any(a => !a.IsImage)), titled: false);
+        }
+
+        if (_runtime is null || RuntimeRootMismatched)
             await EnsureRuntimeAsync(await LoadHistoryFromStoreAsync());
         if (_runtime is null)
             return;
@@ -2222,6 +2256,37 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         await RunTurnAsync(turn, contents);
     }
 
+    /// <summary>
+    /// 创建会话行并**立即分配独立会话工作目录**（需求 D：会话创建即分配、首条消息后锁定；
+    /// 归因用户 local=桌面未登录，评估报告 D1）。
+    /// <paramref name="titled"/>=false 时保留“首条消息正式命名”的既有口径（SendText 预建用临时标题，
+    /// RunTurnAsync 按展示文本重命名）。
+    /// </summary>
+    private async Task CreateSessionWithWorkspaceAsync(string title, bool titled)
+    {
+        _sessionId = await _store.CreateSessionAsync(title);
+        _sessionTitled = titled;
+
+        const string owner = "local";
+        var dir = WorkspaceLayout.ResolveSessionDir(
+            WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir), owner, _sessionId);
+        await _store.SetSessionOwnerUserIdAsync(_sessionId, owner);
+        await _store.SetSessionWorkspaceDirAsync(_sessionId, dir);
+        _sessionWorkspaceDir = dir;
+
+        if (SelectedProvider is not null)
+            await PersistProviderSelectionAsync(SelectedProvider.Id);
+        if (SelectedAgent is not null)
+            await PersistAgentSelectionAsync(SelectedAgent.Id);
+        await PersistActiveSkillsAsync();
+        await PersistPlanModeAsync();
+        await PersistToolPolicyAsync();
+        await ReloadSessionsAsync();
+        _suppressSelection = true;
+        SelectedSession = Sessions.FirstOrDefault(s => s.Id == _sessionId);
+        _suppressSelection = false;
+    }
+
     /// <summary>会话成本预算检查：达到 agent.budget.maxSessionCost 上限时返回阻止原因（null=可继续；未配置/未填价格时放行）。</summary>
     private string? SessionCostBudgetBlock()
     {
@@ -2260,19 +2325,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (_sessionId <= 0)
         {
             var title = BuildSessionTitle(turn.UserText, turn.Images.Count > 0, turn.UserText.Contains("📎"));
-            _sessionId = await _store.CreateSessionAsync(title);
-            _sessionTitled = true;
-            if (SelectedProvider is not null)
-                await PersistProviderSelectionAsync(SelectedProvider.Id);
-            if (SelectedAgent is not null)
-                await PersistAgentSelectionAsync(SelectedAgent.Id);
-            await PersistActiveSkillsAsync();
-            await PersistPlanModeAsync();
-            await PersistToolPolicyAsync();
-            await ReloadSessionsAsync();
-            _suppressSelection = true;
-            SelectedSession = Sessions.FirstOrDefault(s => s.Id == _sessionId);
-            _suppressSelection = false;
+            await CreateSessionWithWorkspaceAsync(title, titled: true);
         }
         else if (_sessionTitled is false)
         {
@@ -2664,7 +2717,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>解析持久化的用户消息：剥离附件标记行，收集图片绝对路径，文件以名字回显。</summary>
     private (string Text, List<string> Images) ParseStoredUser(string content)
     {
-        var workspaceRoot = WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir);
+        var workspaceRoot = CurrentWorkspaceRoot;      // 需求 D：附件标记解析随会话工作目录
         var clean = new List<string>();
         var images = new List<string>();
         var fileNames = new List<string>();
@@ -2726,7 +2779,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (string.IsNullOrWhiteSpace(storageText))
             return (images, files);
 
-        var workspaceRoot = WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir);
+        var workspaceRoot = CurrentWorkspaceRoot;      // 需求 D：附件还原随会话工作目录
         foreach (var raw in storageText.Replace("\r\n", "\n").Split('\n'))
         {
             var line = raw.Trim();

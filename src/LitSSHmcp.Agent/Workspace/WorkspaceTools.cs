@@ -7,12 +7,19 @@ namespace LitSSHmcp.Agent;
 
 /// <summary>
 /// 提供给模型的**工作区文档读写工具**（本地、非 MCP）：用于维护技能要求的运维资产档案（默认 OPS_ASSETS.md）。
-/// 所有路径被限制在工作区目录内，拦截 <c>..</c> 越界与绝对路径逃逸，并有大小上限。
+/// 所有路径被限制在工作区内，拦截 <c>..</c> 越界、绝对路径逃逸与链接逃逸（§10.C.3），并有大小上限。
+/// 双根（评估报告需求 D / D6）：会话分配独立目录时默认读写会话目录（任务产出），
+/// <c>shared/</c> 前缀与省略 path 的默认文档指向共享工作区（OPS_ASSETS 资产档案跨会话保留）；
+/// 未分配会话目录时共享区即唯一根（现状行为）。
 /// 采用自实现的 <see cref="AIFunction"/>（手动读参），避免不同大模型连接器对参数编组/默认值的差异。
 /// </summary>
 public static class WorkspaceTools
 {
     public const string DefaultDoc = "OPS_ASSETS.md";
+
+    /// <summary>共享区路径前缀（会话目录模式下访问共享工作区资产）。</summary>
+    public const string SharedPrefix = "shared/";
+
     private const int MaxReadBytes = 200_000;
     private const int MaxWriteChars = 200_000;
 
@@ -21,40 +28,58 @@ public static class WorkspaceTools
             ? configured!
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "LitSSH");
 
-    public static IReadOnlyList<IAgentTool> Create(string workspaceDir)
+    /// <param name="workspaceDir">主根：会话工作目录（已分配）或共享工作区（未分配=现状）。</param>
+    /// <param name="sharedDir">共享工作区根；与 <paramref name="workspaceDir"/> 相同或空 = 单根模式（行为与既往一致）。</param>
+    public static IReadOnlyList<IAgentTool> Create(string workspaceDir, string? sharedDir = null)
     {
         var root = Path.GetFullPath(workspaceDir);
         Directory.CreateDirectory(root);
 
+        var shared = string.IsNullOrWhiteSpace(sharedDir) ? null : Path.GetFullPath(sharedDir);
+        if (shared is not null &&
+            string.Equals(shared.TrimEnd(Path.DirectorySeparatorChar), root.TrimEnd(Path.DirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase))
+            shared = null;
+        if (shared is not null)
+            Directory.CreateDirectory(shared);
+
+        var pathDoc = shared is null
+            ? "相对工作区根目录的路径"
+            : "相对本会话工作目录的路径; shared/ 前缀表示共享工作区(如 shared/OPS_ASSETS.md)";
+
         var read = new LocalFunction(
             "ops_doc_read",
-            "读取工作区文档(默认 OPS_ASSETS.md); path 相对工作区根目录",
-            """{"type":"object","properties":{"path":{"type":"string","description":"相对工作区根目录的路径, 省略则读写 OPS_ASSETS.md"}}}""",
-            args => Read(root, ArgumentReader.ReadString(args, "path")));
+            "读取工作区文档(默认 OPS_ASSETS.md); " + pathDoc,
+            "{\"type\":\"object\",\"properties\":{" + PathProp(pathDoc + "; 省略则读 OPS_ASSETS.md(共享资产档案)") + "}}",
+            args => Read(root, shared, ArgumentReader.ReadString(args, "path")));
 
         var write = new LocalFunction(
             "ops_doc_write",
-            "写入/覆盖工作区文档(默认 OPS_ASSETS.md); 用于维护运维资产档案与笔记",
-            """{"type":"object","properties":{"content":{"type":"string","description":"要写入的完整文本内容"},"path":{"type":"string","description":"相对工作区根目录的路径, 省略则写 OPS_ASSETS.md"}},"required":["content"]}""",
-            args => Write(root, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty));
+            "写入/覆盖工作区文档; 用于维护资产档案(共享区)与任务产出文档(本会话目录)",
+            "{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"description\":\"要写入的完整文本内容\"}," +
+            PathProp(pathDoc + "; 省略则写 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"content\"]}",
+            args => Write(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty));
 
         var append = new LocalFunction(
             "ops_doc_append",
-            "向工作区文档末尾追加内容(文件不存在则创建); 增量更新运维资产档案时优先用它, 避免整份重写",
-            """{"type":"object","properties":{"content":{"type":"string","description":"要追加的文本(会自动补换行)"},"path":{"type":"string","description":"相对工作区根目录的路径, 省略则用 OPS_ASSETS.md"}},"required":["content"]}""",
-            args => Append(root, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty));
+            "向工作区文档末尾追加内容(文件不存在则创建); 增量更新资产档案时优先用它, 避免整份重写",
+            "{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"description\":\"要追加的文本(会自动补换行)\"}," +
+            PathProp(pathDoc + "; 省略则用 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"content\"]}",
+            args => Append(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty));
 
         var patch = new LocalFunction(
             "ops_doc_patch",
-            "在工作区文档中做定点替换: 把第一处 find 文本替换为 replace; 用于增量修正档案中的条目",
-            """{"type":"object","properties":{"find":{"type":"string","description":"要查找的原文(须精确匹配, 含空白)"},"replace":{"type":"string","description":"替换为的新文本"},"path":{"type":"string","description":"相对工作区根目录的路径, 省略则用 OPS_ASSETS.md"}},"required":["find","replace"]}""",
-            args => Patch(root, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "find") ?? string.Empty, ArgumentReader.ReadString(args, "replace") ?? string.Empty));
+            "在工作区文档中做定点替换: 把第一处 find 文本替换为 replace; 用于增量修正文档中的条目",
+            "{\"type\":\"object\",\"properties\":{\"find\":{\"type\":\"string\",\"description\":\"要查找的原文(须精确匹配, 含空白)\"}," +
+            "\"replace\":{\"type\":\"string\",\"description\":\"替换为的新文本\"}," +
+            PathProp(pathDoc + "; 省略则用 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"find\",\"replace\"]}",
+            args => Patch(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "find") ?? string.Empty, ArgumentReader.ReadString(args, "replace") ?? string.Empty));
 
         var list = new LocalFunction(
             "ops_doc_list",
-            "列出工作区根目录及子目录下的文档文件",
+            "列出工作区文档文件" + (shared is null ? string.Empty : "(本会话目录 + shared/ 共享区)"),
             """{"type":"object","properties":{}}""",
-            _ => List(root));
+            _ => List(root, shared));
 
         return new IAgentTool[]
         {
@@ -66,43 +91,47 @@ public static class WorkspaceTools
         };
     }
 
-    private static string Read(string root, string? path)
+    /// <summary>JSON Schema 的 path 属性片段（description 由调用方按单/双根模式拼好）。</summary>
+    private static string PathProp(string description) =>
+        "\"path\":{\"type\":\"string\",\"description\":\"" + description + "\"}";
+
+    private static string Read(string root, string? shared, string? path)
     {
-        var full = ResolvePath(root, path);
+        var full = Resolve(root, shared, path);
         if (!File.Exists(full))
-            return $"(文件不存在) {Rel(root, full)}";
+            return $"(文件不存在) {Rel(root, full, shared)}";
         var info = new FileInfo(full);
         if (info.Length > MaxReadBytes)
             return $"(文件过大 {info.Length} 字节, 超过上限 {MaxReadBytes}, 未读取)";
         return File.ReadAllText(full);
     }
 
-    private static string Write(string root, string? path, string content)
+    private static string Write(string root, string? shared, string? path, string content)
     {
-        var full = ResolvePath(root, path);
+        var full = Resolve(root, shared, path);
         if (content.Length > MaxWriteChars)
             return $"(内容过长 {content.Length} 字符, 超过上限 {MaxWriteChars}, 未写入)";
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, content);
-        return $"已写入 {Rel(root, full)} ({Encoding.UTF8.GetByteCount(content)} 字节)";
+        return $"已写入 {Rel(root, full, shared)} ({Encoding.UTF8.GetByteCount(content)} 字节)";
     }
 
-    private static string Append(string root, string? path, string content)
+    private static string Append(string root, string? shared, string? path, string content)
     {
-        var full = ResolvePath(root, path);
+        var full = Resolve(root, shared, path);
         if (content.Length > MaxWriteChars)
             return $"(内容过长 {content.Length} 字符, 超过上限 {MaxWriteChars}, 未追加)";
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         var prefix = File.Exists(full) && new FileInfo(full).Length > 0 ? Environment.NewLine : string.Empty;
         File.AppendAllText(full, prefix + content);
-        return $"已追加到 {Rel(root, full)} ({Encoding.UTF8.GetByteCount(content)} 字节)";
+        return $"已追加到 {Rel(root, full, shared)} ({Encoding.UTF8.GetByteCount(content)} 字节)";
     }
 
-    private static string Patch(string root, string? path, string find, string replace)
+    private static string Patch(string root, string? shared, string? path, string find, string replace)
     {
-        var full = ResolvePath(root, path);
+        var full = Resolve(root, shared, path);
         if (!File.Exists(full))
-            return $"(文件不存在) {Rel(root, full)}";
+            return $"(文件不存在) {Rel(root, full, shared)}";
         if (string.IsNullOrEmpty(find))
             return "(find 不能为空)";
 
@@ -115,44 +144,88 @@ public static class WorkspaceTools
 
         var updated = string.Concat(text.AsSpan(0, index), replace, text.AsSpan(index + find.Length));
         File.WriteAllText(full, updated);
-        return $"已更新 {Rel(root, full)} (替换 1 处)";
+        return $"已更新 {Rel(root, full, shared)} (替换 1 处)";
     }
 
-    private static string List(string root)
+    private static string List(string root, string? shared)
     {
         // 不跟随 reparse point（junction/符号链接）：避免枚举沿链接遍历到工作区之外（§10.C.3）
         var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
-        var files = Directory.EnumerateFiles(root, "*", options)
-            .Select(f => Rel(root, f))
+        var files = new List<string>();
+        files.AddRange(Directory.EnumerateFiles(root, "*", options).Select(f => Rel(root, f, shared)));
+
+        if (shared is not null)
+        {
+            // 共享区只展示资产相关子树的根级与脚本/记忆文档，避免 jobs/ 其他会话目录混入清单
+            var sharedFiles = Directory.EnumerateFiles(shared, "*", options)
+                .Select(f => Rel(root, f, shared))
+                .Where(rel => !rel.StartsWith(WorkspaceLayout.JobsDirName + "/", StringComparison.OrdinalIgnoreCase));
+            files.AddRange(sharedFiles);
+        }
+
+        var ordered = files
             .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
             .Take(200)
             .ToList();
-        return files.Count == 0 ? "(工作区暂无文件)" : string.Join('\n', files);
+        return ordered.Count == 0 ? "(工作区暂无文件)" : string.Join('\n', ordered);
     }
 
+    /// <summary>把相对路径解析到工作区内（单根，供 <c>ops_script_register</c> 等外部调用复用）。</summary>
+    public static string ResolvePath(string root, string? path) => Resolve(root, null, path);
+
     /// <summary>
-    /// 把相对路径解析到工作区内；拦截 <c>..</c>、绝对路径逃逸与链接逃逸（评估报告 §10.C.3）：
-    /// 工作区内若有指向区外的 junction/符号链接，经 <see cref="PathGuard"/> 解析后判定越界。
+    /// 双根解析：<c>shared/</c> 前缀 → 共享区；省略 path → 共享区默认文档（会话模式）；
+    /// 其余 → 主根（会话目录）。共享区禁止经 <c>shared/jobs/</c> 触达其他会话目录；
+    /// 逃逸（<c>..</c>、绝对路径、链接）由 <see cref="PathGuard"/> 按物理路径判定。
     /// </summary>
-    public static string ResolvePath(string root, string? path)
+    private static string Resolve(string root, string? shared, string? path)
     {
-        var rel = string.IsNullOrWhiteSpace(path) ? DefaultDoc : path!.Trim();
+        var useDefault = string.IsNullOrWhiteSpace(path);
+        var rel = useDefault ? DefaultDoc : path!.Trim();
         rel = rel.Replace('\\', '/').TrimStart('/');
         if (rel.Contains("..", StringComparison.Ordinal))
             throw new InvalidOperationException("非法路径(禁止 .. 越界)");
 
-        var full = Path.GetFullPath(Path.Combine(root, rel));
-        var canonicalRoot = PathGuard.TryCanonicalize(root);
+        string target;
+        if (shared is not null && !useDefault &&
+            rel.StartsWith(SharedPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            target = shared;
+            rel = rel[SharedPrefix.Length..];
+            if (rel.StartsWith(WorkspaceLayout.JobsDirName + "/", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("非法路径(禁止经 shared/ 访问会话目录)");
+        }
+        else if (shared is not null && useDefault)
+        {
+            // 会话模式下省略 path = 共享区资产档案（跨会话共享，不落会话目录）
+            target = shared;
+            rel = DefaultDoc;
+        }
+        else
+        {
+            target = root;
+        }
+
+        var full = Path.GetFullPath(Path.Combine(target, rel));
+        var canonicalTarget = PathGuard.TryCanonicalize(target);
         var canonicalFull = PathGuard.TryCanonicalize(full);
-        var underRoot = PathGuard.IsUnder(root, full);
+        var underRoot = PathGuard.IsUnder(target, full);
         // 严格包含：根自身（解析后相等）不算合法文件落点
-        var isRootItself = canonicalRoot is not null && canonicalFull is not null &&
-            string.Equals(canonicalRoot.TrimEnd(Path.DirectorySeparatorChar),
+        var isRootItself = canonicalTarget is not null && canonicalFull is not null &&
+            string.Equals(canonicalTarget.TrimEnd(Path.DirectorySeparatorChar),
                 canonicalFull.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
         if (!underRoot || isRootItself || canonicalFull is null)
             throw new InvalidOperationException("非法路径(越出工作区)");
         return full;
     }
 
-    private static string Rel(string root, string full) => Path.GetRelativePath(root, full).Replace('\\', '/');
+    /// <summary>相对展示路径：共享区条目带 shared/ 前缀，主根条目为相对主根路径。</summary>
+    private static string Rel(string root, string full, string? shared)
+    {
+        if (shared is not null &&
+            Path.GetFullPath(full).StartsWith(shared.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase))
+            return SharedPrefix + Path.GetRelativePath(shared, full).Replace('\\', '/');
+        return Path.GetRelativePath(root, full).Replace('\\', '/');
+    }
 }

@@ -21,6 +21,12 @@ public sealed class AgentRuntime : IAsyncDisposable
     public AgentMemoryService? Memory { get; }
     public int ToolCount => Session.ToolCount;
 
+    /// <summary>
+    /// 本次运行装配的工作区主根（会话目录或共享工作区），由 <see cref="StartAsync"/> 赋值。
+    /// 调用方（App）据此判断切换会话后是否需要重建运行时——工作区根在装配期烧进工具与提示词，运行中不可变。
+    /// </summary>
+    public string WorkspaceRoot { get; private set; } = string.Empty;
+
     /// <summary>启用但未能连接的外部 MCP（名称 + 原因）；为空=全部正常。</summary>
     public IReadOnlyList<string> McpWarnings { get; }
 
@@ -171,7 +177,11 @@ public sealed class AgentRuntime : IAsyncDisposable
         return session;
     }
 
-    /// <summary>连接 MCP 服务器、装配工具与系统提示、构建对话会话（含可选长期记忆）。</summary>
+    /// <summary>
+    /// 连接 MCP 服务器、装配工具与系统提示、构建对话会话（含可选长期记忆）。
+    /// <paramref name="sessionWorkspaceDir"/>：本会话工作目录（需求 D；空=共享工作区，现状行为）；
+    /// <paramref name="ownerUserId"/>：会话归属用户，随宿主 spawn 注入 MCP 子进程做审计归因（D1，空=local）。
+    /// </summary>
     public static async Task<AgentRuntime> StartAsync(
         AgentConfig config,
         AgentProviderConfig provider,
@@ -183,7 +193,9 @@ public sealed class AgentRuntime : IAsyncDisposable
         AgentPromptContext? activeAgent = null,
         CancellationToken ct = default,
         IEnumerable<IAgentTool>? extraTools = null,
-        string? assetGraph = null)
+        string? assetGraph = null,
+        string? sessionWorkspaceDir = null,
+        string? ownerUserId = null)
     {
         var servers = AgentMcpServerConfig.Normalize(config.McpServers);
         var builtin = servers.FirstOrDefault(s => s.Builtin);
@@ -202,7 +214,8 @@ public sealed class AgentRuntime : IAsyncDisposable
                 var launch = AgentPaths.ResolveLaunch(config.McpServerPath)
                     ?? throw new InvalidOperationException(
                         "未找到 MCP 服务器(LitSSHmcp.McpServer.exe): 请将服务器放到 App 的 mcp/ 目录, 或在「AI 助手设置」中指定路径。");
-                var host = McpToolHost.ForBuiltin(launch);
+                // 归因身份由宿主 spawn 时注入（评估报告 D1 / §10.A.5），子进程不自行决定
+                var host = McpToolHost.ForBuiltin(launch, ownerUserId);
                 try
                 {
                     await host.ConnectAsync(ct);
@@ -302,8 +315,14 @@ public sealed class AgentRuntime : IAsyncDisposable
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var serverInstructionsText = serverInstructions.Count == 0 ? null : string.Join("\n\n", serverInstructions);
 
-        var workspaceRoot = WorkspaceTools.ResolveDir(config.WorkspaceDir);
-        var workspaceTools = WorkspaceTools.Create(workspaceRoot).ToList();
+        // 两层工作区（需求 D）：共享工作区恒在；会话分配独立目录时主根=会话目录（产出落会话），
+        // 共享根经 WorkspaceTools 的 shared/ 前缀继续可达（资产档案/脚本库不被割裂）。
+        var sharedRoot = WorkspaceTools.ResolveDir(config.WorkspaceDir);
+        var sessionRoot = string.IsNullOrWhiteSpace(sessionWorkspaceDir)
+            ? null
+            : Path.GetFullPath(sessionWorkspaceDir);
+        var workspaceRoot = sessionRoot ?? sharedRoot;
+        var workspaceTools = WorkspaceTools.Create(workspaceRoot, sessionRoot is null ? null : sharedRoot).ToList();
         var skillsDir = SkillRegistry.ResolveDir(config.SkillsDir, bundledSkillsDir);
         var skillTools = skillsDir is null ? new List<IAgentTool>() : SkillTools.Create(skillsDir).ToList();
 
@@ -313,8 +332,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         // 记忆先于工具装配：memory != null 时注册 ops_memory_*（否则不暴露，提示词同步不注入该段）
         var (memory, memoryDisabledReason) = await TryCreateMemoryAsync(config, provider, ct);
         var memoryTools = memory is null ? new List<IAgentTool>() : MemoryTools.Create(memory).ToList();
-        // 脚本复用登记（写 MANIFEST + 可选同步记忆）；工作区可用即注册
-        var scriptTools = ScriptTools.Create(workspaceRoot, memory).ToList();
+        // 脚本复用登记（写 MANIFEST + 可选同步记忆）：台账恒在共享区（D6 scripts/ 留共享，不随会话割裂）
+        var scriptTools = ScriptTools.Create(sharedRoot, memory).ToList();
         Func<string, CancellationToken, Task<string?>>? recall =
             memory is null ? null : (query, token) => memory.RecallAsync(query, ct: token);
 
@@ -337,7 +356,9 @@ public sealed class AgentRuntime : IAsyncDisposable
             builtinMcpDisabled: builtin is { Enabled: false },
             memoryTools: memory is not null,
             scriptTools: true,
-            assetGraph: availableGroups.Contains(ToolGroups.Topology) ? assetGraph : null);
+            assetGraph: availableGroups.Contains(ToolGroups.Topology) ? assetGraph : null,
+            sessionWorkspaceDir: sessionRoot,
+            sharedWorkspaceDir: sessionRoot is null ? null : sharedRoot);
 
         // 主代理基础工具 = MCP + 工作区文档 + 技能参考 + 落盘读取 + 记忆/脚本登记 + 宿主注入的本地工具（不含子代理/计划，它们依赖 client/回调，按会话构建）
         var baseTools = mcpTools.Concat(workspaceTools).Concat(skillTools).Concat(spillTools)
@@ -366,11 +387,14 @@ public sealed class AgentRuntime : IAsyncDisposable
         }
 
         var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, spill, history);
+        runtime.WorkspaceRoot = workspaceRoot;
         if (activeSkillIds is { Count: > 0 })
             runtime.SetActiveSkills(activeSkillIds);
         if (planMode)
             runtime.SetPlanMode(true);
         runtime.StartWorkspaceIndexing(workspaceRoot);
+        if (sessionRoot is not null)
+            runtime.StartWorkspaceIndexing(sharedRoot);   // 会话模式下共享区资产索引不丢
         return runtime;
     }
 

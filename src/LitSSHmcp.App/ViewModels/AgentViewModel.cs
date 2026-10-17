@@ -349,7 +349,11 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             if (collapsed)
                 return;
             foreach (var s in items)
-                SidebarItems.Add(new SidebarItemVM { Session = s });
+                SidebarItems.Add(new SidebarItemVM
+                {
+                    Session = s,
+                    StateTextProvider = () => StateTextForSession(s.Id)
+                });
         }
 
         AddBucket(string.Empty, "未分组", alwaysShow: false);
@@ -1027,13 +1031,19 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private void OnContextStateChanged(SessionRunContext ctx)
     {
         // 状态可能在工具线程包装里变化（审批等待）：统一收口到 UI 线程刷新闸门与徽章
-        _uiInvoke(RaiseBusyChanged);
+        _uiInvoke(() =>
+        {
+            RaiseBusyChanged();
+            // 侧栏所有会话行徽章刷新（后台会话状态/停止入口的启用态都靠它）
+            foreach (var item in SidebarItems)
+                item.RefreshState();
+        });
         if (ReferenceEquals(ctx, CurrentContext))
             OnPropertyChanged(nameof(SessionStateText));
     }
 
-    /// <summary>当前会话的状态文案（侧栏/状态栏徽章用；Idle/Done=空）。</summary>
-    public string SessionStateText => CurrentContext.State switch
+    /// <summary>会话状态机 → 徽章文案（Idle/Done=空）。</summary>
+    private static string StateTextOf(SessionRunState state) => state switch
     {
         SessionRunState.Queued => "排队中",
         SessionRunState.Running => "执行中",
@@ -1042,6 +1052,26 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         SessionRunState.Failed => "上轮失败",
         _ => string.Empty
     };
+
+    /// <summary>当前会话的状态文案（侧栏/状态栏徽章用；Idle/Done=空）。</summary>
+    public string SessionStateText => StateTextOf(CurrentContext.State);
+
+    /// <summary>指定会话的状态徽章文案（侧栏行绑定；无运行上下文=空）。</summary>
+    public string StateTextForSession(long sessionId)
+        => _contexts.TryGetValue(sessionId, out var ctx) ? StateTextOf(ctx.State) : string.Empty;
+
+    /// <summary>指定会话是否处于占用态（侧栏右键「停止任务」启用闸）。</summary>
+    public bool IsSessionRunning(long sessionId)
+        => _contexts.TryGetValue(sessionId, out var ctx) && ctx.IsBusy;
+
+    /// <summary>按会话停止任务（§4.1 停止路由）：只取消该会话的运行上下文，不影响其它会话。</summary>
+    public void StopSession(long sessionId)
+    {
+        if (!_contexts.TryGetValue(sessionId, out var ctx) || ctx.Cts is null)
+            return;
+        try { ctx.Cts.Cancel(); } catch (ObjectDisposedException) { }
+        StatusMessage = $"已请求停止会话 {sessionId} 的任务…";
+    }
 
     private string _statusMessage = "加载中…";
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
@@ -1830,7 +1860,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             try
             {
                 var decision = LitSSHmcp.App.Views.LocalCommandApprovalWindow.Prompt(
-                    command, workingDirectory, _localExemptions.SessionAllGranted, ctx.SessionKey);
+                    command, workingDirectory, _localExemptions.SessionAllGranted(ctx.SessionKey), ctx.SessionKey);
                 tcs.TrySetResult(decision);
             }
             catch (Exception)
@@ -3450,6 +3480,20 @@ public sealed class SidebarItemVM : INotifyPropertyChanged
     public string Glyph => IsHeader ? (IsCollapsed ? "▸" : "▾") : string.Empty;
 
     public AgentSessionRow? Session { get; init; }
+
+    /// <summary>会话状态徽章取值（由 AgentViewModel 按会话 ID 提供；未设置=无徽章）。</summary>
+    public Func<string>? StateTextProvider { get; init; }
+
+    /// <summary>会话行的状态徽章文案（空=隐藏；由 RefreshState 触发重新取值）。</summary>
+    public string StateText => StateTextProvider?.Invoke() ?? string.Empty;
+
+    /// <summary>状态机切换后重新取值（只对会话行有效）。</summary>
+    public void RefreshState()
+    {
+        if (StateTextProvider is null)
+            return;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StateText)));
+    }
 
     private bool _isContextTarget;
 

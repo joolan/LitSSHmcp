@@ -113,8 +113,8 @@ public sealed class LocalTerminalTool : IAgentTool
         var autoApproved = _config.AutoApprovedCommands.Any(rule =>
             string.Equals(rule, command, StringComparison.Ordinal) ||
             command.StartsWith(rule + " ", StringComparison.Ordinal));
-        if (!autoApproved && _exemptions?.IsApproved(ApprovalRoundContext.CurrentRoundId) == true)
-            autoApproved = true;   // 命中弹窗勾选的「本轮次内/本次会话 允许全部命令」授权
+        if (!autoApproved && _exemptions?.IsApproved(ApprovalRoundContext.CurrentRoundId, _sessionKey()) == true)
+            autoApproved = true;   // 命中弹窗勾选的「本轮次内/本次会话 允许全部命令」授权（会话级按会话键隔离）
         var manualApproval = false;
         if (!autoApproved)
         {
@@ -139,7 +139,7 @@ public sealed class LocalTerminalTool : IAgentTool
                     manualApproval = true;
                     break;
                 case LocalApprovalDecision.AllowSession:
-                    _exemptions?.GrantSessionAll();
+                    _exemptions?.GrantSessionAll(_sessionKey());
                     manualApproval = true;
                     break;
             }

@@ -501,6 +501,9 @@ public partial class AgentWindow : FluentWindow
     // 会话右键菜单打开：构建「移动到分组」子菜单（未分组 + 各分组，带勾选）
     private void OnSessionMenuOpened(object sender, RoutedEventArgs e)
     {
+        // 「停止任务」只对有占用态运行上下文的会话可用（§4.1 停止路由：取消的是该会话的 CTS）
+        StopSessionMenu.IsEnabled = _contextSession is { } stoppable && _viewModel.IsSessionRunning(stoppable.Id);
+
         MoveGroupMenu.Items.Clear();
         var session = _contextSession;
         var current = session?.Group ?? string.Empty;
@@ -524,6 +527,12 @@ public partial class AgentWindow : FluentWindow
         AddItem("未分组", string.Empty);
         foreach (var g in _viewModel.Groups)
             AddItem(g, g);
+    }
+
+    private void OnStopSession(object sender, RoutedEventArgs e)
+    {
+        if (_contextSession is { } session)
+            _viewModel.StopSession(session.Id);
     }
 
     private void OnDeleteSession(object sender, RoutedEventArgs e)

@@ -1,6 +1,8 @@
 using System.Text;
 using System.Text.Json;
+using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
 
 namespace LitSSHmcp.Agent;
@@ -58,14 +60,14 @@ public static class WorkspaceTools
             "写入/覆盖工作区文档; 用于维护资产档案(共享区)与任务产出文档(本会话目录)",
             "{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"description\":\"要写入的完整文本内容\"}," +
             PathProp(pathDoc + "; 省略则写 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"content\"]}",
-            args => Write(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty));
+            async (args, ct) => await Write(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty, ct));
 
         var append = new LocalFunction(
             "ops_doc_append",
             "向工作区文档末尾追加内容(文件不存在则创建); 增量更新资产档案时优先用它, 避免整份重写",
             "{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"description\":\"要追加的文本(会自动补换行)\"}," +
             PathProp(pathDoc + "; 省略则用 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"content\"]}",
-            args => Append(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty));
+            async (args, ct) => await Append(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty, ct));
 
         var patch = new LocalFunction(
             "ops_doc_patch",
@@ -73,7 +75,7 @@ public static class WorkspaceTools
             "{\"type\":\"object\",\"properties\":{\"find\":{\"type\":\"string\",\"description\":\"要查找的原文(须精确匹配, 含空白)\"}," +
             "\"replace\":{\"type\":\"string\",\"description\":\"替换为的新文本\"}," +
             PathProp(pathDoc + "; 省略则用 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"find\",\"replace\"]}",
-            args => Patch(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "find") ?? string.Empty, ArgumentReader.ReadString(args, "replace") ?? string.Empty));
+            async (args, ct) => await Patch(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "find") ?? string.Empty, ArgumentReader.ReadString(args, "replace") ?? string.Empty, ct));
 
         var list = new LocalFunction(
             "ops_doc_list",
@@ -106,17 +108,22 @@ public static class WorkspaceTools
         return File.ReadAllText(full);
     }
 
-    private static string Write(string root, string? shared, string? path, string content)
+    // 写/追加/打补丁三类**变更**操作写审计（评估报告 §10.A.1 本地工具补审计；读/list 为只读不记, 避免噪音）。
+
+    private static async Task<string> Write(string root, string? shared, string? path, string content, CancellationToken ct = default)
     {
         var full = Resolve(root, shared, path);
         if (content.Length > MaxWriteChars)
             return $"(内容过长 {content.Length} 字符, 超过上限 {MaxWriteChars}, 未写入)";
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, content);
-        return $"已写入 {Rel(root, full, shared)} ({Encoding.UTF8.GetByteCount(content)} 字节)";
+        var bytes = Encoding.UTF8.GetByteCount(content);
+        await LocalAudit.LogAsync("ops_doc_write", $"DOC_WRITE: {Rel(root, full, shared)}",
+            CommandStatus.Executed, result: $"{bytes} 字节", filePath: full).ConfigureAwait(false);
+        return $"已写入 {Rel(root, full, shared)} ({bytes} 字节)";
     }
 
-    private static string Append(string root, string? shared, string? path, string content)
+    private static async Task<string> Append(string root, string? shared, string? path, string content, CancellationToken ct = default)
     {
         var full = Resolve(root, shared, path);
         if (content.Length > MaxWriteChars)
@@ -124,10 +131,13 @@ public static class WorkspaceTools
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         var prefix = File.Exists(full) && new FileInfo(full).Length > 0 ? Environment.NewLine : string.Empty;
         File.AppendAllText(full, prefix + content);
-        return $"已追加到 {Rel(root, full, shared)} ({Encoding.UTF8.GetByteCount(content)} 字节)";
+        var bytes = Encoding.UTF8.GetByteCount(content);
+        await LocalAudit.LogAsync("ops_doc_append", $"DOC_APPEND: {Rel(root, full, shared)}",
+            CommandStatus.Executed, result: $"+{bytes} 字节", filePath: full).ConfigureAwait(false);
+        return $"已追加到 {Rel(root, full, shared)} ({bytes} 字节)";
     }
 
-    private static string Patch(string root, string? shared, string? path, string find, string replace)
+    private static async Task<string> Patch(string root, string? shared, string? path, string find, string replace, CancellationToken ct = default)
     {
         var full = Resolve(root, shared, path);
         if (!File.Exists(full))
@@ -144,6 +154,8 @@ public static class WorkspaceTools
 
         var updated = string.Concat(text.AsSpan(0, index), replace, text.AsSpan(index + find.Length));
         File.WriteAllText(full, updated);
+        await LocalAudit.LogAsync("ops_doc_patch", $"DOC_PATCH: {Rel(root, full, shared)}",
+            CommandStatus.Executed, result: "替换 1 处", filePath: full).ConfigureAwait(false);
         return $"已更新 {Rel(root, full, shared)} (替换 1 处)";
     }
 

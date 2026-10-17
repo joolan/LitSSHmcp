@@ -51,8 +51,8 @@
                     ToolTip="校验审计哈希链: 检测审计记录是否被篡改/删除"/>
             <StackPanel Grid.Column="12" Orientation="Horizontal" Margin="10,0,0,0">
                 <TextBlock Text="类型:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <ComboBox ItemsSource="{Binding CategoryOptions}" SelectedIndex="{Binding CategoryIndex}" Width="96"
-                          ToolTip="按事件类型过滤: 全部 / 执行 / 审批拦截 / 只读探测 / 列表元数据 / 文件传输"/>
+                <ComboBox ItemsSource="{Binding CategoryOptions}" SelectedIndex="{Binding CategoryIndex}" Width="112"
+                          ToolTip="按事件类型过滤: 全部 / 执行 / 审批拦截 / 只读探测 / 列表元数据 / 文件传输 / 本地工具"/>
             </StackPanel>
         </Grid>
 

@@ -175,7 +175,12 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     {
         if (session is null)
             return;
+        // 归档永久删除同样入审计（§10.A.1 会话删除事件）
+        var sessionDir = await _contextStore.GetSessionWorkspaceDirAsync(session.Id);
         await _contextStore.DeleteSessionAsync(session.Id);
+        await LitSSHmcp.Core.Services.Storage.LocalAudit.LogAsync(
+            "session_delete", $"SESSION_DELETE(archive): {session.Title}", CommandStatus.Executed,
+            filePath: string.IsNullOrWhiteSpace(sessionDir) ? null : sessionDir);
         ArchivedSessions.Remove(session);
         StatusMessage = $"已删除归档会话: {session.Title}";
     }

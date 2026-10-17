@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
 
 namespace LitSSHmcp.Agent;
@@ -107,6 +109,12 @@ public static class ScriptTools
             updated = text.TrimEnd() + "\n" + row + "\n";
 
         await File.WriteAllTextAsync(manifest, updated, ct);
+
+        // 脚本台账变更入审计链（评估报告 §10.A.1：脚本写入/登记此前零审计, D6 投毒路径需据可查）
+        await LocalAudit.LogAsync("ops_script_register", $"SCRIPT_REGISTER: {rel}",
+            CommandStatus.Executed,
+            result: verified ? "已验证" : "待验证",
+            filePath: manifest).ConfigureAwait(false);
 
         string? memoryResult = null;
         if (memory is not null)

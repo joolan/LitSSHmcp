@@ -2,6 +2,7 @@ using System.Linq;
 using LitSSHmcp.Agent;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
 
 namespace LitSSHmcp.App.Services.LocalTerminal;
@@ -87,14 +88,23 @@ public sealed class LocalTerminalTool : IAgentTool
 
         var policy = LocalCommandPolicy.Check(command, _config.AllowedCommands);
         if (policy == LocalPolicyResult.Blocked)
+        {
+            await AuditAsync(command, CommandStatus.Blocked, decision: "blocked", result: "安全策略拦截");
             return "已拒绝：该命令被本机安全策略判定为危险或无效，禁止执行。";
+        }
         if (policy == LocalPolicyResult.Interactive)
+        {
+            await AuditAsync(command, CommandStatus.Blocked, decision: "blocked", result: "交互式/长驻命令拦截");
             return "已拒绝：检测到交互式/长驻命令（会一直占住共享终端）。请改用一次性/非交互形式，" +
                    "例如 `tail -n 50`、`ping -n 4`、`python script.py`（而不是裸 `python`）、`git --no-pager log` 等；" +
                    "需要连续执行多条命令时，请分多次调用本工具。";
+        }
         if (policy == LocalPolicyResult.NotInAllowlist)
+        {
+            await AuditAsync(command, CommandStatus.Blocked, decision: "blocked", result: "不在本机 CLI 白名单");
             return $"已拒绝：命令 '{LocalCommandPolicy.FirstExecutable(command)}' 不在本机 CLI 白名单内。" +
                    $"允许的 CLI：{string.Join(", ", _config.AllowedCommands)}。若确需，请在「AI 助手设置 → 本机终端」中扩充白名单。";
+        }
 
         var terminal = _terminalResolver(_sessionKey() ?? "default");
         if (terminal is null)
@@ -105,24 +115,32 @@ public sealed class LocalTerminalTool : IAgentTool
             command.StartsWith(rule + " ", StringComparison.Ordinal));
         if (!autoApproved && _exemptions?.IsApproved(ApprovalRoundContext.CurrentRoundId) == true)
             autoApproved = true;   // 命中弹窗勾选的「本轮次内/本次会话 允许全部命令」授权
+        var manualApproval = false;
         if (!autoApproved)
         {
             var decision = await _approval(command, terminal.Subtitle, ct);
             switch (decision)
             {
                 case LocalApprovalDecision.Deny:
+                    await AuditAsync(command, CommandStatus.Rejected, decision: "manual-rejected", result: "用户拒绝");
                     return "用户拒绝执行该命令。";
+                case LocalApprovalDecision.Allow:
+                    manualApproval = true;
+                    break;
                 case LocalApprovalDecision.AlwaysAllow:
                     _config.AutoApprovedCommands = _config.AutoApprovedCommands
                         .Append(command).Distinct(StringComparer.Ordinal).ToArray();
                     _persist();
+                    manualApproval = true;
                     break;
                 case LocalApprovalDecision.AllowRound:
                     // 轮次信号缺失时登记失败 → 降级为仅本次放行（只会多弹窗，不会误放行）
                     _exemptions?.GrantRoundAll(ApprovalRoundContext.CurrentRoundId);
+                    manualApproval = true;
                     break;
                 case LocalApprovalDecision.AllowSession:
                     _exemptions?.GrantSessionAll();
+                    manualApproval = true;
                     break;
             }
         }
@@ -150,12 +168,29 @@ public sealed class LocalTerminalTool : IAgentTool
             var meta = $"{status} · 耗时 {sw.Elapsed.TotalSeconds:0.0}s";
             if (!string.IsNullOrWhiteSpace(result.WorkingDirectory))
                 meta += $" · 工作目录 {result.WorkingDirectory}";
+
+            // 本机终端执行入审计（评估报告待办 #8：核查确认此前零审计, 随 M1-一并补入 §10.A.1 范围）
+            var auditStatus = result.ExitCode == 0 && !result.TimedOut && !result.Killed
+                ? CommandStatus.Executed
+                : CommandStatus.Failed;
+            await AuditAsync(command, auditStatus,
+                decision: manualApproval ? "manual-approved" : autoApproved ? "auto-approved" : null,
+                result: status, exitCode: result.ExitCode);
+
             // 状态置于末尾：中央对命令输出按“保尾”截断，确保退出码/元信息可见。
             return output.Length == 0 ? $"[{meta}]（无输出）" : $"{output}\n[{meta}]";
         }
         catch (Exception ex)
         {
+            await AuditAsync(command, CommandStatus.Failed,
+                decision: manualApproval ? "manual-approved" : null, result: ex.Message);
             return "执行失败：" + ex.Message;
         }
     }
+
+    /// <summary>本地终端审计（§10.A.1）：执行/拒绝均入链；失败静默, 不影响工具返回。</summary>
+    private static Task AuditAsync(string command, CommandStatus status,
+        string? decision = null, string? result = null, int? exitCode = null)
+        => LocalAudit.LogAsync(ToolName, $"LOCAL_SHELL: {command}", status,
+            result: result, decision: decision, exitCode: exitCode);
 }

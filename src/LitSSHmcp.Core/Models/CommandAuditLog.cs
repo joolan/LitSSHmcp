@@ -21,7 +21,12 @@ public enum AuditCategory
     /// <summary>列表/元数据：列服务器、列数据源、看拓扑等。</summary>
     Meta,
     /// <summary>文件上传/下载。</summary>
-    Transfer
+    Transfer,
+    /// <summary>
+    /// Agent 本地工具事件（ops_doc_* 写、脚本登记、附件落盘、会话删除、本机终端等）——
+    /// 评估报告 §10.A.1：本地工具此前零审计，D6 产出物移到会话目录后此洞放大。
+    /// </summary>
+    Local
 }
 
 public class CommandAuditLog

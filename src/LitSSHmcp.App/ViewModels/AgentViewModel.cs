@@ -663,6 +663,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool RuntimeRootMismatched =>
         _runtime is not null &&
         !string.Equals(_runtime.WorkspaceRoot, CurrentWorkspaceRoot, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 会话归因同步到本地工具审计（评估报告 §10.A.1 / D1）：本地审计记录以 agent-会话Id 标识来源会话；
+    /// 新建任务未发送（_sessionId=0）时为 null。
+    /// </summary>
+    private void SyncLocalAuditSession()
+        => LocalAudit.AmbientSessionId = _sessionId > 0 ? $"agent-{_sessionId}" : null;
     public ICommand NewSessionCommand { get; }
     public ICommand DeleteSessionCommand { get; }
     public ICommand ClearCommand { get; }
@@ -1139,6 +1146,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private async Task LoadSessionAsync(long id)
     {
         _sessionId = id;
+        SyncLocalAuditSession();
         // 需求 D：先取会话工作目录（附件/历史解析与运行时装配都依赖它；空=旧会话回退共享区）
         _sessionWorkspaceDir = await _store.GetSessionWorkspaceDirAsync(id);
         _editingTurn = null;
@@ -1340,6 +1348,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private void StartNewTask()
     {
         _sessionId = 0;
+        _sessionWorkspaceDir = null;   // 未分配：新任务回退共享工作区，首条消息时再分配独立目录（需求 D）
+        SyncLocalAuditSession();
         _sessionTitled = false;
         Turns.Clear();
         Plan.Clear();
@@ -1361,7 +1371,11 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (session is null) return;
         SessionRemoved?.Invoke(session.Id);
         var wasCurrent = session.Id == _sessionId;
+        // 会话删除入审计（§10.A.1 本地工具补审计三类之一）；FilePath=该会话工作目录（§5.3.5 清理范围, M1-7 落实）
+        var sessionDir = await _store.GetSessionWorkspaceDirAsync(session.Id);
         await _store.DeleteSessionAsync(session.Id);
+        await LocalAudit.LogAsync("session_delete", $"SESSION_DELETE: {session.Title}",
+            CommandStatus.Executed, filePath: string.IsNullOrWhiteSpace(sessionDir) ? null : sessionDir);
         await ReloadSessionsAsync();
 
         var next = Sessions.FirstOrDefault();
@@ -2058,7 +2072,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private sealed record AttachmentBuild(string Display, string Persisted, string ModelText, List<AIContent> Images, List<string> ImagePaths);
 
     /// <summary>把附件落盘持久化并拼进本轮输入：返回(展示文本, 持久化文本, 模型文本, 图片内容块, 图片绝对路径)。</summary>
-    private AttachmentBuild BuildAttachmentPrompt(string text, IReadOnlyList<AgentAttachment> attachments)
+    private async Task<AttachmentBuild> BuildAttachmentPrompt(string text, IReadOnlyList<AgentAttachment> attachments)
     {
         var vision = SelectedProvider?.SupportsVision == true;
         var workspaceRoot = CurrentWorkspaceRoot;      // 需求 D：附件落盘随会话工作目录（未分配=共享区）
@@ -2072,6 +2086,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             var relative = PersistAttachment(workspaceRoot, attachment);
             var absolute = System.IO.Path.GetFullPath(System.IO.Path.Combine(workspaceRoot, relative));
+            // 附件落盘入审计（§10.A.1 本地工具补审计三类之一；FilePath=绝对路径, 供 M1-7 随会话删除追溯）
+            await LocalAudit.LogAsync("attachment_persist", $"ATTACH: {attachment.Name} -> {relative}",
+                CommandStatus.Executed, filePath: absolute);
 
             if (attachment.IsImage)
             {
@@ -2195,7 +2212,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                     IReadOnlyList<AIContent>? editContents = null;
                     if (editPending.Count > 0)
                     {
-                        var build = BuildAttachmentPrompt(editDisplay, editPending);
+                        var build = await BuildAttachmentPrompt(editDisplay, editPending);
                         editDisplay = build.Display;
                         editPersisted = build.Persisted;
                         editImagePaths = build.ImagePaths;
@@ -2238,7 +2255,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         IReadOnlyList<AIContent>? contents = null;
         if (fixedText is null && pending.Count > 0)
         {
-            var build = BuildAttachmentPrompt(displayText, pending);
+            var build = await BuildAttachmentPrompt(displayText, pending);
             displayText = build.Display;
             persistedText = build.Persisted;
             imagePaths = build.ImagePaths;
@@ -2266,6 +2283,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         _sessionId = await _store.CreateSessionAsync(title);
         _sessionTitled = titled;
+        SyncLocalAuditSession();
 
         const string owner = "local";
         var dir = WorkspaceLayout.ResolveSessionDir(

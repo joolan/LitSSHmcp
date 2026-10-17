@@ -27,10 +27,10 @@ public class AuditViewModel : INotifyPropertyChanged
     /// <summary>是否包含超期已归档的历史记录（永久保留）。</summary>
     public bool IncludeHistory { get; set; }
 
-    /// <summary>事件类型过滤：0=全部, 1=Exec, 2=Gate, 3=Probe, 4=Meta, 5=Transfer。</summary>
+    /// <summary>事件类型过滤：0=全部, 1=Exec, 2=Gate, 3=Probe, 4=Meta, 5=Transfer, 6=Local。</summary>
     public int CategoryIndex { get; set; }
 
-    public string[] CategoryOptions { get; } = { "全部", "执行 (Exec)", "审批拦截 (Gate)", "只读探测 (Probe)", "列表元数据 (Meta)", "文件传输 (Transfer)" };
+    public string[] CategoryOptions { get; } = { "全部", "执行 (Exec)", "审批拦截 (Gate)", "只读探测 (Probe)", "列表元数据 (Meta)", "文件传输 (Transfer)", "本地工具 (Local)" };
 
     public string StatusMessage
     {
@@ -60,6 +60,7 @@ public class AuditViewModel : INotifyPropertyChanged
                 3 => AuditCategory.Probe,
                 4 => AuditCategory.Meta,
                 5 => AuditCategory.Transfer,
+                6 => AuditCategory.Local,
                 _ => (AuditCategory?)null
             };
 

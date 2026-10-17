@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using LitSSHmcp.Core.Services.Security;
 using Microsoft.Extensions.AI;
 
 namespace LitSSHmcp.Agent;
@@ -119,7 +120,9 @@ public static class WorkspaceTools
 
     private static string List(string root)
     {
-        var files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+        // 不跟随 reparse point（junction/符号链接）：避免枚举沿链接遍历到工作区之外（§10.C.3）
+        var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
+        var files = Directory.EnumerateFiles(root, "*", options)
             .Select(f => Rel(root, f))
             .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
             .Take(200)
@@ -127,7 +130,10 @@ public static class WorkspaceTools
         return files.Count == 0 ? "(工作区暂无文件)" : string.Join('\n', files);
     }
 
-    /// <summary>把相对路径解析到工作区内；拦截 <c>..</c> 与绝对路径逃逸。</summary>
+    /// <summary>
+    /// 把相对路径解析到工作区内；拦截 <c>..</c>、绝对路径逃逸与链接逃逸（评估报告 §10.C.3）：
+    /// 工作区内若有指向区外的 junction/符号链接，经 <see cref="PathGuard"/> 解析后判定越界。
+    /// </summary>
     public static string ResolvePath(string root, string? path)
     {
         var rel = string.IsNullOrWhiteSpace(path) ? DefaultDoc : path!.Trim();
@@ -136,8 +142,14 @@ public static class WorkspaceTools
             throw new InvalidOperationException("非法路径(禁止 .. 越界)");
 
         var full = Path.GetFullPath(Path.Combine(root, rel));
-        var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
-        if (!full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        var canonicalRoot = PathGuard.TryCanonicalize(root);
+        var canonicalFull = PathGuard.TryCanonicalize(full);
+        var underRoot = PathGuard.IsUnder(root, full);
+        // 严格包含：根自身（解析后相等）不算合法文件落点
+        var isRootItself = canonicalRoot is not null && canonicalFull is not null &&
+            string.Equals(canonicalRoot.TrimEnd(Path.DirectorySeparatorChar),
+                canonicalFull.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+        if (!underRoot || isRootItself || canonicalFull is null)
             throw new InvalidOperationException("非法路径(越出工作区)");
         return full;
     }

@@ -5,38 +5,22 @@ namespace LitSSHmcp.Core.Services.Security;
 /// </summary>
 public static class PathPolicy
 {
-    /// <summary>本地路径是否落在允许的根目录内（Windows 大小写不敏感）。</summary>
+    /// <summary>
+    /// 本地路径是否落在允许的根目录内（Windows 大小写不敏感）。
+    /// M1（评估报告 §10.C.3）：经 <see cref="PathGuard"/> 解析 junction/符号链接后判断归属，
+    /// 防止允许根内的链接指向根外造成"链接逃逸"。
+    /// </summary>
     public static bool IsLocalPathAllowed(string path, string[]? allowedRoots)
     {
         if (string.IsNullOrWhiteSpace(path) || allowedRoots == null || allowedRoots.Length == 0)
             return false;
-
-        string full;
-        try
-        {
-            full = Path.GetFullPath(path);
-        }
-        catch
-        {
-            return false;
-        }
 
         foreach (var root in allowedRoots)
         {
             if (string.IsNullOrWhiteSpace(root))
                 continue;
 
-            string rootFull;
-            try
-            {
-                rootFull = Path.GetFullPath(root);
-            }
-            catch
-            {
-                continue;
-            }
-
-            if (IsUnder(full, rootFull, comparison: StringComparison.OrdinalIgnoreCase))
+            if (PathGuard.IsUnder(root, path))
                 return true;
         }
 
@@ -67,18 +51,6 @@ public static class PathPolicy
         }
 
         return false;
-    }
-
-    private static bool IsUnder(string fullPath, string rootPath, StringComparison comparison)
-    {
-        if (fullPath.Equals(rootPath, comparison))
-            return true;
-
-        var rootWithSep = rootPath.EndsWith(Path.DirectorySeparatorChar)
-            ? rootPath
-            : rootPath + Path.DirectorySeparatorChar;
-
-        return fullPath.StartsWith(rootWithSep, comparison);
     }
 
     /// <summary>规范化远程路径；包含 .. 穿越或无法规范化时返回 null。</summary>

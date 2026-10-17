@@ -255,11 +255,11 @@ MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档�
 - **脚本安全门**：上传脚本文件时先读本地内容做服务端规则扫描（结论/命中行/sha256 附审批弹窗）；命中危险模式直接 `status=blocked_script` 不进审批。
 
 ### `ssh_download_file`
-- **参数**：`serverId`、`remotePath`（须在 `allowedRemotePaths` 内）、`localPath`（须在 `allowedLocalPaths` 内）
+- **参数**：`serverId`、`remotePath`（须在 `allowedRemotePaths` 内）、`localPath`（可选，须在 `allowedLocalPaths` 内；**省略 = 自动落会话工作目录并沿用远端文件名，相对路径 = 会话工作目录之下**——工具级默认落地，由宿主 spawn 注入 `LITSSH_SESSION_WORKSPACE_DIR` 代码强制，非提示词约定；绝对路径原样校验。会话目录**条件注入**白名单：仅当位于配置允许根之下才进 `allowedLocalPaths`，越界不注入，须显式配置）
 - **返回**：`{ success, message, bytesTransferred, durationMs, ... }`；同样受审批与白名单约束
 
 ### `ssh_download_files`
-- **参数**：`serverId`、`remotePaths`（每行一个：文件或目录）、`localDirectory`（本地目标目录，须在 `allowedLocalPaths` 内）、`recursive`（默认 false，目录递归子目录，软链接跳过）、`maxFiles`（默认 200，1~5000）
+- **参数**：`serverId`、`remotePaths`（每行一个：文件或目录）、`localDirectory`（可选，本地目标目录，须在 `allowedLocalPaths` 内；**省略 = 会话工作目录，相对路径 = 会话工作目录之下**，同 `ssh_download_file` 的条件注入规则）、`recursive`（默认 false，目录递归子目录，软链接跳过）、`maxFiles`（默认 200，1~5000）
 - **返回**：`{ success, status, error, localDirectory, total, succeeded, failed, truncated, totalBytes, durationMs, files: [{ remotePath, localPath, success, size, error }] }`
 - **说明**：**用一条 SFTP 连接**批量下载（避免"下载文件夹"时每个文件重复建连/认证）；`remotePaths` 中的目录会被展开（`recursive=true` 递归，跳过软链接防环，深度上限 16）；**整批一次人工确认**；每个源路径均须在 `allowedRemotePaths` 内；受 `maxFiles` 上限约束（超出置 `truncated=true`）；连接复用见 `connectionPool`（SFTP 也入池）。
 

@@ -214,8 +214,8 @@ public sealed class AgentRuntime : IAsyncDisposable
                 var launch = AgentPaths.ResolveLaunch(config.McpServerPath)
                     ?? throw new InvalidOperationException(
                         "未找到 MCP 服务器(LitSSHmcp.McpServer.exe): 请将服务器放到 App 的 mcp/ 目录, 或在「AI 助手设置」中指定路径。");
-                // 归因身份由宿主 spawn 时注入（评估报告 D1 / §10.A.5），子进程不自行决定
-                var host = McpToolHost.ForBuiltin(launch, ownerUserId);
+                // 归因身份与会话工作目录都由宿主 spawn 时注入（评估报告 D1 / §10.A.5、需求 D / §5.3.1），子进程不自行决定
+                var host = McpToolHost.ForBuiltin(launch, ownerUserId, sessionWorkspaceDir);
                 try
                 {
                     await host.ConnectAsync(ct);

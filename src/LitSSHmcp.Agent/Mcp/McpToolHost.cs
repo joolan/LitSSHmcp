@@ -24,20 +24,26 @@ public sealed class McpToolHost : IAsyncDisposable
     /// 内置 LitSSH MCP（本机 stdio 子进程，路径由 <see cref="AgentPaths.ResolveLaunch"/> 解析）。
     /// <paramref name="ownerUserId"/> 由宿主按会话注入（评估报告 D1 / §10.A.5：归因身份只能来自宿主，
     /// 子进程经环境变量读取，绝不接受工具或前端传入）；空 = "local"（桌面未登录会话）。
+    /// <paramref name="sessionWorkspaceDir"/> 会话工作目录（需求 D / §5.3.1）：同样只由宿主注入，
+    /// 供子进程做 fileTransfer 条件白名单与默认落地路径；空 = 共享工作区（现状行为）。
     /// </summary>
-    public static McpToolHost ForBuiltin(McpServerLaunch launch, string? ownerUserId = null)
+    public static McpToolHost ForBuiltin(McpServerLaunch launch, string? ownerUserId = null, string? sessionWorkspaceDir = null)
     {
         ArgumentNullException.ThrowIfNull(launch);
+        var env = new Dictionary<string, string?>
+        {
+            ["LITSSH_OWNER_USER_ID"] = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim()
+        };
+        if (!string.IsNullOrWhiteSpace(sessionWorkspaceDir))
+            env["LITSSH_SESSION_WORKSPACE_DIR"] = sessionWorkspaceDir.Trim();
+
         return new McpToolHost(() => new StdioClientTransport(new StdioClientTransportOptions
         {
             Name = "LitSSHmcp",
             Command = launch.FileName,
             Arguments = launch.Arguments.ToList(),
             WorkingDirectory = launch.WorkingDirectory,
-            EnvironmentVariables = new Dictionary<string, string?>
-            {
-                ["LITSSH_OWNER_USER_ID"] = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim()
-            },
+            EnvironmentVariables = env,
             InheritEnvironmentVariables = true,
         }));
     }

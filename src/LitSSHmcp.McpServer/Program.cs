@@ -37,6 +37,10 @@ var sessionId = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N"
 var ownerUserId = Environment.GetEnvironmentVariable("LITSSH_OWNER_USER_ID");
 AuditContext.CurrentUserId = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim();
 
+// 会话工作目录（需求 D / §5.2-5.3）：同样只由宿主 spawn 经环境变量注入，
+// 供 fileTransfer 条件白名单注入与工具级默认落地路径使用；未注入 = 旧会话/共享工作区。
+SessionWorkspace.SetCurrent(Environment.GetEnvironmentVariable("LITSSH_SESSION_WORKSPACE_DIR"));
+
 // 读取工具分组配置(留空=全部)。在注册 MCP 工具前先算好, 以便只暴露启用的分组。
 // 配置损坏/权限问题时不能让进程直接崩溃退出(客户端会收到一个无法解释的断连), 记下错误、按"全部启用"继续,
 // 具体的配置错误会在 mcp_self_check / 各工具调用时以结构化错误返回。

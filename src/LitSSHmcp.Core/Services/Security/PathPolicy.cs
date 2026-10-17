@@ -27,6 +27,32 @@ public static class PathPolicy
         return false;
     }
 
+    /// <summary>
+    /// 会话工作目录条件注入（评估报告 §5.3.1）：返回含会话目录的有效允许列表。
+    /// 仅当会话目录位于某个已配置允许根之下才追加——越界目录（如桌面用户选 C:\Windows）不注入，
+    /// 否则等于把任意路径洗进白名单（§10.C.4）；无会话目录或无允许根时返回原列表（deny-all 语义不变）。
+    /// 归属判断经 <see cref="PathGuard"/> 物理解析（junction 逃逸同样挡在注入之外）。
+    /// </summary>
+    public static string[] WithSessionDir(string[]? allowedRoots, string? sessionDir)
+    {
+        var roots = (allowedRoots ?? Array.Empty<string>())
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .ToArray();
+
+        if (string.IsNullOrWhiteSpace(sessionDir) || roots.Length == 0)
+            return roots;
+
+        foreach (var root in roots)
+        {
+            if (PathGuard.IsUnder(root, sessionDir))
+                return roots.Contains(sessionDir, StringComparer.OrdinalIgnoreCase)
+                    ? roots
+                    : roots.Append(sessionDir).ToArray();
+        }
+
+        return roots;
+    }
+
     /// <summary>远程路径是否落在允许的根目录内（POSIX，拒绝 .. 穿越）。</summary>
     public static bool IsRemotePathAllowed(string path, string[]? allowedRoots)
     {

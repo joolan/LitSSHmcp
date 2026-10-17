@@ -1,4 +1,5 @@
 using System.ClientModel;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using LitSSHmcp.Core.Models;
@@ -7,9 +8,16 @@ using OpenAI;
 
 namespace LitSSHmcp.Agent;
 
-/// <summary>按 provider 配置构建 <see cref="IChatClient"/>（type=openai → OpenAI 兼容端点）。</summary>
+/// <summary>
+/// 按 provider 配置构建 <see cref="IChatClient"/>（type=openai → OpenAI 兼容端点）。
+/// 底层 <see cref="OpenAIClient"/> 按「端点+API Key+模型」缓存复用：每次新建且从不 Dispose 会泄漏连接句柄，
+/// 并行会话（每会话一个 runtime）会把泄漏放大到每会话一次（评估报告 §4.2）。
+/// </summary>
 public static class ChatClientFactory
 {
+    /// <summary>底层客户端缓存（进程级共享；IChatClient 线程安全，可跨会话复用）。</summary>
+    private static readonly ConcurrentDictionary<string, Lazy<IChatClient>> RawClients = new(StringComparer.Ordinal);
+
     public static IChatClient Create(AgentProviderConfig provider)
     {
         if (!provider.Type.Equals("openai", StringComparison.OrdinalIgnoreCase))
@@ -19,17 +27,33 @@ public static class ChatClientFactory
         if (string.IsNullOrWhiteSpace(provider.ApiKey))
             throw new InvalidOperationException("未配置 API Key");
 
-        var options = new OpenAIClientOptions();
-        if (!string.IsNullOrWhiteSpace(provider.Endpoint))
-            options.Endpoint = new Uri(provider.Endpoint.Trim());
-
-        var client = new OpenAIClient(new ApiKeyCredential(provider.ApiKey!), options);
+        var raw = GetOrCreateRawClient(provider);
         // 手动驱动工具循环(见 AgentSession)，因此不启用自动函数调用中间件；但加并发/超时/重试中间件。
-        IChatClient raw = client.GetChatClient(provider.Model.Trim()).AsIChatClient();
         var resilient = new ResilientChatClient(raw, provider.MaxConcurrency, provider.TimeoutSeconds, provider.MaxRetries);
         resilient.PromptCacheKey = ComputePromptCacheKey(provider.Endpoint, provider.Id, provider.Model);
         return resilient;
     }
+
+    /// <summary>取（或建）缓存中的底层客户端；并发首建时只有写进字典的那份被使用，其余丢弃。</summary>
+    private static IChatClient GetOrCreateRawClient(AgentProviderConfig provider)
+    {
+        var model = provider.Model.Trim();
+        var endpoint = provider.Endpoint?.Trim();
+        var key = $"{endpoint}|{HashSecret(provider.ApiKey!)}|{model}";
+
+        return RawClients.GetOrAdd(key, _ => new Lazy<IChatClient>(() =>
+        {
+            var options = new OpenAIClientOptions();
+            if (!string.IsNullOrWhiteSpace(endpoint))
+                options.Endpoint = new Uri(endpoint!);
+            var client = new OpenAIClient(new ApiKeyCredential(provider.ApiKey!), options);
+            return client.GetChatClient(model).AsIChatClient();
+        })).Value;
+    }
+
+    /// <summary>缓存键只留密钥哈希，避免 API Key 以明文形式出现在内存字典键中。</summary>
+    private static string HashSecret(string secret) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret)));
 
     /// <summary>
     /// 计算 <c>prompt_cache_key</c>（OpenAI 官方顶层字段，用于前缀缓存分组路由）：

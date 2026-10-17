@@ -13,11 +13,18 @@ public partial class LocalCommandApprovalWindow : FluentWindow
 {
     public LocalApprovalDecision Decision { get; private set; } = LocalApprovalDecision.Deny;
 
-    public LocalCommandApprovalWindow(string command, string workingDirectory, bool sessionAllGranted = false)
+    public LocalCommandApprovalWindow(string command, string workingDirectory, bool sessionAllGranted = false, string? sessionLabel = null)
     {
         InitializeComponent();
         CommandText.Text = command ?? string.Empty;
         CwdText.Text = string.IsNullOrWhiteSpace(workingDirectory) ? string.Empty : "工作目录：" + workingDirectory;
+
+        // 并行会话后桌面可能同时出现多个审批弹窗：标明所属会话，避免审批错认（评估报告 §4.2）
+        if (!string.IsNullOrWhiteSpace(sessionLabel))
+        {
+            SessionText.Text = "所属会话：" + sessionLabel;
+            SessionText.Visibility = Visibility.Visible;
+        }
 
         if (sessionAllGranted)
         {
@@ -59,13 +66,13 @@ public partial class LocalCommandApprovalWindow : FluentWindow
     }
 
     /// <summary>在 UI 线程弹出审批对话框并返回用户选择（非 UI 线程会切到 UI 线程）。</summary>
-    public static LocalApprovalDecision Prompt(string command, string workingDirectory, bool sessionAllGranted = false)
+    public static LocalApprovalDecision Prompt(string command, string workingDirectory, bool sessionAllGranted = false, string? sessionLabel = null)
     {
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is not null && !dispatcher.CheckAccess())
-            return dispatcher.Invoke(() => Prompt(command, workingDirectory, sessionAllGranted));
+            return dispatcher.Invoke(() => Prompt(command, workingDirectory, sessionAllGranted, sessionLabel));
 
-        var window = new LocalCommandApprovalWindow(command, workingDirectory, sessionAllGranted) { Topmost = true };
+        var window = new LocalCommandApprovalWindow(command, workingDirectory, sessionAllGranted, sessionLabel) { Topmost = true };
         window.ShowDialog();
         return window.Decision;
     }

@@ -25,6 +25,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly IContextStore _store;
     private readonly string _bundledSkillsDir;
     private readonly Action<Action> _uiInvoke;
+    /// <summary>非阻塞的 UI 调度（BeginInvoke）：审批弹窗用它投递，工具线程只 await 结果，不再同步卡住 Dispatcher。</summary>
+    private readonly Action<Action> _uiBeginInvoke;
 
     private AgentConfig _agentConfig = new();
     private AgentRuntime? _runtime;
@@ -39,12 +41,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private DateTime _lastReasoningFlushUtc = DateTime.MinValue;
     private const int StreamFlushMs = 150;
 
-    public AgentViewModel(IConfigService configService, IContextStore store, string bundledSkillsDir, Action<Action>? uiInvoke = null)
+    public AgentViewModel(IConfigService configService, IContextStore store, string bundledSkillsDir, Action<Action>? uiInvoke = null, Action<Action>? uiBeginInvoke = null)
     {
         _configService = configService;
         _store = store;
         _bundledSkillsDir = bundledSkillsDir;
         _uiInvoke = uiInvoke ?? (action => action());
+        _uiBeginInvoke = uiBeginInvoke ?? _uiInvoke;
         SendCommand = new RelayCommand(_ => _ = SendAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(Input));
         StopCommand = new RelayCommand(_ => _cts?.Cancel(), _ => IsBusy);
         SendOrStopCommand = new RelayCommand(_ => { if (IsBusy) _cts?.Cancel(); else _ = SendAsync(); },
@@ -1626,15 +1629,39 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             () => CurrentSessionKey,
             key => LocalTerminalResolver?.Invoke(key),
             cfg,
-            (command, cwd) =>
-            {
-                var decision = LocalApprovalDecision.Deny;
-                _uiInvoke(() => decision = LitSSHmcp.App.Views.LocalCommandApprovalWindow.Prompt(
-                    command, cwd, _localExemptions.SessionAllGranted));
-                return decision;
-            },
+            RequestLocalApprovalAsync,
             PersistLocalTerminalConfig,
             _localExemptions);
+    }
+
+    /// <summary>
+    /// 本机终端审批：用 BeginInvoke 把弹窗投递到 UI 线程，工具线程只 await TaskCompletionSource。
+    /// 旧实现是 Dispatcher.Invoke + ShowDialog 同步阻塞——UI 线程被审批占用期间所有 Dispatcher 操作排队，
+    /// 且工具线程无法被取消（评估报告 §4.2）。
+    /// </summary>
+    private Task<LocalApprovalDecision> RequestLocalApprovalAsync(string command, string workingDirectory, CancellationToken ct)
+    {
+        var tcs = new TaskCompletionSource<LocalApprovalDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void Show()
+        {
+            try
+            {
+                var decision = LitSSHmcp.App.Views.LocalCommandApprovalWindow.Prompt(
+                    command, workingDirectory, _localExemptions.SessionAllGranted, CurrentSessionKey);
+                tcs.TrySetResult(decision);
+            }
+            catch (Exception)
+            {
+                tcs.TrySetResult(LocalApprovalDecision.Deny);
+            }
+        }
+
+        // 弹窗带 Topmost，取消后用户仍可能点选——TrySetResult 保证只有第一个结果生效（取消优先）。
+        var registration = ct.Register(() => tcs.TrySetResult(LocalApprovalDecision.Deny));
+        _ = tcs.Task.ContinueWith(_ => registration.Dispose(), TaskContinuationOptions.ExecuteSynchronously);
+        _uiBeginInvoke(Show);
+        return tcs.Task;
     }
 
     /// <summary>把「总是允许」的命令写回配置（后台，不阻塞工具调用）。</summary>
@@ -2831,9 +2858,11 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         private readonly Action<AgentEvent> _sink;
         private readonly Action<Action> _uiInvoke;
+
         public SyncProgress(Action<AgentEvent> sink, Action<Action> uiInvoke) { _sink = sink; _uiInvoke = uiInvoke; }
         public void Report(AgentEvent value) => _uiInvoke(() => _sink(value));
     }
+
 }
 
 /// <summary>一轮对话：用户指令 + 该轮的工具调用过程 + 助手回答（含时间与耗时）。</summary>

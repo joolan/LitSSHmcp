@@ -13,6 +13,9 @@ public sealed class ApprovalRequest
     public int TimeoutSeconds { get; set; } = 120;
     public bool TopMost { get; set; } = true;
     public List<string>? SessionGrantedTools { get; set; }
+
+    /// <summary>会话标识（并行会话后桌面同时有多个弹窗，须标明归属，避免审批错认）。</summary>
+    public string? SessionLabel { get; set; }
 }
 
 /// <summary>
@@ -65,7 +68,8 @@ public static class ApprovalRequestHost
                     request.FilePath,
                     request.TimeoutSeconds,
                     request.TopMost,
-                    request.SessionGrantedTools);
+                    request.SessionGrantedTools,
+                    sessionLabel: request.SessionLabel);
 
                 var result = dialog.ShowDialog();
                 code = result == DialogResult.OK

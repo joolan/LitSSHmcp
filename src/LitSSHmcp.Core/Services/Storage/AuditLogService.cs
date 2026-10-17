@@ -23,9 +23,13 @@ public class AuditLogService : IAuditLogService
     private const int AuditFormatVersion = 5;
 
     private readonly string _dbPath;
+    private readonly string _lockPath;
     private readonly ISecurityOptionsProvider? _securityOptions;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private byte[]? _signingKey;   // 为 null 时退化为纯 SHA-256
+
+    /// <summary>跨进程写锁（<c>audit.db.chain.lock</c>）的等待上限；超过视为异常，宁可写失败也不允许链分叉。</summary>
+    public TimeSpan LockTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>当前 MCP 会话 ID（启动时由宿主设置），写入时自动补全到每条记录。</summary>
     public string? SessionId { get; set; }
@@ -41,21 +45,67 @@ public class AuditLogService : IAuditLogService
     public AuditLogService(ISecurityOptionsProvider? securityOptions, string? dbPath)
     {
         _dbPath = string.IsNullOrWhiteSpace(dbPath) ? ConfigPaths.AuditDb : dbPath!;
+        _lockPath = _dbPath + ".chain.lock";
         _securityOptions = securityOptions;
     }
 
     private string ConnectionString => $"Data Source={_dbPath};Default Timeout=3";
 
+    /// <summary>写入/初始化专用连接：命令超时放宽，配合 busy_timeout 让并发写排队而不是直接失败。</summary>
+    private string WriteConnectionString => $"Data Source={_dbPath};Default Timeout=10";
+
+    /// <summary>进入临界段：先拿进程内闸门，再拿跨进程文件锁（顺序固定，避免死锁）。</summary>
+    private async Task<CrossProcessFileLock> EnterWriteAsync(CancellationToken ct = default)
+    {
+        await _writeGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await CrossProcessFileLock.AcquireAsync(_lockPath, LockTimeout, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            _writeGate.Release();
+            throw;
+        }
+    }
+
+    private void ExitWrite(CrossProcessFileLock? gate)
+    {
+        gate?.Dispose();
+        _writeGate.Release();
+    }
+
+    /// <summary>写连接专用的 busy 等待（避免他进程持写锁时直接抛 SQLITE_BUSY）。</summary>
+    private static async Task SetBusyTimeoutAsync(SqliteConnection connection)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA busy_timeout=5000;";
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     public async Task InitializeAsync()
     {
-        await using var connection = new SqliteConnection(ConnectionString);
+        // 初始化包含建表/版本重置/密钥文件创建/归档搬迁，必须跨进程串行：
+        // 否则两个子进程同时启动会各自生成不同签名密钥（链哈希互不匹配）或互相清空对方刚写入的链。
+        var gate = await EnterWriteAsync();
+        try
+        {
+            await InitializeCoreAsync();
+        }
+        finally
+        {
+            ExitWrite(gate);
+        }
+    }
+
+    private async Task InitializeCoreAsync()
+    {
+        await using var connection = new SqliteConnection(WriteConnectionString);
         await connection.OpenAsync();
+        await SetBusyTimeoutAsync(connection);
 
         var cmd = connection.CreateCommand();
         cmd.CommandText = "PRAGMA journal_mode=WAL;";
-        await cmd.ExecuteNonQueryAsync();
-
-        cmd.CommandText = "PRAGMA busy_timeout=3000;";
         await cmd.ExecuteNonQueryAsync();
 
         cmd.CommandText = @"
@@ -213,11 +263,12 @@ public class AuditLogService : IAuditLogService
 
     public async Task LogCommandAsync(CommandAuditLog log)
     {
-        await _writeGate.WaitAsync();
+        var gate = await EnterWriteAsync();
         try
         {
-            await using var connection = new SqliteConnection(ConnectionString);
+            await using var connection = new SqliteConnection(WriteConnectionString);
             await connection.OpenAsync();
+            await SetBusyTimeoutAsync(connection);
             using var tx = connection.BeginTransaction();
 
             long id;
@@ -251,17 +302,18 @@ public class AuditLogService : IAuditLogService
         }
         finally
         {
-            _writeGate.Release();
+            ExitWrite(gate);
         }
     }
 
     public async Task LogSqlAsync(SqlAuditLog log)
     {
-        await _writeGate.WaitAsync();
+        var gate = await EnterWriteAsync();
         try
         {
-            await using var connection = new SqliteConnection(ConnectionString);
+            await using var connection = new SqliteConnection(WriteConnectionString);
             await connection.OpenAsync();
+            await SetBusyTimeoutAsync(connection);
             using var tx = connection.BeginTransaction();
 
             long id;
@@ -294,7 +346,7 @@ public class AuditLogService : IAuditLogService
         }
         finally
         {
-            _writeGate.Release();
+            ExitWrite(gate);
         }
     }
 

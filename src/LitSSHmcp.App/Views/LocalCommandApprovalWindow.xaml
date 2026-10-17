@@ -11,6 +11,8 @@
         <ui:TitleBar Grid.Row="0" Title="本机命令审批"/>
         <StackPanel Grid.Row="1" Margin="16,0,16,14">
             <TextBlock Text="AI 请求在本机 PowerShell 终端执行以下命令：" TextWrapping="Wrap"/>
+            <TextBlock x:Name="SessionText" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,3,0,0"
+                       TextWrapping="Wrap" Visibility="Collapsed"/>
             <TextBlock x:Name="CwdText" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,3,0,8"
                        TextWrapping="Wrap"/>
             <TextBox x:Name="CommandText" IsReadOnly="True" FontFamily="Consolas" FontSize="13"

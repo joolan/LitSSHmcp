@@ -91,6 +91,34 @@ public class ApprovalChannelTests : IDisposable
     public void ApprovalModeParser_parses_and_defaults_to_manual(string input, ApprovalMode expected)
         => Assert.Equal(expected, ApprovalModeParser.Parse(input));
 
+    /// <summary>
+    /// 超时钟在「弹窗可见」时重置：桌面弹窗一次只显示一个，排队中的请求若沿用发起时刻会误判超时。
+    /// </summary>
+    [Fact]
+    public async Task Timeout_clock_extends_when_reset_before_expiry()
+    {
+        using var clock = new ApprovalTimeoutClock(TimeSpan.FromMilliseconds(400));
+
+        // 300ms 时重置（等价于弹窗刚可见），再等 300ms（累计 600ms，但新窗口才过 300ms）不应超时
+        await Task.Delay(300);
+        clock.Reset();
+        await Task.Delay(300);
+        Assert.False(clock.Expired.IsCompleted, "重置后的窗口未到不应超时");
+
+        // 再等 300ms（新窗口累计 600ms > 400ms）应超时
+        await Task.Delay(300);
+        await clock.Expired;   // 窗口届满 → 正常完成
+    }
+
+    [Fact]
+    public async Task Timeout_clock_expires_without_reset()
+    {
+        using var clock = new ApprovalTimeoutClock(TimeSpan.FromMilliseconds(150));
+
+        await clock.Expired;   // 窗口届满 → 正常完成（非取消）
+        Assert.True(clock.Expired.IsCompletedSuccessfully);
+    }
+
     private async Task<string> WaitForPendingIdAsync()
     {
         var deadline = DateTime.UtcNow.AddSeconds(10);

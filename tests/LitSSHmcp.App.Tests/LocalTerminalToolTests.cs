@@ -12,7 +12,7 @@ public class LocalTerminalToolTests
     public async Task Rejects_command_outside_allowlist()
     {
         var cfg = new LocalTerminalConfig { AllowedCommands = new[] { "git" } };
-        var tool = new LocalTerminalTool(() => "test", _ => null, cfg, (_, _) => LocalApprovalDecision.Allow, () => { });
+        var tool = new LocalTerminalTool(() => "test", _ => null, cfg, (_, _, _) => Task.FromResult(LocalApprovalDecision.Allow), () => { });
 
         var result = await tool.InvokeAsync(
             new Dictionary<string, object?> { ["command"] = "npm install" }, CancellationToken.None);
@@ -28,7 +28,7 @@ public class LocalTerminalToolTests
         try
         {
             var cfg = new LocalTerminalConfig { AllowedCommands = new[] { "git" } };
-            var tool = new LocalTerminalTool(() => "test", _ => terminal, cfg, (_, _) => LocalApprovalDecision.Deny, () => { });
+            var tool = new LocalTerminalTool(() => "test", _ => terminal, cfg, (_, _, _) => Task.FromResult(LocalApprovalDecision.Deny), () => { });
 
             var result = await tool.InvokeAsync(
                 new Dictionary<string, object?> { ["command"] = "git status" }, CancellationToken.None);
@@ -49,7 +49,7 @@ public class LocalTerminalToolTests
         try
         {
             var cfg = new LocalTerminalConfig { AllowedCommands = new[] { "Write-Output" }, TimeoutSeconds = 60 };
-            var tool = new LocalTerminalTool(() => "test", _ => terminal, cfg, (_, _) => LocalApprovalDecision.Allow, () => { });
+            var tool = new LocalTerminalTool(() => "test", _ => terminal, cfg, (_, _, _) => Task.FromResult(LocalApprovalDecision.Allow), () => { });
 
             var result = await tool.InvokeAsync(
                 new Dictionary<string, object?> { ["command"] = "Write-Output LITSSH_TOOL_OK" }, CancellationToken.None);

@@ -18,8 +18,12 @@ public enum LocalApprovalDecision
     AllowSession
 }
 
-/// <summary>请求人工审批（由 App 提供对话框实现）。</summary>
-public delegate LocalApprovalDecision LocalApprovalHandler(string command, string workingDirectory);
+/// <summary>
+/// 请求人工审批（由 App 提供对话框实现）。
+/// 异步：审批 UI 用 BeginInvoke + TaskCompletionSource 交给 UI 线程弹出，
+/// 工具线程只 await 结果（不再同步阻塞 Dispatcher，见评估报告 §4.2）。
+/// </summary>
+public delegate Task<LocalApprovalDecision> LocalApprovalHandler(string command, string workingDirectory, CancellationToken ct);
 
 /// <summary>
 /// 暴露给 AI 的本机 CLI 工具：把命令送进用户可见的共享 PowerShell 终端执行。
@@ -103,7 +107,7 @@ public sealed class LocalTerminalTool : IAgentTool
             autoApproved = true;   // 命中弹窗勾选的「本轮次内/本次会话 允许全部命令」授权
         if (!autoApproved)
         {
-            var decision = _approval(command, terminal.Subtitle);
+            var decision = await _approval(command, terminal.Subtitle, ct);
             switch (decision)
             {
                 case LocalApprovalDecision.Deny:

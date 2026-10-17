@@ -149,6 +149,10 @@ builder.Logging.AddProvider(new FileLoggerProvider(ConfigPaths.LogsDir, retentio
 
 var host = builder.Build();
 
+// 审批弹窗标明所属会话：并行会话（每会话一个 MCP 子进程）后桌面会同时出现多个弹窗，
+// 没有会话标识会导致审批错认（评估报告 §4.2）。
+host.Services.GetRequiredService<DesktopApprovalService>().SessionLabel = sessionId;
+
 var startupLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LitSSHmcp.Startup");
 startupLogger.LogInformation("MCP 会话 ID: {SessionId}（审计记录按此区分；可用 mcp_self_check 查看）", sessionId);
 if (startupConfigError is not null)

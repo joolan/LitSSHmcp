@@ -86,6 +86,18 @@ public class DesktopApprovalService : IApprovalService
     private readonly ApprovalExemptionRegistry? _exemptions;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
+    /// <summary>
+    /// 会话标识（MCP 会话 ID），显示在审批弹窗上。
+    /// 并行会话后桌面会同时出现多个弹窗，必须标明归属会话，避免审批错认（评估报告 §4.2）。
+    /// </summary>
+    public string? SessionLabel { get; set; }
+
+    /// <summary>
+    /// 审批界面**可见**时触发：供分发器把超时钟重置为完整窗口
+    /// （本服务内部一次只显示一个弹窗，排队中的请求若沿用发起时刻会误判超时）。
+    /// </summary>
+    public event Action? DialogShown;
+
     public DesktopApprovalService(
         ISecurityOptionsProvider securityOptions,
         ILogger<DesktopApprovalService>? logger = null,
@@ -195,7 +207,9 @@ public class DesktopApprovalService : IApprovalService
                 _logger?.LogInformation("显示自绘授权弹窗(进程内): 服务器={Server} 操作={Operation}", serverName, operation);
 
                 using var dialog = new ApprovalDialog(serverName, operation, command, filePath, options.TimeoutSeconds, options.TopMost,
-                    _exemptions?.SessionGrantedTools, riskReport);
+                    _exemptions?.SessionGrantedTools, riskReport, SessionLabel);
+                // 弹窗可见后通知分发器重置超时钟（排队弹窗不误超时）
+                dialog.Shown += (_, _) => DialogShown?.Invoke();
                 var result = dialog.ShowDialog();
                 sw.Stop();
 
@@ -241,7 +255,8 @@ public class DesktopApprovalService : IApprovalService
             FilePath = filePath,
             TimeoutSeconds = options.TimeoutSeconds,
             TopMost = options.TopMost,
-            SessionGrantedTools = _exemptions?.SessionGrantedTools.ToList()
+            SessionGrantedTools = _exemptions?.SessionGrantedTools.ToList(),
+            SessionLabel = SessionLabel
         };
 
         var requestFile = Path.Combine(Path.GetTempPath(), $"litssh-approval-{Guid.NewGuid():N}.json");
@@ -274,6 +289,9 @@ public class DesktopApprovalService : IApprovalService
                 _logger?.LogWarning("审批子进程启动失败，回退原生");
                 return (SafeNative(serverName, operation, command, filePath, options), ApprovalScope.Once);
             }
+
+            // 子进程启动即视为弹窗可见：分发器据此重置超时钟
+            DialogShown?.Invoke();
 
             // 子进程输出必须持续排空，否则缓冲区写满会把子进程卡死。
             _ = DrainAsync(process.StandardOutput);
@@ -368,6 +386,8 @@ public class DesktopApprovalService : IApprovalService
     private ApprovalOutcome ShowNative(string serverName, string operation, string command, string? filePath, ApprovalConfig options)
     {
         var message = $"服务器: {serverName}\n操作: {operation}\n命令: {command}";
+        if (!string.IsNullOrWhiteSpace(SessionLabel))
+            message += $"\n会话: {SessionLabel}";
         if (filePath != null)
             message += $"\n文件: {filePath}";
         message += "\n\n是否允许执行?";

@@ -54,7 +54,7 @@ public class LocalApprovalScopeTests
             var registry = new LocalApprovalExemptionRegistry();
             var approvalCalls = 0;
             var tool = new LocalTerminalTool(() => "test", _ => terminal, cfg,
-                (_, _) => { approvalCalls++; return LocalApprovalDecision.Deny; }, () => { }, registry);
+                (_, _, _) => { approvalCalls++; return Task.FromResult(LocalApprovalDecision.Deny); }, () => { }, registry);
 
             registry.GrantSessionAll();
             await tool.InvokeAsync(
@@ -81,7 +81,7 @@ public class LocalApprovalScopeTests
             var registry = new LocalApprovalExemptionRegistry();
             var approvalCalls = 0;
             var tool = new LocalTerminalTool(() => "test", _ => terminal, cfg,
-                (_, _) => { approvalCalls++; return LocalApprovalDecision.Deny; }, () => { }, registry);
+                (_, _, _) => { approvalCalls++; return Task.FromResult(LocalApprovalDecision.Deny); }, () => { }, registry);
 
             ApprovalRoundContext.CurrentRoundId = "r7";
             registry.GrantRoundAll("r7");
@@ -110,7 +110,7 @@ public class LocalApprovalScopeTests
             var registry = new LocalApprovalExemptionRegistry();
             var approvalCalls = 0;
             var tool = new LocalTerminalTool(() => "test", _ => terminal, cfg,
-                (_, _) => { approvalCalls++; return LocalApprovalDecision.Deny; }, () => { }, registry);
+                (_, _, _) => { approvalCalls++; return Task.FromResult(LocalApprovalDecision.Deny); }, () => { }, registry);
 
             ApprovalRoundContext.CurrentRoundId = "r8";   // 新一轮
             registry.GrantRoundAll("r6");   // 上一轮的授权
@@ -138,7 +138,7 @@ public class LocalApprovalScopeTests
             var registry = new LocalApprovalExemptionRegistry();
             var approvalCalls = 0;
             var tool = new LocalTerminalTool(() => "test", _ => terminal, cfg,
-                (_, _) => { approvalCalls++; return LocalApprovalDecision.AllowRound; }, () => { }, registry);
+                (_, _, _) => { approvalCalls++; return Task.FromResult(LocalApprovalDecision.AllowRound); }, () => { }, registry);
 
             ApprovalRoundContext.CurrentRoundId = "r7";
             await tool.InvokeAsync(

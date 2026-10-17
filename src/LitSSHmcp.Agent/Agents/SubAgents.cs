@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using LitSSHmcp.Core.Models;
 using Microsoft.Extensions.AI;
@@ -20,8 +21,9 @@ public static class SubAgents
         IReadOnlyList<IAgentTool> subTools,
         string? restrictionNote = null)
     {
-        // 同一子任务的调用计数（防止主模型对着“无输出”的子任务反复重试导致卡住）
-        var taskCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        // 同一子任务的调用计数（防止主模型对着“无输出”的子任务反复重试导致卡住）。
+        // 并行会话下工具可能被并发调用，必须线程安全（评估报告 §4.2）。
+        var taskCounts = new ConcurrentDictionary<string, int>(StringComparer.Ordinal);
 
         var function = new LocalFunction(
             ToolName,
@@ -38,7 +40,7 @@ public static class SubAgents
         AgentConfig config,
         IReadOnlyList<IAgentTool> subTools,
         string? restrictionNote,
-        IDictionary<string, int> taskCounts,
+        ConcurrentDictionary<string, int> taskCounts,
         IDictionary<string, object?> args,
         CancellationToken ct)
     {
@@ -48,10 +50,9 @@ public static class SubAgents
 
         // 同一任务限次：已被委派过 2 次仍无结论时直接阻止，避免无限重试。
         var key = Normalize(task!);
-        taskCounts.TryGetValue(key, out var count);
-        if (count >= 2)
-            return $"(同一子任务已委派 {count} 次仍无结论，已阻止重复调用；请不要再对同一任务调用 run_subagent——请改换策略、缩小任务范围，或调整会话工具/只读设置后自行继续。)";
-        taskCounts[key] = count + 1;
+        var count = taskCounts.AddOrUpdate(key, 1, (_, existing) => existing + 1);
+        if (count > 2)
+            return $"(同一子任务已委派 {count - 1} 次仍无结论，已阻止重复调用；请不要再对同一任务调用 run_subagent——请改换策略、缩小任务范围，或调整会话工具/只读设置后自行继续。)";
 
         var tools = FilterByGroups(subTools, ArgumentReader.ReadString(args, "groups"));
 

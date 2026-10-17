@@ -60,7 +60,8 @@ internal sealed class ApprovalDialog : Form
         int timeoutSeconds,
         bool topMost,
         IReadOnlyList<string>? sessionGrantedTools = null,
-        string? riskReport = null)
+        string? riskReport = null,
+        string? sessionLabel = null)
     {
         _command = command;
         _topMost = topMost;
@@ -81,7 +82,7 @@ internal sealed class ApprovalDialog : Form
 
         Controls.Add(BuildBody(serverName, operation, filePath, sessionGrantedTools, riskReport));
         Controls.Add(BuildFooter(timeoutSeconds));
-        Controls.Add(BuildHeader(serverName));
+        Controls.Add(BuildHeader(serverName, sessionLabel));
 
         Shown += (_, _) =>
         {
@@ -131,7 +132,7 @@ internal sealed class ApprovalDialog : Form
         }
     }
 
-    private Panel BuildHeader(string serverName)
+    private Panel BuildHeader(string serverName, string? sessionLabel = null)
     {
         var header = new TableLayoutPanel
         {
@@ -155,9 +156,13 @@ internal sealed class ApprovalDialog : Form
             AutoSize = true,
             Margin = new Padding(0)
         };
+        // 并行会话后桌面会同时出现多个弹窗：必须标明所属会话，避免审批错认（评估报告 §4.2）。
+        var subtitleText = string.IsNullOrWhiteSpace(sessionLabel)
+            ? $"服务器：{serverName}"
+            : $"服务器：{serverName} · 会话：{sessionLabel}";
         var subtitle = new Label
         {
-            Text = $"服务器：{serverName}",
+            Text = subtitleText,
             ForeColor = Color.FromArgb(198, 208, 226),
             Font = new Font("Microsoft YaHei UI", 8.5F),
             AutoSize = true,

@@ -52,6 +52,58 @@ public interface IApprovalChannel
 }
 
 /// <summary>
+/// 可重置的审批超时钟：默认从请求发起时起算；<see cref="Reset"/> 被调用（桌面弹窗变为可见）后重新给满一个窗口。
+/// 并行会话下桌面弹窗一次只显示一个（<see cref="DesktopApprovalService"/> 内部闸门），
+/// 排队中的请求若沿用发起时刻起算，会在自己的弹窗还没出现前就被判超时（评估报告 §4.2）。
+/// </summary>
+public sealed class ApprovalTimeoutClock : IDisposable
+{
+    private readonly TimeSpan _timeout;
+    private readonly object _sync = new();
+    private CancellationTokenSource _cts = new();
+
+    public ApprovalTimeoutClock(TimeSpan timeout)
+    {
+        _timeout = timeout;
+        Expired = WaitAsync(_timeout, _cts.Token);
+    }
+
+    /// <summary>
+    /// 当前的超时等待任务：窗口自然届满时**正常完成**；
+    /// 被 <see cref="Reset"/>（或 Dispose）取消时以 <see cref="OperationCanceledException"/> 结束——
+    /// 调用方据此区分「真超时」与「弹窗可见后重置」。
+    /// </summary>
+    public Task Expired { get; private set; }
+
+    public void Reset()
+    {
+        CancellationTokenSource old;
+        lock (_sync)
+        {
+            old = _cts;
+            _cts = new CancellationTokenSource();
+            Expired = WaitAsync(_timeout, _cts.Token);
+        }
+
+        try { old.Cancel(); }
+        catch (ObjectDisposedException) { /* ignore */ }
+        old.Dispose();
+    }
+
+    private static async Task WaitAsync(TimeSpan timeout, CancellationToken ct) =>
+        await Task.Delay(timeout, ct).ConfigureAwait(false);
+
+    public void Dispose()
+    {
+        lock (_sync)
+        {
+            try { _cts.Cancel(); } catch (ObjectDisposedException) { /* ignore */ }
+            _cts.Dispose();
+        }
+    }
+}
+
+/// <summary>
 /// 带外 CLI/IPC 审批通道：写 pending-&lt;id&gt;.json 并轮询 decision-&lt;id&gt;.json。
 /// 操作员用 <c>litssh approvals</c> 查看、<c>litssh approve/deny &lt;id&gt;</c> 决定。
 /// 适配无桌面/headless 场景。
@@ -226,17 +278,30 @@ public class ApprovalService : IApprovalService
             return ApprovalOutcome.Unavailable;
         }
 
-        using var delayCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
-        var delay = DelayAsync(TimeSpan.FromSeconds(timeoutSeconds), delayCts.Token);
+        // 超时钟：请求发起即开始计时；桌面弹窗可见后重置为完整窗口
+        // （桌面通道内部一次只显示一个弹窗，排队中的请求不重置会在弹窗出现前就被判超时）。
+        using var clock = new ApprovalTimeoutClock(TimeSpan.FromSeconds(timeoutSeconds));
+        void OnDesktopDialogShown() => clock.Reset();
+        _desktop.DialogShown += OnDesktopDialogShown;
 
         try
         {
             while (pending.Count > 0)
             {
-                var finished = await Task.WhenAny(pending.Cast<Task>().Append(delay));
-                if (ReferenceEquals(finished, delay))
+                var current = clock.Expired;
+                var finished = await Task.WhenAny(pending.Cast<Task>().Append(current));
+                if (ReferenceEquals(finished, current))
                 {
-                    await delay;
+                    try
+                    {
+                        await current;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // 计时器被“弹窗可见”重置，继续等新的窗口
+                        continue;
+                    }
+
                     if (ct.IsCancellationRequested)
                     {
                         _logger?.LogWarning("审批等待被客户端取消");
@@ -266,6 +331,7 @@ public class ApprovalService : IApprovalService
         }
         finally
         {
+            _desktop.DialogShown -= OnDesktopDialogShown;
             cts.Cancel();
         }
 
@@ -274,10 +340,4 @@ public class ApprovalService : IApprovalService
     }
 
     private static async Task<ApprovalOutcome?> AsChannelTask(Task<ApprovalOutcome> task) => await task;
-
-    private static async Task DelayAsync(TimeSpan delay, CancellationToken ct)
-    {
-        try { await Task.Delay(delay, ct); }
-        catch (OperationCanceledException) { /* 由 finally 的 Cancel 触发，不影响结论 */ }
-    }
 }

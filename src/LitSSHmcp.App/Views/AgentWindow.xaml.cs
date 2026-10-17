@@ -22,7 +22,9 @@ public partial class AgentWindow : FluentWindow
         InitializeComponent();
         _configService = configService;
 
-        _viewModel = new AgentViewModel(configService, store, skillsDir, action => Dispatcher.Invoke(action))
+        _viewModel = new AgentViewModel(configService, store, skillsDir,
+            action => Dispatcher.Invoke(action),
+            action => Dispatcher.BeginInvoke(action))
         {
             LocalTerminalResolver = localTerminalResolver
         };

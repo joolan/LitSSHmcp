@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace LitSSHmcp.App.ViewModels;
@@ -12,6 +13,15 @@ public static class AgentTranscript
     /// <summary>工具步骤的落库形态。</summary>
     public sealed record Step(string Tool, string? Args, string? Result, bool Ok, long Ms);
 
+    /// <summary>
+    /// 落库用 JSON 选项：中文/引号不转义（默认编码器会把内层 JSON 引号写成 <c>\u0022</c>、
+    /// 中文写成 <c>\uXXXX</c>，导致 Web 历史回显成乱码般的转义串）。
+    /// </summary>
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     /// <summary>结果落库最大字符数（超出截断）。</summary>
     public const int ResultMaxChars = 20000;
 
@@ -22,12 +32,12 @@ public static class AgentTranscript
     /// <summary>把界面步骤序列化为落库 JSON（结果按 <see cref="ResultMaxChars"/> 截断）。</summary>
     public static string Serialize(AgentStep step)
         => JsonSerializer.Serialize(new Step(
-            step.Tool, step.ArgsJson, Truncate(step.Result, ResultMaxChars), step.Success, step.DurationMs));
+            step.Tool, step.ArgsJson, Truncate(step.Result, ResultMaxChars), step.Success, step.DurationMs), JsonOptions);
 
     /// <summary>解析落库 JSON；损坏时返回 null（跳过该行，不影响其余恢复）。</summary>
     public static Step? Deserialize(string content)
     {
-        try { return JsonSerializer.Deserialize<Step>(content); }
+        try { return JsonSerializer.Deserialize<Step>(content, JsonOptions); }
         catch { return null; }
     }
 
@@ -44,27 +54,10 @@ public static class AgentTranscript
     /// 让模型看到"本轮做过什么"的证据，且不伪造 function_call 配对。信息步骤（<see cref="AgentStep.IsInfo"/>，如记忆召回）不计入。
     /// </summary>
     public static string BuildTrace(IEnumerable<AgentStep> steps)
-    {
-        var sb = new StringBuilder();
-        foreach (var step in steps)
-        {
-            if (step.IsInfo)
-                continue;
-            if (sb.Length >= TraceTurnMaxChars)
-                break;
-            var args = Truncate(step.ArgsJson, TraceArgChars);
-            var result = Truncate(step.Result, TraceResultChars);
-            sb.Append("- ").Append(step.Tool)
-              .Append(args.Length > 0 ? $"({args})" : "()")
-              .Append(step.Success ? " → 成功" : " → 失败")
-              .Append($"({step.DurationMs}ms)");
-            if (result.Length > 0)
-                sb.Append(": ").Append(result.Replace("\r", " ").Replace("\n", " "));
-            sb.AppendLine();
-        }
-        var text = sb.ToString().TrimEnd();
-        return text.Length <= TraceTurnMaxChars ? text : text[..TraceTurnMaxChars] + " …(轨迹过长已截断)";
-    }
+        => LitSSHmcp.Agent.Transcript.ToolTraceFormatter.Build(
+            steps.Where(s => !s.IsInfo)
+                 .Select(s => new LitSSHmcp.Agent.Transcript.ToolTraceItem(
+                     s.Tool, s.ArgsJson, s.Result, s.Success, s.DurationMs)));
 
     private static string Truncate(string? text, int max) =>
         string.IsNullOrEmpty(text) ? string.Empty : (text.Length <= max ? text : text[..max] + " …(截断)");

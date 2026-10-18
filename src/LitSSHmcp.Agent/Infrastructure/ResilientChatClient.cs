@@ -154,4 +154,14 @@ public sealed class ResilientChatClient : DelegatingChatClient
 
     private static Task DelayAsync(int attempt, CancellationToken ct) =>
         Task.Delay(TimeSpan.FromMilliseconds(300 * attempt), ct);
+
+    /// <summary>
+    /// 不释放内部客户端：它由 <see cref="ChatClientFactory"/> 跨会话共享缓存，
+    /// 若随包装器一起 Dispose 会让后续会话拿到已释放的连接（评估报告 §4.2 句柄泄漏修复的配套约束）。
+    /// </summary>
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            _gate.Dispose();
+    }
 }

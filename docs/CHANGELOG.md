@@ -4,6 +4,48 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **桌面可选登录（D1 收尾，仅归因）**：AI 助手窗口侧栏显示归因状态并提供登录 / 注销；复用 Web 账号库 `web.db` 校验（失败计数与锁定曲线与 Web 共享，防绕过限速），登录态经 DPAPI 加密落盘 `desktop-login.dat` **跨重启保持**（账号删除 / 文件被篡改自动失效）。登录后**新会话 owner 与 App 审计 UserId** 记为登录用户名，未登录继续归因 `local`；桌面不因此获得或失去任何权限（不注入 `LITSSH_AUTHZ_MODE`，D1「仅归因不限权」）。
+- **Web 会话工作区根可配（§8.3）**：`config.json` 新增 `web.jobsRoot`——Web 会话目录固定根（空=默认 `%APPDATA%\LitSSH\jobs`，仅接受绝对路径，非法值回退默认，**重启 Web 生效**）；会话目录为 `<根>\<用户Id>\s<会话Id>`，文件浏览 / 下载 / 删除的"必须位于固定根之下"校验随新根生效。桌面「设置 → 安全设置」新增**可视化编辑框**（含「恢复默认」）。
+- **孤儿会话目录清扫（§8.2 附件保留策略）**：新增 `agent.orphanSessionDirRetentionDays`（默认 30，0=关闭）——会话删除仍立即清理目录，另对"库中已无对应会话"的残留 `jobs/<用户>/s<id>`（删除失败 / 被会话保留策略剪除）按最后写入时间超期自动清理；桌面启动（裁剪后）与 Web 启动各清扫一次，跳过重解析点、保护未超期目录，清空后的 owner 目录一并删除。
+- **审计格式 v5→v6 保留数据迁移**：升级时不再清空审计库——为四张审计表补 `UserId` 列（旧记录为空，界面显示 `local`），并按含 UserId 的新 payload **重建哈希链**（链从创世哈希重新开始，历史记录/归档全部保留）；更老版本（<5）仍按原策略清理重建。
+- **会话历史分页 / 懒加载**：`GET /api/sessions/{id}/messages?limit=&beforeId=`（默认最近 120 条，升序返回）；Web 首屏只加载最近一页，顶部「加载更早的记录」按需向前翻页并保持滚动位置，长会话不再一次性拉全量/渲染全量 DOM。
+- **Web 冷启动上下文与桌面对齐**：抽出共享 `SessionContextBuilder` + `ToolTraceFormatter`（桌面端复用同一轨迹格式器，避免两端漂移）——按 `agent.coldStartRecentTurns` 裁剪、每轮注入工具轨迹 System 证据、视觉模型重载最近 3 张图片，并把**会话智能体 / 激活技能 / 计划模式 / 资产图谱**一并注入。同一会话在两端喂给模型的上下文一致，跨端切换时前缀缓存可最大化复用。残余差异：Web 仍不含本机终端工具（安全裁剪），桌面开启该工具组时工具清单会导致前后缀分歧。
+- **Web 图片全屏预览**：点击聊天气泡附图 / 历史缩略图 / Markdown 图片即可打开**全屏查看器**（深色遮罩、按比例适配，点击图片/遮罩/关闭按钮或 Esc 退出）。
+- **Web 聊天 UI/UX 重做（响应式，手机可用）**：顶栏新增连接状态点 / 待审批徽标；**输入区改为桌面风格——发送/停止合并为一个按钮（运行中点击即停止）**，大模型选择与图片上传放在**输入框下方同一工具行**；会话列居中（桌面）与**抽屉式侧栏**（≤820px）；**固定底部输入栏**（自动增高、安全区适配、手机上 Enter 换行、发送按钮提交）；「回到最新」悬浮按钮（向上翻历史时不强制滚底）；会话相对时间、首条消息自动命名；代码块一键复制、GFM 表格 / 任务列表渲染；流式输出按帧节流渲染。
+- **Web 图片附件**：输入区「图片」按钮 / 粘贴 / 拖拽（png/jpeg/webp/gif，单张 ≤10MB、每条 ≤5 张）；先上传到会话目录 `attachments/`（服务端生成文件名），再随消息以**多模态内容**发给模型；非图片/超限拒绝。
+- **Web 会话级模型切换**：`GET /api/agent/providers`（仅启用模型）+ `PUT /api/sessions/{id}/provider`（下一轮生效；运行中 409）；顶栏展示当前模型并可在弹层切换，写入 `agent_sessions.ProviderId`。
+- **审计日志展示用户归因**：命令 / SQL 两张审计表新增「用户」列（`UserId`，空=桌面未登录的 `local`），CSV 导出同步；关键词搜索覆盖 `UserId`（该列 v6 已并入哈希链，此前 UI/导出未展示）。Web 会话审计存的是**用户 Id**（稳定标识，审批路由也按 Id），界面/CSV 会按 `web.db` 映射**显示为用户名**（如 `1` → `admin`；账号已删除/无账号库时回退原 Id），按用户名搜索自动映射为 Id 过滤。
+- **M0 打底（安全与并行前置）**：审计哈希链**跨进程锁**——新增 `CrossProcessFileLock`（`FileShare.None` 独占锁文件，进程崩溃由 OS 释放句柄自愈），链追加"读 prev → 计算 → 插入"与链库初始化全程跨进程串行（**并行子进程并发追加不再链分叉**；超时宁可写失败也不破链，`LockTimeout` 默认 30s；写连接 `busy_timeout` 放宽防 SQLITE_BUSY 丢审计）+ `AuditContext.CurrentUserId` AsyncLocal 槽位（M0 预留、M1 进链 payload 防二次链重建）；打底项：`agent.db` 每连接 `busy_timeout=3000`、`SubAgents.taskCounts` 改 `ConcurrentDictionary`、`ChatClientFactory` 按端点+密钥哈希+模型缓存 OpenAIClient（修每次新建从不 Dispose 的句柄泄漏）；审批链路：超时钟改为**弹窗可见后起算**（排队中的后续审批不再沿用发起时刻误判超时）、本机终端审批改 `BeginInvoke + TaskCompletionSource` 异步化（不再同步阻塞 UI 线程）、桌面/子进程审批弹窗加**会话标识**（并行后多弹窗并排防错认）；附 `AuditChainConcurrencyTests`/`CrossProcessFileLockTests` 并发回归。
+- **Web 助手（`LitSSHmcp.Web`，全新浏览器端）**：Kestrel 宿主 + `wwwroot` 零构建链静态 SPA（登录/会话列表/流式聊天/审批卡片/目录浏览下载）。独立账号库 `web.db`（PBKDF2-SHA256 210k 迭代、连续失败 5 次起指数锁定、首账号自动 admin）；账号管理 CLI `--create-user <名> [--role admin|user]` / `--list-users`（密码只经 `LITSSH_NEW_PASSWORD` 环境变量，不进 argv/进程列表）；每个 AI 会话运行在**独立 AgentRuntime 子进程**（stdio MCP 子进程、会话 owner 逐操作校验、删除会话即终止）；WebSocket 流式聊天（assistant_text/reasoning/tool/tool_result/done/error 分帧、busy 409、掉线取消）与 `/ws/approvals` 审批实时推送（桥接 cli 文件通道，REST 决策吃 CSRF）；会话目录文件浏览/下载（owner + `..` 路径防护）；模型输出 Markdown 经白名单 sanitize 后渲染（构造性 XSS 防护，全部 escape 后仅产白名单标签/URL scheme）。
+- **Web 安全栈**：登录与 API 按 IP 固定窗口限速（`/api/login` 30 次/分、`/api/*` 600 次/分，超限 429 + `rate_limited` 日志）；每用户并发会话上限 `security.limits.maxSessionsPerUser`（默认 8，超限 409 + `session_limit_reached`）；全站安全响应头（`nosniff`/`X-Frame-Options: DENY`/`Referrer-Policy`/`Permissions-Policy` + HTML CSP，与 index.html meta 双保险）；LLM 成本预算 Web 端发送前拦截（`WebBudgetGuard` 对齐桌面会话预算，会话数 × 成本上限 = 单用户成本上界）；HTTPS 启动（`config.json` `web.https` PFX 证书追加监听，默认 7443 绑定所有网卡，密码 `enc:` DPAPI 密文，读配置失败不阻断启动）；访问日志覆盖登录成败/会话创建删除/文件下载/越权与限速拒绝。
+- **操作用户归因进审计链（AuditFormatVersion v6）**：审计四表同序追加 `UserId` 列并纳入哈希链（防篡改检出）；归因解析显式 > 宿主上下文 > `local`；MCP 子进程由宿主 spawn 注入 `LITSSH_OWNER_USER_ID` 环境变量防伪造。
+- **两级工作区与会话级工作目录**：`agent.db` schema v5（会话表 `WorkspaceDir`/`OwnerUserId`）；工作区 `jobs/<owner>/s<id>` 布局 + 目录名段消毒；双根模式（会话目录默认落盘、`shared/` 共享区提升）+ 系统提示注入本会话工作目录取值；fileTransfer 会话目录条件注入（越界不注入防路径洗白）与下载默认落地会话目录。
+- **路径与本机工具加固**：`PathGuard` 逐段解析 junction/符号链接到物理路径再判前缀归属（区内链接放行、指向区外拒绝）；`LocalAudit` 统一出口（`Local` 审计类别：`ops_doc_write` 三类变更、脚本台账、附件落盘、会话删除、本机终端策略/拒绝/执行全部入链，测试 `OverrideSink` 替身防触真实 audit.db）；`ops_promote` 提升命令（会话目录→共享区，脚本类强制桌面确认 + 来源会话标注、目标存在/路径穿越/shared 前缀一律拒）+ 上传源限制在会话目录内 + 会话目录随删除清理；脚本跨根直写共享区自动注入**未审阅标记**（堵提升旁路）。
+- **跨进程写互斥与限流共享（M2-1）**：`TargetLimiter` 增加跨进程层（共享槽位文件 + 分钟速率窗口 `rate.lock`/`rate.json`，进程崩溃自愈、锁竞争失败安全降级仅进程内）；`FileTargetWriteMutex` 同一目标跨进程同一时刻仅一个写类任务（等待上限 5s，超时 `write_busy`，锁目录不可用一律拒 fail-closed）；`McpWriteGateFilter` 写类工具请求门（常写清单 + 条件写按参数判只读，shell 首词白名单宁严勿松）。
+- **按会话隔离的运行状态机（M2-2/M2-3/M2-4）**：`SessionRunContext`（Queued/Running/WaitingApproval/Done/Failed/Stopped + 独立 runtime + 权威轮次/计划镜像），移除切换会话「任务中禁切」闸、切换/删除/归档/关窗全路径按池元素收口，运行收尾/落库/摘要闭包烧定会话上下文防串会话；停止与审批按会话路由 + 侧栏会话状态徽标；会话级连接器/技能子集启用层（入口拆分）；`AgentSession.SendAsync` 重入硬闸。
+- **授权矩阵强制与连接器白名单收窄（M3-4）**：用户→目标白名单 + read/exec 操作级别落工具过滤器（Web 宿主 spawn 的 MCP 子进程经 `HostEnv` 强制执行，桌面进程仅归因不限权）。
+- **Web 授权矩阵可视化配置**：桌面「设置 → 安全设置 → **Web 授权矩阵**」新增启用开关与规则行编辑（用户名 / 目标白名单 `ssh:<id>`·`ds:<id>`·`ssh:*`·`*` / read|exec 级别，可增删行），保存 `security.authorization` 热生效——此前该矩阵只有模型与强制过滤器、无任何编辑入口，Web 用户默认 fail-closed 全拒时只能手改 `config.json`；映射纯逻辑与 XAML 结构均有针对性测试。
+
+### 修复
+
+- **Web 历史图片缩略图回放**：图片附件落库改用与桌面端一致的 `🖼 图片: 名称 [相对路径]` 标记；Web 历史解析标记后经下载接口内联缩略图（仅接受会话 `attachments/` 下路径），模型历史转为「（附图：名称）」文字提示（不重复附图、保留语义）。
+- **Web 模型选择弹层位置**：桌面端改为贴着输入区「模型」按钮**上方弹出**（不再固定右上角），窗口缩放时重新定位；移动端保持底部弹层。
+- **Web 结论丢帧自愈（改为权威视图）**：`done` 后不再信任流式累计文本，**无条件按落库内容重建**当前会话（服务端在 done 前已落库），同时把实时工具卡片替换为带结果的历史卡片——彻底避免 WS 丢帧导致的"结论内容不全"。
+- **Web 静态资源 no-cache + 移除 meta 中无效 CSP**：`/js`、`/css` 等静态资源加 `Cache-Control: no-cache`（ETag/304 协商），升级后不再出现浏览器沿用旧脚本的"修复不生效"；`index.html` meta CSP 去掉 `<meta>` 中无效的 `frame-ancestors`（仍由响应头 `X-Frame-Options: DENY` + CSP 头强制），消除控制台告警。
+- **Web 发送后最终结论偶发不显示（末尾空气泡）**：流式渲染按帧节流，`done` 到达即 `resetRun()` 清空 `assistantText`；若最后一段 `assistant_text` 的渲染仍在排队，就会读到空文本 → 结论被清成空气泡。修复：排队渲染**捕获文本快照** + `done`/`error` 前**同步 flush** 最后一段输出；附 node 回归用例。
+- **Web 历史工具轨迹显示为转义 JSON**：桌面端持久化工具步骤原用默认 JSON 编码器（内层引号 → `\u0022`、中文 → `\uXXXX`），Web 又把 `role="tool"` 历史行当助手正文渲染——改为 relaxed 编码落库，且 Web 历史工具行渲染为**可折叠卡片**（工具/参数/结果/耗时，兼容旧转义行）。
+- **Web 审批操作区不易发现**：审批卡片原为聊天区顶部条带（长会话历史下需回滚到顶部才注意到）——改为**固定悬浮面板**（右上角、不随聊天滚动、可收起；新审批到达自动展开）+ 顶栏「待审批 N」徽标（点击展开）。
+- **Web 审批/聊天实时性缺口（二次审批不出现/结果需刷新）**：审批推送此前只靠 WS 增量——补 **REST 对账**（启动、每 5s、每次决策后、WS 重连/断线时拉 `GET /api/approvals` 全量对齐，漏推自愈）；聊天 WS **重连后重放已落库历史**，断线时若回合仍在执行则轮询库内消息直至结果落库（最长 2 分钟）；服务端回合改为**后台执行**、接收循环不再被 `await` 阻塞（原实现的 `stop` 帧要等回合结束才被处理）。
+- **桌面看不到 Web 进程写入的会话进度**：Web 为独立进程、桌面无跨进程感知——新增 **5s 轻量对账**（`SessionAutoRefresh`）：会话列表快照变化即重载列表；当前会话空闲且 `UpdatedAt` 变化时重载该会话消息（本地运行中/编辑中跳过）。**限制**：跨进程只能同步**已落库的整轮结果**（Web 在回合结束才写消息），无法实时流式。
+- **Web 直跑 exe 静态资源 404**：内容根固定为 `AppContext.BaseDirectory`（原随启动 CWD 漂移，仓库根/服务方式启动时 WebRootPath 落到不存在的 `<cwd>\wwwroot`）；非 Development 不加载 static web assets manifest 而 bin 下无 `wwwroot`，改为 csproj 把 `wwwroot\**` 复制到输出（Development 仍经 manifest 读项目目录）。
+- **登录成功后仍停留登录窗**：`#login-view{display:flex}` 与 `.strip{display:flex}` 的作者样式**压过 UA 对 `[hidden]` 的 `display:none`**，`showApp()` 设 `hidden` 后登录窗藏不住（主界面其实已渲染在下方）；`app.css` 增加全局 `[hidden] { display: none !important; }` 守卫 + 静态资源测试断言防回归（`#files-pane` 此前已有局部防护，同类坑补齐）。
+- **Web 账号管理命令行未接线（M3-1 缺口）**：`WebBootstrap` 的 `--create-user`/`--list-users` 自 M3-2 起从未被 `Program` 调用，Web 一度无任何途径创建登录账号——启动前 `RunCliAsync` 分派，未命中则透传宿主参数。
+- **Web 会话目录重复套 `jobs`（布局与 §8.3 不符）**：`WebJobsRoot`（`%APPDATA%\LitSSH\jobs`）被当作共享根又拼一次 `jobs`，实际落盘 `jobs\jobs\<用户>\s<会话>`——改为固定根下直接 `<用户Id>\s<会话Id>`；启动时自动迁移旧路径的库行与目录（移动失败保留旧行下次重试，幂等）。
+- **App 测试偶发串扰**：`LocalApprovalScopeTests` 未标 `[Collection("local-audit")]`，与 `PromoteToolTests` 并行时经进程级静态 `LocalAudit.OverrideSink` 把本机终端审计记录写进对方断言快照——补同集合串行标注（与 `LocalTerminalToolTests` 先例一致）。
+- **登录后聊天输入框无法输入且无提示**：`chat.open()` 先 `close()`（无会话态强制禁用输入/发送）再设 `sessionId`，但设置后从未重新启用，WS 打开也只改状态文字（显示"就绪"却不解禁）——选中会话也发不出第一条消息，永远等不到 `done`/`error` 事件解禁；`open()` 末尾按已选会话 `setBusy(false)`，未选会话时 placeholder 明示「先点『＋ 新会话』」；node 真跑交付文件的 `chat-open.test.mjs` 防回归。
+
 ## [1.3.0] - 2026-10-17
 
 ### 修复

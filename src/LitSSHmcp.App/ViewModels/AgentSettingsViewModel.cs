@@ -175,9 +175,35 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
     {
         if (session is null)
             return;
+        // 归档永久删除同样入审计（§10.A.1 会话删除事件）
+        var sessionDir = await _contextStore.GetSessionWorkspaceDirAsync(session.Id);
         await _contextStore.DeleteSessionAsync(session.Id);
+        // 附件/会话产出随会话删除清理（§5.3.5）：仅限共享区 jobs/ 内的会话目录（PathGuard 物理判定）
+        var (removedDir, cleanedFiles) = await CleanupSessionWorkspaceAsync(sessionDir);
+        await LitSSHmcp.Core.Services.Storage.LocalAudit.LogAsync(
+            "session_delete", $"SESSION_DELETE(archive): {session.Title}", CommandStatus.Executed,
+            result: removedDir ? $"已清理会话目录({cleanedFiles} 个文件)" : null,
+            filePath: string.IsNullOrWhiteSpace(sessionDir) ? null : sessionDir,
+            sessionId: $"agent-{session.Id}");   // UI 动作显式归因（主窗口可能有会话在跑 §4.1）
         ArchivedSessions.Remove(session);
         StatusMessage = $"已删除归档会话: {session.Title}";
+    }
+
+    /// <summary>归档永久删除时清理会话工作目录（§5.3.5）；读取失败/越界/失败不影响会话删除，仅返回未删。</summary>
+    private async Task<(bool Removed, int Files)> CleanupSessionWorkspaceAsync(string? sessionDir)
+    {
+        if (string.IsNullOrWhiteSpace(sessionDir)) return (false, 0);
+        try
+        {
+            var config = await _configService.LoadConfigAsync();
+            var (removed, files, _) = LitSSHmcp.Agent.WorkspaceLayout.TryRemoveSessionDir(
+                LitSSHmcp.Agent.WorkspaceTools.ResolveDir(config.Agent.WorkspaceDir), sessionDir);
+            return (removed, files);
+        }
+        catch
+        {
+            return (false, 0);
+        }
     }
 
     private AgentProviderEdit? _selectedProvider;

@@ -1,4 +1,5 @@
 using System.Text;
+using LitSSHmcp.Core.Services.Security;
 using Microsoft.Extensions.AI;
 
 namespace LitSSHmcp.Agent;
@@ -32,7 +33,9 @@ public static class SkillTools
 
     private static string ListFiles(string root)
     {
-        var files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+        // 不跟随 reparse point（junction/符号链接）：避免沿链接枚举到技能目录之外（§10.C.3）
+        var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
+        var files = Directory.EnumerateFiles(root, "*", options)
             .Select(f => Path.GetRelativePath(root, f).Replace('\\', '/'))
             .Where(rel => !Path.GetFileName(rel).Equals("SKILL.md", StringComparison.OrdinalIgnoreCase))
             .OrderBy(rel => rel, StringComparer.OrdinalIgnoreCase)
@@ -58,7 +61,9 @@ public static class SkillTools
         return File.ReadAllText(full, Encoding.UTF8);
     }
 
-    /// <summary>把相对路径解析到技能目录内；拦截 <c>..</c> 与绝对路径逃逸。</summary>
+    /// <summary>
+    /// 把相对路径解析到技能目录内；拦截 <c>..</c>、绝对路径逃逸与链接逃逸（评估报告 §10.C.3）。
+    /// </summary>
     private static string ResolvePath(string root, string path)
     {
         var rel = path.Replace('\\', '/').TrimStart('/');
@@ -66,8 +71,13 @@ public static class SkillTools
             throw new InvalidOperationException("禁止 .. 越界");
 
         var full = Path.GetFullPath(Path.Combine(root, rel));
-        var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
-        if (!full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        var canonicalRoot = PathGuard.TryCanonicalize(root);
+        var canonicalFull = PathGuard.TryCanonicalize(full);
+        var underRoot = PathGuard.IsUnder(root, full);
+        var isRootItself = canonicalRoot is not null && canonicalFull is not null &&
+            string.Equals(canonicalRoot.TrimEnd(Path.DirectorySeparatorChar),
+                canonicalFull.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+        if (!underRoot || isRootItself || canonicalFull is null)
             throw new InvalidOperationException("越出技能目录");
         return full;
     }

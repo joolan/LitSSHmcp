@@ -82,6 +82,95 @@ public class WorkspaceToolsTests : IDisposable
         Assert.Contains("未找到", (string)miss!);
     }
 
+    [Fact]
+    public void ResolvePath_rejects_junction_escape_but_allows_internal_links()
+    {
+        var root = Path.GetFullPath(_dir);
+        Directory.CreateDirectory(root);
+        var outside = Path.Combine(Path.GetTempPath(), "litssh-ws-out-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        var evilLink = Path.Combine(root, "evil");
+        var innerReal = Directory.CreateDirectory(Path.Combine(root, "real")).FullName;
+        var innerAlias = Path.Combine(root, "alias");
+
+        try
+        {
+            if (!TryCreateDirLink(evilLink, outside) || !TryCreateDirLink(innerAlias, innerReal))
+                return;    // 环境不允许创建链接：跳过
+
+            // 字面在工作区内、物理指向区外 → 拒绝（评估报告 §10.C.3）
+            Assert.Throws<InvalidOperationException>(() => WorkspaceTools.ResolvePath(root, "evil/secret.md"));
+            // 指向工作区内的链接 → 放行（防护不误伤）
+            var ok = WorkspaceTools.ResolvePath(root, "alias/x.md");
+            Assert.StartsWith(root, ok, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            DeleteLink(evilLink);
+            DeleteLink(innerAlias);
+            try { Directory.Delete(outside, true); } catch { /* ignore */ }
+        }
+    }
+
+    private static bool TryCreateDirLink(string link, string target)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{target}\"")
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                using var p = System.Diagnostics.Process.Start(psi);
+                if (p is null) return false;
+                p.WaitForExit(5000);
+                return p.ExitCode == 0 && Directory.Exists(link);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        try
+        {
+            Directory.CreateSymbolicLink(link, target);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void DeleteLink(string path)
+    {
+        if (!Directory.Exists(path)) return;
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c rmdir \"{path}\"")
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                using var p = System.Diagnostics.Process.Start(psi);
+                p?.WaitForExit(5000);
+            }
+            else
+            {
+                Directory.Delete(path, false);
+            }
+        }
+        catch
+        {
+            /* ignore */
+        }
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_dir, true); } catch { /* ignore */ }

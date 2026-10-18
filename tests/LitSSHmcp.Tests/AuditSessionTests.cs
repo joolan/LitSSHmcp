@@ -192,6 +192,51 @@ public class AuditSessionTests
         }
     }
 
+    [Fact]
+    public async Task Keyword_matches_user_id_or_command()
+    {
+        var db = Path.Combine(Path.GetTempPath(), "litssh-audit-" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            var audit = new AuditLogService(new FakeSecurityOptions(), db);
+            await audit.InitializeAsync();
+            audit.SessionId = "S1";
+
+            await audit.LogCommandAsync(new CommandAuditLog { ServerId = "s", ServerName = "n", Command = "ls", UserId = "alice" });
+            await audit.LogCommandAsync(new CommandAuditLog { ServerId = "s", ServerName = "n", Command = "pwd", UserId = "1" });
+            await audit.LogSqlAsync(new SqlAuditLog
+            {
+                DataSourceId = "d", DataSourceName = "db", Operation = SqlOperation.Query, Sql = "select 1", UserId = "alice"
+            });
+
+            // 关键字命中用户归因（Web 用户 Id / 桌面登录用户名）与命令文本
+            var byUser = await audit.GetLogsAsync(keyword: "alice");
+            Assert.Single(byUser);
+            Assert.Equal("ls", byUser[0].Command);
+
+            var byCommand = await audit.GetLogsAsync(keyword: "pwd");
+            Assert.Single(byCommand);
+            Assert.Equal("1", byCommand[0].UserId);
+
+            var sqlByUser = await audit.GetSqlLogsAsync(keyword: "alice");
+            Assert.Single(sqlByUser);
+            Assert.Equal("select 1", sqlByUser[0].Sql);
+
+            // 用户名搜索 → UI 先把用户名映射为用户 Id，再按 Id 集合过滤
+            var byIds = await audit.GetLogsAsync(userIds: new[] { "1" });
+            Assert.Single(byIds);
+            Assert.Equal("pwd", byIds[0].Command);
+
+            var sqlByIds = await audit.GetSqlLogsAsync(userIds: new[] { "alice" });
+            Assert.Single(sqlByIds);
+        }
+        finally
+        {
+            TryDelete(db);
+            TryDelete(db + ".key");
+        }
+    }
+
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); } catch { /* ignore */ }

@@ -67,6 +67,18 @@
                     </StackPanel>
                 </Button>
 
+                <Border DockPanel.Dock="Bottom" Margin="4,8,4,0" Padding="8,6" CornerRadius="6"
+                        Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                        BorderThickness="1"
+                        ToolTip="桌面登录仅用于归因：新会话与审计记为登录用户（未登录=local）；桌面不做权限限制（评估报告 D1）。登录态跨重启保持，账号与 Web 助手共用 web.db。">
+                    <StackPanel>
+                        <TextBlock Text="{Binding DesktopLoginLabel}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                        <Button Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
+                                Margin="0,4,0,0" Padding="6,3" Content="{Binding DesktopLoginActionText}"
+                                Click="OnDesktopLogin"/>
+                    </StackPanel>
+                </Border>
+
                 <TextBlock DockPanel.Dock="Top" Text="{Binding Sessions.Count, StringFormat='任务/会话 ({0})'}"
                            FontWeight="SemiBold" Margin="4,2,0,6"/>
                 <ui:TextBox FontWeight="Normal" DockPanel.Dock="Top" Margin="0,0,0,8" PlaceholderText="搜索会话…"
@@ -119,10 +131,25 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="{Binding Session.Title}" TextTrimming="CharacterEllipsis"
                                                    FontFamily="Microsoft YaHei" Margin="0,0,8,0"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding Session.UpdatedText}" FontSize="10"
+                                        <!-- 会话级状态机徽章（§4.1）：后台会话执行中/待审批/已停止一眼可见 -->
+                                        <TextBlock Grid.Column="1" Text="{Binding StateText}" FontSize="10" FontWeight="SemiBold"
+                                                   Margin="0,0,6,0" VerticalAlignment="Center" Foreground="{DynamicResource AppAccentBrush}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding StateText}" Value="">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Grid.Column="2" Text="{Binding Session.UpdatedText}" FontSize="10"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
                                     </Grid>
                                 </Border>
@@ -142,6 +169,8 @@
                     </ListBox.ItemTemplate>
                     <ListBox.ContextMenu>
                         <ContextMenu Opened="OnSessionMenuOpened" Closed="OnSessionMenuClosed">
+                            <MenuItem x:Name="StopSessionMenu" Header="停止任务" Click="OnStopSession"/>
+                            <Separator/>
                             <MenuItem x:Name="MoveGroupMenu" Header="移动到分组"/>
                             <Separator/>
                             <MenuItem Header="重命名" Click="OnRenameSession"/>

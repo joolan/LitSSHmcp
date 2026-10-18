@@ -19,6 +19,7 @@
 - [项目简介](#项目简介)
 - [MCP 服务](#mcp-服务)
 - [桌面 App](#桌面-app)
+- [Web 助手](#web-助手)
 - [架构与技术栈](#架构与技术栈)
 - [快速开始](#快速开始)
 - [配置](#配置)
@@ -32,12 +33,13 @@
 
 ## 项目简介
 
-LitSSH MCP 由两部分组成，可**独立使用**，也可组合使用：
+LitSSH MCP 由三部分组成，可**独立使用**，也可组合使用：
 
 | 组成 | 项目 | 说明 |
 |------|------|------|
 | **🤖 MCP 服务** | `LitSSHmcp.McpServer` | 基于 [Model Context Protocol](https://modelcontextprotocol.io/) 的 stdio 服务器，向任意 MCP 客户端（Claude Desktop / Cursor / Cline / CodeBuddy / opencode 等）暴露 **54 个工具**，安全地执行 SSH、数据库、Docker、日志、Java、拓扑等运维操作。 |
 | **🖥️ 桌面 App** | `LitSSHmcp.App` | WPF 管理端：可视化维护服务器/数据源/应用/资产拓扑，内置审计日志、MCP 工具说明，以及**内嵌 MCP 客户端的 AI 运维助手**。 |
+| **🌐 Web 助手** | `LitSSHmcp.Web` | 浏览器访问的 AI 运维助手：独立账号登录、每个 AI 会话跑在**独立子进程**中，流式聊天、Web 内审批、服务器文件浏览与下载。 |
 
 **核心亮点**
 
@@ -301,7 +303,7 @@ ssh:web-server-01  --canAccess-->  ds:mysql-order-01    # 服务器可访问数�
 
 ### 审计日志
 
-查看命令 / SQL 审计；支持按 服务器 / 数据源 ID 筛选 + **命令关键字模糊查询** + **按会话 ID 筛选**、复制、导出 CSV、**含归档**（超期记录永久保留）与 **校验完整性**（哈希链防篡改）。
+查看命令 / SQL 审计；支持按 服务器 / 数据源 ID 筛选 + **命令关键字模糊查询**（含**用户**归因；Web 会话按 `web.db` 映射显示用户名）+ **按会话 ID 筛选**、复制、导出 CSV（含**用户**列，未登录= `local`）、**含归档**（超期记录永久保留）与 **校验完整性**（哈希链防篡改）。
 
 ![审计日志](docs/images/app-audit.png)
 
@@ -318,6 +320,7 @@ App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容
 - **可选长期记忆 / RAG**：配置 OpenAI 兼容 **Embeddings** 端点即可把历史会话与工作区文档向量化、按相似度**召回**注入上下文。
 - **稳定性与成本**：每模型可配**超时 / 重试 / 并发**并对失败给出**分类提示**；系统提示内置**提示注入防护**；**技能按需加载**、**工具描述精简**、**快照默认返回概览**、**大结果落盘句柄**（`spill_read`/`spill_grep`）与**子代理隔离**（`run_subagent` 只回摘要）；同一轮**只读工具并行执行**、**连续失败熔断**、日志类结果保留最新尾部；系统提示 / 工具定义为**稳定前缀**并显示**缓存命中率**；工具轨迹与滚动摘要**落库、重启可恢复**；**冷启动只向模型注入最近 N 轮**（`agent.coldStartRecentTurns`，更早由滚动摘要代表，降低首次请求开销）；**回答风格**可选 `concise`(默认) / `standard` / `detailed`；`+ 菜单 → 用量 / 成本…` 展示当前会话的请求次数、输入/输出/缓存命中 token 与**估算成本**（模型价格在「大模型设置」按每百万 token 填写）。
 - **安全**：模型 API Key 本机 **DPAPI 加密**存储；破坏性工具调用会提示"可能等待人工审批"。
+- **桌面登录（可选，仅归因）**：AI 助手窗口侧栏显示「归因：未登录（local）」/「归因：<用户名>」并可**登录 / 注销**——账号与 Web 助手共用 `web.db`（失败计数与锁定曲线同样共享，防绕过限速），登录态经 **DPAPI 加密落盘、跨重启保持**；登录后**新会话** owner 与审计 UserId 记为该用户（会话目录归到其用户名下），未登录继续归因 `local`；桌面**不做权限限制**（评估报告 D1「仅归因不限权」）。
 - **计划模式与工具级策略**：输入区（上下文环左侧）**模式下拉（执行模式 / 计划模式）**——计划模式**不改系统提示/工具集**（缓存友好），每轮附提示并在调用前拦截写工具：模型只做只读调研、列计划不擅自执行；切回执行模式后由你自行发指令（会话级持久化）。`+ 菜单 → 工具审批策略…` 可按工具设置 **默认/允许/拒绝**（拒绝=调用前拦截；允许不绕过服务端桌面审批）。
 
 > 首次使用请在助手的「AI 助手设置」中添加并启用模型（发布包已内置 MCP 服务器 exe：`mcp/LitSSHmcp.McpServer.exe`）。
@@ -326,27 +329,61 @@ App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容
 
 ### 设置
 
-多 Tab 设置窗口：**外观**（深色 / 浅色 / 跟随系统 + 强调色）、**终端**、**命令片段**、**安全设置**（命令 / SQL 过滤、文件传输、主机密钥、限流、审计策略、授权弹窗与审批通道、结果脱敏、服务器快照、SSH 连接复用池）、**工具分组**、**导入 / 导出** 配置、**MCP 工具说明**（可一键复制到提示词）、**关于**。
+多 Tab 设置窗口：**外观**（深色 / 浅色 / 跟随系统 + 强调色）、**终端**、**命令片段**、**安全设置**（命令 / SQL 过滤、文件传输、主机密钥、限流、审计策略、授权弹窗与审批通道、结果脱敏、服务器快照、SSH 连接复用池、Web 授权矩阵、Web 会话工作区根）、**工具分组**、**导入 / 导出** 配置、**MCP 工具说明**（可一键复制到提示词）、**关于**。
 
 ![设置](docs/images/app-settings.png)
+
+## Web 助手
+
+基于浏览器的 AI 运维助手（`LitSSHmcp.Web`，ASP.NET Core + SignalR），与桌面 App / MCP 服务共用同一套 Core 服务、安全策略与 `config.json`：**每个 AI 会话运行在独立子进程**（进程隔离、互不影响），支持流式聊天（思考 / 工具调用 / 结果分帧推送）、**图片附件**（粘贴 / 拖拽 / 选择，多模态输入）、**会话级模型切换**、Web 内审批卡片（**固定悬浮面板 + 顶栏「待审批 N」徽标**，`/ws/approvals` 实时推送 + REST 定时对账自愈，REST 决策）、服务器目录浏览与文件下载、会话生命周期管理（删除即终止子进程）与并发 / 成本预算约束。输入区与桌面一致：**发送 / 停止合并为一个按钮**，模型选择与图片上传在输入框下方同一工具行；界面为**响应式布局**（桌面居中会话列 + 手机抽屉侧栏 / 底部输入栏 / 底部审批弹层）；**历史分页懒加载**（首屏最近 120 条 + 「加载更早」）；**冷启动上下文与桌面共用同一重建逻辑**（冷启动窗口 / 工具轨迹 / 会话智能体 / 技能 / 计划模式 / 资产图谱 / 视觉图片；Web 仍不含本机终端工具）；Markdown 支持表格、任务列表与代码块复制，工具轨迹渲染为可折叠卡片，**历史图片附件显示缩略图**。桌面端每 5s 对账 `agent.db`，会自动刷新 Web 进程写入的会话列表与选中会话结果（跨进程只能同步已落库的整轮结果）。安全加固见 [Web 助手安全](#web-助手安全)。
+
+**配置生效边界**：**安全类配置**（`security.enabled`、命令 / SQL / 脚本过滤、审批设置、授权矩阵等 `security.*`）按 `config.json` 的 mtime **热加载即时生效**（无需重启，对运行中会话同样生效）；**其余配置**（服务器 / 数据源 / 模型 / 技能 / 连接器注册等）在**会话启动时快照**——修改对运行中会话**不生效、下个会话生效**。Web 不提供任何配置写入口（仅任务级选择），一切配置修改在桌面 App 完成。
+
+### 启动
+
+```bash
+dotnet run --project src/LitSSHmcp.Web                # 开发启动 → http://localhost:5000
+
+# 发布
+dotnet publish src/LitSSHmcp.Web -c Release -r win-x64 --self-contained -o publish-web
+```
+
+- HTTP 默认**只绑定本机回环**；跨机访问请显式设置 `ASPNETCORE_URLS`（如 `http://0.0.0.0:5000`），并注意 [HTTP 明文风险](#web-助手安全)。
+- 配置了 `web.https`（PFX 证书）时自动追加 HTTPS 监听（默认端口 7443，**绑定所有网卡**，见 [Web 助手安全](#web-助手安全)）。
+- **Web 会话工作区根**默认 `%APPDATA%\LitSSH\jobs`；可在 `config.json` 用 `web.jobsRoot`（**绝对路径**）调整，**重启 Web 后生效**。会话目录为 `<根>\<用户Id>\s<会话Id>`，文件浏览 / 下载仍强制约束在该根之下；会话删除即清理目录，**孤儿目录**（删除失败 / 会话被保留策略剪除后残留）按 `agent.orphanSessionDirRetentionDays`（默认 30，0=关闭）在启动时清扫。
+
+### 账号管理
+
+Web 使用**独立账号库** `%APPDATA%\LitSSH\web.db`——**没有内置默认账号**，用命令行创建 / 查看（密码只经环境变量传递，不进命令行历史与进程列表）：
+
+```powershell
+# 创建账号（首个账号自动为 admin，之后默认 user；密码 ≥6 位，建议用 --role 显式指定）
+$env:LITSSH_NEW_PASSWORD = "<密码>"
+src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --create-user <用户名> --role admin
+
+# 查看全部账号
+src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
+```
+
+> 账号带 `admin` / `user` 角色字段（首个账号自动 admin）；当前接口权限按**登录态 + 会话 owner 归属**判定，角色细分权限待后续版本。连续登录失败 5 次起按指数退避锁定（5 分钟起、封顶 1 小时）。同一账号库也被桌面「AI 助手 → 侧栏登录」用于**归因**（不影响权限）。
 
 ## 架构与技术栈
 
 ```
-┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
-│ LitSSHmcp.McpServer │   │    LitSSHmcp.App    │   │    LitSSHmcp.Cli    │
-│  MCP服务器(stdio)    │   │  WPF 管理界面(MVVM)  │   │   终端 SSH 工具      │
-└──────────┬──────────┘   └──────────┬──────────┘   └──────────┬──────────┘
-           └─────────────────────────┼─────────────────────────┘
-                                     ▼
-                     ┌───────────────────────────────┐
-                     │        LitSSHmcp.Core         │
-                     │  Models + Services            │
-                     │  SSH | Datasource | Topology  │
-                     │  Security | Storage           │
-                     └───────────────┬───────────────┘
-                                     ▼
-              %APPDATA%\LitSSH (config.json) + SQLite (审计/快照/会话) + 远程资产
+┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
+│ LitSSHmcp.McpServer │   │    LitSSHmcp.App    │   │    LitSSHmcp.Cli    │   │    LitSSHmcp.Web    │
+│  MCP服务器(stdio)    │   │  WPF 管理界面(MVVM)  │   │   终端 SSH 工具      │   │  浏览器 Web 助手    │
+└──────────┬──────────┘   └──────────┬──────────┘   └──────────┬──────────┘   └──────────┬──────────┘
+           └─────────────────────────┼─────────────────────────┼─────────────────────────┘
+                                                  ▼
+                                  ┌───────────────────────────────┐
+                                  │        LitSSHmcp.Core         │
+                                  │  Models + Services            │
+                                  │  SSH | Datasource | Topology  │
+                                  │  Security | Storage           │
+                                  └───────────────┬───────────────┘
+                                                  ▼
+                           %APPDATA%\LitSSH (config.json) + SQLite (审计/快照/会话) + 远程资产
 ```
 
 | 项目 | 框架 | 职责 |
@@ -355,6 +392,7 @@ App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容
 | `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器（stdio）、54 个工具、授权确认弹窗 |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理端（服务器 / 数据源 / 应用 / 资产拓扑 / 安全 / 审计 / AI 运维助手） |
 | `LitSSHmcp.Agent` | net8.0 | 内置 AI 运维助手（大模型 + 内嵌 MCP 客户端） |
+| `LitSSHmcp.Web` | net8.0 | 浏览器 Web 助手（Kestrel + SignalR：登录 / 每会话子进程 / 流式聊天 / 审批 / 文件浏览） |
 | `LitSSHmcp.Cli` | net10.0 | 终端 SSH 工具（`litssh list/connect/run/approve`） |
 
 **技术栈**：.NET 8 · WPF + [WPF-UI](https://github.com/lepoco/wpfui)（Fluent）· ModelContextProtocol SDK · SSH.NET · MySqlConnector / Npgsql · SQLite · WebView2（内嵌 VNC / noVNC）· Windows DPAPI。详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
@@ -372,7 +410,7 @@ App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容
 git clone https://github.com/joolan/LitSSHmcp.git
 cd LitSSHmcp
 dotnet build LitSSHmcp.slnx
-dotnet test LitSSHmcp.slnx   # 全部测试(Core + Agent + MCP 服务器 + App，共 606 用例)
+dotnet test LitSSHmcp.slnx   # 全部测试(Core + Agent + MCP 服务器 + App + Web，共 1302 用例)
 ```
 
 ### 2. 发布
@@ -386,6 +424,9 @@ dotnet publish src/LitSSHmcp.App -c Release -r win-x64 --self-contained -o publi
 
 # CLI 工具
 dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publish-cli
+
+# Web 助手（浏览器端）
+dotnet publish src/LitSSHmcp.Web -c Release -r win-x64 --self-contained -o publish-web
 ```
 
 > 也可使用一键脚本：`powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.0.0`
@@ -586,6 +627,24 @@ AI 的典型排查链路：
 - **Docker 安全规则**：默认拒绝 `docker system prune` / `docker volume rm` / `docker network prune` / `docker run --privileged` 等；`docker rm/rmi/kill/stop/restart/run/exec/compose down` 等写操作需桌面确认（只读的 `docker ps/logs/inspect/stats` 不受限）
 - **审计日志**：记录所有命令与 SQL（含被拒绝的），支持 SQL 原文开关、字面量脱敏、**超期记录归档到历史表永久保留**；审计写入 **HMAC-SHA256 哈希链**，可在「审计日志」中**校验完整性**检测篡改（`security.audit`）；每条记录带 **MCP 会话 ID**，便于按会话区分
 - **提权执行**：权限不足时可使用 sudo 提权（见 [提权配置](#提权配置)）
+
+### Web 助手安全
+
+- **认证**：独立账号（PBKDF2-SHA256 210k 迭代），连续失败 5 次起按指数退避锁定（5 分钟起、封顶 1 小时）；令牌 Cookie `HttpOnly + SameSite`
+- **授权矩阵**：Web 会话的 MCP 目标工具按「登录用户 → 目标白名单 + read/exec 级别」在工具调用过滤层强制校验（`security.authorization`，**未命中规则默认拒绝** fail-closed，拒绝落 `authorization_denied` 审计）；可视化配置入口在桌面 **「设置 → 安全设置 → Web 授权矩阵」**（启用开关 + 规则行增删，保存热生效），无需手改 `config.json`
+- **限速**：登录与 API 按 IP 固定窗口限速（`/api/login` 30 次/分钟、`/api/*` 600 次/分钟），超限 429 并落 `rate_limited` 访问日志
+- **会话隔离与配额**：所有会话接口逐请求校验 owner（越权统一 404 不泄露存在性）；每用户并发会话上限默认 8（`security.limits.maxSessionsPerUser`，0=不限）；LLM 成本预算按会话生效（`agent.budget.maxSessionCost`，会话数 × 成本上限即单用户上界）
+- **浏览器侧防护**：写操作 CSRF 双提交令牌、WebSocket 握手校验 Origin、全站安全响应头（`nosniff`/`X-Frame-Options: DENY`/`Referrer-Policy` + HTML `Content-Security-Policy`）、模型输出 Markdown 经白名单 sanitize 后才渲染（防存储型 XSS）
+- **访问日志**：登录成败、会话创建/删除、文件下载、越权/限速拒绝均落盘可查
+- **传输（HTTPS 建议）**：默认 **HTTP 局域网明文**——Cookie/令牌可被窃听、聊天内容可被中间人；**仅建议在可信内网使用**。启用 HTTPS：在 `config.json` 配置 `web.https` 节点（PFX 证书），Web 启动即追加 HTTPS 监听（默认端口 7443，可用 `port` 修改；证书密码支持 `enc:` DPAPI 密文）：
+
+  ```json
+  "web": { "https": { "certificatePath": "C:/certs/litssh.pfx", "certificatePassword": "enc:…", "port": 7443 } }
+  ```
+
+  建议使用内网 CA 或自签证书，并用防火墙/网卡绑定限制仅内网访问
+
+- **残余风险（明确声明，不承诺完全消除）**：Web 用户可能经**提示注入**诱导 AI 作恶（模型把不可信内容当作指令执行）——已有三重兜底降低概率：**授权矩阵**（最小授权、默认拒绝）+ **敏感操作审批**（写类操作人工确认）+ **命令/脚本过滤**（黑名单硬拒绝、脚本永不免审），系统提示亦内置注入防护（工具输出视为不可信数据）；但该风险**无法归零**，请配合审计追溯（`authorization_denied` 与命令审计均入哈希链）与按需最小授权使用
 
 ## 提权配置
 

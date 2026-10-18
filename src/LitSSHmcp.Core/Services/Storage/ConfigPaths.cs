@@ -20,8 +20,14 @@ public static class ConfigPaths
     /// <summary>AI 运维助手的会话/消息库（与审计库/快照库分离）。</summary>
     public static string AgentDb => Path.Combine(AppDataDir, "agent.db");
 
+    /// <summary>Web 账号体系库（评估报告 §3.2 M3-1：自建账号/令牌/登录锁定）。</summary>
+    public static string WebDb => Path.Combine(AppDataDir, "web.db");
+
     /// <summary>带外审批（CLI/IPC）待决/决策文件目录。</summary>
     public static string ApprovalsDir => Path.Combine(AppDataDir, "approvals");
+
+    /// <summary>目标级跨进程状态（评估报告 §4.3/M2-1）：限流槽位/速率窗口 + 写互斥锁文件。</summary>
+    public static string TargetStateDir => Path.Combine(AppDataDir, "target-state");
 
     /// <summary>资产拓扑可视化编辑器的布局（节点位置/尺寸、端点锚点）。</summary>
     public static string TopologyLayoutFile => Path.Combine(AppDataDir, "topology-layout.json");

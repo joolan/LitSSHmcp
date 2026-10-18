@@ -12,13 +12,14 @@ public class AuditChainTests : IDisposable
 
     private AuditLogService NewService(ISecurityOptionsProvider? security = null) => new(security, _dbPath);
 
-    private static CommandAuditLog Command(string text, DateTime? at = null) => new()
+    private static CommandAuditLog Command(string text, DateTime? at = null, string? userId = null) => new()
     {
         ServerId = "s1",
         ServerName = "server-1",
         Command = text,
         Status = CommandStatus.Executed,
-        Timestamp = at ?? DateTime.UtcNow
+        Timestamp = at ?? DateTime.UtcNow,
+        UserId = userId
     };
 
     [Fact]
@@ -124,6 +125,93 @@ public class AuditChainTests : IDisposable
         Assert.Equal(AuditCategory.Exec, execs[0].Category);
 
         // 分类/决策纳入哈希链，写入后链仍应完整
+        var result = await service.VerifyChainAsync();
+        Assert.True(result.Ok, result.Message);
+    }
+
+    [Fact]
+    public async Task UserId_defaults_to_local_and_context_overrides()
+    {
+        var service = NewService();
+        await service.InitializeAsync();
+
+        // 未注入上下文 = 桌面未登录会话，归因 local（评估报告 D1）
+        await service.LogCommandAsync(Command("whoami"));
+        // 宿主注入的当前用户（Web 登录会话）
+        AuditContext.CurrentUserId = "web-user-7";
+        try
+        {
+            await service.LogCommandAsync(Command("df -h"));
+        }
+        finally
+        {
+            AuditContext.CurrentUserId = null;
+        }
+        // 显式指定优先于上下文
+        await service.LogCommandAsync(Command("uname -a", userId: "explicit-user"));
+
+        var logs = await service.GetLogsAsync(null, 10);
+        Assert.Equal(3, logs.Length);
+        var byCommand = logs.ToDictionary(l => l.Command, l => l.UserId);
+        Assert.Equal("local", byCommand["whoami"]);
+        Assert.Equal("web-user-7", byCommand["df -h"]);
+        Assert.Equal("explicit-user", byCommand["uname -a"]);
+
+        var result = await service.VerifyChainAsync();
+        Assert.True(result.Ok, result.Message);
+    }
+
+    [Fact]
+    public async Task UserId_is_in_chain_payload_tamper_is_detected()
+    {
+        var service = NewService();
+        await service.InitializeAsync();
+        AuditContext.CurrentUserId = "web-user-9";
+        try
+        {
+            await service.LogCommandAsync(Command("id"));
+        }
+        finally
+        {
+            AuditContext.CurrentUserId = null;
+        }
+
+        var before = await service.VerifyChainAsync();
+        Assert.True(before.Ok, before.Message);
+
+        await using (var connection = new SqliteConnection($"Data Source={_dbPath}"))
+        {
+            await connection.OpenAsync();
+            var cmd = connection.CreateCommand();
+            cmd.CommandText = "UPDATE AuditLogs SET UserId = 'someone-else' WHERE Id = 1";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var after = await service.VerifyChainAsync();
+        Assert.False(after.Ok, "篡改 UserId 应被哈希链检出");
+        Assert.NotNull(after.FirstBadSeq);
+    }
+
+    [Fact]
+    public async Task Sql_UserId_round_trips_into_chain()
+    {
+        var service = NewService();
+        await service.InitializeAsync();
+
+        await service.LogSqlAsync(new SqlAuditLog
+        {
+            DataSourceId = "d1",
+            DataSourceName = "订单库",
+            Operation = SqlOperation.Query,
+            Sql = "select 1",
+            Status = CommandStatus.Executed,
+            UserId = "web-user-3"
+        });
+
+        var sqls = await service.GetSqlLogsAsync(null, 10);
+        Assert.Single(sqls);
+        Assert.Equal("web-user-3", sqls[0].UserId);
+
         var result = await service.VerifyChainAsync();
         Assert.True(result.Ok, result.Message);
     }

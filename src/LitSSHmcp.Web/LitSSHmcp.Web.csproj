@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LitSSHmcp.Agent\LitSSHmcp.Agent.csproj" />
+    <ProjectReference Include="..\LitSSHmcp.Core\LitSSHmcp.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LitSSHmcp.Web.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 直跑 bin 下的 exe（默认 Production）时 ASP.NET Core 不加载 static web assets manifest，
+         内容根下的 wwwroot 必须随构建复制到输出，否则 / 与静态资源 404（Development 仍优先读项目目录）。 -->
+    <Content Update="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

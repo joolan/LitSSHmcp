@@ -4,12 +4,14 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
+using LitSSHmcp.Core.Services.Web;
 
 namespace LitSSHmcp.App.ViewModels;
 
 public class AuditViewModel : INotifyPropertyChanged
 {
     private readonly AuditLogService _audit = new();
+    private readonly WebAccountsStore _accounts = new();
     private bool _initialized;
     private string _statusMessage = string.Empty;
 
@@ -27,10 +29,10 @@ public class AuditViewModel : INotifyPropertyChanged
     /// <summary>是否包含超期已归档的历史记录（永久保留）。</summary>
     public bool IncludeHistory { get; set; }
 
-    /// <summary>事件类型过滤：0=全部, 1=Exec, 2=Gate, 3=Probe, 4=Meta, 5=Transfer。</summary>
+    /// <summary>事件类型过滤：0=全部, 1=Exec, 2=Gate, 3=Probe, 4=Meta, 5=Transfer, 6=Local。</summary>
     public int CategoryIndex { get; set; }
 
-    public string[] CategoryOptions { get; } = { "全部", "执行 (Exec)", "审批拦截 (Gate)", "只读探测 (Probe)", "列表元数据 (Meta)", "文件传输 (Transfer)" };
+    public string[] CategoryOptions { get; } = { "全部", "执行 (Exec)", "审批拦截 (Gate)", "只读探测 (Probe)", "列表元数据 (Meta)", "文件传输 (Transfer)", "本地工具 (Local)" };
 
     public string StatusMessage
     {
@@ -60,18 +62,50 @@ public class AuditViewModel : INotifyPropertyChanged
                 3 => AuditCategory.Probe,
                 4 => AuditCategory.Meta,
                 5 => AuditCategory.Transfer,
+                6 => AuditCategory.Local,
                 _ => (AuditCategory?)null
             };
 
-            var commands = await _audit.GetLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category);
+            // 归因展示：Web 会话审计存用户 Id → 映射为 web.db 用户名（桌面登录本身存用户名）
+            Dictionary<string, string>? idToName = null;
+            string[]? keywordUserIds = null;
+            try
+            {
+                await _accounts.InitializeAsync();
+                var users = await _accounts.ListUsersAsync();
+                idToName = users.ToDictionary(u => u.Id.ToString(), u => u.Username, StringComparer.Ordinal);
+                if (!string.IsNullOrWhiteSpace(keyword))
+                {
+                    var matched = users
+                        .Where(u => u.Username.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                        .Select(u => u.Id.ToString())
+                        .ToArray();
+                    if (matched.Length > 0)
+                        keywordUserIds = matched;
+                }
+            }
+            catch
+            {
+                // 无 web.db / 读取失败：按原始 Id 展示
+            }
+
+            var commands = await _audit.GetLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category, userIds: keywordUserIds);
             CommandLogs.Clear();
             foreach (var item in commands)
+            {
+                if (idToName is not null && item.UserId is not null && idToName.TryGetValue(item.UserId, out var name))
+                    item.UserName = name;
                 CommandLogs.Add(item);
+            }
 
-            var sqls = await _audit.GetSqlLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category);
+            var sqls = await _audit.GetSqlLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category, userIds: keywordUserIds);
             SqlLogs.Clear();
             foreach (var item in sqls)
+            {
+                if (idToName is not null && item.UserId is not null && idToName.TryGetValue(item.UserId, out var name))
+                    item.UserName = name;
                 SqlLogs.Add(item);
+            }
 
             var sessions = await _audit.GetSessionsAsync(200);
             Sessions.Clear();
@@ -110,12 +144,13 @@ public class AuditViewModel : INotifyPropertyChanged
     public string BuildCommandsCsv()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("时间,会话,工具,类型,服务器,命令,状态,决策,退出码,是否文件传输,文件,结果");
+        sb.AppendLine("时间,会话,用户,工具,类型,服务器,命令,状态,决策,退出码,是否文件传输,文件,结果");
         foreach (var log in CommandLogs)
         {
             sb.AppendLine(string.Join(',',
                 Escape(log.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")),
                 Escape(log.SessionId ?? string.Empty),
+                Escape(log.UserDisplay),
                 Escape(log.Tool ?? string.Empty),
                 Escape(log.Category.ToString()),
                 Escape(log.ServerName),
@@ -134,12 +169,13 @@ public class AuditViewModel : INotifyPropertyChanged
     public string BuildSqlCsv()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("时间,会话,工具,数据源,类型,操作,SQL,状态,决策,影响行数,耗时ms,结果");
+        sb.AppendLine("时间,会话,用户,工具,数据源,类型,操作,SQL,状态,决策,影响行数,耗时ms,结果");
         foreach (var log in SqlLogs)
         {
             sb.AppendLine(string.Join(',',
                 Escape(log.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")),
                 Escape(log.SessionId ?? string.Empty),
+                Escape(log.UserDisplay),
                 Escape(log.Tool ?? string.Empty),
                 Escape(log.DataSourceName),
                 Escape(log.Category.ToString()),

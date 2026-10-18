@@ -30,6 +30,9 @@ public interface IContextStore
     Task ReplaceMessagesAsync(long sessionId, IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default);
 
     Task<List<AgentMessageRow>> GetMessagesAsync(long sessionId, CancellationToken ct = default);
+
+    /// <summary>分页读取消息（Id 倒序取最近 <paramref name="limit"/> 条，返回升序；beforeId 用于向前翻页）。</summary>
+    Task<List<AgentMessageRow>> GetRecentMessagesAsync(long sessionId, long? beforeId = null, int limit = 120, CancellationToken ct = default);
     Task TouchSessionAsync(long id, CancellationToken ct = default);
 
     /// <summary>读取会话的滚动摘要（裁剪旧轮次后压缩保存的文本；无则空串）。</summary>
@@ -70,6 +73,24 @@ public interface IContextStore
 
     /// <summary>设置会话所属分组（空串=未分组）。</summary>
     Task SetSessionGroupAsync(long id, string group, CancellationToken ct = default);
+
+    /// <summary>读取会话级工作目录（两层工作区：jobs/&lt;user&gt;/&lt;session&gt;/；空串=未分配，运行时按配置解析）。</summary>
+    Task<string> GetSessionWorkspaceDirAsync(long id, CancellationToken ct = default);
+
+    /// <summary>锁定并保存会话级工作目录（会话首次启动时解析一次，之后不再变化）。</summary>
+    Task SetSessionWorkspaceDirAsync(long id, string workspaceDir, CancellationToken ct = default);
+
+    /// <summary>读取会话归属用户（评估报告 D1 归因：Web 登录用户 Id；"local"=桌面未登录）。</summary>
+    Task<string> GetSessionOwnerUserIdAsync(long id, CancellationToken ct = default);
+
+    /// <summary>保存会话归属用户（由宿主在会话建立时写入，不接受工具/前端传入）。</summary>
+    Task SetSessionOwnerUserIdAsync(long id, string ownerUserId, CancellationToken ct = default);
+
+    /// <summary>读取会话级连接器子集（D8 启用层：连接器 Id 的 JSON 数组；空串=继承全局默认启用集合）。</summary>
+    Task<string> GetSessionEnabledMcpAsync(long id, CancellationToken ct = default);
+
+    /// <summary>保存会话级连接器子集（空串=继承；首条消息后锁定不再变化）。</summary>
+    Task SetSessionEnabledMcpAsync(long id, string enabledMcpJson, CancellationToken ct = default);
 
     /// <summary>列出已定义的分组名（按名称排序）。</summary>
     Task<List<string>> ListGroupsAsync(CancellationToken ct = default);
@@ -129,10 +150,19 @@ public static class RelativeTime
         return local.ToString("yyyy-MM-dd");
     }
 }
-public sealed record AgentMessageRow(string Role, string Content, string Timestamp);
+public sealed record AgentMessageRow(string Role, string Content, string Timestamp, long Id = 0);
 
 public class ContextStore : IContextStore
 {
+    /// <summary>
+    /// agent.db 结构版本（写入 PRAGMA user_version；既有库无版本视为 0，初始化时补齐并盖章）。
+    /// v4（历史上无版本号的基线库）：会话 + 分组 + 排序 + 工具策略等既有列。
+    /// v5：会话表新增 WorkspaceDir（会话级工作目录）与 OwnerUserId（会话归属用户，评估报告 D1）。
+    /// v6：会话表新增 EnabledMcp（会话级连接器子集，D8 启用层；''=继承全局默认集合）。
+    /// 仅追加列（非破坏性），版本仅用于后续迁移分支判断。
+    /// </summary>
+    private const int AgentDbFormatVersion = 6;
+
     private readonly string _dbPath;
 
     public ContextStore() : this(null) { }
@@ -140,10 +170,31 @@ public class ContextStore : IContextStore
 
     private string ConnectionString => $"Data Source={_dbPath};Default Timeout=3";
 
+    /// <summary>
+    /// 打开连接并设置 <c>busy_timeout</c>：并行会话（每会话独立 runtime）下 agent.db 会被多处并发写，
+    /// 显式 busy 等待让写入排队而不是直接抛 SQLITE_BUSY（显式事务场景命令超时不覆盖 BEGIN 本身）。
+    /// </summary>
+    private async Task<SqliteConnection> OpenConnectionAsync(CancellationToken ct)
+    {
+        var connection = new SqliteConnection(ConnectionString);
+        try
+        {
+            await connection.OpenAsync(ct);
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = "PRAGMA busy_timeout=3000;";
+            await cmd.ExecuteNonQueryAsync(ct);
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
 PRAGMA journal_mode=WAL;
@@ -306,12 +357,65 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         {
             // 列已存在
         }
+
+        // v5：会话级工作目录（''=未分配；首次启动时解析并锁定，评估报告需求 D）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN WorkspaceDir TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // v5：会话归属用户（默认 local=桌面未登录；Web 登录会话由宿主写入，评估报告 D1）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN OwnerUserId TEXT NOT NULL DEFAULT 'local';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // v6：会话级连接器子集（D8 启用层；''=继承全局默认启用集合，首条消息后锁定）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN EnabledMcp TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
+        // 结构版本盖章（旧库 0 → 6；后续迁移以 user_version 判断是否需要执行）
+        try
+        {
+            await using var version = connection.CreateCommand();
+            version.CommandText = "PRAGMA user_version;";
+            var current = Convert.ToInt64(await version.ExecuteScalarAsync(ct) ?? 0L);
+            if (current < AgentDbFormatVersion)
+            {
+                await using var stamp = connection.CreateCommand();
+                stamp.CommandText = $"PRAGMA user_version = {AgentDbFormatVersion};";
+                await stamp.ExecuteNonQueryAsync(ct);
+            }
+        }
+        catch
+        {
+            // 盖章失败不影响库可用（列迁移已幂等完成）
+        }
     }
 
     public async Task<long> CreateSessionAsync(string title, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         var now = DateTime.UtcNow.ToString("O");
         // 新会话排到最前（SortOrder 取当前最小值 - 1）
@@ -325,8 +429,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     public async Task<List<AgentSessionRow>> ListSessionsAsync(CancellationToken ct = default)
     {
         var list = new List<AgentSessionRow>();
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId, \"Group\", SortOrder FROM agent_sessions WHERE Archived=0 ORDER BY SortOrder ASC, UpdatedAt DESC;";
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -341,8 +444,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     public async Task<List<AgentSessionRow>> ListArchivedSessionsAsync(CancellationToken ct = default)
     {
         var list = new List<AgentSessionRow>();
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, ProviderId, \"Group\", SortOrder FROM agent_sessions WHERE Archived=1 ORDER BY UpdatedAt DESC;";
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -379,8 +481,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
 
     public async Task<string> GetSessionSummaryAsync(long id, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT Summary FROM agent_sessions WHERE Id=@id;";
         cmd.Parameters.AddWithValue("@id", id);
@@ -394,8 +495,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
 
     public async Task<string> GetSessionPlanAsync(long id, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT Plan FROM agent_sessions WHERE Id=@id;";
         cmd.Parameters.AddWithValue("@id", id);
@@ -409,8 +509,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
 
     public async Task<string> GetSessionActiveSkillsAsync(long id, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT ActiveSkills FROM agent_sessions WHERE Id=@id;";
         cmd.Parameters.AddWithValue("@id", id);
@@ -424,8 +523,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
 
     public async Task<string> GetSessionAgentIdAsync(long id, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT AgentId FROM agent_sessions WHERE Id=@id;";
         cmd.Parameters.AddWithValue("@id", id);
@@ -439,8 +537,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
 
     public async Task<bool> GetSessionPlanModeAsync(long id, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT PlanMode FROM agent_sessions WHERE Id=@id;";
         cmd.Parameters.AddWithValue("@id", id);
@@ -454,8 +551,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
 
     public async Task<string> GetSessionToolPolicyAsync(long id, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT ToolPolicy FROM agent_sessions WHERE Id=@id;";
         cmd.Parameters.AddWithValue("@id", id);
@@ -471,11 +567,52 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         ExecAsync("UPDATE agent_sessions SET \"Group\"=@v WHERE Id=@id;",
             new() { ["@v"] = group ?? string.Empty, ["@id"] = id }, ct);
 
+    public async Task<string> GetSessionWorkspaceDirAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT WorkspaceDir FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : string.Empty;
+    }
+
+    public Task SetSessionWorkspaceDirAsync(long id, string workspaceDir, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET WorkspaceDir=@v WHERE Id=@id;",
+            new() { ["@v"] = workspaceDir ?? string.Empty, ["@id"] = id }, ct);
+
+    public async Task<string> GetSessionOwnerUserIdAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT OwnerUserId FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : "local";
+    }
+
+    public Task SetSessionOwnerUserIdAsync(long id, string ownerUserId, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET OwnerUserId=@v WHERE Id=@id;",
+            new() { ["@v"] = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim(), ["@id"] = id }, ct);
+
+    public async Task<string> GetSessionEnabledMcpAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT EnabledMcp FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : string.Empty;
+    }
+
+    public Task SetSessionEnabledMcpAsync(long id, string enabledMcpJson, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET EnabledMcp=@v WHERE Id=@id;",
+            new() { ["@v"] = enabledMcpJson ?? string.Empty, ["@id"] = id }, ct);
+
     public async Task<List<string>> ListGroupsAsync(CancellationToken ct = default)
     {
         var list = new List<string>();
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT Name FROM agent_groups ORDER BY SortOrder ASC, Name COLLATE NOCASE;";
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -496,8 +633,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         if (from.Length == 0 || to.Length == 0 || string.Equals(from, to, StringComparison.Ordinal))
             return;
 
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
         await using (var cmd = connection.CreateCommand())
         {
@@ -519,8 +655,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         if (group.Length == 0)
             return;
 
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
         await using (var cmd = connection.CreateCommand())
         {
@@ -546,8 +681,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         if (orderedNames is null || orderedNames.Count == 0)
             return;
 
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
         await using (var cmd = connection.CreateCommand())
         {
@@ -571,8 +705,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
 
     public async Task ReplaceMessagesAsync(long sessionId, IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
 
         await using (var del = connection.CreateCommand())
@@ -601,21 +734,39 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     public async Task<List<AgentMessageRow>> GetMessagesAsync(long sessionId, CancellationToken ct = default)
     {
         var list = new List<AgentMessageRow>();
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Role, Content, Timestamp FROM agent_messages WHERE SessionId=@s ORDER BY Id;";
+        cmd.CommandText = "SELECT Id, Role, Content, Timestamp FROM agent_messages WHERE SessionId=@s ORDER BY Id;";
         cmd.Parameters.AddWithValue("@s", sessionId);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
-            list.Add(new AgentMessageRow(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+            list.Add(new AgentMessageRow(reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(0)));
+        return list;
+    }
+
+    public async Task<List<AgentMessageRow>> GetRecentMessagesAsync(long sessionId, long? beforeId = null, int limit = 120, CancellationToken ct = default)
+    {
+        var clamped = Math.Clamp(limit, 1, 500);
+        var list = new List<AgentMessageRow>();
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Id, Role, Content, Timestamp FROM agent_messages WHERE SessionId=@s"
+                        + (beforeId is > 0 ? " AND Id < @beforeId" : string.Empty)
+                        + " ORDER BY Id DESC LIMIT @limit;";
+        cmd.Parameters.AddWithValue("@s", sessionId);
+        if (beforeId is > 0)
+            cmd.Parameters.AddWithValue("@beforeId", beforeId.Value);
+        cmd.Parameters.AddWithValue("@limit", clamped);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(new AgentMessageRow(reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(0)));
+        list.Reverse();   // 返回升序（与 GetMessagesAsync 一致），便于前端直接 append
         return list;
     }
 
     public async Task<int> PruneAsync(int maxSessions, int maxMessagesPerSession, int retentionDays, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
 
         async Task<int> RunAsync(string sql, Dictionary<string, object> args)
         {
@@ -665,8 +816,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
 
     private async Task ExecAsync(string sql, Dictionary<string, object> args, CancellationToken ct)
     {
-        await using var connection = new SqliteConnection(ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
         foreach (var (name, value) in args)

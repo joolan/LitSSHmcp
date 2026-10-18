@@ -42,10 +42,10 @@ public class FileTransferTools
     }
 
     [McpServerTool(Name = "ssh_upload_file", UseStructuredContent = true, OutputSchemaType = typeof(FileTransferResultDto), Destructive = true, OpenWorld = true)]
-    [Description("上传本地文件到SSH服务器。需要人工确认(可返回status=rejected/approval_timeout/approval_unavailable); 路径必须在白名单内, 越界返回path_not_allowed并在错误里给出允许的路径; 文件过大返回file_too_large; 上传脚本文件(.sh/.py/.ps1等)会先做服务端风险扫描并在审批弹窗展示, 扫描出危险模式直接status=blocked_script")]
+    [Description("上传本地文件到SSH服务器。需要人工确认(可返回status=rejected/approval_timeout/approval_unavailable); 路径必须在白名单内, 会话已分配工作目录时源还须在该会话目录内, 越界返回path_not_allowed并在错误里给出指引; 文件过大返回file_too_large; 上传脚本文件(.sh/.py/.ps1等)会先做服务端风险扫描并在审批弹窗展示, 扫描出危险模式直接status=blocked_script")]
     public async Task<FileTransferResultDto> UploadFile(
         [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
-        [Description("本地文件路径(本机Windows路径, 必须在security.fileTransfer.allowedLocalPaths内)")] string localPath,
+        [Description("本地文件路径(本机Windows路径; 会话已分配工作目录时必须在该会话目录内, 且必须在security.fileTransfer.allowedLocalPaths内)")] string localPath,
         [Description("服务器上的目标文件路径(含文件名, 必须在allowedRemotePaths内), 如 /var/log/app/data.json")] string remotePath,
         [Description("助手对该操作的风险评估摘要(可选), 展示在审批弹窗并标注『助手评估(仅供参考)』; 服务端扫描才是权威")] string? riskNote = null,
         IProgress<ProgressNotificationValue>? progress = null,
@@ -61,9 +61,18 @@ public class FileTransferTools
             return FileTransferResultDto.Fail("file_transfer_disabled",
                 "文件传输功能已被禁用(security.fileTransfer.enabled=false)。", null, null, null, server.Id, server.Name, server.Host);
 
-        if (!PathPolicy.IsLocalPathAllowed(localPath, ft.AllowedLocalPaths))
+        // 上传源对称约束(§5.2 需求D6): 会话目录已分配时, 上传源必须位于本会话工作目录内
+        var sessionViolation = SessionSourceViolation(localPath);
+        if (sessionViolation is not null)
             return FileTransferResultDto.Fail("path_not_allowed",
-                $"本地路径不在允许范围内: {localPath}", null, ft.AllowedLocalPaths, null, server.Id, server.Name, server.Host);
+                sessionViolation, null, SessionWorkspace.Current is { } sd ? new[] { sd } : null, null,
+                server.Id, server.Name, server.Host);
+
+        // 会话工作目录条件注入(§5.3.1): 仅当会话目录位于配置允许根之下才进白名单,越界不注入
+        var allowedLocal = SessionWorkspace.WithAllowedRoots(ft.AllowedLocalPaths);
+        if (!PathPolicy.IsLocalPathAllowed(localPath, allowedLocal))
+            return FileTransferResultDto.Fail("path_not_allowed",
+                $"本地路径不在允许范围内: {localPath}", null, allowedLocal, null, server.Id, server.Name, server.Host);
 
         if (!PathPolicy.IsRemotePathAllowed(remotePath, ft.AllowedRemotePaths))
             return FileTransferResultDto.Fail("path_not_allowed",
@@ -171,10 +180,10 @@ public class FileTransferTools
     }
 
     [McpServerTool(Name = "ssh_upload_files", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
-    [Description("批量/目录上传: 用**一条 SFTP 连接**上传多个本地文件或整个本地目录(可递归, 保持子目录结构)到服务器目录, 避免每个文件重复建连。localPaths 每行一个(文件或目录); **整批一次人工确认**; 受 allowedLocalPaths/allowedRemotePaths 白名单、单文件大小与 maxFiles 上限约束; 批内脚本文件(.sh/.py/.ps1等)会做服务端风险扫描并在审批弹窗展示, 任一脚本命中危险模式整批 status=blocked_script")]
+    [Description("批量/目录上传: 用**一条 SFTP 连接**上传多个本地文件或整个本地目录(可递归, 保持子目录结构)到服务器目录, 避免每个文件重复建连。localPaths 每行一个(文件或目录); **整批一次人工确认**; 受 allowedLocalPaths/allowedRemotePaths 白名单(会话已分配工作目录时源还须在该会话目录内)、单文件大小与 maxFiles 上限约束; 批内脚本文件(.sh/.py/.ps1等)会做服务端风险扫描并在审批弹窗展示, 任一脚本命中危险模式整批 status=blocked_script")]
     public async Task<BatchTransferResultDto> UploadFiles(
         [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
-        [Description("本地源路径, 每行一个(文件或目录); 目录会被展开")] string localPaths,
+        [Description("本地源路径, 每行一个(文件或目录); 目录会被展开; 会话已分配工作目录时源必须在该会话目录内")] string localPaths,
         [Description("服务器上的目标目录(必须在security.fileTransfer.allowedRemotePaths内); 目录内文件按相对路径还原")] string remoteDirectory,
         [Description("是否递归上传子目录, 默认 false")] bool recursive = false,
         [Description("最多上传文件数(默认 200, 1~5000)")] int maxFiles = 200,
@@ -196,9 +205,15 @@ public class FileTransferTools
             return BatchTransferResultDto.Fail("bad_request", "localPaths 不能为空(每行一个文件或目录)", server.Id, server.Name, server.Host);
 
         foreach (var path in paths)
-            if (!PathPolicy.IsLocalPathAllowed(path, ft.AllowedLocalPaths))
+        {
+            // 上传源对称约束(§5.2 需求D6): 会话目录已分配时, 上传源必须位于本会话工作目录内
+            var sessionViolation = SessionSourceViolation(path);
+            if (sessionViolation is not null)
+                return BatchTransferResultDto.Fail("path_not_allowed", sessionViolation, server.Id, server.Name, server.Host);
+            if (!PathPolicy.IsLocalPathAllowed(path, SessionWorkspace.WithAllowedRoots(ft.AllowedLocalPaths)))
                 return BatchTransferResultDto.Fail("path_not_allowed",
                     $"本地路径不在允许范围内: {path}", server.Id, server.Name, server.Host);
+        }
 
         if (!PathPolicy.IsRemotePathAllowed(remoteDirectory, ft.AllowedRemotePaths))
             return BatchTransferResultDto.Fail("path_not_allowed",
@@ -343,7 +358,7 @@ public class FileTransferTools
     public async Task<FileTransferResultDto> DownloadFile(
         [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
         [Description("服务器上的源文件路径(必须在security.fileTransfer.allowedRemotePaths内), 如 /var/log/app/app.log")] string remotePath,
-        [Description("本地保存路径(本机Windows路径, 含文件名, 必须在allowedLocalPaths内)")] string localPath,
+        [Description("本地保存路径(本机Windows路径, 含文件名, 必须在allowedLocalPaths内)。省略=自动落会话工作目录并沿用远端文件名; 相对路径=会话工作目录之下(工具级默认落地, 评估报告§5.2); 绝对路径原样校验")] string? localPath = null,
         IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -361,9 +376,18 @@ public class FileTransferTools
             return FileTransferResultDto.Fail("path_not_allowed",
                 $"远程路径不在允许范围内: {remotePath}", null, null, ft.AllowedRemotePaths, server.Id, server.Name, server.Host);
 
-        if (!PathPolicy.IsLocalPathAllowed(localPath, ft.AllowedLocalPaths))
+        // 工具级默认落地(§5.2): 省略/相对路径 → 会话工作目录(宿主 spawn 注入, 非提示词约定)
+        localPath = SessionWorkspace.ResolveLanding(localPath, remotePath, isDirectory: false);
+        if (localPath is null)
+            return FileTransferResultDto.Fail("bad_request",
+                "未提供 localPath, 且当前进程未注入会话工作目录(旧会话/直连 MCP): 请显式提供绝对本地路径。",
+                null, ft.AllowedLocalPaths, null, server.Id, server.Name, server.Host);
+
+        // 会话工作目录条件注入(§5.3.1): 仅当会话目录位于配置允许根之下才进白名单,越界不注入
+        var allowedLocal = SessionWorkspace.WithAllowedRoots(ft.AllowedLocalPaths);
+        if (!PathPolicy.IsLocalPathAllowed(localPath, allowedLocal))
             return FileTransferResultDto.Fail("path_not_allowed",
-                $"本地路径不在允许范围内: {localPath}", null, ft.AllowedLocalPaths, null, server.Id, server.Name, server.Host);
+                $"本地路径不在允许范围内: {localPath}", null, allowedLocal, null, server.Id, server.Name, server.Host);
 
         if (ft.RequireApproval)
         {
@@ -428,7 +452,7 @@ public class FileTransferTools
     public async Task<BatchTransferResultDto> DownloadFiles(
         [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
         [Description("服务器上的源路径, 每行一个(文件或目录); 目录会被展开")] string remotePaths,
-        [Description("本地目标目录(必须在security.fileTransfer.allowedLocalPaths内); 目录内文件按相对路径还原")] string localDirectory,
+        [Description("本地目标目录(必须在security.fileTransfer.allowedLocalPaths内); 目录内文件按相对路径还原。省略=会话工作目录; 相对路径=会话工作目录之下(工具级默认落地, 评估报告§5.2)")] string? localDirectory = null,
         [Description("是否递归下载子目录, 默认 false")] bool recursive = false,
         [Description("最多下载文件数(默认 200, 1~5000)")] int maxFiles = 200,
         CancellationToken cancellationToken = default)
@@ -452,7 +476,16 @@ public class FileTransferTools
                 return BatchTransferResultDto.Fail("path_not_allowed",
                     $"远程路径不在允许范围内: {path}", server.Id, server.Name, server.Host);
 
-        if (!PathPolicy.IsLocalPathAllowed(localDirectory, ft.AllowedLocalPaths))
+        // 工具级默认落地(§5.2): 省略/相对路径 → 会话工作目录
+        localDirectory = SessionWorkspace.ResolveLanding(localDirectory, remotePaths, isDirectory: true);
+        if (localDirectory is null)
+            return BatchTransferResultDto.Fail("bad_request",
+                "未提供 localDirectory, 且当前进程未注入会话工作目录(旧会话/直连 MCP): 请显式提供绝对本地目录。",
+                server.Id, server.Name, server.Host);
+
+        // 会话工作目录条件注入(§5.3.1)
+        var allowedLocal = SessionWorkspace.WithAllowedRoots(ft.AllowedLocalPaths);
+        if (!PathPolicy.IsLocalPathAllowed(localDirectory, allowedLocal))
             return BatchTransferResultDto.Fail("path_not_allowed",
                 $"本地目录不在允许范围内: {localDirectory}", server.Id, server.Name, server.Host);
 
@@ -544,6 +577,21 @@ public class FileTransferTools
             ? new List<string>()
             : text.Split(new[] { '\n', '\r', ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+
+    /// <summary>
+    /// 上传源路径对称约束（评估报告 §5.2 需求 D6 / §10.C.5）：会话目录已分配时上传源必须在本会话工作目录内
+    /// （与"下载落点限会话目录"对称, 附带 PathGuard 物理解析防 symlink 逃逸）；未分配(共享区模式)维持现状仅白名单。
+    /// </summary>
+    private static string? SessionSourceViolation(string path)
+    {
+        var sessionDir = SessionWorkspace.Current;
+        if (string.IsNullOrWhiteSpace(sessionDir))
+            return null;
+        if (PathGuard.IsUnder(sessionDir, path))
+            return null;
+        return $"上传源路径限定在本会话工作目录内(对称约束): {path}\n" +
+               "请改用会话目录内的文件; 共享工作区文件可先经 ops_doc_read/ops_doc_write 复制到会话目录后再上传";
+    }
 
     /// <summary>读取本地文件文本供风险扫描(最多读到扫描上限+1字符, 读失败返回 null → 按未审脚本处理)。</summary>
     private static string? ReadLocalText(string path)

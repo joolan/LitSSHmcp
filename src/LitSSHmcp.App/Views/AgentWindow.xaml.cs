@@ -15,14 +15,19 @@ public partial class AgentWindow : FluentWindow
 {
     private readonly AgentViewModel _viewModel;
     private readonly IConfigService _configService;
+    private readonly DesktopLoginService _desktopLogin;
 
     public AgentWindow(IConfigService configService, IContextStore store, string skillsDir,
         Func<string, LocalTerminalSessionViewModel?>? localTerminalResolver = null)
     {
         InitializeComponent();
         _configService = configService;
+        _desktopLogin = AppServiceFactory.DesktopLogin;
 
-        _viewModel = new AgentViewModel(configService, store, skillsDir, action => Dispatcher.Invoke(action))
+        _viewModel = new AgentViewModel(configService, store, skillsDir,
+            action => Dispatcher.Invoke(action),
+            action => Dispatcher.BeginInvoke(action),
+            _desktopLogin)
         {
             LocalTerminalResolver = localTerminalResolver
         };
@@ -32,7 +37,14 @@ public partial class AgentWindow : FluentWindow
         DataContext = _viewModel;
         WindowLayout.Attach(this, "agent");
         _viewModel.Turns.CollectionChanged += (_, _) => ChatScroll.ScrollToEnd();
-        Loaded += async (_, _) => await _viewModel.InitializeAsync();
+        Loaded += async (_, _) =>
+        {
+            // D1 收尾：先恢复桌面登录态（跨重启保持），再加载会话（新会话按登录用户归因）
+            await _desktopLogin.LoadAsync();
+            _desktopLogin.ApplyAttribution();
+            _viewModel.NotifyDesktopLoginChanged();
+            await _viewModel.InitializeAsync();
+        };
         Closed += async (_, _) => await _viewModel.DisposeAsync();
     }
 
@@ -56,6 +68,30 @@ public partial class AgentWindow : FluentWindow
     }
 
     private void OnOpenSettings(object sender, RoutedEventArgs e) => OpenSettings(null);
+
+    /// <summary>桌面登录 / 注销（评估报告 D1 收尾，仅归因：新会话 owner 与审计 UserId）。</summary>
+    private void OnDesktopLogin(object sender, RoutedEventArgs e)
+    {
+        if (_desktopLogin.Current is { } state)
+        {
+            var result = System.Windows.MessageBox.Show(this,
+                $"确定注销归因用户「{state.Username}」？注销后新会话归因为 local。",
+                "桌面登录", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Question);
+            if (result != System.Windows.MessageBoxResult.OK)
+                return;
+            _desktopLogin.Logout();
+            _desktopLogin.ApplyAttribution();
+            _viewModel.NotifyDesktopLoginChanged();
+            return;
+        }
+
+        var dialog = new DesktopLoginWindow(_desktopLogin) { Owner = this };
+        if (dialog.ShowDialog() == true)
+        {
+            _desktopLogin.ApplyAttribution();
+            _viewModel.NotifyDesktopLoginChanged();
+        }
+    }
 
     private AgentSettingsWindow? _settingsWindow;
 
@@ -126,7 +162,9 @@ public partial class AgentWindow : FluentWindow
     private void BuildConnectorMenuItems(System.Windows.Controls.ContextMenu menu)
     {
         menu.Items.Clear();
-        menu.Items.Add(new System.Windows.Controls.MenuItem { Header = "MCP 连接器", IsEnabled = false });
+        menu.Items.Add(new System.Windows.Controls.MenuItem { Header = "MCP 连接器（本会话启用子集）", IsEnabled = false });
+        if (_viewModel.SessionSubsetLocked)
+            menu.Items.Add(new System.Windows.Controls.MenuItem { Header = "已锁定（首条消息后）· 下个会话生效", IsEnabled = false });
         menu.Items.Add(new System.Windows.Controls.Separator());
 
         if (_viewModel.Connectors.Count == 0)
@@ -134,24 +172,27 @@ public partial class AgentWindow : FluentWindow
 
         foreach (var item in _viewModel.Connectors)
         {
+            // D8 两级模型：全局停用的只展示不可勾；锁定后全部只读——勾选值=本会话是否生效
             var mi = new System.Windows.Controls.MenuItem
             {
                 Header = $"{item.DisplayName}  ·  {item.StatusText}",
                 IsCheckable = true,
                 IsChecked = item.IsEnabled,
-                IsEnabled = true,
+                IsEnabled = !_viewModel.SessionSubsetLocked && item.GlobalEnabled,
                 StaysOpenOnClick = true,
                 Tag = item,
-                ToolTip = item.Builtin
-                    ? "内置 LitSSH MCP：本机服务器/数据源/命令等运维工具（停用后 AI 无法操作本机）"
-                    : $"外部 MCP（{item.Transport}）：第三方工具不经过本程序的审批/过滤/审计"
+                ToolTip = !item.GlobalEnabled
+                    ? "全局已停用：请在「AI 助手设置 → MCP 服务器」启用（会话不能反向开启）"
+                    : item.Builtin
+                        ? "内置 LitSSH MCP：本机服务器/数据源/命令等运维工具（可按会话整体关闭；全局配置不受影响）"
+                        : $"外部 MCP（{item.Transport}）：第三方工具不经过本程序的审批/过滤/审计"
             };
             mi.Click += OnConnectorToggle;
             menu.Items.Add(mi);
         }
 
         menu.Items.Add(new System.Windows.Controls.Separator());
-        var openSettings = new System.Windows.Controls.MenuItem { Header = "打开「AI 助手设置 → MCP 服务器」…" };
+        var openSettings = new System.Windows.Controls.MenuItem { Header = "打开「AI 助手设置 → MCP 服务器」（全局配置）…" };
         openSettings.Click += (_, _) => { menu.IsOpen = false; OpenSettings("mcp"); };
         menu.Items.Add(openSettings);
     }
@@ -163,11 +204,11 @@ public partial class AgentWindow : FluentWindow
         if ((sender as System.Windows.Controls.MenuItem)?.Parent is not System.Windows.Controls.ContextMenu menu)
             return;
 
-        // 勾选框已被 WPF 切换；内置停用需二次确认（与设置页一致）
+        // 勾选框已被 WPF 切换；内置停用需二次确认（与设置页一致；本操作只影响本会话子集）
         if (item.Builtin && item.IsEnabled)
         {
             var confirm = System.Windows.MessageBox.Show(
-                "停用内置 LitSSH MCP 后，AI 将无法操作本机服务器、数据源等（需要时可在「AI 助手设置 → MCP 服务器」重新启用）。确定停用？",
+                "本会话停用内置 LitSSH MCP 后，AI 将无法操作本机服务器、数据源等（仅影响本会话；全局配置不变，下个会话按全局默认）。确定停用？",
                 "停用内置连接器",
                 System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
             if (confirm != System.Windows.MessageBoxResult.OK)
@@ -185,7 +226,7 @@ public partial class AgentWindow : FluentWindow
 
         try
         {
-            var result = await _viewModel.ToggleConnectorAsync(item);
+            var result = await _viewModel.ToggleSessionConnectorAsync(item);
             _viewModel.StatusMessage = result;
         }
         catch (Exception ex)
@@ -204,6 +245,11 @@ public partial class AgentWindow : FluentWindow
 
     private void OpenSkillPicker()
     {
+        if (_viewModel.SessionSubsetLocked)
+        {
+            _viewModel.StatusMessage = "首条消息后锁定：技能子集改动将在下个会话生效。";
+            return;
+        }
         if (_viewModel.AvailableSkills.Count == 0)
         {
             System.Windows.MessageBox.Show("没有可用技能：请在「AI 助手设置 → 技能目录」指定目录，或使用内置技能。",
@@ -499,6 +545,9 @@ public partial class AgentWindow : FluentWindow
     // 会话右键菜单打开：构建「移动到分组」子菜单（未分组 + 各分组，带勾选）
     private void OnSessionMenuOpened(object sender, RoutedEventArgs e)
     {
+        // 「停止任务」只对有占用态运行上下文的会话可用（§4.1 停止路由：取消的是该会话的 CTS）
+        StopSessionMenu.IsEnabled = _contextSession is { } stoppable && _viewModel.IsSessionRunning(stoppable.Id);
+
         MoveGroupMenu.Items.Clear();
         var session = _contextSession;
         var current = session?.Group ?? string.Empty;
@@ -522,6 +571,12 @@ public partial class AgentWindow : FluentWindow
         AddItem("未分组", string.Empty);
         foreach (var g in _viewModel.Groups)
             AddItem(g, g);
+    }
+
+    private void OnStopSession(object sender, RoutedEventArgs e)
+    {
+        if (_contextSession is { } session)
+            _viewModel.StopSession(session.Id);
     }
 
     private void OnDeleteSession(object sender, RoutedEventArgs e)

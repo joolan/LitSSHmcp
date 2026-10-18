@@ -23,7 +23,8 @@ public static class SystemPromptBuilder
         IReadOnlyCollection<string>? availableGroups = null, string? agentName = null, string? agentPrompt = null,
         string? agentStyle = null, string? skillsRoot = null,
         IReadOnlyList<ExternalMcpServerInfo>? externalMcp = null, bool builtinMcpDisabled = false,
-        bool memoryTools = false, bool scriptTools = false, string? assetGraph = null)
+        bool memoryTools = false, bool scriptTools = false, string? assetGraph = null,
+        string? sessionWorkspaceDir = null, string? sharedWorkspaceDir = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine(BasePrompt);
@@ -54,6 +55,17 @@ public static class SystemPromptBuilder
             sb.AppendLine("你可使用工作区文档工具: ops_doc_list(列出)、ops_doc_read(读取)、ops_doc_write(写入/覆盖)、ops_doc_append(追加)、ops_doc_patch(定点替换)。");
             sb.AppendLine("路径相对工作区根目录(默认 OPS_ASSETS.md, 被限制在工作区内)。");
             sb.AppendLine("维护运维资产档案: **默认不要每轮读写**——仅当需要既有的服务器/应用/日志路径等档案信息时才 ops_doc_read; 更新时优先用 ops_doc_append / ops_doc_patch 做**增量修改**(省 token), 只有创建新档案或需整体重写时才用 ops_doc_write。");
+
+            if (!string.IsNullOrWhiteSpace(sessionWorkspaceDir))
+            {
+                sb.AppendLine($"- 本会话工作目录: `{sessionWorkspaceDir}` — 任务产出(报告/笔记/下载落地/附件/临时脚本)一律写此处的相对路径; **目录不可变更**, 工具会在代码层约束路径。");
+                if (!string.IsNullOrWhiteSpace(sharedWorkspaceDir))
+                {
+                    sb.AppendLine($"- 共享工作区: `{sharedWorkspaceDir}` — 跨会话资产(OPS_ASSETS.md 资产档案、scripts/ 脚本库)留共享区; ops_doc 路径加 `shared/` 前缀即可读写共享区(如 shared/OPS_ASSETS.md); **省略 path 的 ops_doc_***默认读写共享区的 OPS_ASSETS.md**。");
+                    sb.AppendLine("- 禁止经 shared/ 访问 jobs/ 下的会话目录(那是隔离区); 本会话产出需被后续会话复用时, 提示用户提升到共享区。");
+                }
+            }
+
             sb.AppendLine();
             sb.AppendLine("## 任务计划");
             sb.AppendLine("处理多步任务时, 先用 update_plan 提交完整计划(每行 '- [ ] 步骤'); 之后每完成一步就再次调用 update_plan 并把已完成项标为 '- [x]'。简单单步问题不必使用。");
@@ -82,6 +94,8 @@ public static class SystemPromptBuilder
             sb.AppendLine("- **完成后登记**: ops_script_register(path, summary, compat, deployedTo, verified) 更新台账并同步记忆; 重复登记同一 path 会合并已部署资产。");
             sb.AppendLine("- **兼容性必须声明**: python 区分 2.7/3.x(2.7 禁 f-string/注解), shell 标 POSIX sh 或 bash4+; 不确定目标环境先探测(`python --version`/`cat /etc/os-release`)。");
             sb.AppendLine("- **脚本永不免审**: 本地或远程脚本执行前必须完成风险分析(规则扫描+摘要)并取得用户同意, 走审批流程; 未审脚本、内容被改过的脚本一律先审再执行。");
+            if (!string.IsNullOrWhiteSpace(sessionWorkspaceDir))
+                sb.AppendLine("- **脚本库在共享区**: ops_script_register 的 path 相对共享工作区根(脚本须位于 scripts/ 下); 本会话新产出的脚本先写在本会话目录, 需跨会话复用时提示用户提升到共享区后再登记。");
         }
 
         if (spillTools || subAgent)

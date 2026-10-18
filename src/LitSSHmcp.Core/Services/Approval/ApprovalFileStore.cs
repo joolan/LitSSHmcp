@@ -11,6 +11,14 @@ public sealed class ApprovalRequestFile
     public string Operation { get; set; } = string.Empty;
     public string Command { get; set; } = string.Empty;
     public string? FilePath { get; set; }
+
+    /// <summary>
+    /// 归因用户：MCP 子进程从宿主注入的 LITSSH_OWNER_USER_ID 带入（AuditContext.CurrentUserId，
+    /// "local"=桌面未登录）。Web 宿主仅把 Owner 与登录用户 Id 一致的请求推给浏览器（报告 §3.3.1/§10.B.5）；
+    /// null/空 = 旧格式文件，不推 Web。
+    /// </summary>
+    public string? Owner { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
     public int TimeoutSeconds { get; set; }

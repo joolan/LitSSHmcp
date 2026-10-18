@@ -10,27 +10,27 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 2. **数据库侧**：连接配置好的 MySQL / Redis（直连或经 SSH 隧道），执行只读查询/写操作/诊断
 3. **拓扑侧**：维护"服务器 / Java应用 / 数据库"资产拓扑，支撑跨机全链路故障排查
 
-三个独立入口共享同一套 Core：
+四个独立入口共享同一套 Core：
 
 ```
-┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-│ LitSSHmcp.McpServer │  │   LitSSHmcp.App     │  │   LitSSHmcp.Cli     │
-│ MCP服务器(stdio)     │  │ WPF管理界面(MVVM)    │  │ 终端SSH工具          │
- │ 53个MCP Tools        │  │ 服务器/数据源/拓扑配置 │  │ list/connect/run    │
-└──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
-           │                        │                        │
-           └────────────────────────┼────────────────────────┘
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                       LitSSHmcp.Core                               │
-│  Models: AppConfig/SshServerConfig/DataSourceConfig/TopologyModels  │
-│  Services: SSH | Datasource | Topology | Security | Storage         │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-             %APPDATA%\LitSSH   SQLite(audit.db)  远程资产
-             config.json        审计/拓扑/快照       SSH服务器/MySQL/PostgreSQL/Redis
+┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
+│ LitSSHmcp.McpServer │  │   LitSSHmcp.App     │  │   LitSSHmcp.Cli     │  │   LitSSHmcp.Web     │
+│ LitSSHmcp.McpServer │  │ LitSSHmcp.App       │  │ LitSSHmcp.Cli       │  │ LitSSHmcp.Web       │
+│ 54个MCP Tools        │  │ 服务器/数据源/拓扑配置 │  │ list/connect/run    │  │ 登录/会话/聊天/审批  │
+└──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
+           │                        │                        │                        │
+           └────────────────────────┼────────────────────────┼────────────────────────┘
+                                                 ▼
+               ┌───────────────────────────────────────────────────────────────────┐
+               │                       LitSSHmcp.Core                              │
+               │  Models: AppConfig/SshServerConfig/DataSourceConfig/TopologyModels│
+               │  Services: SSH | Datasource | Topology | Security | Storage       │
+               └───────────────────────────────────────────────────────────────────┘
+                                                 │
+                                 ┌───────────────┼───────────────┐
+                                 ▼               ▼               ▼
+                         %APPDATA%\LitSSH   SQLite(audit.db)  远程资产
+                         config.json        审计/拓扑/快照       SSH服务器/MySQL/PostgreSQL/Redis
 ```
 
 ## 2. 解决方案结构
@@ -41,11 +41,14 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 | `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、54 个工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理界面（服务器/数据源/应用/资产拓扑可视化编辑/安全设置/审计/工具说明/工具分组） | WPF、Core |
 | `LitSSHmcp.Cli` | net10.0 | 终端 SSH 工具（`litssh list/connect/run`） | Core |
+| `LitSSHmcp.Web` | net8.0 | 浏览器 Web 助手入口（Kestrel/静态 SPA/WebSocket 流式聊天：登录、每会话子进程宿主、审批桥、文件浏览） | ASP.NET Core、Core、Agent |
 | `LitSSHmcp.Tests` | net8.0 | Core 单元测试（安全过滤/路径策略/配置迁移/加密/驱动协议等） | Core、xunit |
 | `LitSSHmcp.McpServer.Tests` | net8.0-windows | MCP 服务器层测试：工具清单一致性（注册 ↔ `docs/TOOLS.md` ↔ 指南）+ **stdio 全链路集成测试**（initialize/tools/list/tools/call） | McpServer、xunit |
+| `LitSSHmcp.Agent.Tests` | net8.0 | Agent 会话/技能/上下文/运行状态机/审计归因测试 | Agent、xunit |
 | `LitSSHmcp.App.Tests` | net8.0-windows | App 画布测试：拓扑路由引擎（Z 形/避障/快慢一致/过桥/简化）、布局几何与四边缩放、导出渲染（STA） | App、xunit |
+| `LitSSHmcp.Web.Tests` | net8.0 | Web 层测试：登录/会话配额/审批桥/WS 协议/限速/安全头/静态资源与前端守卫 | Web、xunit |
 
-- 依赖方向：三个入口项目都只依赖 `Core`，`Core` 不反向依赖任何入口项目；`tests` 项目依赖 `Core`（`LitSSHmcp.App.Tests` 另依赖 `App`）。
+- 依赖方向：`McpServer`/`App`/`Cli` 只依赖 `Core`，`Web` 依赖 `Core` + `Agent`（每会话装配 `AgentRuntime`）；`Core` 不反向依赖任何入口项目；`tests` 项目依赖对应被测项目 + `Core`。
 - 构建环境：`.NET SDK 10.0.x` 可构建全部项目（入口运行时目标仍为 .NET 8，CLI 为 .NET 10）。
 - 代码约定：**接口与实现放在同一文件**（如 `IConfigService.cs` 内含 `ConfigService`），接口以 `I` 前缀命名。
 
@@ -67,12 +70,14 @@ LitSSHmcp/
 │   ├── LitSSHmcp.McpServer/      # MCP 服务器（Program.cs + Tools/ 18 个工具类）
 │   ├── LitSSHmcp.Agent/          # AI 运维助手（MCP 客户端 + 大模型对话循环 + 技能）
 │   ├── LitSSHmcp.App/            # WPF 管理界面（Views/ + ViewModels/）
-│   └── LitSSHmcp.Cli/            # CLI
+│   ├── LitSSHmcp.Cli/            # CLI
+│   └── LitSSHmcp.Web/            # 浏览器 Web 助手（Kestrel + wwwroot 静态 SPA）
 └── tests/
     ├── LitSSHmcp.Tests/           # Core xUnit 单元测试
     ├── LitSSHmcp.McpServer.Tests/ # MCP 服务器层一致性测试
     ├── LitSSHmcp.Agent.Tests/     # Agent 会话/技能/上下文测试
-    └── LitSSHmcp.App.Tests/       # App 画布/路由引擎/几何测试
+    ├── LitSSHmcp.App.Tests/       # App 画布/路由引擎/几何测试
+    └── LitSSHmcp.Web.Tests/       # Web 登录/会话/审批/静态资源测试
 ```
 
 ## 3. MCP 服务器层（LitSSHmcp.McpServer）
@@ -306,9 +311,12 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 | 限流 | 按目标限制并发/每分钟调用（`security.limits`） | `TargetLimiter` |
 | 拓扑发现 | 扫描路径受白名单约束（`security.discovery.allowedSearchPaths`） | `TopologyTools` + `PathPolicy` |
 | 审计 | 命令、SQL（含被拒绝/被驳回）全部落 SQLite（WAL + 索引）；原文开关/字面量脱敏/超期清理见 `security.audit` | `AuditLogService` + `SqlRedactor` |
-| 配置热更新 | commandFilter/sqlFilter/fileTransfer 改动按文件 mtime 即时生效，无需重启 | `SecurityOptionsProvider` |
+| 工作区清理 | 会话删除即清理会话目录；**孤儿会话目录**（删除失败/会话被保留策略剪除后残留）按 `agent.orphanSessionDirRetentionDays`（默认 30，0=关闭）在启动/裁剪后清扫——仅删 `jobs/<用户>/s<id>`、跳过重解析点、保护未超期目录（§8.2） | `WorkspaceLayout.SweepOrphanSessionDirs` |
+| 配置热更新 | **安全类配置**（`security.enabled`、commandFilter/sqlFilter/fileTransfer/scriptRules、审批设置、授权矩阵等 `security.*`）按文件 mtime **即时生效**（无需重启，对运行中会话同样生效）；**其余配置**（服务器/数据源/模型/技能等）**会话启动时快照**——改动对运行中会话不生效、**下个会话生效**；Web 不提供配置写路径（D2），一切修改仅限桌面 | `SecurityOptionsProvider` + 会话装配快照 |
 | 日志 | MCP 日志走 stderr（不污染 stdout 协议流）+ 本机文件 | `Program.cs` + `FileLoggerProvider` |
 | 工具风险提示 | 54 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
+| Web 助手 | 独立账号库 `web.db`（PBKDF2-SHA256 210k、连续失败指数锁定）；令牌 Cookie `HttpOnly+SameSite=Strict` + CSRF 双提交（`/api/login` 例外）；登录/API 按 IP 固定窗口限速（30/600 每分钟）；全站安全响应头 + HTML CSP；会话 owner 逐操作校验（越权统一 404）、每用户并发会话上限与 LLM 成本预算；**授权矩阵强制**（`security.authorization`：登录用户 → 目标白名单 + read/exec，未命中默认拒绝；仅 Web 宿主注入 `LITSSH_AUTHZ_MODE=enforce` 生效，桌面会话仅归因不限权；可视化编辑在桌面「设置 → 安全设置 → Web 授权矩阵」）；账号管理 CLI `--create-user/--list-users`（密码仅走 `LITSSH_NEW_PASSWORD` 环境变量）；会话目录固定根 `web.jobsRoot`（空=默认 `%APPDATA%\LitSSH\jobs`，绝对路径，重启生效；旧版 `jobs/jobs` 布局启动自动迁移；桌面安全设置可视化编辑）；**图片附件**（会话 `attachments/`，仅图片 ≤10MB/张、每条 ≤5 张，多模态发给模型）；**会话级模型切换**（`PUT /api/sessions/{id}/provider`，落库 `ProviderId`，下一轮重建运行时）；**消息分页**（`limit/beforeId`，首屏最近 120 条 + 懒加载）；**冷启动上下文与桌面共用** `SessionContextBuilder`/`ToolTraceFormatter`（冷启动窗口、工具轨迹、智能体/技能/计划模式/资产图谱、视觉图片；Web 不含本机终端工具）；审批卡固定悬浮 + REST 对账（5s/决策后/重连）与聊天 WS 重连重放/回合后台执行（断线自愈、stop 即时）；**响应式 UI**（≤820px 抽屉侧栏/底部输入栏/底部审批弹层） | `WebAuthMiddleware`/`WebCsrfMiddleware`/`WebRateLimitMiddleware`/`WebSecurityHeadersMiddleware`/`WebBudgetGuard`/`WebSessionManager`/`WebBootstrap` + `McpAuthorizationFilter` |
+| 桌面归因 | **桌面可选登录**（评估报告 D1 收尾）：复用 `web.db` 校验（失败计数/锁定与 Web 共享），登录态 DPAPI 落盘跨重启保持；登录后新会话 owner 与审计 `UserId` = 登录用户名，未登录 = `local`——**仅归因不限权**（桌面不注入 `LITSSH_AUTHZ_MODE`）；桌面每 5s 对账 `agent.db`（Web 等独立进程写入）自动刷新会话列表/选中会话（仅已落库整轮结果，非实时流式） | `DesktopLoginService` + `SessionAutoRefresh` + `AuditContext.CurrentUserId` |
 
 ## 9. 扩展点
 
@@ -334,7 +342,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 
 ```bash
 dotnet build LitSSHmcp.slnx                      # 全量构建（应 0 警告 0 错误）
-dotnet test LitSSHmcp.slnx                      # 全部测试(Core + Agent + McpServer + App，549 用例)
+dotnet test LitSSHmcp.slnx                      # 全部测试(Core + Agent + McpServer + App + Web，1302 用例)
 dotnet publish src/LitSSHmcp.McpServer -c Release -r win-x64 --self-contained -o publish
 dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publish
 ```

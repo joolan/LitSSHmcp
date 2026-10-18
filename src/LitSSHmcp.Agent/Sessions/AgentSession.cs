@@ -26,6 +26,7 @@ public sealed class AgentSession
 
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
     private bool _planMode;
+    private int _turnInProgress;
 
     /// <summary>计划模式每轮附在用户消息尾部的提示（不改系统提示/工具集，保持前缀缓存稳定）。</summary>
     private const string PlanModeNotice =
@@ -127,6 +128,22 @@ public sealed class AgentSession
 
     /// <summary>发送多模态用户消息（文本 + 图片等 <see cref="AIContent"/>）并跑到本轮结束。</summary>
     public async Task SendAsync(IReadOnlyList<AIContent> userContents, IProgress<AgentEvent>? progress, CancellationToken ct = default)
+    {
+        // 重入保护（评估报告 §4.2）：同一会话同时只允许一轮 turn——历史是裸 List，
+        // 并发轮会交错写 Messages/工具配对。每会话独立 runtime 后正常路径不会重入，此为硬闸。
+        if (Interlocked.CompareExchange(ref _turnInProgress, 1, 0) != 0)
+            throw new InvalidOperationException("该会话正在执行上一轮，不能并发发送（会话级闸门应已拦截）。");
+        try
+        {
+            await SendCoreAsync(userContents, progress, ct);
+        }
+        finally
+        {
+            Volatile.Write(ref _turnInProgress, 0);
+        }
+    }
+
+    private async Task SendCoreAsync(IReadOnlyList<AIContent> userContents, IProgress<AgentEvent>? progress, CancellationToken ct)
     {
         var userText = string.Concat(userContents.OfType<TextContent>().Select(t => t.Text));
 

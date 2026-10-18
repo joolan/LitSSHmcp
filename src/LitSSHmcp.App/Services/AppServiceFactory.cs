@@ -71,7 +71,7 @@ public static class AppServiceFactory
     {
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
-        var limiter = new TargetLimiter(security);
+        var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
         return new SshService(knownHosts, security, limiter);
     }
 
@@ -81,6 +81,21 @@ public static class AppServiceFactory
     /// <summary>AI 助手会话/消息库（agent.db）。</summary>
     public static LitSSHmcp.Agent.IContextStore CreateAgentContextStore() => new LitSSHmcp.Agent.ContextStore();
 
+    private static DesktopLoginService? _desktopLogin;
+
+    /// <summary>
+    /// 桌面可选登录（评估报告 D1 收尾；进程级单例）：Web 账号库校验 + DPAPI 登录态（跨重启保持），
+    /// 仅用于归因（新会话 owner / 审计 UserId），桌面不做权限限制。
+    /// </summary>
+    public static DesktopLoginService DesktopLogin
+    {
+        get
+        {
+            _desktopLogin ??= new DesktopLoginService();
+            return _desktopLogin;
+        }
+    }
+
     /// <summary>App 内置技能根目录（skills/）：其下每个子目录为一个技能（含 SKILL.md），另含总纲 litssh-mcp-ops-skill。</summary>
     public static string BundledSkillsDir => Path.Combine(AppContext.BaseDirectory, "skills");
 
@@ -89,7 +104,7 @@ public static class AppServiceFactory
     {
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
-        var limiter = new TargetLimiter(security);
+        var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
         var ssh = new SshService(knownHosts, security, limiter);
         var store = new SnapshotStore();
         var configService = new ConfigService();
@@ -110,7 +125,7 @@ public static class AppServiceFactory
     {
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
-        var limiter = new TargetLimiter(security);
+        var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
         var mysql = new MySqlConnectionProvider(configService, knownHosts, security, limiter);
         var postgres = new PostgresConnectionProvider(configService, knownHosts, security, limiter);
         var redis = new RedisConnectionProvider(configService, knownHosts, security, limiter);
@@ -127,7 +142,7 @@ public static class AppServiceFactory
     {
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
-        var limiter = new TargetLimiter(security);
+        var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
         var mysql = new MySqlConnectionProvider(configService, knownHosts, security, limiter);
         var postgres = new PostgresConnectionProvider(configService, knownHosts, security, limiter);
         var redis = new RedisSessionCache(new RedisConnectionProvider(configService, knownHosts, security, limiter));
@@ -139,7 +154,7 @@ public static class AppServiceFactory
     {
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
-        var limiter = new TargetLimiter(security);
+        var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
         var ssh = new SshService(knownHosts, security, limiter);
         var registry = CreateDriverRegistry(configService);
         var store = new TopologyStore();

@@ -20,7 +20,10 @@ public sealed class McpConnectorItem : INotifyPropertyChanged
     /// <summary>传输方式（stdio / http）；内置恒为 stdio。</summary>
     public string Transport { get; init; } = "stdio";
 
-    /// <summary>是否启用（勾选即写回配置并重建连接）。</summary>
+    /// <summary>配置层是否启用（D8 两级模型：全局停用的连接器，会话不能反向开启）。</summary>
+    public bool GlobalEnabled { get; init; }
+
+    /// <summary>本会话是否生效（勾选状态；改动只写会话子集，不回写全局配置）。</summary>
     public bool IsEnabled
     {
         get => _isEnabled;

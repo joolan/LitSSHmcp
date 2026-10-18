@@ -53,6 +53,29 @@ public class SystemPromptBuilderTests
     }
 
     [Fact]
+    public void Build_injects_session_workspace_notice_only_when_session_dir_assigned()
+    {
+        // 需求 D：会话分配独立目录 → 提示词注入"本会话工作目录 + 共享区 + shared/ 前缀"规则（软约束，代码层另强制）
+        var prompt = SystemPromptBuilder.Build(null, null, null,
+            sessionWorkspaceDir: @"C:\ws\jobs\local\s5", sharedWorkspaceDir: @"C:\ws");
+        Assert.Contains("本会话工作目录", prompt);
+        Assert.Contains(@"C:\ws\jobs\local\s5", prompt);
+        Assert.Contains("共享工作区", prompt);
+        Assert.Contains("shared/", prompt);
+        Assert.Contains("禁止经 shared/ 访问 jobs/", prompt);
+
+        // 脚本段：会话模式下说明脚本库恒在共享区
+        var withScripts = SystemPromptBuilder.Build(null, null, null, scriptTools: true,
+            sessionWorkspaceDir: @"C:\ws\jobs\local\s5", sharedWorkspaceDir: @"C:\ws");
+        Assert.Contains("脚本库在共享区", withScripts);
+
+        // 未分配会话（旧会话/现状行为）不注入会话目录段
+        var legacy = SystemPromptBuilder.Build(null, null, null, scriptTools: true);
+        Assert.DoesNotContain("本会话工作目录", legacy);
+        Assert.DoesNotContain("脚本库在共享区", legacy);
+    }
+
+    [Fact]
     public void Build_adds_capability_boundary_when_groups_provided()
     {
         var prompt = SystemPromptBuilder.Build(null, null, null,

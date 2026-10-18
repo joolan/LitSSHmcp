@@ -410,7 +410,7 @@ src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
 git clone https://github.com/joolan/LitSSHmcp.git
 cd LitSSHmcp
 dotnet build LitSSHmcp.slnx
-dotnet test LitSSHmcp.slnx   # 全部测试(Core + Agent + MCP 服务器 + App + Web，共 1296 用例)
+dotnet test LitSSHmcp.slnx   # 全部测试(Core + Agent + MCP 服务器 + App + Web，共 1297 用例)
 ```
 
 ### 2. 发布

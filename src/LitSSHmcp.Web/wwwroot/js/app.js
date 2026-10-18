@@ -47,6 +47,9 @@ const els = {
   filesList: $("files-list"),
   filesUp: $("files-up"),
   filesClose: $("files-close"),
+  imageViewer: $("image-viewer"),
+  imageViewerImg: $("image-viewer-img"),
+  imageViewerClose: $("image-viewer-close"),
   toast: $("toast"),
 };
 
@@ -486,10 +489,34 @@ els.filesBtn.addEventListener("click", async () => {
   }
 });
 
+// ---- 图片全屏预览（聊天气泡 / 历史缩略图 / Markdown 图片通用）----
+function openImageViewer(src) {
+  if (!src) return;
+  els.imageViewerImg.src = src;
+  els.imageViewer.hidden = false;
+}
+
+function closeImageViewer() {
+  els.imageViewer.hidden = true;
+  els.imageViewerImg.src = "";
+}
+
+els.imageViewerClose.addEventListener("click", closeImageViewer);
+els.imageViewer.addEventListener("click", (ev) => {
+  // 点击遮罩或图片本身都关闭（图片没有缩放 UI 时不至于"点不动"）
+  if (ev.target === els.imageViewer || ev.target === els.imageViewerImg) closeImageViewer();
+});
+els.messages.addEventListener("click", (ev) => {
+  const img = ev.target?.closest?.("img");
+  if (img?.src) openImageViewer(img.src);
+});
+
 // Esc 关闭浮层
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
-  if (!els.modelSheet.hidden) {
+  if (!els.imageViewer.hidden) {
+    closeImageViewer();
+  } else if (!els.modelSheet.hidden) {
     closeModelSheet();
   } else if (document.body.classList.contains("drawer-open")) {
     closeDrawer();

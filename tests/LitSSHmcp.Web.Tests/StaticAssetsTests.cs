@@ -98,6 +98,18 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
     }
 
     [Fact]
+    public async Task Image_viewer_overlay_present()
+    {
+        var html = await _fx.Client.GetStringAsync("/");
+        Assert.Contains("id=\"image-viewer\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"image-viewer-img\"", html, StringComparison.Ordinal);
+
+        var css = await _fx.Client.GetStringAsync("/css/app.css");
+        var normalized = System.Text.RegularExpressions.Regex.Replace(css, @"\s+", " ");
+        Assert.Contains(".image-viewer { position: fixed;", normalized, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Api_still_requires_authenticaton()
     {
         var resp = await _fx.Client.GetAsync("/api/sessions");

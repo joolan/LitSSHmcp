@@ -22,6 +22,9 @@ export class ChatController {
     this.lastToolEl = null;
     this.reconnectTimer = null;
     this.intentionalClose = false;
+    this.hasConnected = false;
+    this.persistedRows = 0;
+    this.recovering = false;
   }
 
   async open(sessionId) {
@@ -30,6 +33,7 @@ export class ChatController {
     this.messagesEl.replaceChildren();
     try {
       const rows = await api(`/api/sessions/${sessionId}/messages`);
+      this.persistedRows = rows.length;
       for (const row of rows) this.appendHistory(row);
     } catch (err) {
       this.onToast(`加载历史失败: ${err.message}`);
@@ -55,6 +59,8 @@ export class ChatController {
       this.ws = null;
     }
     this.sessionId = null;
+    this.hasConnected = false;
+    this.recovering = false;
     this.resetRun();
     this.setBusy(false);
     this.onStatus("");
@@ -80,19 +86,80 @@ export class ChatController {
 
     ws.onopen = () => {
       if (ws !== this.ws) return;
+      const reconnected = this.hasConnected;
+      this.hasConnected = true;
       if (!this.busy) this.onStatus("就绪");
+      // 重连后重放已落库历史：断线窗口内丢失的帧无法重发，至少恢复已完成内容
+      if (reconnected && !this.busy) this.reloadHistory();
     };
 
     ws.onclose = () => {
       if (ws !== this.ws || this.intentionalClose) return;
       this.ws = null;
-      this.onStatus("连接断开，重连中…");
-      this.setBusy(false);
+      if (this.busy) {
+        // 回合仍在服务端执行：结果会在完成时落库 → 轮询历史直到恢复（最长 2 分钟）
+        this.onStatus("连接断开，等待任务结果…");
+        this.pollDroppedTurnResult();
+      } else {
+        this.onStatus("连接断开，重连中…");
+        this.setBusy(false);
+      }
       this.reconnectTimer = setTimeout(() => {
         this.reconnectTimer = null;
         if (this.sessionId !== null && this.sessionId === id) this.connect();
       }, 1500);
     };
+  }
+
+  /** 断线重放：按库内历史重建（仅已完成内容；流式中间帧不可恢复）。 */
+  async reloadHistory() {
+    if (this.sessionId === null) return;
+    try {
+      const rows = await api(`/api/sessions/${this.sessionId}/messages`);
+      if (this.sessionId === null) return;
+      this.persistedRows = rows.length;
+      this.messagesEl.replaceChildren();
+      this.resetRun();
+      for (const row of rows) this.appendHistory(row);
+      this.scrollDown();
+    } catch {
+      /* 忽略：WS 推送/下次重连仍可恢复 */
+    }
+  }
+
+  /** 断线时回合未结束：轮询库内消息，直到本轮结果落库（Web 在回合结束才写 assistant 消息）。 */
+  async pollDroppedTurnResult() {
+    if (this.recovering) return;
+    this.recovering = true;
+    const deadline = Date.now() + 120000;
+    try {
+      while (Date.now() < deadline && this.sessionId !== null) {
+        await new Promise((r) => setTimeout(r, 3000));
+        if (this.sessionId === null) return;
+        try {
+          const rows = await api(`/api/sessions/${this.sessionId}/messages`);
+          if (rows.length > this.persistedRows && rows[rows.length - 1]?.role === "assistant") {
+            this.persistedRows = rows.length;
+            this.messagesEl.replaceChildren();
+            this.resetRun();
+            for (const row of rows) this.appendHistory(row);
+            this.scrollDown();
+            this.setBusy(false);
+            this.onStatus("已恢复任务结果");
+            return;
+          }
+        } catch {
+          /* 下一轮再试 */
+        }
+      }
+      if (this.sessionId !== null) {
+        this.setBusy(false);
+        this.onStatus("就绪");
+        this.onToast("断线期间的任务结果未能自动恢复，可重新打开会话查看");
+      }
+    } finally {
+      this.recovering = false;
+    }
   }
 
   dispatch(frame) {

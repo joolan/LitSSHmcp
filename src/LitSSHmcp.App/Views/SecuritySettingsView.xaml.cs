@@ -34,6 +34,8 @@ public partial class SecuritySettingsView : UserControl
             _viewModel.AuthzRules.Remove(row);
     }
 
+    private void OnResetWebJobsRoot(object sender, RoutedEventArgs e) => _viewModel.WebJobsRoot = string.Empty;
+
     private async Task RefreshAppLockStatusAsync()
     {
         try

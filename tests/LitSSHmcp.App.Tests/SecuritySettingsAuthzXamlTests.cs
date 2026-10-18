@@ -45,6 +45,16 @@ public class SecuritySettingsAuthzXamlTests
         Assert.Contains("OnAuthzRemoveRule", source);
     }
 
+    [Fact]
+    public void Web_jobs_root_has_visual_editor()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LitSSHmcp.App", "Views", "SecuritySettingsView.xaml"));
+
+        Assert.Contains("Web 会话工作区根", source);
+        Assert.Contains("Binding WebJobsRoot", source);
+        Assert.Contains("OnResetWebJobsRoot", source);
+    }
+
     private static string FindRepoRoot()
     {
         var dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;

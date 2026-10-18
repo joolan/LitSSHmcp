@@ -58,6 +58,19 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
     }
 
     [Fact]
+    public async Task Approval_panel_is_fixed_overlay_with_badge()
+    {
+        // 审批操作区固定悬浮（不随聊天滚动）+ 顶栏待审批徽标：长会话历史下也一定可见
+        var html = await _fx.Client.GetStringAsync("/");
+        Assert.Contains("id=\"approval-overlay\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"approval-badge\"", html, StringComparison.Ordinal);
+
+        var css = await _fx.Client.GetStringAsync("/css/app.css");
+        var normalized = System.Text.RegularExpressions.Regex.Replace(css, @"\s+", " ");
+        Assert.Contains(".appr-overlay { position: fixed;", normalized, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Api_still_requires_authenticaton()
     {
         var resp = await _fx.Client.GetAsync("/api/sessions");

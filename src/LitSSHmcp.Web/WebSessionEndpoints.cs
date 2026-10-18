@@ -127,6 +127,7 @@ public static class WebSessionEndpoints
         accessLog.Write("ws_connect", principal.Username, ctx.Connection.RemoteIpAddress?.ToString(), $"session={id}");
 
         var sendGate = new SemaphoreSlim(1, 1);
+        Task? turnTask = null;
         try
         {
             while (socket.State == WebSocketState.Open && !ctx.RequestAborted.IsCancellationRequested)
@@ -189,49 +190,67 @@ public static class WebSessionEndpoints
                         continue;
                     }
 
-                    // 有序发送泵：事件经无界 Channel 保持到达顺序地推给对端（Progress 线程池派发会乱序）
-                    var frames = Channel.CreateUnbounded<object>();
-                    var pump = Task.Run(async () =>
+                    // 回合在后台执行：接收循环继续读帧——stop 能在回合进行中即时生效
+                    // （旧实现 await 回合导致 stop 帧要等回合结束才被处理）。
+                    if (turnTask is { IsCompleted: false })
                     {
-                        await foreach (var frame in frames.Reader.ReadAllAsync())
-                            await SendJsonAsync(socket, sendGate, frame, CancellationToken.None);
-                    }, CancellationToken.None);
-                    var progress = new FrameProgress(frames.Writer);
-                    try
-                    {
-                        await manager.RunTurnAsync(principal, id, text!, progress, ctx.RequestAborted);
-                        await frames.Writer.WriteAsync(new { type = "done" }, CancellationToken.None);
+                        await SendJsonAsync(socket, sendGate, new { type = "busy", message = "上一轮仍在进行中" }, ctx.RequestAborted);
+                        continue;
                     }
-                    catch (WebSessionBusyException)
-                    {
-                        await frames.Writer.WriteAsync(new { type = "busy", message = "上一轮仍在进行中" }, CancellationToken.None);
-                    }
-                    catch (WebSessionNotFoundException)
-                    {
-                        frames.Writer.TryComplete();
-                        await pump;
-                        await SendCloseAsync(socket, 4404, "会话不存在");
-                        break;
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        await frames.Writer.WriteAsync(new { type = "done", stopped = true }, CancellationToken.None);
-                    }
-                    catch (Exception ex)
-                    {
-                        await frames.Writer.WriteAsync(new { type = "error", message = ex.Message }, CancellationToken.None);
-                    }
-                    finally
-                    {
-                        frames.Writer.TryComplete();
-                        await pump;
-                    }
+                    turnTask = RunTurnAndStreamAsync(manager, principal, id, text!, socket, sendGate, ctx.RequestAborted);
+                    continue;
                 }
             }
         }
         finally
         {
+            if (turnTask is not null)
+            {
+                try { await turnTask; } catch { /* 回合收尾异常不影响连接清理 */ }
+            }
             accessLog.Write("ws_disconnect", principal.Username, ctx.Connection.RemoteIpAddress?.ToString(), $"session={id}");
+        }
+    }
+
+    /// <summary>
+    /// 后台执行一轮并流式推帧（与接收循环并行，stop 可即时取消）：事件经无界 Channel 保持顺序，
+    /// 由泵串行发送；回合结束（done/error）后泵随之结束。
+    /// </summary>
+    private static async Task RunTurnAndStreamAsync(WebSessionManager manager, WebPrincipal principal, long id,
+        string text, WebSocket socket, SemaphoreSlim sendGate, CancellationToken ct)
+    {
+        var frames = Channel.CreateUnbounded<object>();
+        var pump = Task.Run(async () =>
+        {
+            await foreach (var frame in frames.Reader.ReadAllAsync())
+                await SendJsonAsync(socket, sendGate, frame, CancellationToken.None);
+        }, CancellationToken.None);
+        var progress = new FrameProgress(frames.Writer);
+        try
+        {
+            await manager.RunTurnAsync(principal, id, text, progress, ct);
+            await frames.Writer.WriteAsync(new { type = "done" }, CancellationToken.None);
+        }
+        catch (WebSessionBusyException)
+        {
+            await frames.Writer.WriteAsync(new { type = "busy", message = "上一轮仍在进行中" }, CancellationToken.None);
+        }
+        catch (WebSessionNotFoundException)
+        {
+            await frames.Writer.WriteAsync(new { type = "error", message = "会话不存在" }, CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            await frames.Writer.WriteAsync(new { type = "done", stopped = true }, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            await frames.Writer.WriteAsync(new { type = "error", message = ex.Message }, CancellationToken.None);
+        }
+        finally
+        {
+            frames.Writer.TryComplete();
+            await pump;
         }
     }
 

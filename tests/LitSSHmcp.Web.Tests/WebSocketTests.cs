@@ -159,6 +159,43 @@ public class WebSocketTests : IClassFixture<WsFixture>
     }
 
     [Fact]
+    public async Task Ws_stop_during_turn_is_processed_immediately()
+    {
+        var (token, _) = await _fx.LoginAsync("ws-stopturn");
+        var sessionId = await _fx.CreateSessionAsync(token, "停止");
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _fx.Fake.OnSend = async (_, _, ct) =>
+        {
+            entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, ct);
+        };
+        try
+        {
+            var socket = await ConnectAsync(token, sessionId);
+            await SendFrameAsync(socket, new { type = "user", text = "长跑" });
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            // 回合进行中发 stop：接收循环必须未被阻塞，stop 立即生效 → done(stopped)
+            await SendFrameAsync(socket, new { type = "stop" });
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            JsonElement frame;
+            do
+            {
+                frame = await ReceiveFrameAsync(socket, cts.Token);
+            }
+            while (frame.GetProperty("type").GetString() != "done");
+
+            Assert.True(frame.GetProperty("stopped").GetBoolean());
+            await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
+        }
+        finally
+        {
+            _fx.Fake.OnSend = null;
+        }
+    }
+
+    [Fact]
     public async Task Ws_unknown_frame_type_gets_error()
     {
         var (token, _) = await _fx.LoginAsync("ws-badframe");

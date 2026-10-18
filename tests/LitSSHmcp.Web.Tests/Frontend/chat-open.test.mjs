@@ -7,7 +7,16 @@ import assert from "node:assert/strict";
 // ---- 浏览器全局打桩（chat.js 经 api.js 触达 document.cookie/fetch/location/WebSocket）----
 globalThis.document = { cookie: "" };
 globalThis.location = { protocol: "http:", host: "localhost:5000" };
-globalThis.fetch = async () => ({ ok: false, status: 401, text: async () => "" });
+let messageRows = [
+  { role: "user", content: "旧问" },
+  { role: "assistant", content: "旧答" },
+];
+globalThis.fetch = async (path) => {
+  if (String(path).includes("/messages")) {
+    return { ok: true, status: 200, text: async () => JSON.stringify(messageRows) };
+  }
+  return { ok: false, status: 401, text: async () => "" };
+};
 globalThis.WebSocket = class {
   constructor() {
     this.readyState = 0;
@@ -49,6 +58,12 @@ await chat.open(1);
 assert.equal(input.disabled, false, "open() 后输入框必须可用");
 assert.equal(sendBtn.disabled, false, "open() 后发送按钮必须可用");
 assert.equal(stopBtn.disabled, true, "未运行时停止按钮保持禁用");
+assert.equal(chat.persistedRows, 2, "open() 记录已落库消息数（断线恢复基线）");
+
+// 断线重放：重载历史按库内消息重建（丢失的流式帧无法重发，至少恢复已完成内容）
+messageRows = [...messageRows, { role: "assistant", content: "新答" }];
+await chat.reloadHistory();
+assert.equal(chat.persistedRows, 3, "reloadHistory() 更新落库基线");
 
 // 运行中禁用、结束后恢复
 chat.setBusy(true);

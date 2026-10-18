@@ -53,6 +53,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     private string _connectionPoolConnectTimeout = "20";
     private string _connectionPoolMaxPerServer = "1";
     private bool _authzEnabled = true;
+    private string _webJobsRoot = string.Empty;
     private string _statusMessage = string.Empty;
 
     public SecuritySettingsViewModel()
@@ -111,6 +112,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
 
     /// <summary>Web 授权矩阵规则行（界面上的可编辑集合）。</summary>
     public ObservableCollection<AuthzRuleRow> AuthzRules { get; } = new();
+
+    /// <summary>Web 会话工作区根（config.web.jobsRoot；空=默认 %APPDATA%\LitSSH\jobs，重启 Web 生效）。</summary>
+    public string WebJobsRoot { get => _webJobsRoot; set => Set(ref _webJobsRoot, value); }
 
     public string StatusMessage
     {
@@ -178,6 +182,8 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             AuthzRules.Clear();
             foreach (var row in ToRows(authz))
                 AuthzRules.Add(row);
+
+            WebJobsRoot = config.Web?.JobsRoot ?? string.Empty;
 
             StatusMessage = "已加载当前安全配置";
         }
@@ -268,6 +274,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             s.Authorization ??= new AuthorizationConfig();
             s.Authorization.Enabled = AuthzEnabled;
             s.Authorization.Users = ToRules(AuthzRules);
+
+            config.Web ??= new WebHostConfig();
+            config.Web.JobsRoot = WebJobsRoot?.Trim() ?? string.Empty;
 
             await _configService.SaveConfigAsync(config);
             StatusMessage = "已保存 (过滤器/限流规则无需重启即刻生效)";

@@ -57,6 +57,15 @@
                 </ItemsControl>
                 <Button Content="＋ 添加授权行" Padding="10,3" Margin="0,0,0,8" Click="OnAuthzAddRule"/>
 
+                <TextBlock Text="Web 会话工作区根 (web.jobsRoot)" FontWeight="Bold" Margin="0,4,0,4"
+                           ToolTip="Web 助手会话目录的固定根：其下为 &lt;用户Id&gt;\s&lt;会话Id&gt;。留空=默认 %APPDATA%\LitSSH\jobs；仅接受绝对路径（非法值回退默认）；改动需重启 Web 生效。"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <TextBox Text="{Binding WebJobsRoot, UpdateSourceTrigger=PropertyChanged}" Width="420"
+                             ToolTip="例如 D:\LitSSH-jobs；留空使用默认目录"/>
+                    <Button Content="恢复默认" Margin="6,0,0,0" Padding="10,3" Click="OnResetWebJobsRoot"
+                            ToolTip="清空为默认 %APPDATA%\LitSSH\jobs（保存后重启 Web 生效）"/>
+                </StackPanel>
+
                 <Separator Margin="0,4,0,8"/>
 
                 <TextBlock Text="命令过滤 (每行一条)" FontWeight="Bold" Margin="0,4,0,4"/>

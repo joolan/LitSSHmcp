@@ -23,6 +23,10 @@ const els = {
   filesBtn: $("files-btn"),
   stopBtn: $("stop-btn"),
   approvalStrip: $("approval-strip"),
+  approvalOverlay: $("approval-overlay"),
+  approvalBadge: $("approval-badge"),
+  approvalCount: $("approval-count"),
+  approvalCollapse: $("approval-collapse"),
   messages: $("messages"),
   composer: $("composer"),
   input: $("input"),
@@ -51,7 +55,16 @@ const chat = new ChatController({
   },
 });
 
-const approvals = new ApprovalsPanel({ stripEl: els.approvalStrip, onToast });
+const approvals = new ApprovalsPanel({
+  stripEl: els.approvalStrip,
+  overlayEl: els.approvalOverlay,
+  badgeEl: els.approvalBadge,
+  countEl: els.approvalCount,
+  onToast,
+});
+
+els.approvalCollapse.addEventListener("click", () => approvals.setCollapsed(true));
+els.approvalBadge.addEventListener("click", () => approvals.setCollapsed(false));
 
 const files = new FilesPanel({
   paneEl: els.filesPane,

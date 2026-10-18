@@ -188,15 +188,39 @@ button.active { border-color: var(--accent); color: var(--accent); }
   overflow-wrap: anywhere;
 }
 
-/* ---- 审批卡片 ---- */
-.strip {
+/* ---- 审批卡片（固定悬浮面板：不随聊天滚动，长历史下仍可见） ---- */
+.appr-overlay {
+  position: fixed;
+  top: 54px;
+  right: 16px;
+  width: min(440px, calc(100vw - 32px));
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  background: #221d10;
+  border: 1px solid var(--warn);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  z-index: 45;
+}
+.appr-overlay-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--line);
-  padding: 10px 14px;
+  font-weight: 600;
+  color: var(--warn);
+}
+.strip {
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #221d10;
+  overflow-y: auto;
 }
+.badge { background: #3a2d12; border-color: var(--warn); color: var(--warn); }
+.badge b { color: #fff; }
 .appr { border: 1px solid var(--warn); border-radius: 8px; padding: 8px 12px; background: var(--bg2); }
 .appr-head { display: flex; gap: 10px; align-items: baseline; }
 .appr-expiry { color: var(--fg-dim); font-size: 12px; }

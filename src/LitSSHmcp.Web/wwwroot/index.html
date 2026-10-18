@@ -26,6 +26,7 @@
     <span class="brand">LitSSHmcp</span>
     <span id="turn-status" class="status"></span>
     <span class="spacer"></span>
+    <button id="approval-badge" class="badge" hidden title="有待审批操作，点击展开">待审批 <b id="approval-count">0</b></button>
     <span id="whoami" class="whoami"></span>
     <button id="logout-btn" class="ghost">退出</button>
   </header>
@@ -44,7 +45,6 @@
         <button id="stop-btn" disabled class="danger">停止</button>
       </div>
 
-      <div id="approval-strip" class="strip" hidden></div>
       <div id="messages"></div>
 
       <form id="composer" autocomplete="off">
@@ -63,6 +63,16 @@
       <div id="files-list"></div>
     </section>
   </div>
+</div>
+
+<!-- 审批操作区：固定悬浮（不随聊天滚动），长会话历史下也一定可见；可收起（顶栏徽标可再展开） -->
+<div id="approval-overlay" class="appr-overlay" hidden>
+  <div class="appr-overlay-head">
+    <span class="appr-overlay-title">待审批操作</span>
+    <span class="spacer"></span>
+    <button id="approval-collapse" class="ghost">收起</button>
+  </div>
+  <div id="approval-strip" class="strip"></div>
 </div>
 
 <div id="toast" role="status" hidden></div>

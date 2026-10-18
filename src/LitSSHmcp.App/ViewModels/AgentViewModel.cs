@@ -720,6 +720,11 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private long _sessionId;
     private bool _sessionTitled;
 
+    // ---- 跨进程对账（Web 进程也会写 agent.db）：5s 轻量比较会话列表/选中会话更新时间 ----
+    private CancellationTokenSource? _autoRefreshCts;
+    private string _lastSessionSnapshot = string.Empty;
+    private readonly Dictionary<long, string> _loadedSessionUpdatedAt = new();
+
     private AgentProviderConfig? _selectedProvider;
     public AgentProviderConfig? SelectedProvider
     {
@@ -1212,6 +1217,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             if (Providers.Count == 0)
                 StatusMessage = "未配置大模型：请点「AI 助手设置」添加并启用一个 OpenAI 兼容模型。";
+            StartAutoRefresh();
         }
         catch (Exception ex)
         {
@@ -1244,9 +1250,67 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    /// <summary>启动跨进程对账循环（每 5s：Web 等独立进程写 agent.db 后，桌面自动刷新列表/当前会话）。</summary>
+    private void StartAutoRefresh()
+    {
+        if (_autoRefreshCts is not null)
+            return;
+        _autoRefreshCts = new CancellationTokenSource();
+        _ = AutoRefreshLoopAsync(_autoRefreshCts.Token);
+    }
+
+    private async Task AutoRefreshLoopAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+                _uiInvoke(() => _ = AutoRefreshTickAsync());
+        }
+        catch (OperationCanceledException)
+        {
+            // 窗口关闭
+        }
+    }
+
+    /// <summary>
+    /// 轻量对账：会话列表快照变化 → 重载列表；当前会话空闲且其 UpdatedAt 变化 → 重载该会话消息。
+    /// 本地有会话执行中/正在编辑时不打扰。跨进程只能看到已落库的整轮结果（无法实时流式）。
+    /// </summary>
+    private async Task AutoRefreshTickAsync()
+    {
+        if (_autoRefreshCts is null || IsBusy || IsLoading)
+            return;
+        try
+        {
+            var rows = await _store.ListSessionsAsync();
+            var snapshot = SessionAutoRefresh.Snapshot(rows);
+            if (!string.Equals(snapshot, _lastSessionSnapshot, StringComparison.Ordinal))
+            {
+                _lastSessionSnapshot = snapshot;
+                await ReloadSessionsAsync();
+            }
+
+            if (_sessionId <= 0 || _editingTurn is not null)
+                return;
+            var latest = Sessions.FirstOrDefault(s => s.Id == _sessionId);
+            if (latest is null)
+                return;
+            _loadedSessionUpdatedAt.TryGetValue(_sessionId, out var loaded);
+            if (!SessionAutoRefresh.ShouldReloadSelected(loaded, latest.UpdatedAt))
+                return;
+            await LoadSessionAsync(_sessionId);
+        }
+        catch
+        {
+            // 对账失败忽略（下一轮重试）
+        }
+    }
+
     public async Task ReloadSessionsAsync()
     {
         var list = await _store.ListSessionsAsync();
+        _lastSessionSnapshot = SessionAutoRefresh.Snapshot(list);
         // 后台会话轮结束也会触发本刷新：先保住当前选中，避免正在显示的会话被列表重建清掉选中
         var keepId = _selectedSession?.Id;
         Sessions.Clear();
@@ -1347,6 +1411,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         finally
         {
             IsLoading = false;
+            if (Sessions.FirstOrDefault(s => s.Id == id) is { } loadedRow)
+                _loadedSessionUpdatedAt[id] = loadedRow.UpdatedAt;
             // 切换会话 = 换闸门：忙碌/状态文案随当前上下文重算（含“切到后台运行中会话”的早退路径）
             RaiseBusyChanged();
             OnPropertyChanged(nameof(SessionStateText));
@@ -3222,6 +3288,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        try { _autoRefreshCts?.Cancel(); } catch { /* 忽略 */ }
+        _autoRefreshCts?.Dispose();
+        _autoRefreshCts = null;
         // 窗口关闭：停掉池内所有会话的运行并释放各自 runtime（含 MCP 子进程）
         foreach (var ctx in _contexts.Values)
         {

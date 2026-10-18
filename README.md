@@ -320,6 +320,7 @@ App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容
 - **可选长期记忆 / RAG**：配置 OpenAI 兼容 **Embeddings** 端点即可把历史会话与工作区文档向量化、按相似度**召回**注入上下文。
 - **稳定性与成本**：每模型可配**超时 / 重试 / 并发**并对失败给出**分类提示**；系统提示内置**提示注入防护**；**技能按需加载**、**工具描述精简**、**快照默认返回概览**、**大结果落盘句柄**（`spill_read`/`spill_grep`）与**子代理隔离**（`run_subagent` 只回摘要）；同一轮**只读工具并行执行**、**连续失败熔断**、日志类结果保留最新尾部；系统提示 / 工具定义为**稳定前缀**并显示**缓存命中率**；工具轨迹与滚动摘要**落库、重启可恢复**；**冷启动只向模型注入最近 N 轮**（`agent.coldStartRecentTurns`，更早由滚动摘要代表，降低首次请求开销）；**回答风格**可选 `concise`(默认) / `standard` / `detailed`；`+ 菜单 → 用量 / 成本…` 展示当前会话的请求次数、输入/输出/缓存命中 token 与**估算成本**（模型价格在「大模型设置」按每百万 token 填写）。
 - **安全**：模型 API Key 本机 **DPAPI 加密**存储；破坏性工具调用会提示"可能等待人工审批"。
+- **桌面登录（可选，仅归因）**：AI 助手窗口侧栏显示「归因：未登录（local）」/「归因：<用户名>」并可**登录 / 注销**——账号与 Web 助手共用 `web.db`（失败计数与锁定曲线同样共享，防绕过限速），登录态经 **DPAPI 加密落盘、跨重启保持**；登录后**新会话** owner 与审计 UserId 记为该用户（会话目录归到其用户名下），未登录继续归因 `local`；桌面**不做权限限制**（评估报告 D1「仅归因不限权」）。
 - **计划模式与工具级策略**：输入区（上下文环左侧）**模式下拉（执行模式 / 计划模式）**——计划模式**不改系统提示/工具集**（缓存友好），每轮附提示并在调用前拦截写工具：模型只做只读调研、列计划不擅自执行；切回执行模式后由你自行发指令（会话级持久化）。`+ 菜单 → 工具审批策略…` 可按工具设置 **默认/允许/拒绝**（拒绝=调用前拦截；允许不绕过服务端桌面审批）。
 
 > 首次使用请在助手的「AI 助手设置」中添加并启用模型（发布包已内置 MCP 服务器 exe：`mcp/LitSSHmcp.McpServer.exe`）。
@@ -349,6 +350,7 @@ dotnet publish src/LitSSHmcp.Web -c Release -r win-x64 --self-contained -o publi
 
 - HTTP 默认**只绑定本机回环**；跨机访问请显式设置 `ASPNETCORE_URLS`（如 `http://0.0.0.0:5000`），并注意 [HTTP 明文风险](#web-助手安全)。
 - 配置了 `web.https`（PFX 证书）时自动追加 HTTPS 监听（默认端口 7443，**绑定所有网卡**，见 [Web 助手安全](#web-助手安全)）。
+- **Web 会话工作区根**默认 `%APPDATA%\LitSSH\jobs`；可在 `config.json` 用 `web.jobsRoot`（**绝对路径**）调整，**重启 Web 后生效**。会话目录为 `<根>\<用户Id>\s<会话Id>`，文件浏览 / 下载仍强制约束在该根之下；会话删除即清理目录，**孤儿目录**（删除失败 / 会话被保留策略剪除后残留）按 `agent.orphanSessionDirRetentionDays`（默认 30，0=关闭）在启动时清扫。
 
 ### 账号管理
 
@@ -363,7 +365,7 @@ src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --create-user <用户名> -
 src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
 ```
 
-> 账号带 `admin` / `user` 角色字段（首个账号自动 admin）；当前接口权限按**登录态 + 会话 owner 归属**判定，角色细分权限待后续版本。连续登录失败 5 次起按指数退避锁定（5 分钟起、封顶 1 小时）。
+> 账号带 `admin` / `user` 角色字段（首个账号自动 admin）；当前接口权限按**登录态 + 会话 owner 归属**判定，角色细分权限待后续版本。连续登录失败 5 次起按指数退避锁定（5 分钟起、封顶 1 小时）。同一账号库也被桌面「AI 助手 → 侧栏登录」用于**归因**（不影响权限）。
 
 ## 架构与技术栈
 
@@ -408,7 +410,7 @@ src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
 git clone https://github.com/joolan/LitSSHmcp.git
 cd LitSSHmcp
 dotnet build LitSSHmcp.slnx
-dotnet test LitSSHmcp.slnx   # 全部测试(Core + Agent + MCP 服务器 + App + Web，共 1257 用例)
+dotnet test LitSSHmcp.slnx   # 全部测试(Core + Agent + MCP 服务器 + App + Web，共 1277 用例)
 ```
 
 ### 2. 发布

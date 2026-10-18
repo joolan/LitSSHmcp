@@ -311,10 +311,12 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 | 限流 | 按目标限制并发/每分钟调用（`security.limits`） | `TargetLimiter` |
 | 拓扑发现 | 扫描路径受白名单约束（`security.discovery.allowedSearchPaths`） | `TopologyTools` + `PathPolicy` |
 | 审计 | 命令、SQL（含被拒绝/被驳回）全部落 SQLite（WAL + 索引）；原文开关/字面量脱敏/超期清理见 `security.audit` | `AuditLogService` + `SqlRedactor` |
+| 工作区清理 | 会话删除即清理会话目录；**孤儿会话目录**（删除失败/会话被保留策略剪除后残留）按 `agent.orphanSessionDirRetentionDays`（默认 30，0=关闭）在启动/裁剪后清扫——仅删 `jobs/<用户>/s<id>`、跳过重解析点、保护未超期目录（§8.2） | `WorkspaceLayout.SweepOrphanSessionDirs` |
 | 配置热更新 | **安全类配置**（`security.enabled`、commandFilter/sqlFilter/fileTransfer/scriptRules、审批设置、授权矩阵等 `security.*`）按文件 mtime **即时生效**（无需重启，对运行中会话同样生效）；**其余配置**（服务器/数据源/模型/技能等）**会话启动时快照**——改动对运行中会话不生效、**下个会话生效**；Web 不提供配置写路径（D2），一切修改仅限桌面 | `SecurityOptionsProvider` + 会话装配快照 |
 | 日志 | MCP 日志走 stderr（不污染 stdout 协议流）+ 本机文件 | `Program.cs` + `FileLoggerProvider` |
 | 工具风险提示 | 54 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
-| Web 助手 | 独立账号库 `web.db`（PBKDF2-SHA256 210k、连续失败指数锁定）；令牌 Cookie `HttpOnly+SameSite=Strict` + CSRF 双提交（`/api/login` 例外）；登录/API 按 IP 固定窗口限速（30/600 每分钟）；全站安全响应头 + HTML CSP；会话 owner 逐操作校验（越权统一 404）、每用户并发会话上限与 LLM 成本预算；**授权矩阵强制**（`security.authorization`：登录用户 → 目标白名单 + read/exec，未命中默认拒绝；仅 Web 宿主注入 `LITSSH_AUTHZ_MODE=enforce` 生效，桌面会话仅归因不限权；可视化编辑在桌面「设置 → 安全设置 → Web 授权矩阵」）；账号管理 CLI `--create-user/--list-users`（密码仅走 `LITSSH_NEW_PASSWORD` 环境变量） | `WebAuthMiddleware`/`WebCsrfMiddleware`/`WebRateLimitMiddleware`/`WebSecurityHeadersMiddleware`/`WebBudgetGuard`/`WebSessionManager`/`WebBootstrap` + `McpAuthorizationFilter` |
+| Web 助手 | 独立账号库 `web.db`（PBKDF2-SHA256 210k、连续失败指数锁定）；令牌 Cookie `HttpOnly+SameSite=Strict` + CSRF 双提交（`/api/login` 例外）；登录/API 按 IP 固定窗口限速（30/600 每分钟）；全站安全响应头 + HTML CSP；会话 owner 逐操作校验（越权统一 404）、每用户并发会话上限与 LLM 成本预算；**授权矩阵强制**（`security.authorization`：登录用户 → 目标白名单 + read/exec，未命中默认拒绝；仅 Web 宿主注入 `LITSSH_AUTHZ_MODE=enforce` 生效，桌面会话仅归因不限权；可视化编辑在桌面「设置 → 安全设置 → Web 授权矩阵」）；账号管理 CLI `--create-user/--list-users`（密码仅走 `LITSSH_NEW_PASSWORD` 环境变量）；会话目录固定根 `web.jobsRoot`（空=默认 `%APPDATA%\LitSSH\jobs`，绝对路径，重启生效；旧版 `jobs/jobs` 布局启动自动迁移） | `WebAuthMiddleware`/`WebCsrfMiddleware`/`WebRateLimitMiddleware`/`WebSecurityHeadersMiddleware`/`WebBudgetGuard`/`WebSessionManager`/`WebBootstrap` + `McpAuthorizationFilter` |
+| 桌面归因 | **桌面可选登录**（评估报告 D1 收尾）：复用 `web.db` 校验（失败计数/锁定与 Web 共享），登录态 DPAPI 落盘跨重启保持；登录后新会话 owner 与审计 `UserId` = 登录用户名，未登录 = `local`——**仅归因不限权**（桌面不注入 `LITSSH_AUTHZ_MODE`） | `DesktopLoginService` + `AuditContext.CurrentUserId` |
 
 ## 9. 扩展点
 
@@ -340,7 +342,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 
 ```bash
 dotnet build LitSSHmcp.slnx                      # 全量构建（应 0 警告 0 错误）
-dotnet test LitSSHmcp.slnx                      # 全部测试(Core + Agent + McpServer + App + Web，1257 用例)
+dotnet test LitSSHmcp.slnx                      # 全部测试(Core + Agent + McpServer + App + Web，1277 用例)
 dotnet publish src/LitSSHmcp.McpServer -c Release -r win-x64 --self-contained -o publish
 dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publish
 ```

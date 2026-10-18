@@ -15,16 +15,19 @@ public partial class AgentWindow : FluentWindow
 {
     private readonly AgentViewModel _viewModel;
     private readonly IConfigService _configService;
+    private readonly DesktopLoginService _desktopLogin;
 
     public AgentWindow(IConfigService configService, IContextStore store, string skillsDir,
         Func<string, LocalTerminalSessionViewModel?>? localTerminalResolver = null)
     {
         InitializeComponent();
         _configService = configService;
+        _desktopLogin = AppServiceFactory.DesktopLogin;
 
         _viewModel = new AgentViewModel(configService, store, skillsDir,
             action => Dispatcher.Invoke(action),
-            action => Dispatcher.BeginInvoke(action))
+            action => Dispatcher.BeginInvoke(action),
+            _desktopLogin)
         {
             LocalTerminalResolver = localTerminalResolver
         };
@@ -34,7 +37,14 @@ public partial class AgentWindow : FluentWindow
         DataContext = _viewModel;
         WindowLayout.Attach(this, "agent");
         _viewModel.Turns.CollectionChanged += (_, _) => ChatScroll.ScrollToEnd();
-        Loaded += async (_, _) => await _viewModel.InitializeAsync();
+        Loaded += async (_, _) =>
+        {
+            // D1 收尾：先恢复桌面登录态（跨重启保持），再加载会话（新会话按登录用户归因）
+            await _desktopLogin.LoadAsync();
+            _desktopLogin.ApplyAttribution();
+            _viewModel.NotifyDesktopLoginChanged();
+            await _viewModel.InitializeAsync();
+        };
         Closed += async (_, _) => await _viewModel.DisposeAsync();
     }
 
@@ -58,6 +68,30 @@ public partial class AgentWindow : FluentWindow
     }
 
     private void OnOpenSettings(object sender, RoutedEventArgs e) => OpenSettings(null);
+
+    /// <summary>桌面登录 / 注销（评估报告 D1 收尾，仅归因：新会话 owner 与审计 UserId）。</summary>
+    private void OnDesktopLogin(object sender, RoutedEventArgs e)
+    {
+        if (_desktopLogin.Current is { } state)
+        {
+            var result = System.Windows.MessageBox.Show(this,
+                $"确定注销归因用户「{state.Username}」？注销后新会话归因为 local。",
+                "桌面登录", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Question);
+            if (result != System.Windows.MessageBoxResult.OK)
+                return;
+            _desktopLogin.Logout();
+            _desktopLogin.ApplyAttribution();
+            _viewModel.NotifyDesktopLoginChanged();
+            return;
+        }
+
+        var dialog = new DesktopLoginWindow(_desktopLogin) { Owner = this };
+        if (dialog.ShowDialog() == true)
+        {
+            _desktopLogin.ApplyAttribution();
+            _viewModel.NotifyDesktopLoginChanged();
+        }
+    }
 
     private AgentSettingsWindow? _settingsWindow;
 

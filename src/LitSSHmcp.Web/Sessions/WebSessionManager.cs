@@ -51,8 +51,33 @@ public sealed class WebSessionManager : IAsyncDisposable
         _configService = configService;
     }
 
-    /// <summary>Web 会话目录固定根：&lt;data&gt;/jobs（评估报告 §8 遗留 #3；不跟随桌面 Documents 配置）。</summary>
-    public static string WebJobsRoot => Path.Combine(ConfigPaths.AppDataDir, WorkspaceLayout.JobsDirName);
+    /// <summary>Web 会话目录固定根默认值：&lt;data&gt;/jobs（评估报告 §8.3）。</summary>
+    public static string DefaultWebJobsRoot => Path.Combine(ConfigPaths.AppDataDir, WorkspaceLayout.JobsDirName);
+
+    private static string _webJobsRoot = DefaultWebJobsRoot;
+
+    /// <summary>
+    /// Web 会话目录固定根（评估报告 §8.3 管理员可配）：默认 <c>%APPDATA%\LitSSH\jobs</c>，
+    /// 会话目录为其下 <c>&lt;用户Id&gt;/s&lt;会话Id&gt;</c>。由 <see cref="ConfigureJobsRoot"/> 在宿主启动时应用
+    /// （改动需重启 Web），文件浏览/删除的"必须位于固定根之下"校验随之跟随新根。
+    /// </summary>
+    public static string WebJobsRoot => _webJobsRoot;
+
+    /// <summary>
+    /// 解析配置值 → 固定根（纯函数）：空白/相对路径/规范化失败一律回退默认根（管理员配置错误不阻断启动）。
+    /// </summary>
+    public static string ResolveJobsRoot(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+            return DefaultWebJobsRoot;
+        var trimmed = configured.Trim();
+        if (!Path.IsPathRooted(trimmed))
+            return DefaultWebJobsRoot;
+        return PathGuard.TryCanonicalize(trimmed) ?? DefaultWebJobsRoot;
+    }
+
+    /// <summary>宿主启动时应用配置（§8.3）；null/空恢复默认根。</summary>
+    public static void ConfigureJobsRoot(string? configured) => _webJobsRoot = ResolveJobsRoot(configured);
 
     private sealed class SessionSlot
     {
@@ -80,7 +105,7 @@ public sealed class WebSessionManager : IAsyncDisposable
             throw new WebSessionLimitException($"并发会话数已达上限（{cap}），请先删除不再使用的会话");
         }
         var id = await _store.CreateSessionAsync(string.IsNullOrWhiteSpace(title) ? "Web 任务" : title!.Trim(), ct);
-        var dir = WorkspaceLayout.ResolveSessionDir(WebJobsRoot, owner.UserId.ToString(), id);
+        var dir = WorkspaceLayout.ResolveSessionDirInJobsRoot(WebJobsRoot, owner.UserId.ToString(), id);
         Directory.CreateDirectory(dir);
         await _store.SetSessionOwnerUserIdAsync(id, owner.UserId.ToString(), ct);
         await _store.SetSessionWorkspaceDirAsync(id, dir, ct);
@@ -134,7 +159,7 @@ public sealed class WebSessionManager : IAsyncDisposable
         }
         var dir = await _store.GetSessionWorkspaceDirAsync(sessionId, ct);
         if (!string.IsNullOrWhiteSpace(dir))
-            WorkspaceLayout.TryRemoveSessionDir(WebJobsRoot, dir);
+            WorkspaceLayout.TryRemoveSessionDirInJobsRoot(WebJobsRoot, dir);
         await _store.DeleteSessionAsync(sessionId, ct);
         _accessLog.Write("session_delete", owner.Username, null, $"session={sessionId}");
     }

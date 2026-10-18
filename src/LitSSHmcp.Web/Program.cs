@@ -51,6 +51,9 @@ if (https is not null)
         options.ListenAnyIP(httpsPort, listen => listen.UseHttps(certPath, certPassword)));
 }
 
+// M3-8 / §8.3：Web 会话目录固定根可配（web.jobsRoot，空=默认 %APPDATA%\LitSSH\jobs；改动需重启）
+WebSessionManager.ConfigureJobsRoot(bootConfig.Web?.JobsRoot);
+
 builder.Services.AddSingleton<IConfigService>(bootConfigService);
 builder.Services.AddSingleton<WebAccountsStore>();
 builder.Services.AddSingleton<WebAuthService>();
@@ -66,7 +69,21 @@ builder.Services.AddSingleton<WebRateLimitStore>();
 var app = builder.Build();
 
 await app.Services.GetRequiredService<WebAccountsStore>().InitializeAsync();
-await app.Services.GetRequiredService<IContextStore>().InitializeAsync();
+var webStore = app.Services.GetRequiredService<IContextStore>();
+await webStore.InitializeAsync();
+
+// §8.3 布局修正迁移（jobs/jobs → jobs），随后按保留天数清扫孤儿会话目录（§8.2，0=不清扫）
+await LegacyJobsLayoutMigration.RunAsync(webStore, WebSessionManager.WebJobsRoot);
+try
+{
+    var aliveSessionIds = (await webStore.ListSessionsAsync()).Select(s => s.Id).ToArray();
+    WorkspaceLayout.SweepOrphanSessionDirs(WebSessionManager.WebJobsRoot,
+        bootConfig.Agent?.OrphanSessionDirRetentionDays ?? 0, aliveSessionIds);
+}
+catch
+{
+    // 清扫失败不阻断启动
+}
 
 app.UseWebSockets();
 // M3-8 安全响应头（§10.B 攻击面收敛）：nosniff/DENY/no-referrer/Permissions-Policy + HTML CSP

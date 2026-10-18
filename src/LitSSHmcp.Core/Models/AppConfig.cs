@@ -56,6 +56,12 @@ public class WebHostConfig
     /// 未配置 = 仅 HTTP（局域网明文，Cookie/令牌可被窃听、聊天可被中间人——须知悉该风险，建议内网 CA/自签证书）。
     /// </summary>
     public WebHttpsConfig Https { get; set; } = new();
+
+    /// <summary>
+    /// Web 会话工作区根（评估报告 §8.3 管理员可配）：会话目录为其下 <c>&lt;用户Id&gt;/s&lt;会话Id&gt;</c>；
+    /// 留空 = <c>%APPDATA%\LitSSH\jobs</c>。仅接受绝对路径（相对/非法值回退默认）。改动在 Web 重启后生效。
+    /// </summary>
+    public string JobsRoot { get; set; } = string.Empty;
 }
 
 /// <summary>Web HTTPS 证书设置（PFX/PKCS#12）。</summary>
@@ -189,6 +195,12 @@ public class AgentConfig
 
     /// <summary>会话保留：超过该天数的会话自动清理（0=不限）。</summary>
     public int RetentionDays { get; set; } = 90;
+
+    /// <summary>
+    /// 孤儿会话目录清扫（评估报告 §8.2 附件保留策略）：会话已删除/被保留策略剪除后遗留的
+    /// <c>jobs/&lt;用户&gt;/s&lt;会话&gt;</c> 目录，最后写入早于该天数即自动清理（0=不清扫）。默认 30。
+    /// </summary>
+    public int OrphanSessionDirRetentionDays { get; set; } = 30;
 
     /// <summary>本机 PowerShell 终端 & AI 本地 CLI 执行配置（默认关闭）。</summary>
     public LocalTerminalConfig LocalTerminal { get; set; } = new();

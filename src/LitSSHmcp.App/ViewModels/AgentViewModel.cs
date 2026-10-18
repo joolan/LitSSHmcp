@@ -23,6 +23,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly IConfigService _configService;
     private readonly IContextStore _store;
+    private readonly DesktopLoginService? _desktopLogin;
     private readonly string _bundledSkillsDir;
     private readonly Action<Action> _uiInvoke;
     /// <summary>非阻塞的 UI 调度（BeginInvoke）：审批弹窗用它投递，工具线程只 await 结果，不再同步卡住 Dispatcher。</summary>
@@ -67,10 +68,11 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>测试连接进行中（会话闸门的另一半：与运行状态无关的 UI 占用）。</summary>
     private bool _connectionTesting;
 
-    public AgentViewModel(IConfigService configService, IContextStore store, string bundledSkillsDir, Action<Action>? uiInvoke = null, Action<Action>? uiBeginInvoke = null)
+    public AgentViewModel(IConfigService configService, IContextStore store, string bundledSkillsDir, Action<Action>? uiInvoke = null, Action<Action>? uiBeginInvoke = null, DesktopLoginService? desktopLogin = null)
     {
         _configService = configService;
         _store = store;
+        _desktopLogin = desktopLogin;
         _bundledSkillsDir = bundledSkillsDir;
         _uiInvoke = uiInvoke ?? (action => action());
         _uiBeginInvoke = uiBeginInvoke ?? _uiInvoke;
@@ -1030,6 +1032,25 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// </summary>
     public bool IsBusy => _connectionTesting || CurrentContext.IsBusy;
 
+    /// <summary>桌面登录态（D1 收尾，仅归因）：已登录=登录用户名，未登录=local。</summary>
+    public bool IsDesktopLoggedIn => _desktopLogin?.Current is not null;
+
+    /// <summary>侧栏归因状态文案。</summary>
+    public string DesktopLoginLabel => _desktopLogin?.Current is { } state
+        ? $"归因：{state.Username}"
+        : "归因：未登录（local）";
+
+    /// <summary>登录按钮文案（未登录=登录…，已登录=注销）。</summary>
+    public string DesktopLoginActionText => IsDesktopLoggedIn ? "注销" : "登录…";
+
+    /// <summary>登录态变化后刷新绑定（由窗口在登录/注销/启动恢复后调用）。</summary>
+    public void NotifyDesktopLoginChanged()
+    {
+        OnPropertyChanged(nameof(IsDesktopLoggedIn));
+        OnPropertyChanged(nameof(DesktopLoginLabel));
+        OnPropertyChanged(nameof(DesktopLoginActionText));
+    }
+
     /// <summary>IsBusy 派生量变化（状态机切换 / 测试连接起止）：统一发通知。</summary>
     private void RaiseBusyChanged()
     {
@@ -1208,6 +1229,14 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         try
         {
             await _store.PruneAsync(_agentConfig.RetentionMaxSessions, _agentConfig.RetentionMaxMessages, _agentConfig.RetentionDays, CancellationToken.None);
+            // §8.2 附件保留策略：库行被剪除后会话目录可能残留——按保留天数清扫孤儿目录（0=关闭）
+            if (_agentConfig.OrphanSessionDirRetentionDays > 0)
+            {
+                var jobsRoot = Path.Combine(
+                    WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir), WorkspaceLayout.JobsDirName);
+                var alive = (await _store.ListSessionsAsync()).Select(s => s.Id).ToArray();
+                WorkspaceLayout.SweepOrphanSessionDirs(jobsRoot, _agentConfig.OrphanSessionDirRetentionDays, alive);
+            }
         }
         catch
         {
@@ -2482,7 +2511,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     /// <summary>
     /// 创建会话行并**立即分配独立会话工作目录**（需求 D：会话创建即分配、首条消息后锁定；
-    /// 归因用户 local=桌面未登录，评估报告 D1）。
+    /// 归因用户：桌面可选登录后为新会话归属登录用户，未登录=local，评估报告 D1）。
     /// <paramref name="titled"/>=false 时保留“首条消息正式命名”的既有口径（SendText 预建用临时标题，
     /// RunTurnAsync 按展示文本重命名）。
     /// </summary>
@@ -2492,7 +2521,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         _sessionTitled = titled;
         SyncLocalAuditSession();
 
-        const string owner = "local";
+        // D1：桌面可选登录——已登录则新会话归因为登录用户名，未登录为 local（桌面仅归因不限权）
+        var owner = _desktopLogin?.Current?.Username ?? "local";
         var dir = WorkspaceLayout.ResolveSessionDir(
             WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir), owner, _sessionId);
         await _store.SetSessionOwnerUserIdAsync(_sessionId, owner);

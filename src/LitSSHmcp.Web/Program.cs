@@ -87,6 +87,7 @@ app.MapGet("/api/me", (HttpContext ctx) =>
 
 app.MapWebSessionEndpoints();
 app.MapWebApprovalEndpoints();
+app.MapWebFileEndpoints();
 
 // 审批桥就绪即启轮询（§3.3.1：cli 文件通道 → 浏览器推送）；单例首次解析触发后台循环
 _ = app.Services.GetRequiredService<WebApprovalHub>();

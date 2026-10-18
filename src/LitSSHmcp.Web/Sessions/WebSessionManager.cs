@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using LitSSHmcp.Agent;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Web;
 using Microsoft.Extensions.AI;
@@ -15,6 +16,15 @@ public sealed class WebSessionNotFoundException() : Exception("会话不存在")
 
 /// <summary>同一会话上一轮仍在进行。</summary>
 public sealed class WebSessionBusyException() : Exception("上一轮仍在进行中");
+
+/// <summary>路径越出会话目录（<c>..</c>、绝对路径、链接逃逸、根外目录）——对外统一 404，越权尝试落 file_denied。</summary>
+public sealed class WebFilePathDeniedException() : Exception("路径越出会话目录");
+
+/// <summary>会话目录条目（目录浏览；非递归，Path 相对会话根、'/' 分隔）。</summary>
+public sealed record WebFileEntry(string Path, string Name, bool IsDir, long? Size, string ModifiedAt);
+
+/// <summary>下载句柄：流由端点随 HTTP 响应释放。</summary>
+public sealed record WebFileDownload(string FileName, FileStream Content, long Length);
 
 /// <summary>
 /// Web 会话宿主（评估报告 D4/§3.2）：每会话独立 AgentRuntime（stdio MCP 子进程），
@@ -191,8 +201,141 @@ public sealed class WebSessionManager : IAsyncDisposable
         }
     }
 
-    private async Task EnsureRuntimeAsync(WebPrincipal owner, long sessionId, SessionSlot slot, CancellationToken ct)
+    /// <summary>
+    /// 列出会话目录条目（报告 D6/§3.1/§10.C.2-3 交付物取回）：owner + 固定根 + PathGuard 物理包含三重校验；
+    /// 非递归；跳过 reparse point 条目（不展示链接，防经链接浏览到界外）；目录不存在返回空表；
+    /// 越权（非 owner/路径逃逸/根外目录）抛 404 异常并落 file_denied 访问日志（§10.A.3 越权尝试）。
+    /// </summary>
+    public async Task<IReadOnlyList<WebFileEntry>> ListFilesAsync(WebPrincipal owner, long sessionId,
+        string? relPath, CancellationToken ct = default)
     {
+        var (workspace, full) = await ResolveInWorkspaceAsync(owner, sessionId, relPath, ct);
+        if (!Directory.Exists(full))
+            return Array.Empty<WebFileEntry>();
+
+        var entries = new List<WebFileEntry>();
+        foreach (var entry in Directory.EnumerateFileSystemEntries(full))
+        {
+            if (IsReparsePoint(entry))
+                continue;
+            var name = Path.GetFileName(entry);
+            var rel = Path.GetRelativePath(workspace, entry).Replace('\\', '/');
+            if (Directory.Exists(entry))
+            {
+                entries.Add(new WebFileEntry(rel, name, IsDir: true, Size: null,
+                    new DirectoryInfo(entry).LastWriteTime.ToString("O")));
+            }
+            else
+            {
+                var info = new FileInfo(entry);
+                entries.Add(new WebFileEntry(rel, name, IsDir: false, Size: info.Length,
+                    info.LastWriteTime.ToString("O")));
+            }
+        }
+
+        return entries
+            .OrderByDescending(e => e.IsDir)
+            .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(1000)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// 打开会话文件下载流（校验同 <see cref="ListFilesAsync"/>）；文件不存在/是目录返回 null（404）。
+    /// 成功落 file_download 访问日志（§10.A.3）。调用方负责随响应释放流。
+    /// </summary>
+    public async Task<WebFileDownload?> OpenDownloadAsync(WebPrincipal owner, long sessionId,
+        string relPath, CancellationToken ct = default)
+    {
+        var (_, full) = await ResolveInWorkspaceAsync(owner, sessionId, relPath, ct);
+        if (!File.Exists(full))
+            return null;
+
+        var info = new FileInfo(full);
+        FileStream stream;
+        try
+        {
+            stream = new FileStream(full, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete, 64 * 1024, FileOptions.SequentialScan);
+        }
+        catch (FileNotFoundException) { return null; }
+        catch (DirectoryNotFoundException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+
+        _accessLog.Write("file_download", owner.Username, null,
+            $"session={sessionId} path={info.Name} size={info.Length}");
+        return new WebFileDownload(info.Name, stream, info.Length);
+    }
+
+    /// <summary>
+    /// 解析会话目录内的相对路径 → 绝对路径（报告 §10.C.2/3）：
+    /// owner 校验（越权=404+日志）→ 会话目录必须位于固定根 WebJobsRoot 之下（§5.3.2）→
+    /// 拒 <c>..</c>/绝对路径/冒号（ADS）→ PathGuard 物理解析（junction/symlink 逃逸检出）后须仍在会话目录下。
+    /// </summary>
+    private async Task<(string Workspace, string Full)> ResolveInWorkspaceAsync(
+        WebPrincipal owner, long sessionId, string? relPath, CancellationToken ct)
+    {
+        string workspace;
+        try
+        {
+            await EnsureOwnerAsync(owner, sessionId, ct);
+            workspace = await _store.GetSessionWorkspaceDirAsync(sessionId, ct);
+        }
+        catch (WebSessionNotFoundException)
+        {
+            DenyFileAccess(owner, sessionId, relPath);
+            throw;
+        }
+
+        // §5.3.2：Web 会话目录必须在固定根之下（防库行被改写成任意路径读写通道）
+        if (string.IsNullOrWhiteSpace(workspace) || !PathGuard.IsUnder(WebJobsRoot, workspace))
+        {
+            DenyFileAccess(owner, sessionId, relPath);
+            throw new WebSessionNotFoundException();
+        }
+
+        var rel = (relPath ?? string.Empty).Trim().Replace('/', '\\').TrimStart('\\');
+        if (rel.Contains("..", StringComparison.Ordinal) || rel.Contains(':') || Path.IsPathRooted(rel))
+        {
+            DenyFileAccess(owner, sessionId, relPath);
+            throw new WebFilePathDeniedException();
+        }
+
+        string full;
+        try
+        {
+            full = Path.GetFullPath(Path.Combine(workspace, rel));
+        }
+        catch
+        {
+            DenyFileAccess(owner, sessionId, relPath);
+            throw new WebFilePathDeniedException();
+        }
+
+        if (!PathGuard.IsUnder(workspace, full))
+        {
+            DenyFileAccess(owner, sessionId, relPath);
+            throw new WebFilePathDeniedException();
+        }
+        return (workspace, full);
+    }
+
+    private void DenyFileAccess(WebPrincipal owner, long sessionId, string? relPath)
+        => _accessLog.Write("file_denied", owner.Username, null, $"session={sessionId} path={relPath ?? string.Empty}");
+
+    private static bool IsReparsePoint(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch
+        {
+            return true;    // 属性读不了视为不可信，直接跳过
+        }
+    }
+
+    private async Task EnsureRuntimeAsync(WebPrincipal owner, long sessionId, SessionSlot slot, CancellationToken ct)    {
         if (slot.Runtime is not null)
             return;
         var dir = await _store.GetSessionWorkspaceDirAsync(sessionId, ct);

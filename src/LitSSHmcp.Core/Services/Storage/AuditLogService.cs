@@ -261,10 +261,13 @@ public class AuditLogService : IAuditLogService
         cmd.CommandText = "CREATE INDEX IF NOT EXISTS IX_Sessions_LastSeenAt ON Sessions(LastSeenAt DESC);";
         await cmd.ExecuteNonQueryAsync();
 
-        // 审计格式版本升级：旧库的哈希链未包含 SessionId，直接重建审计数据（测试阶段无历史包袱）。
-        ResetIfFormatOutdated(connection);
-
+        // 签名密钥必须先加载：v5→v6 迁移要用它与后续校验一致的 HMAC 重算链哈希。
         _signingKey = LoadOrCreateSigningKey();
+
+        // 审计格式版本升级：
+        // v5 → v6：保留全部历史记录（补 UserId 列并按新 payload 重建哈希链，链连续性从头开始）；
+        // 更老版本（<5）：旧链与 payload 差异过大，按既有策略直接重建审计数据。
+        UpgradeFormat(connection);
 
         ArchiveExpired(connection);
     }
@@ -661,11 +664,14 @@ public class AuditLogService : IAuditLogService
     }
 
     /// <summary>
-    /// 审计格式版本落后时重建审计数据：
-    /// 旧哈希链未把 SessionId 纳入 payload，与新算法不一致会导致校验失败；
-    /// 测试阶段直接清空（链 + 命令/SQL 活动表 + 历史表 + 会话表）并写入新版本号。
+    /// 审计格式版本升级入口：
+    /// <list type="bullet">
+    /// <item>v5 → v6：<b>保留数据</b>——UserId 列已由 <see cref="EnsureColumn"/> 补齐；清空旧链后，
+    /// 按新 payload（含 UserId）对所有活动+归档记录按时间重建哈希链（链从 Genesis 重新开始，历史记录不丢）；</item>
+    /// <item>&lt;5：旧版本 payload 差异过大，沿用清理重建（链 + 活动/历史表 + 会话表）。</item>
+    /// </list>
     /// </summary>
-    private static void ResetIfFormatOutdated(SqliteConnection connection)
+    private void UpgradeFormat(SqliteConnection connection)
     {
         int version;
         using (var read = connection.CreateCommand())
@@ -677,6 +683,80 @@ public class AuditLogService : IAuditLogService
         if (version >= AuditFormatVersion)
             return;
 
+        if (version >= 5)
+        {
+            MigrateV5ToV6(connection);
+            return;
+        }
+
+        ResetAll(connection);
+    }
+
+    /// <summary>v5 → v6：保留记录，按新 payload 重建哈希链（链首重新从 Genesis 开始）。</summary>
+    private void MigrateV5ToV6(SqliteConnection connection)
+    {
+        using var tx = connection.BeginTransaction();
+
+        using (var clear = connection.CreateCommand())
+        {
+            clear.Transaction = tx;
+            clear.CommandText = "DELETE FROM AuditChain;";
+            clear.ExecuteNonQuery();
+        }
+
+        var rows = new List<(string Kind, long Id, string Timestamp)>();
+        using (var read = connection.CreateCommand())
+        {
+            read.Transaction = tx;
+            read.CommandText =
+                "SELECT 'cmd' AS Kind, Id, Timestamp FROM AuditLogs " +
+                "UNION ALL SELECT 'cmd', Id, Timestamp FROM AuditLogsHistory " +
+                "UNION ALL SELECT 'sql', Id, Timestamp FROM SqlAuditLogs " +
+                "UNION ALL SELECT 'sql', Id, Timestamp FROM SqlAuditLogsHistory " +
+                "ORDER BY Timestamp, Id;";
+            using var reader = read.ExecuteReader();
+            while (reader.Read())
+                rows.Add((reader.GetString(0), reader.GetInt64(1), reader.GetString(2)));
+        }
+
+        var prev = Genesis;
+        var seen = new HashSet<(string, long)>();
+        foreach (var (kind, id, timestamp) in rows)
+        {
+            if (!seen.Add((kind, id)))
+                continue;
+            var payload = kind == "cmd"
+                ? ReadCommandPayload(connection, tx, id)
+                : ReadSqlPayload(connection, tx, id);
+            if (payload is null)
+                continue;
+
+            var hash = ComputeHash(kind, id, payload, prev);
+            using var insert = connection.CreateCommand();
+            insert.Transaction = tx;
+            insert.CommandText = "INSERT INTO AuditChain (Kind, RowId, RecordHash, PrevHash, CreatedAt) VALUES (@Kind, @RowId, @Hash, @Prev, @CreatedAt)";
+            insert.Parameters.AddWithValue("@Kind", kind);
+            insert.Parameters.AddWithValue("@RowId", id);
+            insert.Parameters.AddWithValue("@Hash", hash);
+            insert.Parameters.AddWithValue("@Prev", prev);
+            insert.Parameters.AddWithValue("@CreatedAt", timestamp);
+            insert.ExecuteNonQuery();
+            prev = hash;
+        }
+
+        using (var stamp = connection.CreateCommand())
+        {
+            stamp.Transaction = tx;
+            stamp.CommandText = $"PRAGMA user_version = {AuditFormatVersion};";
+            stamp.ExecuteNonQuery();
+        }
+
+        tx.Commit();
+    }
+
+    /// <summary>旧版本（&lt;5）清理重建：链 + 命令/SQL 活动表 + 历史表 + 会话表。</summary>
+    private static void ResetAll(SqliteConnection connection)
+    {
         using var reset = connection.CreateCommand();
         reset.CommandText =
             "DELETE FROM AuditChain;" +
@@ -687,6 +767,42 @@ public class AuditLogService : IAuditLogService
             "DELETE FROM Sessions;" +
             $"PRAGMA user_version = {AuditFormatVersion};";
         reset.ExecuteNonQuery();
+    }
+
+    private const string CommandPayloadColumns =
+        "ServerId, ServerName, Command, Result, Status, Timestamp, ExitCode, IsFileTransfer, FilePath, FileSize, SessionId, Tool, Category, Decision, UserId";
+
+    private const string SqlPayloadColumns =
+        "DataSourceId, DataSourceName, Operation, Sql, Status, Result, RowsAffected, DurationMs, Timestamp, SessionId, Tool, Category, Decision, UserId";
+
+    private static string? ReadCommandPayload(SqliteConnection connection, SqliteTransaction tx, long id)
+        => ReadPayload(connection, tx, "AuditLogs", "AuditLogsHistory", CommandPayloadColumns, id);
+
+    private static string? ReadSqlPayload(SqliteConnection connection, SqliteTransaction tx, long id)
+        => ReadPayload(connection, tx, "SqlAuditLogs", "SqlAuditLogsHistory", SqlPayloadColumns, id);
+
+    private static string? ReadPayload(SqliteConnection connection, SqliteTransaction tx,
+        string liveTable, string historyTable, string columns, long id)
+    {
+        var live = ReadPayloadFrom(connection, tx, liveTable, columns, id);
+        return live ?? ReadPayloadFrom(connection, tx, historyTable, columns, id);
+    }
+
+    private static string? ReadPayloadFrom(SqliteConnection connection, SqliteTransaction tx,
+        string table, string columns, long id)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = $"SELECT {columns} FROM {table} WHERE Id = @Id";
+        cmd.Parameters.AddWithValue("@Id", id);
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read())
+            return null;
+
+        var fields = new List<object?>();
+        for (var i = 0; i < reader.FieldCount; i++)
+            fields.Add(reader.IsDBNull(i) ? null : reader.GetValue(i));
+        return BuildPayload(fields.ToArray());
     }
 
     private async Task AppendChainAsync(SqliteConnection connection, SqliteTransaction tx, string kind, long rowId, string payload)

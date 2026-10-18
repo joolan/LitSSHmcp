@@ -342,7 +342,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 
 ```bash
 dotnet build LitSSHmcp.slnx                      # 全量构建（应 0 警告 0 错误）
-dotnet test LitSSHmcp.slnx                      # 全部测试(Core + Agent + McpServer + App + Web，1300 用例)
+dotnet test LitSSHmcp.slnx                      # 全部测试(Core + Agent + McpServer + App + Web，1302 用例)
 dotnet publish src/LitSSHmcp.McpServer -c Release -r win-x64 --self-contained -o publish
 dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publish
 ```

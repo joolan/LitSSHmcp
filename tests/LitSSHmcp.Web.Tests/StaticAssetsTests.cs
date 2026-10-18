@@ -25,6 +25,17 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
         Assert.Contains("Content-Security-Policy", html, StringComparison.Ordinal);
         Assert.Contains("script-src 'self'", html, StringComparison.Ordinal);
         Assert.Contains("/js/app.js", html, StringComparison.Ordinal);
+        // frame-ancestors 在 <meta> 中无效（浏览器会告警）；由响应头强制
+        var head = html.Split("</head>", StringSplitOptions.None)[0];
+        Assert.DoesNotContain("frame-ancestors", head, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Static_assets_are_revalidated_to_avoid_stale_js()
+    {
+        var resp = await _fx.Client.GetAsync("/js/chat.js");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.Contains("no-cache", resp.Headers.CacheControl?.ToString() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -93,7 +93,11 @@ app.UseMiddleware<WebRateLimitMiddleware>();
 // M3-7 SPA（评估报告 §3.1/§10.B.3）：wwwroot 静态前端（登录/会话/流式聊天/审批卡片/目录浏览），
 // 与 API 同源；index.html 自带 CSP meta（script-src 'self'，配合 sanitize.js 的构造性 XSS 防护）。
 app.UseDefaultFiles();
-app.UseStaticFiles();
+// 静态资源每次协商（ETag/304）：避免升级后浏览器沿用旧 JS/CSS，出现"修复不生效"的错觉
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache"
+});
 app.UseMiddleware<WebAuthMiddleware>();
 app.UseMiddleware<WebCsrfMiddleware>();
 

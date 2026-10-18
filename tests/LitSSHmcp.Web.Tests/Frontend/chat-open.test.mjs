@@ -102,6 +102,7 @@ assert.equal(stopBtn.disabled, true, "无会话时停止按钮禁用");
 // ---- 回归：done 前最后一段 assistant_text 不能被节流/reset 清空（"末尾没有结果"）----
 {
   const prevCreate = globalThis.document.createElement;
+  const createdNodes = [];
   globalThis.document.createElement = () => {
     const node = {
       className: "",
@@ -114,6 +115,7 @@ assert.equal(stopBtn.disabled, true, "无会话时停止按钮禁用");
       querySelector() { return node; },
       querySelectorAll() { return []; },
     };
+    createdNodes.push(node);
     return node;
   };
   const appended = [];
@@ -133,7 +135,7 @@ assert.equal(stopBtn.disabled, true, "无会话时停止按钮禁用");
   });
   chat2.sessionId = 1;
   chat2.dispatch({ type: "assistant_text", text: "最终结论：全部在线" });
-  // done 后会对账落库内容：让 stub 返回与前端一致的最后一条 assistant（模拟未丢帧）
+  // done 后按落库重建：stub 返回完整内容（模拟未丢帧）
   messageRows = [
     { role: "user", content: "看图" },
     { role: "assistant", content: "最终结论：全部在线" },
@@ -141,9 +143,23 @@ assert.equal(stopBtn.disabled, true, "无会话时停止按钮禁用");
   chat2.dispatch({ type: "done" });
   await new Promise((resolve) => setTimeout(resolve, 60));
 
-  const bubble = appended.find((n) => n.className === "bubble assistant");
-  assert.ok(bubble, "应创建助手气泡");
-  assert.ok(String(bubble.innerHTML).includes("最终结论"), "done 后结论必须保留");
+  assert.ok(appended.some((n) => n.className === "bubble assistant"), "应创建助手气泡");
+  assert.ok(
+    createdNodes.some((n) => String(n.innerHTML).includes("最终结论")),
+    "done 后结论必须保留"
+  );
+
+  // 模拟丢帧：前端只收到前半段，done 后应以落库完整内容重建
+  appended.length = 0;
+  messageRows = [{ role: "user", content: "看图" }, { role: "assistant", content: "前半段。\n\n结论：后半段完整内容。" }];
+  chat2.dispatch({ type: "assistant_text", text: "前半段。" });
+  chat2.dispatch({ type: "done" });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.ok(
+    createdNodes.some((n) => String(n.innerHTML).includes("后半段完整内容")),
+    "丢帧后应按落库内容补齐结尾"
+  );
+
   globalThis.document.createElement = prevCreate;
 }
 

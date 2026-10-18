@@ -210,12 +210,10 @@ export class ChatController {
         this.flushAssistantRender();
         this.setBusy(false);
         this.onStatus(frame.stopped ? "已停止" : "就绪");
-        {
-          // 丢帧自愈：done 后与落库内容对账，若前端文本少了一段则按库重建（避免"结论内容不全"）
-          const expected = this.assistantText;
-          this.resetRun();
-          if (!frame.stopped) this.reconcileFinalAnswer(expected);
-        }
+        this.resetRun();
+        // 以落库内容为准重放（权威视图）：流式帧可能丢尾，导致"结论内容不全"；
+        // 服务端在 done 之前已把 assistant 文本落库，因此这里重建一定完整。
+        if (!frame.stopped) this.reloadFromStore();
         break;
       case "error":
         this.flushAssistantRender();
@@ -503,25 +501,22 @@ export class ChatController {
   }
 
   /**
-   * done 后对账：前端累计文本与落库最后一条 assistant 不一致（WS 丢帧）→ 按库重建，
-   * 保证结论完整（否则只差最后一段，用户看到的是"内容不全"）。
+   * 以落库内容重建当前会话（权威视图）：修复流式丢帧导致的"结论内容不全"，
+   * 同时把实时工具卡片替换为带结果的历史卡片。
    */
-  async reconcileFinalAnswer(expected) {
+  async reloadFromStore() {
     const sessionId = this.sessionId;
-    const trimmed = String(expected ?? "").trim();
-    if (sessionId === null || trimmed.length === 0) return;
+    if (sessionId === null) return;
     try {
       const rows = await api(`/api/sessions/${sessionId}/messages`);
       if (this.sessionId !== sessionId) return;
-      const last = rows[rows.length - 1];
-      if (last?.role !== "assistant" || String(last.content ?? "").trim() === trimmed) return;
       this.persistedRows = rows.length;
       this.messagesEl.replaceChildren();
       this.resetRun();
       for (const row of rows) this.appendHistoryRow(row);
       this.scrollDown(true);
     } catch {
-      /* 对账失败忽略：重新打开会话时历史仍完整 */
+      /* 重建失败则保留流式结果（下次打开会话仍是完整的） */
     }
   }
 

@@ -13,6 +13,10 @@
 
 * { box-sizing: border-box; }
 
+/* [hidden] 守卫：作者样式(#login-view/.strip 的 display:flex)会压过 UA 对 [hidden] 的
+   display:none，导致 showApp() 后登录窗藏不住——统一以 !important 兜底。 */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;

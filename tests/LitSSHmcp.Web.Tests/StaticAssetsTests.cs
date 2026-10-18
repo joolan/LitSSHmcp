@@ -47,6 +47,17 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
     }
 
     [Fact]
+    public async Task Css_hidden_guard_overrides_author_display_rules()
+    {
+        // 登录窗/审批条带 display:flex 的作者样式会压过 UA 对 [hidden] 的 display:none
+        // （曾导致 showApp() 后登录窗藏不住）——守卫规则须恒在。
+        var css = await _fx.Client.GetStringAsync("/css/app.css");
+        var normalized = System.Text.RegularExpressions.Regex.Replace(css, @"\s+", " ");
+        Assert.Contains("[hidden] { display: none !important; }", normalized, StringComparison.Ordinal);
+        Assert.Contains("#login-view { display: flex", normalized, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Api_still_requires_authenticaton()
     {
         var resp = await _fx.Client.GetAsync("/api/sessions");

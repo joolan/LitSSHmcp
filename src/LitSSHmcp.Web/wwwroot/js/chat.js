@@ -35,6 +35,9 @@ export class ChatController {
       this.onToast(`加载历史失败: ${err.message}`);
     }
     this.connect();
+    // close() 已把输入框禁用（sessionId 为 null 时 setBusy 强制禁用），此处必须按
+    // 已选会话重新启用——否则发不出第一条消息，也就永远等不到 done/error 解禁。
+    this.setBusy(false);
   }
 
   close() {

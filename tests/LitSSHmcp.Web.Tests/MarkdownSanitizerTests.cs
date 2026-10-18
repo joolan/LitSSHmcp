@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Xunit;
 
 namespace LitSSHmcp.Web.Tests;
@@ -13,72 +12,16 @@ public class MarkdownSanitizerTests
     [Fact]
     public void Sanitizer_security_suite_passes_via_node()
     {
-        if (!TryResolve("node", out var node))
+        if (!NodeScriptRunner.TryResolve("node", out var node))
             return; // 无 node 环境 → 跳过
 
-        var root = FindRepoRoot();
+        var root = NodeScriptRunner.FindRepoRoot();
         Assert.True(root is not null, "未找到仓库根（LitSSHmcp.slnx）");
         var script = Path.Combine(root!, "tests", "LitSSHmcp.Web.Tests", "Frontend", "sanitize.test.mjs");
         Assert.True(File.Exists(script), $"测试脚本缺失: {script}");
 
-        var psi = new ProcessStartInfo(node, $"\"{script}\"")
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-        using var proc = Process.Start(psi);
-        Assert.NotNull(proc);
-        var stdout = proc!.StandardOutput.ReadToEnd();
-        var stderr = proc.StandardError.ReadToEnd();
-        if (!proc.WaitForExit(30_000))
-        {
-            try { proc.Kill(entireProcessTree: true); } catch { /* ignore */ }
-            Assert.Fail($"node 超时未退出\n{stdout}\n{stderr}");
-        }
-        Assert.True(proc.ExitCode == 0, $"sanitize.test.mjs 失败（退出码 {proc.ExitCode}）\n{stdout}\n{stderr}");
-    }
-
-    private static bool TryResolve(string fileName, out string resolved)
-    {
-        resolved = fileName;
-        try
-        {
-            var psi = new ProcessStartInfo(fileName, "--version")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            using var proc = Process.Start(psi);
-            if (proc is null) return false;
-            proc.StandardOutput.ReadToEnd();
-            proc.StandardError.ReadToEnd();
-            if (!proc.WaitForExit(10_000))
-            {
-                try { proc.Kill(entireProcessTree: true); } catch { /* ignore */ }
-                return false;
-            }
-            return proc.ExitCode == 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>从测试输出目录向上找仓库根（LitSSHmcp.slnx 标记）。</summary>
-    private static string? FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "LitSSHmcp.slnx")))
-                return dir.FullName;
-            dir = dir.Parent;
-        }
-        return null;
+        var (exitCode, output, timedOut) = NodeScriptRunner.Run(node, script);
+        Assert.False(timedOut, $"sanitize.test.mjs 超时未退出\n{output}");
+        Assert.True(exitCode == 0, $"sanitize.test.mjs 失败（退出码 {exitCode}）\n{output}");
     }
 }

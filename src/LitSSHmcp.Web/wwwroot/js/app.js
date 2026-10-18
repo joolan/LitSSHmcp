@@ -79,11 +79,19 @@ function onToast(message) {
   }, 4500);
 }
 
+// 输入框禁用时（未选会话）给出可操作的提示，避免"不能输入也没原因"。
+function updatePlaceholder() {
+  els.input.placeholder = activeId === null
+    ? "请先点击左上方「＋ 新会话」创建或选择会话，再输入任务…"
+    : "输入任务…（Enter 发送，Shift+Enter 换行）";
+}
+
 // ---- 视图切换 ----
 function showLogin() {
   els.appView.hidden = true;
   els.loginView.hidden = false;
   els.loginUser.focus();
+  updatePlaceholder();
 }
 
 function showApp(user) {
@@ -91,6 +99,7 @@ function showApp(user) {
   els.loginView.hidden = true;
   els.appView.hidden = false;
   els.whoami.textContent = `${user.username}（${user.role}）`;
+  updatePlaceholder();
   approvals.start();
   loadSessions().catch((err) => onToast(err.message));
 }
@@ -139,6 +148,7 @@ async function loadSessions() {
 }
 
 function renderSessions() {
+  updatePlaceholder();
   const nodes = [];
   for (const s of sessions) {
     const li = document.createElement("li");

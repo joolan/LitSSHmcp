@@ -32,6 +32,10 @@ await app.Services.GetRequiredService<WebAccountsStore>().InitializeAsync();
 await app.Services.GetRequiredService<IContextStore>().InitializeAsync();
 
 app.UseWebSockets();
+// M3-7 SPA（评估报告 §3.1/§10.B.3）：wwwroot 静态前端（登录/会话/流式聊天/审批卡片/目录浏览），
+// 与 API 同源；index.html 自带 CSP meta（script-src 'self'，配合 sanitize.js 的构造性 XSS 防护）。
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseMiddleware<WebAuthMiddleware>();
 app.UseMiddleware<WebCsrfMiddleware>();
 

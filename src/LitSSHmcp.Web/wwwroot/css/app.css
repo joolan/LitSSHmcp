@@ -1,0 +1,270 @@
+:root {
+  --bg: #0f141a;
+  --bg2: #161d26;
+  --bg3: #1e2833;
+  --line: #2a3644;
+  --fg: #d8e1ea;
+  --fg-dim: #8aa0b5;
+  --accent: #3d8bfd;
+  --ok: #3fb96f;
+  --danger: #e05d5d;
+  --warn: #e0a63d;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.55 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+button, textarea, input {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+button { padding: 6px 12px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { border-color: var(--danger); color: var(--danger); }
+button.ghost { background: transparent; }
+button.block { width: 100%; }
+button.active { border-color: var(--accent); color: var(--accent); }
+.spacer { flex: 1; }
+.empty { color: var(--fg-dim); padding: 10px; text-align: center; }
+
+/* ---- 视图切换 ---- */
+.view { min-height: 100vh; }
+#login-view { display: flex; align-items: center; justify-content: center; }
+.login-card {
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 28px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.login-card h1 { font-size: 18px; margin: 0 0 6px; text-align: center; }
+.login-card input { padding: 8px 10px; }
+.login-card label { color: var(--fg-dim); font-size: 13px; }
+.login-card .hint { color: var(--fg-dim); font-size: 12px; text-align: center; margin: 4px 0 0; }
+.error { color: var(--danger); margin: 0; font-size: 13px; }
+
+/* ---- 顶栏 ---- */
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 700; color: var(--accent); }
+.status { color: var(--warn); font-size: 13px; }
+.whoami { color: var(--fg-dim); }
+
+/* ---- 布局 ---- */
+.layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 0;
+  height: calc(100vh - 45px);
+}
+.layout.files-open { grid-template-columns: 240px minmax(0, 1fr) 320px; }
+
+/* ---- 会话列表 ---- */
+#session-pane {
+  background: var(--bg2);
+  border-right: 1px solid var(--line);
+  padding: 10px;
+  overflow-y: auto;
+}
+#session-pane .block { margin-bottom: 10px; }
+#session-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+#session-list li { display: flex; align-items: stretch; gap: 4px; }
+#session-list li.active .session { border-color: var(--accent); }
+.session {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 9px;
+  text-align: left;
+  background: transparent;
+}
+.session-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-time { color: var(--fg-dim); font-size: 11px; }
+.session-del { color: var(--fg-dim); padding: 2px 8px; background: transparent; border-color: transparent; }
+.session-del:hover { color: var(--danger); border-color: var(--danger); }
+
+/* ---- 聊天 ---- */
+#chat-pane { display: flex; flex-direction: column; min-width: 0; height: 100%; }
+#session-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+#messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+
+.bubble {
+  max-width: 78%;
+  padding: 9px 13px;
+  border-radius: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.bubble.user { align-self: flex-end; background: #234a75; }
+.bubble.assistant { align-self: flex-start; background: var(--bg3); white-space: normal; }
+.bubble.assistant p { margin: 0 0 8px; }
+.bubble.assistant p:last-child { margin-bottom: 0; }
+.bubble.assistant pre {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  white-space: pre;
+  font-size: 13px;
+}
+.bubble.assistant code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+.bubble.assistant pre code { background: none; padding: 0; }
+.bubble.assistant a { color: var(--accent); }
+.bubble.assistant blockquote {
+  margin: 6px 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--accent);
+  color: var(--fg-dim);
+}
+.bubble.assistant img { max-width: 100%; }
+
+.reasoning { align-self: flex-start; color: var(--fg-dim); font-size: 13px; max-width: 78%; }
+.reasoning summary { cursor: pointer; }
+.reasoning-body { padding: 6px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.memory {
+  align-self: flex-start;
+  color: var(--fg-dim);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* ---- 工具任务卡片（任务面板） ---- */
+.tool {
+  align-self: stretch;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.tool.ok { border-left: 3px solid var(--ok); }
+.tool.fail { border-left: 3px solid var(--danger); }
+.tool.running { border-left: 3px solid var(--warn); }
+.tool-head { display: flex; gap: 10px; align-items: center; }
+.tool-name { font-weight: 600; color: var(--accent); }
+.tool-status { color: var(--fg-dim); font-size: 12px; }
+.tool-args {
+  margin: 6px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 12px;
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---- 审批卡片 ---- */
+.strip {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #221d10;
+}
+.appr { border: 1px solid var(--warn); border-radius: 8px; padding: 8px 12px; background: var(--bg2); }
+.appr-head { display: flex; gap: 10px; align-items: baseline; }
+.appr-expiry { color: var(--fg-dim); font-size: 12px; }
+.appr-cmd {
+  margin: 6px 0;
+  max-height: 120px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.appr-actions { display: flex; gap: 8px; align-items: center; }
+.appr-actions button.primary { background: var(--ok); border-color: var(--ok); }
+
+/* ---- 输入区 ---- */
+#composer { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+#composer textarea {
+  flex: 1;
+  resize: none;
+  padding: 8px 10px;
+  background: var(--bg2);
+}
+#composer textarea:focus { outline: none; border-color: var(--accent); }
+
+/* ---- 文件面板 ---- */
+#files-pane {
+  background: var(--bg2);
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+#files-pane[hidden] { display: none; }
+#files-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+#files-path { display: flex; flex-wrap: wrap; min-width: 0; }
+.crumb { background: transparent; border: none; color: var(--accent); padding: 2px 3px; }
+.crumb-sep { color: var(--fg-dim); }
+#files-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--bg3);
+  text-decoration: none;
+  color: var(--fg);
+  text-align: left;
+}
+.file-row:hover { border-color: var(--accent); }
+.file-row .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-row .ftag { color: var(--fg-dim); font-size: 11px; }
+.file-row.dir .ftag { color: var(--accent); }
+a.file-row { cursor: pointer; }
+
+/* ---- Toast ---- */
+#toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg3);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 9px 16px;
+  z-index: 50;
+  max-width: 70vw;
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
+<title>LitSSHmcp 运维助手</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div id="login-view" class="view">
+  <form id="login-form" class="login-card">
+    <h1>LitSSHmcp 运维助手</h1>
+    <label for="login-user">用户名</label>
+    <input id="login-user" name="username" autocomplete="username" required>
+    <label for="login-pass">密码</label>
+    <input id="login-pass" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit" id="login-btn" class="primary">登录</button>
+    <p id="login-error" class="error" hidden></p>
+    <p class="hint">局域网 Web 端 · 会话按登录用户隔离</p>
+  </form>
+</div>
+
+<div id="app-view" class="view" hidden>
+  <header id="topbar">
+    <span class="brand">LitSSHmcp</span>
+    <span id="turn-status" class="status"></span>
+    <span class="spacer"></span>
+    <span id="whoami" class="whoami"></span>
+    <button id="logout-btn" class="ghost">退出</button>
+  </header>
+
+  <div class="layout">
+    <aside id="session-pane">
+      <button id="new-session-btn" class="primary block">＋ 新会话</button>
+      <ul id="session-list"></ul>
+    </aside>
+
+    <main id="chat-pane">
+      <div id="session-header">
+        <span id="session-title">未选择会话</span>
+        <span class="spacer"></span>
+        <button id="files-btn" disabled>目录</button>
+        <button id="stop-btn" disabled class="danger">停止</button>
+      </div>
+
+      <div id="approval-strip" class="strip" hidden></div>
+      <div id="messages"></div>
+
+      <form id="composer" autocomplete="off">
+        <textarea id="input" rows="2" placeholder="输入任务…（Enter 发送，Shift+Enter 换行）"></textarea>
+        <button type="submit" id="send-btn" class="primary">发送</button>
+      </form>
+    </main>
+
+    <section id="files-pane" hidden>
+      <div id="files-head">
+        <div id="files-path"></div>
+        <span class="spacer"></span>
+        <button id="files-up">上级</button>
+        <button id="files-close" class="ghost">关闭</button>
+      </div>
+      <div id="files-list"></div>
+    </section>
+  </div>
+</div>
+
+<div id="toast" role="status" hidden></div>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

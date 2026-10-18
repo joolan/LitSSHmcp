@@ -11,4 +11,8 @@
     <ProjectReference Include="..\LitSSHmcp.Core\LitSSHmcp.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="LitSSHmcp.Web.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -215,6 +215,23 @@ public class ApprovalService : IApprovalService
         _exemptions = exemptions;
     }
 
+    /// <summary>
+    /// 解析生效的审批通道：环境变量 <c>LITSSH_APPROVAL_CHANNELS</c>（逗号分隔）优先于配置
+    /// <c>security.approval.channels</c>（评估报告 §3.2：Web 宿主 spawn 子进程时强制 web/cli、
+    /// 关闭 desktop 弹窗通道；子进程经 env 继承，不改共享 config.json）；两者皆空 → desktop+cli。
+    /// </summary>
+    public static string[] ResolveChannels(string[]? configured)
+    {
+        var env = Environment.GetEnvironmentVariable("LITSSH_APPROVAL_CHANNELS");
+        if (!string.IsNullOrWhiteSpace(env))
+        {
+            var fromEnv = env.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (fromEnv.Length > 0)
+                return fromEnv;
+        }
+        return configured is { Length: > 0 } ? configured : new[] { "desktop", "cli" };
+    }
+
     public async Task<ApprovalOutcome> RequestApprovalAsync(
         string serverName,
         string command,
@@ -251,7 +268,7 @@ public class ApprovalService : IApprovalService
 
         // 默认同时开 desktop + cli：无桌面(服务会话/CI/headless)时 desktop 必然失败,
         // 若只配 desktop, 这类环境 100% 走到"拒绝", 是成功率的最大杀手。
-        var channels = options.Channels is { Length: > 0 } ? options.Channels : new[] { "desktop", "cli" };
+        var channels = ResolveChannels(options.Channels);
 
         var context = new ApprovalRequestContext
         {

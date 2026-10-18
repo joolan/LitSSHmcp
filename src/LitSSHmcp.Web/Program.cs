@@ -1,17 +1,30 @@
 using System.Security.Cryptography;
+using LitSSHmcp.Agent;
+using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Web;
 using LitSSHmcp.Web;
+using LitSSHmcp.Web.Sessions;
+
+// Web 宿主把审批通道压到 cli（文件通道）：桌面弹窗在服务端无意义；
+// web 通道 M3-5 接入后改 "web,cli"。stdio MCP 子进程经 InheritEnvironmentVariables 继承。
+Environment.SetEnvironmentVariable("LITSSH_APPROVAL_CHANNELS", "cli");
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<WebAccountsStore>();
 builder.Services.AddSingleton<WebAuthService>();
 builder.Services.AddSingleton<WebAccessLog>();
+builder.Services.AddSingleton<IConfigService, ConfigService>();
+builder.Services.AddSingleton<IContextStore, ContextStore>();
+builder.Services.AddSingleton<IWebRuntimeFactory, AgentWebRuntimeFactory>();
+builder.Services.AddSingleton<WebSessionManager>();
 
 var app = builder.Build();
 
 await app.Services.GetRequiredService<WebAccountsStore>().InitializeAsync();
+await app.Services.GetRequiredService<IContextStore>().InitializeAsync();
 
+app.UseWebSockets();
 app.UseMiddleware<WebAuthMiddleware>();
 app.UseMiddleware<WebCsrfMiddleware>();
 
@@ -64,6 +77,8 @@ app.MapGet("/api/me", (HttpContext ctx) =>
         ? Results.Unauthorized()
         : Results.Ok(new { id = principal.UserId, username = principal.Username, role = principal.Role });
 });
+
+app.MapWebSessionEndpoints();
 
 await app.RunAsync();
 

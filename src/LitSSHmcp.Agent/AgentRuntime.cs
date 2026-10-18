@@ -196,7 +196,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         string? assetGraph = null,
         string? sessionWorkspaceDir = null,
         string? ownerUserId = null,
-        IReadOnlyCollection<string>? enabledMcpIds = null)
+        IReadOnlyCollection<string>? enabledMcpIds = null,
+        string? ownerUsername = null)
     {
         // D8 启用层：会话级连接器子集只在全局启用集合内收窄（null=继承全局默认集合；全局停用恒出局）
         var servers = McpSubsetPolicy.EffectiveServers(AgentMcpServerConfig.Normalize(config.McpServers), enabledMcpIds);
@@ -216,8 +217,9 @@ public sealed class AgentRuntime : IAsyncDisposable
                 var launch = AgentPaths.ResolveLaunch(config.McpServerPath)
                     ?? throw new InvalidOperationException(
                         "未找到 MCP 服务器(LitSSHmcp.McpServer.exe): 请将服务器放到 App 的 mcp/ 目录, 或在「AI 助手设置」中指定路径。");
-                // 归因身份与会话工作目录都由宿主 spawn 时注入（评估报告 D1 / §10.A.5、需求 D / §5.3.1），子进程不自行决定
-                var host = McpToolHost.ForBuiltin(launch, ownerUserId, sessionWorkspaceDir);
+                // 归因身份与会话工作目录都由宿主 spawn 时注入（评估报告 D1 / §10.A.5、需求 D / §5.3.1），子进程不自行决定；
+                // ownerUsername 供子进程按用户名匹配授权矩阵（M3-4，仅 Web 宿主注入）
+                var host = McpToolHost.ForBuiltin(launch, ownerUserId, sessionWorkspaceDir, ownerUsername);
                 try
                 {
                     await host.ConnectAsync(ct);

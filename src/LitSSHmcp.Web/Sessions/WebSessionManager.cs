@@ -203,7 +203,7 @@ public sealed class WebSessionManager : IAsyncDisposable
         var summary = await _store.GetSessionSummaryAsync(sessionId, ct);
         slot.WorkspaceDir = dir;
         slot.Runtime = await _runtimeFactory.CreateAsync(
-            new WebRuntimeRequest(sessionId, owner.UserId.ToString(), dir, history, summary), ct);
+            new WebRuntimeRequest(sessionId, owner.UserId.ToString(), owner.Username, dir, history, summary), ct);
     }
 
     /// <summary>库内消息 → 模型历史（user/assistant 文本对；tool/reasoning 轨迹暂不重建，M3-7 随 UI 富化）。</summary>

@@ -34,12 +34,12 @@ var sessionId = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N"
 
 // 操作用户归因（评估报告 D1 / §10.A.5）：身份只能由宿主 spawn 子进程时经环境变量注入，
 // 子进程不自行决定、也不接受工具/前端参数（防伪造）。未注入 = 桌面未登录会话，归因 "local"。
-var ownerUserId = Environment.GetEnvironmentVariable("LITSSH_OWNER_USER_ID");
+var ownerUserId = Environment.GetEnvironmentVariable(HostEnv.OwnerUserId);
 AuditContext.CurrentUserId = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim();
 
 // 会话工作目录（需求 D / §5.2-5.3）：同样只由宿主 spawn 经环境变量注入，
-// 供 fileTransfer 条件白名单注入与工具级默认落地路径使用；未注入 = 旧会话/共享工作区。
-SessionWorkspace.SetCurrent(Environment.GetEnvironmentVariable("LITSSH_SESSION_WORKSPACE_DIR"));
+// 供 fileTransfer 条件白名单与工具级默认落地路径使用；未注入 = 旧会话/共享工作区。
+SessionWorkspace.SetCurrent(Environment.GetEnvironmentVariable(HostEnv.SessionWorkspaceDir));
 
 // 读取工具分组配置(留空=全部)。在注册 MCP 工具前先算好, 以便只暴露启用的分组。
 // 配置损坏/权限问题时不能让进程直接崩溃退出(客户端会收到一个无法解释的断连), 记下错误、按"全部启用"继续,
@@ -127,6 +127,9 @@ var mcp = builder.Services
         options.Filters.Request.CallToolFilters.Add(McpGlobalSwitch.CreateFilter());
         // 会话跟踪：从 initialize 后的请求上下文取客户端信息写入会话表
         options.Filters.Request.CallToolFilters.Add(McpSessionFilter.CreateFilter());
+        // 授权矩阵（M3-4 / §10.B.4）：Web 会话按"用户→目标白名单+操作级别"强制校验，
+        // 放在写互斥之前（拒绝不占锁）、会话过滤器之后（审计可带上会话上下文）
+        options.Filters.Request.CallToolFilters.Add(McpAuthorizationFilter.CreateFilter());
         // 目标级写互斥（§4.3/M2-1）：写类工具按目标跨进程串行，读类自由并行
         options.Filters.Request.CallToolFilters.Add(McpWriteGateFilter.CreateFilter());
     })

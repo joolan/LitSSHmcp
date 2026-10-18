@@ -112,6 +112,7 @@ public class WebSessionManagerTests
 
         var request = Assert.Single(_factory.Requests);
         Assert.Equal("101", request.OwnerUserId);
+        Assert.Equal("alice", request.OwnerUsername); // 授权矩阵按用户名匹配（M3-4）
         Assert.Equal(session.WorkspaceDir, request.WorkspaceDir);
         Assert.Equal(new[] { "user", "assistant" }, request.History.Select(m => m.Role.Value).ToArray());
         Assert.Equal(new[] { "旧问", "旧答" }, request.History.Select(m => m.Text).ToArray());

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using LitSSHmcp.Agent;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Web;
 using LitSSHmcp.Web;
@@ -8,6 +9,10 @@ using LitSSHmcp.Web.Sessions;
 // Web 宿主把审批通道压到 cli（文件通道）：桌面弹窗在服务端无意义；
 // web 通道 M3-5 接入后改 "web,cli"。stdio MCP 子进程经 InheritEnvironmentVariables 继承。
 Environment.SetEnvironmentVariable("LITSSH_APPROVAL_CHANNELS", "cli");
+
+// M3-4 授权矩阵（报告 D1 / §10.B.4）：Web 宿主 spawn 的 MCP 子进程强制"用户→目标"白名单+操作级别校验；
+// 桌面进程不注入此变量（D1 桌面仅归因不限权）。进程级变量同样由子进程继承。
+Environment.SetEnvironmentVariable(HostEnv.AuthzMode, HostEnv.Enforce);
 
 var builder = WebApplication.CreateBuilder(args);
 

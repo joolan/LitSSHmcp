@@ -1,4 +1,5 @@
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 
@@ -26,16 +27,14 @@ public sealed class McpToolHost : IAsyncDisposable
     /// 子进程经环境变量读取，绝不接受工具或前端传入）；空 = "local"（桌面未登录会话）。
     /// <paramref name="sessionWorkspaceDir"/> 会话工作目录（需求 D / §5.3.1）：同样只由宿主注入，
     /// 供子进程做 fileTransfer 条件白名单与默认落地路径；空 = 共享工作区（现状行为）。
+    /// <paramref name="ownerUsername"/> 授权矩阵匹配用用户名（M3-4 / §10.B.4）：仅 Web 宿主注入；
+    /// 空 = 子进程按用户 Id 匹配矩阵。
     /// </summary>
-    public static McpToolHost ForBuiltin(McpServerLaunch launch, string? ownerUserId = null, string? sessionWorkspaceDir = null)
+    public static McpToolHost ForBuiltin(McpServerLaunch launch, string? ownerUserId = null,
+        string? sessionWorkspaceDir = null, string? ownerUsername = null)
     {
         ArgumentNullException.ThrowIfNull(launch);
-        var env = new Dictionary<string, string?>
-        {
-            ["LITSSH_OWNER_USER_ID"] = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim()
-        };
-        if (!string.IsNullOrWhiteSpace(sessionWorkspaceDir))
-            env["LITSSH_SESSION_WORKSPACE_DIR"] = sessionWorkspaceDir.Trim();
+        var env = BuildBuiltinEnvironment(ownerUserId, sessionWorkspaceDir, ownerUsername);
 
         return new McpToolHost(() => new StdioClientTransport(new StdioClientTransportOptions
         {
@@ -46,6 +45,25 @@ public sealed class McpToolHost : IAsyncDisposable
             EnvironmentVariables = env,
             InheritEnvironmentVariables = true,
         }));
+    }
+
+    /// <summary>
+    /// 内置 MCP 子进程的注入环境（评估报告 §10.A.5：身份/授权变量只由宿主在此决定）。
+    /// 抽成独立方法便于单测覆盖；<c>LITSSH_AUTHZ_MODE</c> 属进程级（Web 宿主启动时设置，
+    /// 经 InheritEnvironmentVariables 继承），不在会话级字典内。
+    /// </summary>
+    public static Dictionary<string, string?> BuildBuiltinEnvironment(
+        string? ownerUserId, string? sessionWorkspaceDir, string? ownerUsername)
+    {
+        var env = new Dictionary<string, string?>
+        {
+            [HostEnv.OwnerUserId] = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim()
+        };
+        if (!string.IsNullOrWhiteSpace(sessionWorkspaceDir))
+            env[HostEnv.SessionWorkspaceDir] = sessionWorkspaceDir.Trim();
+        if (!string.IsNullOrWhiteSpace(ownerUsername))
+            env[HostEnv.AuthzUser] = ownerUsername.Trim();
+        return env;
     }
 
     /// <summary>按配置创建外部 MCP 宿主：<c>transport=http</c> 走 HTTP，否则 stdio。</summary>

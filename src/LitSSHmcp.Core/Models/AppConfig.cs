@@ -461,6 +461,58 @@ public class SecurityConfig
 
     /// <summary>查询结果列级脱敏规则。</summary>
     public MaskingConfig Masking { get; set; } = new();
+
+    /// <summary>
+    /// 授权矩阵（评估报告 D1 / §3.2 / §10.B.4）：用户 → 目标白名单 + 操作级别。
+    /// 仅对宿主注入 <c>LITSSH_AUTHZ_MODE=enforce</c> 的会话（Web）强制；桌面会话仅归因不限权（D1）。
+    /// </summary>
+    public AuthorizationConfig Authorization { get; set; } = new();
+}
+
+/// <summary>
+/// 授权矩阵：Web 用户 → 可操作目标（SSH 服务器 / 数据源）白名单 + 操作级别（只读/可执行）。
+/// 在 MCP 工具调用过滤器层强制校验（<c>McpAuthorizationFilter</c>，§10.B.4"UI 隐藏不算数"），
+/// 目标级校验先于建 SSH 连接完成。仅桌面可编辑（config.json 对 Web 只读，D2）。
+/// </summary>
+public class AuthorizationConfig
+{
+    /// <summary>
+    /// 是否启用矩阵校验。默认 true = fail-closed：Web 用户未配置白名单前目标工具一律拒绝
+    /// （§3.3.2"授权矩阵是 B 的安全命门"）。关闭 = 管理员显式放弃该防线，不建议。
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>用户规则表；无命中规则的用户默认拒绝（fail-closed）。</summary>
+    public AuthorizationUserRule[] Users { get; set; } = Array.Empty<AuthorizationUserRule>();
+
+    /// <summary>
+    /// Web 会话允许下发的外部 MCP 连接器 Id 白名单（内置 litssh 恒可用，不受此限）。
+    /// 默认空 = 外部连接器不下发 Web（§10.B.7：外部工具绕过 LitSSH 审批，Web 上风险放大）。
+    /// 仍受全局启用集合约束（D8 配置层优先）。
+    /// </summary>
+    public string[] WebConnectors { get; set; } = Array.Empty<string>();
+}
+
+/// <summary>一条用户授权规则：某用户能操作哪些目标、最高什么操作级别。</summary>
+public class AuthorizationUserRule
+{
+    /// <summary>
+    /// 用户名（Web 账号用户名，推荐）或用户 Id；<c>*</c> = 兜底规则（对未单独成条的用户生效）。
+    /// </summary>
+    public string User { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 目标白名单：精确 <c>ssh:&lt;服务器Id&gt;</c> / <c>ds:&lt;数据源Id&gt;</c>，
+    /// 或通配 <c>ssh:*</c> / <c>ds:*</c> / <c>*</c>（末位 <c>*</c> 为前缀通配）。
+    /// </summary>
+    public string[] Targets { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// 操作级别：<c>read</c> = 仅允许只读调用（ls/查询/日志/下载等）；
+    /// <c>exec</c> = 另允许写类调用（执行命令/上传/重启/SQL 写等）。
+    /// 未知值按 read 处理（宁严勿松）。
+    /// </summary>
+    public string Level { get; set; } = "read";
 }
 
 /// <summary>结果列级脱敏配置：按列名正则匹配，命中即对单元格值脱敏。</summary>

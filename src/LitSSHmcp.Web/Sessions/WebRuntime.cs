@@ -9,6 +9,7 @@ namespace LitSSHmcp.Web.Sessions;
 public sealed record WebRuntimeRequest(
     long SessionId,
     string OwnerUserId,
+    string OwnerUsername,
     string WorkspaceDir,
     IReadOnlyList<ChatMessage> History,
     string Summary);
@@ -27,7 +28,7 @@ public interface IWebRuntimeFactory
 
 /// <summary>
 /// 生产实现：按会话装配 AgentRuntime（连接 MCP 子进程、烧定工作目录/归因、恢复摘要）。
-/// 不注入本机终端/提升工具（桌面专属，需桌面确认）；连接器子集暂继承全局（M3-4 授权矩阵接管收窄）。
+/// 不注入本机终端/提升工具（桌面专属，需桌面确认）；连接器按 §10.B.7 白名单收窄（M3-4）。
 /// </summary>
 public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
 {
@@ -47,10 +48,29 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
             agent, provider, bundledSkillsDir: null,
             history: request.History,
             sessionWorkspaceDir: request.WorkspaceDir,
-            ownerUserId: request.OwnerUserId);
+            ownerUserId: request.OwnerUserId,
+            enabledMcpIds: ComputeWebEnabledMcpIds(config.Security?.Authorization ?? new AuthorizationConfig()),
+            ownerUsername: request.OwnerUsername);
         if (!string.IsNullOrEmpty(request.Summary))
             runtime.Session.RestoreSummary(request.Summary);
         return new AgentWebRuntime(runtime);
+    }
+
+    /// <summary>
+    /// Web 会话的连接器启用集合（§10.B.7 攻击面收敛）：内置 litssh 恒含（走 LitSSH 审批/授权矩阵），
+    /// 外部 MCP 默认不下发 Web——仅 <c>security.authorization.webConnectors</c> 白名单内的 Id 才下发；
+    /// 全局停用的连接器仍出局（子集只在全局启用集合内收窄，D8 配置层优先）。
+    /// </summary>
+    public static IReadOnlyCollection<string> ComputeWebEnabledMcpIds(AuthorizationConfig authorization)
+    {
+        ArgumentNullException.ThrowIfNull(authorization);
+        var ids = new HashSet<string>(StringComparer.Ordinal) { AgentMcpServerConfig.BuiltinDefault().Id };
+        foreach (var id in authorization.WebConnectors ?? Array.Empty<string>())
+        {
+            if (!string.IsNullOrWhiteSpace(id))
+                ids.Add(id.Trim());
+        }
+        return ids;
     }
 
     private sealed class AgentWebRuntime(AgentRuntime runtime) : IWebRuntime

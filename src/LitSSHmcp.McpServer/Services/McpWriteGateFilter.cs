@@ -247,6 +247,18 @@ public static class McpWriteGateFilter
             return null; // 配置读不到 → 工具自身也无法定位目标 → 放行
         }
 
+        return ResolveTargetKey(config, toolName, args);
+    }
+
+    /// <summary>
+    /// 同 <see cref="ResolveTargetKeyAsync"/>，但直接使用调用方已加载的配置（避免同一次过滤里重复读盘）；
+    /// 授权矩阵过滤器（McpAuthorizationFilter）与写互斥共用同一归一化逻辑。
+    /// </summary>
+    public static string? ResolveTargetKey(AppConfig config, string toolName, IDictionary<string, JsonElement>? args)
+    {
+        if (config is null)
+            return null;
+
         if (toolName.StartsWith("ssh_", StringComparison.Ordinal) ||
             toolName is "service_restart" or "docker_restart" or "docker_exec")
         {

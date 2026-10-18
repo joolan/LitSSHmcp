@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
 <title>LitSSHmcp 运维助手</title>
 <link rel="stylesheet" href="/css/app.css">
 </head>
@@ -23,16 +23,25 @@
 
 <div id="app-view" class="view" hidden>
   <header id="topbar">
+    <button id="menu-btn" class="icon-btn only-mobile" aria-label="会话列表" title="会话列表">☰</button>
     <span class="brand">LitSSHmcp</span>
+    <span id="conn-dot" class="dot" title="连接状态"></span>
     <span id="turn-status" class="status"></span>
     <span class="spacer"></span>
+    <button id="model-btn" class="chip" title="切换模型">模型…</button>
     <button id="approval-badge" class="badge" hidden title="有待审批操作，点击展开">待审批 <b id="approval-count">0</b></button>
     <span id="whoami" class="whoami"></span>
-    <button id="logout-btn" class="ghost">退出</button>
+    <button id="logout-btn" class="ghost" title="退出登录">退出</button>
   </header>
 
   <div class="layout">
+    <div id="backdrop" class="backdrop" hidden></div>
+
     <aside id="session-pane">
+      <div class="pane-head">
+        <span>会话</span>
+        <button id="pane-close" class="ghost icon-btn only-mobile" title="收起会话列表">✕</button>
+      </div>
       <button id="new-session-btn" class="primary block">＋ 新会话</button>
       <ul id="session-list"></ul>
     </aside>
@@ -46,10 +55,16 @@
       </div>
 
       <div id="messages"></div>
+      <button id="to-bottom" class="to-bottom" hidden title="回到最新">↓</button>
 
       <form id="composer" autocomplete="off">
-        <textarea id="input" rows="2" placeholder="输入任务…（Enter 发送，Shift+Enter 换行）"></textarea>
-        <button type="submit" id="send-btn" class="primary">发送</button>
+        <div id="attachment-chips" class="chips" hidden></div>
+        <div class="composer-row">
+          <button type="button" id="attach-btn" class="icon-btn" title="添加图片（也可粘贴/拖拽）">图片</button>
+          <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+          <textarea id="input" rows="1" placeholder="输入任务…（Enter 发送，Shift+Enter 换行）"></textarea>
+          <button type="submit" id="send-btn" class="primary">发送</button>
+        </div>
       </form>
     </main>
 
@@ -63,16 +78,26 @@
       <div id="files-list"></div>
     </section>
   </div>
-</div>
 
-<!-- 审批操作区：固定悬浮（不随聊天滚动），长会话历史下也一定可见；可收起（顶栏徽标可再展开） -->
-<div id="approval-overlay" class="appr-overlay" hidden>
-  <div class="appr-overlay-head">
-    <span class="appr-overlay-title">待审批操作</span>
-    <span class="spacer"></span>
-    <button id="approval-collapse" class="ghost">收起</button>
+  <!-- 模型选择（底部/弹层） -->
+  <div id="model-sheet" class="sheet" hidden>
+    <div class="sheet-head">
+      <span>选择模型</span>
+      <span class="spacer"></span>
+      <button id="model-close" class="ghost">关闭</button>
+    </div>
+    <div id="model-list" class="sheet-body"></div>
   </div>
-  <div id="approval-strip" class="strip"></div>
+
+  <!-- 审批操作区：固定悬浮（不随聊天滚动），长会话历史下也一定可见；可收起（顶栏徽标可再展开） -->
+  <div id="approval-overlay" class="appr-overlay" hidden>
+    <div class="appr-overlay-head">
+      <span class="appr-overlay-title">待审批操作</span>
+      <span class="spacer"></span>
+      <button id="approval-collapse" class="ghost">收起</button>
+    </div>
+    <div id="approval-strip" class="strip"></div>
+  </div>
 </div>
 
 <div id="toast" role="status" hidden></div>

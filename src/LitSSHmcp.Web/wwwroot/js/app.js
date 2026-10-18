@@ -1,4 +1,4 @@
-// 应用入口：登录/会话列表/视图接线（聊天、审批、目录由各模块接管）。
+// 应用入口：登录/会话列表/模型选择/抽屉与聊天接线（聊天、审批、目录由各模块接管）。
 import { api } from "./api.js";
 import { ChatController } from "./chat.js";
 import { ApprovalsPanel } from "./approvals.js";
@@ -16,21 +16,33 @@ const els = {
   appView: $("app-view"),
   whoami: $("whoami"),
   logoutBtn: $("logout-btn"),
+  menuBtn: $("menu-btn"),
+  paneClose: $("pane-close"),
+  backdrop: $("backdrop"),
   newSessionBtn: $("new-session-btn"),
   sessionList: $("session-list"),
   sessionTitle: $("session-title"),
   turnStatus: $("turn-status"),
+  connDot: $("conn-dot"),
   filesBtn: $("files-btn"),
   stopBtn: $("stop-btn"),
+  modelBtn: $("model-btn"),
+  modelSheet: $("model-sheet"),
+  modelList: $("model-list"),
+  modelClose: $("model-close"),
   approvalStrip: $("approval-strip"),
   approvalOverlay: $("approval-overlay"),
   approvalBadge: $("approval-badge"),
   approvalCount: $("approval-count"),
   approvalCollapse: $("approval-collapse"),
   messages: $("messages"),
+  toBottom: $("to-bottom"),
   composer: $("composer"),
   input: $("input"),
   sendBtn: $("send-btn"),
+  attachBtn: $("attach-btn"),
+  fileInput: $("file-input"),
+  chips: $("attachment-chips"),
   filesPane: $("files-pane"),
   filesPath: $("files-path"),
   filesList: $("files-list"),
@@ -43,15 +55,25 @@ let me = null;
 let sessions = [];
 let activeId = null;
 let toastTimer = null;
+let providers = { activeId: null, items: [] };
+const isCoarsePointer = () => window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
 
 const chat = new ChatController({
   messagesEl: els.messages,
   inputEl: els.input,
   sendBtn: els.sendBtn,
   stopBtn: els.stopBtn,
+  attachBtn: els.attachBtn,
+  fileInput: els.fileInput,
+  chipsEl: els.chips,
+  toBottomEl: els.toBottom,
   onToast,
   onStatus: (text) => {
     els.turnStatus.textContent = text;
+  },
+  onConnState: (state) => {
+    els.connDot.className = "dot" + (state === "ok" ? " ok" : state === "down" ? " down" : "");
+    els.connDot.title = state === "ok" ? "已连接" : state === "down" ? "连接断开" : "连接状态";
   },
 });
 
@@ -73,13 +95,8 @@ const files = new FilesPanel({
   upBtn: els.filesUp,
   closeBtn: els.filesClose,
   onToast,
-  onOpened: () => {
-    document.querySelector(".layout").classList.add("files-open");
-  },
-  onClosed: () => {
-    document.querySelector(".layout").classList.remove("files-open");
-    els.filesBtn.classList.remove("active");
-  },
+  onOpened: () => els.filesBtn.classList.add("active"),
+  onClosed: () => els.filesBtn.classList.remove("active"),
 });
 
 function onToast(message) {
@@ -99,11 +116,26 @@ function updatePlaceholder() {
     : "输入任务…（Enter 发送，Shift+Enter 换行）";
 }
 
+// ---- 抽屉（手机） ----
+function openDrawer() {
+  document.body.classList.add("drawer-open");
+  els.backdrop.hidden = false;
+}
+function closeDrawer() {
+  document.body.classList.remove("drawer-open");
+  els.backdrop.hidden = true;
+}
+els.menuBtn.addEventListener("click", openDrawer);
+els.paneClose.addEventListener("click", closeDrawer);
+els.backdrop.addEventListener("click", closeDrawer);
+
 // ---- 视图切换 ----
 function showLogin() {
   els.appView.hidden = true;
   els.loginView.hidden = false;
   els.loginUser.focus();
+  closeDrawer();
+  closeModelSheet();
   updatePlaceholder();
 }
 
@@ -114,6 +146,7 @@ function showApp(user) {
   els.whoami.textContent = `${user.username}（${user.role}）`;
   updatePlaceholder();
   approvals.start();
+  loadProviders().catch(() => {});
   loadSessions().catch((err) => onToast(err.message));
 }
 
@@ -154,10 +187,110 @@ els.logoutBtn.addEventListener("click", async () => {
   showLogin();
 });
 
+// ---- 模型 ----
+function providerLabel() {
+  const session = sessions.find((s) => s.id === activeId);
+  const id = session?.providerId || providers.activeId;
+  const item = providers.items.find((p) => p.id === id);
+  return item ? item.display || item.model || item.name : "模型…";
+}
+
+function updateModelButton() {
+  els.modelBtn.textContent = `${providerLabel()} ▾`;
+  els.modelBtn.title = "切换本会话模型";
+}
+
+async function loadProviders() {
+  const data = await api("/api/agent/providers");
+  providers = { activeId: data.activeId || null, items: data.providers || [] };
+  updateModelButton();
+}
+
+function openModelSheet() {
+  if (activeId === null) {
+    onToast("请先选择或新建会话，再切换模型");
+    return;
+  }
+  els.modelSheet.hidden = false;
+  renderModelSheet();
+}
+
+function closeModelSheet() {
+  els.modelSheet.hidden = true;
+}
+
+function renderModelSheet() {
+  const session = sessions.find((s) => s.id === activeId);
+  const currentId = session?.providerId || providers.activeId;
+  const nodes = providers.items.map((item) => {
+    const button = document.createElement("button");
+    button.className = "model-item" + (item.id === currentId ? " active" : "");
+    const name = document.createElement("span");
+    name.textContent = item.display || item.name || item.model || item.id;
+    const meta = document.createElement("small");
+    meta.textContent = item.model ? `模型：${item.model}` : "";
+    button.append(name, meta);
+    button.addEventListener("click", () => chooseModel(item.id).catch((err) => onToast(err.message)));
+    return button;
+  });
+  const empty = document.createElement("div");
+  empty.className = "empty";
+  empty.textContent = providers.items.length === 0 ? "未配置启用的模型（在桌面 AI 助手设置添加）" : "";
+  if (providers.items.length === 0) nodes.push(empty);
+  els.modelList.replaceChildren(...nodes);
+}
+
+async function chooseModel(providerId) {
+  const session = sessions.find((s) => s.id === activeId);
+  if (!session) return;
+  await api(`/api/sessions/${session.id}/provider`, {
+    method: "PUT",
+    body: { providerId },
+  });
+  session.providerId = providerId;
+  updateModelButton();
+  closeModelSheet();
+  renderSessions();
+  onToast("模型已切换（下一轮消息生效）");
+}
+
+els.modelBtn.addEventListener("click", openModelSheet);
+els.modelClose.addEventListener("click", closeModelSheet);
+
 // ---- 会话列表 ----
+function relativeTime(iso) {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diff = Math.round((then - Date.now()) / 1000);
+  const abs = Math.abs(diff);
+  const units = [
+    [60, "秒"],
+    [3600, "分钟"],
+    [86400, "小时"],
+    [2592000, "天"],
+    [31536000, "个月"],
+  ];
+  if (abs < 60) return "刚刚";
+  let value = diff / 60;
+  let label = "分钟";
+  for (let i = 1; i < units.length; i++) {
+    if (abs < units[i][0]) {
+      value = diff / units[i - 1][0];
+      label = units[i - 1][1];
+      break;
+    }
+    value = diff / units[i][0];
+    label = units[i][1];
+  }
+  const rounded = Math.round(value);
+  return rounded < 0 ? `${Math.abs(rounded)}${label}前` : `${rounded}${label}后`;
+}
+
 async function loadSessions() {
   sessions = await api("/api/sessions");
   renderSessions();
+  updateModelButton();
 }
 
 function renderSessions() {
@@ -174,7 +307,7 @@ function renderSessions() {
     title.textContent = s.title || `会话 ${s.id}`;
     const time = document.createElement("span");
     time.className = "session-time";
-    time.textContent = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";
+    time.textContent = relativeTime(s.updatedAt);
     open.append(title, time);
     const del = document.createElement("button");
     del.className = "session-del";
@@ -224,6 +357,9 @@ async function selectSession(id) {
     els.filesBtn.classList.remove("active");
   }
   renderSessions();
+  updateModelButton();
+  closeDrawer();
+  closeModelSheet();
   await chat.open(id);
 }
 
@@ -236,25 +372,68 @@ function clearActive() {
   els.sessionTitle.textContent = "未选择会话";
   els.messages.replaceChildren();
   renderSessions();
+  updateModelButton();
 }
 
 // ---- 聊天输入 ----
 els.composer.addEventListener("submit", (ev) => {
   ev.preventDefault();
   const text = els.input.value.trim();
-  if (!text || chat.busy) return;
+  if ((!text && chat.files.length === 0) || chat.busy || chat.uploading) return;
   els.input.value = "";
-  chat.send(text);
+  autoGrow();
+  chat.send(text).then((ok) => {
+    if (ok === false) {
+      // 发送失败（如连接未就绪/图片上传失败）：恢复输入内容，避免用户丢失草稿
+      if (!els.input.value) els.input.value = text;
+      autoGrow();
+      return;
+    }
+    // 首条消息后服务端会把默认标题改为任务摘要：稍后刷新列表
+    setTimeout(() => loadSessions().catch(() => {}), 1200);
+  });
 });
 
 els.input.addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter" && !ev.shiftKey) {
-    ev.preventDefault();
-    els.composer.requestSubmit();
-  }
+  if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing) return;
+  if (isCoarsePointer()) return; // 手机键盘：Enter 换行，用发送按钮
+  ev.preventDefault();
+  els.composer.requestSubmit();
 });
 
+els.input.addEventListener("input", autoGrow);
+
+function autoGrow() {
+  els.input.style.height = "auto";
+  els.input.style.height = `${Math.min(els.input.scrollHeight, Math.round(window.innerHeight * 0.34))}px`;
+}
+
 els.stopBtn.addEventListener("click", () => chat.stop());
+
+// ---- 图片附件（按钮/粘贴/拖拽） ----
+els.attachBtn.addEventListener("click", () => els.fileInput.click());
+els.fileInput.addEventListener("change", () => {
+  chat.addFiles(els.fileInput.files);
+  els.fileInput.value = "";
+});
+els.composer.addEventListener("paste", (ev) => {
+  const files = ev.clipboardData?.files;
+  if (files && files.length > 0) {
+    ev.preventDefault();
+    chat.addFiles(files);
+  }
+});
+const chatPane = $("chat-pane");
+chatPane.addEventListener("dragover", (ev) => {
+  if (Array.from(ev.dataTransfer?.types || []).includes("Files")) ev.preventDefault();
+});
+chatPane.addEventListener("drop", (ev) => {
+  const files = ev.dataTransfer?.files;
+  if (files && files.length > 0) {
+    ev.preventDefault();
+    chat.addFiles(files);
+  }
+});
 
 // ---- 文件面板 ----
 els.filesBtn.addEventListener("click", async () => {
@@ -270,6 +449,16 @@ els.filesBtn.addEventListener("click", async () => {
   } else {
     files.close();
     els.filesBtn.classList.remove("active");
+  }
+});
+
+// Esc 关闭浮层
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape") return;
+  if (!els.modelSheet.hidden) {
+    closeModelSheet();
+  } else if (document.body.classList.contains("drawer-open")) {
+    closeDrawer();
   }
 });
 

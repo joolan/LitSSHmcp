@@ -83,7 +83,94 @@ public static class WebSessionEndpoints
             }
         });
 
+        // 聊天图片附件上传（仅图片、单张 ≤10MB）：返回相对会话目录路径，随 WS user 帧回传
+        api.MapPost("/{id:long}/attachments", async (long id, HttpContext ctx, WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            if (!ctx.Request.HasFormContentType)
+                return Results.BadRequest(new { error = "需要 multipart/form-data" });
+
+            var form = await ctx.Request.ReadFormAsync(ctx.RequestAborted);
+            var file = form.Files.FirstOrDefault();
+            if (file is null || file.Length == 0)
+                return Results.BadRequest(new { error = "缺少文件" });
+
+            try
+            {
+                await using var stream = file.OpenReadStream();
+                var path = await manager.SaveAttachmentAsync(principal, id, file.FileName, file.ContentType, stream, ctx.RequestAborted);
+                return Results.Ok(new
+                {
+                    path,
+                    name = file.FileName,
+                    contentType = file.ContentType,
+                    size = file.Length
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (WebFilePathDeniedException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        // 会话级模型切换（下一轮生效；运行中 409）
+        api.MapPut("/{id:long}/provider", async (long id, SetProviderRequest? req, HttpContext ctx, WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            if (string.IsNullOrWhiteSpace(req?.ProviderId))
+                return Results.BadRequest(new { error = "providerId 不能为空" });
+            try
+            {
+                await manager.SetProviderAsync(principal, id, req.ProviderId!, ctx.RequestAborted);
+                return Results.Ok(new { providerId = req.ProviderId });
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (WebSessionBusyException)
+            {
+                return Results.Json(new { error = "会话正在执行，稍后再切换模型" }, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         app.Map("/ws/sessions/{id:long}", HandleWebSocketAsync);
+    }
+
+    /// <summary>解析 WS user 帧里的图片附件（最多 5 张；路径由上传接口返回）。</summary>
+    private static IReadOnlyList<WebAttachmentInput>? ParseAttachments(JsonElement root)
+    {
+        if (!root.TryGetProperty("attachments", out var array) || array.ValueKind != JsonValueKind.Array)
+            return null;
+
+        var items = new List<WebAttachmentInput>();
+        foreach (var element in array.EnumerateArray())
+        {
+            if (element.ValueKind != JsonValueKind.Object)
+                continue;
+            var path = element.TryGetProperty("path", out var p) ? p.GetString() : null;
+            if (string.IsNullOrWhiteSpace(path))
+                continue;
+            var contentType = element.TryGetProperty("contentType", out var c) ? c.GetString() : null;
+            items.Add(new WebAttachmentInput(path!, contentType));
+            if (items.Count >= 5)
+                break;
+        }
+        return items.Count == 0 ? null : items;
     }
 
     /// <summary>
@@ -189,6 +276,7 @@ public static class WebSessionEndpoints
                         await SendJsonAsync(socket, sendGate, new { type = "error", message = "消息不能为空" }, ctx.RequestAborted);
                         continue;
                     }
+                    var attachments = ParseAttachments(doc.RootElement);
 
                     // 回合在后台执行：接收循环继续读帧——stop 能在回合进行中即时生效
                     // （旧实现 await 回合导致 stop 帧要等回合结束才被处理）。
@@ -197,7 +285,7 @@ public static class WebSessionEndpoints
                         await SendJsonAsync(socket, sendGate, new { type = "busy", message = "上一轮仍在进行中" }, ctx.RequestAborted);
                         continue;
                     }
-                    turnTask = RunTurnAndStreamAsync(manager, principal, id, text!, socket, sendGate, ctx.RequestAborted);
+                    turnTask = RunTurnAndStreamAsync(manager, principal, id, text!, attachments, socket, sendGate, ctx.RequestAborted);
                     continue;
                 }
             }
@@ -217,7 +305,7 @@ public static class WebSessionEndpoints
     /// 由泵串行发送；回合结束（done/error）后泵随之结束。
     /// </summary>
     private static async Task RunTurnAndStreamAsync(WebSessionManager manager, WebPrincipal principal, long id,
-        string text, WebSocket socket, SemaphoreSlim sendGate, CancellationToken ct)
+        string text, IReadOnlyList<WebAttachmentInput>? attachments, WebSocket socket, SemaphoreSlim sendGate, CancellationToken ct)
     {
         var frames = Channel.CreateUnbounded<object>();
         var pump = Task.Run(async () =>
@@ -228,7 +316,7 @@ public static class WebSessionEndpoints
         var progress = new FrameProgress(frames.Writer);
         try
         {
-            await manager.RunTurnAsync(principal, id, text, progress, ct);
+            await manager.RunTurnAsync(principal, id, text, attachments, progress, ct);
             await frames.Writer.WriteAsync(new { type = "done" }, CancellationToken.None);
         }
         catch (WebSessionBusyException)
@@ -327,4 +415,7 @@ public static class WebSessionEndpoints
     }
 
     public sealed record CreateSessionRequest(string? Title);
+
+/// <summary>PUT /api/sessions/{id}/provider 请求体（会话级模型切换）。</summary>
+public sealed record SetProviderRequest(string? ProviderId);
 }

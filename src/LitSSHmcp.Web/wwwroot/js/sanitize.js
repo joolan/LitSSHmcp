@@ -59,9 +59,25 @@ const HEAD_RE = /^(#{1,6})\s+(.*)$/;
 const HR_RE = /^(-{3,}|\*{3,}|_{3,})\s*$/;
 const QUOTE_RE = /^&gt;\s?(.*)$/;
 const UL_RE = /^[-*+]\s+(.*)$/;
+const TASK_RE = /^[-*+]\s+\[([ xX])\]\s+(.*)$/;
 const OL_RE = /^\d{1,3}\.\s+(.*)$/;
 const FENCE_OPEN_RE = /^```(.*)$/;
 const BLOCK_START_RE = /^(?:```|#{1,6}\s|>|[-*+]\s|\d{1,3}\.\s|(-{3,}|\*{3,}|_{3,})\s*$)/;
+
+// GFM 表格：拆单元格（去首尾竖线与空白）；不是表格返回 []
+function splitTableRow(line) {
+  let s = String(line ?? "").trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  if (!s.includes("|")) return [];
+  return s.split("|").map((cell) => cell.trim());
+}
+
+function isTableSeparator(line) {
+  const cells = splitTableRow(line);
+  if (cells.length === 0) return false;
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
 
 // 块级渲染：源文本 → 安全 HTML（全部片段经 escapeHtml + 白名单标签构造）
 export function renderMarkdown(source) {
@@ -122,6 +138,29 @@ export function renderMarkdown(source) {
       continue;
     }
 
+    // GFM 表格（表头 + | --- | 分隔行 + 数据行）：单元格经 escapeHtml + inline 渲染
+    if (raw.includes("|") && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      const header = splitTableRow(raw);
+      if (header.length > 0) {
+        closeList();
+        i += 2;
+        const rows = [];
+        while (i < lines.length && lines[i].trim() !== "" && lines[i].includes("|")) {
+          const cells = splitTableRow(lines[i]);
+          if (cells.length === 0) break;
+          rows.push(cells);
+          i++;
+        }
+        const rowHtml = (cells, tag) =>
+          `<tr>${cells.map((cell) => `<${tag}>${inline(escapeHtml(cell))}</${tag}>`).join("")}</tr>`;
+        out.push(
+          `<div class="table-wrap"><table><thead>${rowHtml(header, "th")}</thead><tbody>${rows
+            .map((cells) => rowHtml(cells, "td"))
+            .join("")}</tbody></table></div>`);
+        continue;
+      }
+    }
+
     m = line.match(QUOTE_RE);
     if (m !== null) {
       closeList();
@@ -134,6 +173,19 @@ export function renderMarkdown(source) {
         i++;
       }
       out.push(`<blockquote>${buf.map(inline).join("<br>")}</blockquote>`);
+      continue;
+    }
+
+    m = line.match(TASK_RE);
+    if (m !== null) {
+      if (list !== "ul") {
+        closeList();
+        out.push('<ul class="tasks">');
+        list = "ul";
+      }
+      const checked = m[1] === " " ? "" : " checked";
+      out.push(`<li class="task"><input type="checkbox" disabled${checked}> ${inline(m[2])}</li>`);
+      i++;
       continue;
     }
 

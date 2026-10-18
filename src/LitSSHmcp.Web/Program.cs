@@ -147,6 +147,26 @@ app.MapGet("/api/me", (HttpContext ctx) =>
         : Results.Ok(new { id = principal.UserId, username = principal.Username, role = principal.Role });
 });
 
+// 模型列表（Web 顶栏展示与按会话切换；仅启用模型）
+app.MapGet("/api/agent/providers", async (HttpContext ctx, IConfigService configService) =>
+{
+    if (ctx.GetWebPrincipal() is null)
+        return Results.Unauthorized();
+    var config = await configService.LoadConfigAsync();
+    var providers = AgentProviderGroupConfig.Flatten(config.Agent.Providers)
+        .Where(p => p.Enabled)
+        .Select(p => new
+        {
+            id = p.Id,
+            name = p.Name,
+            group = p.GroupName,
+            model = p.Model,
+            display = p.DisplayName
+        })
+        .ToArray();
+    return Results.Ok(new { activeId = config.Agent.ActiveProviderId, providers });
+});
+
 app.MapWebSessionEndpoints();
 app.MapWebApprovalEndpoints();
 app.MapWebFileEndpoints();

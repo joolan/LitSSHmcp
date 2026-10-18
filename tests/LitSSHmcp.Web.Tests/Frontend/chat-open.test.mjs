@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 
 // ---- 浏览器全局打桩（chat.js 经 api.js 触达 document.cookie/fetch/location/WebSocket）----
-globalThis.document = { cookie: "" };
+globalThis.document = { cookie: "", createElement: () => el(), createTextNode: () => ({}) };
 globalThis.location = { protocol: "http:", host: "localhost:5000" };
 let messageRows = [
   { role: "user", content: "旧问" },
@@ -39,7 +39,20 @@ const el = () => ({
   querySelector: () => el(),
 });
 
-const { ChatController } = await import("../../../src/LitSSHmcp.Web/wwwroot/js/chat.js");
+const { ChatController, parseToolRow } = await import("../../../src/LitSSHmcp.Web/wwwroot/js/chat.js");
+
+// 历史工具轨迹行解析（PascalCase 落库 + camelCase 兼容 + 坏行返回 null）
+{
+  const step = parseToolRow(JSON.stringify({ Tool: "ssh_list_servers", Args: '{"a":1}', Result: "中文结果", Ok: true, Ms: 12 }));
+  assert.equal(step.tool, "ssh_list_servers");
+  assert.equal(step.result, "中文结果");
+  assert.equal(step.ok, true);
+  assert.equal(step.ms, 12);
+  const camel = parseToolRow(JSON.stringify({ tool: "x", args: "", result: "", ok: false, ms: 0 }));
+  assert.equal(camel.tool, "x");
+  assert.equal(camel.ok, false);
+  assert.equal(parseToolRow("not-json"), null);
+}
 
 const input = { disabled: true };   // 模拟 app.js 启动时的禁用
 const sendBtn = { disabled: true };
@@ -62,8 +75,8 @@ assert.equal(chat.persistedRows, 2, "open() 记录已落库消息数（断线恢
 
 // 断线重放：重载历史按库内消息重建（丢失的流式帧无法重发，至少恢复已完成内容）
 messageRows = [...messageRows, { role: "assistant", content: "新答" }];
-await chat.reloadHistory();
-assert.equal(chat.persistedRows, 3, "reloadHistory() 更新落库基线");
+await chat.loadHistory();
+assert.equal(chat.persistedRows, 3, "loadHistory() 更新落库基线");
 
 // 运行中禁用、结束后恢复
 chat.setBusy(true);

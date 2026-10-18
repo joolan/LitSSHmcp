@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using LitSSHmcp.Agent;
+using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Web;
@@ -9,7 +10,10 @@ using Microsoft.Extensions.AI;
 namespace LitSSHmcp.Web.Sessions;
 
 /// <summary>Web 会话摘要（REST/WS 共用）。</summary>
-public sealed record WebSessionInfo(long Id, string Title, string OwnerUserId, string WorkspaceDir, string UpdatedAt);
+public sealed record WebSessionInfo(long Id, string Title, string OwnerUserId, string WorkspaceDir, string UpdatedAt, string? ProviderId = null);
+
+/// <summary>上传图片附件（相对会话目录的路径 + MIME）。</summary>
+public sealed record WebAttachmentInput(string RelativePath, string? ContentType = null);
 
 /// <summary>不属于当前用户（或会话不存在）——对调用方统一表现为 404，不泄露存在性。</summary>
 public sealed class WebSessionNotFoundException() : Exception("会话不存在");
@@ -111,7 +115,7 @@ public sealed class WebSessionManager : IAsyncDisposable
         await _store.SetSessionWorkspaceDirAsync(id, dir, ct);
         _accessLog.Write("session_create", owner.Username, null, $"session={id}");
         var row = (await _store.ListSessionsAsync(ct)).First(s => s.Id == id);
-        return new WebSessionInfo(id, row.Title, owner.UserId.ToString(), dir, row.UpdatedAt);
+        return new WebSessionInfo(id, row.Title, owner.UserId.ToString(), dir, row.UpdatedAt, row.ProviderId);
     }
 
     /// <summary>列出当前用户的会话（逐条按 owner 过滤；桌面 local 会话不出现在 Web 列表）。</summary>
@@ -125,7 +129,7 @@ public sealed class WebSessionManager : IAsyncDisposable
             if (!string.Equals(sessionOwner, owner.UserId.ToString(), StringComparison.Ordinal))
                 continue;
             var dir = await _store.GetSessionWorkspaceDirAsync(row.Id, ct);
-            result.Add(new WebSessionInfo(row.Id, row.Title, sessionOwner, dir, row.UpdatedAt));
+            result.Add(new WebSessionInfo(row.Id, row.Title, sessionOwner, dir, row.UpdatedAt, row.ProviderId));
         }
         return result;
     }
@@ -164,12 +168,17 @@ public sealed class WebSessionManager : IAsyncDisposable
         _accessLog.Write("session_delete", owner.Username, null, $"session={sessionId}");
     }
 
+    /// <summary>发送一轮（无附件便捷重载）。</summary>
+    public Task RunTurnAsync(WebPrincipal owner, long sessionId, string userText,
+        IProgress<AgentEvent> progress, CancellationToken ct = default)
+        => RunTurnAsync(owner, sessionId, userText, null, progress, ct);
+
     /// <summary>
     /// 发送一轮消息并流式回吐事件（owner 校验 + 每会话一轮闸门 + 可取消）。
     /// 轮次成功后把用户/助手消息落库并触达会话；失败/取消不落助手消息。
     /// </summary>
     public async Task RunTurnAsync(WebPrincipal owner, long sessionId, string userText,
-        IProgress<AgentEvent> progress, CancellationToken ct = default)
+        IReadOnlyList<WebAttachmentInput>? attachments, IProgress<AgentEvent> progress, CancellationToken ct = default)
     {
         await EnsureOwnerAsync(owner, sessionId, ct);
         if (string.IsNullOrWhiteSpace(userText))
@@ -187,7 +196,12 @@ public sealed class WebSessionManager : IAsyncDisposable
         try
         {
             await EnsureRuntimeAsync(owner, sessionId, slot, turnCts.Token);
-            await _store.AppendMessageAsync(sessionId, "user", userText, turnCts.Token);
+            var contents = await BuildUserContentsAsync(sessionId, userText, attachments, turnCts.Token);
+            var storedText = attachments is { Count: > 0 }
+                ? userText + $"\n\n（附图 ×{attachments.Count}）"
+                : userText;
+            await _store.AppendMessageAsync(sessionId, "user", storedText, turnCts.Token);
+            await EnsureFriendlyTitleAsync(sessionId, userText, turnCts.Token);
 
             var assistantText = new StringBuilder();
             // 同步转发（不经 Progress<T> 线程池派发），保持事件到达顺序
@@ -198,7 +212,7 @@ public sealed class WebSessionManager : IAsyncDisposable
                 progress.Report(e);
             });
             using var auditScope = LocalAudit.BeginRunScope(sessionId.ToString());
-            await slot.Runtime!.SendAsync(userText, sink, turnCts.Token);
+            await slot.Runtime!.SendAsync(contents, sink, turnCts.Token);
 
             if (assistantText.Length > 0)
                 await _store.AppendMessageAsync(sessionId, "assistant", assistantText.ToString(), CancellationToken.None);
@@ -383,9 +397,167 @@ public sealed class WebSessionManager : IAsyncDisposable
         var messages = await _store.GetMessagesAsync(sessionId, ct);
         var history = BuildHistory(messages);
         var summary = await _store.GetSessionSummaryAsync(sessionId, ct);
+        var sessionRow = (await _store.ListSessionsAsync(ct)).FirstOrDefault(s => s.Id == sessionId);
         slot.WorkspaceDir = dir;
         slot.Runtime = await _runtimeFactory.CreateAsync(
-            new WebRuntimeRequest(sessionId, owner.UserId.ToString(), owner.Username, dir, history, summary), ct);
+            new WebRuntimeRequest(sessionId, owner.UserId.ToString(), owner.Username, dir, history, summary,
+                sessionRow?.ProviderId), ct);
+    }
+
+    /// <summary>
+    /// 保存聊天图片附件（仅图片；单张 ≤10MB）：会话目录 <c>attachments/</c> 下服务端生成文件名，
+    /// 返回相对会话目录的路径（WS user 帧回传）。
+    /// </summary>
+    public async Task<string> SaveAttachmentAsync(WebPrincipal owner, long sessionId, string? fileName,
+        string? contentType, Stream content, CancellationToken ct = default)
+    {
+        await EnsureOwnerAsync(owner, sessionId, ct);
+        var workspace = await _store.GetSessionWorkspaceDirAsync(sessionId, ct);
+        if (string.IsNullOrWhiteSpace(workspace) || !PathGuard.IsUnder(WebJobsRoot, workspace))
+            throw new WebSessionNotFoundException();
+
+        var extension = ResolveImageExtension(fileName, contentType)
+            ?? throw new InvalidOperationException("仅支持图片附件（png/jpeg/webp/gif）");
+
+        const long maxBytes = 10 * 1024 * 1024;
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await content.ReadAsync(chunk, ct)) > 0)
+        {
+            if (buffer.Length + read > maxBytes)
+                throw new InvalidOperationException("图片过大（单张上限 10MB）");
+            buffer.Write(chunk, 0, read);
+        }
+
+        var dir = Path.Combine(workspace, "attachments");
+        Directory.CreateDirectory(dir);
+        var name = Guid.NewGuid().ToString("N") + extension;
+        await File.WriteAllBytesAsync(Path.Combine(dir, name), buffer.ToArray(), ct);
+        _accessLog.Write("attachment_upload", owner.Username, null,
+            $"session={sessionId} name={name} size={buffer.Length}");
+        return "attachments/" + name;
+    }
+
+    /// <summary>切换会话模型：校验模型存在且启用 → 落库 → 释放现有运行时（下一轮按新模型重建）。</summary>
+    public async Task SetProviderAsync(WebPrincipal owner, long sessionId, string providerId, CancellationToken ct = default)
+    {
+        await EnsureOwnerAsync(owner, sessionId, ct);
+        if (string.IsNullOrWhiteSpace(providerId))
+            throw new ArgumentException("providerId 不能为空", nameof(providerId));
+
+        var config = await _configService.LoadConfigAsync();
+        var provider = AgentProviderGroupConfig.Flatten(config.Agent.Providers)
+            .FirstOrDefault(p => p.Enabled && string.Equals(p.Id, providerId.Trim(), StringComparison.Ordinal))
+            ?? throw new ArgumentException("模型不存在或已停用", nameof(providerId));
+
+        await _store.SetSessionProviderAsync(sessionId, provider.Id, ct);
+        if (_slots.TryGetValue(sessionId, out var slot) && slot.Runtime is not null)
+        {
+            if (!slot.TurnGate.Wait(0, ct))
+                throw new WebSessionBusyException();
+            try
+            {
+                await slot.Runtime.DisposeAsync();
+            }
+            catch
+            {
+                // 释放失败忽略：下一轮 EnsureRuntime 仍按新模型重建
+            }
+            finally
+            {
+                slot.Runtime = null;
+                slot.TurnGate.Release();
+            }
+        }
+        _accessLog.Write("session_model", owner.Username, null,
+            $"session={sessionId} provider={provider.Id} model={provider.Model}");
+    }
+
+    /// <summary>把用户文本 + 图片附件解析为模型内容（附件路径必须位于会话目录 attachments/ 下）。</summary>
+    private async Task<List<AIContent>> BuildUserContentsAsync(long sessionId, string userText,
+        IReadOnlyList<WebAttachmentInput>? attachments, CancellationToken ct)
+    {
+        var contents = new List<AIContent> { new TextContent(userText) };
+        if (attachments is not { Count: > 0 })
+            return contents;
+
+        var workspace = await _store.GetSessionWorkspaceDirAsync(sessionId, ct);
+        foreach (var attachment in attachments)
+        {
+            var full = ResolveAttachment(workspace, attachment.RelativePath);
+            var bytes = await File.ReadAllBytesAsync(full, ct);
+            contents.Add(new DataContent(bytes,
+                string.IsNullOrWhiteSpace(attachment.ContentType) ? "image/png" : attachment.ContentType));
+        }
+        return contents;
+    }
+
+    private static string ResolveAttachment(string? workspace, string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(workspace) || string.IsNullOrWhiteSpace(relativePath))
+            throw new WebFilePathDeniedException();
+        var root = Path.Combine(workspace, "attachments");
+        var full = Path.GetFullPath(Path.Combine(workspace, relativePath));
+        if (!PathGuard.IsUnder(root, full) || !File.Exists(full))
+            throw new WebFilePathDeniedException();
+        return full;
+    }
+
+    private static string? ResolveImageExtension(string? fileName, string? contentType)
+    {
+        var type = (contentType ?? string.Empty).Split(';')[0].Trim().ToLowerInvariant();
+        var byType = type switch
+        {
+            "image/png" => ".png",
+            "image/jpeg" or "image/jpg" => ".jpg",
+            "image/webp" => ".webp",
+            "image/gif" => ".gif",
+            _ => null
+        };
+        if (byType is not null)
+            return byType;
+
+        var extension = Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant();
+        return extension switch
+        {
+            ".png" => ".png",
+            ".jpg" or ".jpeg" => ".jpg",
+            ".webp" => ".webp",
+            ".gif" => ".gif",
+            _ => null
+        };
+    }
+
+    /// <summary>默认标题（"Web 任务"/"任务 …"）在首条用户消息后改为消息摘要（截断），提升会话列表可读性。</summary>
+    private async Task EnsureFriendlyTitleAsync(long sessionId, string userText, CancellationToken ct)
+    {
+        try
+        {
+            var row = (await _store.ListSessionsAsync(ct)).FirstOrDefault(s => s.Id == sessionId);
+            if (row is null || !IsDefaultTitle(row.Title))
+                return;
+            var title = ShortTitle(userText);
+            if (title.Length > 0)
+                await _store.RenameSessionAsync(sessionId, title, ct);
+        }
+        catch
+        {
+            // 命名失败不影响轮次
+        }
+    }
+
+    private static bool IsDefaultTitle(string? title)
+        => string.IsNullOrWhiteSpace(title)
+           || string.Equals(title, "Web 任务", StringComparison.Ordinal)
+           || title.StartsWith("任务 ", StringComparison.Ordinal);
+
+    private static string ShortTitle(string text)
+    {
+        var line = (text ?? string.Empty)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault() ?? string.Empty;
+        return line.Length <= 24 ? line : line[..24] + "…";
     }
 
     /// <summary>库内消息 → 模型历史（user/assistant 文本对；tool/reasoning 轨迹暂不重建，M3-7 随 UI 富化）。</summary>

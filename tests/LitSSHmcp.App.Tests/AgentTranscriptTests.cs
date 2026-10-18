@@ -23,6 +23,24 @@ public class AgentTranscriptTests
     }
 
     [Fact]
+    public void Serialize_keeps_chinese_and_inner_quotes_unescaped()
+    {
+        // 默认编码器会把引号写成 \u0022、中文写成 \uXXXX —— Web 历史回显会出现转义噪声
+        var step = new AgentStep("ssh_get_server_status", "{\"serverId\":\"虚拟服务器\"}");
+        step.Complete(true, "状态：在线", 12);
+
+        var json = AgentTranscript.Serialize(step);
+
+        Assert.Contains("虚拟服务器", json, StringComparison.Ordinal);
+        Assert.Contains("在线", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\\u", json, StringComparison.Ordinal);
+
+        var parsed = AgentTranscript.Deserialize(json);
+        Assert.Equal("{\"serverId\":\"虚拟服务器\"}", parsed!.Args);
+        Assert.Equal("状态：在线", parsed.Result);
+    }
+
+    [Fact]
     public void Deserialize_returns_null_for_corrupt_content()
     {
         Assert.Null(AgentTranscript.Deserialize("not-json"));

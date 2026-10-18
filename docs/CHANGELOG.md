@@ -9,6 +9,9 @@
 - **桌面可选登录（D1 收尾，仅归因）**：AI 助手窗口侧栏显示归因状态并提供登录 / 注销；复用 Web 账号库 `web.db` 校验（失败计数与锁定曲线与 Web 共享，防绕过限速），登录态经 DPAPI 加密落盘 `desktop-login.dat` **跨重启保持**（账号删除 / 文件被篡改自动失效）。登录后**新会话 owner 与 App 审计 UserId** 记为登录用户名，未登录继续归因 `local`；桌面不因此获得或失去任何权限（不注入 `LITSSH_AUTHZ_MODE`，D1「仅归因不限权」）。
 - **Web 会话工作区根可配（§8.3）**：`config.json` 新增 `web.jobsRoot`——Web 会话目录固定根（空=默认 `%APPDATA%\LitSSH\jobs`，仅接受绝对路径，非法值回退默认，**重启 Web 生效**）；会话目录为 `<根>\<用户Id>\s<会话Id>`，文件浏览 / 下载 / 删除的"必须位于固定根之下"校验随新根生效。桌面「设置 → 安全设置」新增**可视化编辑框**（含「恢复默认」）。
 - **孤儿会话目录清扫（§8.2 附件保留策略）**：新增 `agent.orphanSessionDirRetentionDays`（默认 30，0=关闭）——会话删除仍立即清理目录，另对"库中已无对应会话"的残留 `jobs/<用户>/s<id>`（删除失败 / 被会话保留策略剪除）按最后写入时间超期自动清理；桌面启动（裁剪后）与 Web 启动各清扫一次，跳过重解析点、保护未超期目录，清空后的 owner 目录一并删除。
+- **Web 聊天 UI/UX 重做（响应式，手机可用）**：顶栏新增连接状态点 / 模型 chip / 待审批徽标；会话列居中（桌面）与**抽屉式侧栏**（≤820px）；**固定底部输入栏**（自动增高、安全区适配、手机上 Enter 换行、发送按钮提交）；「回到最新」悬浮按钮（向上翻历史时不强制滚底）；会话相对时间、首条消息自动命名；**模型选择弹层**；代码块一键复制、GFM 表格 / 任务列表渲染；流式输出按帧节流渲染。
+- **Web 图片附件**：输入区「图片」按钮 / 粘贴 / 拖拽（png/jpeg/webp/gif，单张 ≤10MB、每条 ≤5 张）；先上传到会话目录 `attachments/`（服务端生成文件名），再随消息以**多模态内容**发给模型；非图片/超限拒绝。
+- **Web 会话级模型切换**：`GET /api/agent/providers`（仅启用模型）+ `PUT /api/sessions/{id}/provider`（下一轮生效；运行中 409）；顶栏展示当前模型并可在弹层切换，写入 `agent_sessions.ProviderId`。
 - **审计日志展示用户归因**：命令 / SQL 两张审计表新增「用户」列（`UserId`，空=桌面未登录的 `local`），CSV 导出同步；关键词搜索覆盖 `UserId`（该列 v6 已并入哈希链，此前 UI/导出未展示）。Web 会话审计存的是**用户 Id**（稳定标识，审批路由也按 Id），界面/CSV 会按 `web.db` 映射**显示为用户名**（如 `1` → `admin`；账号已删除/无账号库时回退原 Id），按用户名搜索自动映射为 Id 过滤。
 - **M0 打底（安全与并行前置）**：审计哈希链**跨进程锁**——新增 `CrossProcessFileLock`（`FileShare.None` 独占锁文件，进程崩溃由 OS 释放句柄自愈），链追加"读 prev → 计算 → 插入"与链库初始化全程跨进程串行（**并行子进程并发追加不再链分叉**；超时宁可写失败也不破链，`LockTimeout` 默认 30s；写连接 `busy_timeout` 放宽防 SQLITE_BUSY 丢审计）+ `AuditContext.CurrentUserId` AsyncLocal 槽位（M0 预留、M1 进链 payload 防二次链重建）；打底项：`agent.db` 每连接 `busy_timeout=3000`、`SubAgents.taskCounts` 改 `ConcurrentDictionary`、`ChatClientFactory` 按端点+密钥哈希+模型缓存 OpenAIClient（修每次新建从不 Dispose 的句柄泄漏）；审批链路：超时钟改为**弹窗可见后起算**（排队中的后续审批不再沿用发起时刻误判超时）、本机终端审批改 `BeginInvoke + TaskCompletionSource` 异步化（不再同步阻塞 UI 线程）、桌面/子进程审批弹窗加**会话标识**（并行后多弹窗并排防错认）；附 `AuditChainConcurrencyTests`/`CrossProcessFileLockTests` 并发回归。
 - **Web 助手（`LitSSHmcp.Web`，全新浏览器端）**：Kestrel 宿主 + `wwwroot` 零构建链静态 SPA（登录/会话列表/流式聊天/审批卡片/目录浏览下载）。独立账号库 `web.db`（PBKDF2-SHA256 210k 迭代、连续失败 5 次起指数锁定、首账号自动 admin）；账号管理 CLI `--create-user <名> [--role admin|user]` / `--list-users`（密码只经 `LITSSH_NEW_PASSWORD` 环境变量，不进 argv/进程列表）；每个 AI 会话运行在**独立 AgentRuntime 子进程**（stdio MCP 子进程、会话 owner 逐操作校验、删除会话即终止）；WebSocket 流式聊天（assistant_text/reasoning/tool/tool_result/done/error 分帧、busy 409、掉线取消）与 `/ws/approvals` 审批实时推送（桥接 cli 文件通道，REST 决策吃 CSRF）；会话目录文件浏览/下载（owner + `..` 路径防护）；模型输出 Markdown 经白名单 sanitize 后渲染（构造性 XSS 防护，全部 escape 后仅产白名单标签/URL scheme）。
@@ -23,6 +26,7 @@
 
 ### 修复
 
+- **Web 历史工具轨迹显示为转义 JSON**：桌面端持久化工具步骤原用默认 JSON 编码器（内层引号 → `\u0022`、中文 → `\uXXXX`），Web 又把 `role="tool"` 历史行当助手正文渲染——改为 relaxed 编码落库，且 Web 历史工具行渲染为**可折叠卡片**（工具/参数/结果/耗时，兼容旧转义行）。
 - **Web 审批操作区不易发现**：审批卡片原为聊天区顶部条带（长会话历史下需回滚到顶部才注意到）——改为**固定悬浮面板**（右上角、不随聊天滚动、可收起；新审批到达自动展开）+ 顶栏「待审批 N」徽标（点击展开）。
 - **Web 审批/聊天实时性缺口（二次审批不出现/结果需刷新）**：审批推送此前只靠 WS 增量——补 **REST 对账**（启动、每 5s、每次决策后、WS 重连/断线时拉 `GET /api/approvals` 全量对齐，漏推自愈）；聊天 WS **重连后重放已落库历史**，断线时若回合仍在执行则轮询库内消息直至结果落库（最长 2 分钟）；服务端回合改为**后台执行**、接收循环不再被 `await` 阻塞（原实现的 `stop` 帧要等回合结束才被处理）。
 - **桌面看不到 Web 进程写入的会话进度**：Web 为独立进程、桌面无跨进程感知——新增 **5s 轻量对账**（`SessionAutoRefresh`）：会话列表快照变化即重载列表；当前会话空闲且 `UpdatedAt` 变化时重载该会话消息（本地运行中/编辑中跳过）。**限制**：跨进程只能同步**已落库的整轮结果**（Web 在回合结束才写消息），无法实时流式。

@@ -196,6 +196,47 @@ public class WebSocketTests : IClassFixture<WsFixture>
     }
 
     [Fact]
+    public async Task Ws_attachment_upload_then_send_reaches_runtime()
+    {
+        var (token, csrf) = await _fx.LoginAsync("ws-image");
+        var sessionId = await _fx.CreateSessionAsync(token, "图片");
+
+        using var form = new MultipartFormDataContent();
+        var file = new ByteArrayContent(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+        form.Add(file, "file", "a.png");
+        var upload = new HttpRequestMessage(HttpMethod.Post, $"/api/sessions/{sessionId}/attachments") { Content = form };
+        upload.Headers.Add("Cookie", $"litssh_token={token}; litssh_csrf={csrf}");
+        upload.Headers.Add("X-CSRF-Token", csrf);
+        var uploadResp = await _fx.Client.SendAsync(upload);
+        Assert.Equal(HttpStatusCode.OK, uploadResp.StatusCode);
+        var body = JsonDocument.Parse(await uploadResp.Content.ReadAsStringAsync()).RootElement;
+        var path = body.GetProperty("path").GetString();
+        Assert.StartsWith("attachments/", path);
+        Assert.Equal("image/png", body.GetProperty("contentType").GetString());
+
+        var socket = await ConnectAsync(token, sessionId);
+        await SendFrameAsync(socket, new
+        {
+            type = "user",
+            text = "看图",
+            attachments = new[] { new { path, contentType = "image/png" } }
+        });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        while (true)
+        {
+            var frame = await ReceiveFrameAsync(socket, cts.Token);
+            if (frame.GetProperty("type").GetString() == "done")
+                break;
+        }
+
+        Assert.NotNull(_fx.Fake.LastContents);
+        Assert.Equal(2, _fx.Fake.LastContents!.Count);       // 文本 + 1 张图片
+        Assert.Single(_fx.Fake.LastContents!.OfType<Microsoft.Extensions.AI.DataContent>());
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Ws_unknown_frame_type_gets_error()
     {
         var (token, _) = await _fx.LoginAsync("ws-badframe");

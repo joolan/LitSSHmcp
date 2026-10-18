@@ -71,6 +71,19 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
     }
 
     [Fact]
+    public async Task Mobile_layout_and_composer_attachments_present()
+    {
+        var html = await _fx.Client.GetStringAsync("/");
+        foreach (var id in new[] { "menu-btn", "file-input", "attachment-chips", "model-sheet", "to-bottom" })
+            Assert.Contains($"id=\"{id}\"", html, StringComparison.Ordinal);
+
+        var css = await _fx.Client.GetStringAsync("/css/app.css");
+        var normalized = System.Text.RegularExpressions.Regex.Replace(css, @"\s+", " ");
+        Assert.Contains("@media (max-width: 820px)", normalized, StringComparison.Ordinal);
+        Assert.Contains("body.drawer-open #session-pane", normalized, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Api_still_requires_authenticaton()
     {
         var resp = await _fx.Client.GetAsync("/api/sessions");

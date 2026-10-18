@@ -3,6 +3,7 @@ using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Web;
 using LitSSHmcp.Web.Sessions;
+using Microsoft.Extensions.AI;
 using Xunit;
 
 namespace LitSSHmcp.Web.Tests;
@@ -221,6 +222,61 @@ public class WebSessionManagerTests
         Assert.Equal(new[] { "user", "assistant" }, history.Select(m => m.Role.Value).ToArray());
     }
 
+    [Fact]
+    public async Task Switching_provider_persists_and_applies_next_runtime()
+    {
+        _config.Config.Agent.Providers = new[]
+        {
+            new AgentProviderGroupConfig
+            {
+                Id = "g1",
+                Name = "测试组",
+                Endpoint = "http://localhost:1",
+                Enabled = true,
+                Models = new[]
+                {
+                    new AgentModelConfig { Id = "p1", Name = "模型1", Enabled = true },
+                    new AgentModelConfig { Id = "p2", Name = "模型2", Enabled = true }
+                }
+            }
+        };
+        _config.Config.Agent.ActiveProviderId = "p1";
+        var session = await _manager.CreateSessionAsync(_alice, "换模型");
+
+        await _manager.RunTurnAsync(_alice, session.Id, "hi", new Recorder());
+        Assert.Null(_factory.Requests[0].ProviderId); // 会话未设置 → 宿主回退全局默认
+
+        await _manager.SetProviderAsync(_alice, session.Id, "p2");
+        Assert.Equal("p2", (await _store.ListSessionsAsync()).First(s => s.Id == session.Id).ProviderId);
+
+        await _manager.RunTurnAsync(_alice, session.Id, "again", new Recorder());
+        Assert.Equal("p2", _factory.Requests[1].ProviderId);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _manager.SetProviderAsync(_alice, session.Id, "not-exist"));
+    }
+
+    [Fact]
+    public async Task Attachment_upload_saves_image_and_reaches_runtime()
+    {
+        var session = await _manager.CreateSessionAsync(_alice, "附件");
+
+        await using var png = new MemoryStream(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
+        var path = await _manager.SaveAttachmentAsync(_alice, session.Id, "a.png", "image/png", png);
+        Assert.StartsWith("attachments/", path);
+        var full = Path.Combine(session.WorkspaceDir, path.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(full));
+
+        // 非图片拒绝落盘
+        await using var exe = new MemoryStream(new byte[] { 1, 2, 3 });
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _manager.SaveAttachmentAsync(_alice, session.Id, "a.exe", "application/octet-stream", exe));
+
+        // 附件随轮次进入模型内容（文本 + 1 张图片）
+        await _manager.RunTurnAsync(_alice, session.Id, "看图", new[] { new WebAttachmentInput(path, "image/png") }, new Recorder());
+        Assert.Equal(2, _factory.LastContents!.Count);
+        Assert.Single(_factory.LastContents!.OfType<DataContent>());
+    }
+
     private sealed class Recorder : IProgress<AgentEvent>
     {
         public List<AgentEvent> Events { get; } = new();
@@ -235,6 +291,8 @@ public sealed class FakeRuntimeFactory : IWebRuntimeFactory
     public Func<string, IProgress<AgentEvent>?, CancellationToken, Task>? OnSend { get; set; }
     public bool Disposed { get; private set; }
     public string Summary { get; set; } = "summary";
+    /// <summary>最近一轮收到的内容（断言图片附件用）。</summary>
+    public IReadOnlyList<AIContent>? LastContents { get; private set; }
 
     public Task<IWebRuntime> CreateAsync(WebRuntimeRequest request, CancellationToken ct)
     {
@@ -246,8 +304,10 @@ public sealed class FakeRuntimeFactory : IWebRuntimeFactory
     {
         public string Summary => owner.Summary;
 
-        public Task SendAsync(string userText, IProgress<AgentEvent>? progress, CancellationToken ct)
+        public Task SendAsync(IReadOnlyList<AIContent> contents, IProgress<AgentEvent>? progress, CancellationToken ct)
         {
+            owner.LastContents = contents;
+            var userText = contents.OfType<TextContent>().FirstOrDefault()?.Text ?? string.Empty;
             if (owner.OnSend is not null)
                 return owner.OnSend(userText, progress, ct);
             progress?.Report(new AgentEvent(AgentEventKind.AssistantText, Text: "echo:" + userText));

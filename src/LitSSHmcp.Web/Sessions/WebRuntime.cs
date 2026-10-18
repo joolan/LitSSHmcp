@@ -12,12 +12,14 @@ public sealed record WebRuntimeRequest(
     string OwnerUsername,
     string WorkspaceDir,
     IReadOnlyList<ChatMessage> History,
-    string Summary);
+    string Summary,
+    string? ProviderId = null);
 
 /// <summary>Web 会话运行时抽象：把 AgentRuntime 池化细节与宿主逻辑解耦（测试可注入假运行时）。</summary>
 public interface IWebRuntime : IAsyncDisposable
 {
-    Task SendAsync(string userText, IProgress<AgentEvent>? progress, CancellationToken ct);
+    /// <summary>发送一轮（可带图片等 AI 内容附件）。</summary>
+    Task SendAsync(IReadOnlyList<AIContent> contents, IProgress<AgentEvent>? progress, CancellationToken ct);
     string Summary { get; }
 }
 
@@ -41,7 +43,13 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
         var config = await _configService.LoadConfigAsync();
         var agent = config.Agent;
         var flat = AgentProviderGroupConfig.Flatten(agent.Providers);
-        var provider = flat.FirstOrDefault(p => p.Id == agent.ActiveProviderId) ?? flat.FirstOrDefault()
+        // 会话级模型：会话 ProviderId 优先，失效/未设置回退全局默认 → 第一个模型
+        var provider =
+            (!string.IsNullOrWhiteSpace(request.ProviderId)
+                ? flat.FirstOrDefault(p => p.Id == request.ProviderId)
+                : null)
+            ?? flat.FirstOrDefault(p => p.Id == agent.ActiveProviderId)
+            ?? flat.FirstOrDefault()
             ?? throw new InvalidOperationException("未配置可用的模型（AI 助手设置 → 模型）。");
 
         var runtime = await AgentRuntime.StartAsync(
@@ -78,15 +86,15 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
     {
         public string Summary => runtime.Session.Summary;
 
-        public Task SendAsync(string userText, IProgress<AgentEvent>? progress, CancellationToken ct)
+        public Task SendAsync(IReadOnlyList<AIContent> contents, IProgress<AgentEvent>? progress, CancellationToken ct)
         {
-            // 成本预算（§10.B.6）：达到 agent.budget.maxSessionCost 上限阻止新发送（§10.B.6 按用户生效）
+            // 成本预算（§10.B.6）：达到 agent.budget.maxSessionCost 上限阻止新发送（按用户生效）
             var block = WebBudgetGuard.ComputeCostBlock(budget,
                 runtime.Session.SessionInputTokens, runtime.Session.SessionOutputTokens,
                 inputPricePerMTok, outputPricePerMTok);
             if (block is not null)
                 throw new InvalidOperationException(block);
-            return runtime.Session.SendAsync(userText, progress, ct);
+            return runtime.Session.SendAsync(contents, progress, ct);
         }
 
         public async ValueTask DisposeAsync() => await runtime.DisposeAsync();

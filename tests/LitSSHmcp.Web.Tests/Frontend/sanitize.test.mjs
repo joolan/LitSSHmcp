@@ -124,6 +124,22 @@ assert.equal(sanitizeUrl(null), null);
   }
 }
 
+// ---- GFM 表格 / 任务列表 ----
+{
+  const out = renderMarkdown("| 名称 | 状态 |\n| --- | --- |\n| web | ok |");
+  assert.ok(out.includes("<table>"), "表格应渲染为 table");
+  assert.ok(out.includes("<th>名称</th>"), "表头单元格渲染");
+  assert.ok(out.includes("<td>ok</td>"), "数据单元格渲染");
+  assert.ok(!out.includes("| --- |"), "分隔行不应作为正文");
+}
+
+{
+  const out = renderMarkdown("- [x] 已完成\n- [ ] 待办");
+  assert.ok(out.includes('type="checkbox"'), "任务列表渲染复选框");
+  assert.ok(out.includes("checked"), "已完成项勾选");
+  assert.ok(out.includes("待办"), "任务文本保留");
+}
+
 // ---- escapeHtml 基础 ----
 assert.equal(escapeHtml(`<>&"'`), "&lt;&gt;&amp;&quot;&#39;");
 

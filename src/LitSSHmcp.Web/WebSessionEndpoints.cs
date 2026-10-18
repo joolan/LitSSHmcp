@@ -228,7 +228,7 @@ public static class WebSessionEndpoints
         }
     }
 
-    private static async Task<string?> ReceiveTextAsync(WebSocket socket, CancellationToken ct)
+    internal static async Task<string?> ReceiveTextAsync(WebSocket socket, CancellationToken ct)
     {
         var buffer = new byte[16 * 1024];
         using var ms = new MemoryStream();
@@ -266,7 +266,7 @@ public static class WebSessionEndpoints
         }
     }
 
-    private static async Task SendJsonAsync(WebSocket socket, SemaphoreSlim gate, object frame, CancellationToken ct)
+    internal static async Task SendJsonAsync(WebSocket socket, SemaphoreSlim gate, object frame, CancellationToken ct)
     {
         if (socket.State != WebSocketState.Open)
             return;

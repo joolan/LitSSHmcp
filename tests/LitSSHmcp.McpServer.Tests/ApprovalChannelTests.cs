@@ -1,6 +1,7 @@
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Approval;
 using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.McpServer.Services;
 using Xunit;
 
@@ -31,6 +32,34 @@ public class ApprovalChannelTests : IDisposable
         var context = new ApprovalRequestContext { ServerName = "s", Operation = "op", Command = "rm x", TimeoutSeconds = 1 };
 
         Assert.Equal(ApprovalOutcome.Timeout, await channel.RequestAsync(context, CancellationToken.None));
+    }
+
+    /// <summary>
+    /// M3-5：pending 文件携带宿主注入的归因 Owner（AuditContext ← LITSSH_OWNER_USER_ID），
+    /// Web 宿主凭它做浏览器推送的身份过滤（报告 §3.3.1/§10.B.5）。
+    /// </summary>
+    [Fact]
+    public async Task Cli_channel_pending_carries_audit_owner()
+    {
+        AuditContext.CurrentUserId = "42";
+        try
+        {
+            var channel = new CliApprovalChannel(_dir);
+            var task = channel.RequestAsync(
+                new ApprovalRequestContext { ServerName = "s", Operation = "op", Command = "ls", TimeoutSeconds = 15 },
+                CancellationToken.None);
+
+            var id = await WaitForPendingIdAsync();
+            var pending = ApprovalFileStore.ListPending(_dir).Single(p => p.Id == id);
+            Assert.Equal("42", pending.Owner);
+
+            ApprovalFileStore.WriteDecision(_dir, new ApprovalDecisionFile { Id = id, Approved = true, DecidedAt = DateTimeOffset.Now, Channel = "cli" });
+            Assert.Equal(ApprovalOutcome.Approved, await task);
+        }
+        finally
+        {
+            AuditContext.CurrentUserId = null;
+        }
     }
 
     [Fact]

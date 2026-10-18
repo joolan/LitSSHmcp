@@ -146,6 +146,9 @@ public sealed class CliApprovalChannel : IApprovalChannel
             Operation = context.Operation,
             Command = context.Command.Length > 4000 ? context.Command[..4000] : context.Command,
             FilePath = context.FilePath,
+            // 归因随宿主注入（MCP Program 启动时置入 AuditContext；"local"=桌面未登录）——
+            // Web 宿主按它过滤推送（报告 §3.3.1），不影响 cli 决策本身
+            Owner = AuditContext.CurrentUserId,
             CreatedAt = DateTimeOffset.Now,
             ExpiresAt = DateTimeOffset.Now.AddSeconds(timeout),
             TimeoutSeconds = context.TimeoutSeconds

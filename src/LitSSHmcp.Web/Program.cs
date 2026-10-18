@@ -4,10 +4,11 @@ using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Web;
 using LitSSHmcp.Web;
+using LitSSHmcp.Web.Approvals;
 using LitSSHmcp.Web.Sessions;
 
-// Web 宿主把审批通道压到 cli（文件通道）：桌面弹窗在服务端无意义；
-// web 通道 M3-5 接入后改 "web,cli"。stdio MCP 子进程经 InheritEnvironmentVariables 继承。
+// Web 宿主把审批通道压到 cli（文件通道）：桌面弹窗在服务端无意义；浏览器审批经 WebApprovalHub
+// 桥接同一文件通道推送/决策（报告 §3.3.1，无需 web 通道）。stdio MCP 子进程经 InheritEnvironmentVariables 继承。
 Environment.SetEnvironmentVariable("LITSSH_APPROVAL_CHANNELS", "cli");
 
 // M3-4 授权矩阵（报告 D1 / §10.B.4）：Web 宿主 spawn 的 MCP 子进程强制"用户→目标"白名单+操作级别校验；
@@ -23,6 +24,7 @@ builder.Services.AddSingleton<IConfigService, ConfigService>();
 builder.Services.AddSingleton<IContextStore, ContextStore>();
 builder.Services.AddSingleton<IWebRuntimeFactory, AgentWebRuntimeFactory>();
 builder.Services.AddSingleton<WebSessionManager>();
+builder.Services.AddSingleton<WebApprovalHub>();
 
 var app = builder.Build();
 
@@ -84,6 +86,10 @@ app.MapGet("/api/me", (HttpContext ctx) =>
 });
 
 app.MapWebSessionEndpoints();
+app.MapWebApprovalEndpoints();
+
+// 审批桥就绪即启轮询（§3.3.1：cli 文件通道 → 浏览器推送）；单例首次解析触发后台循环
+_ = app.Services.GetRequiredService<WebApprovalHub>();
 
 await app.RunAsync();
 

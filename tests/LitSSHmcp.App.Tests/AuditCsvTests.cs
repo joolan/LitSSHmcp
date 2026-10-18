@@ -29,6 +29,23 @@ public class AuditCsvTests
     }
 
     [Fact]
+    public void User_display_prefers_resolved_username_over_id()
+    {
+        var log = new CommandAuditLog
+        {
+            ServerId = "s", ServerName = "srv", Command = "ls", UserId = "1", UserName = "admin",
+            Status = CommandStatus.Executed
+        };
+
+        Assert.Equal("admin", log.UserDisplay);
+
+        var vm = new AuditViewModel();
+        vm.CommandLogs.Add(log);
+        Assert.Contains(",admin,", vm.BuildCommandsCsv(), StringComparison.Ordinal);
+        Assert.DoesNotContain(",1,", vm.BuildCommandsCsv().Split('\n')[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Sql_csv_includes_user_column_with_local_fallback()
     {
         var vm = new AuditViewModel();

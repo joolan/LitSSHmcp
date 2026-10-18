@@ -303,7 +303,7 @@ ssh:web-server-01  --canAccess-->  ds:mysql-order-01    # 服务器可访问数�
 
 ### 审计日志
 
-查看命令 / SQL 审计；支持按 服务器 / 数据源 ID 筛选 + **命令关键字模糊查询**（含**用户**归因）+ **按会话 ID 筛选**、复制、导出 CSV（含**用户**列，空=桌面未登录的 `local`）、**含归档**（超期记录永久保留）与 **校验完整性**（哈希链防篡改）。
+查看命令 / SQL 审计；支持按 服务器 / 数据源 ID 筛选 + **命令关键字模糊查询**（含**用户**归因；Web 会话按 `web.db` 映射显示用户名）+ **按会话 ID 筛选**、复制、导出 CSV（含**用户**列，未登录= `local`）、**含归档**（超期记录永久保留）与 **校验完整性**（哈希链防篡改）。
 
 ![审计日志](docs/images/app-audit.png)
 
@@ -410,7 +410,7 @@ src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
 git clone https://github.com/joolan/LitSSHmcp.git
 cd LitSSHmcp
 dotnet build LitSSHmcp.slnx
-dotnet test LitSSHmcp.slnx   # 全部测试(Core + Agent + MCP 服务器 + App + Web，共 1289 用例)
+dotnet test LitSSHmcp.slnx   # 全部测试(Core + Agent + MCP 服务器 + App + Web，共 1290 用例)
 ```
 
 ### 2. 发布

@@ -430,9 +430,9 @@ public class McpAuthorizationFilterTests : IDisposable
         public string? SessionId { get; set; }
         public virtual Task InitializeAsync() => Task.CompletedTask;
         public virtual Task LogCommandAsync(CommandAuditLog log) => Task.CompletedTask;
-        public virtual Task<CommandAuditLog[]> GetLogsAsync(string? serverId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null) => Task.FromResult(Array.Empty<CommandAuditLog>());
+        public virtual Task<CommandAuditLog[]> GetLogsAsync(string? serverId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null) => Task.FromResult(Array.Empty<CommandAuditLog>());
         public virtual Task LogSqlAsync(SqlAuditLog log) => Task.CompletedTask;
-        public virtual Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null) => Task.FromResult(Array.Empty<SqlAuditLog>());
+        public virtual Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null) => Task.FromResult(Array.Empty<SqlAuditLog>());
         public virtual Task RecordSessionAsync(AuditSession session) => Task.CompletedTask;
         public virtual Task<AuditSession[]> GetSessionsAsync(int limit = 50) => Task.FromResult(Array.Empty<AuditSession>());
         public virtual Task<AuditVerifyResult> VerifyChainAsync(CancellationToken ct = default) => Task.FromResult(new AuditVerifyResult { Ok = true });

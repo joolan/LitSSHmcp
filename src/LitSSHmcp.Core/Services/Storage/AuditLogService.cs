@@ -364,7 +364,7 @@ public class AuditLogService : IAuditLogService
 
     // —— 查询（活动表 / 含历史归档） ——
 
-    public async Task<CommandAuditLog[]> GetLogsAsync(string? serverId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null)
+    public async Task<CommandAuditLog[]> GetLogsAsync(string? serverId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null)
     {
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync();
@@ -383,6 +383,8 @@ public class AuditLogService : IAuditLogService
             conditions.Add("(Command LIKE @Keyword ESCAPE '\\' OR IFNULL(UserId, '') LIKE @Keyword ESCAPE '\\')");
             cmd.Parameters.AddWithValue("@Keyword", $"%{EscapeLike(keyword.Trim())}%");
         }
+
+        AddUserIdsCondition(conditions, cmd, userIds);
 
         if (!string.IsNullOrWhiteSpace(sessionId))
         {
@@ -418,7 +420,7 @@ public class AuditLogService : IAuditLogService
         return logs.ToArray();
     }
 
-    public async Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null)
+    public async Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null)
     {
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync();
@@ -437,6 +439,8 @@ public class AuditLogService : IAuditLogService
             conditions.Add("(Sql LIKE @Keyword ESCAPE '\\' OR IFNULL(UserId, '') LIKE @Keyword ESCAPE '\\')");
             cmd.Parameters.AddWithValue("@Keyword", $"%{EscapeLike(keyword.Trim())}%");
         }
+
+        AddUserIdsCondition(conditions, cmd, userIds);
 
         if (!string.IsNullOrWhiteSpace(sessionId))
         {
@@ -470,6 +474,28 @@ public class AuditLogService : IAuditLogService
             logs.Add(ReadSqlRow(reader));
 
         return logs.ToArray();
+    }
+
+    /// <summary>
+    /// 按归因用户集合过滤（用户名搜索 → 映射到用户 Id 后传入）：<c>UserId IN (…)</c>。
+    /// 空集合不产生条件。
+    /// </summary>
+    private static void AddUserIdsCondition(List<string> conditions, SqliteCommand cmd, IReadOnlyCollection<string>? userIds)
+    {
+        if (userIds is not { Count: > 0 })
+            return;
+
+        var names = new List<string>();
+        var index = 0;
+        foreach (var id in userIds.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal))
+        {
+            var parameter = "@Uid" + index++;
+            names.Add(parameter);
+            cmd.Parameters.AddWithValue(parameter, id);
+        }
+
+        if (names.Count > 0)
+            conditions.Add($"UserId IN ({string.Join(", ", names)})");
     }
 
     /// <summary>转义 LIKE 通配符，避免 keyword 里的 % / _ 匹配到非预期记录。</summary>

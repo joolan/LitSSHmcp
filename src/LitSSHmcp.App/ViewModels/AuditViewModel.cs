@@ -4,12 +4,14 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
+using LitSSHmcp.Core.Services.Web;
 
 namespace LitSSHmcp.App.ViewModels;
 
 public class AuditViewModel : INotifyPropertyChanged
 {
     private readonly AuditLogService _audit = new();
+    private readonly WebAccountsStore _accounts = new();
     private bool _initialized;
     private string _statusMessage = string.Empty;
 
@@ -64,15 +66,46 @@ public class AuditViewModel : INotifyPropertyChanged
                 _ => (AuditCategory?)null
             };
 
-            var commands = await _audit.GetLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category);
+            // 归因展示：Web 会话审计存用户 Id → 映射为 web.db 用户名（桌面登录本身存用户名）
+            Dictionary<string, string>? idToName = null;
+            string[]? keywordUserIds = null;
+            try
+            {
+                await _accounts.InitializeAsync();
+                var users = await _accounts.ListUsersAsync();
+                idToName = users.ToDictionary(u => u.Id.ToString(), u => u.Username, StringComparer.Ordinal);
+                if (!string.IsNullOrWhiteSpace(keyword))
+                {
+                    var matched = users
+                        .Where(u => u.Username.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                        .Select(u => u.Id.ToString())
+                        .ToArray();
+                    if (matched.Length > 0)
+                        keywordUserIds = matched;
+                }
+            }
+            catch
+            {
+                // 无 web.db / 读取失败：按原始 Id 展示
+            }
+
+            var commands = await _audit.GetLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category, userIds: keywordUserIds);
             CommandLogs.Clear();
             foreach (var item in commands)
+            {
+                if (idToName is not null && item.UserId is not null && idToName.TryGetValue(item.UserId, out var name))
+                    item.UserName = name;
                 CommandLogs.Add(item);
+            }
 
-            var sqls = await _audit.GetSqlLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category);
+            var sqls = await _audit.GetSqlLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category, userIds: keywordUserIds);
             SqlLogs.Clear();
             foreach (var item in sqls)
+            {
+                if (idToName is not null && item.UserId is not null && idToName.TryGetValue(item.UserId, out var name))
+                    item.UserName = name;
                 SqlLogs.Add(item);
+            }
 
             var sessions = await _audit.GetSessionsAsync(200);
             Sessions.Clear();

@@ -62,6 +62,11 @@ public class CommandAuditLog
     /// </summary>
     public string? UserId { get; set; }
 
-    /// <summary>审计视图/CSV 展示用：空 = local（桌面未登录）。</summary>
-    public string UserDisplay => string.IsNullOrWhiteSpace(UserId) ? "local" : UserId;
+    /// <summary>展示用用户名（读取时由 UI 按 web.db 账号映射填充；不落库、不进哈希链）。</summary>
+    public string? UserName { get; set; }
+
+    /// <summary>审计视图/CSV 展示用：优先映射出的用户名 → 原始 UserId → local（桌面未登录）。</summary>
+    public string UserDisplay => !string.IsNullOrWhiteSpace(UserName)
+        ? UserName!
+        : string.IsNullOrWhiteSpace(UserId) ? "local" : UserId;
 }

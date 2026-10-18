@@ -221,6 +221,14 @@ public class AuditSessionTests
             var sqlByUser = await audit.GetSqlLogsAsync(keyword: "alice");
             Assert.Single(sqlByUser);
             Assert.Equal("select 1", sqlByUser[0].Sql);
+
+            // 用户名搜索 → UI 先把用户名映射为用户 Id，再按 Id 集合过滤
+            var byIds = await audit.GetLogsAsync(userIds: new[] { "1" });
+            Assert.Single(byIds);
+            Assert.Equal("pwd", byIds[0].Command);
+
+            var sqlByIds = await audit.GetSqlLogsAsync(userIds: new[] { "alice" });
+            Assert.Single(sqlByIds);
         }
         finally
         {

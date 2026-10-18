@@ -1,8 +1,8 @@
 ﻿# LitSSH MCP 发布脚本
-# 生成「App(含内置 MCP 服务器)」与「独立 MCP 服务器」两类产物。
+# 生成「App(含内置 MCP 服务器)」「独立 MCP 服务器」「CLI」「Web 助手」四类产物。
 # 用法:
-#   powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.2.0
-#   powershell ... -File scripts\build-release.ps1 -Version v1.2.0 -FrameworkDependent
+#   powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.4.0
+#   powershell ... -File scripts\build-release.ps1 -Version v1.4.0 -FrameworkDependent
 param(
     [string]$Version = "dev",
     [string]$Runtime = "win-x64",
@@ -36,5 +36,13 @@ Publish-Project (Join-Path $root "src\LitSSHmcp.App\LitSSHmcp.App.csproj") $appO
 $appMcp = Join-Path $appOut "mcp"
 if (Test-Path $appMcp) { Remove-Item -Recurse -Force $appMcp }
 Copy-Item -Recurse $mcpOut $appMcp
+
+# 3) CLI 终端工具（独立产物）
+$cliOut = Join-Path $releaseDir "Cli"
+Publish-Project (Join-Path $root "src\LitSSHmcp.Cli\LitSSHmcp.Cli.csproj") $cliOut
+
+# 4) Web 助手（浏览器端，独立进程）
+$webOut = Join-Path $releaseDir "Web"
+Publish-Project (Join-Path $root "src\LitSSHmcp.Web\LitSSHmcp.Web.csproj") $webOut
 
 Write-Host "done. 产物位于: $releaseDir"

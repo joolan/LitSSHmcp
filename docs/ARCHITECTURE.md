@@ -148,7 +148,7 @@ LitSSHmcp/
   - `SqlAuditLogs`：SQL 操作（query/execute/explain，含 blocked/rejected）；Redis 命令审计也写入本表（`operation` 同 query/execute/diagnostics，SQL 列记录命令原文）；同样带 `SessionId`/`Tool`/`Category`/`Decision`；
   - `Sessions`：MCP 会话表（会话ID → 客户端名称/版本、首末活动），由 `McpSessionFilter` 从 `initialize` 后的客户端信息回填；
   - `TopologyEdges` / `TopologyNodes`：`topology_discover` 自动发现的关系缓存与节点信息（端口/类型/路径）。
-- **审计防篡改与永久归档**：`AuditChain`（HMAC-SHA256 哈希链，密钥 DPAPI 保护于 `audit.db.key`；无密钥时退化为 SHA-256）+ 历史归档表 `AuditLogsHistory`/`SqlAuditLogsHistory`——超过 `security.audit.retentionDays` 的活动记录**移动**到历史表（永久保留，链不删除、Id 不变）；`IAuditLogService.VerifyChainAsync()` 校验整链完整性，App「审计日志」提供“校验完整性/含归档”。`Category`/`Decision` 一并纳入哈希链（审计格式版本 v5；版本落后时启动重建）。
+- **审计防篡改与永久归档**：`AuditChain`（HMAC-SHA256 哈希链，密钥 DPAPI 保护于 `audit.db.key`；无密钥时退化为 SHA-256）+ 历史归档表 `AuditLogsHistory`/`SqlAuditLogsHistory`——超过 `security.audit.retentionDays` 的活动记录**移动**到历史表（永久保留，链不删除、Id 不变）；`IAuditLogService.VerifyChainAsync()` 校验整链完整性，App「审计日志」提供“校验完整性/含归档”。`Category`/`Decision`/`UserId` 一并纳入哈希链（审计格式版本 **v6**；**v5→v6 升级保留记录并按新 payload 重建链**，更老版本清理重建）。
 - **带外审批**：`ApprovalService` 按 `security.approval.channels` 启用 `desktop`（`DesktopApprovalService` 弹窗）与 `cli`（写 `%APPDATA%\LitSSH\approvals\pending-<id>.json` 等待决策文件，操作员用 `litssh approve/deny <id>` 决定）；共享 `ApprovalFileStore` 文件格式。审批前先看 `security.approval.mode`：`auto-approve`/`auto-reject` 直接放行/拒绝（不弹窗、不等 CLI）。
 - `PathPolicy`：文件传输路径白名单校验（本地 `GetFullPath` 规范化 + 前缀匹配；远程 POSIX 规范化并拒绝 `..` 穿越）。
 - `AppLockService`（`AppLockService.cs`）：**应用锁（启动密码门卫）**——设置/修改/关闭密码、**PBKDF2-SHA256（210k 迭代）常数时间校验**（`CryptographicOperations.FixedTimeEquals`）；哈希与盐存 `config.json` 的 `appLock` 节点并纳入 DPAPI `enc:` 加密通道（`ConfigService.EncryptSecrets/DecryptSecrets`），明文密码绝不落盘。定位是**防他人随手操作的门卫**（不是凭据金库，凭据仍由 DPAPI(CurrentUser) 保护）。

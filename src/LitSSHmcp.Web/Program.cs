@@ -16,7 +16,13 @@ Environment.SetEnvironmentVariable("LITSSH_APPROVAL_CHANNELS", "cli");
 // 桌面进程不注入此变量（D1 桌面仅归因不限权）。进程级变量同样由子进程继承。
 Environment.SetEnvironmentVariable(HostEnv.AuthzMode, HostEnv.Enforce);
 
-var builder = WebApplication.CreateBuilder(args);
+// 内容根固定到程序目录：否则 content root 跟随启动时工作目录漂移（如从仓库根、
+// 任务计划程序、服务方式启动），WebRootPath 指向不存在的 <cwd>\wwwroot → 静态资源 404。
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory
+});
 
 // M3-8 HTTPS（§10.B.2 建议项）：启动即读配置（同一实例随后注入容器，避免双读歧义）；
 // 配置了 PFX 证书则追加 HTTPS 监听，默认无证书=仅 HTTP（局域网明文，风险见 README 安全模型）。

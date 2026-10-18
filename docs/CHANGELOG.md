@@ -14,6 +14,7 @@
 - **跨进程写互斥与限流共享（M2-1）**：`TargetLimiter` 增加跨进程层（共享槽位文件 + 分钟速率窗口 `rate.lock`/`rate.json`，进程崩溃自愈、锁竞争失败安全降级仅进程内）；`FileTargetWriteMutex` 同一目标跨进程同一时刻仅一个写类任务（等待上限 5s，超时 `write_busy`，锁目录不可用一律拒 fail-closed）；`McpWriteGateFilter` 写类工具请求门（常写清单 + 条件写按参数判只读，shell 首词白名单宁严勿松）。
 - **按会话隔离的运行状态机（M2-2/M2-3/M2-4）**：`SessionRunContext`（Queued/Running/WaitingApproval/Done/Failed/Stopped + 独立 runtime + 权威轮次/计划镜像），移除切换会话「任务中禁切」闸、切换/删除/归档/关窗全路径按池元素收口，运行收尾/落库/摘要闭包烧定会话上下文防串会话；停止与审批按会话路由 + 侧栏会话状态徽标；会话级连接器/技能子集启用层（入口拆分）；`AgentSession.SendAsync` 重入硬闸。
 - **授权矩阵强制与连接器白名单收窄（M3-4）**：用户→目标白名单 + read/exec 操作级别落工具过滤器（Web 宿主 spawn 的 MCP 子进程经 `HostEnv` 强制执行，桌面进程仅归因不限权）。
+- **Web 授权矩阵可视化配置**：桌面「设置 → 安全设置 → **Web 授权矩阵**」新增启用开关与规则行编辑（用户名 / 目标白名单 `ssh:<id>`·`ds:<id>`·`ssh:*`·`*` / read|exec 级别，可增删行），保存 `security.authorization` 热生效——此前该矩阵只有模型与强制过滤器、无任何编辑入口，Web 用户默认 fail-closed 全拒时只能手改 `config.json`；映射纯逻辑与 XAML 结构均有针对性测试。
 
 ### 修复
 
@@ -21,6 +22,7 @@
 - **登录成功后仍停留登录窗**：`#login-view{display:flex}` 与 `.strip{display:flex}` 的作者样式**压过 UA 对 `[hidden]` 的 `display:none`**，`showApp()` 设 `hidden` 后登录窗藏不住（主界面其实已渲染在下方）；`app.css` 增加全局 `[hidden] { display: none !important; }` 守卫 + 静态资源测试断言防回归（`#files-pane` 此前已有局部防护，同类坑补齐）。
 - **Web 账号管理命令行未接线（M3-1 缺口）**：`WebBootstrap` 的 `--create-user`/`--list-users` 自 M3-2 起从未被 `Program` 调用，Web 一度无任何途径创建登录账号——启动前 `RunCliAsync` 分派，未命中则透传宿主参数。
 - **App 测试偶发串扰**：`LocalApprovalScopeTests` 未标 `[Collection("local-audit")]`，与 `PromoteToolTests` 并行时经进程级静态 `LocalAudit.OverrideSink` 把本机终端审计记录写进对方断言快照——补同集合串行标注（与 `LocalTerminalToolTests` 先例一致）。
+- **登录后聊天输入框无法输入且无提示**：`chat.open()` 先 `close()`（无会话态强制禁用输入/发送）再设 `sessionId`，但设置后从未重新启用，WS 打开也只改状态文字（显示"就绪"却不解禁）——选中会话也发不出第一条消息，永远等不到 `done`/`error` 事件解禁；`open()` 末尾按已选会话 `setBusy(false)`，未选会话时 placeholder 明示「先点『＋ 新会话』」；node 真跑交付文件的 `chat-open.test.mjs` 防回归。
 
 ## [1.3.0] - 2026-10-17
 

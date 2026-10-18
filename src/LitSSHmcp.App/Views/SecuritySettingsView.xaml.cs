@@ -25,6 +25,15 @@ public partial class SecuritySettingsView : UserControl
 
     private void OnSave(object sender, RoutedEventArgs e) => _viewModel.Save();
 
+    private void OnAuthzAddRule(object sender, RoutedEventArgs e) =>
+        _viewModel.AuthzRules.Add(new AuthzRuleRow());
+
+    private void OnAuthzRemoveRule(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: AuthzRuleRow row })
+            _viewModel.AuthzRules.Remove(row);
+    }
+
     private async Task RefreshAppLockStatusAsync()
     {
         try

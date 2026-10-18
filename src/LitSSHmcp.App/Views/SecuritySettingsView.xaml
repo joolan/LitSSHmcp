@@ -27,6 +27,38 @@
                           FontWeight="SemiBold" Margin="0,4,0,10"
                           ToolTip="全局开关：关闭后 MCP 将拒绝所有工具调用；按配置文件热生效，无需重启"/>
 
+                <TextBlock Text="Web 授权矩阵 (security.authorization)" FontWeight="Bold" Margin="0,4,0,4"
+                           ToolTip="仅 Web 助手会话强制执行（桌面会话仅归因不限权）。规则按 Web 登录用户名生效；未命中任何规则的用户默认拒绝（fail-closed）。"/>
+                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           Text="给 Web 助手登录用户分配可操作目标与级别。目标可填 ssh:&lt;服务器Id&gt; / ds:&lt;数据源Id&gt;，或通配 ssh:* / ds:* / *（空格或逗号分隔多个）；级别 read=仅只读调用（查询/日志/下载），exec=另允许执行命令、上传、重启等写操作；* 用户行为未单独成条用户的兜底规则。保存后热生效。"/>
+                <CheckBox Content="启用授权矩阵（关闭 = 放弃该 Web 防线，不建议）" IsChecked="{Binding AuthzEnabled}" Margin="0,0,0,6"
+                          ToolTip="开启时：Web 用户不在下方规则表中、或目标不在其白名单 → 工具调用直接拒绝并写审计（authorization_denied）"/>
+                <ItemsControl ItemsSource="{Binding AuthzRules}" Margin="0,0,0,4">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Text="用户:" VerticalAlignment="Center" Width="44"/>
+                                <TextBox Text="{Binding UserText, UpdateSourceTrigger=PropertyChanged}" Width="130" Margin="0,0,8,0"
+                                         ToolTip="Web 登录用户名（或用户 Id）；* = 对所有未单独成条的用户生效"/>
+                                <TextBlock Text="目标:" VerticalAlignment="Center" Width="36"/>
+                                <TextBox Text="{Binding TargetsText, UpdateSourceTrigger=PropertyChanged}" Width="260" Margin="0,0,8,0"
+                                         ToolTip="ssh:&lt;服务器Id&gt; / ds:&lt;数据源Id&gt; / ssh:* / ds:* / *，空格或逗号分隔多个"/>
+                                <TextBlock Text="级别:" VerticalAlignment="Center" Width="36"/>
+                                <ComboBox SelectedIndex="{Binding LevelIndex}" Width="96" Margin="0,0,8,0"
+                                          ToolTip="read=仅只读调用; exec=另允许写类调用（执行命令/上传/SQL写等）">
+                                    <ComboBoxItem Content="read 只读"/>
+                                    <ComboBoxItem Content="exec 可执行"/>
+                                </ComboBox>
+                                <Button Content="✕" Width="26" Padding="0" Click="OnAuthzRemoveRule"
+                                        ToolTip="删除此行"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="＋ 添加授权行" Padding="10,3" Margin="0,0,0,8" Click="OnAuthzAddRule"/>
+
+                <Separator Margin="0,4,0,8"/>
+
                 <TextBlock Text="命令过滤 (每行一条)" FontWeight="Bold" Margin="0,4,0,4"/>
                 <TextBlock Text="禁止命令 (直接拒绝):" Margin="0,0,0,2"/>
                 <TextBox Text="{Binding BlockedCommands, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="60" FontFamily="Consolas" Margin="0,0,0,8"/>

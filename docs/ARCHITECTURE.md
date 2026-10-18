@@ -314,7 +314,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 | 配置热更新 | commandFilter/sqlFilter/fileTransfer 改动按文件 mtime 即时生效，无需重启 | `SecurityOptionsProvider` |
 | 日志 | MCP 日志走 stderr（不污染 stdout 协议流）+ 本机文件 | `Program.cs` + `FileLoggerProvider` |
 | 工具风险提示 | 54 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
-| Web 助手 | 独立账号库 `web.db`（PBKDF2-SHA256 210k、连续失败指数锁定）；令牌 Cookie `HttpOnly+SameSite=Strict` + CSRF 双提交（`/api/login` 例外）；登录/API 按 IP 固定窗口限速（30/600 每分钟）；全站安全响应头 + HTML CSP；会话 owner 逐操作校验（越权统一 404）、每用户并发会话上限与 LLM 成本预算；账号管理 CLI `--create-user/--list-users`（密码仅走 `LITSSH_NEW_PASSWORD` 环境变量） | `WebAuthMiddleware`/`WebCsrfMiddleware`/`WebRateLimitMiddleware`/`WebSecurityHeadersMiddleware`/`WebBudgetGuard`/`WebSessionManager`/`WebBootstrap` |
+| Web 助手 | 独立账号库 `web.db`（PBKDF2-SHA256 210k、连续失败指数锁定）；令牌 Cookie `HttpOnly+SameSite=Strict` + CSRF 双提交（`/api/login` 例外）；登录/API 按 IP 固定窗口限速（30/600 每分钟）；全站安全响应头 + HTML CSP；会话 owner 逐操作校验（越权统一 404）、每用户并发会话上限与 LLM 成本预算；**授权矩阵强制**（`security.authorization`：登录用户 → 目标白名单 + read/exec，未命中默认拒绝；仅 Web 宿主注入 `LITSSH_AUTHZ_MODE=enforce` 生效，桌面会话仅归因不限权；可视化编辑在桌面「设置 → 安全设置 → Web 授权矩阵」）；账号管理 CLI `--create-user/--list-users`（密码仅走 `LITSSH_NEW_PASSWORD` 环境变量） | `WebAuthMiddleware`/`WebCsrfMiddleware`/`WebRateLimitMiddleware`/`WebSecurityHeadersMiddleware`/`WebBudgetGuard`/`WebSessionManager`/`WebBootstrap` + `McpAuthorizationFilter` |
 
 ## 9. 扩展点
 
@@ -340,7 +340,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 
 ```bash
 dotnet build LitSSHmcp.slnx                      # 全量构建（应 0 警告 0 错误）
-dotnet test LitSSHmcp.slnx                      # 全部测试(Core + Agent + McpServer + App + Web，1248 用例)
+dotnet test LitSSHmcp.slnx                      # 全部测试(Core + Agent + McpServer + App + Web，1257 用例)
 dotnet publish src/LitSSHmcp.McpServer -c Release -r win-x64 --self-contained -o publish
 dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publish
 ```

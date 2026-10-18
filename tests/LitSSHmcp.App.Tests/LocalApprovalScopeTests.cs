@@ -8,6 +8,7 @@ using Xunit;
 namespace LitSSHmcp.App.Tests;
 
 /// <summary>本机终端审批三档范围（全部命令级）：仅本次 / 本轮次内全部命令 / 本次会话全部命令。</summary>
+[Collection("local-audit")]   // OverrideSink 是进程级静态替身: 本类也经 LocalTerminalTool 写审计, 须与 PromoteToolTests 等串行防相互覆盖
 public class LocalApprovalScopeTests
 {
     [Fact]

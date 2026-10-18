@@ -4,6 +4,24 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **Web 助手（`LitSSHmcp.Web`，全新浏览器端）**：Kestrel 宿主 + `wwwroot` 零构建链静态 SPA（登录/会话列表/流式聊天/审批卡片/目录浏览下载）。独立账号库 `web.db`（PBKDF2-SHA256 210k 迭代、连续失败 5 次起指数锁定、首账号自动 admin）；账号管理 CLI `--create-user <名> [--role admin|user]` / `--list-users`（密码只经 `LITSSH_NEW_PASSWORD` 环境变量，不进 argv/进程列表）；每个 AI 会话运行在**独立 AgentRuntime 子进程**（stdio MCP 子进程、会话 owner 逐操作校验、删除会话即终止）；WebSocket 流式聊天（assistant_text/reasoning/tool/tool_result/done/error 分帧、busy 409、掉线取消）与 `/ws/approvals` 审批实时推送（桥接 cli 文件通道，REST 决策吃 CSRF）；会话目录文件浏览/下载（owner + `..` 路径防护）；模型输出 Markdown 经白名单 sanitize 后渲染（构造性 XSS 防护，全部 escape 后仅产白名单标签/URL scheme）。
+- **Web 安全栈**：登录与 API 按 IP 固定窗口限速（`/api/login` 30 次/分、`/api/*` 600 次/分，超限 429 + `rate_limited` 日志）；每用户并发会话上限 `security.limits.maxSessionsPerUser`（默认 8，超限 409 + `session_limit_reached`）；全站安全响应头（`nosniff`/`X-Frame-Options: DENY`/`Referrer-Policy`/`Permissions-Policy` + HTML CSP，与 index.html meta 双保险）；LLM 成本预算 Web 端发送前拦截（`WebBudgetGuard` 对齐桌面会话预算，会话数 × 成本上限 = 单用户成本上界）；HTTPS 启动（`config.json` `web.https` PFX 证书追加监听，默认 7443 绑定所有网卡，密码 `enc:` DPAPI 密文，读配置失败不阻断启动）；访问日志覆盖登录成败/会话创建删除/文件下载/越权与限速拒绝。
+- **操作用户归因进审计链（AuditFormatVersion v6）**：审计四表同序追加 `UserId` 列并纳入哈希链（防篡改检出）；归因解析显式 > 宿主上下文 > `local`；MCP 子进程由宿主 spawn 注入 `LITSSH_OWNER_USER_ID` 环境变量防伪造。
+- **两级工作区与会话级工作目录**：`agent.db` schema v5（会话表 `WorkspaceDir`/`OwnerUserId`）；工作区 `jobs/<owner>/s<id>` 布局 + 目录名段消毒；双根模式（会话目录默认落盘、`shared/` 共享区提升）+ 系统提示注入本会话工作目录取值；fileTransfer 会话目录条件注入（越界不注入防路径洗白）与下载默认落地会话目录。
+- **路径与本机工具加固**：`PathGuard` 逐段解析 junction/符号链接到物理路径再判前缀归属（区内链接放行、指向区外拒绝）；`LocalAudit` 统一出口（`Local` 审计类别：`ops_doc_write` 三类变更、脚本台账、附件落盘、会话删除、本机终端策略/拒绝/执行全部入链，测试 `OverrideSink` 替身防触真实 audit.db）；`ops_promote` 提升命令（会话目录→共享区，脚本类强制桌面确认 + 来源会话标注、目标存在/路径穿越/shared 前缀一律拒）+ 上传源限制在会话目录内 + 会话目录随删除清理；脚本跨根直写共享区自动注入**未审阅标记**（堵提升旁路）。
+- **跨进程写互斥与限流共享（M2-1）**：`TargetLimiter` 增加跨进程层（共享槽位文件 + 分钟速率窗口 `rate.lock`/`rate.json`，进程崩溃自愈、锁竞争失败安全降级仅进程内）；`FileTargetWriteMutex` 同一目标跨进程同一时刻仅一个写类任务（等待上限 5s，超时 `write_busy`，锁目录不可用一律拒 fail-closed）；`McpWriteGateFilter` 写类工具请求门（常写清单 + 条件写按参数判只读，shell 首词白名单宁严勿松）。
+- **按会话隔离的运行状态机（M2-2/M2-3/M2-4）**：`SessionRunContext`（Queued/Running/WaitingApproval/Done/Failed/Stopped + 独立 runtime + 权威轮次/计划镜像），移除切换会话「任务中禁切」闸、切换/删除/归档/关窗全路径按池元素收口，运行收尾/落库/摘要闭包烧定会话上下文防串会话；停止与审批按会话路由 + 侧栏会话状态徽标；会话级连接器/技能子集启用层（入口拆分）；`AgentSession.SendAsync` 重入硬闸。
+- **授权矩阵强制与连接器白名单收窄（M3-4）**：用户→目标白名单 + read/exec 操作级别落工具过滤器（Web 宿主 spawn 的 MCP 子进程经 `HostEnv` 强制执行，桌面进程仅归因不限权）。
+
+### 修复
+
+- **Web 直跑 exe 静态资源 404**：内容根固定为 `AppContext.BaseDirectory`（原随启动 CWD 漂移，仓库根/服务方式启动时 WebRootPath 落到不存在的 `<cwd>\wwwroot`）；非 Development 不加载 static web assets manifest 而 bin 下无 `wwwroot`，改为 csproj 把 `wwwroot\**` 复制到输出（Development 仍经 manifest 读项目目录）。
+- **登录成功后仍停留登录窗**：`#login-view{display:flex}` 与 `.strip{display:flex}` 的作者样式**压过 UA 对 `[hidden]` 的 `display:none`**，`showApp()` 设 `hidden` 后登录窗藏不住（主界面其实已渲染在下方）；`app.css` 增加全局 `[hidden] { display: none !important; }` 守卫 + 静态资源测试断言防回归（`#files-pane` 此前已有局部防护，同类坑补齐）。
+- **Web 账号管理命令行未接线（M3-1 缺口）**：`WebBootstrap` 的 `--create-user`/`--list-users` 自 M3-2 起从未被 `Program` 调用，Web 一度无任何途径创建登录账号——启动前 `RunCliAsync` 分派，未命中则透传宿主参数。
+- **App 测试偶发串扰**：`LocalApprovalScopeTests` 未标 `[Collection("local-audit")]`，与 `PromoteToolTests` 并行时经进程级静态 `LocalAudit.OverrideSink` 把本机终端审计记录写进对方断言快照——补同集合串行标注（与 `LocalTerminalToolTests` 先例一致）。
+
 ## [1.3.0] - 2026-10-17
 
 ### 修复

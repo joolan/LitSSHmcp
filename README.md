@@ -19,6 +19,7 @@
 - [项目简介](#项目简介)
 - [MCP 服务](#mcp-服务)
 - [桌面 App](#桌面-app)
+- [Web 助手](#web-助手)
 - [架构与技术栈](#架构与技术栈)
 - [快速开始](#快速开始)
 - [配置](#配置)
@@ -32,12 +33,13 @@
 
 ## 项目简介
 
-LitSSH MCP 由两部分组成，可**独立使用**，也可组合使用：
+LitSSH MCP 由三部分组成，可**独立使用**，也可组合使用：
 
 | 组成 | 项目 | 说明 |
 |------|------|------|
 | **🤖 MCP 服务** | `LitSSHmcp.McpServer` | 基于 [Model Context Protocol](https://modelcontextprotocol.io/) 的 stdio 服务器，向任意 MCP 客户端（Claude Desktop / Cursor / Cline / CodeBuddy / opencode 等）暴露 **54 个工具**，安全地执行 SSH、数据库、Docker、日志、Java、拓扑等运维操作。 |
 | **🖥️ 桌面 App** | `LitSSHmcp.App` | WPF 管理端：可视化维护服务器/数据源/应用/资产拓扑，内置审计日志、MCP 工具说明，以及**内嵌 MCP 客户端的 AI 运维助手**。 |
+| **🌐 Web 助手** | `LitSSHmcp.Web` | 浏览器访问的 AI 运维助手：独立账号登录、每个 AI 会话跑在**独立子进程**中，流式聊天、Web 内审批、服务器文件浏览与下载。 |
 
 **核心亮点**
 
@@ -330,23 +332,54 @@ App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容
 
 ![设置](docs/images/app-settings.png)
 
+## Web 助手
+
+基于浏览器的 AI 运维助手（`LitSSHmcp.Web`，ASP.NET Core + SignalR），与桌面 App / MCP 服务共用同一套 Core 服务、安全策略与 `config.json`：**每个 AI 会话运行在独立子进程**（进程隔离、互不影响），支持流式聊天（思考 / 工具调用 / 结果分帧推送）、Web 内审批卡片（`/ws/approvals` 实时推送，REST 决策）、服务器目录浏览与文件下载、会话生命周期管理（删除即终止子进程）与并发 / 成本预算约束。安全加固见 [Web 助手安全](#web-助手安全)。
+
+### 启动
+
+```bash
+dotnet run --project src/LitSSHmcp.Web                # 开发启动 → http://localhost:5000
+
+# 发布
+dotnet publish src/LitSSHmcp.Web -c Release -r win-x64 --self-contained -o publish-web
+```
+
+- HTTP 默认**只绑定本机回环**；跨机访问请显式设置 `ASPNETCORE_URLS`（如 `http://0.0.0.0:5000`），并注意 [HTTP 明文风险](#web-助手安全)。
+- 配置了 `web.https`（PFX 证书）时自动追加 HTTPS 监听（默认端口 7443，**绑定所有网卡**，见 [Web 助手安全](#web-助手安全)）。
+
+### 账号管理
+
+Web 使用**独立账号库** `%APPDATA%\LitSSH\web.db`——**没有内置默认账号**，用命令行创建 / 查看（密码只经环境变量传递，不进命令行历史与进程列表）：
+
+```powershell
+# 创建账号（首个账号自动为 admin，之后默认 user；密码 ≥6 位，建议用 --role 显式指定）
+$env:LITSSH_NEW_PASSWORD = "<密码>"
+src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --create-user <用户名> --role admin
+
+# 查看全部账号
+src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
+```
+
+> 账号带 `admin` / `user` 角色字段（首个账号自动 admin）；当前接口权限按**登录态 + 会话 owner 归属**判定，角色细分权限待后续版本。连续登录失败 5 次起按指数退避锁定（5 分钟起、封顶 1 小时）。
+
 ## 架构与技术栈
 
 ```
-┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
-│ LitSSHmcp.McpServer │   │    LitSSHmcp.App    │   │    LitSSHmcp.Cli    │
-│  MCP服务器(stdio)    │   │  WPF 管理界面(MVVM)  │   │   终端 SSH 工具      │
-└──────────┬──────────┘   └──────────┬──────────┘   └──────────┬──────────┘
-           └─────────────────────────┼─────────────────────────┘
-                                     ▼
-                     ┌───────────────────────────────┐
-                     │        LitSSHmcp.Core         │
-                     │  Models + Services            │
-                     │  SSH | Datasource | Topology  │
-                     │  Security | Storage           │
-                     └───────────────┬───────────────┘
-                                     ▼
-              %APPDATA%\LitSSH (config.json) + SQLite (审计/快照/会话) + 远程资产
+┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
+│ LitSSHmcp.McpServer │   │    LitSSHmcp.App    │   │    LitSSHmcp.Cli    │   │    LitSSHmcp.Web    │
+│  MCP服务器(stdio)    │   │  WPF 管理界面(MVVM)  │   │   终端 SSH 工具      │   │  浏览器 Web 助手    │
+└──────────┬──────────┘   └──────────┬──────────┘   └──────────┬──────────┘   └──────────┬──────────┘
+           └─────────────────────────┼─────────────────────────┼─────────────────────────┘
+                                                  ▼
+                                  ┌───────────────────────────────┐
+                                  │        LitSSHmcp.Core         │
+                                  │  Models + Services            │
+                                  │  SSH | Datasource | Topology  │
+                                  │  Security | Storage           │
+                                  └───────────────┬───────────────┘
+                                                  ▼
+                           %APPDATA%\LitSSH (config.json) + SQLite (审计/快照/会话) + 远程资产
 ```
 
 | 项目 | 框架 | 职责 |
@@ -355,6 +388,7 @@ App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容
 | `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器（stdio）、54 个工具、授权确认弹窗 |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理端（服务器 / 数据源 / 应用 / 资产拓扑 / 安全 / 审计 / AI 运维助手） |
 | `LitSSHmcp.Agent` | net8.0 | 内置 AI 运维助手（大模型 + 内嵌 MCP 客户端） |
+| `LitSSHmcp.Web` | net8.0 | 浏览器 Web 助手（Kestrel + SignalR：登录 / 每会话子进程 / 流式聊天 / 审批 / 文件浏览） |
 | `LitSSHmcp.Cli` | net10.0 | 终端 SSH 工具（`litssh list/connect/run/approve`） |
 
 **技术栈**：.NET 8 · WPF + [WPF-UI](https://github.com/lepoco/wpfui)（Fluent）· ModelContextProtocol SDK · SSH.NET · MySqlConnector / Npgsql · SQLite · WebView2（内嵌 VNC / noVNC）· Windows DPAPI。详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
@@ -372,7 +406,7 @@ App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容
 git clone https://github.com/joolan/LitSSHmcp.git
 cd LitSSHmcp
 dotnet build LitSSHmcp.slnx
-dotnet test LitSSHmcp.slnx   # 全部测试(Core + Agent + MCP 服务器 + App，共 606 用例)
+dotnet test LitSSHmcp.slnx   # 全部测试(Core + Agent + MCP 服务器 + App + Web，共 1247 用例)
 ```
 
 ### 2. 发布
@@ -386,6 +420,9 @@ dotnet publish src/LitSSHmcp.App -c Release -r win-x64 --self-contained -o publi
 
 # CLI 工具
 dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publish-cli
+
+# Web 助手（浏览器端）
+dotnet publish src/LitSSHmcp.Web -c Release -r win-x64 --self-contained -o publish-web
 ```
 
 > 也可使用一键脚本：`powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.0.0`

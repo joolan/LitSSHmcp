@@ -39,7 +39,14 @@ const el = () => ({
   querySelector: () => el(),
 });
 
-const { ChatController, parseToolRow } = await import("../../../src/LitSSHmcp.Web/wwwroot/js/chat.js");
+const { ChatController, parseToolRow, parseUserContent } = await import("../../../src/LitSSHmcp.Web/wwwroot/js/chat.js");
+
+// 历史用户消息图片标记（与桌面端一致: 🖼 图片: 名称 [相对路径]）
+{
+  const parsed = parseUserContent("看图\n🖼 图片: a.png [attachments/a.png]\n🖼 图片: b.jpg [attachments/b.jpg]");
+  assert.equal(parsed.text, "看图");
+  assert.deepEqual(parsed.images, ["attachments/a.png", "attachments/b.jpg"]);
+}
 
 // 历史工具轨迹行解析（PascalCase 落库 + camelCase 兼容 + 坏行返回 null）
 {
@@ -126,8 +133,13 @@ assert.equal(stopBtn.disabled, true, "无会话时停止按钮禁用");
   });
   chat2.sessionId = 1;
   chat2.dispatch({ type: "assistant_text", text: "最终结论：全部在线" });
+  // done 后会对账落库内容：让 stub 返回与前端一致的最后一条 assistant（模拟未丢帧）
+  messageRows = [
+    { role: "user", content: "看图" },
+    { role: "assistant", content: "最终结论：全部在线" },
+  ];
   chat2.dispatch({ type: "done" });
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await new Promise((resolve) => setTimeout(resolve, 60));
 
   const bubble = appended.find((n) => n.className === "bubble assistant");
   assert.ok(bubble, "应创建助手气泡");

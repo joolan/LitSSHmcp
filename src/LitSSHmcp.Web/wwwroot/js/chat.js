@@ -2,7 +2,7 @@
 // tool_result/memory_recall/done/error/busy）。助手输出只经 sanitize.renderMarkdown 落 DOM，
 // 其余字段一律 textContent（模型/工具输出 = 不可信输入）。
 // 支持图片附件（粘贴/选择/拖拽，≤5 张、单张 ≤10MB）：先 REST 上传到会话目录，再随 user 帧回传。
-import { api, upload, wsUrl } from "./api.js";
+import { api, downloadUrl, upload, wsUrl } from "./api.js";
 import { renderMarkdown } from "./sanitize.js";
 
 const MAX_IMAGES = 5;
@@ -34,6 +34,26 @@ function prettyJson(text) {
   } catch {
     return String(text ?? "");
   }
+}
+
+/**
+ * 解析用户消息里的图片标记（与桌面端一致：🖼 图片: 名称 [相对路径]）。
+ * 返回 { text: 去掉标记后的展示文本, images: 相对路径数组 }。
+ */
+export function parseUserContent(content) {
+  const images = [];
+  const lines = [];
+  for (const raw of String(content ?? "").replace(/\r\n/g, "\n").split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("🖼")) {
+      const open = line.indexOf("[");
+      const close = line.lastIndexOf("]");
+      if (open >= 0 && close > open) images.push(line.slice(open + 1, close).trim());
+      continue;
+    }
+    lines.push(raw);
+  }
+  return { text: lines.join("\n").trim(), images };
 }
 
 export class ChatController {
@@ -190,7 +210,12 @@ export class ChatController {
         this.flushAssistantRender();
         this.setBusy(false);
         this.onStatus(frame.stopped ? "已停止" : "就绪");
-        this.resetRun();
+        {
+          // 丢帧自愈：done 后与落库内容对账，若前端文本少了一段则按库重建（避免"结论内容不全"）
+          const expected = this.assistantText;
+          this.resetRun();
+          if (!frame.stopped) this.reconcileFinalAnswer(expected);
+        }
         break;
       case "error":
         this.flushAssistantRender();
@@ -335,9 +360,14 @@ export class ChatController {
 
   appendHistoryRow(row) {
     switch (row.role) {
-      case "user":
-        this.appendUser(row.content || "");
+      case "user": {
+        const parsed = parseUserContent(row.content);
+        const urls = parsed.images
+          .filter((p) => p.startsWith("attachments/") && !p.includes(".."))
+          .map((p) => downloadUrl(this.sessionId, p));
+        this.appendUser(parsed.text, urls);
         break;
+      }
       case "tool":
         this.appendToolHistory(row.content);
         break;
@@ -470,6 +500,29 @@ export class ChatController {
       if (md) md.innerHTML = renderMarkdown(this.assistantText);
     }
     this.renderQueued = false;
+  }
+
+  /**
+   * done 后对账：前端累计文本与落库最后一条 assistant 不一致（WS 丢帧）→ 按库重建，
+   * 保证结论完整（否则只差最后一段，用户看到的是"内容不全"）。
+   */
+  async reconcileFinalAnswer(expected) {
+    const sessionId = this.sessionId;
+    const trimmed = String(expected ?? "").trim();
+    if (sessionId === null || trimmed.length === 0) return;
+    try {
+      const rows = await api(`/api/sessions/${sessionId}/messages`);
+      if (this.sessionId !== sessionId) return;
+      const last = rows[rows.length - 1];
+      if (last?.role !== "assistant" || String(last.content ?? "").trim() === trimmed) return;
+      this.persistedRows = rows.length;
+      this.messagesEl.replaceChildren();
+      this.resetRun();
+      for (const row of rows) this.appendHistoryRow(row);
+      this.scrollDown(true);
+    } catch {
+      /* 对账失败忽略：重新打开会话时历史仍完整 */
+    }
   }
 
   ensureReasoning() {

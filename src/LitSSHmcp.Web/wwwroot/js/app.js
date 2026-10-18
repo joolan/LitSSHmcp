@@ -211,7 +211,31 @@ function openModelSheet() {
     return;
   }
   els.modelSheet.hidden = false;
+  positionModelSheet();
   renderModelSheet();
+}
+
+/** 电脑端：弹层贴着「模型」按钮上方出现（手机端沿用底部弹层样式）。 */
+function positionModelSheet() {
+  const sheet = els.modelSheet;
+  if (window.innerWidth <= 820) {
+    sheet.style.left = "";
+    sheet.style.right = "";
+    sheet.style.top = "";
+    sheet.style.bottom = "";
+    sheet.style.width = "";
+    sheet.style.maxHeight = "";
+    return;
+  }
+  const rect = els.modelBtn.getBoundingClientRect();
+  const width = Math.min(380, window.innerWidth - 24);
+  const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+  sheet.style.width = `${width}px`;
+  sheet.style.left = `${left}px`;
+  sheet.style.right = "auto";
+  sheet.style.top = "auto";
+  sheet.style.bottom = `${Math.max(12, window.innerHeight - rect.top + 8)}px`;
+  sheet.style.maxHeight = `${Math.max(160, Math.min(window.innerHeight * 0.6, rect.top - 16))}px`;
 }
 
 function closeModelSheet() {
@@ -255,6 +279,14 @@ async function chooseModel(providerId) {
 
 els.modelBtn.addEventListener("click", openModelSheet);
 els.modelClose.addEventListener("click", closeModelSheet);
+window.addEventListener("resize", () => {
+  if (!els.modelSheet.hidden) positionModelSheet();
+});
+document.addEventListener("click", (ev) => {
+  if (els.modelSheet.hidden) return;
+  if (els.modelSheet.contains(ev.target) || els.modelBtn.contains(ev.target)) return;
+  closeModelSheet();
+});
 
 // ---- 会话列表 ----
 function relativeTime(iso) {

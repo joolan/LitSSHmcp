@@ -166,7 +166,8 @@ public static class WebSessionEndpoints
             if (string.IsNullOrWhiteSpace(path))
                 continue;
             var contentType = element.TryGetProperty("contentType", out var c) ? c.GetString() : null;
-            items.Add(new WebAttachmentInput(path!, contentType));
+            var name = element.TryGetProperty("name", out var n) ? n.GetString() : null;
+            items.Add(new WebAttachmentInput(path!, contentType, name));
             if (items.Count >= 5)
                 break;
         }

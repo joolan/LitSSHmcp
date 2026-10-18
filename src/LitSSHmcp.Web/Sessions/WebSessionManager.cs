@@ -13,7 +13,7 @@ namespace LitSSHmcp.Web.Sessions;
 public sealed record WebSessionInfo(long Id, string Title, string OwnerUserId, string WorkspaceDir, string UpdatedAt, string? ProviderId = null);
 
 /// <summary>上传图片附件（相对会话目录的路径 + MIME）。</summary>
-public sealed record WebAttachmentInput(string RelativePath, string? ContentType = null);
+public sealed record WebAttachmentInput(string RelativePath, string? ContentType = null, string? Name = null);
 
 /// <summary>不属于当前用户（或会话不存在）——对调用方统一表现为 404，不泄露存在性。</summary>
 public sealed class WebSessionNotFoundException() : Exception("会话不存在");
@@ -198,7 +198,7 @@ public sealed class WebSessionManager : IAsyncDisposable
             await EnsureRuntimeAsync(owner, sessionId, slot, turnCts.Token);
             var contents = await BuildUserContentsAsync(sessionId, userText, attachments, turnCts.Token);
             var storedText = attachments is { Count: > 0 }
-                ? userText + $"\n\n（附图 ×{attachments.Count}）"
+                ? userText + BuildImageMarkers(attachments)
                 : userText;
             await _store.AppendMessageAsync(sessionId, "user", storedText, turnCts.Token);
             await EnsureFriendlyTitleAsync(sessionId, userText, turnCts.Token);
@@ -560,6 +560,47 @@ public sealed class WebSessionManager : IAsyncDisposable
         return line.Length <= 24 ? line : line[..24] + "…";
     }
 
+    /// <summary>
+    /// 图片附件落库标记（与桌面端一致：<c>🖼 图片: 名称 [相对路径]</c>）——
+    /// 桌面/Web 历史都能解析为缩略图；模型历史侧会转成文字提示。
+    /// </summary>
+    private static string BuildImageMarkers(IReadOnlyList<WebAttachmentInput> attachments)
+    {
+        var sb = new StringBuilder();
+        foreach (var attachment in attachments)
+        {
+            var name = string.IsNullOrWhiteSpace(attachment.Name)
+                ? Path.GetFileName(attachment.RelativePath)
+                : attachment.Name!;
+            sb.Append("\n🖼 图片: ").Append(name).Append(" [").Append(attachment.RelativePath).Append(']');
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>把用户消息里的图片标记行转成文字提示（模型历史不重复附图，但保留"当时有图"的语义）。</summary>
+    internal static string ToModelUserText(string content)
+    {
+        var joined = new StringBuilder();
+        foreach (var raw in content.Replace("\r\n", "\n").Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.StartsWith("🖼"))
+            {
+                var open = line.IndexOf('[');
+                var label = (open > 0 ? line[..open] : line).Trim();
+                var colon = label.IndexOf(':');
+                var name = colon >= 0 ? label[(colon + 1)..].Trim() : label;
+                joined.Append("（附图：").Append(name).Append('）');
+            }
+            else
+            {
+                joined.Append(raw);
+            }
+            joined.Append('\n');
+        }
+        return joined.ToString().Trim();
+    }
+
     /// <summary>库内消息 → 模型历史（user/assistant 文本对；tool/reasoning 轨迹暂不重建，M3-7 随 UI 富化）。</summary>
     internal static List<ChatMessage> BuildHistory(IReadOnlyList<AgentMessageRow> messages)
     {
@@ -569,7 +610,7 @@ public sealed class WebSessionManager : IAsyncDisposable
             if (string.IsNullOrEmpty(m.Content))
                 continue;
             if (m.Role == "user")
-                history.Add(new ChatMessage(ChatRole.User, m.Content));
+                history.Add(new ChatMessage(ChatRole.User, ToModelUserText(m.Content)));
             else if (m.Role == "assistant")
                 history.Add(new ChatMessage(ChatRole.Assistant, m.Content));
         }

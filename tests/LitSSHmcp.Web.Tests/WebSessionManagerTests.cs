@@ -272,9 +272,16 @@ public class WebSessionManagerTests
             () => _manager.SaveAttachmentAsync(_alice, session.Id, "a.exe", "application/octet-stream", exe));
 
         // 附件随轮次进入模型内容（文本 + 1 张图片）
-        await _manager.RunTurnAsync(_alice, session.Id, "看图", new[] { new WebAttachmentInput(path, "image/png") }, new Recorder());
+        await _manager.RunTurnAsync(_alice, session.Id, "看图", new[] { new WebAttachmentInput(path, "image/png", "a.png") }, new Recorder());
         Assert.Equal(2, _factory.LastContents!.Count);
         Assert.Single(_factory.LastContents!.OfType<DataContent>());
+
+        // 落库保留图片标记（桌面/Web 历史都能回放缩略图）；模型历史转文字提示
+        var rows = await _store.GetMessagesAsync(session.Id);
+        var user = rows.First(r => r.Role == "user");
+        Assert.Contains("🖼 图片: a.png [attachments/", user.Content, StringComparison.Ordinal);
+        var history = WebSessionManager.BuildHistory(rows);
+        Assert.Contains(history, m => (m.Text ?? string.Empty).Contains("（附图：a.png）", StringComparison.Ordinal));
     }
 
     private sealed class Recorder : IProgress<AgentEvent>

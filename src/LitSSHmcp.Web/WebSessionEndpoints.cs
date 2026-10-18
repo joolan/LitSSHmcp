@@ -39,13 +39,14 @@ public static class WebSessionEndpoints
             return Results.Ok(await manager.ListSessionsAsync(principal, ctx.RequestAborted));
         });
 
-        api.MapGet("/{id:long}/messages", async (long id, HttpContext ctx, WebSessionManager manager) =>
+        // 消息分页：默认最近 120 条；beforeId 向前翻页（长会话懒加载）
+        api.MapGet("/{id:long}/messages", async (long id, long? beforeId, int? limit, HttpContext ctx, WebSessionManager manager) =>
         {
             var principal = ctx.GetWebPrincipal();
             if (principal is null) return Results.Unauthorized();
             try
             {
-                return Results.Ok(await manager.GetMessagesAsync(principal, id, ctx.RequestAborted));
+                return Results.Ok(await manager.GetMessagePageAsync(principal, id, beforeId, limit, ctx.RequestAborted));
             }
             catch (WebSessionNotFoundException)
             {

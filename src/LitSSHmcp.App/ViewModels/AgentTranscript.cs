@@ -54,27 +54,10 @@ public static class AgentTranscript
     /// 让模型看到"本轮做过什么"的证据，且不伪造 function_call 配对。信息步骤（<see cref="AgentStep.IsInfo"/>，如记忆召回）不计入。
     /// </summary>
     public static string BuildTrace(IEnumerable<AgentStep> steps)
-    {
-        var sb = new StringBuilder();
-        foreach (var step in steps)
-        {
-            if (step.IsInfo)
-                continue;
-            if (sb.Length >= TraceTurnMaxChars)
-                break;
-            var args = Truncate(step.ArgsJson, TraceArgChars);
-            var result = Truncate(step.Result, TraceResultChars);
-            sb.Append("- ").Append(step.Tool)
-              .Append(args.Length > 0 ? $"({args})" : "()")
-              .Append(step.Success ? " → 成功" : " → 失败")
-              .Append($"({step.DurationMs}ms)");
-            if (result.Length > 0)
-                sb.Append(": ").Append(result.Replace("\r", " ").Replace("\n", " "));
-            sb.AppendLine();
-        }
-        var text = sb.ToString().TrimEnd();
-        return text.Length <= TraceTurnMaxChars ? text : text[..TraceTurnMaxChars] + " …(轨迹过长已截断)";
-    }
+        => LitSSHmcp.Agent.Transcript.ToolTraceFormatter.Build(
+            steps.Where(s => !s.IsInfo)
+                 .Select(s => new LitSSHmcp.Agent.Transcript.ToolTraceItem(
+                     s.Tool, s.ArgsJson, s.Result, s.Success, s.DurationMs)));
 
     private static string Truncate(string? text, int max) =>
         string.IsNullOrEmpty(text) ? string.Empty : (text.Length <= max ? text : text[..max] + " …(截断)");

@@ -205,21 +205,21 @@ public class WebSessionManagerTests
     }
 
     [Fact]
-    public void Build_history_keeps_only_text_roles()
+    public void Context_builder_keeps_text_roles_and_skips_reasoning()
     {
         var rows = new List<AgentMessageRow>
         {
             new("user", "q1", "t"),
             new("assistant", "a1", "t"),
             new("tool", "输出", "t"),
-            new("reasoning", "思考", "t"),
-            new("assistant", "", "t")
+            new("reasoning", "思考", "t")
         };
 
-        var history = WebSessionManager.BuildHistory(rows);
+        var built = Agent.Sessions.SessionContextBuilder.Build(
+            new AppConfig(), null, null, false, rows, null, supportsVision: false);
 
-        Assert.Equal(new[] { "q1", "a1" }, history.Select(m => m.Text).ToArray());
-        Assert.Equal(new[] { "user", "assistant" }, history.Select(m => m.Role.Value).ToArray());
+        Assert.Equal(new[] { "q1", "a1" }, built.History.Select(m => m.Text).ToArray());
+        Assert.Equal(new[] { "user", "assistant" }, built.History.Select(m => m.Role.Value).ToArray());
     }
 
     [Fact]
@@ -276,12 +276,75 @@ public class WebSessionManagerTests
         Assert.Equal(2, _factory.LastContents!.Count);
         Assert.Single(_factory.LastContents!.OfType<DataContent>());
 
-        // 落库保留图片标记（桌面/Web 历史都能回放缩略图）；模型历史转文字提示
+        // 落库保留图片标记（桌面/Web 历史都能回放缩略图）；模型历史剔除标记行
         var rows = await _store.GetMessagesAsync(session.Id);
         var user = rows.First(r => r.Role == "user");
         Assert.Contains("🖼 图片: a.png [attachments/", user.Content, StringComparison.Ordinal);
-        var history = WebSessionManager.BuildHistory(rows);
-        Assert.Contains(history, m => (m.Text ?? string.Empty).Contains("（附图：a.png）", StringComparison.Ordinal));
+        var built = Agent.Sessions.SessionContextBuilder.Build(
+            new AppConfig(), null, null, false, rows, session.WorkspaceDir, supportsVision: false);
+        Assert.Contains(built.History, m => (m.Text ?? string.Empty).Contains("看图", StringComparison.Ordinal));
+        Assert.DoesNotContain(built.History, m => (m.Text ?? string.Empty).Contains("🖼", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Context_builder_matches_desktop_history_shape()
+    {
+        var rows = new List<AgentMessageRow>
+        {
+            new("user", "q1", "t"),
+            new("tool", "{\"Tool\":\"ssh_list_servers\",\"Args\":\"{}\",\"Result\":\"3 台\",\"Ok\":true,\"Ms\":12}", "t"),
+            new("reasoning", "思考", "t"),
+            new("assistant", "a1", "t"),
+            new("user", "看图\n🖼 图片: a.png [attachments/a.png]", "t"),
+            new("assistant", "a2", "t"),
+        };
+        var config = new AppConfig { Agent = new AgentConfig { ColdStartRecentTurns = 0 } };
+
+        var built = Agent.Sessions.SessionContextBuilder.Build(config, null, null, false, rows, null, supportsVision: false);
+
+        // 与桌面一致：user → 工具轨迹(System) → assistant；reasoning 不进模型历史；图片标记行被剔除
+        Assert.Equal(new[] { "user", "system", "assistant", "user", "assistant" },
+            built.History.Select(m => m.Role.Value).ToArray());
+        Assert.Contains("【本轮工具轨迹", built.History[1].Text, StringComparison.Ordinal);
+        Assert.Contains("ssh_list_servers", built.History[1].Text, StringComparison.Ordinal);
+        Assert.Equal("q1", built.History[0].Text);
+        Assert.Equal("a1", built.History[2].Text);
+        Assert.Equal("看图", built.History[3].Text);
+        Assert.Equal("a2", built.History[4].Text);
+    }
+
+    [Fact]
+    public void Context_builder_applies_cold_start_window()
+    {
+        var rows = new List<AgentMessageRow>();
+        for (var i = 1; i <= 5; i++)
+        {
+            rows.Add(new AgentMessageRow("user", $"q{i}", "t"));
+            rows.Add(new AgentMessageRow("assistant", $"a{i}", "t"));
+        }
+        var config = new AppConfig { Agent = new AgentConfig { ColdStartRecentTurns = 2 } };
+
+        var built = Agent.Sessions.SessionContextBuilder.Build(config, null, null, false, rows, null, false);
+
+        Assert.Equal("system", built.History[0].Role.Value);
+        Assert.Contains("较早的 3 轮", built.History[0].Text, StringComparison.Ordinal);
+        Assert.Equal(5, built.History.Count);   // 1 条省略提示 + 最近 2 轮 × (user+assistant)
+        Assert.Equal("q4", built.History[1].Text);
+        Assert.Equal("a5", built.History[4].Text);
+    }
+
+    [Fact]
+    public async Task Message_page_supports_beforeId_paging()
+    {
+        var session = await _manager.CreateSessionAsync(_alice, "分页");
+        for (var i = 0; i < 5; i++)
+            await _store.AppendMessageAsync(session.Id, "user", $"m{i}");
+
+        var page1 = await _manager.GetMessagePageAsync(_alice, session.Id, null, 2);
+        Assert.Equal(new[] { "m3", "m4" }, page1.Select(m => m.Content).ToArray());
+
+        var page2 = await _manager.GetMessagePageAsync(_alice, session.Id, page1[0].Id, 2);
+        Assert.Equal(new[] { "m1", "m2" }, page2.Select(m => m.Content).ToArray());
     }
 
     private sealed class Recorder : IProgress<AgentEvent>

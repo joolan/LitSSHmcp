@@ -85,7 +85,7 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
     public async Task Mobile_layout_and_composer_attachments_present()
     {
         var html = await _fx.Client.GetStringAsync("/");
-        foreach (var id in new[] { "menu-btn", "file-input", "attachment-chips", "model-sheet", "to-bottom" })
+        foreach (var id in new[] { "menu-btn", "file-input", "attachment-chips", "model-sheet", "to-bottom", "load-older" })
             Assert.Contains($"id=\"{id}\"", html, StringComparison.Ordinal);
         // 桌面风格输入区：发送/停止合并按钮 + 模型/图片工具行（在输入框下方）
         Assert.Contains("class=\"primary send-stop\"", html, StringComparison.Ordinal);

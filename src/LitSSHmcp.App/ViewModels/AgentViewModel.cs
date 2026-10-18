@@ -1422,7 +1422,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     // ---- 统一的会话记录解析（UI Turns 与模型 history 的唯一来源） ----
 
-    private const string ToolTracePrefix = "【本轮工具轨迹（历史恢复，仅供参考；以实际工具结果为准）】\n";
+    private const string ToolTracePrefix = LitSSHmcp.Agent.Transcript.ToolTraceFormatter.Prefix;
 
     /// <summary>重启恢复时重新载入历史图片的最大张数（从最新往回；其余图片只保留文本标记）。</summary>
     private const int ReloadImageQuota = 3;

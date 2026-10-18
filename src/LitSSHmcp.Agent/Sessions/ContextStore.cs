@@ -30,6 +30,9 @@ public interface IContextStore
     Task ReplaceMessagesAsync(long sessionId, IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default);
 
     Task<List<AgentMessageRow>> GetMessagesAsync(long sessionId, CancellationToken ct = default);
+
+    /// <summary>分页读取消息（Id 倒序取最近 <paramref name="limit"/> 条，返回升序；beforeId 用于向前翻页）。</summary>
+    Task<List<AgentMessageRow>> GetRecentMessagesAsync(long sessionId, long? beforeId = null, int limit = 120, CancellationToken ct = default);
     Task TouchSessionAsync(long id, CancellationToken ct = default);
 
     /// <summary>读取会话的滚动摘要（裁剪旧轮次后压缩保存的文本；无则空串）。</summary>
@@ -147,7 +150,7 @@ public static class RelativeTime
         return local.ToString("yyyy-MM-dd");
     }
 }
-public sealed record AgentMessageRow(string Role, string Content, string Timestamp);
+public sealed record AgentMessageRow(string Role, string Content, string Timestamp, long Id = 0);
 
 public class ContextStore : IContextStore
 {
@@ -733,11 +736,31 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         var list = new List<AgentMessageRow>();
         await using var connection = await OpenConnectionAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT Role, Content, Timestamp FROM agent_messages WHERE SessionId=@s ORDER BY Id;";
+        cmd.CommandText = "SELECT Id, Role, Content, Timestamp FROM agent_messages WHERE SessionId=@s ORDER BY Id;";
         cmd.Parameters.AddWithValue("@s", sessionId);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
-            list.Add(new AgentMessageRow(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+            list.Add(new AgentMessageRow(reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(0)));
+        return list;
+    }
+
+    public async Task<List<AgentMessageRow>> GetRecentMessagesAsync(long sessionId, long? beforeId = null, int limit = 120, CancellationToken ct = default)
+    {
+        var clamped = Math.Clamp(limit, 1, 500);
+        var list = new List<AgentMessageRow>();
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Id, Role, Content, Timestamp FROM agent_messages WHERE SessionId=@s"
+                        + (beforeId is > 0 ? " AND Id < @beforeId" : string.Empty)
+                        + " ORDER BY Id DESC LIMIT @limit;";
+        cmd.Parameters.AddWithValue("@s", sessionId);
+        if (beforeId is > 0)
+            cmd.Parameters.AddWithValue("@beforeId", beforeId.Value);
+        cmd.Parameters.AddWithValue("@limit", clamped);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(new AgentMessageRow(reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(0)));
+        list.Reverse();   // 返回升序（与 GetMessagesAsync 一致），便于前端直接 append
         return list;
     }
 

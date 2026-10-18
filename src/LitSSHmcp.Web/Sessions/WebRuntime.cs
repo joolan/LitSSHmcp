@@ -13,7 +13,11 @@ public sealed record WebRuntimeRequest(
     string WorkspaceDir,
     IReadOnlyList<ChatMessage> History,
     string Summary,
-    string? ProviderId = null);
+    string? ProviderId = null,
+    AgentPromptContext? ActiveAgent = null,
+    IReadOnlyCollection<string>? ActiveSkillIds = null,
+    bool PlanMode = false,
+    string? AssetGraph = null);
 
 /// <summary>Web 会话运行时抽象：把 AgentRuntime 池化细节与宿主逻辑解耦（测试可注入假运行时）。</summary>
 public interface IWebRuntime : IAsyncDisposable
@@ -56,6 +60,10 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
             agent, provider, bundledSkillsDir: null,
             history: request.History,
             sessionWorkspaceDir: request.WorkspaceDir,
+            activeSkillIds: request.ActiveSkillIds,
+            planMode: request.PlanMode,
+            activeAgent: request.ActiveAgent,
+            assetGraph: request.AssetGraph,
             ownerUserId: request.OwnerUserId,
             enabledMcpIds: ComputeWebEnabledMcpIds(config.Security?.Authorization ?? new AuthorizationConfig()),
             ownerUsername: request.OwnerUsername);

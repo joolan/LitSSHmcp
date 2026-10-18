@@ -57,7 +57,7 @@ export function parseUserContent(content) {
 }
 
 export class ChatController {
-  constructor({ messagesEl, inputEl, sendBtn, stopBtn, attachBtn, fileInput, chipsEl, toBottomEl, onToast, onStatus, onConnState }) {
+  constructor({ messagesEl, inputEl, sendBtn, stopBtn, attachBtn, fileInput, chipsEl, toBottomEl, loadOlderBtn, onToast, onStatus, onConnState }) {
     this.messagesEl = messagesEl;
     this.inputEl = inputEl;
     this.sendBtn = sendBtn;
@@ -66,6 +66,7 @@ export class ChatController {
     this.fileInput = fileInput;
     this.chipsEl = chipsEl;
     this.toBottomEl = toBottomEl;
+    this.loadOlderBtn = loadOlderBtn;
     this.onToast = onToast;
     this.onStatus = onStatus;
     this.onConnState = onConnState;
@@ -86,6 +87,10 @@ export class ChatController {
     this.files = [];
     this.renderQueued = false;
     this.stick = true;
+    this.pageSize = 120;
+    this.hasMore = false;
+    this.oldestId = null;
+    this.lastAssistantContent = "";
 
     // 只有接近底部时才跟随滚动（用户向上翻历史时不打断）
     this.messagesEl.addEventListener?.("scroll", () => {
@@ -96,6 +101,9 @@ export class ChatController {
       this.stick = true;
       this.scrollDown(true);
       if (this.toBottomEl) this.toBottomEl.hidden = true;
+    });
+    this.loadOlderBtn?.addEventListener?.("click", () => {
+      this.loadOlder().catch((err) => this.onToast(err.message));
     });
   }
 
@@ -128,6 +136,10 @@ export class ChatController {
     this.sessionId = null;
     this.hasConnected = false;
     this.recovering = false;
+    this.hasMore = false;
+    this.oldestId = null;
+    this.lastAssistantContent = "";
+    if (this.loadOlderBtn) this.loadOlderBtn.hidden = true;
     this.clearFiles();
     this.resetRun();
     this.setBusy(false);
@@ -339,46 +351,90 @@ export class ChatController {
     this.chipsEl.hidden = false;
   }
 
-  // ---- 历史（含工具轨迹行） ----
+  // ---- 历史（分页 + 含工具轨迹行） ----
 
   async loadHistory() {
     if (this.sessionId === null) return;
     try {
-      const rows = await api(`/api/sessions/${this.sessionId}/messages`);
+      const rows = await api(`/api/sessions/${this.sessionId}/messages?limit=${this.pageSize}`);
       if (this.sessionId === null) return;
-      this.persistedRows = rows.length;
       this.messagesEl.replaceChildren();
       this.resetRun();
+      this.oldestId = null;
+      this.lastAssistantContent = "";
       for (const row of rows) this.appendHistoryRow(row);
+      this.persistedRows = rows.length;
+      this.updatePaging(rows);
       this.scrollDown(true);
     } catch (err) {
       this.onToast(`加载历史失败: ${err.message}`);
     }
   }
 
-  appendHistoryRow(row) {
+  /** 记录分页状态（最早 Id / 是否还有更早）。 */
+  updatePaging(rows) {
+    if (rows.length > 0) {
+      const firstId = rows[0].id;
+      this.oldestId = this.oldestId === null ? firstId : Math.min(this.oldestId, firstId);
+    }
+    this.hasMore = rows.length >= this.pageSize;
+    if (this.loadOlderBtn) this.loadOlderBtn.hidden = !this.hasMore;
+  }
+
+  /** 向前翻页：把更早的消息插到顶部，并保持当前滚动位置不跳动。 */
+  async loadOlder() {
+    if (this.sessionId === null || this.oldestId === null || !this.hasMore) return;
+    const sessionId = this.sessionId;
+    const beforeId = this.oldestId;
+    const rows = await api(`/api/sessions/${sessionId}/messages?beforeId=${beforeId}&limit=${this.pageSize}`);
+    if (this.sessionId !== sessionId) return;
+    if (rows.length === 0) {
+      this.hasMore = false;
+      if (this.loadOlderBtn) this.loadOlderBtn.hidden = true;
+      return;
+    }
+
+    const container = this.messagesEl;
+    const prevHeight = container.scrollHeight ?? 0;
+    const fragment = typeof document.createDocumentFragment === "function"
+      ? document.createDocumentFragment()
+      : document.createElement("div");
+    for (const row of rows) this.appendHistoryRow(row, fragment);
+    if (typeof container.prepend === "function") container.prepend(fragment);
+    else container.append(fragment);
+
+    this.oldestId = rows[0]?.id ?? this.oldestId;
+    this.hasMore = rows.length >= this.pageSize;
+    if (this.loadOlderBtn) this.loadOlderBtn.hidden = !this.hasMore;
+    container.scrollTop = (container.scrollTop ?? 0) + ((container.scrollHeight ?? 0) - prevHeight);
+  }
+
+  appendHistoryRow(row, container = this.messagesEl) {
     switch (row.role) {
       case "user": {
         const parsed = parseUserContent(row.content);
         const urls = parsed.images
           .filter((p) => p.startsWith("attachments/") && !p.includes(".."))
           .map((p) => downloadUrl(this.sessionId, p));
-        this.appendUser(parsed.text, urls);
+        this.appendUser(parsed.text, urls, container);
         break;
       }
       case "tool":
-        this.appendToolHistory(row.content);
+        this.appendToolHistory(row.content, container);
         break;
       case "reasoning":
-        this.appendReasoningHistory(row.content);
+        this.appendReasoningHistory(row.content, container);
         break;
-      default:
-        this.appendAssistant(row.content || "");
+      default: {
+        const text = row.content || "";
+        if (container === this.messagesEl) this.lastAssistantContent = String(text);
+        this.appendAssistant(text, container);
         break;
+      }
     }
   }
 
-  appendUser(text, imageUrls = []) {
+  appendUser(text, imageUrls = [], container = this.messagesEl) {
     const bubble = document.createElement("div");
     bubble.className = "bubble user";
     const label = document.createElement("div");
@@ -398,11 +454,11 @@ export class ChatController {
       }
       bubble.append(gallery);
     }
-    this.messagesEl.append(bubble);
-    this.scrollDown();
+    container.append(bubble);
+    if (container === this.messagesEl) this.scrollDown();
   }
 
-  appendAssistant(text) {
+  appendAssistant(text, container = this.messagesEl) {
     if (!text) return;
     const bubble = document.createElement("div");
     bubble.className = "bubble assistant";
@@ -410,12 +466,12 @@ export class ChatController {
     md.className = "md";
     md.innerHTML = renderMarkdown(text);
     bubble.append(md);
-    this.messagesEl.append(bubble);
+    container.append(bubble);
     this.enhanceCodeBlocks(bubble);
-    this.scrollDown();
+    if (container === this.messagesEl) this.scrollDown();
   }
 
-  appendToolHistory(content) {
+  appendToolHistory(content, container = this.messagesEl) {
     const step = parseToolRow(content);
     if (step === null) return;
     const details = document.createElement("details");
@@ -442,11 +498,11 @@ export class ChatController {
       pre.textContent = step.result;
       details.append(pre);
     }
-    this.messagesEl.append(details);
-    this.scrollDown();
+    container.append(details);
+    if (container === this.messagesEl) this.scrollDown();
   }
 
-  appendReasoningHistory(text) {
+  appendReasoningHistory(text, container = this.messagesEl) {
     if (!text) return;
     const details = document.createElement("details");
     details.className = "reasoning";
@@ -456,7 +512,7 @@ export class ChatController {
     body.className = "reasoning-body";
     body.textContent = text;
     details.append(summary, body);
-    this.messagesEl.append(details);
+    container.append(details);
   }
 
   // ---- 实时流 ----
@@ -508,12 +564,15 @@ export class ChatController {
     const sessionId = this.sessionId;
     if (sessionId === null) return;
     try {
-      const rows = await api(`/api/sessions/${sessionId}/messages`);
+      const rows = await api(`/api/sessions/${sessionId}/messages?limit=${this.pageSize}`);
       if (this.sessionId !== sessionId) return;
-      this.persistedRows = rows.length;
       this.messagesEl.replaceChildren();
       this.resetRun();
+      this.oldestId = null;
+      this.lastAssistantContent = "";
       for (const row of rows) this.appendHistoryRow(row);
+      this.persistedRows = rows.length;
+      this.updatePaging(rows);
       this.scrollDown(true);
     } catch {
       /* 重建失败则保留流式结果（下次打开会话仍是完整的） */
@@ -655,9 +714,10 @@ export class ChatController {
         await new Promise((r) => setTimeout(r, 3000));
         if (this.sessionId === null) return;
         try {
-          const rows = await api(`/api/sessions/${this.sessionId}/messages`);
-          if (rows.length > this.persistedRows && rows[rows.length - 1]?.role === "assistant") {
-            await this.loadHistory();
+          const rows = await api(`/api/sessions/${this.sessionId}/messages?limit=1`);
+          const last = rows[rows.length - 1];
+          if (last?.role === "assistant" && String(last.content ?? "") !== this.lastAssistantContent) {
+            await this.reloadFromStore();
             this.setBusy(false);
             this.onStatus("已恢复任务结果");
             return;

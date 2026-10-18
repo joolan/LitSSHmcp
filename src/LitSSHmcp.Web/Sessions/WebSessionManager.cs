@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using LitSSHmcp.Agent;
+using LitSSHmcp.Agent.Sessions;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
@@ -395,13 +396,19 @@ public sealed class WebSessionManager : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(dir))
             throw new InvalidOperationException("会话目录未分配");
         var messages = await _store.GetMessagesAsync(sessionId, ct);
-        var history = BuildHistory(messages);
         var summary = await _store.GetSessionSummaryAsync(sessionId, ct);
         var sessionRow = (await _store.ListSessionsAsync(ct)).FirstOrDefault(s => s.Id == sessionId);
+        // 与桌面一致的冷启动重建：冷启动窗口 + 工具轨迹 + 视觉图片 + 智能体/技能/计划模式/资产图谱
+        var config = await _configService.LoadConfigAsync();
+        var agentId = await _store.GetSessionAgentIdAsync(sessionId, ct);
+        var activeSkills = await _store.GetSessionActiveSkillsAsync(sessionId, ct);
+        var planMode = await _store.GetSessionPlanModeAsync(sessionId, ct);
+        var vision = SessionContextBuilder.ResolveSupportsVision(config, sessionRow?.ProviderId);
+        var built = SessionContextBuilder.Build(config, agentId, activeSkills, planMode, messages, dir, vision);
         slot.WorkspaceDir = dir;
         slot.Runtime = await _runtimeFactory.CreateAsync(
-            new WebRuntimeRequest(sessionId, owner.UserId.ToString(), owner.Username, dir, history, summary,
-                sessionRow?.ProviderId), ct);
+            new WebRuntimeRequest(sessionId, owner.UserId.ToString(), owner.Username, dir, built.History, summary,
+                sessionRow?.ProviderId, built.ActiveAgent, built.ActiveSkillIds, built.PlanMode, built.AssetGraph), ct);
     }
 
     /// <summary>
@@ -577,44 +584,12 @@ public sealed class WebSessionManager : IAsyncDisposable
         return sb.ToString();
     }
 
-    /// <summary>把用户消息里的图片标记行转成文字提示（模型历史不重复附图，但保留"当时有图"的语义）。</summary>
-    internal static string ToModelUserText(string content)
+    /// <summary>分页读取消息（默认最近 120 条；<paramref name="beforeId"/> 用于向前翻页）。</summary>
+    public async Task<IReadOnlyList<AgentMessageRow>> GetMessagePageAsync(WebPrincipal owner, long sessionId,
+        long? beforeId, int? limit, CancellationToken ct = default)
     {
-        var joined = new StringBuilder();
-        foreach (var raw in content.Replace("\r\n", "\n").Split('\n'))
-        {
-            var line = raw.Trim();
-            if (line.StartsWith("🖼"))
-            {
-                var open = line.IndexOf('[');
-                var label = (open > 0 ? line[..open] : line).Trim();
-                var colon = label.IndexOf(':');
-                var name = colon >= 0 ? label[(colon + 1)..].Trim() : label;
-                joined.Append("（附图：").Append(name).Append('）');
-            }
-            else
-            {
-                joined.Append(raw);
-            }
-            joined.Append('\n');
-        }
-        return joined.ToString().Trim();
-    }
-
-    /// <summary>库内消息 → 模型历史（user/assistant 文本对；tool/reasoning 轨迹暂不重建，M3-7 随 UI 富化）。</summary>
-    internal static List<ChatMessage> BuildHistory(IReadOnlyList<AgentMessageRow> messages)
-    {
-        var history = new List<ChatMessage>();
-        foreach (var m in messages)
-        {
-            if (string.IsNullOrEmpty(m.Content))
-                continue;
-            if (m.Role == "user")
-                history.Add(new ChatMessage(ChatRole.User, ToModelUserText(m.Content)));
-            else if (m.Role == "assistant")
-                history.Add(new ChatMessage(ChatRole.Assistant, m.Content));
-        }
-        return history;
+        await EnsureOwnerAsync(owner, sessionId, ct);
+        return await _store.GetRecentMessagesAsync(sessionId, beforeId, limit ?? 120, ct);
     }
 
     private async Task EnsureOwnerAsync(WebPrincipal owner, long sessionId, CancellationToken ct)

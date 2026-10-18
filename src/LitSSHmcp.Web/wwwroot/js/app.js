@@ -36,6 +36,7 @@ const els = {
   approvalCollapse: $("approval-collapse"),
   messages: $("messages"),
   toBottom: $("to-bottom"),
+  loadOlder: $("load-older"),
   composer: $("composer"),
   input: $("input"),
   sendBtn: $("send-btn"),
@@ -69,6 +70,7 @@ const chat = new ChatController({
   fileInput: els.fileInput,
   chipsEl: els.chips,
   toBottomEl: els.toBottom,
+  loadOlderBtn: els.loadOlder,
   onToast,
   onStatus: (text) => {
     els.turnStatus.textContent = text;

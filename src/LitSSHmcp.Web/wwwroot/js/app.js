@@ -25,7 +25,6 @@ const els = {
   turnStatus: $("turn-status"),
   connDot: $("conn-dot"),
   filesBtn: $("files-btn"),
-  stopBtn: $("stop-btn"),
   modelBtn: $("model-btn"),
   modelSheet: $("model-sheet"),
   modelList: $("model-list"),
@@ -62,7 +61,7 @@ const chat = new ChatController({
   messagesEl: els.messages,
   inputEl: els.input,
   sendBtn: els.sendBtn,
-  stopBtn: els.stopBtn,
+  stopBtn: null, // 发送/停止合并为一个按钮（busy 时点击 = 停止）
   attachBtn: els.attachBtn,
   fileInput: els.fileInput,
   chipsEl: els.chips,
@@ -378,8 +377,13 @@ function clearActive() {
 // ---- 聊天输入 ----
 els.composer.addEventListener("submit", (ev) => {
   ev.preventDefault();
+  // 发送/停止合并：运行中点击（或 Enter）即停止本轮
+  if (chat.busy) {
+    chat.stop();
+    return;
+  }
   const text = els.input.value.trim();
-  if ((!text && chat.files.length === 0) || chat.busy || chat.uploading) return;
+  if ((!text && chat.files.length === 0) || chat.uploading) return;
   els.input.value = "";
   autoGrow();
   chat.send(text).then((ok) => {
@@ -407,8 +411,6 @@ function autoGrow() {
   els.input.style.height = "auto";
   els.input.style.height = `${Math.min(els.input.scrollHeight, Math.round(window.innerHeight * 0.34))}px`;
 }
-
-els.stopBtn.addEventListener("click", () => chat.stop());
 
 // ---- 图片附件（按钮/粘贴/拖拽） ----
 els.attachBtn.addEventListener("click", () => els.fileInput.click());

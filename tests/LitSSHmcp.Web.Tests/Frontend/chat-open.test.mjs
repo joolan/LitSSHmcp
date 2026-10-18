@@ -92,4 +92,47 @@ assert.equal(input.disabled, true, "无会话时输入框禁用");
 assert.equal(sendBtn.disabled, true, "无会话时发送按钮禁用");
 assert.equal(stopBtn.disabled, true, "无会话时停止按钮禁用");
 
+// ---- 回归：done 前最后一段 assistant_text 不能被节流/reset 清空（"末尾没有结果"）----
+{
+  const prevCreate = globalThis.document.createElement;
+  globalThis.document.createElement = () => {
+    const node = {
+      className: "",
+      textContent: "",
+      innerHTML: "",
+      disabled: false,
+      append() {},
+      replaceChildren() {},
+      addEventListener() {},
+      querySelector() { return node; },
+      querySelectorAll() { return []; },
+    };
+    return node;
+  };
+  const appended = [];
+  const messages = {
+    ...el(),
+    append(node) { appended.push(node); },
+    replaceChildren() { appended.length = 0; },
+  };
+  const input2 = { disabled: true };
+  const chat2 = new ChatController({
+    messagesEl: messages,
+    inputEl: input2,
+    sendBtn: { disabled: true },
+    stopBtn: { disabled: true },
+    onToast() {},
+    onStatus() {},
+  });
+  chat2.sessionId = 1;
+  chat2.dispatch({ type: "assistant_text", text: "最终结论：全部在线" });
+  chat2.dispatch({ type: "done" });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  const bubble = appended.find((n) => n.className === "bubble assistant");
+  assert.ok(bubble, "应创建助手气泡");
+  assert.ok(String(bubble.innerHTML).includes("最终结论"), "done 后结论必须保留");
+  globalThis.document.createElement = prevCreate;
+}
+
 console.log("chat-open.test.mjs: all passed");

@@ -28,7 +28,6 @@
     <span id="conn-dot" class="dot" title="连接状态"></span>
     <span id="turn-status" class="status"></span>
     <span class="spacer"></span>
-    <button id="model-btn" class="chip" title="切换模型">模型…</button>
     <button id="approval-badge" class="badge" hidden title="有待审批操作，点击展开">待审批 <b id="approval-count">0</b></button>
     <span id="whoami" class="whoami"></span>
     <button id="logout-btn" class="ghost" title="退出登录">退出</button>
@@ -51,7 +50,6 @@
         <span id="session-title">未选择会话</span>
         <span class="spacer"></span>
         <button id="files-btn" disabled>目录</button>
-        <button id="stop-btn" disabled class="danger">停止</button>
       </div>
 
       <div id="messages"></div>
@@ -60,11 +58,16 @@
       <form id="composer" autocomplete="off">
         <div id="attachment-chips" class="chips" hidden></div>
         <div class="composer-row">
-          <button type="button" id="attach-btn" class="icon-btn" title="添加图片（也可粘贴/拖拽）">图片</button>
-          <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
           <textarea id="input" rows="1" placeholder="输入任务…（Enter 发送，Shift+Enter 换行）"></textarea>
-          <button type="submit" id="send-btn" class="primary">发送</button>
+          <button type="submit" id="send-btn" class="primary send-stop" title="发送 / 停止">发送</button>
         </div>
+        <div class="composer-toolbar">
+          <button type="button" id="attach-btn" class="tool-btn" title="添加图片（也可粘贴/拖拽）">＋ 图片</button>
+          <button type="button" id="model-btn" class="chip" title="切换本会话模型">模型… ▾</button>
+          <span class="spacer"></span>
+          <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+        </div>
+        <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
       </form>
     </main>
 

@@ -45,7 +45,7 @@ public class WorkspaceToolsAuditTests : IDisposable
         await Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "v1"), ("path", rel)), default);
         await Tool(tools, "ops_doc_append").InvokeAsync(Args(("content", "v2"), ("path", rel)), default);
         await Tool(tools, "ops_doc_patch").InvokeAsync(Args(("find", "v1"), ("replace", "v1x"), ("path", rel)), default);
-        var readsBefore = Snapshot().Count;
+        var readsBefore = Snapshot().Count(r => r.FilePath == full);
         await Tool(tools, "ops_doc_read").InvokeAsync(Args(("path", rel)), default);
         await Tool(tools, "ops_doc_list").InvokeAsync(Args(), default);
 
@@ -62,8 +62,8 @@ public class WorkspaceToolsAuditTests : IDisposable
         Assert.Equal(new[] { "ops_doc_write", "ops_doc_append", "ops_doc_patch" },
             mine.Select(r => r.Tool).ToArray());
 
-        // 只读操作不新增审计（防噪音）
-        Assert.Equal(readsBefore, Snapshot().Count);
+        // 只读操作不新增审计（防噪音）；按本用例文件路径过滤，避免其他测试类并行写入干扰全局计数
+        Assert.Equal(readsBefore, Snapshot().Count(r => r.FilePath == full));
     }
 
     [Fact]

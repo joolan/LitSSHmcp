@@ -76,6 +76,9 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
         var html = await _fx.Client.GetStringAsync("/");
         foreach (var id in new[] { "menu-btn", "file-input", "attachment-chips", "model-sheet", "to-bottom" })
             Assert.Contains($"id=\"{id}\"", html, StringComparison.Ordinal);
+        // 桌面风格输入区：发送/停止合并按钮 + 模型/图片工具行（在输入框下方）
+        Assert.Contains("class=\"primary send-stop\"", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"composer-toolbar\"", html, StringComparison.Ordinal);
 
         var css = await _fx.Client.GetStringAsync("/css/app.css");
         var normalized = System.Text.RegularExpressions.Regex.Replace(css, @"\s+", " ");

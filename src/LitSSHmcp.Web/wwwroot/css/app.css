@@ -297,6 +297,20 @@ button.chip { background: var(--bg3); border-radius: 999px; padding: 5px 12px; m
   overflow-y: auto;
 }
 #composer textarea:focus { outline: none; border-color: var(--accent); }
+.send-stop { min-width: 88px; }
+.send-stop.is-stop { background: var(--danger); border-color: var(--danger); color: #fff; }
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 900px;
+  margin: 6px auto 0;
+  min-width: 0;
+}
+.composer-toolbar .chip { max-width: 46vw; }
+.tool-btn { background: transparent; color: var(--fg-dim); padding: 4px 8px; }
+.tool-btn:hover { color: var(--accent); }
+.composer-hint { color: var(--fg-dim); font-size: 11px; white-space: nowrap; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; max-width: 900px; margin: 0 auto 6px; }
 .chip {
   display: inline-flex;
@@ -317,7 +331,7 @@ button.chip { background: var(--bg3); border-radius: 999px; padding: 5px 12px; m
 .to-bottom {
   position: absolute;
   right: 18px;
-  bottom: 92px;
+  bottom: 128px;
   width: 38px;
   height: 38px;
   border-radius: 50%;
@@ -439,8 +453,11 @@ a.file-row { cursor: pointer; }
 
   #composer { padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); }
   #composer textarea { font-size: 16px; /* 防 iOS 聚焦缩放 */ max-height: 34vh; }
+  .composer-toolbar { flex-wrap: wrap; }
+  .composer-hint { display: none; }
+  .send-stop { min-width: 72px; }
 
-  .to-bottom { right: 14px; bottom: calc(110px + env(safe-area-inset-bottom)); }
+  .to-bottom { right: 14px; bottom: calc(136px + env(safe-area-inset-bottom)); }
 
   .appr-overlay {
     top: auto;

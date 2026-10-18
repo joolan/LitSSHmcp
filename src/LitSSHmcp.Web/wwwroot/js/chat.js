@@ -187,11 +187,13 @@ export class ChatController {
         this.scrollDown();
         break;
       case "done":
+        this.flushAssistantRender();
         this.setBusy(false);
         this.onStatus(frame.stopped ? "已停止" : "就绪");
         this.resetRun();
         break;
       case "error":
+        this.flushAssistantRender();
         this.onToast(frame.message || "发生错误");
         this.setBusy(false);
         this.onStatus("就绪");
@@ -449,13 +451,25 @@ export class ChatController {
   queueAssistantRender(md) {
     if (this.renderQueued) return;
     this.renderQueued = true;
+    // 关键：排队时捕获文本快照——done 会立刻 resetRun() 清空 assistantText，
+    // 若渲染仍读实时字段，最后一段结论会被清成空气泡（"末尾没有结果"）。
+    const text = this.assistantText;
     const render = () => {
       this.renderQueued = false;
-      if (md) md.innerHTML = renderMarkdown(this.assistantText);
+      if (md) md.innerHTML = renderMarkdown(text);
       this.scrollDown();
     };
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(render);
     else setTimeout(render, 16);
+  }
+
+  /** 同步落盘最后一段助手文本（done/error/关闭前调用，避免节流窗口内丢结论）。 */
+  flushAssistantRender() {
+    if (this.assistantEl !== null) {
+      const md = this.assistantEl.querySelector(".md") || this.assistantEl.querySelector("div");
+      if (md) md.innerHTML = renderMarkdown(this.assistantText);
+    }
+    this.renderQueued = false;
   }
 
   ensureReasoning() {
@@ -550,12 +564,20 @@ export class ChatController {
   setBusy(busy) {
     this.busy = busy;
     this.inputEl.disabled = busy;
-    this.sendBtn.disabled = busy;
-    this.stopBtn.disabled = !busy;
+    if (this.stopBtn) {
+      // 旧布局：发送/停止两个按钮
+      this.sendBtn.disabled = busy;
+      this.stopBtn.disabled = !busy;
+    } else if (this.sendBtn) {
+      // 桌面风格：发送/停止合并为一个按钮（busy 时点击 = 停止）
+      this.sendBtn.textContent = busy ? "停止" : "发送";
+      this.sendBtn.classList.toggle("is-stop", busy);
+      this.sendBtn.title = busy ? "停止本轮任务" : "发送（Enter）";
+    }
     if (this.sessionId === null) {
       this.inputEl.disabled = true;
       this.sendBtn.disabled = true;
-      this.stopBtn.disabled = true;
+      if (this.stopBtn) this.stopBtn.disabled = true;
     }
   }
 

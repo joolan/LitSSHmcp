@@ -380,7 +380,7 @@ public class AuditLogService : IAuditLogService
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
-            conditions.Add("Command LIKE @Keyword ESCAPE '\\'");
+            conditions.Add("(Command LIKE @Keyword ESCAPE '\\' OR IFNULL(UserId, '') LIKE @Keyword ESCAPE '\\')");
             cmd.Parameters.AddWithValue("@Keyword", $"%{EscapeLike(keyword.Trim())}%");
         }
 
@@ -434,7 +434,7 @@ public class AuditLogService : IAuditLogService
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
-            conditions.Add("Sql LIKE @Keyword ESCAPE '\\'");
+            conditions.Add("(Sql LIKE @Keyword ESCAPE '\\' OR IFNULL(UserId, '') LIKE @Keyword ESCAPE '\\')");
             cmd.Parameters.AddWithValue("@Keyword", $"%{EscapeLike(keyword.Trim())}%");
         }
 

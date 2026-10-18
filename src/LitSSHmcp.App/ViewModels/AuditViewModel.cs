@@ -111,12 +111,13 @@ public class AuditViewModel : INotifyPropertyChanged
     public string BuildCommandsCsv()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("时间,会话,工具,类型,服务器,命令,状态,决策,退出码,是否文件传输,文件,结果");
+        sb.AppendLine("时间,会话,用户,工具,类型,服务器,命令,状态,决策,退出码,是否文件传输,文件,结果");
         foreach (var log in CommandLogs)
         {
             sb.AppendLine(string.Join(',',
                 Escape(log.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")),
                 Escape(log.SessionId ?? string.Empty),
+                Escape(log.UserDisplay),
                 Escape(log.Tool ?? string.Empty),
                 Escape(log.Category.ToString()),
                 Escape(log.ServerName),
@@ -135,12 +136,13 @@ public class AuditViewModel : INotifyPropertyChanged
     public string BuildSqlCsv()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("时间,会话,工具,数据源,类型,操作,SQL,状态,决策,影响行数,耗时ms,结果");
+        sb.AppendLine("时间,会话,用户,工具,数据源,类型,操作,SQL,状态,决策,影响行数,耗时ms,结果");
         foreach (var log in SqlLogs)
         {
             sb.AppendLine(string.Join(',',
                 Escape(log.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")),
                 Escape(log.SessionId ?? string.Empty),
+                Escape(log.UserDisplay),
                 Escape(log.Tool ?? string.Empty),
                 Escape(log.DataSourceName),
                 Escape(log.Category.ToString()),

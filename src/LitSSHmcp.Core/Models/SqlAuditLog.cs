@@ -40,4 +40,7 @@ public class SqlAuditLog
     /// 已纳入哈希链 payload（v6）。
     /// </summary>
     public string? UserId { get; set; }
+
+    /// <summary>审计视图/CSV 展示用：空 = local（桌面未登录）。</summary>
+    public string UserDisplay => string.IsNullOrWhiteSpace(UserId) ? "local" : UserId;
 }

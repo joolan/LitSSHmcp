@@ -70,6 +70,7 @@
                         <GridView>
                             <GridViewColumn Header="时间" Width="140" DisplayMemberBinding="{Binding Timestamp, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}"/>
                             <GridViewColumn Header="会话" Width="180" DisplayMemberBinding="{Binding SessionId}"/>
+                            <GridViewColumn Header="用户" Width="100" DisplayMemberBinding="{Binding UserDisplay}"/>
                             <GridViewColumn Header="工具" Width="160" DisplayMemberBinding="{Binding Tool}"/>
                             <GridViewColumn Header="类型" Width="80" DisplayMemberBinding="{Binding Category}"/>
                             <GridViewColumn Header="服务器" Width="100" DisplayMemberBinding="{Binding ServerName}"/>
@@ -94,6 +95,7 @@
                         <GridView>
                             <GridViewColumn Header="时间" Width="140" DisplayMemberBinding="{Binding Timestamp, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}"/>
                             <GridViewColumn Header="会话" Width="180" DisplayMemberBinding="{Binding SessionId}"/>
+                            <GridViewColumn Header="用户" Width="100" DisplayMemberBinding="{Binding UserDisplay}"/>
                             <GridViewColumn Header="工具" Width="160" DisplayMemberBinding="{Binding Tool}"/>
                             <GridViewColumn Header="数据源" Width="120" DisplayMemberBinding="{Binding DataSourceName}"/>
                             <GridViewColumn Header="类型" Width="80" DisplayMemberBinding="{Binding Category}"/>

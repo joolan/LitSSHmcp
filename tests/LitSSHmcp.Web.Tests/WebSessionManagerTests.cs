@@ -1,4 +1,5 @@
 using LitSSHmcp.Agent;
+using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Web;
 using LitSSHmcp.Web.Sessions;
@@ -10,6 +11,7 @@ namespace LitSSHmcp.Web.Tests;
 public class WebSessionManagerTests
 {
     private readonly FakeRuntimeFactory _factory = new();
+    private readonly FakeWebConfigService _config = new();
     private readonly ContextStore _store;
     private readonly WebSessionManager _manager;
     private readonly WebPrincipal _alice = new(101, "alice", "user");
@@ -20,7 +22,7 @@ public class WebSessionManagerTests
         var dbPath = Path.Combine(WebTestEnv.DataDir, $"agent-{Guid.NewGuid():N}.db");
         _store = new ContextStore(dbPath);
         _store.InitializeAsync().GetAwaiter().GetResult();
-        _manager = new WebSessionManager(_store, _factory, new WebAccessLog());
+        _manager = new WebSessionManager(_store, _factory, new WebAccessLog(), _config);
     }
 
     [Fact]
@@ -183,6 +185,25 @@ public class WebSessionManagerTests
     }
 
     [Fact]
+    public async Task Create_session_enforces_per_user_cap()
+    {
+        _config.Config.Security.Limits.MaxSessionsPerUser = 1;
+
+        var first = await _manager.CreateSessionAsync(_alice, "第一个");
+        Assert.True(first.Id > 0);
+
+        // 上限只约束同一 owner：bob 不受影响
+        await _manager.CreateSessionAsync(_bob, "bob 的");
+        var ex = await Assert.ThrowsAsync<WebSessionLimitException>(
+            () => _manager.CreateSessionAsync(_alice, "超限"));
+        Assert.Contains("上限", ex.Message, StringComparison.Ordinal);
+
+        // 0 = 不限
+        _config.Config.Security.Limits.MaxSessionsPerUser = 0;
+        await _manager.CreateSessionAsync(_alice, "解除后");
+    }
+
+    [Fact]
     public void Build_history_keeps_only_text_roles()
     {
         var rows = new List<AgentMessageRow>
@@ -239,4 +260,14 @@ public sealed class FakeRuntimeFactory : IWebRuntimeFactory
             return ValueTask.CompletedTask;
         }
     }
+}
+
+/// <summary>可变配置假件：默认 AppConfig（含 MaxSessionsPerUser=8 等内置默认值），测试直接改字段。</summary>
+public sealed class FakeWebConfigService : IConfigService
+{
+    public AppConfig Config { get; set; } = new();
+
+    public Task<AppConfig> LoadConfigAsync() => Task.FromResult(Config);
+    public Task SaveConfigAsync(AppConfig config) => Task.CompletedTask;
+    public string GetConfigPath() => Path.Combine(WebTestEnv.DataDir, "fake-config.json");
 }

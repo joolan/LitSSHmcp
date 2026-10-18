@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using LitSSHmcp.Agent;
+using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Web;
@@ -17,14 +18,39 @@ Environment.SetEnvironmentVariable(HostEnv.AuthzMode, HostEnv.Enforce);
 
 var builder = WebApplication.CreateBuilder(args);
 
+// M3-8 HTTPS（§10.B.2 建议项）：启动即读配置（同一实例随后注入容器，避免双读歧义）；
+// 配置了 PFX 证书则追加 HTTPS 监听，默认无证书=仅 HTTP（局域网明文，风险见 README 安全模型）。
+// 读失败（如多宿主并发首建 config.json 的瞬时竞争）不阻断启动，按默认配置起宿主，
+// 后续各 API 的 LoadConfigAsync 每次重读磁盘，文件就绪后自然恢复。
+var bootConfigService = new ConfigService();
+AppConfig bootConfig;
+try
+{
+    bootConfig = await bootConfigService.LoadConfigAsync();
+}
+catch
+{
+    bootConfig = new AppConfig();
+}
+var https = WebHttpsBoot.Resolve(bootConfig.Web, File.Exists);
+if (https is not null)
+{
+    var (httpsPort, certPath, certPassword) = https.Value;
+    builder.WebHost.ConfigureKestrel(options =>
+        options.ListenAnyIP(httpsPort, listen => listen.UseHttps(certPath, certPassword)));
+}
+
+builder.Services.AddSingleton<IConfigService>(bootConfigService);
 builder.Services.AddSingleton<WebAccountsStore>();
 builder.Services.AddSingleton<WebAuthService>();
 builder.Services.AddSingleton<WebAccessLog>();
-builder.Services.AddSingleton<IConfigService, ConfigService>();
 builder.Services.AddSingleton<IContextStore, ContextStore>();
 builder.Services.AddSingleton<IWebRuntimeFactory, AgentWebRuntimeFactory>();
 builder.Services.AddSingleton<WebSessionManager>();
 builder.Services.AddSingleton<WebApprovalHub>();
+// M3-8 登录/API 层限速（§10.B.1/B.6）：进程内按 IP 固定窗口计数
+builder.Services.AddSingleton<WebRateLimitPolicy>();
+builder.Services.AddSingleton<WebRateLimitStore>();
 
 var app = builder.Build();
 
@@ -32,6 +58,10 @@ await app.Services.GetRequiredService<WebAccountsStore>().InitializeAsync();
 await app.Services.GetRequiredService<IContextStore>().InitializeAsync();
 
 app.UseWebSockets();
+// M3-8 安全响应头（§10.B 攻击面收敛）：nosniff/DENY/no-referrer/Permissions-Policy + HTML CSP
+app.UseMiddleware<WebSecurityHeadersMiddleware>();
+// M3-8 限速（§10.B.1/B.6）：/api/login 与 /api/* 按 IP 分桶，超限 429 + rate_limited 日志
+app.UseMiddleware<WebRateLimitMiddleware>();
 // M3-7 SPA（评估报告 §3.1/§10.B.3）：wwwroot 静态前端（登录/会话/流式聊天/审批卡片/目录浏览），
 // 与 API 同源；index.html 自带 CSP meta（script-src 'self'，配合 sanitize.js 的构造性 XSS 防护）。
 app.UseDefaultFiles();

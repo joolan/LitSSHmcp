@@ -53,7 +53,7 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
             ownerUsername: request.OwnerUsername);
         if (!string.IsNullOrEmpty(request.Summary))
             runtime.Session.RestoreSummary(request.Summary);
-        return new AgentWebRuntime(runtime);
+        return new AgentWebRuntime(runtime, agent.Budget, provider.InputPricePerMTok, provider.OutputPricePerMTok);
     }
 
     /// <summary>
@@ -73,12 +73,21 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
         return ids;
     }
 
-    private sealed class AgentWebRuntime(AgentRuntime runtime) : IWebRuntime
+    private sealed class AgentWebRuntime(AgentRuntime runtime, AgentBudgetConfig? budget,
+        double inputPricePerMTok, double outputPricePerMTok) : IWebRuntime
     {
         public string Summary => runtime.Session.Summary;
 
         public Task SendAsync(string userText, IProgress<AgentEvent>? progress, CancellationToken ct)
-            => runtime.Session.SendAsync(userText, progress, ct);
+        {
+            // 成本预算（§10.B.6）：达到 agent.budget.maxSessionCost 上限阻止新发送（§10.B.6 按用户生效）
+            var block = WebBudgetGuard.ComputeCostBlock(budget,
+                runtime.Session.SessionInputTokens, runtime.Session.SessionOutputTokens,
+                inputPricePerMTok, outputPricePerMTok);
+            if (block is not null)
+                throw new InvalidOperationException(block);
+            return runtime.Session.SendAsync(userText, progress, ct);
+        }
 
         public async ValueTask DisposeAsync() => await runtime.DisposeAsync();
     }

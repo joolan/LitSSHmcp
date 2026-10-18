@@ -21,8 +21,15 @@ public static class WebSessionEndpoints
         {
             var principal = ctx.GetWebPrincipal();
             if (principal is null) return Results.Unauthorized();
-            var info = await manager.CreateSessionAsync(principal, req.Title, ctx.RequestAborted);
-            return Results.Ok(info);
+            try
+            {
+                var info = await manager.CreateSessionAsync(principal, req.Title, ctx.RequestAborted);
+                return Results.Ok(info);
+            }
+            catch (WebSessionLimitException ex)
+            {
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status409Conflict);
+            }
         });
 
         api.MapGet("/", async (HttpContext ctx, WebSessionManager manager) =>

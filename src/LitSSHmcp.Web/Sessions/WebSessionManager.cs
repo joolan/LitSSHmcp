@@ -17,6 +17,9 @@ public sealed class WebSessionNotFoundException() : Exception("会话不存在")
 /// <summary>同一会话上一轮仍在进行。</summary>
 public sealed class WebSessionBusyException() : Exception("上一轮仍在进行中");
 
+/// <summary>超出每用户并发会话上限（§10.B.6 配额限速）——端点对外映射 409。</summary>
+public sealed class WebSessionLimitException(string message) : Exception(message);
+
 /// <summary>路径越出会话目录（<c>..</c>、绝对路径、链接逃逸、根外目录）——对外统一 404，越权尝试落 file_denied。</summary>
 public sealed class WebFilePathDeniedException() : Exception("路径越出会话目录");
 
@@ -36,13 +39,16 @@ public sealed class WebSessionManager : IAsyncDisposable
     private readonly IContextStore _store;
     private readonly IWebRuntimeFactory _runtimeFactory;
     private readonly WebAccessLog _accessLog;
+    private readonly IConfigService _configService;
     private readonly ConcurrentDictionary<long, SessionSlot> _slots = new();
 
-    public WebSessionManager(IContextStore store, IWebRuntimeFactory runtimeFactory, WebAccessLog accessLog)
+    public WebSessionManager(IContextStore store, IWebRuntimeFactory runtimeFactory,
+        WebAccessLog accessLog, IConfigService configService)
     {
         _store = store;
         _runtimeFactory = runtimeFactory;
         _accessLog = accessLog;
+        _configService = configService;
     }
 
     /// <summary>Web 会话目录固定根：&lt;data&gt;/jobs（评估报告 §8 遗留 #3；不跟随桌面 Documents 配置）。</summary>
@@ -65,6 +71,14 @@ public sealed class WebSessionManager : IAsyncDisposable
     /// <summary>创建会话：owner=登录用户，立即分配固定根下会话目录并落库锁定。</summary>
     public async Task<WebSessionInfo> CreateSessionAsync(WebPrincipal owner, string? title, CancellationToken ct = default)
     {
+        // 每用户并发会话上限（评估报告 §10.B.6 配额限速；0=不限）
+        var config = await _configService.LoadConfigAsync();
+        var cap = config.Security?.Limits?.MaxSessionsPerUser ?? 0;
+        if (cap > 0 && (await ListSessionsAsync(owner, ct)).Count >= cap)
+        {
+            _accessLog.Write("session_limit_reached", owner.Username, null, $"cap={cap}");
+            throw new WebSessionLimitException($"并发会话数已达上限（{cap}），请先删除不再使用的会话");
+        }
         var id = await _store.CreateSessionAsync(string.IsNullOrWhiteSpace(title) ? "Web 任务" : title!.Trim(), ct);
         var dir = WorkspaceLayout.ResolveSessionDir(WebJobsRoot, owner.UserId.ToString(), id);
         Directory.CreateDirectory(dir);

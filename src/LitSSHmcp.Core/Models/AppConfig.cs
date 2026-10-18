@@ -43,6 +43,32 @@ public class AppConfig
 
     /// <summary>应用锁（启动密码门卫）：防止他人拿到电脑后直接打开本程序操作。</summary>
     public AppLockConfig AppLock { get; set; } = new();
+
+    /// <summary>Web 宿主（LitSSHmcp.Web）设置：HTTPS 等；仅 Web 进程读取。</summary>
+    public WebHostConfig Web { get; set; } = new();
+}
+
+/// <summary>Web 宿主设置（评估报告 §10.B.2/B.6）。</summary>
+public class WebHostConfig
+{
+    /// <summary>
+    /// HTTPS（评估报告 §10.B.2 建议项）：配置了证书即为 Web 追加 HTTPS 监听；
+    /// 未配置 = 仅 HTTP（局域网明文，Cookie/令牌可被窃听、聊天可被中间人——须知悉该风险，建议内网 CA/自签证书）。
+    /// </summary>
+    public WebHttpsConfig Https { get; set; } = new();
+}
+
+/// <summary>Web HTTPS 证书设置（PFX/PKCS#12）。</summary>
+public class WebHttpsConfig
+{
+    /// <summary>PFX 证书文件路径；留空 = 不启用 HTTPS。</summary>
+    public string CertificatePath { get; set; } = string.Empty;
+
+    /// <summary>证书密码（config.json 内为 DPAPI 密文 enc: 前缀，由 ConfigService 透明解密）。</summary>
+    public string CertificatePassword { get; set; } = string.Empty;
+
+    /// <summary>HTTPS 监听端口；0 = 默认 7443。</summary>
+    public int Port { get; set; }
 }
 
 /// <summary>
@@ -623,6 +649,12 @@ public class LimitsConfig
 
     /// <summary>数据库备份动作的最大并发数（同时运行的备份任务数，1~16）；防止多任务同时 dump 压垮本机/目标。</summary>
     public int MaxConcurrentBackups { get; set; } = 2;
+
+    /// <summary>
+    /// 每个 Web 用户允许的并发会话数上限（评估报告 §10.B.6 配额限速），超出创建返回 409。0=不限。
+    /// 与 agent.budget 按会话生效配合：会话数 × 单会话成本上限即单用户成本上界。
+    /// </summary>
+    public int MaxSessionsPerUser { get; set; } = 8;
 }
 
 public class FileTransferConfig

@@ -130,6 +130,10 @@ public class ConfigService : IConfigService
             config.AppLock.PasswordHash = _protector.Protect(config.AppLock.PasswordHash);
             config.AppLock.Salt = _protector.Protect(config.AppLock.Salt);
         }
+
+        if (config.Web?.Https is not null)
+            config.Web.Https.CertificatePassword =
+                _protector.Protect(config.Web.Https.CertificatePassword) ?? string.Empty;
     }
 
     private void DecryptSecrets(AppConfig config)
@@ -168,6 +172,10 @@ public class ConfigService : IConfigService
             config.AppLock.PasswordHash = _protector.Unprotect(config.AppLock.PasswordHash);
             config.AppLock.Salt = _protector.Unprotect(config.AppLock.Salt);
         }
+
+        if (config.Web?.Https is not null)
+            config.Web.Https.CertificatePassword =
+                _protector.Unprotect(config.Web.Https.CertificatePassword) ?? string.Empty;
     }
 
     private bool ContainsPlaintextSecrets(AppConfig config)
@@ -190,6 +198,7 @@ public class ConfigService : IConfigService
                (config.RemoteDesktops ?? Array.Empty<RemoteDesktopConfig>()).Any(rd => HasPlaintext(rd.Password)) ||
                (config.Agent?.Providers ?? Array.Empty<AgentProviderGroupConfig>()).Any(p => HasPlaintext(p.ApiKey)) ||
                (config.Agent?.Memory is not null && HasPlaintext(config.Agent.Memory.ApiKey)) ||
+               (config.Web?.Https is not null && HasPlaintext(config.Web.Https.CertificatePassword)) ||
                (config.Triggers ?? Array.Empty<TriggerConfig>()).Any(t => (t?.Actions ?? Array.Empty<TriggerAction>()).Any(a => HasPlaintext(a.Secret)));
     }
 

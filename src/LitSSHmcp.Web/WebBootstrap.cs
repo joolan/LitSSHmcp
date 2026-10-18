@@ -55,4 +55,35 @@ public static class WebBootstrap
         }
         return 0;
     }
+
+    /// <summary>
+    /// 命令行账号管理入口（Program 启动前调用）：
+    /// <c>--create-user &lt;用户名&gt; [--role admin|user]</c>（密码取环境变量 <see cref="PasswordEnvVar"/>）、
+    /// <c>--list-users</c>。命中返回退出码；未命中返回 null（继续起 Web 服务，透传其余参数）。
+    /// </summary>
+    public static async Task<int?> RunCliAsync(string[] args, CancellationToken ct = default)
+    {
+        if (args.Length == 0)
+            return null;
+        switch (args[0])
+        {
+            case "--list-users":
+                return await RunListUsersAsync(ct);
+            case "--create-user":
+                if (args.Length < 2)
+                {
+                    Console.Error.WriteLine("用法: --create-user <用户名> [--role admin|user]（密码经环境变量 " + PasswordEnvVar + " 传入）");
+                    return 1;
+                }
+                string? role = null;
+                for (var i = 2; i + 1 < args.Length; i++)
+                {
+                    if (args[i] == "--role")
+                        role = args[i + 1];
+                }
+                return await RunCreateUserAsync(args[1], role, ct);
+            default:
+                return null;
+        }
+    }
 }

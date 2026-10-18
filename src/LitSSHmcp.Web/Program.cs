@@ -16,6 +16,11 @@ Environment.SetEnvironmentVariable("LITSSH_APPROVAL_CHANNELS", "cli");
 // 桌面进程不注入此变量（D1 桌面仅归因不限权）。进程级变量同样由子进程继承。
 Environment.SetEnvironmentVariable(HostEnv.AuthzMode, HostEnv.Enforce);
 
+// 账号管理命令行（M3-1 账号体系 / §3.2）：--create-user <用户名> [--role …]（密码走 LITSSH_NEW_PASSWORD
+// 环境变量）、--list-users；未命中则继续起 Web 服务（其余参数照常透传给宿主）。
+if (await WebBootstrap.RunCliAsync(args) is { } cliExitCode)
+    return cliExitCode;
+
 // 内容根固定到程序目录：否则 content root 跟随启动时工作目录漂移（如从仓库根、
 // 任务计划程序、服务方式启动），WebRootPath 指向不存在的 <cwd>\wwwroot → 静态资源 404。
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -133,6 +138,7 @@ app.MapWebFileEndpoints();
 _ = app.Services.GetRequiredService<WebApprovalHub>();
 
 await app.RunAsync();
+return 0;
 
 public sealed record LoginRequest(string? Username, string? Password);
 

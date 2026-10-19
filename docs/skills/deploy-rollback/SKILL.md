@@ -6,11 +6,14 @@ appliesTo: [ssh, command, service, docker, topology]
 
 # 发布后验证与回滚检查单
 
+## 发布前
+- 先用 `topology_search` 定位应用/服务器，`topology_impact(assetId)` 查变更影响面（谁依赖它、会影响哪些上游），把结果写进验证清单。
+
 ## 发布后验证（按顺序，先只读）
 1. **进程/容器**：`service_status`(unit) 或 `docker_ps` 看目标是否 Running、重启次数是否为 0。
 2. **端口/健康**：`ssh_snapshot_get section="portmap"` 或 `ss -lntup | grep <port>`；`curl -sS -m 8 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:<port>/health`（如有健康端点）。
 3. **日志**：`log_tail`/`service_logs`/`docker_logs` 看启动后是否报错（异常栈、连接失败、配置缺失）。
-4. **依赖**：`app_health_snapshot`(appId) 或 `topology_get_dependencies` 看依赖的数据库/上游是否可达。
+4. **依赖**：`app_health_snapshot`(appId) 看运行时连通性；用 `topology_neighbors` / `topology_path` 对照依赖链路，结论用 `topology_explain` 核实证据与 `stale`。
 5. **指标**：`ssh_snapshot_get section="resource"` 看 CPU/内存/负载是否异常升高。
 
 ## 判断是否回滚

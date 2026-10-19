@@ -6,7 +6,7 @@ using Xunit;
 namespace LitSSHmcp.Tests;
 
 /// <summary>
-/// 审计格式迁移：v5→v6 保留记录（补 UserId 列 + 重建链），更老版本仍清理重建。
+/// 审计格式迁移：任意旧版本 → v6 均保留记录（补齐缺失列 + 按 v6 payload 重建链）。
 /// </summary>
 public class AuditV5MigrationTests
 {
@@ -83,7 +83,7 @@ public class AuditV5MigrationTests
     }
 
     [Fact]
-    public async Task Older_than_v5_is_still_reset()
+    public async Task Older_than_v5_preserves_records_and_rebuilds_chain()
     {
         var db = Path.Combine(Path.GetTempPath(), "litssh-audit-mig-" + Guid.NewGuid().ToString("N") + ".db");
         try
@@ -92,24 +92,58 @@ public class AuditV5MigrationTests
             await audit.InitializeAsync();
             await audit.LogCommandAsync(new CommandAuditLog
             {
-                ServerId = "s", ServerName = "n", Command = "ls", Status = CommandStatus.Executed
+                ServerId = "s", ServerName = "n", Command = "ls", UserId = "alice",
+                Status = CommandStatus.Executed
             });
 
+            // 模拟 v4 库：去掉 v4 之后新增的列（Tool/Category/Decision/UserId 等）、版本置 4、链清空。
             using (var conn = new SqliteConnection($"Data Source={db}"))
             {
                 conn.Open();
+                foreach (var table in new[] { "AuditLogs", "AuditLogsHistory", "SqlAuditLogs", "SqlAuditLogsHistory" })
+                {
+                    foreach (var column in new[] { "UserId", "Decision", "Category", "Tool", "SessionId" })
+                    {
+                        if (!Columns(conn, table).Contains(column, StringComparer.OrdinalIgnoreCase))
+                            continue;
+                        using var alter = conn.CreateCommand();
+                        alter.CommandText = $"ALTER TABLE {table} DROP COLUMN {column};";
+                        alter.ExecuteNonQuery();
+                    }
+                }
                 using var version = conn.CreateCommand();
                 version.CommandText = "PRAGMA user_version = 4;";
                 version.ExecuteNonQuery();
+                using var clear = conn.CreateCommand();
+                clear.CommandText = "DELETE FROM AuditChain;";
+                clear.ExecuteNonQuery();
             }
 
             var upgraded = new AuditLogService(new FakeSecurityOptions(), db);
             await upgraded.InitializeAsync();
 
-            Assert.Empty(await upgraded.GetLogsAsync());
+            // 记录保留，新增列自动补齐（旧记录归因为空）
+            var commands = await upgraded.GetLogsAsync();
+            Assert.Single(commands);
+            Assert.Equal("ls", commands[0].Command);
+            Assert.Null(commands[0].UserId);
+
             var verify = await upgraded.VerifyChainAsync();
             Assert.True(verify.Ok, verify.Message);
-            Assert.Equal(0, verify.Checked);
+            Assert.Equal(1, verify.Checked);
+
+            using (var conn = new SqliteConnection($"Data Source={db}"))
+            {
+                conn.Open();
+                using var version = conn.CreateCommand();
+                version.CommandText = "PRAGMA user_version;";
+                Assert.Equal(6L, Convert.ToInt64(version.ExecuteScalar()));
+                foreach (var column in new[] { "SessionId", "Tool", "Category", "Decision", "UserId" })
+                {
+                    Assert.Contains(column, Columns(conn, "AuditLogs"));
+                    Assert.Contains(column, Columns(conn, "AuditLogsHistory"));
+                }
+            }
         }
         finally
         {

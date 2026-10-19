@@ -210,8 +210,9 @@ public class SkillRootResolutionTests : IDisposable
 
     public SkillRootResolutionTests()
     {
-        Directory.CreateDirectory(Path.Combine(Bundled, "litssh-mcp-ops-skill"));
+        Directory.CreateDirectory(Path.Combine(Bundled, "litssh-mcp-ops-skill", "references"));
         File.WriteAllText(Path.Combine(Bundled, "litssh-mcp-ops-skill", "SKILL.md"), "OPS");
+        File.WriteAllText(Path.Combine(Bundled, "litssh-mcp-ops-skill", "references", "guide.md"), "OLD");
     }
 
     public void Dispose()
@@ -239,7 +240,7 @@ public class SkillRootResolutionTests : IDisposable
     }
 
     [Fact]
-    public void Existing_stable_dir_wins_and_is_not_overwritten()
+    public void Existing_stable_dir_keeps_user_skill_and_installs_missing_bundled_skill()
     {
         Directory.CreateDirectory(Path.Combine(Stable, "my-skill"));
         File.WriteAllText(Path.Combine(Stable, "my-skill", "SKILL.md"), "MINE");
@@ -247,8 +248,64 @@ public class SkillRootResolutionTests : IDisposable
         var dir = SkillRegistry.ResolveDir(null, Bundled, Stable);
 
         Assert.Equal(Stable, dir);
-        Assert.True(File.Exists(Path.Combine(Stable, "my-skill", "SKILL.md")));
-        Assert.False(Directory.Exists(Path.Combine(Stable, "litssh-mcp-ops-skill")));   // 不覆盖已有稳定目录
+        Assert.Equal("MINE", File.ReadAllText(Path.Combine(Stable, "my-skill", "SKILL.md")));
+        Assert.True(File.Exists(Path.Combine(Stable, "litssh-mcp-ops-skill", "SKILL.md")));
+        Assert.True(File.Exists(Path.Combine(Stable, ".litssh-bundle.json")));
+    }
+
+    [Fact]
+    public void Upgrade_updates_unmodified_bundled_files_and_preserves_user_edits()
+    {
+        SkillRegistry.ResolveDir(null, Bundled, Stable);
+        var stableSkill = Path.Combine(Stable, "litssh-mcp-ops-skill", "SKILL.md");
+        var stableRef = Path.Combine(Stable, "litssh-mcp-ops-skill", "references", "guide.md");
+        File.WriteAllText(stableSkill, "USER EDITED");
+
+        File.WriteAllText(Path.Combine(Bundled, "litssh-mcp-ops-skill", "SKILL.md"), "OPS2");
+        File.WriteAllText(Path.Combine(Bundled, "litssh-mcp-ops-skill", "references", "guide.md"), "NEW");
+        File.WriteAllText(Path.Combine(Bundled, "litssh-mcp-ops-skill", "references", "new.md"), "NEW FILE");
+
+        SkillRegistry.ResolveDir(null, Bundled, Stable);
+
+        Assert.Equal("USER EDITED", File.ReadAllText(stableSkill));   // 用户改过 → 保留
+        Assert.Equal("NEW", File.ReadAllText(stableRef));              // 未改过 → 随包升级
+        Assert.True(File.Exists(Path.Combine(Stable, "litssh-mcp-ops-skill", "references", "new.md")));
+    }
+
+    [Fact]
+    public void Legacy_stable_dir_without_manifest_is_upgraded_once()
+    {
+        Directory.CreateDirectory(Path.Combine(Stable, "litssh-mcp-ops-skill"));
+        File.WriteAllText(Path.Combine(Stable, "litssh-mcp-ops-skill", "SKILL.md"), "OLD BUNDLE");
+
+        SkillRegistry.ResolveDir(null, Bundled, Stable);
+
+        Assert.Equal("OPS", File.ReadAllText(Path.Combine(Stable, "litssh-mcp-ops-skill", "SKILL.md")));
+        Assert.True(File.Exists(Path.Combine(Stable, ".litssh-bundle.json")));
+    }
+
+    [Fact]
+    public void Deleted_bundled_file_is_not_resurrected()
+    {
+        SkillRegistry.ResolveDir(null, Bundled, Stable);
+        var stableRef = Path.Combine(Stable, "litssh-mcp-ops-skill", "references", "guide.md");
+        File.Delete(stableRef);
+
+        SkillRegistry.ResolveDir(null, Bundled, Stable);
+
+        Assert.False(File.Exists(stableRef));
+    }
+
+    [Fact]
+    public void New_bundled_skill_is_installed_on_next_resolve()
+    {
+        SkillRegistry.ResolveDir(null, Bundled, Stable);
+        Directory.CreateDirectory(Path.Combine(Bundled, "new-skill"));
+        File.WriteAllText(Path.Combine(Bundled, "new-skill", "SKILL.md"), "NEW SKILL");
+
+        SkillRegistry.ResolveDir(null, Bundled, Stable);
+
+        Assert.True(File.Exists(Path.Combine(Stable, "new-skill", "SKILL.md")));
     }
 
     [Fact]

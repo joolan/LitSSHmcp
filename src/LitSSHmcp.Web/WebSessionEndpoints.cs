@@ -375,6 +375,7 @@ public static class WebSessionEndpoints
                 AgentEventKind.ToolCall => new { type = "tool", tool = e.ToolName, args = e.ArgumentsJson },
                 AgentEventKind.ToolResult => new { type = "tool_result", tool = e.ToolName, ok = e.ToolSuccess, ms = e.DurationMs },
                 AgentEventKind.MemoryRecall => new { type = "memory_recall", text = e.Text },
+            AgentEventKind.AssetGraphContext => new { type = "asset_graph_context", text = e.Text },
                 AgentEventKind.Error => new { type = "error", message = e.Text },
                 _ => new { type = "event", kind = e.Kind.ToString() }
             };

@@ -53,7 +53,15 @@ public sealed class SystemdHealthSnapshotCollector : ISnapshotCollector
             ["systemState"] = string.IsNullOrWhiteSpace(state) ? null : state,
             ["total"] = units.Count,
             ["counts"] = counts,
-            ["failed"] = failed
+            ["failed"] = failed,
+            ["units"] = units.Select(u => new Dictionary<string, object?>
+            {
+                ["unit"] = u.Name,
+                ["load"] = u.Load,
+                ["active"] = u.Active,
+                ["sub"] = u.Sub,
+                ["description"] = u.Description
+            }).ToList()
         };
 
         sw.Stop();

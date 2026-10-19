@@ -32,6 +32,7 @@ public class TopologyService : ITopologyService
     private readonly ITopologyStore _store;
     private readonly ICommandFilterService _commandFilter;
     private readonly IAuditLogService _auditLogService;
+    private readonly ISnapshotStore? _snapshotStore;
     private readonly SemaphoreSlim _discoverGate = new(1, 1);
     private bool _auditReady;
 
@@ -41,7 +42,8 @@ public class TopologyService : ITopologyService
         IDatasourceDriverRegistry driverRegistry,
         ITopologyStore store,
         ICommandFilterService commandFilter,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        ISnapshotStore? snapshotStore = null)
     {
         _configService = configService;
         _sshService = sshService;
@@ -49,6 +51,7 @@ public class TopologyService : ITopologyService
         _store = store;
         _commandFilter = commandFilter;
         _auditLogService = auditLogService;
+        _snapshotStore = snapshotStore;
     }
 
     public async Task<TopologyGraph> GetGraphAsync(CancellationToken ct = default)
@@ -125,7 +128,10 @@ public class TopologyService : ITopologyService
                 To = rel.To,
                 Type = string.IsNullOrWhiteSpace(rel.Type) ? "relatedTo" : rel.Type,
                 Evidence = rel.Note,
-                Source = "manual"
+                Source = "manual",
+                Confidence = 1.0,
+                ValidFrom = DateTime.UtcNow,
+                LastVerifiedAt = DateTime.UtcNow
             });
             manualKeys.Add(EdgeKey(rel.From, rel.To, rel.Type));
             EnsureNode(nodes, rel.From, "discovered");
@@ -133,7 +139,9 @@ public class TopologyService : ITopologyService
         }
 
         await _store.InitializeAsync();
-        foreach (var edge in await _store.GetEdgesAsync())
+        var discoveredEdges = await _store.GetEdgesAsync();
+        await ReconcileDisputesAsync(discoveredEdges, edges, ct);
+        foreach (var edge in discoveredEdges)
         {
             if (manualKeys.Contains(EdgeKey(edge.From, edge.To, edge.Type))) continue;
             edges.Add(edge);
@@ -149,8 +157,12 @@ public class TopologyService : ITopologyService
             try
             {
                 if (JsonSerializer.Deserialize<Dictionary<string, object?>>(json) is { } info)
+                {
                     foreach (var kv in info)
                         node.Info[kv.Key] = kv.Value;
+                    if (InfoString(node, "label") is { Length: > 0 } infoLabel)
+                        node.Label = infoLabel;
+                }
             }
             catch { /* 忽略损坏的 info */ }
 
@@ -731,6 +743,8 @@ public class TopologyService : ITopologyService
             {
                 notes.Add($"{server.Name}: 配置文件扫描失败: {Truncate(grepResult.Error, 200)}");
             }
+
+            await AddSnapshotGraphAsync(config, server, drafts, notes, ct);
         }
 
         foreach (var ds in config.DataSources.Where(d => d.Type.Equals("mysql", StringComparison.OrdinalIgnoreCase)))
@@ -853,6 +867,41 @@ public class TopologyService : ITopologyService
     }
 
     /// <summary>
+    /// P1：把最近一次服务器快照里的 systemd/docker/portmap/nginx_tls 增量写入图谱。
+    /// 快照缺失/解析失败只记 note，不影响本轮 SSH 发现结果。
+    /// </summary>
+    private async Task AddSnapshotGraphAsync(
+        AppConfig config,
+        SshServerConfig server,
+        List<TopologyEdge> drafts,
+        List<string> notes,
+        CancellationToken ct)
+    {
+        if (_snapshotStore is null)
+            return;
+
+        try
+        {
+            var snapshot = await _snapshotStore.GetLatestAsync(server.Id, ct);
+            if (snapshot is null || string.IsNullOrWhiteSpace(snapshot.DataJson))
+            {
+                notes.Add($"{server.Name}: 暂无可用快照，服务/容器/部署/域名/端口/证书未入库（可先执行一次服务器快照）");
+                return;
+            }
+
+            var contribution = SnapshotTopologyBuilder.Build(config, server, snapshot);
+            drafts.AddRange(contribution.Edges);
+            foreach (var (nodeId, info) in contribution.NodeInfo)
+                await _store.UpsertNodeInfoAsync(nodeId, JsonSerializer.Serialize(info));
+            notes.AddRange(contribution.Notes);
+        }
+        catch (Exception ex)
+        {
+            notes.Add($"{server.Name}: 快照图谱入库失败: {Truncate(ex.Message, 200)}");
+        }
+    }
+
+    /// <summary>
     /// 构造配置文件扫描命令。所有路径都经 <see cref="ShellQuote.Single"/> 单引号转义，
     /// 使 <c>; | &amp; $( ) `</c> 等 shell 元字符退化为字面量（防注入的唯一入口，勿绕过）。
     /// </summary>
@@ -933,8 +982,23 @@ public class TopologyService : ITopologyService
         Evidence = evidence,
         Source = "discovered",
         FirstSeenAt = DateTime.UtcNow,
-        LastSeenAt = DateTime.UtcNow
+        LastSeenAt = DateTime.UtcNow,
+        Confidence = 0.8,
+        ValidFrom = DateTime.UtcNow,
+        LastVerifiedAt = DateTime.UtcNow
     };
+
+    private static string? InfoString(TopologyNode node, string key)
+    {
+        if (!node.Info.TryGetValue(key, out var value))
+            return null;
+        return value switch
+        {
+            string s => s,
+            JsonElement { ValueKind: JsonValueKind.String } e => e.GetString(),
+            _ => null
+        };
+    }
 
     private static void EnsureNode(Dictionary<string, TopologyNode> nodes, string id, string source)
     {
@@ -944,6 +1008,13 @@ public class TopologyService : ITopologyService
             _ when id.StartsWith(AssetNode.SshPrefix, StringComparison.Ordinal) => ("ssh", id[4..]),
             _ when id.StartsWith(AssetNode.DsPrefix, StringComparison.Ordinal) => ("datasource", id[3..]),
             _ when id.StartsWith(AssetNode.AppPrefix, StringComparison.Ordinal) => ("application", id[4..]),
+            _ when id.StartsWith(AssetNode.ServicePrefix, StringComparison.Ordinal) => ("service", id[8..]),
+            _ when id.StartsWith(AssetNode.ContainerPrefix, StringComparison.Ordinal) => ("container", id[10..]),
+            _ when id.StartsWith(AssetNode.DeployPrefix, StringComparison.Ordinal) => ("deploy", id[7..]),
+            _ when id.StartsWith(AssetNode.SystemPrefix, StringComparison.Ordinal) => ("system", id[7..]),
+            _ when id.StartsWith(AssetNode.DomainPrefix, StringComparison.Ordinal) => ("domain", id[7..]),
+            _ when id.StartsWith(AssetNode.PortPrefix, StringComparison.Ordinal) => ("port", id[5..]),
+            _ when id.StartsWith(AssetNode.CertPrefix, StringComparison.Ordinal) => ("cert", id[5..]),
             _ when id.StartsWith(AssetNode.MqPrefix, StringComparison.Ordinal) => ("mq", id[3..]),
             _ => ("unknown", id)
         };
@@ -1014,6 +1085,68 @@ public class TopologyService : ITopologyService
         return graph.Nodes.FirstOrDefault(n =>
             n.Id.EndsWith(":" + assetId, StringComparison.Ordinal) ||
             n.Label.Equals(assetId, StringComparison.OrdinalIgnoreCase))?.Id;
+    }
+
+    /// <summary>只能指向一个目标的函数型关系；出现多个目标即视为冲突。</summary>
+    private static readonly HashSet<string> FunctionalRelationTypes =
+        new(StringComparer.OrdinalIgnoreCase) { "runsOn", "hostedOn" };
+
+    /// <summary>
+    /// 自动发现边与人工边/其它发现边冲突时写入 Disputed；人工确认过的边保持不标红，
+    /// 冲突消失后清空标记与确认状态，以便未来再次冲突时能重新提示。
+    /// </summary>
+    private async Task ReconcileDisputesAsync(
+        IReadOnlyList<TopologyEdge> discovered, IReadOnlyList<TopologyEdge> all, CancellationToken ct)
+    {
+        var manualTargets = all
+            .Where(e => string.Equals(e.Source, "manual", StringComparison.OrdinalIgnoreCase))
+            .Where(e => FunctionalRelationTypes.Contains(e.Type))
+            .GroupBy(e => $"{e.From}|{e.Type}", StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Select(e => e.To).Distinct(StringComparer.Ordinal).ToArray(),
+                StringComparer.Ordinal);
+
+        var changed = new List<TopologyEdge>();
+        foreach (var group in discovered
+                     .Where(e => FunctionalRelationTypes.Contains(e.Type))
+                     .GroupBy(e => $"{e.From}|{e.Type}", StringComparer.Ordinal))
+        {
+            var targets = group.Select(e => e.To).Distinct(StringComparer.Ordinal).ToArray();
+            var conflict = targets.Length > 1;
+            var allTargets = targets.ToHashSet(StringComparer.Ordinal);
+            if (manualTargets.TryGetValue(group.Key, out var manual))
+            {
+                if (manual.Any(t => !allTargets.Contains(t)))
+                    conflict = true;
+                allTargets.UnionWith(manual);
+            }
+
+            var reason = conflict && allTargets.Count > 1
+                ? $"冲突: {group.First().Type} 同时指向 {string.Join(", ", allTargets.OrderBy(x => x, StringComparer.Ordinal))}"
+                : null;
+
+            foreach (var edge in group)
+            {
+                var desiredDisputed = conflict && !edge.DisputeAcknowledged;
+                var desiredReason = conflict ? reason : null;
+                if (edge.Disputed == desiredDisputed && edge.DisputeReason == desiredReason &&
+                    (conflict || !edge.DisputeAcknowledged))
+                {
+                    continue;
+                }
+
+                edge.Disputed = desiredDisputed;
+                edge.DisputeReason = desiredReason;
+                if (!conflict)
+                    edge.DisputeAcknowledged = false;
+                changed.Add(edge);
+            }
+        }
+
+        foreach (var edge in changed)
+        {
+            ct.ThrowIfCancellationRequested();
+            await _store.UpsertEdgeAsync(edge);
+        }
     }
 
     private static string EdgeKey(string from, string to, string type) => $"{from}|{to}|{type}";

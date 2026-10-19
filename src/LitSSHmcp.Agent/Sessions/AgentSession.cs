@@ -19,6 +19,7 @@ public sealed class AgentSession
     private readonly IReadOnlyList<IAgentTool> _tools;
     private readonly Dictionary<string, IAgentTool> _toolsByName;
     private readonly Func<string, CancellationToken, Task<string?>>? _recall;
+    private readonly Func<string, CancellationToken, Task<string?>>? _graphContext;
     private string _systemPrompt;
     private readonly SpillStore? _spill;
     private readonly int? _maxIterationsOverride;
@@ -56,7 +57,8 @@ public sealed class AgentSession
         Func<string, CancellationToken, Task<string?>>? recall = null,
         SpillStore? spill = null,
         int? maxIterationsOverride = null,
-        IAgentTool? roundNotifier = null)
+        IAgentTool? roundNotifier = null,
+        Func<string, CancellationToken, Task<string?>>? graphContext = null)
     {
         _client = client;
         _provider = provider;
@@ -64,6 +66,7 @@ public sealed class AgentSession
         _config = config;
         _toolsByName = _tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _recall = recall;
+        _graphContext = graphContext;
         _systemPrompt = systemPrompt;
         _spill = spill;
         _maxIterationsOverride = maxIterationsOverride;
@@ -183,6 +186,25 @@ public sealed class AgentSession
             catch
             {
                 // 召回失败忽略，不影响本轮
+            }
+        }
+
+        // Graph-RAG：解析问题中的资产并注入 1 跳邻域，减少模型盲猜 ID/依赖关系
+        if (_graphContext is not null)
+        {
+            try
+            {
+                var graph = await _graphContext(userText, ct);
+                if (!string.IsNullOrWhiteSpace(graph))
+                {
+                    Messages.Insert(Messages.Count - 1, new ChatMessage(ChatRole.System,
+                        "以下是从资产图谱按本次请求自动检索的上下文(只读快照, 以实际工具结果为准):\n" + graph));
+                    progress?.Report(new AgentEvent(AgentEventKind.AssetGraphContext, Text: graph));
+                }
+            }
+            catch
+            {
+                // 图谱检索失败忽略，不影响本轮
             }
         }
 

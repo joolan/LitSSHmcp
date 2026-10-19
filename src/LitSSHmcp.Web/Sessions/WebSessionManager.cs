@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text;
+using System.Text.Json;
 using LitSSHmcp.Agent;
 using LitSSHmcp.Agent.Sessions;
 using LitSSHmcp.Core.Models;
@@ -405,10 +406,35 @@ public sealed class WebSessionManager : IAsyncDisposable
         var planMode = await _store.GetSessionPlanModeAsync(sessionId, ct);
         var vision = SessionContextBuilder.ResolveSupportsVision(config, sessionRow?.ProviderId);
         var built = SessionContextBuilder.Build(config, agentId, activeSkills, planMode, messages, dir, vision);
+        var toolPolicy = await LoadToolPolicyAsync(sessionId, ct);
         slot.WorkspaceDir = dir;
         slot.Runtime = await _runtimeFactory.CreateAsync(
             new WebRuntimeRequest(sessionId, owner.UserId.ToString(), owner.Username, dir, built.History, summary,
-                sessionRow?.ProviderId, built.ActiveAgent, built.ActiveSkillIds, built.PlanMode, built.AssetGraph), ct);
+                sessionRow?.ProviderId, built.ActiveAgent, built.ActiveSkillIds, built.PlanMode, built.AssetGraph,
+                toolPolicy), ct);
+    }
+
+    /// <summary>读取会话级工具策略（桌面配置、Web 生效）；损坏/空值按无策略处理，不影响会话启动。</summary>
+    private async Task<IReadOnlyDictionary<string, AgentToolPolicy>?> LoadToolPolicyAsync(
+        long sessionId, CancellationToken ct)
+    {
+        try
+        {
+            var json = await _store.GetSessionToolPolicyAsync(sessionId, ct);
+            if (string.IsNullOrWhiteSpace(json))
+                return null;
+            var map = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            if (map is not { Count: > 0 })
+                return null;
+            return map
+                .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
+                .ToDictionary(kv => kv.Key, kv => AgentToolPolicyParser.Parse(kv.Value),
+                    StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>

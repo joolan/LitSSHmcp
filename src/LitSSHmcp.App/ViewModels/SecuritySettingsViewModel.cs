@@ -113,6 +113,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
     /// <summary>Web 授权矩阵规则行（界面上的可编辑集合）。</summary>
     public ObservableCollection<AuthzRuleRow> AuthzRules { get; } = new();
 
+    /// <summary>允许下发 Web 的外部连接器（来自 agent.mcpServers 非内置条目）。</summary>
+    public ObservableCollection<WebConnectorOption> WebConnectors { get; } = new();
+
     /// <summary>Web 会话工作区根（config.web.jobsRoot；空=默认 %APPDATA%\LitSSH\jobs，重启 Web 生效）。</summary>
     public string WebJobsRoot { get => _webJobsRoot; set => Set(ref _webJobsRoot, value); }
 
@@ -182,6 +185,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             AuthzRules.Clear();
             foreach (var row in ToRows(authz))
                 AuthzRules.Add(row);
+            WebConnectors.Clear();
+            foreach (var row in ToWebConnectorRows(config.Agent?.McpServers, authz.WebConnectors))
+                WebConnectors.Add(row);
 
             WebJobsRoot = config.Web?.JobsRoot ?? string.Empty;
 
@@ -274,6 +280,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             s.Authorization ??= new AuthorizationConfig();
             s.Authorization.Enabled = AuthzEnabled;
             s.Authorization.Users = ToRules(AuthzRules);
+            s.Authorization.WebConnectors = ToWebConnectorIds(WebConnectors);
 
             config.Web ??= new WebHostConfig();
             config.Web.JobsRoot = WebJobsRoot?.Trim() ?? string.Empty;
@@ -363,6 +370,42 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
                 LevelIndex = string.Equals(r.Level?.Trim(), "exec", StringComparison.OrdinalIgnoreCase) ? 1 : 0
             })
             .ToArray();
+
+    /// <summary>
+    /// 外部连接器配置 → 可编辑勾选项（加载路径）：只展示非内置条目，
+    /// 已配白名单的 Id 预勾选；已停用条目仍展示但标注，全局启停由 agent.mcpServers 决定。
+    /// </summary>
+    public static WebConnectorOption[] ToWebConnectorRows(
+        IEnumerable<AgentMcpServerConfig>? servers, IEnumerable<string>? selected)
+    {
+        var selectedSet = new HashSet<string>(
+            (selected ?? Array.Empty<string>())
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(id => id.Trim()),
+            StringComparer.Ordinal);
+
+        return (servers ?? Array.Empty<AgentMcpServerConfig>())
+            .Where(s => s is { Builtin: false } && !string.IsNullOrWhiteSpace(s.Id))
+            .Select(s => new WebConnectorOption
+            {
+                Id = s.Id,
+                Name = string.IsNullOrWhiteSpace(s.Name) ? s.Id : s.Name,
+                Enabled = s.Enabled,
+                IsSelected = selectedSet.Contains(s.Id)
+            })
+            .ToArray();
+    }
+
+    /// <summary>勾选项 → 下发白名单（保存路径）：只保留勾选且非空的 Id，去重。</summary>
+    public static string[] ToWebConnectorIds(IEnumerable<WebConnectorOption> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        return rows
+            .Where(r => r is { IsSelected: true } && !string.IsNullOrWhiteSpace(r.Id))
+            .Select(r => r.Id.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
 
     private static string[] SplitTargets(string? text) =>
         string.IsNullOrWhiteSpace(text)

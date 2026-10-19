@@ -52,7 +52,7 @@ public class TopologyManageViewModel : INotifyPropertyChanged
 
     public ObservableCollection<RelationRow> Relations { get; } = new();
     public ObservableCollection<NodeOption> NodeOptions { get; } = new();
-    public string[] RelationTypes { get; } = { "runsOn", "connectsTo", "canAccess", "relatedTo" };
+    public string[] RelationTypes { get; } = RelationRules.KnownTypes;
 
     public string FromText
     {
@@ -133,7 +133,7 @@ public class TopologyManageViewModel : INotifyPropertyChanged
             foreach (var ds in config.DataSources)
                 NodeOptions.Add(new NodeOption { NodeId = AssetNode.Ds(ds.Id), Label = ds.Name });
 
-            StatusMessage = $"已加载 {Relations.Count} 条关系; runsOn 表示'运行在'(应用/数据库→服务器), connectsTo 表示'连接到'(应用→数据库), canAccess 表示'可访问'(服务器→数据库)";
+            StatusMessage = $"已加载 {Relations.Count} 条关系; 常用: runsOn(运行在服务器), connectsTo(连接数据库/应用), canAccess(服务器可访问数据库), deployedFrom(来自部署), partOf(属于业务系统)";
         }
         catch (Exception ex)
         {

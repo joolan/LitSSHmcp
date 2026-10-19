@@ -29,3 +29,33 @@ public sealed class AuthzRuleRow : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+
+/// <summary>
+/// 「Web 授权矩阵 → 允许下发 Web 的外部连接器」多选项：
+/// <see cref="Id"/> 对应 <c>security.authorization.webConnectors[]</c>，
+/// <see cref="Enabled"/> 仅用于提示全局启停状态，不影响白名单勾选。
+/// </summary>
+public sealed class WebConnectorOption : INotifyPropertyChanged
+{
+    private bool _isSelected;
+
+    public string Id { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public bool Enabled { get; init; }
+
+    public string DisplayName => Enabled ? Name : $"{Name}（已停用）";
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value)
+                return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}

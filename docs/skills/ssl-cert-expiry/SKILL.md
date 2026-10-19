@@ -8,6 +8,7 @@ appliesTo: [ssh, command, topology]
 
 ## 步骤
 1. **看有效配置与域名**：优先 `ssh_snapshot_get section="nginx_tls"`，拿到 `domains`、每个域名关联的证书路径与**到期时间**（该维度用 nginx 可执行文件跑 `nginx -T` 取全量配置）。
+   图谱里若已有证书/域名关系，先用 `topology_search` 找 `cert:`/`domain:` 节点，再用 `topology_impact(cert:<id>)` 反查受影响域名、`topology_explain` 核对关系来源（图谱未覆盖时以快照为准）。
 2. **直接探测证书**（任选域名）：
    `ssh_execute_command "echo | openssl s_client -connect <host>:443 -servername <domain> 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName"`
    看 `notAfter`（到期）、`subject/SAN`（域名是否匹配）。

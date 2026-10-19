@@ -17,7 +17,8 @@ public sealed record WebRuntimeRequest(
     AgentPromptContext? ActiveAgent = null,
     IReadOnlyCollection<string>? ActiveSkillIds = null,
     bool PlanMode = false,
-    string? AssetGraph = null);
+    string? AssetGraph = null,
+    IReadOnlyDictionary<string, AgentToolPolicy>? ToolPolicy = null);
 
 /// <summary>Web 会话运行时抽象：把 AgentRuntime 池化细节与宿主逻辑解耦（测试可注入假运行时）。</summary>
 public interface IWebRuntime : IAsyncDisposable
@@ -69,6 +70,8 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
             ownerUsername: request.OwnerUsername);
         if (!string.IsNullOrEmpty(request.Summary))
             runtime.Session.RestoreSummary(request.Summary);
+        if (request.ToolPolicy is { Count: > 0 })
+            runtime.Session.SetToolPolicy(request.ToolPolicy);
         return new AgentWebRuntime(runtime, agent.Budget, provider.InputPricePerMTok, provider.OutputPricePerMTok);
     }
 

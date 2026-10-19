@@ -45,7 +45,7 @@ public class AuditSessionTests
     }
 
     [Fact]
-    public async Task Legacy_db_is_reset_to_current_audit_format()
+    public async Task Legacy_db_is_upgraded_and_records_are_preserved()
     {
         var db = Path.Combine(Path.GetTempPath(), "litssh-audit-" + Guid.NewGuid().ToString("N") + ".db");
         try
@@ -68,18 +68,24 @@ public class AuditSessionTests
             }
 
             var audit = new AuditLogService(new FakeSecurityOptions(), db);
-            await audit.InitializeAsync(); // 旧格式 → 重建审计数据
+            await audit.InitializeAsync(); // 旧格式 → 补齐缺失列并保留记录、重建链
 
-            Assert.Empty(await audit.GetLogsAsync()); // 旧记录已按新格式清空
+            var legacy = await audit.GetLogsAsync();
+            var old = Assert.Single(legacy);
+            Assert.Equal("ls", old.Command);
+            Assert.Null(old.SessionId); // 旧记录缺失的会话列保持为空
 
             audit.SessionId = "S9";
             await audit.LogCommandAsync(new CommandAuditLog { ServerId = "s", ServerName = "n", Command = "whoami" });
 
             var logs = await audit.GetLogsAsync();
-            Assert.Single(logs);
-            Assert.Equal("S9", logs[0].SessionId);
+            Assert.Equal(2, logs.Length);
+            Assert.Contains(logs, l => l.Command == "ls");
+            Assert.Contains(logs, l => l.Command == "whoami" && l.SessionId == "S9");
 
-            Assert.True((await audit.VerifyChainAsync()).Ok);
+            var verify = await audit.VerifyChainAsync();
+            Assert.True(verify.Ok, verify.Message);
+            Assert.Equal(2, verify.Checked);
         }
         finally
         {

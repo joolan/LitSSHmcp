@@ -1,6 +1,7 @@
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Datasource;
 using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.Core.Services.Snapshot;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Topology;
@@ -489,6 +490,91 @@ public class TopologyDiscoveryTests
     }
 
     [Fact]
+    public async Task Graph_marks_runsOn_conflicts_and_respects_acknowledgement()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" },
+                new SshServerConfig { Id = "s2", Name = "web2", Host = "10.0.0.2" }
+            }
+        };
+        var store = new MemoryTopologyStore();
+        var now = DateTime.UtcNow;
+        var first = new TopologyEdge
+        {
+            From = "app:a", To = "ssh:s1", Type = "runsOn", Source = "discovered",
+            LastSeenAt = now, LastVerifiedAt = now
+        };
+        var second = new TopologyEdge
+        {
+            From = "app:a", To = "ssh:s2", Type = "runsOn", Source = "discovered",
+            LastSeenAt = now, LastVerifiedAt = now
+        };
+        store.Edges.Add(first);
+        store.Edges.Add(second);
+
+        var topology = new TopologyService(
+            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var graph = await topology.GetGraphAsync();
+        var firstEdge = Assert.Single(graph.Edges, e => e.From == "app:a" && e.To == "ssh:s1");
+        var secondEdge = Assert.Single(graph.Edges, e => e.From == "app:a" && e.To == "ssh:s2");
+        Assert.True(firstEdge.Disputed);
+        Assert.True(secondEdge.Disputed);
+        Assert.Contains("ssh:s1", secondEdge.DisputeReason);
+        Assert.Contains("ssh:s2", secondEdge.DisputeReason);
+
+        // 人工确认其中一条后，该边不再标红；另一条仍保持冲突。
+        first.DisputeAcknowledged = true;
+        graph = await topology.GetGraphAsync();
+        Assert.False(Assert.Single(graph.Edges, e => e.To == "ssh:s1").Disputed);
+        Assert.True(Assert.Single(graph.Edges, e => e.To == "ssh:s2").Disputed);
+
+        // 冲突消失后清空原因和确认状态，便于未来再次冲突时重新提示。
+        store.Edges.Remove(second);
+        graph = await topology.GetGraphAsync();
+        var resolved = Assert.Single(graph.Edges, e => e.From == "app:a");
+        Assert.False(resolved.Disputed);
+        Assert.False(resolved.DisputeAcknowledged);
+        Assert.Null(resolved.DisputeReason);
+    }
+
+    [Fact]
+    public async Task Graph_marks_discovered_edge_that_conflicts_with_manual_runsOn()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" },
+                new SshServerConfig { Id = "s2", Name = "web2", Host = "10.0.0.2" }
+            },
+            Relations = new[] { new RelationConfig { From = "app:a", To = "ssh:s1", Type = "runsOn" } }
+        };
+        var store = new MemoryTopologyStore();
+        store.Edges.Add(new TopologyEdge
+        {
+            From = "app:a", To = "ssh:s2", Type = "runsOn", Source = "discovered",
+            LastSeenAt = DateTime.UtcNow, LastVerifiedAt = DateTime.UtcNow
+        });
+
+        var topology = new TopologyService(
+            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var graph = await topology.GetGraphAsync();
+        var manual = Assert.Single(graph.Edges, e => e.To == "ssh:s1");
+        var discovered = Assert.Single(graph.Edges, e => e.To == "ssh:s2");
+        Assert.False(manual.Disputed);
+        Assert.True(discovered.Disputed);
+        Assert.Contains("ssh:s1", discovered.DisputeReason);
+        Assert.Contains("ssh:s2", discovered.DisputeReason);
+    }
+
+    [Fact]
     public async Task Concurrent_discovery_is_rejected()
     {
         var config = new AppConfig
@@ -508,6 +594,102 @@ public class TopologyDiscoveryTests
 
         gate.SetResult();
         Assert.NotNull(await first);
+    }
+
+    [Fact]
+    public async Task Discovery_ingests_latest_snapshot_into_graph()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var snapshotStore = new FakeSnapshotStore
+        {
+            Latest = new ServerSnapshot
+            {
+                ServerId = "s1",
+                ServerName = "web1",
+                Status = SnapshotStatus.Succeeded,
+                CreatedAt = "2026-01-02T03:04:05Z",
+                CompletedAt = "2026-01-02T03:04:05Z",
+                DataJson = """
+                {
+                  "sections": {
+                    "portmap": {
+                      "status": "ok",
+                      "data": {
+                        "truncated": false,
+                        "listeners": [
+                          { "proto": "tcp", "bind": "0.0.0.0", "port": 443, "process": "nginx", "pid": 100, "anyBind": true }
+                        ]
+                      }
+                    },
+                    "nginx_tls": {
+                      "status": "ok",
+                      "data": {
+                        "configTruncated": false,
+                        "domains": [
+                          {
+                            "domain": "shop.example.com",
+                            "ssl": true,
+                            "ports": [443],
+                            "certificates": [
+                              {
+                                "path": "/etc/ssl/shop.pem",
+                                "subjectCn": "shop.example.com",
+                                "notAfter": "2027-01-01T00:00:00Z",
+                                "daysRemaining": 100,
+                                "expired": false
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+                """
+            }
+        };
+
+        var store = new MemoryTopologyStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(), store,
+            new AllowAllCommandFilter(), new NoopAudit(), snapshotStore);
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        Assert.Contains(result.NewEdges, e =>
+            e.From == "domain:shop.example.com" && e.To == "app:disc:nginx" && e.Type == "exposes");
+        Assert.Contains(result.NewEdges, e =>
+            e.From == "port:s1:tcp-443" && e.To == "ssh:s1" && e.Type == "hostedOn");
+        Assert.Contains(store.Edges, e =>
+            e.From == "domain:shop.example.com" && e.Type == "tlsBy" && e.To.StartsWith("cert:", StringComparison.Ordinal));
+        Assert.True(store.NodeInfos.ContainsKey("port:s1:tcp-443"));
+        Assert.Contains(store.NodeInfos.Keys, id => id.StartsWith("cert:", StringComparison.Ordinal));
+
+        var graph = await topology.GetGraphAsync();
+        Assert.Contains(graph.Nodes, n => n.Id == "domain:shop.example.com" && n.Type == "domain" && n.Label == "shop.example.com");
+        Assert.Contains(graph.Nodes, n => n.Id == "port:s1:tcp-443" && n.Type == "port");
+    }
+
+    private sealed class FakeSnapshotStore : ISnapshotStore
+    {
+        public ServerSnapshot? Latest { get; set; }
+
+        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task<long?> BeginAsync(string serverId, string serverName, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task AppendEventAsync(long snapshotId, string serverId, string kind, string? collector = null, string? message = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task CompleteAsync(long snapshotId, string dataJson, double durationMs, string? escalation, int collectorVersion, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task FailAsync(long snapshotId, string? error, double durationMs, string? dataJson = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ServerSnapshot?> GetLatestAsync(string serverId, CancellationToken ct = default) => Task.FromResult(Latest);
+        public Task<ServerSnapshot?> GetByIdAsync(long id, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ServerSnapshot?> GetRunningAsync(string serverId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<List<ServerSnapshot>> GetRecentAsync(string serverId, int limit = 10, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<List<SnapshotEvent>> GetEventsAsync(long snapshotId, int limit = 50, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<int> PruneAsync(string serverId, int keepPerServer, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeSsh : ISshService

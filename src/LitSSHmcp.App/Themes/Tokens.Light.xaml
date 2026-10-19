@@ -26,6 +26,22 @@
     <Color x:Key="NodeAppBorderColor">#FFE08A00</Color>
     <Color x:Key="NodeDbBgColor">#FFE6F4EA</Color>
     <Color x:Key="NodeDbBorderColor">#FF1E8E3E</Color>
+    <Color x:Key="NodeServiceBgColor">#FFE3F5F5</Color>
+    <Color x:Key="NodeServiceBorderColor">#FF138A8A</Color>
+    <Color x:Key="NodeContainerBgColor">#FFE5EFFA</Color>
+    <Color x:Key="NodeContainerBorderColor">#FF3F7DBA</Color>
+    <Color x:Key="NodeDeployBgColor">#FFF1E8FA</Color>
+    <Color x:Key="NodeDeployBorderColor">#FF7C4DB3</Color>
+    <Color x:Key="NodeDomainBgColor">#FFE6F2F8</Color>
+    <Color x:Key="NodeDomainBorderColor">#FF2F83B0</Color>
+    <Color x:Key="NodePortBgColor">#FFF0F0F0</Color>
+    <Color x:Key="NodePortBorderColor">#FF6E6E6E</Color>
+    <Color x:Key="NodeCertBgColor">#FFFFF3DD</Color>
+    <Color x:Key="NodeCertBorderColor">#FFB77900</Color>
+    <Color x:Key="NodeSystemBgColor">#FFF8E8F8</Color>
+    <Color x:Key="NodeSystemBorderColor">#FF9A4A9A</Color>
+    <Color x:Key="NodeMqBgColor">#FFFAE8EE</Color>
+    <Color x:Key="NodeMqBorderColor">#FFB3405E</Color>
     <Color x:Key="NodeTextColor">#FF1F1F1F</Color>
     <Color x:Key="NodeTextSubColor">#CC1F1F1F</Color>
     <Color x:Key="CodeKeywordColor">#FF0000C0</Color>
@@ -57,6 +73,22 @@
     <SolidColorBrush x:Key="NodeAppBorderBrush" Color="{StaticResource NodeAppBorderColor}"/>
     <SolidColorBrush x:Key="NodeDbBgBrush" Color="{StaticResource NodeDbBgColor}"/>
     <SolidColorBrush x:Key="NodeDbBorderBrush" Color="{StaticResource NodeDbBorderColor}"/>
+    <SolidColorBrush x:Key="NodeServiceBgBrush" Color="{StaticResource NodeServiceBgColor}"/>
+    <SolidColorBrush x:Key="NodeServiceBorderBrush" Color="{StaticResource NodeServiceBorderColor}"/>
+    <SolidColorBrush x:Key="NodeContainerBgBrush" Color="{StaticResource NodeContainerBgColor}"/>
+    <SolidColorBrush x:Key="NodeContainerBorderBrush" Color="{StaticResource NodeContainerBorderColor}"/>
+    <SolidColorBrush x:Key="NodeDeployBgBrush" Color="{StaticResource NodeDeployBgColor}"/>
+    <SolidColorBrush x:Key="NodeDeployBorderBrush" Color="{StaticResource NodeDeployBorderColor}"/>
+    <SolidColorBrush x:Key="NodeDomainBgBrush" Color="{StaticResource NodeDomainBgColor}"/>
+    <SolidColorBrush x:Key="NodeDomainBorderBrush" Color="{StaticResource NodeDomainBorderColor}"/>
+    <SolidColorBrush x:Key="NodePortBgBrush" Color="{StaticResource NodePortBgColor}"/>
+    <SolidColorBrush x:Key="NodePortBorderBrush" Color="{StaticResource NodePortBorderColor}"/>
+    <SolidColorBrush x:Key="NodeCertBgBrush" Color="{StaticResource NodeCertBgColor}"/>
+    <SolidColorBrush x:Key="NodeCertBorderBrush" Color="{StaticResource NodeCertBorderColor}"/>
+    <SolidColorBrush x:Key="NodeSystemBgBrush" Color="{StaticResource NodeSystemBgColor}"/>
+    <SolidColorBrush x:Key="NodeSystemBorderBrush" Color="{StaticResource NodeSystemBorderColor}"/>
+    <SolidColorBrush x:Key="NodeMqBgBrush" Color="{StaticResource NodeMqBgColor}"/>
+    <SolidColorBrush x:Key="NodeMqBorderBrush" Color="{StaticResource NodeMqBorderColor}"/>
     <SolidColorBrush x:Key="NodeTextBrush" Color="{StaticResource NodeTextColor}"/>
     <SolidColorBrush x:Key="NodeTextSubBrush" Color="{StaticResource NodeTextSubColor}"/>
     <SolidColorBrush x:Key="AppCodeKeywordBrush" Color="{StaticResource CodeKeywordColor}"/>

@@ -86,9 +86,23 @@ public static class AssetNode
     public const string DsPrefix = "ds:";
     public const string AppPrefix = "app:";
     public const string MqPrefix = "mq:";
+    public const string DomainPrefix = "domain:";
+    public const string PortPrefix = "port:";
+    public const string CertPrefix = "cert:";
+    public const string ServicePrefix = "service:";
+    public const string ContainerPrefix = "container:";
+    public const string DeployPrefix = "deploy:";
+    public const string SystemPrefix = "system:";
 
     public static string Ssh(string serverId) => SshPrefix + serverId;
     public static string Ds(string datasourceId) => DsPrefix + datasourceId;
     public static string App(string applicationId) => AppPrefix + applicationId;
     public static string Mq(string endpoint) => MqPrefix + endpoint;
+    public static string Domain(string domain) => DomainPrefix + domain;
+    public static string Port(string endpoint) => PortPrefix + endpoint;
+    public static string Cert(string fingerprint) => CertPrefix + fingerprint;
+    public static string Service(string endpoint) => ServicePrefix + endpoint;
+    public static string Container(string endpoint) => ContainerPrefix + endpoint;
+    public static string Deploy(string endpoint) => DeployPrefix + endpoint;
+    public static string System(string systemId) => SystemPrefix + systemId;
 }

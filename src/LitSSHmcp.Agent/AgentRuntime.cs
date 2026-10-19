@@ -50,6 +50,7 @@ public sealed class AgentRuntime : IAsyncDisposable
     private readonly IAgentTool? _roundNotifier;
     private readonly Action<IReadOnlyList<PlanItem>>? _onPlan;
     private readonly Func<string, CancellationToken, Task<string?>>? _recall;
+    private readonly Func<string, CancellationToken, Task<string?>>? _graphContext;
     private readonly SpillStore? _spill;
     private List<string> _activeSkillIds = new();
     private AgentPromptContext? _activeAgent;
@@ -75,6 +76,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         IAgentTool? roundNotifier,
         Action<IReadOnlyList<PlanItem>>? onPlan,
         Func<string, CancellationToken, Task<string?>>? recall,
+        Func<string, CancellationToken, Task<string?>>? graphContext,
         SpillStore? spill,
         IEnumerable<ChatMessage>? history)
     {
@@ -94,6 +96,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         _roundNotifier = roundNotifier;
         _onPlan = onPlan;
         _recall = recall;
+        _graphContext = graphContext;
         _spill = spill;
         Session = BuildSession(provider, history);
     }
@@ -171,7 +174,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         if (_onPlan is not null)
             tools.Add(PlanTools.Create(_onPlan));
         var session = new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill,
-            roundNotifier: _roundNotifier);
+            roundNotifier: _roundNotifier, graphContext: _graphContext);
         session.SetToolPolicy(_toolPolicy);
         session.SetPlanMode(_planMode);
         return session;
@@ -283,6 +286,12 @@ public sealed class AgentRuntime : IAsyncDisposable
             }
         }
 
+        // Graph-RAG：仅在内置 topology 工具存在时启用；每次发送前自动解析资产并拉 1 跳邻域。
+        var graphContext = AssetGraphContextProvider.Create(
+            builtinTools.FirstOrDefault(t => string.Equals(t.Name, "topology_search", StringComparison.Ordinal)),
+            builtinTools.FirstOrDefault(t => string.Equals(t.Name, "topology_neighbors", StringComparison.Ordinal)),
+            assetGraph);
+
         var mcpTools = new List<IAgentTool>(builtinTools);
         foreach (var (server, host) in externalHosts)
         {
@@ -390,7 +399,7 @@ public sealed class AgentRuntime : IAsyncDisposable
                 hostStatuses.Add(new McpHostStatus(s.Id, s.Name, false, info.Error is null, info.ToolCount, info.Error));
         }
 
-        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, spill, history);
+        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, graphContext, spill, history);
         runtime.WorkspaceRoot = workspaceRoot;
         if (activeSkillIds is { Count: > 0 })
             runtime.SetActiveSkills(activeSkillIds);

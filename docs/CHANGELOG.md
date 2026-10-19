@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **资产图查询（P0）**：新增 5 个只读 MCP 工具 `topology_search` / `topology_neighbors` / `topology_path` / `topology_impact` / `topology_explain`——在现有拓扑图上做搜索、邻域、有向链路、反向影响面与证据解释；不新增表、不修改采集器，全部归入 `topology` 工具组。`topology_impact` 默认排除 `:disc:` 待确认节点并单独计数；`topology_explain` 返回来源（manual/discovered）/证据/末次发现/`stale`（超过 7 天未确认）。
+- **快照图谱（P1）**：`topology_discover` 现在会读取最近快照的 `systemd` / `docker` / `portmap` / `nginx_tls`，生成 `service:*` / `container:*` / `deploy:*` / `domain:*` / `port:*` / `cert:*` 节点与 `runsOn` / `listensOn` / `deployedFrom` / `hostedOn` / `exposes` / `tlsBy` / `resolvesTo` 边；系统服务同时由 systemd 单元和监听端口的 `unit` 交叉生成，容器按已登记应用的 `containerName` + 镜像 tag 推导部署记录。边新增 `Confidence`/`Disputed`/`ValidFrom`/`ValidTo`/`LastVerifiedAt` 并支持旧 SQLite 库增量迁移；图查询、影响面、`kinds` 过滤、拓扑提示与 App 类型标签同步扩展。App 拓扑新增服务/容器/部署/域名等类型配色、按图层隐藏节点、证书 30 天内黄色/过期红色边框、冲突边红色 `⚠` 标记与「确认无冲突」操作，以及选中节点后的反向 2 跳影响面高亮（非影响节点/边降透明并显示影响数量）。
+- **关系冲突自动检测（P1）**：读取图谱时核对 `runsOn` / `hostedOn` 发现边——同一 `(from, type)` 出现多个目标或与人工配置不一致时标记 `disputed` 并写入 `disputeReason`；App「确认无冲突」写入 `disputeAcknowledged`，冲突仍在但不再标红，冲突消失后自动清空原因与确认状态。`topology_explain` 同步返回 `disputeReason` / `disputeAcknowledged`。
+- **拓扑时间线与快照 Diff（P2）**：新增只读 MCP 工具 `topology_timeline` / `topology_diff`，按快照历史重放 `systemd` / `docker` / `portmap` / `nginx_tls`，返回每个时点的节点/边及相对上一次的新增、移除；`topology_diff` 默认比较最近两次快照，支持指定 `fromSnapshotId` / `toSnapshotId`。
+- **Graph-RAG 发送前图谱上下文（P2）**：AI 助手每轮发送前从问题中解析已知资产（也回退到 `topology_search`），自动调用 `topology_neighbors` 拉取 1 跳邻域，作为临时系统上下文注入；App 以「资产图谱」步骤展示注入内容，Web 推送 `asset_graph_context` 事件，失败静默不影响对话。
+- **内置技能包可升级**：稳定目录新增 `.litssh-bundle.json`（逐文件 SHA256）。升级时只覆盖“上次随包且用户未修改”的文件，保留用户编辑；老稳定目录无清单时一次性接管；用户删除的随包技能不会复活，新随包技能自动安装。
+- **图查询歧义防护**：`topology_*` 的资产解析对大小写 ID、后缀、Label 多命中返回 `asset_ambiguous` 并列出候选，空 ID 返回 `asset_id_required`，避免静默命中错误资产；补充搜索/邻域/影响面截断、过期边与 1000 节点规模测试。
+- **GitHub Actions CI**：新增 `.github/workflows/ci.yml`，在 Windows runner 上执行 `dotnet restore/build` + 5 个测试项目 + Web 前端 JS `node --check`。
+
+### 修复
+
+- **Web 会话级 ToolPolicy 生效**：Web 运行时装配时读取 `agent_sessions.ToolPolicy` 并 `SetToolPolicy`，桌面配置的会话级工具允许/拒绝策略在 Web 端不再失效；损坏/空策略按无策略处理，不阻断会话启动。
+- **Web 外部连接器下发白名单可视化**：桌面「设置 → 安全设置 → Web 授权矩阵」新增“允许下发 Web 的外部连接器”多选（来自 `agent.mcpServers` 非内置条目；无外部连接器时显示引导文案），保存到 `security.authorization.webConnectors`；之前只能手改 `config.json`。App 端补嵌入文档回归测试，确保 5 个图查询工具出现在「MCP 工具说明」。
+
 ## [1.4.0] - 2026-10-18
 
 ### 新增
@@ -11,7 +27,7 @@
 - **桌面可选登录（D1 收尾，仅归因）**：AI 助手窗口侧栏显示归因状态并提供登录 / 注销；复用 Web 账号库 `web.db` 校验（失败计数与锁定曲线与 Web 共享，防绕过限速），登录态经 DPAPI 加密落盘 `desktop-login.dat` **跨重启保持**（账号删除 / 文件被篡改自动失效）。登录后**新会话 owner 与 App 审计 UserId** 记为登录用户名，未登录继续归因 `local`；桌面不因此获得或失去任何权限（不注入 `LITSSH_AUTHZ_MODE`，D1「仅归因不限权」）。
 - **Web 会话工作区根可配（§8.3）**：`config.json` 新增 `web.jobsRoot`——Web 会话目录固定根（空=默认 `%APPDATA%\LitSSH\jobs`，仅接受绝对路径，非法值回退默认，**重启 Web 生效**）；会话目录为 `<根>\<用户Id>\s<会话Id>`，文件浏览 / 下载 / 删除的"必须位于固定根之下"校验随新根生效。桌面「设置 → 安全设置」新增**可视化编辑框**（含「恢复默认」）。
 - **孤儿会话目录清扫（§8.2 附件保留策略）**：新增 `agent.orphanSessionDirRetentionDays`（默认 30，0=关闭）——会话删除仍立即清理目录，另对"库中已无对应会话"的残留 `jobs/<用户>/s<id>`（删除失败 / 被会话保留策略剪除）按最后写入时间超期自动清理；桌面启动（裁剪后）与 Web 启动各清扫一次，跳过重解析点、保护未超期目录，清空后的 owner 目录一并删除。
-- **审计格式 v5→v6 保留数据迁移**：升级时不再清空审计库——为四张审计表补 `UserId` 列（旧记录为空，界面显示 `local`），并按含 UserId 的新 payload **重建哈希链**（链从创世哈希重新开始，历史记录/归档全部保留）；更老版本（<5）仍按原策略清理重建。
+- **审计格式 v5→v6 保留数据迁移**：升级时不再清空审计库——为四张审计表补 `UserId` 列（旧记录为空，界面显示 `local`），并按含 UserId 的新 payload **重建哈希链**（链从创世哈希重新开始，历史记录/归档全部保留）；**更老版本（<5）同样保留记录**：启动时补齐 `SessionId`/`Tool`/`Category`/`Decision`/`UserId` 等缺失列后按 v6 payload 重建链，不再清理审计库。
 - **会话历史分页 / 懒加载**：`GET /api/sessions/{id}/messages?limit=&beforeId=`（默认最近 120 条，升序返回）；Web 首屏只加载最近一页，顶部「加载更早的记录」按需向前翻页并保持滚动位置，长会话不再一次性拉全量/渲染全量 DOM。
 - **Web 冷启动上下文与桌面对齐**：抽出共享 `SessionContextBuilder` + `ToolTraceFormatter`（桌面端复用同一轨迹格式器，避免两端漂移）——按 `agent.coldStartRecentTurns` 裁剪、每轮注入工具轨迹 System 证据、视觉模型重载最近 3 张图片，并把**会话智能体 / 激活技能 / 计划模式 / 资产图谱**一并注入。同一会话在两端喂给模型的上下文一致，跨端切换时前缀缓存可最大化复用。残余差异：Web 仍不含本机终端工具（安全裁剪），桌面开启该工具组时工具清单会导致前后缀分歧。
 - **Web 图片全屏预览**：点击聊天气泡附图 / 历史缩略图 / Markdown 图片即可打开**全屏查看器**（深色遮罩、按比例适配，点击图片/遮罩/关闭按钮或 Esc 退出）。

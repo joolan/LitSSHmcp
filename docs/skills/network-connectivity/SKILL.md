@@ -1,12 +1,13 @@
 ---
 name: network-connectivity
 description: 排查到目标主机/端口的网络连通性（ping/telnet/curl 不通、DNS、路由、防火墙）。适用于「连不上数据库/接口」「超时」「丢包」「域名解析失败」。
-appliesTo: [ssh, command]
+appliesTo: [ssh, command, topology]
 ---
 
 # 网络连通性排查
 
 ## 步骤
+0. **先看图谱**：`topology_search` 找源/目标资产，`topology_path(源, 目标)` 看预期链路（跳板/隧道/直连）；`topology_explain` 核对关系是否 `stale`，避免按过期依赖排查。
 1. **分层探测**（从本机或跳板机）：
    - ICMP：`ping -c 4 <host>`（有限次数，避免挂起）。
    - 端口：`timeout 5 bash -c '</dev/tcp/<host>/<port>' && echo open || echo closed`（勿用交互式 `telnet`/`nc`）。

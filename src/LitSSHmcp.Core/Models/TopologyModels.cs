@@ -9,6 +9,27 @@ public class TopologyEdge
     public string Source { get; set; } = "manual";
     public DateTime FirstSeenAt { get; set; } = DateTime.UtcNow;
     public DateTime LastSeenAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>证据置信度 0..1：人工=1.0，直接观测≈0.9，推断≈0.5。</summary>
+    public double Confidence { get; set; } = 0.8;
+
+    /// <summary>冲突标记：人工关系与发现结果不一致时由上层置位。</summary>
+    public bool Disputed { get; set; }
+
+    /// <summary>冲突原因（自动检测写入，用于 explain/UI）。</summary>
+    public string? DisputeReason { get; set; }
+
+    /// <summary>人工已确认该冲突可接受；冲突仍存在时不再重复标红。</summary>
+    public bool DisputeAcknowledged { get; set; }
+
+    /// <summary>事实生效时间（可选）。</summary>
+    public DateTime? ValidFrom { get; set; }
+
+    /// <summary>事实失效时间（可选）。</summary>
+    public DateTime? ValidTo { get; set; }
+
+    /// <summary>最近一次被证据确认的时间（stale 判定优先使用）。</summary>
+    public DateTime? LastVerifiedAt { get; set; }
 }
 
 public class TopologyNode

@@ -159,6 +159,6 @@ public static class AppServiceFactory
         var registry = CreateDriverRegistry(configService);
         var store = new TopologyStore();
         return new TopologyService(configService, ssh, registry, store,
-            new CommandFilterService(security), new AuditLogService(security));
+            new CommandFilterService(security), new AuditLogService(security), new SnapshotStore());
     }
 }

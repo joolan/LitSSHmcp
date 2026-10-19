@@ -25,6 +25,17 @@ public abstract class GraphItemVm : INotifyPropertyChanged
     public string Id { get; set; } = string.Empty;
     public string Tooltip { get; set; } = string.Empty;
 
+    /// <summary>证书等资产已过期：红色高亮。</summary>
+    public bool IsExpired { get; set; }
+
+    /// <summary>证书等资产即将过期（30 天内）：橙色高亮。</summary>
+    public bool IsExpiringSoon { get; set; }
+
+    private bool _isDimmed;
+
+    /// <summary>选中节点后，非影响面节点降低透明度。</summary>
+    public bool IsDimmed { get => _isDimmed; set => Set(ref _isDimmed, value); }
+
     public double X { get => _x; set => Set(ref _x, value); }
     public double Y { get => _y; set => Set(ref _y, value); }
     public double Width { get => _width; set => Set(ref _width, value); }
@@ -72,6 +83,8 @@ public class GraphEdgeVm : INotifyPropertyChanged
     private double _labelX;
     private double _labelY;
     private bool _isDiscovered;
+    private bool _isDisputed;
+    private bool _isDimmed;
 
     /// <summary>正交折线路径（拐角圆角化）。</summary>
     public Geometry Line { get => _line; set => Set(ref _line, value); }
@@ -93,12 +106,21 @@ public class GraphEdgeVm : INotifyPropertyChanged
     /// <summary>关系证据（自动发现时说明来源：ESTAB 连接 / mysql processlist 客户端 / 配置扫描文件等）。</summary>
     public string Evidence { get; set; } = string.Empty;
 
+    /// <summary>冲突原因（自动检测写入）。</summary>
+    public string? DisputeReason { get; set; }
+
     /// <summary>布局锚点键（From|Type|To，建边时算一次；拖动热路径免字符串分配）。</summary>
     public string Key { get; set; } = string.Empty;
     public List<Point> Points { get; set; } = new();
     public double LabelX { get => _labelX; set => Set(ref _labelX, value); }
     public double LabelY { get => _labelY; set => Set(ref _labelY, value); }
     public bool IsDiscovered { get => _isDiscovered; set => Set(ref _isDiscovered, value); }
+
+    /// <summary>人工配置与自动发现不一致：红色显示，确认后清除。</summary>
+    public bool IsDisputed { get => _isDisputed; set => Set(ref _isDisputed, value); }
+
+    /// <summary>选中节点后，不在影响面路径上的边降低透明度。</summary>
+    public bool IsDimmed { get => _isDimmed; set => Set(ref _isDimmed, value); }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -217,6 +239,36 @@ public class TopologyViewModel : INotifyPropertyChanged
     /// <summary>当前是否已有可显示的内容（用于判断"适应"是否该执行）。</summary>
     public bool HasContent => Boxes.Count + Chips.Count + Nodes.Count > 0;
 
+    private bool _showServices = true;
+    private bool _showContainers = true;
+    private bool _showDeploys = true;
+    private bool _showNetwork = true;
+
+    public bool ShowServices
+    {
+        get => _showServices;
+        set { if (_showServices == value) return; _showServices = value; OnPropertyChanged(); ApplyNodeFilter(); }
+    }
+
+    public bool ShowContainers
+    {
+        get => _showContainers;
+        set { if (_showContainers == value) return; _showContainers = value; OnPropertyChanged(); ApplyNodeFilter(); }
+    }
+
+    public bool ShowDeploys
+    {
+        get => _showDeploys;
+        set { if (_showDeploys == value) return; _showDeploys = value; OnPropertyChanged(); ApplyNodeFilter(); }
+    }
+
+    /// <summary>域名/端口/证书合并为一个网络图层。</summary>
+    public bool ShowNetwork
+    {
+        get => _showNetwork;
+        set { if (_showNetwork == value) return; _showNetwork = value; OnPropertyChanged(); ApplyNodeFilter(); }
+    }
+
     public ObservableCollection<GraphBoxVm> Boxes { get; } = new();
     public ObservableCollection<GraphChipVm> Chips { get; } = new();
     public ObservableCollection<GraphNodeVm> Nodes { get; } = new();
@@ -245,6 +297,15 @@ public class TopologyViewModel : INotifyPropertyChanged
         set { _statusMessage = value; OnPropertyChanged(); }
     }
 
+    private string _impactSummary = string.Empty;
+
+    /// <summary>选中节点后的反向影响面摘要（谁依赖它）。</summary>
+    public string ImpactSummary
+    {
+        get => _impactSummary;
+        private set { _impactSummary = value; OnPropertyChanged(); }
+    }
+
     public async void Load()
     {
         try
@@ -265,6 +326,8 @@ public class TopologyViewModel : INotifyPropertyChanged
         try
         {
             _graph = graph;
+            ClearSelection();
+            ClearEdgeSelection();
 
             Boxes.Clear();
             Chips.Clear();
@@ -276,9 +339,10 @@ public class TopologyViewModel : INotifyPropertyChanged
             var geometry = new Dictionary<string, (double X, double Y, double W, double H)>(StringComparer.Ordinal);
             var labelById = new Dictionary<string, string>(StringComparer.Ordinal);
 
-            var servers = graph.Nodes.Where(n => n.Type == "ssh").ToArray();
-            var apps = graph.Nodes.Where(n => n.Type == "application").ToArray();
-            var datasources = graph.Nodes.Where(n => n.Type != "ssh" && n.Type != "application").ToArray();
+            var visibleNodes = graph.Nodes.Where(IsNodeVisible).ToArray();
+            var servers = visibleNodes.Where(n => n.Type == "ssh").ToArray();
+            var apps = visibleNodes.Where(n => n.Type == "application").ToArray();
+            var datasources = visibleNodes.Where(n => n.Type != "ssh" && n.Type != "application").ToArray();
 
             foreach (var node in graph.Nodes)
                 labelById[node.Id] = LabelWithPort(node);
@@ -346,7 +410,7 @@ public class TopologyViewModel : INotifyPropertyChanged
                     var chipY = serverY + ServerHeader + i * (ChipHeight + ChipGap);
                     var child = children[i];
                     _parentOf[child.Id] = server.Id;
-                    Chips.Add(new GraphChipVm
+                    var chip = new GraphChipVm
                     {
                         Id = child.Id,
                         Label = labelById[child.Id],
@@ -356,7 +420,9 @@ public class TopologyViewModel : INotifyPropertyChanged
                         Y = chipY,
                         Width = ServerWidth - 24,
                         Height = ChipHeight
-                    });
+                    };
+                    ApplyNodeHealth(chip, child);
+                    Chips.Add(chip);
                     geometry[child.Id] = (ServerX + 12, chipY, ServerWidth - 24, ChipHeight);
                 }
 
@@ -367,7 +433,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             double appY = 20;
             foreach (var app in standaloneApps)
             {
-                Nodes.Add(new GraphNodeVm
+                var node = new GraphNodeVm
                 {
                     Id = app.Id,
                     Label = labelById[app.Id],
@@ -377,7 +443,9 @@ public class TopologyViewModel : INotifyPropertyChanged
                     Y = appY,
                     Width = StandaloneAppWidth,
                     Height = StandaloneAppHeight
-                });
+                };
+                ApplyNodeHealth(node, app);
+                Nodes.Add(node);
                 geometry[app.Id] = (StandaloneAppX, appY, StandaloneAppWidth, StandaloneAppHeight);
                 appY += StandaloneAppHeight + 12;
             }
@@ -386,17 +454,19 @@ public class TopologyViewModel : INotifyPropertyChanged
             double dsY = 20;
             foreach (var ds in standaloneDs)
             {
-                Nodes.Add(new GraphNodeVm
+                var node = new GraphNodeVm
                 {
                     Id = ds.Id,
                     Label = labelById[ds.Id],
-                    Type = "datasource",
+                    Type = ds.Type,
                     Tooltip = tooltipById[ds.Id],
                     X = DsX,
                     Y = dsY,
                     Width = DsWidth,
                     Height = DsHeight
-                });
+                };
+                ApplyNodeHealth(node, ds);
+                Nodes.Add(node);
                 geometry[ds.Id] = (DsX, dsY, DsWidth, DsHeight);
                 dsY += DsHeight + 12;
             }
@@ -432,7 +502,10 @@ public class TopologyViewModel : INotifyPropertyChanged
 
             CanvasHeight = Math.Max(Math.Max(Math.Max(serverY, appY), dsY) + 40, 1400);
             CanvasWidth = Math.Max(Math.Max(DsX + DsWidth, MaxRight()) + 40, 2000);
-            StatusMessage = $"服务器 {servers.Length} 台, 应用 {apps.Length} 个, 数据库 {datasources.Length} 个, 连线 {Edges.Count} 条 (runsOn 以嵌套展示)";
+            var serviceCount = graph.Nodes.Count(n => n.Type == "service");
+            var containerCount = graph.Nodes.Count(n => n.Type == "container");
+            var deployCount = graph.Nodes.Count(n => n.Type == "deploy");
+            StatusMessage = $"服务器 {servers.Length} 台, 应用 {apps.Length} 个, 服务 {serviceCount} 个, 容器 {containerCount} 个, 部署 {deployCount} 个, 其他资产 {datasources.Length - serviceCount - containerCount - deployCount} 个, 连线 {Edges.Count} 条 (runsOn 以嵌套展示)";
             GraphLoaded?.Invoke();
         }
         catch (Exception ex)
@@ -509,7 +582,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         _frameMaxMs = 0;
     }
 
-    public string[] RelationTypes { get; } = { "runsOn", "connectsTo", "canAccess", "relatedTo" };
+    public string[] RelationTypes { get; } = RelationRules.KnownTypes;
     public string SelectedEdgeSummary => _selectedEdge == null
         ? string.Empty
         : $"{_selectedEdge.From}  →  {_selectedEdge.To}" + (_selectedEdge.IsDiscovered ? "（自动发现，仅可删除）" : "（手动）");
@@ -605,6 +678,14 @@ public class TopologyViewModel : INotifyPropertyChanged
             .Where(e => !string.IsNullOrEmpty(e.Evidence))
             .GroupBy(e => $"{e.From}|{e.Type}|{e.To}")
             .ToDictionary(g => g.Key, g => g.First().Evidence!);
+        var disputedKeys = _graph.Edges
+            .Where(e => e.Disputed)
+            .Select(e => $"{e.From}|{e.Type}|{e.To}")
+            .ToHashSet(StringComparer.Ordinal);
+        var disputeReasons = _graph.Edges
+            .Where(e => !string.IsNullOrWhiteSpace(e.DisputeReason))
+            .GroupBy(e => $"{e.From}|{e.Type}|{e.To}")
+            .ToDictionary(g => g.Key, g => g.First().DisputeReason, StringComparer.Ordinal);
         var drawable = _graph.Edges
             .Where(e => e.Type != "runsOn")
             .Where(e => !(e.Type == "canAccess" && hostedBy.TryGetValue(e.To, out var host) && host == e.From))
@@ -642,7 +723,9 @@ public class TopologyViewModel : INotifyPropertyChanged
                 if (points.Count < 2)
                     points = new List<Point> { route.S, new Point(route.S.X + 1, route.S.Y) };
 
-                var stroke = TopologyRouteEngine.StrokeFor(route.Type, route.IsDiscovered);
+                var key = $"{route.From}|{route.Type}|{route.To}";
+                var disputed = disputedKeys.Contains(key);
+                var stroke = disputed ? Brushes.IndianRed : TopologyRouteEngine.StrokeFor(route.Type, route.IsDiscovered);
                 var (labelX, labelY) = TopologyRouteEngine.LabelPoint(points, route.Horizontal);
                 var line = TopologyRouteEngine.BuildRoundedPolyline(points, 8);
                 var dot = TopologyRouteEngine.BuildDot(points[0], 4);
@@ -650,20 +733,23 @@ public class TopologyViewModel : INotifyPropertyChanged
 
                 var vm = new GraphEdgeVm
                 {
-                    Key = $"{route.From}|{route.Type}|{route.To}",
+                    Key = key,
                     Line = line,
                     Dot = dot,
                     Arrow = arrow,
                     Stroke = stroke,
                     Type = route.Type,
-                    Label = route.Type is "canAccess" or "connectsTo" ? string.Empty : route.Type,
+                    Label = disputed ? $"⚠ {route.Type}" :
+                        route.Type is "canAccess" or "connectsTo" ? string.Empty : route.Type,
                     From = route.From,
                     To = route.To,
-                    Evidence = evidenceByKey.GetValueOrDefault($"{route.From}|{route.Type}|{route.To}") ?? string.Empty,
+                    Evidence = evidenceByKey.GetValueOrDefault(key) ?? string.Empty,
+                    DisputeReason = disputeReasons.GetValueOrDefault(key),
                     Points = points,
                     LabelX = labelX,
                     LabelY = labelY,
-                    IsDiscovered = route.IsDiscovered
+                    IsDiscovered = route.IsDiscovered,
+                    IsDisputed = disputed
                 };
                 Edges.Add(vm);
                 if (vm.Label.Length > 0)
@@ -697,6 +783,9 @@ public class TopologyViewModel : INotifyPropertyChanged
                 });
             }
         }
+
+        if (_selectedId != null)
+            ApplyImpactHighlight(_selectedId);
     }
 
     // ---- 交互 ----
@@ -727,6 +816,68 @@ public class TopologyViewModel : INotifyPropertyChanged
         _selectedId = id;
         OnPropertyChanged(nameof(HasSelection));
         UpdateSelectionRect();
+        ApplyImpactHighlight(id);
+    }
+
+    /// <summary>
+    /// 反向 BFS（谁依赖当前节点）最多 2 跳；根节点与路径上的节点/边保持高亮，其余降透明。
+    /// </summary>
+    private void ApplyImpactHighlight(string? rootId)
+    {
+        if (_graph == null || string.IsNullOrWhiteSpace(rootId))
+        {
+            foreach (var item in _allItems)
+                item.IsDimmed = false;
+            foreach (var edge in Edges)
+                edge.IsDimmed = false;
+            ImpactSummary = string.Empty;
+            return;
+        }
+
+        var visible = _geometry.Keys.ToHashSet(StringComparer.Ordinal);
+        var (impacted, impactedEdges) = ComputeImpact(rootId, _graph.Edges, visible);
+
+        foreach (var item in _allItems)
+            item.IsDimmed = !impacted.Contains(item.Id);
+        foreach (var edge in Edges)
+            edge.IsDimmed = !impactedEdges.Contains($"{edge.From}|{edge.Type}|{edge.To}");
+
+        var count = Math.Max(0, impacted.Count - 1);
+        ImpactSummary = count == 0
+            ? "影响面: 没有已知的反向依赖（2 跳内）"
+            : $"影响面: {count} 个资产依赖它（反向 2 跳）";
+    }
+
+    /// <summary>反向影响面：沿 incoming 边最多 maxHops 跳，返回节点与路径边键。</summary>
+    public static (HashSet<string> Nodes, HashSet<string> EdgeKeys) ComputeImpact(
+        string rootId, IEnumerable<TopologyEdge> edges, ISet<string> visible, int maxHops = 2)
+    {
+        var incoming = edges
+            .Where(e => visible.Contains(e.From) && visible.Contains(e.To))
+            .GroupBy(e => e.To, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
+
+        var impacted = new HashSet<string>(StringComparer.Ordinal) { rootId };
+        var impactedEdges = new HashSet<string>(StringComparer.Ordinal);
+        var queue = new Queue<(string Id, int Hops)>();
+        queue.Enqueue((rootId, 0));
+
+        while (queue.Count > 0)
+        {
+            var (current, hops) = queue.Dequeue();
+            if (hops >= maxHops || !incoming.TryGetValue(current, out var parents))
+                continue;
+
+            foreach (var edge in parents)
+            {
+                impactedEdges.Add($"{edge.From}|{edge.Type}|{edge.To}");
+                if (!impacted.Add(edge.From))
+                    continue;
+                queue.Enqueue((edge.From, hops + 1));
+            }
+        }
+
+        return (impacted, impactedEdges);
     }
 
     public void ClearSelection() => SelectNode(null);
@@ -1770,9 +1921,17 @@ public class TopologyViewModel : INotifyPropertyChanged
     {
         var f = RelationRules.PrefixOf(fromId);
         var t = RelationRules.PrefixOf(toId);
-        if ((f == "app" || f == "ds") && t == "ssh") return "runsOn";
-        if (f == "app" && t == "ds") return "connectsTo";
+        if ((f == "app" || f == "ds" || f == "service" || f == "container") && t == "ssh") return "runsOn";
+        if ((f == "app" || f == "service" || f == "container") &&
+            (t == "ds" || t == "app" || t == "service" || t == "mq")) return "connectsTo";
         if (f == "ssh" && t == "ds") return "canAccess";
+        if ((f == "app" || f == "ds" || f == "service" || f == "container") && t == "port") return "listensOn";
+        if (f == "port" && t == "ssh") return "hostedOn";
+        if ((f == "app" || f == "service" || f == "container") && t == "deploy") return "deployedFrom";
+        if ((f == "app" || f == "service" || f == "container") && t == "system") return "partOf";
+        if (f == "domain" && (t == "app" || t == "service")) return "exposes";
+        if (f == "domain" && t == "cert") return "tlsBy";
+        if (f == "domain" && t == "ssh") return "resolvesTo";
         return "relatedTo";
     }
 
@@ -1780,6 +1939,86 @@ public class TopologyViewModel : INotifyPropertyChanged
     private static bool IsNodeDisabled(TopologyNode node) =>
         node.Info.TryGetValue("disabled", out var v) &&
         (v is bool b ? b : v is string s && bool.TryParse(s, out var parsed) && parsed);
+
+    /// <summary>按图层复选框过滤节点；服务器始终显示（其托管子节点另行过滤）。</summary>
+    private bool IsNodeVisible(TopologyNode node) => node.Type switch
+    {
+        "service" => ShowServices,
+        "container" => ShowContainers,
+        "deploy" => ShowDeploys,
+        "domain" or "port" or "cert" => ShowNetwork,
+        _ => true
+    };
+
+    private void ApplyNodeFilter()
+    {
+        if (_synthetic || _graph == null)
+            return;
+        ApplyGraph(_graph);
+    }
+
+    private static void ApplyNodeHealth(GraphItemVm item, TopologyNode node)
+    {
+        var expired = TryGetBool(node.Info, "expired", out var e) && e;
+        if (TryGetInt(node.Info, "daysRemaining", out var days) && days <= 0)
+            expired = true;
+
+        item.IsExpired = expired;
+        item.IsExpiringSoon = !expired &&
+            TryGetInt(node.Info, "daysRemaining", out var remaining) && remaining <= 30;
+    }
+
+    private static bool TryGetBool(Dictionary<string, object?>? info, string key, out bool value)
+    {
+        value = false;
+        if (info == null || !info.TryGetValue(key, out var raw) || raw == null)
+            return false;
+
+        switch (raw)
+        {
+            case bool b:
+                value = b;
+                return true;
+            case string s when bool.TryParse(s, out var parsed):
+                value = parsed;
+                return true;
+            case JsonElement { ValueKind: JsonValueKind.True }:
+                value = true;
+                return true;
+            case JsonElement { ValueKind: JsonValueKind.False }:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryGetInt(Dictionary<string, object?>? info, string key, out int value)
+    {
+        value = 0;
+        if (info == null || !info.TryGetValue(key, out var raw) || raw == null)
+            return false;
+
+        switch (raw)
+        {
+            case int i:
+                value = i;
+                return true;
+            case long l when l is >= int.MinValue and <= int.MaxValue:
+                value = (int)l;
+                return true;
+            case double d:
+                value = (int)d;
+                return true;
+            case string s when int.TryParse(s, out var parsed):
+                value = parsed;
+                return true;
+            case JsonElement { ValueKind: JsonValueKind.Number } je when je.TryGetInt32(out var parsed):
+                value = parsed;
+                return true;
+            default:
+                return false;
+        }
+    }
 
     /// <summary>节点(服务器本身或其托管子节点)是否落在一台已禁用的服务器上。</summary>
     private bool IsDisabledNode(string id)
@@ -1817,18 +2056,25 @@ public class TopologyViewModel : INotifyPropertyChanged
 
     public void SelectEdge(GraphEdgeVm edge)
     {
+        SelectNode(null);
         _selectedEdge = edge;
         _selEdgeOldType = edge.Type;
         SelectedEdgeType = edge.Type;
         SelectedEdgeNote = string.Empty;
         SelectedEdgeHint = edge.IsDiscovered
             ? "自动发现的关系可直接删除，不可编辑类型/备注。" +
-              (string.IsNullOrWhiteSpace(edge.Evidence) ? string.Empty : $"\n证据: {edge.Evidence}")
+              (string.IsNullOrWhiteSpace(edge.Evidence) ? string.Empty : $"\n证据: {edge.Evidence}") +
+              (edge.IsDisputed
+                  ? $"\n该关系与人工配置冲突，请核实后确认或删除。" +
+                    (string.IsNullOrWhiteSpace(edge.DisputeReason) ? string.Empty : $"\n{edge.DisputeReason}")
+                  : string.Empty)
             : string.Empty;
         SelectedEdgeLine = edge.Line;
         OnPropertyChanged(nameof(HasSelectedEdge));
         OnPropertyChanged(nameof(SelectedEdgeSummary));
         OnPropertyChanged(nameof(SelectedEdgeEditable));
+        OnPropertyChanged(nameof(SelectedEdgeDisputed));
+        OnPropertyChanged(nameof(SelectedEdgeCanConfirm));
         RebuildEdgeAnchors();
 
         if (!edge.IsDiscovered)
@@ -1908,6 +2154,51 @@ public class TopologyViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasSelectedEdge));
         OnPropertyChanged(nameof(SelectedEdgeSummary));
         OnPropertyChanged(nameof(SelectedEdgeEditable));
+        OnPropertyChanged(nameof(SelectedEdgeDisputed));
+        OnPropertyChanged(nameof(SelectedEdgeCanConfirm));
+    }
+
+    /// <summary>选中发现边是否存在冲突标记（供面板显示确认按钮）。</summary>
+    public bool SelectedEdgeDisputed => _selectedEdge?.IsDisputed == true;
+
+    /// <summary>仅自动发现且带冲突标记的边可人工确认。</summary>
+    public bool SelectedEdgeCanConfirm => _selectedEdge is { IsDiscovered: true, IsDisputed: true };
+
+    /// <summary>人工确认冲突已核实：清除 Disputed 并刷新末次核实时间。</summary>
+    public async void ConfirmSelectedEdge()
+    {
+        if (_selectedEdge is not { IsDiscovered: true, IsDisputed: true } edge)
+            return;
+
+        try
+        {
+            await _topologyStore.InitializeAsync();
+            var stored = (await _topologyStore.GetEdgesAsync())
+                .FirstOrDefault(e => e.From == edge.From && e.To == edge.To && e.Type == edge.Type);
+            if (stored == null)
+            {
+                SelectedEdgeHint = "未找到该关系的存储记录，请刷新后重试。";
+                return;
+            }
+
+            stored.Disputed = false;
+            stored.DisputeAcknowledged = true;
+            stored.LastVerifiedAt = DateTime.UtcNow;
+            await _topologyStore.UpsertEdgeAsync(stored);
+
+            var (from, to, type) = (edge.From, edge.To, edge.Type);
+            StatusMessage = $"已确认关系无冲突: {from} --{type}--> {to}";
+            Load();
+            var updated = Edges.FirstOrDefault(e => e.From == from && e.To == to && e.Type == type);
+            if (updated != null)
+                SelectEdge(updated);
+            else
+                ClearEdgeSelection();
+        }
+        catch (Exception ex)
+        {
+            SelectedEdgeHint = $"确认失败: {ex.Message}";
+        }
     }
 
     private void RebuildEdgeAnchors()
@@ -2308,10 +2599,25 @@ public class TopologyViewModel : INotifyPropertyChanged
         AppendInfo(sb, info, "username", "账号");
         AppendInfo(sb, info, "datasourceType", "数据库类型");
         AppendInfo(sb, info, "applicationType", "应用类型");
+        AppendInfo(sb, info, "unit", "systemd 单元");
+        AppendInfo(sb, info, "active", "运行状态");
+        AppendInfo(sb, info, "load", "加载状态");
+        AppendInfo(sb, info, "sub", "子状态");
+        AppendInfo(sb, info, "image", "镜像");
+        AppendInfo(sb, info, "state", "容器状态");
+        AppendInfo(sb, info, "version", "版本");
+        AppendInfo(sb, info, "deployedAt", "部署时间");
+        AppendInfo(sb, info, "daysRemaining", "剩余天数");
+        AppendInfo(sb, info, "expired", "已过期");
         AppendInfo(sb, info, "type", "类型");
         AppendInfo(sb, info, "path", "路径");
         AppendInfo(sb, info, "defaultDatabase", "默认库");
         AppendInfo(sb, info, "accessMode", "访问模式");
+        AppendInfo(sb, info, "bind", "绑定地址");
+        AppendInfo(sb, info, "process", "进程");
+        AppendInfo(sb, info, "ssl", "SSL");
+        AppendInfo(sb, info, "expiresAt", "到期时间");
+        AppendInfo(sb, info, "lastVerifiedAt", "末次核实");
         AppendInfo(sb, info, "description", "描述");
         AppendInfo(sb, info, "tags", "标签");
 
@@ -2345,6 +2651,14 @@ public class TopologyViewModel : INotifyPropertyChanged
         "ssh" => "SSH服务器",
         "datasource" => "数据库",
         "application" => "应用",
+        "service" => "系统服务",
+        "container" => "容器",
+        "deploy" => "部署",
+        "system" => "业务系统",
+        "domain" => "域名",
+        "port" => "端口",
+        "cert" => "TLS证书",
+        "mq" => "消息队列",
         _ => type
     };
 

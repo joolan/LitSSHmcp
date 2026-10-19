@@ -1,3 +1,6 @@
+# maybe-todo: 本地研究/待办草稿文件夹，禁止上传
+maybe-todo/
+
 # Build results
 bin/
 obj/

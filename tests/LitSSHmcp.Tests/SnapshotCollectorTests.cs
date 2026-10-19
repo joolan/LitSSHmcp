@@ -660,6 +660,30 @@ public class SnapshotCollectorTests
         Assert.Equal("Foo service", units[1].Description);
     }
 
+    [Fact]
+    public async Task Systemd_collector_exports_unit_list_for_topology()
+    {
+        var output = "nginx.service loaded active running A high performance web server\n" +
+                     "##state\nrunning";
+        var context = new SnapshotContext
+        {
+            Server = new SshServerConfig { Id = "s1", Name = "n", Host = "h" },
+            Elevate = false,
+            ExecuteAsync = (_, _, _) => Task.FromResult(new CommandResult { Success = true, Output = output })
+        };
+
+        var result = await new SystemdHealthSnapshotCollector().CollectAsync(context, default);
+
+        Assert.True(result.Success);
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Data);
+        Assert.Equal("running", data["systemState"]);
+        var units = Assert.IsType<List<Dictionary<string, object?>>>(data["units"]);
+        var unit = Assert.Single(units);
+        Assert.Equal("nginx.service", unit["unit"]);
+        Assert.Equal("active", unit["active"]);
+        Assert.Equal("running", unit["sub"]);
+    }
+
     // ---------- resource 阈值/告警 ----------
 
     [Fact]

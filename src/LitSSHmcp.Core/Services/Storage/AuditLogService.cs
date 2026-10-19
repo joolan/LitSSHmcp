@@ -19,7 +19,8 @@ public class AuditLogService : IAuditLogService
     /// v4：新增 Category（执行/审批/探测/列表/传输）与 Decision（审批决策），并纳入哈希链。
     /// v5：SQL/Redis 审计同样新增 Category 与 Decision，并纳入哈希链。
     /// v6：新增 UserId（操作用户归因：Web 登录用户 Id / 桌面未登录 "local"），并纳入哈希链 payload。
-    /// 版本落后时启动会重建审计表（测试阶段允许；避免旧链与新算法不一致导致校验失败）。
+    /// 版本落后时启动会补齐缺失列并**保留记录**，再按当前 payload 重建哈希链（链首重新从 Genesis 开始）；
+    /// 更老版本不再清空审计库（避免升级丢历史）。
     /// </summary>
     private const int AuditFormatVersion = 6;
 
@@ -266,7 +267,7 @@ public class AuditLogService : IAuditLogService
 
         // 审计格式版本升级：
         // v5 → v6：保留全部历史记录（补 UserId 列并按新 payload 重建哈希链，链连续性从头开始）；
-        // 更老版本（<5）：旧链与 payload 差异过大，按既有策略直接重建审计数据。
+        // 更老版本（<5）：同样补齐缺失列并保留记录，按当前 payload 重建哈希链（不再清空审计库）。
         UpgradeFormat(connection);
 
         ArchiveExpired(connection);
@@ -664,11 +665,12 @@ public class AuditLogService : IAuditLogService
     }
 
     /// <summary>
-    /// 审计格式版本升级入口：
+    /// 审计格式版本升级入口（任意旧版本 → v6）：
     /// <list type="bullet">
-    /// <item>v5 → v6：<b>保留数据</b>——UserId 列已由 <see cref="EnsureColumn"/> 补齐；清空旧链后，
-    /// 按新 payload（含 UserId）对所有活动+归档记录按时间重建哈希链（链从 Genesis 重新开始，历史记录不丢）；</item>
-    /// <item>&lt;5：旧版本 payload 差异过大，沿用清理重建（链 + 活动/历史表 + 会话表）。</item>
+    /// <item><b>保留数据</b>——v2~v6 缺失的 SessionId/Tool/Category/Decision/UserId 列已由
+    /// <see cref="EnsureColumn"/> 补齐；清空旧链后，按当前 payload 对所有活动+归档记录按时间重建哈希链
+    /// （链从 Genesis 重新开始，历史记录不丢）；</item>
+    /// <item>旧记录缺失的归因/分类列保持 NULL（UI 按既有规则显示为空或 local）。</item>
     /// </list>
     /// </summary>
     private void UpgradeFormat(SqliteConnection connection)
@@ -683,24 +685,28 @@ public class AuditLogService : IAuditLogService
         if (version >= AuditFormatVersion)
             return;
 
-        if (version >= 5)
-        {
-            MigrateV5ToV6(connection);
-            return;
-        }
-
-        ResetAll(connection);
+        RebuildChainV6(connection);
     }
 
-    /// <summary>v5 → v6：保留记录，按新 payload 重建哈希链（链首重新从 Genesis 开始）。</summary>
-    private void MigrateV5ToV6(SqliteConnection connection)
+    /// <summary>旧版本 → v6：保留记录，按新 payload 重建哈希链（链首重新从 Genesis 开始）。</summary>
+    private void RebuildChainV6(SqliteConnection connection)
     {
         using var tx = connection.BeginTransaction();
 
+        // 重建链前直接重建 AuditChain：既清空旧链，也兼容极老版本可能不同的表结构。
         using (var clear = connection.CreateCommand())
         {
             clear.Transaction = tx;
-            clear.CommandText = "DELETE FROM AuditChain;";
+            clear.CommandText = @"
+                DROP TABLE IF EXISTS AuditChain;
+                CREATE TABLE AuditChain (
+                    Seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Kind TEXT NOT NULL,
+                    RowId INTEGER NOT NULL,
+                    RecordHash TEXT NOT NULL,
+                    PrevHash TEXT NOT NULL,
+                    CreatedAt TEXT NOT NULL
+                );";
             clear.ExecuteNonQuery();
         }
 
@@ -752,21 +758,6 @@ public class AuditLogService : IAuditLogService
         }
 
         tx.Commit();
-    }
-
-    /// <summary>旧版本（&lt;5）清理重建：链 + 命令/SQL 活动表 + 历史表 + 会话表。</summary>
-    private static void ResetAll(SqliteConnection connection)
-    {
-        using var reset = connection.CreateCommand();
-        reset.CommandText =
-            "DELETE FROM AuditChain;" +
-            "DELETE FROM AuditLogs;" +
-            "DELETE FROM SqlAuditLogs;" +
-            "DELETE FROM AuditLogsHistory;" +
-            "DELETE FROM SqlAuditLogsHistory;" +
-            "DELETE FROM Sessions;" +
-            $"PRAGMA user_version = {AuditFormatVersion};";
-        reset.ExecuteNonQuery();
     }
 
     private const string CommandPayloadColumns =

@@ -112,6 +112,7 @@ builder.Services.AddSingleton<IDatasourceDriver, PostgresDriver>();
 builder.Services.AddSingleton<IDatasourceDriver, RedisDriver>();
 builder.Services.AddSingleton<IDatasourceDriverRegistry, DatasourceDriverRegistry>();
 builder.Services.AddSingleton<ITopologyService, TopologyService>();
+builder.Services.AddSingleton<IAssetGraphQueryService, AssetGraphQueryService>();
 
 // 【同步约定 · 请勿删除】每个 WithTools<T>() 对应一个工具类。新增/移除工具类, 或工具类内的工具发生变动
 // (新增/改名/删除、参数或描述变化)时, 必须同步以下三处, 否则 AI 客户端拿到的说明与实际能力不一致:
@@ -146,7 +147,7 @@ if (enabledToolGroups.Contains(ToolGroups.Docker)) mcp = mcp.WithTools<DockerToo
 if (enabledToolGroups.Contains(ToolGroups.Service)) mcp = mcp.WithTools<ServiceTools>();
 if (enabledToolGroups.Contains(ToolGroups.Log)) mcp = mcp.WithTools<LogTools>();
 if (enabledToolGroups.Contains(ToolGroups.Java)) mcp = mcp.WithTools<JavaTools>();
-if (enabledToolGroups.Contains(ToolGroups.Topology)) mcp = mcp.WithTools<TopologyTools>();
+        if (enabledToolGroups.Contains(ToolGroups.Topology)) mcp = mcp.WithTools<TopologyTools>().WithTools<GraphTools>();
 if (enabledToolGroups.Contains(ToolGroups.App)) mcp = mcp.WithTools<AppTools>();
 if (enabledToolGroups.Contains(ToolGroups.Guide)) mcp = mcp.WithTools<UsageGuideTools>().WithTools<HealthTools>();
 // 内部工具：审批轮次边界（不随分组停用；Agent 端会把它从模型可见工具中过滤掉）

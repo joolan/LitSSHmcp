@@ -1,3 +1,4 @@
+using System.Globalization;
 using LitSSHmcp.Core.Models;
 using Microsoft.Data.Sqlite;
 
@@ -56,9 +57,30 @@ public class TopologyStore : ITopologyStore
                 Evidence TEXT,
                 FirstSeenAt TEXT NOT NULL,
                 LastSeenAt TEXT NOT NULL,
+                Confidence REAL NOT NULL DEFAULT 0.8,
+                Disputed INTEGER NOT NULL DEFAULT 0,
+                DisputeReason TEXT,
+                DisputeAcknowledged INTEGER NOT NULL DEFAULT 0,
+                ValidFrom TEXT,
+                ValidTo TEXT,
+                LastVerifiedAt TEXT,
                 UNIQUE(FromNode, ToNode, RelationType)
             )";
         await cmd.ExecuteNonQueryAsync();
+
+        await EnsureColumnAsync(connection, "TopologyEdges", "Confidence", "REAL NOT NULL DEFAULT 0.8");
+        await EnsureColumnAsync(connection, "TopologyEdges", "Disputed", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(connection, "TopologyEdges", "DisputeReason", "TEXT");
+        await EnsureColumnAsync(connection, "TopologyEdges", "DisputeAcknowledged", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(connection, "TopologyEdges", "ValidFrom", "TEXT");
+        await EnsureColumnAsync(connection, "TopologyEdges", "ValidTo", "TEXT");
+        await EnsureColumnAsync(connection, "TopologyEdges", "LastVerifiedAt", "TEXT");
+
+        using var index = connection.CreateCommand();
+        index.CommandText = @"
+            CREATE INDEX IF NOT EXISTS IX_TopologyEdges_From ON TopologyEdges(FromNode, RelationType);
+            CREATE INDEX IF NOT EXISTS IX_TopologyEdges_To ON TopologyEdges(ToNode, RelationType);";
+        await index.ExecuteNonQueryAsync();
 
         cmd.CommandText = @"
             CREATE TABLE IF NOT EXISTS TopologyNodes (
@@ -74,7 +96,10 @@ public class TopologyStore : ITopologyStore
         await connection.OpenAsync();
 
         var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT FromNode, ToNode, RelationType, Evidence, FirstSeenAt, LastSeenAt FROM TopologyEdges";
+        cmd.CommandText =
+            "SELECT FromNode, ToNode, RelationType, Evidence, FirstSeenAt, LastSeenAt, " +
+            "Confidence, Disputed, ValidFrom, ValidTo, LastVerifiedAt, DisputeReason, DisputeAcknowledged " +
+            "FROM TopologyEdges";
 
         var edges = new List<TopologyEdge>();
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -87,8 +112,15 @@ public class TopologyStore : ITopologyStore
                 Type = reader.GetString(2),
                 Evidence = reader.IsDBNull(3) ? null : reader.GetString(3),
                 Source = "discovered",
-                FirstSeenAt = DateTime.Parse(reader.GetString(4)),
-                LastSeenAt = DateTime.Parse(reader.GetString(5))
+                FirstSeenAt = ReadDateTime(reader, 4) ?? DateTime.UtcNow,
+                LastSeenAt = ReadDateTime(reader, 5) ?? DateTime.UtcNow,
+                Confidence = reader.IsDBNull(6) ? 0.8 : reader.GetDouble(6),
+                Disputed = !reader.IsDBNull(7) && reader.GetInt64(7) != 0,
+                ValidFrom = ReadDateTime(reader, 8),
+                ValidTo = ReadDateTime(reader, 9),
+                LastVerifiedAt = ReadDateTime(reader, 10),
+                DisputeReason = reader.IsDBNull(11) ? null : reader.GetString(11),
+                DisputeAcknowledged = !reader.IsDBNull(12) && reader.GetInt64(12) != 0
             });
         }
 
@@ -102,16 +134,36 @@ public class TopologyStore : ITopologyStore
 
         var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO TopologyEdges (FromNode, ToNode, RelationType, Evidence, FirstSeenAt, LastSeenAt)
-            VALUES (@FromNode, @ToNode, @RelationType, @Evidence, @FirstSeenAt, @LastSeenAt)
+            INSERT INTO TopologyEdges (
+                FromNode, ToNode, RelationType, Evidence, FirstSeenAt, LastSeenAt,
+                Confidence, Disputed, DisputeReason, DisputeAcknowledged, ValidFrom, ValidTo, LastVerifiedAt)
+            VALUES (
+                @FromNode, @ToNode, @RelationType, @Evidence, @FirstSeenAt, @LastSeenAt,
+                @Confidence, @Disputed, @DisputeReason, @DisputeAcknowledged, @ValidFrom, @ValidTo, @LastVerifiedAt)
             ON CONFLICT(FromNode, ToNode, RelationType)
-            DO UPDATE SET Evidence = @Evidence, LastSeenAt = @LastSeenAt";
+            DO UPDATE SET
+                Evidence = @Evidence,
+                LastSeenAt = @LastSeenAt,
+                Confidence = @Confidence,
+                Disputed = @Disputed,
+                DisputeReason = @DisputeReason,
+                DisputeAcknowledged = @DisputeAcknowledged,
+                ValidFrom = @ValidFrom,
+                ValidTo = @ValidTo,
+                LastVerifiedAt = @LastVerifiedAt";
         cmd.Parameters.AddWithValue("@FromNode", edge.From);
         cmd.Parameters.AddWithValue("@ToNode", edge.To);
         cmd.Parameters.AddWithValue("@RelationType", edge.Type);
         cmd.Parameters.AddWithValue("@Evidence", edge.Evidence ?? (object)DBNull.Value);
-        cmd.Parameters.AddWithValue("@FirstSeenAt", DateTime.UtcNow.ToString("O"));
-        cmd.Parameters.AddWithValue("@LastSeenAt", DateTime.UtcNow.ToString("O"));
+        cmd.Parameters.AddWithValue("@FirstSeenAt", edge.FirstSeenAt.ToString("O"));
+        cmd.Parameters.AddWithValue("@LastSeenAt", edge.LastSeenAt.ToString("O"));
+        cmd.Parameters.AddWithValue("@Confidence", edge.Confidence);
+        cmd.Parameters.AddWithValue("@Disputed", edge.Disputed ? 1 : 0);
+        cmd.Parameters.AddWithValue("@DisputeReason", edge.DisputeReason ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("@DisputeAcknowledged", edge.DisputeAcknowledged ? 1 : 0);
+        cmd.Parameters.AddWithValue("@ValidFrom", edge.ValidFrom?.ToString("O") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("@ValidTo", edge.ValidTo?.ToString("O") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("@LastVerifiedAt", edge.LastVerifiedAt?.ToString("O") ?? (object)DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
     }
 
@@ -221,5 +273,41 @@ public class TopologyStore : ITopologyStore
             result[reader.GetString(0)] = reader.GetString(1);
 
         return result;
+    }
+
+    private static DateTime? ReadDateTime(SqliteDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+            return null;
+        return DateTime.TryParse(reader.GetString(ordinal), CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static async Task EnsureColumnAsync(
+        SqliteConnection connection, string table, string column, string definition)
+    {
+        using (var info = connection.CreateCommand())
+        {
+            info.CommandText = $"PRAGMA table_info({table})";
+            await using var reader = await info.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+        }
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition}";
+        try
+        {
+            await alter.ExecuteNonQueryAsync();
+        }
+        catch (SqliteException ex) when (ex.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase))
+        {
+            // 另一个进程已完成同一迁移。
+        }
     }
 }

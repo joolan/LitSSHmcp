@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
+MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
 
 > **⚠ 同步约定（唯一事实来源）**：本文件是 MCP 工具说明的**唯一事实来源**。以下三处必须与本文件**双向同步**，工具发生任何变动（新增/改名/删除、参数变化、描述与路由变化）时缺一不可：
 > 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`get_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
@@ -75,7 +75,7 @@ MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档�
 | `service` | systemd 服务 | `service_status`、`service_list`、`service_restart`、`service_logs` |
 | `log` | 日志文件 | `log_tail`、`log_grep`、`log_find` |
 | `java` | JVM 诊断 | `java_processes`、`java_threads`、`java_heap`、`java_info` |
-| `topology` | 拓扑 | `topology_get_overview`、`topology_get_dependencies`、`topology_discover` |
+| `topology` | 拓扑 | `topology_get_overview`、`topology_get_dependencies`、`topology_discover`、`topology_search`、`topology_neighbors`、`topology_path`、`topology_impact`、`topology_explain`、`topology_timeline`、`topology_diff` |
 | `app` | 应用体检 | `app_health_snapshot` |
 | `guide` | 指南/自检 | `mcp_usage_guide`、`mcp_self_check`、`mcp_list_sessions` |
 
@@ -96,7 +96,7 @@ MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档�
 | systemd | `service_` | 服务状态 / 列表 / 重启 / journalctl 日志 |
 | 日志文件 | `log_` | 读取尾部 / 关键字检索（受白名单约束） |
 | JVM | `java_` | 进程列表 / 线程栈 / 堆与GC / JVM信息 |
-| 拓扑 | `topology_` | 拓扑总览 / 资产依赖 / 自动发现 |
+| 拓扑 | `topology_` | 拓扑总览 / 资产依赖 / 自动发现 / 搜索 / 邻域 / 链路 / 影响面 / 证据解释 / 时间线 / 快照 Diff |
 | 应用 | `app_` | 跨服务器+数据源的一键体检快照 |
 | MCP 自身 | `mcp_` | 使用指南 / 自检 |
 
@@ -154,6 +154,13 @@ MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档�
 | 某应用整体体检(跨服务器+数据库) | `app_health_snapshot` | 先看它再下钻 |
 | 系统架构 / 拓扑 / 应用部署在哪 / 依赖关系 | `topology_get_overview` | |
 | 某资产的上下游依赖 | `topology_get_dependencies` | |
+| 不知道资产 ID / 按名称或端口找资产 | `topology_search` | 先拿到精确 ID 再用其它图工具 |
+| 看某资产周围连了谁 | `topology_neighbors` | 入边+出边，可多跳 |
+| 两个资产之间怎么走（域名→应用→库） | `topology_path` | 有向路径；无路径会说明原因 |
+| 机器/库/证书变更影响谁 | `topology_impact` | 反向多跳影响面（爆炸半径） |
+| 为什么认为 A 依赖 B / 证据是否过期 | `topology_explain` | 来源/证据/末次发现/冲突原因 |
+| 某台机器最近新增或消失了哪些服务/端口 | `topology_timeline` | 按快照历史重放并标出增量 |
+| 两次快照之间具体变了什么 | `topology_diff` | 默认比较最近两次快照 |
 | 拓扑缺失或过期 | `topology_discover` | |
 | 命令执行历史 | `ssh_get_command_history` | |
 | 不确定用哪个 | `mcp_usage_guide`（返回内置使用指南） | |
@@ -460,7 +467,7 @@ MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档�
 ### `topology_get_overview`
 - **参数**：无
 - **返回**：`{ nodes: [...], edges: [...] }` —— 合并人工声明（`relations`）与自动发现（`TopologyEdges` 表）的全量拓扑
-- **边的含义**：`runsOn`（应用/数据库→服务器，表示其运行在该服务器上）、`connectsTo`（应用→数据库）、`canAccess`（服务器→数据库）；`relatedTo` 为通用占位关系（无特定语义，按方向参与依赖查询）
+- **边的含义**：`runsOn`（应用/数据库→服务器）、`connectsTo`（应用→数据库）、`canAccess`（服务器→数据库）、`hostedOn`（端口→服务器）、`listensOn`（应用/数据库→端口）、`exposes`（域名→应用）、`tlsBy`（域名→证书）、`resolvesTo`（域名→服务器）；`relatedTo` 为通用占位关系（无特定语义，按方向参与依赖查询）
 
 ### `topology_get_dependencies`
 - **参数**：`assetId` — `ds:订单库` / `ssh:web-01` / `app:order-service`，也接受纯ID或名称
@@ -473,6 +480,42 @@ MCP 服务器当前注册 **54 个工具**，按用途分为 14 组。本文档�
 - **发现手段**：java 进程 / 通用服务进程(nginx/mysql/redis/postgres 等, 按进程名精准匹配, 不依赖 systemd, 带监听端口) / ESTAB 网络连接 / 配置文件 JDBC(`mysql`/`postgresql`)、Redis、RabbitMQ(`amqp://`)、Kafka(`bootstrap.servers`)、Nginx(`upstream`/`proxy_pass`) / `docker ps` 容器 / MySQL `SHOW PROCESSLIST` 反查客户端
 - **待确认节点**：未登记的应用/容器（`app:disc:*`）、未配置的数据库端点（`ds:disc:*`）、未登记的 DB 客户端（`ssh:disc:*`）也会作为"待确认"节点+关系写入缓存（不再只报告），可在资产关系里删除或据其补登记；人工 `relations` 不会被重复写入。
 - **端口信息**：解析 `ss -ltnp` 得到监听端口（可见 root 服务进程名时精确；否则用常见端口兜底），显示在待确认节点标签与节点信息里。可开启 `security.discovery.useSudo`（安全设置）让端口/配置扫描走提权以识别 root 服务。
+- **快照入库（P1）**：发现完成后读取每台服务器最近一次快照，把 `systemd` 的 service 单元、`docker` 容器、`portmap` 监听端口和 `nginx_tls` 域名/证书转成 `service:*` / `container:*` / `deploy:*` / `port:*` / `domain:*` / `cert:*` 节点及 `runsOn` / `listensOn` / `deployedFrom` / `hostedOn` / `exposes` / `tlsBy` / `resolvesTo` 边；边含 `confidence`、`lastVerifiedAt`，节点信息含 `label`、`lastVerifiedAt`，证书含 `expiresAt`/`daysRemaining`。已登记应用按 `containerName` + 镜像 tag 推导 `deploy:<appId>@<version>`。无快照时只记录说明，不影响 SSH 发现结果。
+
+### `topology_search`
+- **参数**：`query`（名称/ID/主机/端口/标签片段）、`kinds`（可选，`ssh,datasource,application,service,container,deploy,system,domain,port,cert,mq`，逗号或空格分隔）、`limit`（默认 20，最大 50）
+- **返回**：`{ query, items: [{ node: { id, label, type, detail, degree }, score }], truncated, summary }`
+- **说明**：先搜到精确资产 ID，再交给 `topology_path` / `topology_impact` / `topology_explain`；`detail` 含主机、端口、类型、标签等摘要（不返回密码/凭据）。
+
+### `topology_neighbors`
+- **参数**：`assetId`（ID 或名称）、`depth`（默认 1，最大 6）、`relationTypes`（可选，如 `runsOn,connectsTo,hostedOn,listensOn,exposes,tlsBy,resolvesTo,upstreamOf,deployedFrom,partOf`）
+- **返回**：`{ root, nodes: [...], edges: [...], truncated, summary }`，入边和出边都算，适合快速看某资产周围连了谁。
+
+### `topology_path`
+- **参数**：`from`（起点 ID/名称）、`to`（终点 ID/名称）、`maxHops`（默认 6，最大 6）
+- **返回**：`{ from, to, paths: [{ nodes, edges, hops, complete, summary }], truncated, error, summary }`
+- **说明**：按**有向边**查找（如 `domain → app → port → ssh`，或 `domain → cert`），最多返回 5 条；无路径时 `error` 会说明是方向问题还是关系缺失，可改用 `topology_neighbors` / `topology_impact`。
+
+### `topology_impact`
+- **参数**：`assetId`（ID/名称）、`maxDepth`（默认 6，最大 6）、`includeUnconfirmed`（默认 false）
+- **返回**：`{ root, impacted: [{ node, hops, via, path, unconfirmed }], unknownCount, truncated, summary }`
+- **说明**：反向遍历“谁依赖它”，用于机器下线、端口关闭、数据库维护、证书更换前的影响面评估（如 `topology_impact("cert:...")` 可找到使用该证书的域名）；默认排除 `:disc:` 待确认节点，`unknownCount` 单独计数。结论基于现有拓扑，建议先用 `topology_explain` 核实关键边。
+
+### `topology_explain`
+- **参数**：`assetId`（ID/名称）、`to`（可选，只看与另一资产之间的边）、`relationType`（可选，如 `runsOn`）
+- **返回**：`{ entity, edges: [{ from, to, type, source, evidence, confidence, disputed, disputeReason, disputeAcknowledged, validFrom, validTo, lastSeenAt, lastVerifiedAt, stale }], facts, summary }`
+- **说明**：用于回答“为什么认为 A 依赖 B”。`source` 为 `manual` / `discovered`，人工边 `confidence=1.0`、快照边约 `0.9`；`stale=true` 表示自动发现边超过 7 天未再次核实（优先看 `lastVerifiedAt`），影响面结论需谨慎。
+- **冲突检测**：读取图谱时自动核对 `runsOn` / `hostedOn` 的发现边——同一 `(from, type)` 出现多个目标，或与人工配置目标不一致时标记 `disputed=true`，并在 `disputeReason` 说明冲突目标；App 中人工确认后 `disputeAcknowledged=true`，冲突仍存在但不再标红；冲突消失后自动清空原因与确认状态。
+
+### `topology_timeline`
+- **参数**：`serverId`（服务器 ID/名称）、`limit`（最近快照数，默认 10，最大 20）
+- **返回**：`{ serverId, points: [{ snapshotId, capturedAt, success, nodes, edges, addedNodes, removedNodes, addedEdges, removedEdges }], truncated, error, summary }`
+- **说明**：对每份快照重放 `systemd` / `docker` / `portmap` / `nginx_tls`，得到该时点的节点/边集合，并与上一份快照比较。回答“这台机器最近多了/少了哪些服务、容器、端口、域名或证书”；边为快照派生，`source=discovered`。
+
+### `topology_diff`
+- **参数**：`serverId`（服务器 ID/名称）、`fromSnapshotId`（可选，起始快照）、`toSnapshotId`（可选，结束快照）；两者留空时比较最近两次快照
+- **返回**：`{ serverId, fromSnapshot, toSnapshot, addedNodes, removedNodes, addedEdges, removedEdges, truncated, error, summary }`
+- **说明**：返回快照之间新增/移除的节点与边，节点含 `id/label/type`，边含 `from/to/type/source`。用于变更复盘、发布前后核对；`from` 必须早于 `to`。
 
 ## 应用体检组（app）
 

@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
@@ -473,26 +475,35 @@ public static class SkillRegistry
 
     /// <summary>
     /// 取稳定目录；首次使用时把随包技能复制过去（用户已装的技能不会随 bin 目录清理而丢失）。
-    /// 两者都不可用时返回 null。
+    /// 稳定目录已存在时，按内置清单升级随包技能：只覆盖上次随包版本中未被用户改过的文件，
+    /// 用户自建技能与手改过的内置文件保持不动。两者都不可用时返回 null。
     /// </summary>
     private static string? EnsureStableDir(string? bundledSkillsDir, string stable)
     {
         try
         {
-            if (Directory.Exists(stable))
-                return stable;
-            if (string.IsNullOrWhiteSpace(bundledSkillsDir) || !Directory.Exists(bundledSkillsDir))
-                return null;
-            if (Path.GetFullPath(bundledSkillsDir).TrimEnd(Path.DirectorySeparatorChar)
-                    .Equals(stable.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
-                return stable;
+            var stablePath = Path.GetFullPath(stable);
+            var bundledPath = string.IsNullOrWhiteSpace(bundledSkillsDir) || !Directory.Exists(bundledSkillsDir)
+                ? null
+                : Path.GetFullPath(bundledSkillsDir);
 
-            CopyDirectory(bundledSkillsDir, stable);
-            return Directory.Exists(stable) ? stable : null;
+            if (Directory.Exists(stablePath))
+            {
+                if (bundledPath is not null && !SamePath(bundledPath, stablePath))
+                    UpgradeBundledSkills(bundledPath, stablePath);
+                return stablePath;
+            }
+
+            if (bundledPath is null || SamePath(bundledPath, stablePath))
+                return null;
+
+            CopyDirectory(bundledPath, stablePath);
+            WriteBundleManifest(stablePath, BuildBundleMap(bundledPath));
+            return Directory.Exists(stablePath) ? stablePath : null;
         }
         catch
         {
-            return null;   // 迁移失败退回随包目录
+            return Directory.Exists(stable) ? stable : null;   // 迁移/升级失败退回已有稳定目录
         }
     }
 
@@ -507,4 +518,137 @@ public static class SkillRegistry
             File.Copy(file, dest, overwrite: false);
         }
     }
+
+    private const string BundleManifestFile = ".litssh-bundle.json";
+    private const int BundleManifestVersion = 1;
+
+    /// <summary>随包技能清单：技能目录/根级文件 → 相对路径 → SHA256。</summary>
+    private sealed class BundleManifest
+    {
+        public int Version { get; set; } = BundleManifestVersion;
+        public Dictionary<string, Dictionary<string, string>> Skills { get; set; } = new();
+    }
+
+    private static void UpgradeBundledSkills(string bundledDir, string stableDir)
+    {
+        var bundled = BuildBundleMap(bundledDir);
+        var previous = LoadBundleManifest(stableDir);
+        var legacy = previous is null;   // 老版本稳定目录没有清单：一次性把内置技能升级到当前随包版本
+
+        foreach (var (skill, files) in bundled)
+        {
+            var skillDir = skill == "." ? stableDir : Path.Combine(stableDir, skill);
+            var known = previous is not null && previous.Skills.TryGetValue(skill, out var old)
+                ? old
+                : null;
+
+            if (!Directory.Exists(skillDir))
+            {
+                // 用户主动删掉的内置技能不复活；真正的新内置技能则补装
+                if (known is not null)
+                    continue;
+                CopySkillDirectory(bundledDir, stableDir, skill);
+                continue;
+            }
+
+            foreach (var (rel, newHash) in files)
+            {
+                var source = Path.Combine(bundledDir, skill == "." ? rel : Path.Combine(skill, rel));
+                var target = Path.Combine(skillDir, rel);
+                if (!File.Exists(target))
+                {
+                    // 老清单里有的文件被用户删除时不复活；新增文件照常补装
+                    if (known is null || !known.ContainsKey(rel))
+                        CopyFile(source, target);
+                    continue;
+                }
+
+                var targetHash = HashFile(target);
+                if (string.Equals(targetHash, newHash, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // 老稳定目录没有历史哈希，按内置技能整体升级；有清单时只覆盖“上次随包版本且未被修改”的文件
+                if (legacy || (known is not null && known.TryGetValue(rel, out var oldHash)
+                               && string.Equals(targetHash, oldHash, StringComparison.OrdinalIgnoreCase)))
+                    CopyFile(source, target);
+            }
+        }
+
+        WriteBundleManifest(stableDir, bundled);
+    }
+
+    private static void CopySkillDirectory(string bundledDir, string stableDir, string skill)
+    {
+        var source = skill == "." ? bundledDir : Path.Combine(bundledDir, skill);
+        var target = skill == "." ? stableDir : Path.Combine(stableDir, skill);
+        CopyDirectory(source, target);
+    }
+
+    private static void CopyFile(string source, string target)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.Copy(source, target, overwrite: true);
+    }
+
+    private static Dictionary<string, Dictionary<string, string>> BuildBundleMap(string bundledDir)
+    {
+        var map = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in Directory.EnumerateFiles(bundledDir, "*", SearchOption.AllDirectories))
+        {
+            var rel = Path.GetRelativePath(bundledDir, file).Replace('\\', '/');
+            if (rel.Equals(BundleManifestFile, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var slash = rel.IndexOf('/');
+            var skill = slash > 0 ? rel[..slash] : ".";
+            var inner = slash > 0 ? rel[(slash + 1)..] : rel;
+            if (!map.TryGetValue(skill, out var files))
+                map[skill] = files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            files[inner] = HashFile(file);
+        }
+        return map;
+    }
+
+    private static string HashFile(string path) =>
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+
+    private static BundleManifest? LoadBundleManifest(string stableDir)
+    {
+        try
+        {
+            var path = Path.Combine(stableDir, BundleManifestFile);
+            if (!File.Exists(path))
+                return null;
+            var manifest = JsonSerializer.Deserialize<BundleManifest>(File.ReadAllText(path));
+            if (manifest?.Skills is null || manifest.Version > BundleManifestVersion)
+                return null;
+            return manifest;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void WriteBundleManifest(string stableDir, Dictionary<string, Dictionary<string, string>> skills)
+    {
+        try
+        {
+            var manifest = new BundleManifest { Skills = skills };
+            var path = Path.Combine(stableDir, BundleManifestFile);
+            var temp = path + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(temp, path, overwrite: true);
+        }
+        catch
+        {
+            // 清单写失败不影响技能可用；下次会按老版本再升级一次
+        }
+    }
+
+    private static bool SamePath(string left, string right) =>
+        string.Equals(
+            left.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            right.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
 }

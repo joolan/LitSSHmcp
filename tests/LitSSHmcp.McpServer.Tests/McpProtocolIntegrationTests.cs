@@ -41,8 +41,8 @@ public class McpProtocolIntegrationTests
             var tools = list.GetProperty("result").GetProperty("tools").EnumerateArray().ToList();
             var names = tools.Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
 
-            Assert.Equal(54, tools.Count);
-            foreach (var expected in new[] { "mysql_query", "postgres_diagnostics", "redis_read", "ssh_list_servers", "datasource_list", "topology_get_overview", "mcp_usage_guide", "mcp_self_check", "mcp_list_sessions", "mcp_approval_round", "docker_ps", "service_status", "log_tail", "log_find", "java_processes", "app_health_snapshot", "ssh_snapshot_get", "ssh_snapshot_refresh" })
+            Assert.Equal(61, tools.Count);
+            foreach (var expected in new[] { "mysql_query", "postgres_diagnostics", "redis_read", "ssh_list_servers", "datasource_list", "topology_get_overview", "topology_search", "topology_neighbors", "topology_path", "topology_impact", "topology_explain", "topology_timeline", "topology_diff", "mcp_usage_guide", "mcp_self_check", "mcp_list_sessions", "mcp_approval_round", "docker_ps", "service_status", "log_tail", "log_find", "java_processes", "app_health_snapshot", "ssh_snapshot_get", "ssh_snapshot_refresh" })
                 Assert.Contains(expected, names);
 
             foreach (var tool in tools)
@@ -62,6 +62,17 @@ public class McpProtocolIntegrationTests
             Assert.False(string.IsNullOrWhiteSpace(selfStructured.GetProperty("sessionId").GetString()));
             // 客户端信息来自 initialize 的 clientInfo（本测试客户端 name="it"），由会话过滤器在工具调用前回填
             Assert.Equal("it", selfStructured.GetProperty("clientName").GetString());
+
+            // 图查询工具：空拓扑下也应返回结构化结果而不是协议错误
+            var graphSearch = await client.RequestAsync("tools/call", new
+            {
+                name = "topology_search",
+                arguments = new { query = "no-such-asset" }
+            });
+            var graphStructured = graphSearch.GetProperty("result").GetProperty("structuredContent");
+            Assert.Equal(0, graphStructured.GetProperty("items").GetArrayLength());
+            Assert.False(graphStructured.GetProperty("truncated").GetBoolean());
+            Assert.Contains("未找到", graphStructured.GetProperty("summary").GetString());
 
             // 会话列表应包含当前会话
             var sessions = await client.RequestAsync("tools/call", new { name = "mcp_list_sessions", arguments = new { } });
@@ -118,7 +129,7 @@ public class McpProtocolIntegrationTests
 
             // 工具仍会列出
             var list = await client.RequestAsync("tools/list", new { });
-            Assert.Equal(54, list.GetProperty("result").GetProperty("tools").GetArrayLength());
+            Assert.Equal(61, list.GetProperty("result").GetProperty("tools").GetArrayLength());
 
             // 但任何调用都被拒绝
             var call = await client.RequestAsync("tools/call", new { name = "mcp_self_check", arguments = new { } });

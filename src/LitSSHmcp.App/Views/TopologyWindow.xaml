@@ -52,21 +52,40 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10,8,0,0">
-                    <TextBlock Text="图例:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,0"/>
-                    <Border Background="{DynamicResource NodeServerBgBrush}" BorderBrush="{DynamicResource NodeServerBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
-                        <TextBlock Text="SSH服务器(内含 应用/数据库 = runsOn)" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                <WrapPanel Grid.Row="0" Margin="10,8,0,0">
+                    <TextBlock Text="图例:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <Border Background="{DynamicResource NodeServerBgBrush}" BorderBrush="{DynamicResource NodeServerBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
+                        <TextBlock Text="SSH服务器(内含托管资产 = runsOn)" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
-                    <Border Background="{DynamicResource NodeAppBgBrush}" BorderBrush="{DynamicResource NodeAppBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
+                    <Border Background="{DynamicResource NodeAppBgBrush}" BorderBrush="{DynamicResource NodeAppBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
                         <TextBlock Text="应用" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
-                    <Border Background="{DynamicResource NodeDbBgBrush}" BorderBrush="{DynamicResource NodeDbBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
+                    <Border Background="{DynamicResource NodeDbBgBrush}" BorderBrush="{DynamicResource NodeDbBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
                         <TextBlock Text="数据库" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
-                    <TextBlock Text="— connectsTo(应用→库) / canAccess(服务器→库)" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBlock Text="- - 自动发现" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,0"/>
-                    <TextBlock Text="(鼠标悬浮节点查看详情)" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                </StackPanel>
+                    <Border Background="{DynamicResource NodeServiceBgBrush}" BorderBrush="{DynamicResource NodeServiceBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
+                        <TextBlock Text="服务" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                    </Border>
+                    <Border Background="{DynamicResource NodeContainerBgBrush}" BorderBrush="{DynamicResource NodeContainerBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
+                        <TextBlock Text="容器" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                    </Border>
+                    <Border Background="{DynamicResource NodeDeployBgBrush}" BorderBrush="{DynamicResource NodeDeployBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
+                        <TextBlock Text="部署" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                    </Border>
+                    <Border Background="{DynamicResource NodeDomainBgBrush}" BorderBrush="{DynamicResource NodeDomainBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
+                        <TextBlock Text="域名" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                    </Border>
+                    <TextBlock Text="- - 自动发现 / ⚠ 冲突边 / 红框=证书过期" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,12,6"/>
+                    <TextBlock Text="显示:" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,6,6"/>
+                    <CheckBox Content="服务" IsChecked="{Binding ShowServices}" VerticalAlignment="Center" Margin="0,0,8,6"
+                              ToolTip="显示/隐藏 systemd 服务节点"/>
+                    <CheckBox Content="容器" IsChecked="{Binding ShowContainers}" VerticalAlignment="Center" Margin="0,0,8,6"
+                              ToolTip="显示/隐藏 Docker 容器节点"/>
+                    <CheckBox Content="部署" IsChecked="{Binding ShowDeploys}" VerticalAlignment="Center" Margin="0,0,8,6"
+                              ToolTip="显示/隐藏部署记录节点"/>
+                    <CheckBox Content="域名/端口/证书" IsChecked="{Binding ShowNetwork}" VerticalAlignment="Center" Margin="0,0,8,6"
+                              ToolTip="显示/隐藏网络层节点"/>
+                </WrapPanel>
 
                 <Grid x:Name="CanvasHost" Grid.Row="1" Margin="0,6,0,0" Background="{DynamicResource AppSurfaceAltBrush}" ClipToBounds="True"
                       PreviewMouseLeftButtonDown="OnCanvasMouseDown"
@@ -96,7 +115,11 @@
                                         <Style TargetType="Border">
                                             <Setter Property="Background" Value="{DynamicResource NodeServerBgBrush}"/>
                                             <Setter Property="BorderBrush" Value="{DynamicResource NodeServerBorderBrush}"/>
+                                            <Setter Property="Opacity" Value="1"/>
                                             <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDimmed}" Value="True">
+                                                    <Setter Property="Opacity" Value="0.28"/>
+                                                </DataTrigger>
                                                 <!-- 已禁用的服务器: 灰化 + 角标, 且不可拖线建链 -->
                                                 <DataTrigger Binding="{Binding IsDisabled}" Value="True">
                                                     <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
@@ -162,6 +185,16 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Canvas>
+                                    <Canvas.Style>
+                                        <Style TargetType="Canvas">
+                                            <Setter Property="Opacity" Value="1"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDimmed}" Value="True">
+                                                    <Setter Property="Opacity" Value="0.18"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Canvas.Style>
                                     <Path Data="{Binding Line}" Stroke="{Binding Stroke}" StrokeThickness="2" StrokeLineJoin="Round">
                                         <Path.Style>
                                             <Style TargetType="Path">
@@ -213,9 +246,13 @@
                                            Background="{DynamicResource AppCardBrush}" Padding="3,0">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
+                                            <Setter Property="Opacity" Value="1"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding Label}" Value="">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsDimmed}" Value="True">
+                                                    <Setter Property="Opacity" Value="0.18"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -238,6 +275,16 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Grid Width="{Binding Width}" Height="{Binding Height}" ToolTip="{Binding Tooltip}">
+                                    <Grid.Style>
+                                        <Style TargetType="Grid">
+                                            <Setter Property="Opacity" Value="1"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDimmed}" Value="True">
+                                                    <Setter Property="Opacity" Value="0.28"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Grid.Style>
                                     <Border CornerRadius="4">
                                         <Border.Style>
                                             <Style TargetType="Border">
@@ -246,18 +293,75 @@
                                                     <DataTrigger Binding="{Binding Type}" Value="datasource">
                                                         <Setter Property="Background" Value="{DynamicResource NodeDbBgBrush}"/>
                                                     </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="service">
+                                                        <Setter Property="Background" Value="{DynamicResource NodeServiceBgBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="container">
+                                                        <Setter Property="Background" Value="{DynamicResource NodeContainerBgBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="deploy">
+                                                        <Setter Property="Background" Value="{DynamicResource NodeDeployBgBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="domain">
+                                                        <Setter Property="Background" Value="{DynamicResource NodeDomainBgBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="port">
+                                                        <Setter Property="Background" Value="{DynamicResource NodePortBgBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="cert">
+                                                        <Setter Property="Background" Value="{DynamicResource NodeCertBgBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="system">
+                                                        <Setter Property="Background" Value="{DynamicResource NodeSystemBgBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="mq">
+                                                        <Setter Property="Background" Value="{DynamicResource NodeMqBgBrush}"/>
+                                                    </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </Border.Style>
                                     </Border>
                                     <!-- runsOn 托管节点: 用点线边框区分(选中框为蓝色长虚线) -->
-                                    <Rectangle RadiusX="4" RadiusY="4" StrokeThickness="1" StrokeDashArray="1 3">
+                                    <Rectangle RadiusX="4" RadiusY="4" StrokeDashArray="1 3">
                                         <Rectangle.Style>
                                             <Style TargetType="Rectangle">
+                                                <Setter Property="StrokeThickness" Value="1"/>
                                                 <Setter Property="Stroke" Value="{DynamicResource NodeAppBorderBrush}"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Type}" Value="datasource">
                                                         <Setter Property="Stroke" Value="{DynamicResource NodeDbBorderBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="service">
+                                                        <Setter Property="Stroke" Value="{DynamicResource NodeServiceBorderBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="container">
+                                                        <Setter Property="Stroke" Value="{DynamicResource NodeContainerBorderBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="deploy">
+                                                        <Setter Property="Stroke" Value="{DynamicResource NodeDeployBorderBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="domain">
+                                                        <Setter Property="Stroke" Value="{DynamicResource NodeDomainBorderBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="port">
+                                                        <Setter Property="Stroke" Value="{DynamicResource NodePortBorderBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="cert">
+                                                        <Setter Property="Stroke" Value="{DynamicResource NodeCertBorderBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="system">
+                                                        <Setter Property="Stroke" Value="{DynamicResource NodeSystemBorderBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Type}" Value="mq">
+                                                        <Setter Property="Stroke" Value="{DynamicResource NodeMqBorderBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsExpiringSoon}" Value="True">
+                                                        <Setter Property="Stroke" Value="{DynamicResource AppWarningBrush}"/>
+                                                        <Setter Property="StrokeThickness" Value="2"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsExpired}" Value="True">
+                                                        <Setter Property="Stroke" Value="{DynamicResource AppDangerBrush}"/>
+                                                        <Setter Property="StrokeThickness" Value="2"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -282,15 +386,60 @@
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Width="{Binding Width}" Height="{Binding Height}" ToolTip="{Binding Tooltip}" BorderThickness="1" CornerRadius="5">
+                                <Border Width="{Binding Width}" Height="{Binding Height}" ToolTip="{Binding Tooltip}" CornerRadius="5">
                                     <Border.Style>
                                         <Style TargetType="Border">
+                                            <Setter Property="BorderThickness" Value="1"/>
                                             <Setter Property="Background" Value="{DynamicResource NodeDbBgBrush}"/>
                                             <Setter Property="BorderBrush" Value="{DynamicResource NodeDbBorderBrush}"/>
+                                            <Setter Property="Opacity" Value="1"/>
                                             <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDimmed}" Value="True">
+                                                    <Setter Property="Opacity" Value="0.28"/>
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding Type}" Value="application">
                                                     <Setter Property="Background" Value="{DynamicResource NodeAppBgBrush}"/>
                                                     <Setter Property="BorderBrush" Value="{DynamicResource NodeAppBorderBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Type}" Value="service">
+                                                    <Setter Property="Background" Value="{DynamicResource NodeServiceBgBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeServiceBorderBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Type}" Value="container">
+                                                    <Setter Property="Background" Value="{DynamicResource NodeContainerBgBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeContainerBorderBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Type}" Value="deploy">
+                                                    <Setter Property="Background" Value="{DynamicResource NodeDeployBgBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeDeployBorderBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Type}" Value="domain">
+                                                    <Setter Property="Background" Value="{DynamicResource NodeDomainBgBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeDomainBorderBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Type}" Value="port">
+                                                    <Setter Property="Background" Value="{DynamicResource NodePortBgBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodePortBorderBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Type}" Value="cert">
+                                                    <Setter Property="Background" Value="{DynamicResource NodeCertBgBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeCertBorderBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Type}" Value="system">
+                                                    <Setter Property="Background" Value="{DynamicResource NodeSystemBgBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeSystemBorderBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Type}" Value="mq">
+                                                    <Setter Property="Background" Value="{DynamicResource NodeMqBgBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeMqBorderBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsExpiringSoon}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource AppWarningBrush}"/>
+                                                    <Setter Property="BorderThickness" Value="2"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsExpired}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource AppDangerBrush}"/>
+                                                    <Setter Property="BorderThickness" Value="2"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -413,6 +562,9 @@
                                          IsEnabled="{Binding SelectedEdgeEditable}" Margin="0,2,0,8"/>
                                 <TextBlock Text="{Binding SelectedEdgeHint}" Foreground="{DynamicResource AppDangerBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button Content="确认无冲突" Width="88" Padding="6,4" Margin="0,0,6,0" Click="OnConfirmEdge"
+                                            IsEnabled="{Binding SelectedEdgeCanConfirm}"
+                                            ToolTip="核实该冲突边后清除冲突标记"/>
                                     <Button Content="保存" Width="72" Padding="6,4" Margin="0,0,6,0" Click="OnSaveEdge"
                                             IsEnabled="{Binding SelectedEdgeEditable}"/>
                                     <Button Content="删除" Width="72" Padding="6,4" Click="OnDeleteEdge"/>
@@ -424,7 +576,11 @@
             </Grid>
         </Border>
 
-        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,6,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,6,0,0">
+            <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            <TextBlock Text="{Binding ImpactSummary}" Margin="16,0,0,0" FontWeight="SemiBold"
+                       Foreground="{DynamicResource AppAccentTextBrush}"/>
+        </StackPanel>
         </Grid>
     </Grid>
 </ui:FluentWindow>

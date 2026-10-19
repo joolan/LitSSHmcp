@@ -257,6 +257,7 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnDeleteEdge(object sender, RoutedEventArgs e) => _viewModel.DeleteSelectedEdge();
     private void OnSaveEdge(object sender, RoutedEventArgs e) => _viewModel.SaveSelectedEdge();
+    private void OnConfirmEdge(object sender, RoutedEventArgs e) => _viewModel.ConfirmSelectedEdge();
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {

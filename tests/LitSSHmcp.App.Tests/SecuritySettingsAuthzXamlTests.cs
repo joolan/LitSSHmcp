@@ -43,6 +43,10 @@ public class SecuritySettingsAuthzXamlTests
         Assert.Contains("Binding AuthzRules", source);
         Assert.Contains("OnAuthzAddRule", source);
         Assert.Contains("OnAuthzRemoveRule", source);
+        Assert.Contains("Binding WebConnectors", source);
+        Assert.Contains("security.authorization.webConnectors", source);
+        Assert.Contains("暂无外部连接器", source);
+        Assert.Contains("WebConnectorList", source);
     }
 
     [Fact]

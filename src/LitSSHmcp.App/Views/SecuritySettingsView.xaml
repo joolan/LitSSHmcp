@@ -57,6 +57,32 @@
                 </ItemsControl>
                 <Button Content="＋ 添加授权行" Padding="10,3" Margin="0,0,0,8" Click="OnAuthzAddRule"/>
 
+                <TextBlock Text="允许下发 Web 的外部连接器 (security.authorization.webConnectors)" FontWeight="Bold" Margin="0,4,0,4"
+                           ToolTip="仅控制外部 MCP 连接器是否随 Web 会话下发；内置 LitSSH 恒可用。未勾选的外部连接器不下发 Web。"/>
+                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           Text="外部 MCP 默认不下发 Web（其工具绕过 LitSSH 审批，Web 上风险放大）。勾选后仍需在「AI 助手 → MCP 服务器」中全局启用；已停用的连接器不会生效。保存后对新 Web 会话生效。"/>
+                <ItemsControl x:Name="WebConnectorList" ItemsSource="{Binding WebConnectors}" Margin="0,0,0,8">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsSelected, Mode=TwoWay}" Margin="0,0,0,4"
+                                      ToolTip="勾选 = 允许该外部连接器随 Web 会话下发（仍受全局启用状态约束）"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           Text="暂无外部连接器。请先在「AI 助手 → MCP 服务器」添加并启用外部 MCP 服务，保存后点下方「重新加载」再回到此处勾选。">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ElementName=WebConnectorList, Path=HasItems}" Value="False">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
                 <TextBlock Text="Web 会话工作区根 (web.jobsRoot)" FontWeight="Bold" Margin="0,4,0,4"
                            ToolTip="Web 助手会话目录的固定根：其下为 &lt;用户Id&gt;\s&lt;会话Id&gt;。留空=默认 %APPDATA%\LitSSH\jobs；仅接受绝对路径（非法值回退默认）；改动需重启 Web 生效。"/>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">

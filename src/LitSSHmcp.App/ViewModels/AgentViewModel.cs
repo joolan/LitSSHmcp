@@ -2908,6 +2908,15 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 turn.Steps.Add(recallStep);
                 break;
 
+            case AgentEventKind.AssetGraphContext:
+                // Graph-RAG 可见性：展示本轮自动注入的资产邻域，便于核对模型依据
+                FlushDelta(turn, ctx);
+                FlushReasoning(turn, ctx);
+                var graphStep = new AgentStep("资产图谱", string.Empty, isInfo: true);
+                graphStep.Complete(true, e.Text ?? string.Empty, 0);
+                turn.Steps.Add(graphStep);
+                break;
+
             case AgentEventKind.Error:
                 FlushDelta(turn, ctx);
                 FlushReasoning(turn, ctx);

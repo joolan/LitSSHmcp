@@ -37,7 +37,7 @@ LitSSH MCP 由三部分组成，可**独立使用**，也可组合使用：
 
 | 组成 | 项目 | 说明 |
 |------|------|------|
-| **🤖 MCP 服务** | `LitSSHmcp.McpServer` | 基于 [Model Context Protocol](https://modelcontextprotocol.io/) 的 stdio 服务器，向任意 MCP 客户端（Claude Desktop / Cursor / Cline / CodeBuddy / opencode 等）暴露 **54 个工具**，安全地执行 SSH、数据库、Docker、日志、Java、拓扑等运维操作。 |
+| **🤖 MCP 服务** | `LitSSHmcp.McpServer` | 基于 [Model Context Protocol](https://modelcontextprotocol.io/) 的 stdio 服务器，向任意 MCP 客户端（Claude Desktop / Cursor / Cline / CodeBuddy / opencode 等）暴露 **61 个工具**，安全地执行 SSH、数据库、Docker、日志、Java、拓扑等运维操作。 |
 | **🖥️ 桌面 App** | `LitSSHmcp.App` | WPF 管理端：可视化维护服务器/数据源/应用/资产拓扑，内置审计日志、MCP 工具说明，以及**内嵌 MCP 客户端的 AI 运维助手**。 |
 | **🌐 Web 助手** | `LitSSHmcp.Web` | 浏览器访问的 AI 运维助手：独立账号登录、每个 AI 会话跑在**独立子进程**中，流式聊天、Web 内审批、服务器文件浏览与下载。 |
 
@@ -66,7 +66,7 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 除工具外，服务还通过 MCP **Resources** 暴露**只读上下文**（供客户端“浏览 / 挂载”，无需调用工具）：`litssh://servers`（服务器清单）、`litssh://datasources`（数据源清单）、`litssh://usage-guide`（使用指南）、`litssh://topology`（资产拓扑）、`litssh://server/{id}/snapshot/latest`（资源模板：某服务器最新快照概览）。资源**不含密码/密钥**、禁用服务器已排除，并按**启用的工具分组**暴露。
 
 <details>
-<summary><b>查看全部 54 个工具</b>（点击展开）</summary>
+<summary><b>查看全部 61 个工具</b>（点击展开）</summary>
 
 > 完整参数 / 返回结构 / "用户意图 → 工具" 路由表见 **[docs/TOOLS.md](docs/TOOLS.md)**（唯一事实来源）。工具发生变动时，MCP 服务器端注解、`docs/TOOLS.md`、App 展示三处必须同步。
 
@@ -119,16 +119,23 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 | `java_heap` | 堆内存/GC（jcmd + jstat） |
 | `java_info` | JVM 版本/运行时长 |
 | `app_health_snapshot` | 按应用聚合体检（所在服务器进程/容器/端口 + 依赖数据源连通性） |
-| `topology_get_overview` | 资产拓扑图（服务器/应用/数据库及关系） |
+| `topology_get_overview` | 资产拓扑图（服务器/应用/服务/容器/部署/数据库/域名/端口/证书及关系） |
 | `topology_get_dependencies` | 查询某资产的上下游依赖 |
-| `topology_discover` | 自动发现拓扑（java/服务进程/端口/ESTAB/JDBC/Redis/RabbitMQ/Kafka/Nginx/docker/processlist；有节流） |
+| `topology_discover` | 自动发现拓扑（java/服务进程/端口/ESTAB/JDBC/Redis/RabbitMQ/Kafka/Nginx/docker/processlist；并从最近快照入库服务/容器/部署/域名/端口/证书；有节流） |
+| `topology_search` | 按名称/ID/主机/端口/标签搜索资产，拿到精确 ID |
+| `topology_neighbors` | 查某资产的邻域（入边+出边，可多跳） |
+| `topology_path` | 查两个资产之间的有向链路（域名→应用→库） |
+| `topology_impact` | 反向查影响面（机器/库/证书变更影响谁） |
+| `topology_explain` | 解释依赖边：来源/证据/末次发现/是否过期/冲突原因 |
+| `topology_timeline` | 按快照历史重放拓扑，标出每次新增/移除的服务、容器、端口、域名、证书 |
+| `topology_diff` | 比较两次快照的节点/边差异（默认最近两次） |
 | `mcp_usage_guide` | 获取使用指南 |
 | `mcp_self_check` | MCP 自检（配置/审计/主机密钥，可测连通性；返回当前会话ID/客户端） |
 | `mcp_list_sessions` | 列出最近 MCP 会话（会话ID/客户端/首末活动） |
 
 </details>
 
-**工具分组（按部署裁剪）**：默认暴露全部 54 个工具；可在 App 的 **设置 → 工具分组** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `docker` / `service` / `log` / `java` / `topology` / `app` / `guide`），降低 AI 上下文占用与误选。留空 / 不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。
+**工具分组（按部署裁剪）**：默认暴露全部 61 个工具；可在 App 的 **设置 → 工具分组** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `docker` / `service` / `log` / `java` / `topology` / `app` / `guide`），降低 AI 上下文占用与误选。留空 / 不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。
 
 **AI 排障 Skill**：仓库内置 [`docs/litssh-mcp-ops-skill/SKILL.md`](docs/litssh-mcp-ops-skill/SKILL.md)（工具无关，随仓库分发），供支持 skills 的 AI 智能体（opencode / Claude 等）使用。内容包含工具路由、标准排障流程、日志路径发现，以及 **MCP 未覆盖能力经 SSH 变通**的方案（如按 Java 启动命令 / 配置文件定位日志后再用 `log_tail`）。可复制到对应智能体的 skill 目录，或在 opencode 中用 `skills.paths` 指向该目录。
 
@@ -288,7 +295,8 @@ WPF 桌面管理端，主界面为**左侧图标导航栏 + 右侧页面**：顶
 - **节点右键 → 查看/编辑关系**：列出相关全部关系（手动 / 自动发现），可删除或编辑类型与备注；**解除 `runsOn`** 后相关应用 / 数据库自动挪到就近空白处；
 - **Ctrl+Z 撤销 / Ctrl+Y 重做**、**「重新自动布局」**；
 - 手动布局保存在 `%APPDATA%\LitSSH\topology-layout.json`，与应用 / 数据源配置分离；
-- 关系逻辑校验（`runsOn` 只能 应用/数据库→服务器 且**每节点只 runsOn 一台**、`connectsTo` 只能 应用→数据库、`canAccess` 只能 服务器→数据库、禁止自环）在创建时即时生效。
+- **服务 / 容器 / 部署 / 域名 / 端口 / 证书**图层：不同类型独立配色，顶部复选框可按层隐藏；证书 30 天内黄框、过期红框；冲突边红色 `⚠` 标记，选中后可「确认无冲突」；**选中节点自动高亮反向 2 跳影响面**（谁依赖它），其余节点/边降透明并显示影响数量；
+- 关系逻辑校验（`runsOn` 只能 应用/数据库/服务/容器→服务器 且**每节点只 runsOn 一台**、`connectsTo` 只能 应用/服务/容器→数据库/应用/服务、`canAccess` 只能 服务器→数据库、`deployedFrom` 只能 →部署、`partOf` 只能 →应用/服务/系统、禁止自环）在创建时即时生效。
 
 关系示例：
 
@@ -309,7 +317,7 @@ ssh:web-server-01  --canAccess-->  ds:mysql-order-01    # 服务器可访问数�
 
 ### AI 运维助手
 
-App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容大模型**（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等，可**多模型启用 / 停用**、设默认、**对话中热切换**），用自然语言对话完成服务器 / 数据源 / 应用运维。它通过**内嵌 MCP 客户端**（stdio 子进程）调用本机 MCP 服务器，即**全部 54 个工具**，因此**桌面审批、命令过滤器、审计哈希链与第三方 AI 客户端完全一致**。
+App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容大模型**（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等，可**多模型启用 / 停用**、设默认、**对话中热切换**），用自然语言对话完成服务器 / 数据源 / 应用运维。它通过**内嵌 MCP 客户端**（stdio 子进程）调用本机 MCP 服务器，即**全部 61 个工具**，因此**桌面审批、命令过滤器、审计哈希链与第三方 AI 客户端完全一致**。
 
 - **对话体验**：流式输出、**多会话管理**（新建 / 切换 / 删除、首条消息自动命名，独立 `agent.db`；点「新建任务」**不写库、首次发送消息才落库**；侧栏按**分组**归类（「未分组」置顶、分组可重命名/删除、归档恢复保留分组；支持**拖拽**会话入组/排序、分组**拖拽排序**与**折叠/展开**；右键仅作用于鼠标所在行且打开菜单时保持悬浮高亮））、**只读模式**（全局仅暴露只读工具）、**工具分组裁剪**（均在「AI 助手设置」全局配置；会话期内工具集恒定，利于 Prompt Caching）；打开 / 切换会话有**加载动画**，超长会话**转录分页懒加载**（默认渲染最近 20 轮，顶部可加载更早；会话侧栏仅加载元数据、仅重建当前会话上下文，启动裁剪后台执行）；回答以 **Markdown 渲染**，每轮按 **用户指令(带时间) → 工具过程 → 回答(带时间与耗时)** 展示（工具过程运行中展开、完成后折叠）。
 - **本机 PowerShell 终端（ConPTY）**：可从「SSH 会话窗口 → 新建连接 → 本机 PowerShell 终端」打开一个**真实本机终端**；内置助手可在**同一可见会话**里执行 CLI（共享 `cwd`/环境）。安全：**硬白名单**（仅白名单内 CLI 可执行）、危险命令拦截、**每次人工审批**（可勾选放行范围：默认仅本次；「本轮次内允许全部命令（不建议）」下一条用户消息后恢复审批；「本次 AI 会话期间允许全部命令（不建议）」本会话内不再逐条确认，白名单与危险拦截仍生效；「总是允许此命令」写入配置永久记忆）、超时中断 + 进程树清理。默认**关闭**，在「AI 助手设置 → 本机终端」启用并配置白名单等。**终端按会话隔离**：每个 AI 会话复用自己那一个终端（失效自动重建），标题形如 `本机 PowerShell [AI-进程Id]`；手动可开多个本机终端互不影响。
@@ -389,7 +397,7 @@ src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
 | 项目 | 框架 | 职责 |
 |------|------|------|
 | `LitSSHmcp.Core` | net8.0 | 数据模型 + 全部业务服务（SSH / 数据源 / 拓扑 / 安全 / 存储） |
-| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器（stdio）、54 个工具、授权确认弹窗 |
+| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器（stdio）、61 个工具、授权确认弹窗 |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理端（服务器 / 数据源 / 应用 / 资产拓扑 / 安全 / 审计 / AI 运维助手） |
 | `LitSSHmcp.Agent` | net8.0 | 内置 AI 运维助手（大模型 + 内嵌 MCP 客户端） |
 | `LitSSHmcp.Web` | net8.0 | 浏览器 Web 助手（Kestrel + SignalR：登录 / 每会话子进程 / 流式聊天 / 审批 / 文件浏览） |
@@ -591,11 +599,12 @@ AI 会自动使用 `ssh_execute_sudo` 工具提权执行。
 AI 的典型排查链路：
 
 1. `topology_get_overview` 拿到全局拓扑：订单服务（Java）运行在哪台 SSH 服务器、连接了哪个 MySQL
-2. `topology_get_dependencies(app:order-service)` 精确获取上下游依赖
-3. SSH 侧：`ssh_execute_command` 查看 java 进程、端口、应用日志中的数据库连接异常
-4. 数据库侧：`mysql_diagnostics` 看连接数 / 慢查询 / 锁等待 / 复制状态，`mysql_query` 查 `SHOW FULL PROCESSLIST` 与慢日志，`mysql_explain` 分析问题 SQL；涉及缓存时用 `redis_diagnostics` 看内存 / 命中率 / 慢日志、`redis_read` 查具体 key
-5. 跨机关联：应用日志里的数据库 IP 与 `datasource_list` 返回的 `host/port` 对应，即可确认是哪个数据源（MySQL 3306 / Redis 6379 皆可匹配）
-6. 拓扑过期时用 `topology_discover` 自动补全（扫描 java / 通用服务进程、监听端口、ESTAB 连接、配置文件 JDBC / Redis / RabbitMQ / Kafka / Nginx、docker 容器、MySQL processlist）；发现做了**节流**（同时只跑一个）；未登记的应用 / 数据源 / 客户端会以 `*:disc:*` "待确认"节点出现，可在拓扑页**右键 → 确认节点**登记为资产。
+2. 不确定 ID 时先用 `topology_search`（名称/主机/端口/标签）找到精确资产，再 `topology_get_dependencies(app:order-service)` 获取上下游依赖
+3. 需要链路/影响面时用 `topology_path`（域名→应用→库）、`topology_impact`（机器/库/证书变更影响谁）、`topology_explain`（来源/证据/是否过期）
+4. SSH 侧：`ssh_execute_command` 查看 java 进程、端口、应用日志中的数据库连接异常
+5. 数据库侧：`mysql_diagnostics` 看连接数 / 慢查询 / 锁等待 / 复制状态，`mysql_query` 查 `SHOW FULL PROCESSLIST` 与慢日志，`mysql_explain` 分析问题 SQL；涉及缓存时用 `redis_diagnostics` 看内存 / 命中率 / 慢日志、`redis_read` 查具体 key
+6. 跨机关联：应用日志里的数据库 IP 与 `datasource_list` 返回的 `host/port` 对应，即可确认是哪个数据源（MySQL 3306 / Redis 6379 皆可匹配）
+7. 拓扑过期时用 `topology_discover` 自动补全（扫描 java / 通用服务进程、监听端口、ESTAB 连接、配置文件 JDBC / Redis / RabbitMQ / Kafka / Nginx、docker 容器、MySQL processlist）；发现做了**节流**（同时只跑一个）；未登记的应用 / 数据源 / 客户端会以 `*:disc:*` "待确认"节点出现，可在拓扑页**右键 → 确认节点**登记为资产。
 
 ### 授权确认弹窗
 
@@ -687,7 +696,7 @@ litssh deny <审批ID>               # 拒绝
 | 文档 | 内容 |
 |------|------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计：分层结构、核心模块、安全模型、拓扑模型、线程模型、扩展点 |
-| [docs/TOOLS.md](docs/TOOLS.md) | 54 个 MCP 工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
+| [docs/TOOLS.md](docs/TOOLS.md) | 61 个 MCP 工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 迭代历史：每个版本的新增 / 修复 / 变更记录 |
 | [docs/UPGRADE_PLAN.md](docs/UPGRADE_PLAN.md) | 升级方案（Roadmap）：安全、可视化配置、运维、质量的分期计划 |
 | [docs/litssh-mcp-ops-skill/SKILL.md](docs/litssh-mcp-ops-skill/SKILL.md) | AI 排障 Skill（工具路由、标准排障流程、SSH 变通方案） |

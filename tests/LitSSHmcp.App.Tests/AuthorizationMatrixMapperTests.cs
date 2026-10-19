@@ -93,6 +93,50 @@ public class AuthorizationMatrixMapperTests
     }
 
     [Fact]
+    public void ToWebConnectorRows_SkipsBuiltinAndMarksSelected()
+    {
+        var servers = new[]
+        {
+            AgentMcpServerConfig.BuiltinDefault(),
+            new AgentMcpServerConfig { Id = "ext-a", Name = "外部 A", Enabled = true },
+            new AgentMcpServerConfig { Id = "ext-b", Name = "外部 B", Enabled = false },
+            new AgentMcpServerConfig { Id = "", Name = "无 Id" }
+        };
+
+        var rows = SecuritySettingsViewModel.ToWebConnectorRows(servers, new[] { " ext-a ", "missing" });
+
+        Assert.Equal(2, rows.Length);
+        Assert.Equal("ext-a", rows[0].Id);
+        Assert.True(rows[0].IsSelected);
+        Assert.Equal("外部 A", rows[0].DisplayName);
+        Assert.Equal("ext-b", rows[1].Id);
+        Assert.False(rows[1].IsSelected);
+        Assert.Equal("外部 B（已停用）", rows[1].DisplayName);
+        Assert.DoesNotContain(rows, r => r.Id == "litssh");
+    }
+
+    [Fact]
+    public void ToWebConnectorIds_ReturnsSelectedTrimmedDistinct()
+    {
+        var ids = SecuritySettingsViewModel.ToWebConnectorIds(new[]
+        {
+            new WebConnectorOption { Id = " ext-a ", IsSelected = true },
+            new WebConnectorOption { Id = "ext-a", IsSelected = true },
+            new WebConnectorOption { Id = "ext-b", IsSelected = false },
+            new WebConnectorOption { Id = "", IsSelected = true }
+        });
+
+        Assert.Equal(new[] { "ext-a" }, ids);
+    }
+
+    [Fact]
+    public void WebConnectorRows_NullInputsAreSafe()
+    {
+        Assert.Empty(SecuritySettingsViewModel.ToWebConnectorRows(null, null));
+        Assert.Empty(SecuritySettingsViewModel.ToWebConnectorIds(Array.Empty<WebConnectorOption>()));
+    }
+
+    [Fact]
     public void RoundTrip_KeepsRuleSemantics()
     {
         var original = new[]

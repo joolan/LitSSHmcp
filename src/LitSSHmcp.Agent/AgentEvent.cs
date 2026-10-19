@@ -12,6 +12,8 @@ public enum AgentEventKind
     ToolResult,
     /// <summary>本轮自动召回的记忆（注入上下文前推送给 UI 展示；Text 为召回文本）。</summary>
     MemoryRecall,
+    /// <summary>本轮自动检索的资产图谱上下文（命中资产 + 邻域）。</summary>
+    AssetGraphContext,
     /// <summary>本轮结束。</summary>
     Done,
     /// <summary>错误/中止。</summary>

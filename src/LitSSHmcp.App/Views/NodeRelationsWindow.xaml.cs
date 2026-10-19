@@ -38,7 +38,7 @@ public partial class NodeRelationsWindow : Wpf.Ui.Controls.FluentWindow
         _topology = AppServiceFactory.CreateTopologyService(_config);
         HeaderText.Text = $"节点 {nodeId} 的关系";
         RelationList.ItemsSource = _rows;
-        foreach (var type in new[] { "runsOn", "connectsTo", "canAccess", "relatedTo" })
+        foreach (var type in RelationRules.KnownTypes)
             TypeBox.Items.Add(type);
         Loaded += async (_, _) => await LoadAsync();
     }

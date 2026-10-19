@@ -71,6 +71,32 @@ public class WebSessionManagerTests
     }
 
     [Fact]
+    public async Task Run_turn_passes_session_tool_policy_to_runtime()
+    {
+        var session = await _manager.CreateSessionAsync(_alice, "策略");
+        await _store.SetSessionToolPolicyAsync(session.Id,
+            """{"ssh_execute_command":"deny","mysql_query":"allow","unknown":"weird"}""");
+
+        await _manager.RunTurnAsync(_alice, session.Id, "hi", new Recorder());
+
+        var request = Assert.Single(_factory.Requests);
+        Assert.NotNull(request.ToolPolicy);
+        Assert.Equal(AgentToolPolicy.Deny, request.ToolPolicy!["ssh_execute_command"]);
+        Assert.Equal(AgentToolPolicy.Allow, request.ToolPolicy["mysql_query"]);
+        Assert.Equal(AgentToolPolicy.Default, request.ToolPolicy["unknown"]);
+    }
+
+    [Fact]
+    public async Task Run_turn_without_tool_policy_leaves_it_null()
+    {
+        var session = await _manager.CreateSessionAsync(_alice, "无策略");
+
+        await _manager.RunTurnAsync(_alice, session.Id, "hi", new Recorder());
+
+        Assert.Null(Assert.Single(_factory.Requests).ToolPolicy);
+    }
+
+    [Fact]
     public async Task Run_turn_persists_messages_and_forwards_events_in_order()
     {
         var session = await _manager.CreateSessionAsync(_alice, "轮次");

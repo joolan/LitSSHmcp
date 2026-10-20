@@ -238,6 +238,175 @@ public partial class RemoteFileBrowserView : UserControl
             vm.RequestCd(item);
     }
 
+    // ---- 终端操作（日志）----
+
+    private void OnFileContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        var vm = ViewModel;
+        // 只在同时具备交互式终端（SSH 会话标签）的文件面板中显示；远程复制 / 选择目录窗口没有终端。
+        TerminalOpsMenuItem.Visibility = vm?.TerminalCommandSender is not null
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        var isFile = vm?.SelectedItem is { IsDirectory: false };
+        TerminalOpsMenuItem.IsEnabled = isFile;
+        TerminalOpsMenuItem.ToolTip = isFile
+            ? "在右侧终端执行日志命令（终端需空闲并已连接）"
+            : "请选中一个文件后再使用终端操作";
+    }
+
+    private RemoteFileItem? SelectedFileItem()
+        => ViewModel?.SelectedItem is { IsDirectory: false } item ? item : null;
+
+    private void OnLogSearchLastHour(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || SelectedFileItem() is not { } file)
+            return;
+        var dialog = Views.LogSearchDialog.LastHour(Owner);
+        if (dialog is null)
+            return;
+        SendTerminal(vm, LogTerminalCommandBuilder.SearchLastHour(file.FullName, dialog.Keyword, dialog.MaxLines));
+    }
+
+    private void OnLogSearchRange(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || SelectedFileItem() is not { } file)
+            return;
+        var dialog = Views.LogSearchDialog.Range(Owner);
+        if (dialog is null)
+            return;
+        SendTerminal(vm, LogTerminalCommandBuilder.SearchBetween(
+            file.FullName, dialog.StartText, dialog.EndText, dialog.Keyword, dialog.MaxLines));
+    }
+
+    private void OnLogFollow(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || SelectedFileItem() is not { } file)
+            return;
+        if (!ConfirmFollow(file))
+            return;
+        SendTerminal(vm, LogTerminalCommandBuilder.Follow(file.FullName));
+    }
+
+    private void OnLogTail(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || SelectedFileItem() is not { } file)
+            return;
+        var text = Views.TextInputDialog.Prompt(Owner, "查看最新日志",
+            $"显示最新多少条（1-{LogTerminalCommandBuilder.MaxMaxLines}）:", "200");
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+        if (!int.TryParse(text.Trim(), out var lines) ||
+            lines < 1 || lines > LogTerminalCommandBuilder.MaxMaxLines)
+        {
+            MessageBox.Show($"请输入 1-{LogTerminalCommandBuilder.MaxMaxLines} 的整数。", "查看最新日志",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        SendTerminal(vm, LogTerminalCommandBuilder.TailLatest(file.FullName, lines));
+    }
+
+    private void OnLogErrors(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || SelectedFileItem() is not { } file)
+            return;
+        SendTerminal(vm, LogTerminalCommandBuilder.Errors(file.FullName));
+    }
+
+    private void OnLogContext(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || SelectedFileItem() is not { } file)
+            return;
+        var pattern = Views.TextInputDialog.Prompt(Owner, "关键字上下文",
+            "关键字 / 正则（匹配行前后各显示 3 行）:", "Exception");
+        if (string.IsNullOrWhiteSpace(pattern))
+            return;
+        SendTerminal(vm, LogTerminalCommandBuilder.GrepContext(file.FullName, pattern));
+    }
+
+    private void OnLogCount(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || SelectedFileItem() is not { } file)
+            return;
+        var pattern = Views.TextInputDialog.Prompt(Owner, "统计关键字",
+            "要统计的关键字 / 正则:", "Exception");
+        if (string.IsNullOrWhiteSpace(pattern))
+            return;
+        SendTerminal(vm, LogTerminalCommandBuilder.Count(file.FullName, pattern));
+    }
+
+    private void OnLogFollowFiltered(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || SelectedFileItem() is not { } file)
+            return;
+        var pattern = Views.TextInputDialog.Prompt(Owner, "实时过滤日志",
+            "只显示匹配的关键字 / 正则:", "Exception");
+        if (string.IsNullOrWhiteSpace(pattern))
+            return;
+        if (!ConfirmFollow(file, pattern))
+            return;
+        SendTerminal(vm, LogTerminalCommandBuilder.FollowFiltered(file.FullName, pattern));
+    }
+
+    private void OnLogSlice(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || SelectedFileItem() is not { } file)
+            return;
+
+        var dialog = Views.LogSliceDialog.Show(Owner, file.FullName, DefaultSlicePath(file.FullName));
+        if (dialog is null)
+            return;
+
+        try
+        {
+            var command = LogTerminalCommandBuilder.SliceToFile(
+                file.FullName,
+                dialog.OutputPath,
+                dialog.Keyword,
+                dialog.ScanLines,
+                dialog.FilterByTime ? dialog.StartText : null,
+                dialog.FilterByTime ? dialog.EndText : null);
+            SendTerminal(vm, command);
+        }
+        catch (ArgumentException ex)
+        {
+            MessageBox.Show(ex.Message, "筛选并保存", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private static string DefaultSlicePath(string source)
+    {
+        var slash = source.LastIndexOf('/');
+        var dir = slash > 0 ? source[..slash] : "/";
+        var name = slash >= 0 ? source[(slash + 1)..] : source;
+        var stem = name.EndsWith(".log", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name;
+        var prefix = dir == "/" ? string.Empty : dir;
+        return $"{prefix}/{stem}.slice-{DateTime.Now:yyyyMMdd-HHmmss}.log";
+    }
+
+    private void OnLogLess(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || SelectedFileItem() is not { } file)
+            return;
+        SendTerminal(vm, LogTerminalCommandBuilder.LessAtEnd(file.FullName));
+    }
+
+    private bool ConfirmFollow(RemoteFileItem file, string? pattern = null)
+    {
+        var filter = string.IsNullOrWhiteSpace(pattern) ? string.Empty : $"\n仅显示匹配：{pattern}";
+        var result = MessageBox.Show(
+            $"将从此刻开始实时跟踪：\n{file.FullName}{filter}\n\n这会占用当前终端，按 Ctrl+C 结束。继续？",
+            "实时跟踪日志", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        return result == MessageBoxResult.Yes;
+    }
+
+    private void SendTerminal(RemoteFileBrowserViewModel vm, string command)
+    {
+        var error = vm.SendTerminalCommand(command);
+        if (error is not null)
+            MessageBox.Show(error, "终端操作", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
     private List<RemoteFileItem> SelectedItems()
         => FileList.SelectedItems.Cast<RemoteFileItem>().ToList();
 

@@ -269,11 +269,40 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
     /// <summary>请求在终端中 cd 到某目录（由终端标签注入）。</summary>
     public Action<string>? CdRequested { get; set; }
 
+    /// <summary>向右侧终端发送命令；返回 null 表示已发送，否则为不可发送的原因（未连接 / 终端忙等）。</summary>
+    public Func<string, string?>? TerminalCommandSender { get; set; }
+
+    /// <summary>命令成功写入终端后触发，供终端标签把键盘焦点移回终端。</summary>
+    public event Action? TerminalCommandSent;
+
+    /// <summary>把拼好的日志命令发送到右侧终端（终端须处于空闲提示符）。</summary>
+    public string? SendTerminalCommand(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return "命令为空。";
+
+        var sender = TerminalCommandSender;
+        if (sender is null)
+            return "当前会话未连接交互式终端，无法发送命令。";
+
+        var error = sender(command);
+        if (error is null)
+        {
+            StatusMessage = "已发送到终端: " + command;
+            TerminalCommandSent?.Invoke();
+        }
+        return error;
+    }
+
     /// <summary>切换到该项所在目录（目录本身 / 文件的父目录）并在终端执行 cd。</summary>
     public void RequestCd(RemoteFileItem item)
     {
         var dir = item.IsDirectory ? item.FullName : ParentOf(item.FullName);
-        CdRequested?.Invoke(dir);
+        if (CdRequested is { } cd)
+        {
+            cd(dir);
+            TerminalCommandSent?.Invoke();
+        }
         StatusMessage = $"已在终端切换目录: {dir}";
     }
 

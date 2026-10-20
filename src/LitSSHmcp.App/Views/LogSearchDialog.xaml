@@ -1,0 +1,66 @@
+<ui:FluentWindow xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" x:Class="LitSSHmcp.App.Views.LogSearchDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="搜索日志" Width="500" SizeToContent="Height" WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize" ShowInTaskbar="False" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar x:Name="TitleBar" Grid.Row="0" Title="搜索日志"/>
+        <Grid Grid.Row="1" Margin="16,0,16,14">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Text="关键字 / 正则（留空 = 不按关键字过滤）" Margin="0,0,0,6"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            <ui:TextBox x:Name="KeywordBox" Grid.Row="1" MinHeight="30" VerticalContentAlignment="Center"
+                        PlaceholderText="例如：Exception、OutOfMemory、timeout|refused"/>
+
+            <Grid x:Name="RangePanel" Grid.Row="2" Margin="0,10,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="开始时间" Margin="0,0,0,6"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    <ui:TextBox x:Name="StartBox" MinHeight="30" VerticalContentAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="至" VerticalAlignment="Bottom" Margin="10,0,10,7"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="结束时间" Margin="0,0,0,6"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    <ui:TextBox x:Name="EndBox" MinHeight="30" VerticalContentAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+
+            <TextBlock x:Name="TimeNote" Grid.Row="3" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="11"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+
+            <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,10,0,0" VerticalAlignment="Center">
+                <TextBlock Text="最多显示" VerticalAlignment="Center"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                <ui:TextBox x:Name="MaxLinesBox" Width="90" MinHeight="30" Margin="8,0,6,0"
+                            VerticalContentAlignment="Center" Text="200"/>
+                <TextBlock Text="行（1-5000）" VerticalAlignment="Center"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            </StackPanel>
+
+            <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                <ui:Button Content="发送到终端" Appearance="Primary" Width="110" Margin="0,0,8,0"
+                           Click="OnOk" IsDefault="True"/>
+                <ui:Button Content="取消" Width="86" Click="OnCancel" IsCancel="True"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

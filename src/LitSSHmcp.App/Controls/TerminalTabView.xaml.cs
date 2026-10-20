@@ -13,6 +13,8 @@ public partial class TerminalTabView : UserControl
     private const double DefaultWidth = 300;
     private const double MinPanelWidth = 120;
 
+    private TerminalSessionViewModel? _hookedVm;
+
     public TerminalTabView()
     {
         InitializeComponent();
@@ -27,13 +29,23 @@ public partial class TerminalTabView : UserControl
 
     private void Hook()
     {
-        if (Vm is { } vm)
+        if (_hookedVm is { } old)
         {
-            vm.PropertyChanged -= OnVmPropertyChanged;
+            old.PropertyChanged -= OnVmPropertyChanged;
+            old.FileBrowser.TerminalCommandSent -= OnTerminalCommandSent;
+        }
+
+        _hookedVm = Vm;
+        if (_hookedVm is { } vm)
+        {
             vm.PropertyChanged += OnVmPropertyChanged;
+            vm.FileBrowser.TerminalCommandSent += OnTerminalCommandSent;
         }
         ApplyLayout();
     }
+
+    private void OnTerminalCommandSent()
+        => Dispatcher.BeginInvoke(new Action(() => Terminal.FocusInput()), System.Windows.Threading.DispatcherPriority.Input);
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {

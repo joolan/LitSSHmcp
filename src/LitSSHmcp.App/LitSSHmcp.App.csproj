@@ -42,7 +42,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <!-- 应用版本（发布脚本会以 -p:Version=<tag> 覆盖）；「设置 → 关于」页面显示该值 -->
-    <Version>1.3.0</Version>
+    <Version>1.4.0</Version>
     <!-- ����������ͼ�� NotifyIcon���Ƴ� WinForms ��ʽ using�������� WPF ���ͣ�Button/TextBox/Application �ȣ����� -->
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>

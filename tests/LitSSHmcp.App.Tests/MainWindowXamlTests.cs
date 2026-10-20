@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Threading;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Services.Storage;
@@ -117,6 +118,26 @@ public class MainWindowXamlTests
             _ = new AppearanceSettingsView();
             _ = new TerminalSettingsView();
             _ = new SnippetEditorView();
+        });
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void Log_dialogs_parse_xaml()
+    {
+        var ex = RunSta(() =>
+        {
+            var sliceCtor = typeof(LogSliceDialog).GetConstructor(
+                BindingFlags.Instance | BindingFlags.NonPublic, null,
+                new[] { typeof(string), typeof(string) }, null);
+            Assert.NotNull(sliceCtor);
+            _ = sliceCtor.Invoke(new object[] { "/var/log/a.log", "/var/log/a.slice.log" });
+
+            var searchCtor = typeof(LogSearchDialog).GetConstructor(
+                BindingFlags.Instance | BindingFlags.NonPublic, null,
+                new[] { typeof(string), typeof(bool) }, null);
+            Assert.NotNull(searchCtor);
+            _ = searchCtor.Invoke(new object[] { "搜索日志", true });
         });
         Assert.Null(ex);
     }

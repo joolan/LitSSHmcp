@@ -25,6 +25,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         Model = new TerminalModel(cols, rows);
         FileBrowser = new RemoteFileBrowserViewModel(server, ssh);
         FileBrowser.CdRequested = ChangeDirectory;
+        FileBrowser.TerminalCommandSender = TrySendCommandToTerminal;
         ToggleFileBrowserCommand = new RelayCommand(_ => ShowFileBrowser = !ShowFileBrowser);
         ReconnectCommand = new RelayCommand(_ => _ = ReconnectAsync());
     }
@@ -33,6 +34,32 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
 
     /// <summary>在终端里 cd 到指定目录（用于文件列表右键「切换到此目录」）。</summary>
     public void ChangeDirectory(string remotePath) => SendInput($"cd {Quote(remotePath)}\r");
+
+    /// <summary>
+    /// 文件列表「终端操作」：仅在终端已连接且看起来回到 shell 提示符时发送命令。
+    /// 返回 null 表示已发送；否则返回可读原因（由调用方提示用户）。
+    /// </summary>
+    public string? TrySendCommandToTerminal(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return "命令为空。";
+        if (_disposed)
+            return "会话已关闭，无法发送命令。";
+        if (!IsConnected)
+            return "终端未连接，无法发送命令。请先连接或点击「重新连接」。";
+        if (IsFullScreenActive)
+            return "终端正在运行全屏程序（如 vim / top / less），请先退出后再试。";
+        if (!IsLikelyIdle)
+        {
+            var line = Model.LastNonEmptyLineText().Trim();
+            if (line.Length > 80)
+                line = line[..80] + "…";
+            return "终端可能仍在执行命令，请等待回到提示符后再试。\n当前最后一行：" + line;
+        }
+
+        SendInput(command + "\r");
+        return null;
+    }
 
     /// <summary>重开会话（用于 exit/logout 或断线后恢复）。</summary>
     public async Task ReconnectAsync()

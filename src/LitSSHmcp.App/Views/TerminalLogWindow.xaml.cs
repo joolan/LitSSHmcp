@@ -84,7 +84,7 @@ public partial class TerminalLogWindow : Wpf.Ui.Controls.FluentWindow
         ReplayPanel.Visibility = Visibility.Collapsed;
         try
         {
-            ContentBox.Text = AnsiRegex.Replace(File.ReadAllText(item.Path), string.Empty);
+            ContentBox.Text = AnsiRegex.Replace(SessionLogReader.ReadAllText(item.Path), string.Empty);
         }
         catch (Exception ex)
         {
@@ -104,7 +104,7 @@ public partial class TerminalLogWindow : Wpf.Ui.Controls.FluentWindow
 
         try
         {
-            var lines = File.ReadAllLines(path, Encoding.UTF8);
+            var lines = SessionLogReader.ReadAllLines(path);
             foreach (var line in lines)
             {
                 if (line.Length == 0 || line[0] != '[')

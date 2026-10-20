@@ -28,6 +28,7 @@
         <ListView Grid.Row="2" x:Name="FileList" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}"
                   SelectionMode="Extended" SelectionChanged="OnFileSelectionChanged"
                   Padding="2" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
+                  ContextMenuOpening="OnFileContextMenuOpening"
                   PreviewMouseLeftButtonDown="OnListPreviewLeftButtonDown" PreviewMouseMove="OnListPreviewMouseMove"
                   Background="Transparent" BorderThickness="0" controls:GridViewSort.Enabled="True">
             <ListView.ContextMenu>
@@ -47,6 +48,26 @@
                     <MenuItem Header="复制到远程服务器…" Click="OnCopyToRemote"/>
                     <Separator/>
                     <MenuItem Header="切换到所在目录（终端 cd）" Click="OnCd"/>
+                    <MenuItem x:Name="TerminalOpsMenuItem" Header="终端操作">
+                        <MenuItem Header="搜索最近 1 小时日志…" Click="OnLogSearchLastHour"
+                                  ToolTip="按远端时间过滤行首 ISO 时间戳，再按关键字/正则搜索"/>
+                        <MenuItem Header="搜索指定时间范围…" Click="OnLogSearchRange"
+                                  ToolTip="输入起止时间与关键字，在右侧终端执行过滤命令"/>
+                        <MenuItem Header="实时跟踪日志（tail -f）" Click="OnLogFollow"
+                                  ToolTip="从此刻开始跟踪新写入的日志，按 Ctrl+C 结束"/>
+                        <MenuItem Header="查看最新 N 条…" Click="OnLogTail"/>
+                        <Separator/>
+                        <MenuItem Header="查看错误 / 异常（最近 2000 行）" Click="OnLogErrors"
+                                  ToolTip="在最近 2000 行中过滤 error / exception / fatal / timeout / OOM 等关键字，最多显示 200 条"/>
+                        <MenuItem Header="查看关键字上下文（前后 3 行）…" Click="OnLogContext"/>
+                        <MenuItem Header="统计关键字出现次数…" Click="OnLogCount"/>
+                        <MenuItem Header="实时跟踪并过滤关键字…" Click="OnLogFollowFiltered"/>
+                        <Separator/>
+                        <MenuItem Header="筛选并保存到文件…（日志切片）" Click="OnLogSlice"
+                                  ToolTip="按关键字 / 时间 / 扫描行数过滤后写入远端文件，完成后刷新列表即可下载"/>
+                        <MenuItem Header="用 less 打开（跳到末尾，q 退出）" Click="OnLogLess"
+                                  ToolTip="进入 less 后：/ 搜索、n 下一个、Shift+G 末尾、q 退出"/>
+                    </MenuItem>
                     <MenuItem Header="属性 / 权限…" Click="OnProperties"/>
                     <Separator/>
                     <MenuItem Header="重命名…" Click="OnRename"/>
@@ -72,7 +93,9 @@
             </ListView.View>
         </ListView>
 
-        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Margin="0,6,0,0" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Margin="0,6,0,0"
+                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                   ToolTip="{Binding StatusMessage}" ToolTipService.ShowDuration="120000"
                    Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"/>
     </Grid>
 </UserControl>

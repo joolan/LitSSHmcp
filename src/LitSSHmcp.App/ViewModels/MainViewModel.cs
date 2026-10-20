@@ -76,8 +76,18 @@ public class MainViewModel : INotifyPropertyChanged
     public MainViewModel()
     {
         _configService = new ConfigService();
-        _sshService = new SshService();
+        // 与数据源 / 端口转发 / 拓扑发现一致：携带 known-hosts 与安全设置（Tofu/Strict/Off），
+        // 避免主界面终端绕过主机密钥校验、而弹窗"测试连接"走另一套策略。
+        _sshService = AppServiceFactory.CreateSshService();
         _auditLogService = new AuditLogService();
+        AiTerminals = new Services.LocalTerminal.AiTerminalBroker(
+            name => CreateLocalTerminal(isAi: true, aiName: name),
+            RemoveLocalTerminal,
+            terminal =>
+            {
+                SelectedSession = terminal;
+                ShowSessionWindow();
+            });
 
         LoadServersCommand = new RelayCommand(_ => LoadServers());
         AddServerCommand = new RelayCommand(_ => AddServer());
@@ -386,6 +396,8 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly Dictionary<string, LocalTerminalSessionViewModel> _aiTerminals = new(StringComparer.Ordinal);
     private int _manualLocalSeq;
 
+    public Services.LocalTerminal.IAiTerminalBroker AiTerminals { get; }
+
     /// <summary>手动打开一个新的本机 PowerShell 终端标签（可多次打开，互不影响）。</summary>
     public LocalTerminalSessionViewModel ConnectLocalTerminal()
     {
@@ -395,12 +407,30 @@ public class MainViewModel : INotifyPropertyChanged
         return vm;
     }
 
-    private LocalTerminalSessionViewModel CreateLocalTerminal(bool isAi)
+    private LocalTerminalSessionViewModel CreateLocalTerminal(bool isAi, string? aiName = null)
     {
-        var vm = new LocalTerminalSessionViewModel(isAi, ++_manualLocalSeq);
+        var vm = new LocalTerminalSessionViewModel(isAi, ++_manualLocalSeq) { SessionName = aiName };
         Sessions.Add(vm);
         _ = vm.EnsureStartedAsync(vm.Model.Cols, vm.Model.Rows);
         return vm;
+    }
+
+    private void RemoveLocalTerminal(LocalTerminalSessionViewModel terminal)
+    {
+        _ = terminal.DisposeAsync();
+        if (_floatWindows.TryGetValue(terminal, out var floatWin))
+        {
+            _floatWindows.Remove(terminal);
+            floatWin.SuppressDock();
+            floatWin.Close();
+        }
+        if (!Sessions.Contains(terminal))
+            return;
+        var index = DockedSessions.IndexOf(terminal);
+        var wasSelected = ReferenceEquals(SelectedSession, terminal);
+        Sessions.Remove(terminal);
+        RebuildDockedSessions();
+        EnsureDockedSelection(wasSelected ? index : null);
     }
 
     /// <summary>
@@ -477,6 +507,7 @@ public class MainViewModel : INotifyPropertyChanged
             _floatWindows.Clear();
             foreach (var term in Sessions.OfType<TerminalSessionViewModel>().ToList())
                 _ = term.DisposeAsync();
+            AiTerminals.CloseAll();
             foreach (var local in Sessions.OfType<LocalTerminalSessionViewModel>().ToList())
                 _ = local.DisposeAsync();
             Sessions.Clear();
@@ -505,11 +536,11 @@ public class MainViewModel : INotifyPropertyChanged
         var window = new SshSessionFloatWindow(this, session) { Topmost = false };
         window.DockRequested += DockSession;
         window.CloseRequested += CloseSession;
+        var index = DockedSessions.IndexOf(session);
+        var wasSelected = ReferenceEquals(SelectedSession, session);
         _floatWindows[session] = window;
         RebuildDockedSessions();
-
-        if (ReferenceEquals(SelectedSession, session))
-            SelectedSession = DockedSessions.FirstOrDefault();
+        EnsureDockedSelection(wasSelected ? index : null);
 
         window.Show();
         StatusMessage = $"已分离为独立窗口: {TitleOf(session)}";
@@ -532,13 +563,52 @@ public class MainViewModel : INotifyPropertyChanged
 
     private void RebuildDockedSessions()
     {
-        DockedSessions.Clear();
-        foreach (var s in Sessions)
+        var desired = Sessions.Where(s => !_floatWindows.ContainsKey(s)).ToList();
+
+        for (var i = DockedSessions.Count - 1; i >= 0; i--)
         {
-            if (!_floatWindows.ContainsKey(s))
-                DockedSessions.Add(s);
+            if (!desired.Contains(DockedSessions[i]))
+                DockedSessions.RemoveAt(i);
         }
+
+        for (var i = 0; i < desired.Count; i++)
+        {
+            var item = desired[i];
+            var current = DockedSessions.IndexOf(item);
+            if (current < 0)
+                DockedSessions.Insert(i, item);
+            else if (current != i)
+                DockedSessions.Move(current, i);
+        }
+
         OnPropertyChanged(nameof(HasDockedSessions));
+    }
+
+    private void EnsureDockedSelection(int? preferredIndex = null)
+    {
+        if (SelectedSession is not null && DockedSessions.Contains(SelectedSession))
+            return;
+
+        if (DockedSessions.Count == 0)
+        {
+            SelectedSession = null;
+            return;
+        }
+
+        var index = Math.Clamp(preferredIndex ?? 0, 0, DockedSessions.Count - 1);
+        var fallback = DockedSessions[index];
+        SelectedSession = fallback;
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || !dispatcher.CheckAccess())
+            return;
+
+        dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (SelectedSession is not null && DockedSessions.Contains(SelectedSession))
+                return;
+            SelectedSession = DockedSessions.Contains(fallback) ? fallback : DockedSessions.FirstOrDefault();
+        }), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private static string TitleOf(object session) => session switch
@@ -567,6 +637,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
 
         var index = Sessions.IndexOf(session);
+        var wasSelected = ReferenceEquals(SelectedSession, session) || SelectedSession == session;
 
         // 若该会话正处于独立窗口，先关闭该窗口（避免触发"收回"）
         if (_floatWindows.TryGetValue(session, out var floatWin))
@@ -579,11 +650,13 @@ public class MainViewModel : INotifyPropertyChanged
         if (session is TerminalSessionViewModel term)
             _ = term.DisposeAsync();
         else if (session is LocalTerminalSessionViewModel local)
+        {
+            AiTerminals.CloseTerminal(local);
             _ = local.DisposeAsync();
+        }
         Sessions.Remove(session);
         RebuildDockedSessions();
-        if (ReferenceEquals(SelectedSession, session) || SelectedSession == session)
-            SelectedSession = DockedSessions.Count > 0 ? DockedSessions[Math.Max(0, Math.Min(index, DockedSessions.Count - 1))] : null;
+        EnsureDockedSelection(wasSelected ? index : null);
 
         StatusMessage = Sessions.Count == 0 ? "已关闭全部会话" : $"已关闭会话: {name}";
     }
@@ -1038,7 +1111,12 @@ public class MainViewModel : INotifyPropertyChanged
             return _agentWindow;
         }
 
-        _agentWindow = new AgentWindow(_configService, AppServiceFactory.CreateAgentContextStore(), AppServiceFactory.BundledSkillsDir, ResolveSessionTerminal) { Topmost = false };
+        _agentWindow = new AgentWindow(
+            _configService,
+            AppServiceFactory.CreateAgentContextStore(),
+            AppServiceFactory.BundledSkillsDir,
+            ResolveSessionTerminal,
+            AiTerminals) { Topmost = false };
         _agentWindow.ViewModel.SessionRemoved += CloseSessionTerminal;
         _agentWindow.Closed += (_, _) =>
         {
@@ -1055,13 +1133,17 @@ public class MainViewModel : INotifyPropertyChanged
     {
         void Close()
         {
+            AiTerminals.CloseSession(sessionId.ToString());
             if (!_aiTerminals.Remove(sessionId.ToString(), out var vm))
                 return;
             _ = vm.DisposeAsync();
             if (Sessions.Contains(vm))
             {
+                var index = DockedSessions.IndexOf(vm);
+                var wasSelected = ReferenceEquals(SelectedSession, vm);
                 Sessions.Remove(vm);
                 RebuildDockedSessions();
+                EnsureDockedSelection(wasSelected ? index : null);
             }
         }
 

@@ -29,11 +29,12 @@ public class AssetGraphContextProviderTests
         var graph = "- app:order | order-service | 10.0.0.1\n- ssh:s1 | web1";
         var provider = AssetGraphContextProvider.Create(search, neighbors, graph);
 
-        var text = await provider!("check app:order health", CancellationToken.None);
+        var context = await provider!("check app:order health", CancellationToken.None);
 
-        Assert.NotNull(text);
-        Assert.Contains("app:order (application)", text);
-        Assert.Contains("app:order -runsOn-> ssh:s1", text);
+        Assert.NotNull(context);
+        Assert.Contains("app:order (application)", context!.Text);
+        Assert.Contains("app:order -runsOn-> ssh:s1", context.Text);
+        Assert.Equal(new[] { "app:order" }, context.AssetIds);
         Assert.Equal(0, searchCalls);
     }
 
@@ -57,9 +58,11 @@ public class AssetGraphContextProviderTests
         });
         var provider = AssetGraphContextProvider.Create(search, neighbors, null);
 
-        var text = await provider!("nginx 为什么没启动", CancellationToken.None);
+        var context = await provider!("nginx 为什么没启动", CancellationToken.None);
 
-        Assert.Contains("service:s1:nginx (service)", text);
+        Assert.NotNull(context);
+        Assert.Contains("service:s1:nginx (service)", context!.Text);
+        Assert.Equal(new[] { "service:s1:nginx" }, context.AssetIds);
         Assert.Contains("nginx", searched);
     }
 

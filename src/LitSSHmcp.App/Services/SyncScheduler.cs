@@ -1,5 +1,4 @@
 using LitSSHmcp.Core.Models;
-using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Sync;
 
@@ -21,7 +20,7 @@ public sealed class SyncScheduler : IDisposable
     public SyncScheduler(IConfigService config)
     {
         _config = config;
-        _sync = new SyncService(new FileSshKnownHostsStore(), SshHostKeyMode.Tofu, new SshService());
+        _sync = AppServiceFactory.CreateSyncService();
     }
 
     /// <summary>某任务正在运行时触发（供 UI 显示状态）。</summary>

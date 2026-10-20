@@ -49,8 +49,8 @@ public sealed class AgentRuntime : IAsyncDisposable
     private readonly List<IAgentTool> _subTools;
     private readonly IAgentTool? _roundNotifier;
     private readonly Action<IReadOnlyList<PlanItem>>? _onPlan;
-    private readonly Func<string, CancellationToken, Task<string?>>? _recall;
-    private readonly Func<string, CancellationToken, Task<string?>>? _graphContext;
+    private readonly Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? _recall;
+    private readonly Func<string, CancellationToken, Task<AssetGraphContextResult?>>? _graphContext;
     private readonly SpillStore? _spill;
     private List<string> _activeSkillIds = new();
     private AgentPromptContext? _activeAgent;
@@ -75,8 +75,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         List<IAgentTool> subTools,
         IAgentTool? roundNotifier,
         Action<IReadOnlyList<PlanItem>>? onPlan,
-        Func<string, CancellationToken, Task<string?>>? recall,
-        Func<string, CancellationToken, Task<string?>>? graphContext,
+        Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? recall,
+        Func<string, CancellationToken, Task<AssetGraphContextResult?>>? graphContext,
         SpillStore? spill,
         IEnumerable<ChatMessage>? history)
     {
@@ -347,8 +347,10 @@ public sealed class AgentRuntime : IAsyncDisposable
         var memoryTools = memory is null ? new List<IAgentTool>() : MemoryTools.Create(memory).ToList();
         // 脚本复用登记（写 MANIFEST + 可选同步记忆）：台账恒在共享区（D6 scripts/ 留共享，不随会话割裂）
         var scriptTools = ScriptTools.Create(sharedRoot, memory).ToList();
-        Func<string, CancellationToken, Task<string?>>? recall =
-            memory is null ? null : (query, token) => memory.RecallAsync(query, ct: token);
+        Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? recall =
+            memory is null
+                ? null
+                : (query, assetIds, token) => memory.RecallAsync(query, assetIds: assetIds, ct: token);
 
         // 系统提示按"激活技能"动态构建（未选技能=仅注入索引）；切换技能时用同一定义重算。
         var skillFiles = skillsDir is null ? null : SkillRegistry.ListReferenceFiles(skillsDir);

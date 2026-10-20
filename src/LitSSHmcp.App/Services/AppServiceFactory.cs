@@ -6,6 +6,7 @@ using LitSSHmcp.Core.Services.Snapshot.Collectors;
 using LitSSHmcp.Core.Services.RemoteDesktop;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
+using LitSSHmcp.Core.Services.Sync;
 using LitSSHmcp.Core.Services.Topology;
 
 namespace LitSSHmcp.App.Services;
@@ -160,5 +161,19 @@ public static class AppServiceFactory
         var store = new TopologyStore();
         return new TopologyService(configService, ssh, registry, store,
             new CommandFilterService(security), new AuditLogService(security), new SnapshotStore());
+    }
+
+    /// <summary>资产图谱查询服务（时间线/Diff 读取快照库；与 MCP 端使用同一实现）。</summary>
+    public static IAssetGraphQueryService CreateAssetGraphQueryService(IConfigService configService) =>
+        new AssetGraphQueryService(CreateTopologyService(configService), CreateSnapshotStore(), configService);
+
+    /// <summary>文件/文件夹同步服务：known-hosts、主机密钥模式（Tofu/Strict/Off）与命令 SSH 通道保持一致。</summary>
+    public static SyncService CreateSyncService()
+    {
+        var security = new SecurityOptionsProvider();
+        var knownHosts = new FileSshKnownHostsStore();
+        var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
+        var ssh = new SshService(knownHosts, security, limiter);
+        return new SyncService(knownHosts, security.SshHostKey.Mode, ssh);
     }
 }

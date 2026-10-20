@@ -344,8 +344,8 @@ public class ServerEditViewModel : INotifyPropertyChanged
             server.KeyFilePassphrase = Coalesce(_editWindow.GetKeyPassword(), _editingServer?.KeyFilePassphrase);
             server.SudoPassword = Coalesce(_editWindow.GetSudoPassword(), _editingServer?.SudoPassword);
 
-            var result = await _sshService.TestConnectionAsync(server);
-            StatusMessage = result ? "连接成功" : "连接失败";
+            var result = await _sshService.ProbeConnectionAsync(server);
+            StatusMessage = SshProbeFormatter.Describe(result);
         }
         catch (Exception ex)
         {

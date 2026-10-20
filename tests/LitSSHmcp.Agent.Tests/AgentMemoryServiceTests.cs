@@ -99,6 +99,47 @@ public class AgentMemoryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Recall_filters_asset_specific_memories_but_keeps_generic()
+    {
+        var (svc, _) = await CreateAsync(topK: 5);
+        await svc.SaveAsync("task", "disk:s1", "磁盘满经验甲: journalctl --vacuum-size 清理 journald 日志后 df 恢复", "ssh:s1", null);
+        await svc.SaveAsync("task", "nginx:s2", "磁盘满相关噪声乙: nginx upstream 超时, 调整 proxy_read_timeout 后恢复", "ssh:s2", null);
+        await svc.SaveAsync("task", "disk:generic", "磁盘满通用经验: 先 df 定位分区再清理日志", null, null);
+
+        var recalled = await svc.RecallAsync("磁盘满 日志 怎么处理", assetIds: new[] { "ssh:s1" });
+
+        Assert.NotNull(recalled);
+        Assert.Contains("task:disk:s1", recalled);
+        Assert.Contains("task:disk:generic", recalled);
+        Assert.DoesNotContain("task:nginx:s2", recalled);
+    }
+
+    [Fact]
+    public async Task Recall_asset_boundary_does_not_match_prefix()
+    {
+        var (svc, _) = await CreateAsync(topK: 5);
+        await svc.SaveAsync("task", "disk:s10", "磁盘满经验: journalctl --vacuum-size 清理日志后恢复", "ssh:s10", null);
+
+        var recalled = await svc.RecallAsync("磁盘满 日志", assetIds: new[] { "ssh:s1" });
+
+        Assert.Null(recalled);
+    }
+
+    [Fact]
+    public async Task Recall_asset_boundary_escapes_like_wildcards()
+    {
+        var (svc, _) = await CreateAsync(topK: 5);
+        await svc.SaveAsync("task", "disk:web-1", "磁盘满经验甲: journalctl --vacuum-size 清理日志后恢复", "ssh:web_1", null);
+        await svc.SaveAsync("task", "disk:web01", "磁盘满经验乙: 清理旧内核与缓存后恢复", "ssh:web01", null);
+
+        var recalled = await svc.RecallAsync("磁盘满 日志", assetIds: new[] { "ssh:web_1" });
+
+        Assert.NotNull(recalled);
+        Assert.Contains("task:disk:web-1", recalled);
+        Assert.DoesNotContain("task:disk:web01", recalled);
+    }
+
+    [Fact]
     public async Task PruneRaw_keeps_only_latest_n()
     {
         var (svc, store) = await CreateAsync();

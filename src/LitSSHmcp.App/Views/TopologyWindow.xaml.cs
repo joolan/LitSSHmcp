@@ -123,6 +123,14 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnRefresh(object sender, RoutedEventArgs e) => _viewModel.Load();
 
+    private void OnTimeline(object sender, RoutedEventArgs e)
+    {
+        var initialServerId = ServerFilterBox.Text
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+        new TopologyTimelineWindow(initialServerId) { Owner = this }.Show();
+    }
+
     private void OnDiscoveryReport(object sender, RoutedEventArgs e)
     {
         var window = new Window

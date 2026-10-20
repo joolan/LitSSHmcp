@@ -15,12 +15,14 @@ namespace LitSSHmcp.App.ViewModels;
 public sealed class LocalTerminalSessionViewModel : INotifyPropertyChanged, IAsyncDisposable, ISshTab, ITerminalSession
 {
     private readonly object _gate = new();
+    private readonly TerminalOutputBuffer _output = new();
     private ConPtySession? _pty;
     private SessionLogger? _logger;
     private bool _started;
     private bool _disposed;
     private readonly bool _isAi;
     private readonly int _manualSeq;
+    private string? _sessionName;
 
     public LocalTerminalSessionViewModel(bool isAi = false, int manualSeq = 1, int cols = 80, int rows = 24)
     {
@@ -48,8 +50,32 @@ public sealed class LocalTerminalSessionViewModel : INotifyPropertyChanged, IAsy
     public string Title => !string.IsNullOrWhiteSpace(_customTitle)
         ? _customTitle!
         : _isAi
-            ? $"本机 PowerShell [AI-{ProcessId}]"
+            ? string.IsNullOrWhiteSpace(_sessionName)
+                ? $"本机 PowerShell [AI-{ProcessId}]"
+                : $"{_sessionName} [AI-{ProcessId}]"
             : _manualSeq <= 1 ? "本机 PowerShell" : $"本机 PowerShell ({_manualSeq})";
+
+    public string? SessionName
+    {
+        get => _sessionName;
+        set
+        {
+            if (string.Equals(_sessionName, value, StringComparison.Ordinal))
+                return;
+            _sessionName = value;
+            OnPropertyChanged(nameof(Title));
+        }
+    }
+
+    public bool IsRunning => _pty?.IsRunning == true;
+
+    public long OutputCursor => _output.Cursor;
+
+    public DateTimeOffset? LastOutputAt => _output.LastWriteAt;
+
+    public TerminalOutputSnapshot ReadOutput(long cursor, int maxChars) => _output.Read(cursor, maxChars);
+
+    public event Action? Exited;
 
     private string? _customTitle;
 
@@ -146,13 +172,17 @@ public sealed class LocalTerminalSessionViewModel : INotifyPropertyChanged, IAsy
     }
 
     /// <summary>在共享会话中执行命令并返回干净输出（供 AI 调用）。</summary>
-    public Task<CommandResult> RunCommandAsync(string command, TimeSpan timeout, CancellationToken ct = default)
+    public Task<CommandResult> RunCommandAsync(string command, TimeSpan timeout, CancellationToken ct = default, bool captureOutput = true)
     {
         var pty = _pty;
         if (pty is null || !pty.IsRunning)
             throw new InvalidOperationException("本机终端未启动");
-        return pty.RunCommandAsync(command, timeout, ct);
+        return pty.RunCommandAsync(command, timeout, ct, captureOutput);
     }
+
+    public void Interrupt() => _pty?.Write("\u0003");
+
+    public void TerminateProcessTree() => _pty?.TerminateJobObject();
 
     public void SendInput(string text)
     {
@@ -181,6 +211,7 @@ public sealed class LocalTerminalSessionViewModel : INotifyPropertyChanged, IAsy
     {
         if (string.IsNullOrEmpty(text))
             return;
+        _output.Append(text);
         _logger?.Write(text);
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is not null && !dispatcher.CheckAccess())
@@ -203,6 +234,7 @@ public sealed class LocalTerminalSessionViewModel : INotifyPropertyChanged, IAsy
         IsConnected = false;
         if (!StatusMessage.StartsWith("启动失败", StringComparison.Ordinal))
             StatusMessage = "已退出";
+        Exited?.Invoke();
     }
 
     private void SafeFeed(string text)

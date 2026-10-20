@@ -4,15 +4,16 @@ using LitSSHmcp.Core.Models;
 namespace LitSSHmcp.Core.Services.Topology;
 
 /// <summary>
-/// 把资产清单（服务器/数据源/应用/关系）渲染为注入系统提示的紧凑文本快照。
-/// 纯函数、无 IO、无时间戳（保证会话内 prompt 前缀稳定，不打散缓存）；
-/// 超过 <see cref="MaxChars"/> 时按「应用细节 → 关系数 → 条目裁剪」顺序降级。
+/// 把人工配置的资产（服务器/数据源/应用/关系）渲染为注入系统提示的稳定摘要。
+/// 纯函数、无 IO、无时间戳/发现细节（保证会话内 prompt 前缀稳定，不打散缓存）；
+/// 超过 <see cref="MaxChars"/> 时先丢弃关系，再按行截断，并提示改用 topology_* 工具查询完整细节。
 /// </summary>
 public static class AssetGraphPromptFormatter
 {
-    public const int MaxChars = 4000;
+    /// <summary>稳定摘要上限；发现细节（服务/容器/端口/域名/证书/证据）不进系统提示。</summary>
+    public const int MaxChars = 2000;
 
-    /// <summary>渲染资产图谱文本；无任何启用资产时返回 null。</summary>
+    /// <summary>渲染资产摘要；无任何启用资产时返回 null。</summary>
     public static string? Format(
         IReadOnlyList<SshServerConfig>? servers,
         IReadOnlyList<DataSourceConfig>? dataSources,
@@ -27,20 +28,13 @@ public static class AssetGraphPromptFormatter
         if (s.Count == 0 && d.Count == 0 && a.Count == 0)
             return null;
 
-        var text = Render(s, d, a, r, includeAppDetails: true);
+        var text = Render(s, d, a, r, includeRelations: true);
         if (text.Length <= MaxChars)
             return text;
 
-        text = Render(s, d, a, r, includeAppDetails: false);
-        if (text.Length <= MaxChars)
-            return text;
-
-        // 仍超长：先砍关系，再逐段裁剪条目（保底保服务器/数据源头部条目）
-        text = Render(s, d, a, [], includeAppDetails: false);
-        if (text.Length <= MaxChars)
-            return text;
-
-        return Truncate(text, MaxChars);
+        // 关系通常最占空间，且可由 topology_neighbors/path 按需查询：先丢弃关系保留全部资产 ID。
+        text = Render(s, d, a, [], includeRelations: false);
+        return text.Length <= MaxChars ? text : Truncate(text, MaxChars);
     }
 
     /// <summary>便捷入口：从 AppConfig 渲染（Disabled 服务器已排除）。</summary>
@@ -55,7 +49,7 @@ public static class AssetGraphPromptFormatter
         List<DataSourceConfig> dataSources,
         List<ApplicationConfig> applications,
         List<RelationConfig> relations,
-        bool includeAppDetails)
+        bool includeRelations)
     {
         var sb = new StringBuilder();
         if (servers.Count > 0)
@@ -63,8 +57,7 @@ public static class AssetGraphPromptFormatter
             sb.AppendLine("[服务器]");
             foreach (var x in servers)
                 sb.AppendLine($"- {AssetNode.Ssh(x.Id)} | {x.Name} | {x.Host}:{x.Port}"
-                    + (x.Tags.Length > 0 ? $" | tags={string.Join(",", x.Tags)}" : "")
-                    + (string.IsNullOrWhiteSpace(x.Description) ? "" : $" | {x.Description}"));
+                    + (x.Tags.Length > 0 ? $" | tags={string.Join(",", x.Tags)}" : ""));
         }
         if (dataSources.Count > 0)
         {
@@ -83,16 +76,10 @@ public static class AssetGraphPromptFormatter
                 var line = new StringBuilder($"- {AssetNode.App(x.Id)} | {x.Type} {x.Name}");
                 if (x.Port is int port) line.Append($" :{port}");
                 if (!string.IsNullOrWhiteSpace(x.Host)) line.Append($" host={x.Host}");
-                if (!string.IsNullOrWhiteSpace(x.ContainerName)) line.Append($" container={x.ContainerName}");
-                if (includeAppDetails)
-                {
-                    if (!string.IsNullOrWhiteSpace(x.Path)) line.Append($" path={x.Path}");
-                    if (x.LogPaths.Length > 0) line.Append($" logs={string.Join(";", x.LogPaths)}");
-                }
                 sb.AppendLine(line.ToString());
             }
         }
-        if (relations.Count > 0)
+        if (includeRelations && relations.Count > 0)
         {
             sb.AppendLine("[关系]");
             foreach (var x in relations)
@@ -109,6 +96,7 @@ public static class AssetGraphPromptFormatter
         // 截断到最后一行边界，避免留下半行误导模型
         var cut = text.LastIndexOf('\n', maxChars - 1);
         if (cut < maxChars / 2) cut = maxChars - 1;
-        return text[..cut].TrimEnd() + "\n…(资产过多, 以上为节选; 完整清单用 ssh_list_servers/datasource_list 等列表工具获取)";
+        return text[..cut].TrimEnd()
+            + "\n…(资产摘要已截断；完整清单用 ssh_list_servers/datasource_list，关系用 topology_search/neighbors 查询)";
     }
 }

@@ -37,7 +37,7 @@ public class AssetGraphPromptFormatterTests
         Assert.Contains("ds:d1", text);
         Assert.Contains("app:a1", text);
         Assert.Contains("app:a1 -connectsTo-> ds:d1", text);
-        Assert.Contains("path=/opt/app", text);
+        Assert.DoesNotContain("path=/opt/app", text!);   // 稳定摘要不注入应用路径/日志等发现细节
         Assert.DoesNotContain("CreatedAt", text!);
     }
 
@@ -71,7 +71,7 @@ public class AssetGraphPromptFormatterTests
     }
 
     [Fact]
-    public void App_details_dropped_before_truncation_when_overlong()
+    public void App_details_are_never_in_stable_summary()
     {
         var longPath = "/opt/" + new string('p', 500);
         var apps = Enumerable.Range(0, 10)
@@ -81,7 +81,48 @@ public class AssetGraphPromptFormatterTests
         var text = AssetGraphPromptFormatter.Format(null, null, apps, null);
 
         Assert.NotNull(text);
-        Assert.DoesNotContain(longPath, text!);   // includeAppDetails=false 降级：path 已被移除
+        Assert.DoesNotContain(longPath, text!);
+        Assert.True(text!.Length <= AssetGraphPromptFormatter.MaxChars + 100);
+    }
+
+    [Fact]
+    public void Relations_are_dropped_before_assets_when_overlong()
+    {
+        var servers = Enumerable.Range(0, 30)
+            .Select(i => new SshServerConfig { Id = $"s{i}", Name = $"server-{i}", Host = $"10.0.0.{i}" })
+            .ToList();
+        var relations = Enumerable.Range(0, 50)
+            .Select(i => new RelationConfig
+            {
+                From = $"app:a{i}", To = $"ds:d{i}", Type = "connectsTo",
+                Note = new string('n', 120)
+            })
+            .ToList();
+
+        var text = AssetGraphPromptFormatter.Format(servers, null, null, relations);
+
+        Assert.NotNull(text);
+        Assert.True(text!.Length <= AssetGraphPromptFormatter.MaxChars + 100);
+        Assert.DoesNotContain("[关系]", text);
+        Assert.Contains("ssh:s0", text);
+        Assert.Contains("ssh:s29", text);
+    }
+
+    [Fact]
+    public void Stable_summary_is_deterministic()
+    {
+        var servers = new[]
+        {
+            new SshServerConfig { Id = "s1", Name = "web01", Host = "10.0.0.1", Port = 22, Tags = new[] { "prod" } }
+        };
+        var relations = new[] { new RelationConfig { From = "ssh:s1", To = "ds:d1", Type = "canAccess" } };
+
+        var first = AssetGraphPromptFormatter.Format(servers, null, null, relations);
+        var second = AssetGraphPromptFormatter.Format(servers, null, null, relations);
+
+        Assert.Equal(first, second);
+        Assert.DoesNotContain("LastSeen", first!);
+        Assert.DoesNotContain("2026-", first!);
     }
 
     [Fact]

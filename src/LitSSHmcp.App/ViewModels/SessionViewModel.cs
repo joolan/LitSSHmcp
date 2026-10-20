@@ -102,8 +102,8 @@ public class SessionViewModel : INotifyPropertyChanged, ISshTab
         }
 
         StatusMessage = "测试连接中...";
-        var ok = await _ssh.TestConnectionAsync(Server);
-        StatusMessage = ok ? "连接成功" : "连接失败";
+        var result = await _ssh.ProbeConnectionAsync(Server);
+        StatusMessage = SshProbeFormatter.Describe(result);
     }
 
     public async Task ExecuteAsync()

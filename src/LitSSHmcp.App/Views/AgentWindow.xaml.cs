@@ -18,7 +18,8 @@ public partial class AgentWindow : FluentWindow
     private readonly DesktopLoginService _desktopLogin;
 
     public AgentWindow(IConfigService configService, IContextStore store, string skillsDir,
-        Func<string, LocalTerminalSessionViewModel?>? localTerminalResolver = null)
+        Func<string, LocalTerminalSessionViewModel?>? localTerminalResolver = null,
+        Services.LocalTerminal.IAiTerminalBroker? localTerminalBroker = null)
     {
         InitializeComponent();
         _configService = configService;
@@ -29,7 +30,8 @@ public partial class AgentWindow : FluentWindow
             action => Dispatcher.BeginInvoke(action),
             _desktopLogin)
         {
-            LocalTerminalResolver = localTerminalResolver
+            LocalTerminalResolver = localTerminalResolver,
+            LocalTerminalBroker = localTerminalBroker
         };
         _viewModel.SettingsRequested += tab => Dispatcher.Invoke(() => OpenSettings(tab));
         _viewModel.TemporaryChatRequested += text => Dispatcher.Invoke(() => OpenTemporaryChat(text));

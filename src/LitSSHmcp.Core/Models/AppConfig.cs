@@ -233,6 +233,9 @@ public class LocalTerminalConfig
     /// <summary>单条命令超时秒数。</summary>
     public int TimeoutSeconds { get; set; } = 60;
 
+    /// <summary>单个 AI 会话最多同时保留的长驻终端数。</summary>
+    public int MaxSessions { get; set; } = 4;
+
     /// <summary>开发/构建/云凭据类 CLI 的常用默认白名单。</summary>
     public static string[] DefaultAllowedCommands() => new[]
     {
@@ -241,7 +244,7 @@ public class LocalTerminalConfig
         "docker", "docker-compose", "compose",
         "python", "python3", "pip", "pip3", "poetry", "uv", "pdm", "conda",
         "go", "cargo", "rustc", "java", "mvn", "gradle", "make", "cmake",
-        "where", "tree", "curl", "invoke-webrequest"
+        "where", "tree", "curl", "invoke-webrequest", "ping"
     };
 }
 

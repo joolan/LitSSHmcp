@@ -1,0 +1,94 @@
+<ui:FluentWindow xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" x:Class="LitSSHmcp.App.Views.TopologyTimelineWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="拓扑时间线" Height="640" Width="1080" MinWidth="880" MinHeight="480"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="拓扑时间线"/>
+
+        <Grid Grid.Row="1" Margin="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                <TextBlock Text="服务器" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <ComboBox x:Name="ServerCombo" Width="240" ItemsSource="{Binding Servers}"
+                          SelectedItem="{Binding SelectedServer, Mode=TwoWay}" DisplayMemberPath="Name"
+                          SelectionChanged="OnServerChanged" ToolTip="切换服务器查看其快照时间线"/>
+                <TextBlock Text="最近" VerticalAlignment="Center" Margin="12,0,6,0"/>
+                <ComboBox x:Name="LimitCombo" Width="70" ItemsSource="{Binding LimitOptions}"
+                          SelectedItem="{Binding SelectedLimit, Mode=TwoWay}" SelectionChanged="OnLimitChanged"
+                          ToolTip="读取最近 N 份快照"/>
+                <Button Content="刷新" Width="70" Padding="6,4" Margin="10,0,0,0" Click="OnRefresh"/>
+                <Button Content="打开快照历史" Width="104" Padding="6,4" Margin="6,0,0,0" Click="OnOpenSnapshot"
+                        ToolTip="在服务器快照历史中定位到当前选中的快照"/>
+                <TextBlock Text="按时间正序重放快照；右侧列出相对上一份快照的新增/移除"
+                           VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           FontSize="11" Margin="14,0,0,0"/>
+            </StackPanel>
+
+            <TextBlock Grid.Row="1" Text="{Binding Summary}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="11"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,8"/>
+
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="560"/>
+                    <ColumnDefinition Width="6"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <ListView x:Name="PointList" Grid.Column="0" ItemsSource="{Binding Points}"
+                          SelectedItem="{Binding SelectedPoint, Mode=TwoWay}" FontFamily="Consolas" FontSize="11">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="采集时间" Width="140" DisplayMemberBinding="{Binding CapturedAtText}"/>
+                            <GridViewColumn Header="快照" Width="70" DisplayMemberBinding="{Binding SnapshotText}"/>
+                            <GridViewColumn Header="状态" Width="50" DisplayMemberBinding="{Binding StateText}"/>
+                            <GridViewColumn Header="规模" Width="110" DisplayMemberBinding="{Binding NodeEdgeText}"/>
+                            <GridViewColumn Header="相对上一份" Width="170" DisplayMemberBinding="{Binding DeltaText}"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+
+                <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                              Background="#22000000" ResizeBehavior="PreviousAndNext"/>
+
+                <DockPanel Grid.Column="2" Margin="6,0,0,0">
+                    <TextBlock DockPanel.Dock="Top" Text="变化明细" FontWeight="Bold" Margin="0,0,0,6"
+                               Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                    <ListView ItemsSource="{Binding Changes}" FontFamily="Consolas" FontSize="11">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="类型" Width="70" DisplayMemberBinding="{Binding Kind}"/>
+                                <GridViewColumn Header="资产 / 关系" Width="360" DisplayMemberBinding="{Binding Text}"/>
+                            </GridView>
+                        </ListView.View>
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Added}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource AppSuccessBrush}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Added}" Value="False">
+                                        <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                    </ListView>
+                </DockPanel>
+            </Grid>
+
+            <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Margin="0,6,0,0"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

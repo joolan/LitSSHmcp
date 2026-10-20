@@ -6,17 +6,25 @@
 
 ### 新增
 
+- **本机多终端（v1）**：AI 会话新增 `local_shell_open` / `local_shell_list` / `local_shell_read` / `local_shell_stop`，可同时管理最多 4 个独立 PowerShell/ConPTY 终端，并行跑后端、前端、下载与脚本测试；每个终端有 `term-N` ID、状态与独立输出缓冲，`read` 按 `cursor` 增量返回（默认 8000、上限 200000 字符），自动清理 ANSI 与内部同步标记。`open`/每命令仍逐次人工审批，硬白名单与危险命令拦截不变；`list`/`read` 只读，`stop` 免审批但写审计，并在停止后自动关闭对应终端标签（命令已结束时也会关闭）。`local_shell` 新增可选 `terminalId`：不传时用默认共享终端，传入空闲的 `term-N` 时把一次性命令注入该终端（长驻命令未结束时拒绝），因此可在刚打开的终端里继续执行 `ping -n 3` 等命令而无需重开；默认 CLI 白名单补充 `ping`（一次性 `local_shell` 仍拦截无限 `ping -t`）。v1 不开放任意 stdin 写入；裸 shell/REPL、`Start-Process`/`Start-Job`、尾部 `&` 等后台化写法前置拒绝，`tail -f`/dev server/构建/下载等长驻任务可用。终端复用现有本机会话标签实时显示，标题带 `[AI-进程Id]`；关闭标签、删除 AI 会话或关闭会话窗口都会回收对应进程树。
 - **资产图查询（P0）**：新增 5 个只读 MCP 工具 `topology_search` / `topology_neighbors` / `topology_path` / `topology_impact` / `topology_explain`——在现有拓扑图上做搜索、邻域、有向链路、反向影响面与证据解释；不新增表、不修改采集器，全部归入 `topology` 工具组。`topology_impact` 默认排除 `:disc:` 待确认节点并单独计数；`topology_explain` 返回来源（manual/discovered）/证据/末次发现/`stale`（超过 7 天未确认）。
 - **快照图谱（P1）**：`topology_discover` 现在会读取最近快照的 `systemd` / `docker` / `portmap` / `nginx_tls`，生成 `service:*` / `container:*` / `deploy:*` / `domain:*` / `port:*` / `cert:*` 节点与 `runsOn` / `listensOn` / `deployedFrom` / `hostedOn` / `exposes` / `tlsBy` / `resolvesTo` 边；系统服务同时由 systemd 单元和监听端口的 `unit` 交叉生成，容器按已登记应用的 `containerName` + 镜像 tag 推导部署记录。边新增 `Confidence`/`Disputed`/`ValidFrom`/`ValidTo`/`LastVerifiedAt` 并支持旧 SQLite 库增量迁移；图查询、影响面、`kinds` 过滤、拓扑提示与 App 类型标签同步扩展。App 拓扑新增服务/容器/部署/域名等类型配色、按图层隐藏节点、证书 30 天内黄色/过期红色边框、冲突边红色 `⚠` 标记与「确认无冲突」操作，以及选中节点后的反向 2 跳影响面高亮（非影响节点/边降透明并显示影响数量）。
 - **关系冲突自动检测（P1）**：读取图谱时核对 `runsOn` / `hostedOn` 发现边——同一 `(from, type)` 出现多个目标或与人工配置不一致时标记 `disputed` 并写入 `disputeReason`；App「确认无冲突」写入 `disputeAcknowledged`，冲突仍在但不再标红，冲突消失后自动清空原因与确认状态。`topology_explain` 同步返回 `disputeReason` / `disputeAcknowledged`。
 - **拓扑时间线与快照 Diff（P2）**：新增只读 MCP 工具 `topology_timeline` / `topology_diff`，按快照历史重放 `systemd` / `docker` / `portmap` / `nginx_tls`，返回每个时点的节点/边及相对上一次的新增、移除；`topology_diff` 默认比较最近两次快照，支持指定 `fromSnapshotId` / `toSnapshotId`。
 - **Graph-RAG 发送前图谱上下文（P2）**：AI 助手每轮发送前从问题中解析已知资产（也回退到 `topology_search`），自动调用 `topology_neighbors` 拉取 1 跳邻域，作为临时系统上下文注入；App 以「资产图谱」步骤展示注入内容，Web 推送 `asset_graph_context` 事件，失败静默不影响对话。
+- **记忆资产过滤**：召回前先取本轮 Graph-RAG 的种子资产，过滤结构化记忆；`raw` 与无 `assetIds` 的通用经验保留，资产 ID 按逗号边界匹配（`ssh:s1` 不会误中 `ssh:s10`），最多 20 个，降低跨服务器/应用的经验串味。
+- **资产提示稳定摘要**：`AssetGraphPromptFormatter` 上限从 4000 收紧到 2000 字符，只保留人工配置的服务器/数据源/应用与关系，不再注入应用路径、日志、时间戳等发现细节；超长先丢弃关系再按行截断，并提示改用 `topology_*` 查询，稳定前缀缓存并减少误导。
+- **拓扑时间线桌面视图**：资产拓扑「更多操作 → 快照时间线…」按服务器回放最近 N 份快照，展示节点/边规模与相对上一份的新增、移除明细，支持点选时间点及跳转快照历史。
 - **内置技能包可升级**：稳定目录新增 `.litssh-bundle.json`（逐文件 SHA256）。升级时只覆盖“上次随包且用户未修改”的文件，保留用户编辑；老稳定目录无清单时一次性接管；用户删除的随包技能不会复活，新随包技能自动安装。
 - **图查询歧义防护**：`topology_*` 的资产解析对大小写 ID、后缀、Label 多命中返回 `asset_ambiguous` 并列出候选，空 ID 返回 `asset_id_required`，避免静默命中错误资产；补充搜索/邻域/影响面截断、过期边与 1000 节点规模测试。
 - **GitHub Actions CI**：新增 `.github/workflows/ci.yml`，在 Windows runner 上执行 `dotnet restore/build` + 5 个测试项目 + Web 前端 JS `node --check`。
 
 ### 修复
 
+- **关闭终端后剩余标签空白**：停靠标签改为增量同步，不再整表清空重建；关闭当前终端、浮动终端或删除 AI 会话时保留原选中索引，并在绑定把 `SelectedSession` 置空后延迟补选剩余会话，剩余标签内容立即正常显示，无需再点一下标签。
+- **「测试连接」失败可诊断且与终端一致**：编辑服务器/会话的「测试连接」改用 `ProbeConnectionAsync`，状态栏区分认证失败 / 主机密钥不匹配 / 超时 / 网络不可达并附原始错误，不再只显示“连接失败”；探测超时由 10 秒对齐交互式终端的 30 秒（首次连接 DNS/KEX/主机密钥协商/VPN 冷启动常超过 10 秒）；主界面 SSH 服务、远程文件夹选择、文件同步（含调度器）统一改走 `AppServiceFactory.CreateSshService()` / `CreateSyncService()`，与数据源、端口转发、拓扑发现共用同一套 known-hosts 与 Tofu/Strict/Off 策略，不再绕过主机密钥校验。
+- **Web 发送按钮恢复可用**：发送/停止合并按钮在 `close()` 被禁用后，`open()` 重新选中会话时未解禁，导致输入文字后鼠标点击无反应而 Enter 仍能发送；现在选中会话后按状态正确启用，运行中保持可点击以停止。
+- **AI 会话上下文注入可回看**：记忆召回/资产图谱步骤改为随会话记录持久化（`IsInfo`），任务完成后的自动刷新、切换会话和重启不再丢失；仍不计入模型恢复轨迹，避免把注入内容伪装成工具结果。Web 历史与实时 `asset_graph_context` 事件同步展示。
 - **Web 会话级 ToolPolicy 生效**：Web 运行时装配时读取 `agent_sessions.ToolPolicy` 并 `SetToolPolicy`，桌面配置的会话级工具允许/拒绝策略在 Web 端不再失效；损坏/空策略按无策略处理，不阻断会话启动。
 - **Web 外部连接器下发白名单可视化**：桌面「设置 → 安全设置 → Web 授权矩阵」新增“允许下发 Web 的外部连接器”多选（来自 `agent.mcpServers` 非内置条目；无外部连接器时显示引导文案），保存到 `security.authorization.webConnectors`；之前只能手改 `config.json`。App 端补嵌入文档回归测试，确保 5 个图查询工具出现在「MCP 工具说明」。
 

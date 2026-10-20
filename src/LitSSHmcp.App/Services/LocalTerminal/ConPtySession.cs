@@ -270,7 +270,7 @@ public sealed class ConPtySession : IDisposable
     /// 把命令写入临时 .ps1（点源执行以保留 cwd/env），用 Tee 一边实时显示在终端、一边写入临时文件，
     /// 再用唯一标记（含退出码与 $PWD）判断完成。超时先 Ctrl+C 等其回到提示符，宽限期仍未回则强杀整棵进程树。
     /// </summary>
-    public async Task<CommandResult> RunCommandAsync(string command, TimeSpan timeout, CancellationToken ct = default)
+    public async Task<CommandResult> RunCommandAsync(string command, TimeSpan timeout, CancellationToken ct = default, bool captureOutput = true)
     {
         if (!IsRunning)
             throw new InvalidOperationException("本地 shell 未启动");
@@ -280,13 +280,14 @@ public sealed class ConPtySession : IDisposable
             return new CommandResult(string.Empty, -1, false, Busy: true);
         try
         {
+            ct.ThrowIfCancellationRequested();
             _tempDir = string.IsNullOrEmpty(_tempDir)
                 ? Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "litssh-ai")).FullName
                 : _tempDir;
             var id = Guid.NewGuid().ToString("N");
             var scriptPath = Path.Combine(_tempDir, id + ".ps1");
             var outPath = Path.Combine(_tempDir, id + ".out");
-            await File.WriteAllTextAsync(scriptPath, command ?? string.Empty, new UTF8Encoding(true), ct).ConfigureAwait(false);
+            File.WriteAllText(scriptPath, command ?? string.Empty, new UTF8Encoding(true));
 
             var token = "LITSSH_" + id;
             var marker = "<<<" + token + ">>>";
@@ -312,8 +313,11 @@ public sealed class ConPtySession : IDisposable
                 // 标记用拼接避免被命令行回显提前命中；命令输出经 Tee 实时显示并落盘。
                 var scriptArg = scriptPath.Replace("'", "''");
                 var outArg = outPath.Replace("'", "''");
+                var pipeline = captureOutput
+                    ? $". '{scriptArg}' *>&1 | Tee-Object -FilePath '{outArg}' | Out-Host; "
+                    : $". '{scriptArg}' *>&1 | Out-Host; ";
                 Write(
-                    $"$__ec=0; . '{scriptArg}' *>&1 | Tee-Object -FilePath '{outArg}' | Out-Host; " +
+                    $"$__ec=0; {pipeline}" +
                     $"$__ec=$LASTEXITCODE; $__m='<<<'+'{token}'+'>>>'; " +
                     "Write-Host ($__m + '|' + $__ec + '|' + $PWD.Path)\r");
 
@@ -334,8 +338,11 @@ public sealed class ConPtySession : IDisposable
                 var output = string.Empty;
                 try
                 {
-                    if (File.Exists(outPath))
-                        output = StripAnsi(await ReadCapturedTextAsync(outPath, ct).ConfigureAwait(false));
+                    if (captureOutput && File.Exists(outPath))
+                        output = StripAnsi(await ReadCapturedTextAsync(outPath, CancellationToken.None).ConfigureAwait(false));
+                    else
+                        lock (sink)
+                            output = StripAnsi(sink.ToString());
                 }
                 catch { /* 读取失败忽略 */ }
 
@@ -346,7 +353,8 @@ public sealed class ConPtySession : IDisposable
             {
                 Output -= OnOutput;
                 try { File.Delete(scriptPath); } catch { /* ignore */ }
-                try { File.Delete(outPath); } catch { /* ignore */ }
+                if (captureOutput)
+                    try { File.Delete(outPath); } catch { /* ignore */ }
             }
         }
         finally

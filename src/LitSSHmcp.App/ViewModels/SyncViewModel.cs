@@ -3,8 +3,8 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
-using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Sync;
 
@@ -73,7 +73,7 @@ public sealed class SyncEventHookOption : INotifyPropertyChanged
 /// <summary>文件/文件夹同步设置（单向）：任务增删改、方向联动、调度三选一、文件过滤；保存仅校验必填项（测试为可选自检）。</summary>
 public sealed class SyncViewModel : INotifyPropertyChanged
 {    private readonly IConfigService _config = new ConfigService();
-    private readonly SyncService _sync = new(new FileSshKnownHostsStore(), SshHostKeyMode.Tofu, new SshService());
+    private readonly SyncService _sync = AppServiceFactory.CreateSyncService();
 
     private string? _testedSignature;
     private bool _suppressOptions;

@@ -109,6 +109,79 @@ public static class LocalCommandPolicy
         return allowed.Contains(exe) ? LocalPolicyResult.Allowed : LocalPolicyResult.NotInAllowlist;
     }
 
+    /// <summary>长驻会话策略：允许 tail -f / dev server / 下载等，但仍拦截裸 shell、REPL 与后台逃逸。</summary>
+    public static LocalPolicyResult CheckForLongRunning(string? command, IReadOnlyCollection<string>? allowedCommands)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return LocalPolicyResult.Blocked;
+
+        foreach (var pattern in DangerousPatterns)
+        {
+            if (pattern.IsMatch(command))
+                return LocalPolicyResult.Blocked;
+        }
+
+        if (Regex.IsMatch(command, @"(^|\s)&\s*$", RegexOptions.Compiled) ||
+            Regex.IsMatch(command, @"\bStart-(Process|Job)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled))
+            return LocalPolicyResult.Blocked;
+
+        if (IsUnsupportedForBackground(command))
+            return LocalPolicyResult.Interactive;
+
+        var exe = FirstExecutable(command);
+        if (exe is null)
+            return LocalPolicyResult.Blocked;
+
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in allowedCommands ?? Array.Empty<string>())
+        {
+            var name = item?.Trim().TrimEnd('*').Trim();
+            if (string.IsNullOrEmpty(name))
+                continue;
+            if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                name = name[..^4];
+            try { name = System.IO.Path.GetFileName(name); }
+            catch { /* 原样 */ }
+            allowed.Add(name);
+        }
+
+        return allowed.Contains(exe) ? LocalPolicyResult.Allowed : LocalPolicyResult.NotInAllowlist;
+    }
+
+    public static bool IsUnsupportedForBackground(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return false;
+
+        var exe = FirstExecutable(command)?.ToLowerInvariant();
+        if (exe is null)
+            return false;
+
+        if (exe is "vim" or "vi" or "nvim" or "nano" or "emacs" or "pico" or "less" or "more"
+            or "man" or "top" or "htop" or "btop" or "watch" or "screen" or "tmux" or "mc"
+            or "powershell" or "pwsh" or "cmd" or "bash" or "sh" or "zsh" or "wsl"
+            or "start-process" or "start-job")
+            return true;
+
+        var tokens = SplitTokens(command);
+        var args = tokens.Skip(1).ToList();
+
+        if (exe is "python" or "python3" or "node" or "irb" or "ruby" && args.Count == 0)
+            return true;
+
+        if (exe is "docker" or "kubectl" && args.Any(a => a is "-it" or "-ti"))
+            return true;
+
+        if (exe == "git" && args.Count >= 2 &&
+            (args[0] == "rebase" && args.Contains("-i") || args[0] == "add" && args.Contains("-p")))
+            return true;
+
+        if (exe is "mysql" or "psql" or "redis-cli" or "sqlite3" or "mongo" or "mongosh" && args.Count == 0)
+            return true;
+
+        return false;
+    }
+
     /// <summary>
     /// 粗判疑似交互式/长驻命令（编辑器、分页器、全屏监视、tail -f、无参 REPL、
     /// docker/kubectl exec -it、无参数据库客户端等）——这类会一直占住共享终端。
@@ -131,6 +204,9 @@ public static class LocalCommandPolicy
         var args = tokens.Skip(1).ToList();
 
         if (exe == "tail" && args.Any(a => a is "-f" or "--follow" || a.StartsWith("--follow=", StringComparison.Ordinal)))
+            return true;
+
+        if (exe == "ping" && args.Any(a => a is "-t" or "/t"))
             return true;
 
         // 无参 REPL / 嵌套交互式 shell

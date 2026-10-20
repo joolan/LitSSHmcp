@@ -2,7 +2,6 @@ using System.Windows;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Models;
-using LitSSHmcp.Core.Services.SSH;
 using Wpf.Ui.Controls;
 
 namespace LitSSHmcp.App.Views;
@@ -16,7 +15,7 @@ public partial class RemoteFolderPickerWindow : FluentWindow
     public RemoteFolderPickerWindow(SshServerConfig server, string? initialPath)
     {
         InitializeComponent();
-        _vm = new RemoteFileBrowserViewModel(server, new SshService());
+        _vm = new RemoteFileBrowserViewModel(server, AppServiceFactory.CreateSshService());
         DataContext = _vm;
         Loaded += async (_, _) =>
         {

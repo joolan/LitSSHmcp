@@ -10,8 +10,12 @@ public interface IAgentMemoryStore
     Task AddAsync(string source, string content, float[] vector, CancellationToken ct = default);
     Task<bool> ExistsAsync(string source, string content, CancellationToken ct = default);
     Task<int> CountAsync(CancellationToken ct = default);
-    /// <summary>向量召回；kind 非空时仅在该类别内检索，activeOnly 时排除 status=superseded 的条目。</summary>
-    Task<List<MemoryHit>> SearchAsync(float[] query, int topK, string? kind = null, bool activeOnly = true, CancellationToken ct = default);
+    /// <summary>
+    /// 向量召回；kind 非空时仅在该类别内检索，activeOnly 时排除 status=superseded 的条目。
+    /// assetIds 非空时只保留「raw / 无资产归属的通用经验 / 关联资产有交集」的条目。
+    /// </summary>
+    Task<List<MemoryHit>> SearchAsync(float[] query, int topK, string? kind = null, bool activeOnly = true,
+        IReadOnlyCollection<string>? assetIds = null, CancellationToken ct = default);
     Task ClearAsync(CancellationToken ct = default);
 
     /// <summary>按 (Kind, Key) 查找结构化记忆；不存在返回 null。</summary>
@@ -152,9 +156,16 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
     }
 
-    public async Task<List<MemoryHit>> SearchAsync(float[] query, int topK, string? kind = null, bool activeOnly = true, CancellationToken ct = default)
+    public async Task<List<MemoryHit>> SearchAsync(float[] query, int topK, string? kind = null, bool activeOnly = true,
+        IReadOnlyCollection<string>? assetIds = null, CancellationToken ct = default)
     {
         var scored = new List<MemoryHit>();
+        var assets = (assetIds ?? Array.Empty<string>())
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .Select(a => a.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(20)
+            .ToArray();
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
@@ -166,6 +177,17 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         }
         if (activeOnly)
             sql += " AND Status='active'";
+        if (assets.Length > 0)
+        {
+            // raw 与无资产归属的通用经验保留；结构化经验要求资产交集（逗号边界 + LIKE 转义，避免 ssh:s1 命中 ssh:s10、ssh:web_1 命中 ssh:web01）。
+            var matches = new List<string>();
+            for (var i = 0; i < assets.Length; i++)
+            {
+                matches.Add($"((',' || IFNULL(AssetIds,'') || ',') LIKE @asset{i} ESCAPE '\\')");
+                cmd.Parameters.AddWithValue($"@asset{i}", $"%,{EscapeLike(assets[i])},%");
+            }
+            sql += $" AND (Kind='raw' OR IFNULL(AssetIds,'')='' OR {string.Join(" OR ", matches)})";
+        }
         cmd.CommandText = sql;
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -363,6 +385,9 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4),
         reader.GetString(5), reader.GetString(6), reader.GetInt32(7), reader.GetString(8),
         reader.GetString(9), reader.GetString(10));
+
+    private static string EscapeLike(string value) =>
+        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
     private static byte[] ToBytes(float[] vector)
     {

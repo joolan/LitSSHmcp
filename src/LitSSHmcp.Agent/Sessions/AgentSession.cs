@@ -18,8 +18,8 @@ public sealed class AgentSession
     private readonly AgentConfig _config;
     private readonly IReadOnlyList<IAgentTool> _tools;
     private readonly Dictionary<string, IAgentTool> _toolsByName;
-    private readonly Func<string, CancellationToken, Task<string?>>? _recall;
-    private readonly Func<string, CancellationToken, Task<string?>>? _graphContext;
+    private readonly Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? _recall;
+    private readonly Func<string, CancellationToken, Task<AssetGraphContextResult?>>? _graphContext;
     private string _systemPrompt;
     private readonly SpillStore? _spill;
     private readonly int? _maxIterationsOverride;
@@ -54,11 +54,11 @@ public sealed class AgentSession
         string systemPrompt,
         AgentConfig config,
         IEnumerable<ChatMessage>? history = null,
-        Func<string, CancellationToken, Task<string?>>? recall = null,
+        Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? recall = null,
         SpillStore? spill = null,
         int? maxIterationsOverride = null,
         IAgentTool? roundNotifier = null,
-        Func<string, CancellationToken, Task<string?>>? graphContext = null)
+        Func<string, CancellationToken, Task<AssetGraphContextResult?>>? graphContext = null)
     {
         _client = client;
         _provider = provider;
@@ -169,12 +169,32 @@ public sealed class AgentSession
             : userContents.ToList();
         Messages.Add(new ChatMessage(ChatRole.User, effectiveContents));
 
-        // 长期记忆召回：作为一条临时系统上下文插在用户消息之前
+        // Graph-RAG：先解析问题中的资产并注入 1 跳邻域；解析出的资产 ID 再用于约束记忆召回。
+        AssetGraphContextResult? graphContext = null;
+        if (_graphContext is not null)
+        {
+            try
+            {
+                graphContext = await _graphContext(userText, ct);
+                if (!string.IsNullOrWhiteSpace(graphContext?.Text))
+                {
+                    Messages.Insert(Messages.Count - 1, new ChatMessage(ChatRole.System,
+                        "以下是从资产图谱按本次请求自动检索的上下文(只读快照, 以实际工具结果为准):\n" + graphContext.Text));
+                    progress?.Report(new AgentEvent(AgentEventKind.AssetGraphContext, Text: graphContext.Text));
+                }
+            }
+            catch
+            {
+                // 图谱检索失败忽略，不影响本轮
+            }
+        }
+
+        // 长期记忆召回：作为一条临时系统上下文插在用户消息之前；有图谱种子时按资产过滤，减少跨资产误用。
         if (_recall is not null)
         {
             try
             {
-                var memory = await _recall(userText, ct);
+                var memory = await _recall(userText, graphContext?.AssetIds, ct);
                 if (!string.IsNullOrWhiteSpace(memory))
                 {
                     Messages.Insert(Messages.Count - 1, new ChatMessage(ChatRole.System,
@@ -186,25 +206,6 @@ public sealed class AgentSession
             catch
             {
                 // 召回失败忽略，不影响本轮
-            }
-        }
-
-        // Graph-RAG：解析问题中的资产并注入 1 跳邻域，减少模型盲猜 ID/依赖关系
-        if (_graphContext is not null)
-        {
-            try
-            {
-                var graph = await _graphContext(userText, ct);
-                if (!string.IsNullOrWhiteSpace(graph))
-                {
-                    Messages.Insert(Messages.Count - 1, new ChatMessage(ChatRole.System,
-                        "以下是从资产图谱按本次请求自动检索的上下文(只读快照, 以实际工具结果为准):\n" + graph));
-                    progress?.Report(new AgentEvent(AgentEventKind.AssetGraphContext, Text: graph));
-                }
-            }
-            catch
-            {
-                // 图谱检索失败忽略，不影响本轮
             }
         }
 

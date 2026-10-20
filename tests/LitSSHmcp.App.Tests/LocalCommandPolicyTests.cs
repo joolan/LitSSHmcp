@@ -1,4 +1,5 @@
 using LitSSHmcp.App.Services.LocalTerminal;
+using LitSSHmcp.Core.Models;
 using Xunit;
 
 namespace LitSSHmcp.App.Tests;
@@ -29,6 +30,11 @@ public class LocalCommandPolicyTests
     public void Non_allowlisted_commands_are_rejected(string command)
         => Assert.Equal(LocalPolicyResult.NotInAllowlist, LocalCommandPolicy.Check(command, Allowed));
 
+    [Fact]
+    public void Default_allowlist_permits_finite_ping()
+        => Assert.Equal(LocalPolicyResult.Allowed,
+            LocalCommandPolicy.Check("ping -n 3 www.baidu.com", LocalTerminalConfig.DefaultAllowedCommands()));
+
     [Theory]
     [InlineData("rm -rf /")]
     [InlineData("Remove-Item C:\\data -Recurse -Force")]
@@ -47,6 +53,7 @@ public class LocalCommandPolicyTests
     [InlineData("watch -n 1 ls")]
     [InlineData("tail -f app.log")]
     [InlineData("tail --follow=name app.log")]
+    [InlineData("ping -t 10.0.0.1")]
     [InlineData("python")]
     [InlineData("node")]
     [InlineData("docker exec -it web bash")]
@@ -64,4 +71,43 @@ public class LocalCommandPolicyTests
     [InlineData("cmd /c exit 7")]
     public void Non_interactive_commands_are_not_flagged(string command)
         => Assert.False(LocalCommandPolicy.IsLikelyInteractive(command));
+
+    [Theory]
+    [InlineData("tail -f app.log")]
+    [InlineData("npm run dev")]
+    [InlineData("dotnet run")]
+    [InlineData("python script.py")]
+    [InlineData("docker compose up")]
+    [InlineData("kubectl logs -f pod/x")]
+    public void Long_running_commands_are_allowed_for_background_sessions(string command)
+        => Assert.Equal(LocalPolicyResult.Allowed,
+            LocalCommandPolicy.CheckForLongRunning(command, new[] { "tail", "npm", "dotnet", "python", "docker", "kubectl" }));
+
+    [Theory]
+    [InlineData("powershell")]
+    [InlineData("powershell -Command Get-Date")]
+    [InlineData("cmd /c dir")]
+    [InlineData("python")]
+    [InlineData("node")]
+    [InlineData("vim app.log")]
+    [InlineData("watch ls")]
+    [InlineData("docker exec -it web bash")]
+    [InlineData("git rebase -i HEAD~2")]
+    public void Interactive_or_shell_commands_are_rejected_for_background_sessions(string command)
+        => Assert.Equal(LocalPolicyResult.Interactive,
+            LocalCommandPolicy.CheckForLongRunning(command, new[] { "powershell", "cmd", "python", "node", "vim", "watch", "docker", "git" }));
+
+    [Theory]
+    [InlineData("Start-Process notepad")]
+    [InlineData("Start-Job { Get-Date }")]
+    [InlineData("npm run dev &")]
+    [InlineData("rm -rf /")]
+    public void Background_escape_commands_are_blocked(string command)
+        => Assert.Equal(LocalPolicyResult.Blocked,
+            LocalCommandPolicy.CheckForLongRunning(command, new[] { "npm" }));
+
+    [Fact]
+    public void Background_commands_still_require_allowlist()
+        => Assert.Equal(LocalPolicyResult.NotInAllowlist,
+            LocalCommandPolicy.CheckForLongRunning("npm run dev", new[] { "dotnet" }));
 }

@@ -27,6 +27,8 @@
                         <MenuItem Header="适应" Click="OnZoomFit" ToolTip="缩放到适合窗口"/>
                         <MenuItem Header="100%" Click="OnZoomReset" InputGestureText="Ctrl+0" ToolTip="重置缩放"/>
                         <Separator/>
+                        <MenuItem Header="快照时间线…" Click="OnTimeline"
+                                  ToolTip="按历史快照重放拓扑，查看节点/关系的新增与移除"/>
                         <MenuItem Header="刷新" Click="OnRefresh"/>
                         <MenuItem Header="发现报告" Click="OnDiscoveryReport"
                                   ToolTip="查看最近一次自动发现的说明/未匹配端点(含来源文件)/错误"/>

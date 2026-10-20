@@ -186,16 +186,18 @@ public sealed class AgentMemoryService
 
     /// <summary>
     /// 按查询召回 topK 记忆，拼成可直接注入提示的文本；无相关记忆返回 null。kind 非空时只在该类别内检索。
+    /// assetIds 非空时优先保留关联资产有交集的条目（raw 与通用经验仍可召回），减少跨资产误用。
     /// 结构化经验优先；raw(会话/文档片段) 最多占 min(2, topK) 席, 避免挤占复用价值更高的结构化条目。
     /// </summary>
-    public async Task<string?> RecallAsync(string query, string? kind = null, CancellationToken ct = default)
+    public async Task<string?> RecallAsync(string query, string? kind = null,
+        IReadOnlyCollection<string>? assetIds = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(query))
             return null;
 
         var vector = await EmbedAsync(query, ct);
-        // 多取一些候选再重排：结构化优先、raw 限量
-        var candidates = (await _store.SearchAsync(vector, _topK * 4, kind, activeOnly: true, ct))
+        // 多取一些候选再重排：结构化优先、raw 限量；资产过滤在存储层完成
+        var candidates = (await _store.SearchAsync(vector, _topK * 4, kind, activeOnly: true, assetIds, ct))
             .Where(h => h.Score > _recallThreshold)
             .OrderByDescending(h => h.Kind != "raw")   // 结构化在前
             .ThenByDescending(h => h.Score)

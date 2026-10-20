@@ -131,7 +131,9 @@ public class SshService : ISshService
             {
                 Log($"Testing connection to {server.Host}:{server.Port} as {server.Username}");
                 using var client = CreateSshClient(server);
-                client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(10);
+                // 与交互式终端保持一致（SSH.NET 默认 30 秒）：首次连接可能因 DNS / KEX /
+                // 主机密钥协商 / VPN 冷启动超过 10 秒，过短会让"测试连接"误报失败。
+                client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(30);
                 client.Connect();
                 Log($"Connection to {server.Host}:{server.Port} successful");
                 client.Disconnect();

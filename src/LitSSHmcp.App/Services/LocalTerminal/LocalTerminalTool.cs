@@ -34,6 +34,7 @@ public sealed class LocalTerminalTool : IAgentTool
 {
     private readonly Func<string?> _sessionKey;
     private readonly Func<string, LocalTerminalSessionViewModel?> _terminalResolver;
+    private readonly IAiTerminalBroker? _broker;
     private readonly LocalTerminalConfig _config;
     private readonly LocalApprovalHandler _approval;
     private readonly Action _persist;
@@ -46,16 +47,18 @@ public sealed class LocalTerminalTool : IAgentTool
         LocalTerminalConfig config,
         LocalApprovalHandler approval,
         Action persist,
-        LocalApprovalExemptionRegistry? exemptions = null)
+        LocalApprovalExemptionRegistry? exemptions = null,
+        IAiTerminalBroker? broker = null)
     {
         _sessionKey = sessionKey;
         _terminalResolver = terminalResolver;
+        _broker = broker;
         _config = config;
         _approval = approval;
         _persist = persist;
         _exemptions = exemptions;
         _schema = AIFunctionFactory.Create(
-            (string command) => command,
+            (string command, string? terminalId = null) => (command, terminalId),
             Name,
             Description);
     }
@@ -73,16 +76,21 @@ public sealed class LocalTerminalTool : IAgentTool
     public AITool Tool => _schema;
 
     private const string Description =
-        "在本**会话共享的同一个**本机 Windows PowerShell 终端中执行一条 CLI 命令（命令与输出对用户可见）。" +
-        "【重要约束】同一会话只有一个终端、同一时刻只能执行一条命令：必须等本工具返回（含输出与退出码）后再发下一条；" +
-        "不要并发调用本工具，也不要在上一条命令尚未结束时提交新命令——那样会被直接拒绝。" +
+        "在本机 Windows PowerShell 终端中执行一条一次性 CLI 命令（命令与输出对用户可见）。" +
+        "不传 terminalId 时使用本会话共享的默认终端；传 local_shell_open 返回的 terminalId（如 term-1）时，把命令注入该终端（要求它当前空闲，长驻命令未结束时会被拒绝）。" +
+        "【重要约束】同一终端同一时刻只能执行一条命令：必须等本工具返回（含输出与退出码）后再发下一条；" +
+        "不要并发调用同一个终端，也不要在上一条命令尚未结束时提交新命令。" +
         "【适用】一次性、能自行结束的命令；不要用于交互式/长驻命令（如 vim、top、tail -f、watch、REPL、等待 stdin 的程序），这类会一直占住终端且会被前置拒绝。" +
+        "需要长驻/后台任务（dev server、日志跟随、下载、构建等）请改用 local_shell_open，它会创建独立终端。" +
         "需要连续执行多条命令时，请**分多次调用本工具**。" +
         "仅允许白名单内的 CLI（如 git/dotnet/npm/gh/aws/az/terraform 等），且可能需用户人工审批。参数 command 为完整命令行；返回命令的 stdout/stderr 与退出码。";
 
     public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct)
     {
         var command = arguments is not null && arguments.TryGetValue("command", out var c) ? c?.ToString()?.Trim() : null;
+        var terminalId = arguments is not null && arguments.TryGetValue("terminalId", out var t)
+            ? t?.ToString()?.Trim()
+            : null;
         if (string.IsNullOrWhiteSpace(command))
             return "错误：缺少 command 参数。";
 
@@ -106,9 +114,34 @@ public sealed class LocalTerminalTool : IAgentTool
                    $"允许的 CLI：{string.Join(", ", _config.AllowedCommands)}。若确需，请在「AI 助手设置 → 本机终端」中扩充白名单。";
         }
 
-        var terminal = _terminalResolver(_sessionKey() ?? "default");
-        if (terminal is null)
-            return "错误：本机终端不可用（无法创建共享会话）。";
+        var sessionKey = _sessionKey() ?? "default";
+        LocalTerminalSessionViewModel? terminal = null;
+        AiTerminalInfo? target = null;
+        if (!string.IsNullOrWhiteSpace(terminalId))
+        {
+            if (_broker is null)
+                return "错误：当前宿主不支持向指定终端注入命令。";
+            target = _broker.List(sessionKey)
+                .FirstOrDefault(x => string.Equals(x.Id, terminalId, StringComparison.Ordinal));
+            if (target is null)
+                return $"错误：未找到终端 {terminalId}。请先用 local_shell_list 查看本会话终端。";
+            if (target.Running)
+                return $"错误：终端 {terminalId}（{target.Name}）仍在执行上一条命令，不能注入新命令。请等它结束，或新开一个终端。";
+        }
+        else
+        {
+            terminal = _terminalResolver(sessionKey);
+            if (terminal is null)
+                return "错误：本机终端不可用（无法创建共享会话）。";
+        }
+
+        var approvalDirectory = terminal?.Subtitle;
+        if (string.IsNullOrWhiteSpace(approvalDirectory))
+        {
+            approvalDirectory = string.IsNullOrWhiteSpace(LocalTerminalSettings.WorkingDirectory)
+                ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                : LocalTerminalSettings.WorkingDirectory;
+        }
 
         var autoApproved = _config.AutoApprovedCommands.Any(rule =>
             string.Equals(rule, command, StringComparison.Ordinal) ||
@@ -118,7 +151,7 @@ public sealed class LocalTerminalTool : IAgentTool
         var manualApproval = false;
         if (!autoApproved)
         {
-            var decision = await _approval(command, terminal.Subtitle, ct);
+            var decision = await _approval(command, approvalDirectory, ct);
             switch (decision)
             {
                 case LocalApprovalDecision.Deny:
@@ -149,7 +182,23 @@ public sealed class LocalTerminalTool : IAgentTool
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var result = await terminal.RunCommandAsync(command, timeout, ct);
+            CommandResult result;
+            if (target is not null)
+            {
+                var run = await _broker!.RunAsync(sessionKey, target.Id, command, timeout, ct);
+                if (!run.Success || run.Result is null)
+                {
+                    await AuditAsync(command, CommandStatus.Failed,
+                        decision: manualApproval ? "manual-approved" : autoApproved ? "auto-approved" : null,
+                        result: run.Error ?? "注入失败");
+                    return "执行失败：" + (run.Error ?? "无法向指定终端注入命令。");
+                }
+                result = run.Result;
+            }
+            else
+            {
+                result = await terminal!.RunCommandAsync(command, timeout, ct);
+            }
             sw.Stop();
             if (result.Busy)
                 return "上一条命令仍在执行中：本机终端一次只能跑一条命令，请等它返回（输出与退出码）后再提交下一条，不要并发调用。";

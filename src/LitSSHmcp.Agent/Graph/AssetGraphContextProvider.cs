@@ -4,6 +4,9 @@ using System.Text.RegularExpressions;
 
 namespace LitSSHmcp.Agent;
 
+/// <summary>Graph-RAG 注入结果：可读上下文 + 本轮解析出的种子资产 ID（供记忆按资产过滤）。</summary>
+public sealed record AssetGraphContextResult(string Text, IReadOnlyList<string> AssetIds);
+
 /// <summary>
 /// Graph-RAG：发送前从用户问题里解析资产，再通过 topology_search / topology_neighbors
 /// 拉取 1 跳邻域，压成一段临时系统上下文。只读、失败静默，不改变工具调用链。
@@ -20,7 +23,7 @@ public static class AssetGraphContextProvider
         "please", "check", "show", "list", "help", "server", "service", "services"
     };
 
-    public static Func<string, CancellationToken, Task<string?>>? Create(
+    public static Func<string, CancellationToken, Task<AssetGraphContextResult?>>? Create(
         IAgentTool? searchTool, IAgentTool? neighborsTool, string? assetGraph)
     {
         if (searchTool is null || neighborsTool is null)
@@ -39,7 +42,7 @@ public static class AssetGraphContextProvider
         };
     }
 
-    private static async Task<string?> BuildAsync(
+    private static async Task<AssetGraphContextResult?> BuildAsync(
         IAgentTool searchTool, IAgentTool neighborsTool, string? assetGraph, string query, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -90,9 +93,9 @@ public static class AssetGraphContextProvider
             sb.AppendLine($"- {edge}");
 
         var text = sb.ToString().TrimEnd();
-        return text.Length <= MaxContextChars
-            ? text
-            : text[..MaxContextChars].TrimEnd() + "\n…（上下文已截断）";
+        if (text.Length > MaxContextChars)
+            text = text[..MaxContextChars].TrimEnd() + "\n…（上下文已截断）";
+        return new AssetGraphContextResult(text, seeds.Take(MaxKnownEntities).ToArray());
     }
 
     private static async Task<List<string>> SearchAsync(IAgentTool searchTool, string query, CancellationToken ct)

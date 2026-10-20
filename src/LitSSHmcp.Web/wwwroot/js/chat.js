@@ -1,5 +1,5 @@
 // 流式聊天：/ws/sessions/{id} 协议（C→S user/stop；S→C assistant_text/reasoning/tool/
-// tool_result/memory_recall/done/error/busy）。助手输出只经 sanitize.renderMarkdown 落 DOM，
+// tool_result/memory_recall/asset_graph_context/done/error/busy）。助手输出只经 sanitize.renderMarkdown 落 DOM，
 // 其余字段一律 textContent（模型/工具输出 = 不可信输入）。
 // 支持图片附件（粘贴/选择/拖拽，≤5 张、单张 ≤10MB）：先 REST 上传到会话目录，再随 user 帧回传。
 import { api, downloadUrl, upload, wsUrl } from "./api.js";
@@ -9,7 +9,7 @@ const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const IMAGE_TYPE_RE = /^image\/(png|jpe?g|webp|gif)$/i;
 
-/** 解析历史里的工具轨迹行（AgentTranscript JSON：Tool/Args/Result/Ok/Ms，兼容 camelCase）。 */
+/** 解析历史里的工具轨迹行（AgentTranscript JSON：Tool/Args/Result/Ok/Ms/IsInfo，兼容 camelCase）。 */
 export function parseToolRow(content) {
   try {
     const raw = JSON.parse(String(content ?? ""));
@@ -22,6 +22,7 @@ export function parseToolRow(content) {
       result: raw.Result ?? raw.result ?? "",
       ok: raw.Ok ?? raw.ok ?? true,
       ms: raw.Ms ?? raw.ms ?? 0,
+      isInfo: (raw.IsInfo ?? raw.isInfo) === true,
     };
   } catch {
     return null;
@@ -215,7 +216,11 @@ export class ChatController {
         this.scrollDown();
         break;
       case "memory_recall":
-        this.appendMemory(frame.text || "");
+        this.appendInfo("记忆召回", frame.text || "");
+        this.scrollDown();
+        break;
+      case "asset_graph_context":
+        this.appendInfo("资产图谱", frame.text || "");
         this.scrollDown();
         break;
       case "done":
@@ -475,7 +480,7 @@ export class ChatController {
     const step = parseToolRow(content);
     if (step === null) return;
     const details = document.createElement("details");
-    details.className = `tool history ${step.ok ? "ok" : "fail"}`;
+    details.className = `tool history ${step.isInfo ? "info" : step.ok ? "ok" : "fail"}`;
     const summary = document.createElement("summary");
     summary.className = "tool-head";
     const name = document.createElement("span");
@@ -483,7 +488,9 @@ export class ChatController {
     name.textContent = step.tool;
     const status = document.createElement("span");
     status.className = "tool-status";
-    status.textContent = `${step.ok ? "完成" : "失败"}${step.ms ? ` · ${step.ms}ms` : ""}`;
+    status.textContent = step.isInfo
+      ? "已注入本轮上下文"
+      : `${step.ok ? "完成" : "失败"}${step.ms ? ` · ${step.ms}ms` : ""}`;
     summary.append(name, status);
     details.append(summary);
     if (step.args) {
@@ -626,10 +633,10 @@ export class ChatController {
     this.lastToolEl = null;
   }
 
-  appendMemory(text) {
+  appendInfo(label, text) {
     const el = document.createElement("div");
     el.className = "memory";
-    el.textContent = `记忆召回: ${text}`;
+    el.textContent = `${label}: ${text}`;
     this.messagesEl.append(el);
   }
 
@@ -676,7 +683,10 @@ export class ChatController {
       this.sendBtn.disabled = busy;
       this.stopBtn.disabled = !busy;
     } else if (this.sendBtn) {
-      // 桌面风格：发送/停止合并为一个按钮（busy 时点击 = 停止）
+      // 桌面风格：发送/停止合并为一个按钮（busy 时点击 = 停止）。
+      // 必须显式解禁：close() 在 sessionId=null 时禁用按钮，open() 重新选中会话后
+      // 若只走本分支，按钮会一直停留在 disabled（Enter 走 requestSubmit 不受影响）。
+      this.sendBtn.disabled = false;
       this.sendBtn.textContent = busy ? "停止" : "发送";
       this.sendBtn.classList.toggle("is-stop", busy);
       this.sendBtn.title = busy ? "停止本轮任务" : "发送（Enter）";

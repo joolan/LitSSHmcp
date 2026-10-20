@@ -122,6 +122,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// </summary>
     public Func<string, LocalTerminalSessionViewModel?>? LocalTerminalResolver { get; set; }
 
+    public IAiTerminalBroker? LocalTerminalBroker { get; set; }
+
     /// <summary>当前会话键（已落库=会话 Id；新建未落库="new"），用于按会话隔离本机终端。</summary>
     public string CurrentSessionKey => _sessionId > 0 ? _sessionId.ToString() : "new";
 
@@ -1910,7 +1912,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             ModelStatus = "connecting";
             StatusMessage = "正在连接 MCP 服务器…";
             var extra = new List<IAgentTool>();
-            if (BuildLocalTerminalTool(ctx) is { } lt) extra.Add(lt);
+            extra.AddRange(BuildLocalTerminalTools(ctx));
             // 需求 D/§10.D.1：提升命令——会话目录 → 共享工作区归档（脚本类须桌面确认, 全量记审计）
             extra.Add(new Services.PromoteTool(
                 () => ctx.WorkspaceDir,
@@ -1956,20 +1958,40 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    /// <summary>构建本机 CLI 工具（仅在「本机终端」启用且宿主提供了按会话解析的终端时）；闭包绑定 <paramref name="ctx"/> 会话，运行中切换显示不串号。</summary>
-    private IAgentTool? BuildLocalTerminalTool(SessionRunContext ctx)
+    private IReadOnlyList<IAgentTool> BuildLocalTerminalTools(SessionRunContext ctx)
     {
         var cfg = _agentConfig.LocalTerminal;
-        if (cfg is null || !cfg.Enabled || LocalTerminalResolver is null)
-            return null;
+        if (cfg is null || !cfg.Enabled)
+            return Array.Empty<IAgentTool>();
 
-        return new LocalTerminalTool(
-            () => ctx.SessionKey,
-            key => LocalTerminalResolver?.Invoke(key),
-            cfg,
-            (cmd, dir, ct) => RequestLocalApprovalAsync(ctx, cmd, dir, ct),
-            PersistLocalTerminalConfig,
-            _localExemptions);
+        var tools = new List<IAgentTool>();
+        if (LocalTerminalResolver is not null)
+        {
+            tools.Add(new LocalTerminalTool(
+                () => ctx.SessionKey,
+                key => LocalTerminalResolver?.Invoke(key),
+                cfg,
+                (cmd, dir, ct) => RequestLocalApprovalAsync(ctx, cmd, dir, ct),
+                PersistLocalTerminalConfig,
+                _localExemptions,
+                LocalTerminalBroker));
+        }
+
+        if (LocalTerminalBroker is not null)
+        {
+            tools.Add(new LocalShellOpenTool(
+                () => ctx.SessionKey,
+                LocalTerminalBroker,
+                cfg,
+                (cmd, dir, ct) => RequestLocalApprovalAsync(ctx, cmd, dir, ct),
+                PersistLocalTerminalConfig,
+                _localExemptions));
+            tools.Add(new LocalShellListTool(() => ctx.SessionKey, LocalTerminalBroker));
+            tools.Add(new LocalShellReadTool(() => ctx.SessionKey, LocalTerminalBroker));
+            tools.Add(new LocalShellStopTool(() => ctx.SessionKey, LocalTerminalBroker));
+        }
+
+        return tools;
     }
 
     /// <summary>
@@ -3074,11 +3096,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             if (!string.IsNullOrEmpty(turn.ReasoningText))
                 messages.Add(("reasoning", turn.ReasoningText));
             foreach (var step in turn.Steps)
-            {
-                if (step.IsInfo)
-                    continue;   // 信息步骤（记忆召回等）不落库为工具轨迹
-                messages.Add(("tool", AgentTranscript.Serialize(step)));
-            }
+                messages.Add(("tool", AgentTranscript.Serialize(step)));   // IsInfo 随行落库，仅展示、不进模型轨迹
             if (!string.IsNullOrEmpty(turn.AssistantText))
                 messages.Add(("assistant", turn.AssistantText));
         }
@@ -3515,7 +3533,7 @@ public sealed class AgentStep : INotifyPropertyChanged
     public string ArgsJson { get; }
     public bool Destructive { get; }
 
-    /// <summary>信息类步骤（如"记忆召回"）：仅展示，不参与重试、不落库为工具轨迹。</summary>
+    /// <summary>信息类步骤（如"记忆召回"）：仅展示，不参与重试、不进模型工具轨迹；随会话记录落库以便历史回看。</summary>
     public bool IsInfo { get; }
 
     /// <summary>模型侧的工具调用 Id（并行执行时用于把结果精确回填到对应步骤）。</summary>

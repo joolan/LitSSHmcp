@@ -59,6 +59,32 @@ public class AgentTranscriptTests
     }
 
     [Fact]
+    public void Info_step_roundtrip_preserves_info_flag_and_display()
+    {
+        var step = new AgentStep("资产图谱", string.Empty, isInfo: true);
+        step.Complete(true, "- ssh:web-01\n- app:shop", 0);
+
+        var parsed = AgentTranscript.Deserialize(AgentTranscript.Serialize(step));
+        var restored = AgentTranscript.ToStep(parsed!);
+
+        Assert.True(parsed!.IsInfo);
+        Assert.True(restored.IsInfo);
+        Assert.Equal("资产图谱", restored.Label);
+        Assert.Equal("已注入本轮上下文", restored.Tail);
+        Assert.Contains("ssh:web-01", restored.Result);
+    }
+
+    [Fact]
+    public void Legacy_tool_row_defaults_to_non_info()
+    {
+        var parsed = AgentTranscript.Deserialize(
+            "{\"Tool\":\"ssh_list_servers\",\"Args\":\"{}\",\"Result\":\"ok\",\"Ok\":true,\"Ms\":3}")!;
+
+        Assert.False(parsed.IsInfo);
+        Assert.Equal("调用 ssh_list_servers", AgentTranscript.ToStep(parsed).Label);
+    }
+
+    [Fact]
     public void BuildTrace_formats_success_and_failure_lines()
     {
         var ok = new AgentStep("ssh_execute_command", "{\"command\":\"df -h\"}");

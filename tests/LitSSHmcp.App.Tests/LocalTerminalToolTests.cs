@@ -3,6 +3,7 @@ using LitSSHmcp.App.Services.LocalTerminal;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
+using Microsoft.Extensions.AI;
 using Xunit;
 
 namespace LitSSHmcp.App.Tests;
@@ -133,5 +134,22 @@ public class LocalTerminalToolTests
         {
             await terminal.DisposeAsync();
         }
+    }
+
+    [Fact]
+    public void Schema_exposes_optional_terminal_id()
+    {
+        var cfg = new LocalTerminalConfig { AllowedCommands = new[] { "git" } };
+        var tool = new LocalTerminalTool(() => "test", _ => null, cfg,
+            (_, _, _) => Task.FromResult(LocalApprovalDecision.Allow), () => { });
+
+        var function = Assert.IsAssignableFrom<AIFunction>(tool.Tool);
+        var required = function.JsonSchema.GetProperty("required")
+            .EnumerateArray()
+            .Select(x => x.GetString())
+            .ToArray();
+
+        Assert.Contains("command", required);
+        Assert.DoesNotContain("terminalId", required);
     }
 }

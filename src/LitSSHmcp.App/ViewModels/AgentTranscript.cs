@@ -10,8 +10,8 @@ namespace LitSSHmcp.App.ViewModels;
 /// </summary>
 public static class AgentTranscript
 {
-    /// <summary>工具步骤的落库形态。</summary>
-    public sealed record Step(string Tool, string? Args, string? Result, bool Ok, long Ms);
+    /// <summary>工具步骤的落库形态；IsInfo 标记记忆召回/资产图谱等只展示、不回灌模型的注入步骤。</summary>
+    public sealed record Step(string Tool, string? Args, string? Result, bool Ok, long Ms, bool IsInfo = false);
 
     /// <summary>
     /// 落库用 JSON 选项：中文/引号不转义（默认编码器会把内层 JSON 引号写成 <c>\u0022</c>、
@@ -32,7 +32,8 @@ public static class AgentTranscript
     /// <summary>把界面步骤序列化为落库 JSON（结果按 <see cref="ResultMaxChars"/> 截断）。</summary>
     public static string Serialize(AgentStep step)
         => JsonSerializer.Serialize(new Step(
-            step.Tool, step.ArgsJson, Truncate(step.Result, ResultMaxChars), step.Success, step.DurationMs), JsonOptions);
+            step.Tool, step.ArgsJson, Truncate(step.Result, ResultMaxChars), step.Success, step.DurationMs,
+            step.IsInfo), JsonOptions);
 
     /// <summary>解析落库 JSON；损坏时返回 null（跳过该行，不影响其余恢复）。</summary>
     public static Step? Deserialize(string content)
@@ -44,7 +45,7 @@ public static class AgentTranscript
     /// <summary>把界面步骤还原为可展示/可重试的 <see cref="AgentStep"/>。</summary>
     public static AgentStep ToStep(Step step)
     {
-        var vm = new AgentStep(step.Tool, step.Args ?? string.Empty);
+        var vm = new AgentStep(step.Tool, step.Args ?? string.Empty, isInfo: step.IsInfo);
         vm.Complete(step.Ok, step.Result ?? string.Empty, step.Ms);
         return vm;
     }

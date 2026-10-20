@@ -58,6 +58,12 @@ const { ChatController, parseToolRow, parseUserContent } = await import("../../.
   const camel = parseToolRow(JSON.stringify({ tool: "x", args: "", result: "", ok: false, ms: 0 }));
   assert.equal(camel.tool, "x");
   assert.equal(camel.ok, false);
+  assert.equal(camel.isInfo, false);
+  const info = parseToolRow(JSON.stringify({
+    Tool: "记忆召回", Args: "", Result: "- [task:x] 经验", Ok: true, Ms: 0, IsInfo: true,
+  }));
+  assert.equal(info.isInfo, true);
+  assert.equal(info.tool, "记忆召回");
   assert.equal(parseToolRow("not-json"), null);
 }
 
@@ -98,6 +104,36 @@ chat.close();
 assert.equal(input.disabled, true, "无会话时输入框禁用");
 assert.equal(sendBtn.disabled, true, "无会话时发送按钮禁用");
 assert.equal(stopBtn.disabled, true, "无会话时停止按钮禁用");
+
+// 新布局：发送/停止合并按钮（stopBtn=null）。close() 会禁用按钮，
+// open() 只走合并分支时必须显式解禁，否则鼠标无法发送但 Enter 仍可。
+{
+  const mergedInput = { disabled: true };
+  const mergedSend = {
+    disabled: true,
+    textContent: "",
+    title: "",
+    classList: { toggle() {} },
+  };
+  const merged = new ChatController({
+    messagesEl: el(),
+    inputEl: mergedInput,
+    sendBtn: mergedSend,
+    stopBtn: null,
+    onToast() {},
+    onStatus() {},
+  });
+  merged.setBusy(false); // 无会话：保持禁用
+  assert.equal(mergedSend.disabled, true, "合并按钮无会话时禁用");
+  merged.sessionId = 1;
+  merged.setBusy(false); // open() 的启用路径
+  assert.equal(mergedSend.disabled, false, "合并按钮选中会话后必须可点击发送");
+  merged.setBusy(true);
+  assert.equal(mergedSend.disabled, false, "合并按钮运行中保持可点击以停止");
+  assert.equal(mergedSend.textContent, "停止", "运行中按钮文案为停止");
+  merged.setBusy(false);
+  assert.equal(mergedSend.textContent, "发送", "结束后按钮文案恢复发送");
+}
 
 // ---- 回归：done 前最后一段 assistant_text 不能被节流/reset 清空（"末尾没有结果"）----
 {

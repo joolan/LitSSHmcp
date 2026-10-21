@@ -135,10 +135,14 @@ public static class RemoteCopyCommandBuilder
         return i < 0 ? t : t[(i + 1)..];
     }
 
-    public static string BuildSshOptions(bool keyAuth, int port, string? proxyJump = null)
+    /// <summary>源机 OpenSSH 支持 accept-new 时输出的标记；用于回退到严格校验。</summary>
+    public const string HostKeyAcceptNewMarker = "LITSSH_HOSTKEY_ACCEPT_NEW";
+
+    public static string BuildSshOptions(bool keyAuth, int port, string? proxyJump = null, bool acceptNewHostKey = true)
     {
-        // 注意：不能用 accept-new（需 OpenSSH>=7.6，CentOS7 等旧客户端不支持）；用 no 兼容老版本。
-        var opts = "-o StrictHostKeyChecking=no -o ConnectTimeout=10 -p " + port;
+        // accept-new：首次连接仍为 TOFU，但记录后拒绝变化；旧版 OpenSSH 回退到 yes（绝不使用 no）。
+        var hostKeyMode = acceptNewHostKey ? "accept-new" : "yes";
+        var opts = "-o StrictHostKeyChecking=" + hostKeyMode + " -o ConnectTimeout=10 -p " + port;
         opts += keyAuth
             ? " -o BatchMode=yes"
             : " -o PubkeyAuthentication=no -o PreferredAuthentications=password -o NumberOfPasswordPrompts=1";
@@ -148,17 +152,22 @@ public static class RemoteCopyCommandBuilder
         return opts;
     }
 
-    /// <summary>源机能力/免密探测：一次命令返回 rsync/tar/sshpass/pv 是否存在，以及免密是否可用。</summary>
+    /// <summary>
+    /// 源机能力/免密探测：一次命令返回 rsync/tar/sshpass/pv 是否存在、是否支持 accept-new，以及免密是否可用。
+    /// 主机密钥校验绝不使用 <c>no</c>；旧版 OpenSSH 回退到 <c>yes</c>。
+    /// </summary>
     public static string BuildProbeCommand(string targetHost, int targetPort, string targetUser, string? proxyJump = null)
     {
         var dest = ShellQuote(targetUser + "@" + targetHost);
         var jump = string.IsNullOrWhiteSpace(proxyJump) ? string.Empty : " -J " + proxyJump;
         return string.Join("; ",
+            "HM=yes",
+            "if ssh -G -o StrictHostKeyChecking=accept-new localhost >/dev/null 2>&1; then HM=accept-new; echo " + HostKeyAcceptNewMarker + "; fi",
             "command -v rsync >/dev/null 2>&1 && echo LITSSH_HAS_RSYNC",
             "command -v tar >/dev/null 2>&1 && echo LITSSH_HAS_TAR",
             "command -v sshpass >/dev/null 2>&1 && echo LITSSH_HAS_SSHPASS",
             "command -v pv >/dev/null 2>&1 && echo LITSSH_HAS_PV",
-            "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 -p " + targetPort + jump +
+            "ssh -o BatchMode=yes -o StrictHostKeyChecking=$HM -o ConnectTimeout=8 -p " + targetPort + jump +
             " " + dest + " true >/dev/null 2>&1 && echo LITSSH_KEY_OK || echo LITSSH_KEY_FAIL");
     }
 
@@ -199,10 +208,10 @@ public static class RemoteCopyCommandBuilder
     /// - 无 rsync 时 tar|ssh（可选 pv 提供进度）；
     /// - usePassword 时用 sshpass+临时密码文件（密码经 stdin 写入，不进 argv）。
     /// </summary>
-    public static string BuildDirectCommand(RemoteCopyRequest req, bool usePassword, bool useRsync, bool hasPv, long totalBytes, bool tarSkipOldFiles = false, string? proxyJump = null)
+    public static string BuildDirectCommand(RemoteCopyRequest req, bool usePassword, bool useRsync, bool hasPv, long totalBytes, bool tarSkipOldFiles = false, string? proxyJump = null, bool acceptNewHostKey = true)
     {
         var dest = req.Target.Username + "@" + req.TargetHost;
-        var sshOpts = BuildSshOptions(!usePassword, req.TargetPort, proxyJump);
+        var sshOpts = BuildSshOptions(!usePassword, req.TargetPort, proxyJump, acceptNewHostKey);
         var sshCmd = "ssh " + sshOpts;
         var destQ = ShellQuote(dest);
         var auth = usePassword ? "sshpass -f \"$f\" " : "";
@@ -253,10 +262,11 @@ public static class RemoteCopyCommandBuilder
     /// </summary>
     public static string BuildRsyncSyncCommand(string sourceSpec, string targetHost, int targetPort, string targetUser,
         string targetDir, bool deleteExtra, bool usePassword,
-        IReadOnlyList<string>? includes = null, IReadOnlyList<string>? excludes = null, string? proxyJump = null)
+        IReadOnlyList<string>? includes = null, IReadOnlyList<string>? excludes = null, string? proxyJump = null,
+        bool acceptNewHostKey = true)
     {
         var dest = targetUser + "@" + targetHost;
-        var sshOpts = BuildSshOptions(!usePassword, targetPort, proxyJump);
+        var sshOpts = BuildSshOptions(!usePassword, targetPort, proxyJump, acceptNewHostKey);
         var sshCmd = "ssh " + sshOpts;
         var destQ = ShellQuote(dest);
         var auth = usePassword ? "sshpass -f \"$f\" " : "";

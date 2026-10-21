@@ -158,11 +158,38 @@ public class RemoteCopyCommandBuilderTests
     }
 
     [Fact]
-    public void BuildSshOptions_uses_old_openssh_compatible_host_key_option()
+    public void BuildSshOptions_defaults_to_accept_new_and_never_disables_host_key_checking()
     {
-        var opts = RemoteCopyCommandBuilder.BuildSshOptions(keyAuth: true, port: 22);
-        Assert.Contains("StrictHostKeyChecking=no", opts);
-        Assert.DoesNotContain("accept-new", opts);
+        var acceptNew = RemoteCopyCommandBuilder.BuildSshOptions(keyAuth: true, port: 22);
+        Assert.Contains("StrictHostKeyChecking=accept-new", acceptNew);
+        Assert.DoesNotContain("StrictHostKeyChecking=no", acceptNew);
+
+        var strict = RemoteCopyCommandBuilder.BuildSshOptions(keyAuth: true, port: 22, acceptNewHostKey: false);
+        Assert.Contains("StrictHostKeyChecking=yes", strict);
+        Assert.DoesNotContain("StrictHostKeyChecking=no", strict);
+    }
+
+    [Fact]
+    public void Direct_and_sync_commands_use_strict_or_accept_new_but_never_no()
+    {
+        var req = new RemoteCopyRequest
+        {
+            Source = Server(),
+            SourcePaths = new[] { "/var/log/a.log" },
+            Target = Server("10.0.0.6"),
+            TargetHost = "10.0.0.6",
+            TargetPort = 22,
+            TargetDirectory = "/backup"
+        };
+
+        var direct = RemoteCopyCommandBuilder.BuildDirectCommand(req, false, true, false, 0, acceptNewHostKey: false);
+        var sync = RemoteCopyCommandBuilder.BuildRsyncSyncCommand("/src/", "10.0.0.6", 22, "root", "/backup",
+            deleteExtra: false, usePassword: false, acceptNewHostKey: false);
+
+        Assert.Contains("StrictHostKeyChecking=yes", direct);
+        Assert.Contains("StrictHostKeyChecking=yes", sync);
+        Assert.DoesNotContain("StrictHostKeyChecking=no", direct);
+        Assert.DoesNotContain("StrictHostKeyChecking=no", sync);
     }
 
     [Fact]
@@ -249,6 +276,9 @@ public class RemoteCopyCommandBuilderTests
         Assert.Contains("LITSSH_HAS_SSHPASS", cmd);
         Assert.Contains("LITSSH_KEY_OK", cmd);
         Assert.Contains("root@10.0.0.6", cmd);
+        Assert.Contains(RemoteCopyCommandBuilder.HostKeyAcceptNewMarker, cmd);
+        Assert.Contains("StrictHostKeyChecking=$HM", cmd);
+        Assert.DoesNotContain("StrictHostKeyChecking=no", cmd);
     }
 
     [Fact]

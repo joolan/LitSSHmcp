@@ -25,8 +25,11 @@ public interface IAuditLogService
     /// <summary>记录/更新一次 MCP 会话（含客户端名称/版本），用于把 SessionId 映射到具体客户端。</summary>
     Task RecordSessionAsync(AuditSession session);
 
-    /// <summary>列出最近的 MCP 会话（按最近活动倒序）。</summary>
-    Task<AuditSession[]> GetSessionsAsync(int limit = 50);
+    /// <summary>
+    /// 列出最近的 MCP 会话（按最近活动倒序）。<paramref name="ownerUserId"/> 非空时只返回该用户的会话；
+    /// 空 = 全局（仅非强制模式或管理员显式 allUsers）。
+    /// </summary>
+    Task<AuditSession[]> GetSessionsAsync(int limit = 50, string? ownerUserId = null);
 
     /// <summary>校验审计哈希链：完整性 + 是否被篡改。链引用的记录可来自活动表或历史归档表。</summary>
     Task<AuditVerifyResult> VerifyChainAsync(CancellationToken ct = default);

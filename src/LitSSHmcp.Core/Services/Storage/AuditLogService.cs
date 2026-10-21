@@ -255,11 +255,18 @@ public class AuditLogService : IAuditLogService
                 ClientName TEXT,
                 ClientVersion TEXT,
                 StartedAt TEXT NOT NULL,
-                LastSeenAt TEXT NOT NULL
+                LastSeenAt TEXT NOT NULL,
+                OwnerUserId TEXT
             )";
         await cmd.ExecuteNonQueryAsync();
 
+        // P0-2：旧库补会话归属列；历史会话保持 NULL（管理员可见，普通用户不可见）
+        EnsureColumn(connection, "Sessions", "OwnerUserId", "TEXT");
+
         cmd.CommandText = "CREATE INDEX IF NOT EXISTS IX_Sessions_LastSeenAt ON Sessions(LastSeenAt DESC);";
+        await cmd.ExecuteNonQueryAsync();
+
+        cmd.CommandText = "CREATE INDEX IF NOT EXISTS IX_Sessions_Owner_LastSeen ON Sessions(OwnerUserId, LastSeenAt DESC);";
         await cmd.ExecuteNonQueryAsync();
 
         // 签名密钥必须先加载：v5→v6 迁移要用它与后续校验一致的 HMAC 重算链哈希。
@@ -518,28 +525,33 @@ public class AuditLogService : IAuditLogService
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Sessions (SessionId, ClientName, ClientVersion, StartedAt, LastSeenAt)
-            VALUES (@Id, @Name, @Ver, @Start, @Last)
+            INSERT INTO Sessions (SessionId, ClientName, ClientVersion, StartedAt, LastSeenAt, OwnerUserId)
+            VALUES (@Id, @Name, @Ver, @Start, @Last, @Owner)
             ON CONFLICT(SessionId) DO UPDATE SET
                 ClientName = COALESCE(excluded.ClientName, Sessions.ClientName),
                 ClientVersion = COALESCE(excluded.ClientVersion, Sessions.ClientVersion),
-                LastSeenAt = excluded.LastSeenAt;";
+                LastSeenAt = excluded.LastSeenAt,
+                OwnerUserId = COALESCE(Sessions.OwnerUserId, excluded.OwnerUserId);";
         cmd.Parameters.AddWithValue("@Id", session.SessionId);
         cmd.Parameters.AddWithValue("@Name", (object?)session.ClientName ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@Ver", (object?)session.ClientVersion ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@Start", session.StartedAt.ToString("O"));
         cmd.Parameters.AddWithValue("@Last", session.LastSeenAt.ToString("O"));
+        cmd.Parameters.AddWithValue("@Owner", ResolveUserId(session.OwnerUserId));
         await cmd.ExecuteNonQueryAsync();
     }
 
-    public async Task<AuditSession[]> GetSessionsAsync(int limit = 50)
+    public async Task<AuditSession[]> GetSessionsAsync(int limit = 50, string? ownerUserId = null)
     {
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync();
 
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT SessionId, ClientName, ClientVersion, StartedAt, LastSeenAt FROM Sessions ORDER BY LastSeenAt DESC LIMIT @Limit";
+        var where = string.IsNullOrWhiteSpace(ownerUserId) ? string.Empty : "WHERE OwnerUserId = @OwnerUserId";
+        cmd.CommandText = $"SELECT SessionId, ClientName, ClientVersion, StartedAt, LastSeenAt, OwnerUserId FROM Sessions {where} ORDER BY LastSeenAt DESC LIMIT @Limit";
         cmd.Parameters.AddWithValue("@Limit", Math.Max(1, limit));
+        if (!string.IsNullOrWhiteSpace(ownerUserId))
+            cmd.Parameters.AddWithValue("@OwnerUserId", ownerUserId);
 
         var list = new List<AuditSession>();
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -551,7 +563,8 @@ public class AuditLogService : IAuditLogService
                 ClientName = reader.IsDBNull(1) ? null : reader.GetString(1),
                 ClientVersion = reader.IsDBNull(2) ? null : reader.GetString(2),
                 StartedAt = DateTime.Parse(reader.GetString(3)),
-                LastSeenAt = DateTime.Parse(reader.GetString(4))
+                LastSeenAt = DateTime.Parse(reader.GetString(4)),
+                OwnerUserId = reader.IsDBNull(5) ? null : reader.GetString(5)
             });
         }
 

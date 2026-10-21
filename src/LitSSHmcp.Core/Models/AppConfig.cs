@@ -236,14 +236,16 @@ public class LocalTerminalConfig
     /// <summary>单个 AI 会话最多同时保留的长驻终端数。</summary>
     public int MaxSessions { get; set; } = 4;
 
-    /// <summary>开发/构建/云凭据类 CLI 的常用默认白名单。</summary>
+    /// <summary>
+    /// 开发/构建/云凭据类 CLI 的常用默认白名单。
+    /// 解释器/脚本运行时（python/node/java 等）默认不列入，避免一次批准即获得任意代码执行能力；确需时由用户显式添加。
+    /// </summary>
     public static string[] DefaultAllowedCommands() => new[]
     {
-        "git", "dotnet", "msbuild", "npm", "pnpm", "yarn", "node", "npx",
+        "git", "dotnet", "msbuild", "npm", "pnpm", "yarn",
         "gh", "aws", "az", "terraform", "kubectl", "helm",
         "docker", "docker-compose", "compose",
-        "python", "python3", "pip", "pip3", "poetry", "uv", "pdm", "conda",
-        "go", "cargo", "rustc", "java", "mvn", "gradle", "make", "cmake",
+        "go", "cargo", "rustc", "mvn", "gradle", "make", "cmake",
         "where", "tree", "curl", "invoke-webrequest", "ping"
     };
 }

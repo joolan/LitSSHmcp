@@ -11,7 +11,28 @@ public interface IConfigService
     string GetConfigPath();
 }
 
-public class ConfigService : IConfigService
+/// <summary>
+/// 安全入口使用的严格配置读取：配置文件存在但无法读取/解析/迁移时抛 <see cref="ConfigLoadException"/>，
+/// 而不是静默回退默认配置，避免损坏配置被当作“未设置应用锁”而绕过。
+/// </summary>
+public interface IStrictConfigService
+{
+    Task<AppConfig> LoadStrictAsync();
+}
+
+/// <summary>配置文件存在但无法读取、解析或迁移。</summary>
+public sealed class ConfigLoadException : Exception
+{
+    public string ConfigPath { get; }
+
+    public ConfigLoadException(string message, string configPath, Exception? inner = null)
+        : base(message, inner)
+    {
+        ConfigPath = configPath;
+    }
+}
+
+public class ConfigService : IConfigService, IStrictConfigService
 {
     private readonly string _configPath;
     private readonly ISecretProtector _protector;
@@ -28,7 +49,11 @@ public class ConfigService : IConfigService
 
     public string GetConfigPath() => _configPath;
 
-    public async Task<AppConfig> LoadConfigAsync()
+    public Task<AppConfig> LoadConfigAsync() => LoadConfigCoreAsync(failOnCorrupt: false);
+
+    public Task<AppConfig> LoadStrictAsync() => LoadConfigCoreAsync(failOnCorrupt: true);
+
+    private async Task<AppConfig> LoadConfigCoreAsync(bool failOnCorrupt)
     {
         if (!File.Exists(_configPath))
         {
@@ -50,6 +75,11 @@ public class ConfigService : IConfigService
 
             ServerConfigCache.Update(config.Servers);
             return config;
+        }
+        catch (Exception ex) when (failOnCorrupt)
+        {
+            throw new ConfigLoadException(
+                $"配置文件损坏或无法读取：{_configPath}。请修复或从备份恢复后重试。", _configPath, ex);
         }
         catch
         {

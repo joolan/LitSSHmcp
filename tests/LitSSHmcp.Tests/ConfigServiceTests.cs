@@ -35,6 +35,55 @@ public class ConfigServiceTests
     }
 
     [Fact]
+    public async Task Corrupt_config_throws_in_strict_mode_and_falls_back_by_default()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "config.json");
+        await File.WriteAllTextAsync(path, "{ not valid json");
+
+        try
+        {
+            var service = new ConfigService(path, new DpapiSecretProtector());
+
+            // 普通调用保持原有容错：返回默认配置，供非安全入口继续降级运行。
+            var fallback = await service.LoadConfigAsync();
+            Assert.Empty(fallback.Servers);
+            Assert.Empty(fallback.DataSources);
+
+            // 应用锁等安全入口必须 fail-closed，不能把损坏配置当成“未设置密码”。
+            var ex = await Assert.ThrowsAsync<ConfigLoadException>(
+                () => service.LoadStrictAsync());
+            Assert.Equal(path, ex.ConfigPath);
+            Assert.Contains("配置文件损坏", ex.Message);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public async Task Missing_config_still_creates_default_in_strict_mode()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(dir, "config.json");
+
+        try
+        {
+            var service = new ConfigService(path, new DpapiSecretProtector());
+            var config = await service.LoadStrictAsync();
+
+            Assert.Equal(AppConfig.CurrentSchemaVersion, config.SchemaVersion);
+            Assert.True(File.Exists(path));
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public async Task Remote_desktop_password_is_encrypted_at_rest_and_round_trips()
     {
         var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));

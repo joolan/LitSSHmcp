@@ -511,7 +511,7 @@ public class SecurityConfig
 }
 
 /// <summary>
-/// 授权矩阵：Web 用户 → 可操作目标（SSH 服务器 / 数据源）白名单 + 操作级别（只读/可执行）。
+/// 授权矩阵：Web 用户 → 可操作目标（SSH 服务器 / 数据源）白名单 + 操作级别（read/write/exec）。
 /// 在 MCP 工具调用过滤器层强制校验（<c>McpAuthorizationFilter</c>，§10.B.4"UI 隐藏不算数"），
 /// 目标级校验先于建 SSH 连接完成。仅桌面可编辑（config.json 对 Web 只读，D2）。
 /// </summary>
@@ -550,8 +550,8 @@ public class AuthorizationUserRule
 
     /// <summary>
     /// 操作级别：<c>read</c> = 仅允许只读调用（ls/查询/日志/下载等）；
-    /// <c>exec</c> = 另允许写类调用（执行命令/上传/重启/SQL 写等）。
-    /// 未知值按 read 处理（宁严勿松）。
+    /// <c>write</c> = 另允许上传/重启/SQL 写等；<c>exec</c> = 另允许命令执行/docker exec/快照刷新，
+    /// 并包含 write（级别有序：read &lt; write &lt; exec）；未知值按 read 处理（宁严勿松）。
     /// </summary>
     public string Level { get; set; } = "read";
 }

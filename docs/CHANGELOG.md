@@ -6,6 +6,7 @@
 
 ### 新增
 
+- **工具安全目录与 read/write/exec 授权级别**：新增 `ToolSecurityCatalog` / `ToolSecurityDescriptor`，为全部 61 个 MCP 工具统一声明目标形态、目标参数、最低访问级别与写锁需求；`McpAuthorizationFilter` 改为按目录解析并 fail-closed，覆盖 `log_*` / `docker_*` / `java_*` / `service_*` / `topology_*` / `app_health_snapshot` 等此前未校验的目标工具；`ssh_execute_command` / `ssh_execute_sudo` / `docker_exec` / `ssh_snapshot_refresh` 要求 exec，`app_health_snapshot` 扩展到应用关联的服务器/数据源，`topology_discover` 要求全部涉及服务器授权。新增 `write` 级别（read &lt; write &lt; exec），同一用户可用多行规则分别授权不同目标；SQL/Redis 执行按实际语句动态要求 read/write，SQL `Sensitive` 不再当只读。桌面授权矩阵同步 0=read / 1=write / 2=exec，工具目录一致性测试强制注册工具与安全目录同名同数。
 - **SSH 会话 · 日志文件「终端操作」右键菜单**：左侧远程文件面板对文件新增「终端操作」二级菜单，把拼好的命令直接发送到右侧交互式终端（仅在终端已连接且回到 shell 提示符时发送，未连接 / 全屏程序 / 疑似忙碌会提示原因）。内置：搜索最近 1 小时日志、搜索指定时间范围、实时跟踪（tail -f）、查看最新 N 条、查看错误 / 异常（error/exception/timeout/OOM 等）、关键字上下文（前后 3 行）、统计关键字次数、实时跟踪并过滤关键字、用 less 打开并跳到末尾（`q` 退出）、筛选并保存到文件（日志切片，可按关键字 / 时间 / 扫描行数过滤后写入远端文件，完成后刷新列表即可下载）；发送成功后自动把键盘焦点移回终端；文件面板底部结果固定单行省略显示，鼠标悬浮查看完整内容，避免挤压文件列表；另有确认提示防止误占终端。时间过滤支持行首 ISO 时间戳（`yyyy-MM-dd HH:mm:ss` 或 `T` 分隔）、nginx 错误日志的 `yyyy/MM/dd` 以及 nginx/Apache 访问日志的 `[dd/Mon/yyyy:HH:mm:ss`，保留命中时间戳后的续行，搜索默认扫描最近 20 万行；syslog 格式提示改用关键字 / 最新 N 条。所有路径、关键字与时间参数均经 shell 单引号转义，命令保持单行注入。
 
 - **本机多终端（v1）**：AI 会话新增 `local_shell_open` / `local_shell_list` / `local_shell_read` / `local_shell_stop`，可同时管理最多 4 个独立 PowerShell/ConPTY 终端，并行跑后端、前端、下载与脚本测试；每个终端有 `term-N` ID、状态与独立输出缓冲，`read` 按 `cursor` 增量返回（默认 8000、上限 200000 字符），自动清理 ANSI 与内部同步标记。`open`/每命令仍逐次人工审批，硬白名单与危险命令拦截不变；`list`/`read` 只读，`stop` 免审批但写审计，并在停止后自动关闭对应终端标签（命令已结束时也会关闭）。`local_shell` 新增可选 `terminalId`：不传时用默认共享终端，传入空闲的 `term-N` 时把一次性命令注入该终端（长驻命令未结束时拒绝），因此可在刚打开的终端里继续执行 `ping -n 3` 等命令而无需重开；默认 CLI 白名单补充 `ping`（一次性 `local_shell` 仍拦截无限 `ping -t`）。v1 不开放任意 stdin 写入；裸 shell/REPL、`Start-Process`/`Start-Job`、尾部 `&` 等后台化写法前置拒绝，`tail -f`/dev server/构建/下载等长驻任务可用。终端复用现有本机会话标签实时显示，标题带 `[AI-进程Id]`；关闭标签、删除 AI 会话或关闭会话窗口都会回收对应进程树。
@@ -23,6 +24,7 @@
 
 ### 修复
 
+- **Web 授权目标覆盖与绕过修复**：日志/Docker/Java/服务/拓扑/应用体检等目标工具纳入统一授权目录，无法解析的目标改为 fail-closed；`ssh_execute_command` 不再用“首词只读”降低授权或写锁，任意 shell 都要求 exec；SQL `Sensitive` 不再算只读；`ssh_snapshot_refresh` 归入 exec 并占写锁。
 - **会话日志 / 录像在录制中可查看**：会话日志窗口改为以 `FileShare.ReadWrite | FileShare.Delete` 读取 `.log` / `.cast`，不再因录制端持续持有写句柄而报「文件正被另一个进程使用」。这不是会话日志逻辑冲突——终端操作发送的命令回显和输出仍由读循环正常写入 `.log` / `.cast`，只是此前查看时被 Windows 文件共享规则拒绝；现在可一边执行大日志切片 / grep，一边打开会话日志查看当前进度，刷新列表即可看到新增内容。
 - **关闭终端后剩余标签空白**：停靠标签改为增量同步，不再整表清空重建；关闭当前终端、浮动终端或删除 AI 会话时保留原选中索引，并在绑定把 `SelectedSession` 置空后延迟补选剩余会话，剩余标签内容立即正常显示，无需再点一下标签。
 - **「测试连接」失败可诊断且与终端一致**：编辑服务器/会话的「测试连接」改用 `ProbeConnectionAsync`，状态栏区分认证失败 / 主机密钥不匹配 / 超时 / 网络不可达并附原始错误，不再只显示“连接失败”；探测超时由 10 秒对齐交互式终端的 30 秒（首次连接 DNS/KEX/主机密钥协商/VPN 冷启动常超过 10 秒）；主界面 SSH 服务、远程文件夹选择、文件同步（含调度器）统一改走 `AppServiceFactory.CreateSshService()` / `CreateSyncService()`，与数据源、端口转发、拓扑发现共用同一套 known-hosts 与 Tofu/Strict/Off 策略，不再绕过主机密钥校验。

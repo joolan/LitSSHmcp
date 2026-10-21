@@ -16,7 +16,7 @@ public class AuthorizationMatrixMapperTests
     {
         var rules = SecuritySettingsViewModel.ToRules(new[]
         {
-            new AuthzRuleRow { UserText = "admin", TargetsText = "ssh:* ds:ds-1", LevelIndex = 1 },
+            new AuthzRuleRow { UserText = "admin", TargetsText = "ssh:* ds:ds-1", LevelIndex = 2 },
             new AuthzRuleRow { UserText = "alice", TargetsText = "ssh:s-1", LevelIndex = 0 }
         });
 
@@ -25,6 +25,18 @@ public class AuthorizationMatrixMapperTests
         Assert.Equal(new[] { "ssh:*", "ds:ds-1" }, rules[0].Targets);
         Assert.Equal("exec", rules[0].Level);
         Assert.Equal("read", rules[1].Level);
+    }
+
+    [Fact]
+    public void ToRules_MapsWriteLevel()
+    {
+        var rules = SecuritySettingsViewModel.ToRules(new[]
+        {
+            new AuthzRuleRow { UserText = "writer", TargetsText = "ssh:s-1", LevelIndex = 1 }
+        });
+
+        Assert.Single(rules);
+        Assert.Equal("write", rules[0].Level);
     }
 
     [Fact]
@@ -72,17 +84,19 @@ public class AuthorizationMatrixMapperTests
             Users = new[]
             {
                 new AuthorizationUserRule { User = "admin", Targets = new[] { "ssh:*", "ds:d-1" }, Level = "exec" },
+                new AuthorizationUserRule { User = "writer", Targets = new[] { "ssh:s-1" }, Level = "write" },
                 new AuthorizationUserRule { User = "bob", Targets = new[] { "ssh:s-1" }, Level = "read" },
                 new AuthorizationUserRule { User = "x", Targets = new string[0], Level = "bogus" }
             }
         });
 
-        Assert.Equal(3, rows.Length);
+        Assert.Equal(4, rows.Length);
         Assert.Equal("ssh:* ds:d-1", rows[0].TargetsText);
-        Assert.Equal(1, rows[0].LevelIndex);
-        Assert.Equal(0, rows[1].LevelIndex);
-        Assert.Equal(string.Empty, rows[2].TargetsText);
-        Assert.Equal(0, rows[2].LevelIndex); // 未知级别按 read（宁严勿松）
+        Assert.Equal(2, rows[0].LevelIndex);
+        Assert.Equal(1, rows[1].LevelIndex);
+        Assert.Equal(0, rows[2].LevelIndex);
+        Assert.Equal(string.Empty, rows[3].TargetsText);
+        Assert.Equal(0, rows[3].LevelIndex); // 未知级别按 read（宁严勿松）
     }
 
     [Fact]
@@ -141,7 +155,8 @@ public class AuthorizationMatrixMapperTests
     {
         var original = new[]
         {
-            new AuthzRuleRow { UserText = "admin", TargetsText = "ssh:* ds:*", LevelIndex = 1 },
+            new AuthzRuleRow { UserText = "admin", TargetsText = "ssh:* ds:*", LevelIndex = 2 },
+            new AuthzRuleRow { UserText = "writer", TargetsText = "ssh:s-2", LevelIndex = 1 },
             new AuthzRuleRow { UserText = "alice", TargetsText = "ssh:s-1 ds:d-1", LevelIndex = 0 }
         };
 

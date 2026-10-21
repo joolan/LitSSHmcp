@@ -343,7 +343,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// 规则行 → 授权矩阵规则（保存路径）：User 为空白的草稿行丢弃；
-    /// 目标按空白/逗号/分号分割去空；级别按下拉索引映射（1=exec，其余=read，宁严勿松）。
+    /// 目标按空白/逗号/分号分割去空；级别按下拉索引映射（2=exec、1=write、其余=read，宁严勿松）。
     /// </summary>
     public static AuthorizationUserRule[] ToRules(IEnumerable<AuthzRuleRow> rows)
     {
@@ -354,12 +354,17 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             {
                 User = r!.UserText.Trim(),
                 Targets = SplitTargets(r.TargetsText),
-                Level = r.LevelIndex == 1 ? "exec" : "read"
+                Level = r.LevelIndex switch
+                {
+                    2 => "exec",
+                    1 => "write",
+                    _ => "read"
+                }
             })
             .ToArray();
     }
 
-    /// <summary>授权矩阵规则 → 可编辑行（加载路径）：目标以空格连接为单行文本，exec→索引1。</summary>
+    /// <summary>授权矩阵规则 → 可编辑行（加载路径）：目标以空格连接为单行文本，exec→索引2、write→1。</summary>
     public static AuthzRuleRow[] ToRows(AuthorizationConfig? policy) =>
         (policy?.Users ?? Array.Empty<AuthorizationUserRule>())
             .Where(r => r is not null)
@@ -367,7 +372,12 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
             {
                 UserText = r.User ?? string.Empty,
                 TargetsText = string.Join(' ', (r.Targets ?? Array.Empty<string>()).Where(t => !string.IsNullOrWhiteSpace(t))),
-                LevelIndex = string.Equals(r.Level?.Trim(), "exec", StringComparison.OrdinalIgnoreCase) ? 1 : 0
+                LevelIndex = r.Level?.Trim().ToLowerInvariant() switch
+                {
+                    "exec" => 2,
+                    "write" => 1,
+                    _ => 0
+                }
             })
             .ToArray();
 

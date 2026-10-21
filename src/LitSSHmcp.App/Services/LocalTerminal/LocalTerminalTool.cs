@@ -83,6 +83,7 @@ public sealed class LocalTerminalTool : IAgentTool
         "【适用】一次性、能自行结束的命令；不要用于交互式/长驻命令（如 vim、top、tail -f、watch、REPL、等待 stdin 的程序），这类会一直占住终端且会被前置拒绝。" +
         "需要长驻/后台任务（dev server、日志跟随、下载、构建等）请改用 local_shell_open，它会创建独立终端。" +
         "需要连续执行多条命令时，请**分多次调用本工具**。" +
+        "每次只接受一条简单命令：禁止 `;`、`&&`、`||`、`|`、`&`、重定向、`$()`/`@()`、脚本块、括号/方括号表达式和嵌套 shell；引号内的普通文本不受影响。" +
         "仅允许白名单内的 CLI（如 git/dotnet/npm/gh/aws/az/terraform 等），且可能需用户人工审批。参数 command 为完整命令行；返回命令的 stdout/stderr 与退出码。";
 
     public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct)
@@ -99,6 +100,11 @@ public sealed class LocalTerminalTool : IAgentTool
         {
             await AuditAsync(command, CommandStatus.Blocked, decision: "blocked", result: "安全策略拦截");
             return "已拒绝：该命令被本机安全策略判定为危险或无效，禁止执行。";
+        }
+        if (policy == LocalPolicyResult.UnsafeSyntax)
+        {
+            await AuditAsync(command, CommandStatus.Blocked, decision: "blocked", result: "包含 shell 拼接/重定向/子表达式");
+            return "已拒绝：本机命令只允许单条简单命令，禁止使用 `;`、`&&`、`||`、`|`、`&`、重定向、`$()`/`@()`、脚本块、括号/方括号表达式或嵌套 shell。请拆成多次调用。";
         }
         if (policy == LocalPolicyResult.Interactive)
         {
@@ -143,9 +149,7 @@ public sealed class LocalTerminalTool : IAgentTool
                 : LocalTerminalSettings.WorkingDirectory;
         }
 
-        var autoApproved = _config.AutoApprovedCommands.Any(rule =>
-            string.Equals(rule, command, StringComparison.Ordinal) ||
-            command.StartsWith(rule + " ", StringComparison.Ordinal));
+        var autoApproved = LocalCommandPolicy.IsAutoApproved(command, _config.AutoApprovedCommands);
         if (!autoApproved && _exemptions?.IsApproved(ApprovalRoundContext.CurrentRoundId, _sessionKey()) == true)
             autoApproved = true;   // 命中弹窗勾选的「本轮次内/本次会话 允许全部命令」授权（会话级按会话键隔离）
         var manualApproval = false;

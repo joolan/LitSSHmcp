@@ -36,6 +36,64 @@ public class LocalCommandPolicyTests
             LocalCommandPolicy.Check("ping -n 3 www.baidu.com", LocalTerminalConfig.DefaultAllowedCommands()));
 
     [Theory]
+    [InlineData("python")]
+    [InlineData("python3")]
+    [InlineData("node")]
+    [InlineData("npx")]
+    [InlineData("pip")]
+    [InlineData("poetry")]
+    [InlineData("uv")]
+    [InlineData("conda")]
+    [InlineData("java")]
+    public void Default_allowlist_excludes_interpreters(string exe)
+        => Assert.DoesNotContain(exe, LocalTerminalConfig.DefaultAllowedCommands(),
+            StringComparer.OrdinalIgnoreCase);
+
+    [Theory]
+    [InlineData("git status && evil")]
+    [InlineData("git status; evil")]
+    [InlineData("git status || evil")]
+    [InlineData("git status | more")]
+    [InlineData("git status &")]
+    [InlineData("git log > out.txt")]
+    [InlineData("git log < input.txt")]
+    [InlineData("git log $(evil)")]
+    [InlineData("git log @(evil)")]
+    [InlineData("git log `evil`")]
+    [InlineData("git log { evil }")]
+    [InlineData("git log (evil)")]
+    [InlineData("git log [IO.File]::Delete('x')")]
+    [InlineData("git log\nstatus")]
+    [InlineData("git log\u2028status")]
+    [InlineData("git log\u00A0status")]
+    [InlineData("git log \"$(evil)\"")]
+    public void Shell_syntax_is_rejected(string command)
+        => Assert.Equal(LocalPolicyResult.UnsafeSyntax, LocalCommandPolicy.Check(command, Allowed));
+
+    [Theory]
+    [InlineData("git commit -m \"fix: a | b; c\"")]
+    [InlineData("git commit -m 'don''t run; this'")]
+    [InlineData("git log --pretty=format:'%h > %s'")]
+    [InlineData("& 'C:\\tools\\gh.exe' pr list")]
+    public void Quoted_literals_and_leading_call_operator_are_allowed(string command)
+        => Assert.Equal(LocalPolicyResult.Allowed, LocalCommandPolicy.Check(command, Allowed));
+
+    [Theory]
+    [InlineData("cmd /c dir")]
+    [InlineData("powershell -Command Get-Date")]
+    [InlineData("pwsh -NoProfile -Command Get-Date")]
+    public void Nested_shells_are_rejected(string command)
+        => Assert.Equal(LocalPolicyResult.UnsafeSyntax, LocalCommandPolicy.Check(command, Allowed));
+
+    [Fact]
+    public void Auto_approval_requires_exact_full_command()
+    {
+        Assert.True(LocalCommandPolicy.IsAutoApproved("git status", new[] { "git status" }));
+        Assert.False(LocalCommandPolicy.IsAutoApproved("git status --short", new[] { "git status" }));
+        Assert.False(LocalCommandPolicy.IsAutoApproved("git status && evil", new[] { "git status" }));
+    }
+
+    [Theory]
     [InlineData("rm -rf /")]
     [InlineData("Remove-Item C:\\data -Recurse -Force")]
     [InlineData("shutdown /s /t 0")]
@@ -98,13 +156,12 @@ public class LocalCommandPolicyTests
             LocalCommandPolicy.CheckForLongRunning(command, new[] { "powershell", "cmd", "python", "node", "vim", "watch", "docker", "git" }));
 
     [Theory]
-    [InlineData("Start-Process notepad")]
-    [InlineData("Start-Job { Get-Date }")]
-    [InlineData("npm run dev &")]
-    [InlineData("rm -rf /")]
-    public void Background_escape_commands_are_blocked(string command)
-        => Assert.Equal(LocalPolicyResult.Blocked,
-            LocalCommandPolicy.CheckForLongRunning(command, new[] { "npm" }));
+    [InlineData("Start-Process notepad", LocalPolicyResult.Blocked)]
+    [InlineData("Start-Job { Get-Date }", LocalPolicyResult.UnsafeSyntax)]
+    [InlineData("npm run dev &", LocalPolicyResult.UnsafeSyntax)]
+    [InlineData("rm -rf /", LocalPolicyResult.Blocked)]
+    public void Background_escape_commands_are_blocked(string command, LocalPolicyResult expected)
+        => Assert.Equal(expected, LocalCommandPolicy.CheckForLongRunning(command, new[] { "npm" }));
 
     [Fact]
     public void Background_commands_still_require_allowlist()

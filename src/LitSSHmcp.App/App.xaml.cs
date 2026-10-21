@@ -84,12 +84,21 @@ public partial class App : Application
         bool configured;
         try
         {
-            var config = await configService.LoadConfigAsync().ConfigureAwait(false);
+            var config = await configService.LoadStrictAsync().ConfigureAwait(false);
             configured = Core.Services.Security.AppLockService.IsConfigured(config.AppLock);
         }
-        catch
+        catch (Exception ex)
         {
-            configured = false;   // 配置读不了：不拦（避免把自己锁死在损坏状态）
+            // 配置损坏时不能当作“未设置密码”继续进入，否则应用锁被绕过。保持 fail-closed 并退出。
+            await Dispatcher.InvokeAsync(() =>
+            {
+                System.Windows.MessageBox.Show(
+                    "无法读取配置文件，为避免绕过应用锁，程序将退出。\n\n" + ex.Message +
+                    "\n\n请修复或从备份恢复配置后重试。",
+                    "LitSSH", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown();
+            });
+            return;
         }
 
         var tcs = new TaskCompletionSource<bool>();

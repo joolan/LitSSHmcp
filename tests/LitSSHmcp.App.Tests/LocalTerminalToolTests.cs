@@ -137,6 +137,35 @@ public class LocalTerminalToolTests
     }
 
     [Fact]
+    public async Task Auto_approval_does_not_cover_extra_arguments()
+    {
+        var terminal = new LocalTerminalSessionViewModel();
+        await terminal.EnsureStartedAsync(80, 24);
+        try
+        {
+            var approvals = 0;
+            var cfg = new LocalTerminalConfig
+            {
+                AllowedCommands = new[] { "Write-Output" },
+                AutoApprovedCommands = new[] { "Write-Output approved" },
+                TimeoutSeconds = 60
+            };
+            var tool = new LocalTerminalTool(() => "test", _ => terminal, cfg,
+                (_, _, _) => { approvals++; return Task.FromResult(LocalApprovalDecision.Deny); }, () => { });
+
+            var result = await tool.InvokeAsync(
+                new Dictionary<string, object?> { ["command"] = "Write-Output approved extra" }, CancellationToken.None);
+
+            Assert.Contains("拒绝", result?.ToString());
+            Assert.Equal(1, approvals);
+        }
+        finally
+        {
+            await terminal.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public void Schema_exposes_optional_terminal_id()
     {
         var cfg = new LocalTerminalConfig { AllowedCommands = new[] { "git" } };

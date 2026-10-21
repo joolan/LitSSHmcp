@@ -280,12 +280,25 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        // 已设置应用锁：恢复主界面前先解锁（未设置密码则直接恢复）
+        // 已设置应用锁：恢复主界面前先解锁（未设置密码则直接恢复）。
+        // 配置读取/解锁失败必须保持隐藏，不能 fail-open 直接恢复主界面。
+        var configService = new ConfigService();
+        Core.Models.AppConfig config;
         try
         {
-            var configService = new ConfigService();
-            var config = await configService.LoadConfigAsync();
-            if (AppLockService.IsConfigured(config.AppLock))
+            config = await configService.LoadStrictAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this,
+                "无法读取配置文件，已保持主界面隐藏以避免绕过应用锁。\n\n" + ex.Message,
+                "LitSSH", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            return;
+        }
+
+        if (AppLockService.IsConfigured(config.AppLock))
+        {
+            try
             {
                 var lockWindow = new Views.AppLockWindow(new AppLockService(configService), Views.AppLockWindowMode.Unlock, relock: true)
                 {
@@ -297,10 +310,13 @@ public partial class MainWindow : FluentWindow
                 if (!unlocked)
                     return;   // 未解锁（点「退出程序」时进程已在退出）
             }
-        }
-        catch
-        {
-            // 解锁窗口异常时不把用户挡在外面，直接恢复
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this,
+                    "解锁窗口异常，已保持主界面隐藏以避免绕过应用锁。\n\n" + ex.Message,
+                    "LitSSH", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
         }
 
         // 先按快照恢复先前隐藏的独立窗口（已关闭的跳过），再显示主窗口并置前

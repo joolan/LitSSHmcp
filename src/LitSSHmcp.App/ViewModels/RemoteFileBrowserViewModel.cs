@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.SSH;
 
 namespace LitSSHmcp.App.ViewModels;
@@ -603,12 +604,24 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
 
     public static bool IsArchive(string name) => IsZip(name) || IsTarGz(name);
 
-    /// <summary>下载到临时目录、用系统默认程序打开，并监视改动自动回传 SFTP。</summary>
+    /// <summary>下载到临时目录、交给用户选择程序打开，并监视改动自动回传 SFTP。</summary>
     public async Task<string?> OpenFileForEditAsync(RemoteFileItem item)
     {
+        if (!RemotePathGuard.TryFileName(item.Name, out var safeName))
+        {
+            StatusMessage = $"远端文件名不安全，已拒绝打开: {item.Name}";
+            return null;
+        }
+
         var dir = Path.Combine(Path.GetTempPath(), "litssh-remote");
         Directory.CreateDirectory(dir);
-        var local = Path.Combine(dir, item.Name);
+        var local = RemotePathGuard.ResolveLocalUnder(dir, safeName);
+        if (local is null)
+        {
+            StatusMessage = $"远端文件名无法安全落盘，已拒绝打开: {item.Name}";
+            return null;
+        }
+
         await DownloadAsync(item, local);
         if (!File.Exists(local))
             return null;

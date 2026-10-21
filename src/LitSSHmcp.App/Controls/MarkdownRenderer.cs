@@ -510,6 +510,13 @@ public static class MarkdownRenderer
                 return;
             }
 
+            // 只允许打开外部浏览/邮件协议；file:/ms-msdt:/自定义协议等交给用户手动复制处理，避免一键触发本地程序。
+            if (uri.Scheme is not ("http" or "https" or "mailto"))
+            {
+                paragraph.Inlines.Add(new Run(label) { ToolTip = "已阻止不安全的链接：" + url });
+                return;
+            }
+
             var hyperlink = new Hyperlink(new Run(label)) { NavigateUri = uri, ToolTip = url };
             hyperlink.RequestNavigate += (_, e) =>
             {

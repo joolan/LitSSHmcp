@@ -11,6 +11,8 @@ public enum LocalPolicyResult
     NotInAllowlist,
     /// <summary>命中危险/无效规则（硬拒绝）。</summary>
     Blocked,
+    /// <summary>包含 shell 拼接/重定向/子表达式，或嵌套 shell（硬拒绝）。</summary>
+    UnsafeSyntax,
     /// <summary>疑似交互式/长驻命令，会一直占住终端（硬拒绝）。</summary>
     Interactive
 }
@@ -74,11 +76,108 @@ public static class LocalCommandPolicy
         return token.Length == 0 ? null : token;
     }
 
-    /// <summary>判定命令是否可执行：白名单 + 危险规则。</summary>
+    /// <summary>
+    /// 拒绝 shell 拼接、管道、重定向、子表达式、脚本块、成员访问等可绕开“单条命令”边界的语法。
+    /// 引号内的普通字符（如提交信息里的 <c>|</c>）不受影响；双引号内的子表达式仍拒绝。
+    /// </summary>
+    public static bool ContainsUnsafeShellSyntax(string? command)
+    {
+        if (string.IsNullOrEmpty(command))
+            return false;
+
+        var inSingle = false;
+        var inDouble = false;
+        var sawToken = false;
+        for (var i = 0; i < command.Length; i++)
+        {
+            var c = command[i];
+            if (c is '\r' or '\n')
+                return true;
+
+            if (inSingle)
+            {
+                // PowerShell 单引号内用两个单引号表示一个字面单引号。
+                if (c == '\'')
+                {
+                    if (i + 1 < command.Length && command[i + 1] == '\'')
+                        i++;
+                    else
+                        inSingle = false;
+                }
+                continue;
+            }
+
+            if (inDouble)
+            {
+                if (c == '`')
+                    return true;
+                if (c == '$' && i + 1 < command.Length && command[i + 1] is '(' or '{')
+                    return true;
+                if (c == '"')
+                {
+                    if (i + 1 < command.Length && command[i + 1] == '"')
+                        i++;
+                    else
+                        inDouble = false;
+                }
+                continue;
+            }
+
+            if (c is ' ' or '\t')
+                continue;
+            if (char.IsWhiteSpace(c))
+                return true;
+
+            if (c == '\'')
+            {
+                inSingle = true;
+                sawToken = true;
+                continue;
+            }
+            if (c == '"')
+            {
+                inDouble = true;
+                sawToken = true;
+                continue;
+            }
+
+            // 仅允许行首的 PowerShell 调用运算符：& 'C:\Program Files\git.exe' status
+            if (c == '&' && !sawToken && (i + 1 >= command.Length || command[i + 1] != '&'))
+            {
+                sawToken = true;
+                continue;
+            }
+
+            if (c is ';' or '|' or '&' or '>' or '<' or '`' or '{' or '}' or '(' or ')' or '[' or ']')
+                return true;
+            if (c == '$' && i + 1 < command.Length && command[i + 1] is '(' or '{')
+                return true;
+            if (c == '@' && i + 1 < command.Length && command[i + 1] == '(')
+                return true;
+
+            sawToken = true;
+        }
+
+        return inSingle || inDouble;
+    }
+
+    public static bool IsAutoApproved(string? command, IReadOnlyCollection<string>? rules)
+        => !string.IsNullOrWhiteSpace(command) &&
+           (rules ?? Array.Empty<string>()).Any(rule =>
+               string.Equals(rule?.Trim(), command.Trim(), StringComparison.Ordinal));
+
+    private static bool IsNestedShell(string? exe)
+        => exe is not null && exe.ToLowerInvariant() is
+            "cmd" or "powershell" or "pwsh" or "bash" or "sh" or "zsh" or "wsl" or "cscript" or "wscript";
+
+    /// <summary>判定命令是否可执行：白名单 + 危险规则 + 单条命令语法。</summary>
     public static LocalPolicyResult Check(string? command, IReadOnlyCollection<string>? allowedCommands)
     {
         if (string.IsNullOrWhiteSpace(command))
             return LocalPolicyResult.Blocked;
+
+        if (ContainsUnsafeShellSyntax(command))
+            return LocalPolicyResult.UnsafeSyntax;
 
         foreach (var pattern in DangerousPatterns)
         {
@@ -92,6 +191,8 @@ public static class LocalCommandPolicy
         var exe = FirstExecutable(command);
         if (exe is null)
             return LocalPolicyResult.Blocked;
+        if (IsNestedShell(exe))
+            return LocalPolicyResult.UnsafeSyntax;
 
         var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in allowedCommands ?? Array.Empty<string>())
@@ -115,14 +216,16 @@ public static class LocalCommandPolicy
         if (string.IsNullOrWhiteSpace(command))
             return LocalPolicyResult.Blocked;
 
+        if (ContainsUnsafeShellSyntax(command))
+            return LocalPolicyResult.UnsafeSyntax;
+
         foreach (var pattern in DangerousPatterns)
         {
             if (pattern.IsMatch(command))
                 return LocalPolicyResult.Blocked;
         }
 
-        if (Regex.IsMatch(command, @"(^|\s)&\s*$", RegexOptions.Compiled) ||
-            Regex.IsMatch(command, @"\bStart-(Process|Job)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled))
+        if (Regex.IsMatch(command, @"\bStart-(Process|Job)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled))
             return LocalPolicyResult.Blocked;
 
         if (IsUnsupportedForBackground(command))

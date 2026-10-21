@@ -1,10 +1,11 @@
-using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
+using LitSSHmcp.Core.Services.Security;
 using Microsoft.Win32;
 
 namespace LitSSHmcp.App.Controls;
@@ -103,7 +104,7 @@ public partial class RemoteFileBrowserView : UserControl
     private async Task OpenWithAsync(RemoteFileBrowserViewModel vm, RemoteFileItem item)
     {
         var local = await vm.OpenFileForEditAsync(item);
-        if (local is null)
+        if (local is null || !ConfirmPotentiallyExecutable(local))
             return;
 
         Views.OpenWithDialog.Show(Owner, local);
@@ -121,26 +122,34 @@ public partial class RemoteFileBrowserView : UserControl
         _ = OpenFileAsync(vm, item);
     }
 
-    private static async Task OpenFileAsync(RemoteFileBrowserViewModel vm, RemoteFileItem item)
+    private async Task OpenFileAsync(RemoteFileBrowserViewModel vm, RemoteFileItem item)
     {
         var local = await vm.OpenFileForEditAsync(item);
         if (local is null)
             return;
-        try
-        {
-            Process.Start(new ProcessStartInfo(local) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            vm.StatusMessage = "无法打开文件: " + ex.Message;
-        }
+        if (!ConfirmPotentiallyExecutable(local))
+            return;
+
+        Views.OpenWithDialog.Show(Owner, local);
+    }
+
+    private bool ConfirmPotentiallyExecutable(string local)
+    {
+        if (!RemotePathGuard.IsPotentiallyExecutableFileName(local))
+            return true;
+
+        return MessageBox.Show(Owner,
+            $"远端文件「{Path.GetFileName(local)}」可能是可执行文件或脚本。\n" +
+            "为避免误执行，将只交给所选程序打开，不会使用系统默认方式执行。是否继续？",
+            "安全提示", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
     }
 
     private void OnDownload(object sender, RoutedEventArgs e)
     {
         if (ViewModel is not { } vm || vm.SelectedItem is not { } item || item.IsDirectory)
             return;
-        var dialog = new SaveFileDialog { Title = "下载到", FileName = item.Name, Filter = "所有文件|*.*" };
+        var suggested = RemotePathGuard.TryFileName(item.Name, out var safeName) ? safeName : "download";
+        var dialog = new SaveFileDialog { Title = "下载到", FileName = suggested, Filter = "所有文件|*.*" };
         if (dialog.ShowDialog(Owner) != true)
             return;
         _ = vm.DownloadAsync(item, dialog.FileName);

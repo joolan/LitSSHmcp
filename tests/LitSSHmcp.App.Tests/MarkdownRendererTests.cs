@@ -54,4 +54,29 @@ public class MarkdownRendererTests
 
         Assert.Contains(doc.Blocks.OfType<Paragraph>(), p => p.FontWeight == System.Windows.FontWeights.Bold);
     });
+
+    [Theory]
+    [InlineData("https://example.com/docs")]
+    [InlineData("http://example.com")]
+    [InlineData("mailto:ops@example.com")]
+    public void Allows_only_external_safe_link_schemes(string url) => OnSta(() =>
+    {
+        var doc = MarkdownRenderer.Render($"[链接]({url})");
+
+        var link = Assert.Single(doc.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines).OfType<Hyperlink>());
+        Assert.Equal(url, link.NavigateUri.OriginalString);
+    });
+
+    [Theory]
+    [InlineData("file:///C:/Windows/System32/calc.exe")]
+    [InlineData("ms-msdt:/id PCWDiagnostic")]
+    [InlineData("javascript:alert(1)")]
+    public void Blocks_local_and_unknown_link_schemes(string url) => OnSta(() =>
+    {
+        var doc = MarkdownRenderer.Render($"[链接]({url})");
+
+        var inlines = doc.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines).ToList();
+        Assert.Empty(inlines.OfType<Hyperlink>());
+        Assert.Contains(inlines.OfType<Run>(), r => r.Text == "链接");
+    });
 }

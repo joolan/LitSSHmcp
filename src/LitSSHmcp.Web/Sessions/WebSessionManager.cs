@@ -32,6 +32,14 @@ public sealed class WebSessionLimitException(string message) : Exception(message
 /// <summary>路径越出会话目录（<c>..</c>、绝对路径、链接逃逸、根外目录）——对外统一 404，越权尝试落 file_denied。</summary>
 public sealed class WebFilePathDeniedException() : Exception("路径越出会话目录");
 
+/// <summary>下载文件超过 Web 边界——对外 413，并记录 file_download_too_large。</summary>
+public sealed class WebFileTooLargeException(long size, long limit)
+    : Exception($"文件大小 {size} 字节超过 Web 下载上限 {limit} 字节")
+{
+    public long Size { get; } = size;
+    public long Limit { get; } = limit;
+}
+
 /// <summary>会话目录条目（目录浏览；非递归，Path 相对会话根、'/' 分隔）。</summary>
 public sealed record WebFileEntry(string Path, string Name, bool IsDir, long? Size, string ModifiedAt);
 
@@ -300,16 +308,20 @@ public sealed class WebSessionManager : IAsyncDisposable
 
     /// <summary>
     /// 打开会话文件下载流（校验同 <see cref="ListFilesAsync"/>）；文件不存在/是目录返回 null（404）。
+    /// 超过 <paramref name="maxBytes"/> 抛 <see cref="WebFileTooLargeException"/>（413），不打开流；
     /// 成功落 file_download 访问日志（§10.A.3）。调用方负责随响应释放流。
     /// </summary>
     public async Task<WebFileDownload?> OpenDownloadAsync(WebPrincipal owner, long sessionId,
-        string relPath, CancellationToken ct = default)
+        string relPath, long maxBytes, CancellationToken ct = default)
     {
         var (_, full) = await ResolveInWorkspaceAsync(owner, sessionId, relPath, ct);
         if (!File.Exists(full))
             return null;
 
         var info = new FileInfo(full);
+        if (maxBytes > 0 && info.Length > maxBytes)
+            throw new WebFileTooLargeException(info.Length, maxBytes);
+
         FileStream stream;
         try
         {
@@ -320,9 +332,17 @@ public sealed class WebSessionManager : IAsyncDisposable
         catch (DirectoryNotFoundException) { return null; }
         catch (UnauthorizedAccessException) { return null; }
 
+        // 打开期间文件可能被替换/增长；以实际流长度再校验一次，避免绕过上限。
+        var actualLength = stream.Length;
+        if (maxBytes > 0 && actualLength > maxBytes)
+        {
+            stream.Dispose();
+            throw new WebFileTooLargeException(actualLength, maxBytes);
+        }
+
         _accessLog.Write("file_download", owner.Username, null,
-            $"session={sessionId} path={info.Name} size={info.Length}");
-        return new WebFileDownload(info.Name, stream, info.Length);
+            $"session={sessionId} path={info.Name} size={actualLength}");
+        return new WebFileDownload(info.Name, stream, actualLength);
     }
 
     /// <summary>

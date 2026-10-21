@@ -66,6 +66,8 @@ builder.Services.AddSingleton<WebApprovalHub>();
 builder.Services.AddSingleton<WebRateLimitPolicy>();
 builder.Services.AddSingleton<WebRateLimitStore>();
 builder.Services.AddSingleton<WebSocketConnectionLimiter>();
+builder.Services.AddSingleton<WebDownloadPolicy>();
+builder.Services.AddSingleton<WebDownloadLimiter>();
 
 var app = builder.Build();
 

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using LitSSHmcp.Core.Services.Web;
@@ -112,6 +113,9 @@ public class WebFileEndpointTests : IClassFixture<FileFixture>
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
             Assert.Equal(payload, await resp.Content.ReadAsByteArrayAsync());
+            Assert.Equal((long)payload.Length, resp.Content.Headers.ContentLength);
+            Assert.True(resp.Headers.TryGetValues("Accept-Ranges", out var acceptRanges));
+            Assert.Equal("bytes", Assert.Single(acceptRanges!));
             var disposition = resp.Content.Headers.ContentDisposition;
             Assert.NotNull(disposition);
             Assert.Contains("deliverable.txt", disposition!.FileName ?? disposition.FileNameStar, StringComparison.Ordinal);
@@ -121,6 +125,83 @@ public class WebFileEndpointTests : IClassFixture<FileFixture>
         {
             await DeleteSessionAsync(token, csrf, id);
         }
+    }
+
+    [Fact]
+    public async Task Download_supports_single_range_and_rejects_invalid_or_multi_range()
+    {
+        var (token, csrf) = await _fx.LoginAsync("file-dl-range");
+        var (id, dir) = await _fx.CreateSessionAsync(token, csrf);
+        try
+        {
+            var payload = "0123456789"u8.ToArray();
+            await File.WriteAllBytesAsync(Path.Combine(dir, "range.txt"), payload);
+
+            var mid = await DownloadAsync(token, id, "range.txt", new RangeHeaderValue(2, 5));
+            Assert.Equal(HttpStatusCode.PartialContent, mid.StatusCode);
+            Assert.Equal("2345", await mid.Content.ReadAsStringAsync());
+            Assert.Equal(4L, mid.Content.Headers.ContentLength);
+            Assert.Equal(2L, mid.Content.Headers.ContentRange!.From!.Value);
+            Assert.Equal(5L, mid.Content.Headers.ContentRange.To!.Value);
+            Assert.Equal(10L, mid.Content.Headers.ContentRange.Length!.Value);
+
+            var suffix = await DownloadAsync(token, id, "range.txt", new RangeHeaderValue(null, 3));
+            Assert.Equal(HttpStatusCode.PartialContent, suffix.StatusCode);
+            Assert.Equal("789", await suffix.Content.ReadAsStringAsync());
+
+            var openEnded = await DownloadAsync(token, id, "range.txt", new RangeHeaderValue(7, null));
+            Assert.Equal(HttpStatusCode.PartialContent, openEnded.StatusCode);
+            Assert.Equal("789", await openEnded.Content.ReadAsStringAsync());
+
+            var beyond = await DownloadWithRangeAsync(token, id, "range.txt", "bytes=20-");
+            Assert.Equal(HttpStatusCode.RequestedRangeNotSatisfiable, beyond.StatusCode);
+            Assert.Equal("bytes */10", beyond.Content.Headers.ContentRange!.ToString());
+
+            var multi = await DownloadWithRangeAsync(token, id, "range.txt", "bytes=0-1,3-4");
+            Assert.Equal(HttpStatusCode.RequestedRangeNotSatisfiable, multi.StatusCode);
+        }
+        finally
+        {
+            await DeleteSessionAsync(token, csrf, id);
+        }
+    }
+
+    [Fact]
+    public async Task Download_rejects_file_over_limit_with_413_and_logs()
+    {
+        var (token, csrf) = await _fx.LoginAsync("file-dl-big");
+        var (id, dir) = await _fx.CreateSessionAsync(token, csrf);
+        var before = _fx.ReadAccessLog();
+        try
+        {
+            await File.WriteAllBytesAsync(Path.Combine(dir, "big.bin"), new byte[1025]);
+
+            var resp = await _fx.Client.SendAsync(Authed(HttpMethod.Get,
+                $"/api/sessions/{id}/download?path=big.bin", token, null));
+
+            Assert.Equal(HttpStatusCode.RequestEntityTooLarge, resp.StatusCode);
+            var body = await resp.Content.ReadAsStringAsync();
+            Assert.Contains("上限", body, StringComparison.Ordinal);
+            Assert.Contains("file_download_too_large", _fx.LogAddedSince(before), StringComparison.Ordinal);
+        }
+        finally
+        {
+            await DeleteSessionAsync(token, csrf, id);
+        }
+    }
+
+    [Fact]
+    public void Download_limiter_enforces_per_user_cap()
+    {
+        var limiter = new WebDownloadLimiter();
+
+        using var first = limiter.TryAcquire("user:1", 1);
+        Assert.NotNull(first);
+        Assert.Null(limiter.TryAcquire("user:1", 1));
+        Assert.Null(limiter.TryAcquire("user:3", 0));
+
+        using var other = limiter.TryAcquire("user:2", 1);
+        Assert.NotNull(other);
     }
 
     [Fact]
@@ -217,6 +298,22 @@ public class WebFileEndpointTests : IClassFixture<FileFixture>
         return doc.RootElement.GetProperty("items").EnumerateArray().Select(e => e.Clone()).ToArray();
     }
 
+    private async Task<HttpResponseMessage> DownloadAsync(string token, long id, string path, RangeHeaderValue range)
+    {
+        var req = Authed(HttpMethod.Get,
+            $"/api/sessions/{id}/download?path=" + Uri.EscapeDataString(path), token, null);
+        req.Headers.Range = range;
+        return await _fx.Client.SendAsync(req);
+    }
+
+    private async Task<HttpResponseMessage> DownloadWithRangeAsync(string token, long id, string path, string range)
+    {
+        var req = Authed(HttpMethod.Get,
+            $"/api/sessions/{id}/download?path=" + Uri.EscapeDataString(path), token, null);
+        req.Headers.TryAddWithoutValidation("Range", range);
+        return await _fx.Client.SendAsync(req);
+    }
+
     private async Task DeleteSessionAsync(string token, string csrf, long id)
     {
         var resp = await _fx.Client.SendAsync(Authed(HttpMethod.Delete, $"/api/sessions/{id}", token, csrf));
@@ -271,6 +368,13 @@ public sealed class FileFixture : IDisposable
             {
                 services.RemoveAll<WebAccessLog>();
                 services.AddSingleton(new WebAccessLog(logDir));
+                services.RemoveAll<WebDownloadPolicy>();
+                services.AddSingleton(new WebDownloadPolicy
+                {
+                    MaxBytes = 1024,
+                    MaxConcurrentPerUser = 2,
+                    Timeout = TimeSpan.FromSeconds(30)
+                });
             }));
         Client = Factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
     }

@@ -89,6 +89,12 @@ public class WorkspaceToolsAuditTests : IDisposable
         Assert.Contains(scriptRel, record.Command);
     }
 
+    [Fact]
+    public void Script_register_is_hidden_when_shared_is_read_only()
+    {
+        Assert.Empty(ScriptTools.Create(_root, null, enabled: false));
+    }
+
     private static IAgentTool Tool(IReadOnlyList<IAgentTool> tools, string name) => tools.First(t => t.Name == name);
 
     private static Dictionary<string, object?> Args(params (string, object?)[] pairs) =>

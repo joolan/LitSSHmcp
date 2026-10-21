@@ -378,6 +378,34 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public void AddChildUsage_accumulates_into_parent_session_totals()
+    {
+        var session = new AgentSession(new CapturingChatClient(),
+            new AgentProviderConfig { Model = "m", ApiKey = "k" }, Array.Empty<IAgentTool>(), "sys", new AgentConfig());
+
+        session.AddChildUsage(120, 30);
+        session.AddChildUsage(5, 0);
+
+        Assert.Equal(125L, session.SessionInputTokens);
+        Assert.Equal(30L, session.SessionOutputTokens);
+    }
+
+    [Fact]
+    public async Task Budget_check_stops_session_after_usage_exceeds_limit()
+    {
+        var usage = new UsageDetails { InputTokenCount = 1_000_000, OutputTokenCount = 0 };
+        var checks = 0;
+        var session = new AgentSession(new UsageEmittingChatClient(usage),
+            new AgentProviderConfig { Model = "m", ApiKey = "k" }, Array.Empty<IAgentTool>(), "sys", new AgentConfig(),
+            budgetCheck: (_, _) => { checks++; return false; });
+
+        await session.SendAsync("hi", null);
+
+        Assert.Equal(1, checks);
+        Assert.Equal(1_000_000L, session.SessionInputTokens);
+    }
+
+    [Fact]
     public async Task Executes_readonly_calls_in_parallel_keeping_call_order()
     {
         var callA = new FunctionCallContent("c1", "read_a", new Dictionary<string, object?>());

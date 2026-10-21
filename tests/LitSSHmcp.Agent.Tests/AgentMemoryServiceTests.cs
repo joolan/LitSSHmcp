@@ -24,6 +24,52 @@ public class AgentMemoryServiceTests : IDisposable
         return (svc, store);
     }
 
+    private async Task<(AgentMemoryService Svc, AgentMemoryStore Store)> CreateScopedAsync(string owner, bool isAdmin)
+    {
+        var store = new AgentMemoryStore(_dbPath, new MemoryAccessScope(owner, isAdmin));
+        var svc = new AgentMemoryService(store, new FakeEmbedder(), 5, 0.15);
+        await svc.InitializeAsync();
+        return (svc, store);
+    }
+
+    [Fact]
+    public async Task Scoped_private_memory_is_invisible_to_other_members_team_is_read_only()
+    {
+        var (alice, _) = await CreateScopedAsync("1", isAdmin: false);
+        var (bob, _) = await CreateScopedAsync("2", isAdmin: false);
+        var (admin, adminStore) = await CreateScopedAsync("9", isAdmin: true);
+
+        await alice.SaveAsync("task", "alice-only", "磁盘满私有经验: journalctl --vacuum-size 清理日志后恢复", "ssh:s1", null);
+        Assert.Contains("alice-only", await alice.ListAsync(null, null, 50));
+        Assert.DoesNotContain("alice-only", await bob.ListAsync(null, null, 50));
+        Assert.Null(await bob.RecallAsync("磁盘满私有经验 journalctl 清理日志"));
+
+        await admin.SaveAsync("task", "team-disk", "团队磁盘经验: 先 df 定位分区, 再按日志增长清理", "ssh:s2", null);
+        Assert.Contains("team-disk", await alice.ListAsync(null, null, 50));
+        Assert.Contains("team-disk", await bob.ListAsync(null, null, 50));
+
+        Assert.Contains("未找到", await alice.UpdateAsync("task", "team-disk", "被成员篡改的团队经验内容", null, null, null));
+        Assert.Contains("未找到", await alice.DeleteAsync("task", "team-disk"));
+        Assert.NotNull(await adminStore.FindByKeyAsync("task", "team-disk"));
+        Assert.Contains("已删除", await admin.DeleteAsync("task", "team-disk"));
+    }
+
+    [Fact]
+    public async Task Near_duplicate_merge_never_rewrites_team_memory_for_member()
+    {
+        var (alice, _) = await CreateScopedAsync("1", isAdmin: false);
+        var (admin, adminStore) = await CreateScopedAsync("9", isAdmin: true);
+        const string body = "现象: /var 分区 100%; 根因: journald 日志膨胀; 处置: journalctl --vacuum-size=200M 验证: df 恢复";
+
+        await admin.SaveAsync("task", "team-disk", body, "ssh:s1", null);
+        var result = await alice.SaveAsync("task", "alice-disk", body, "ssh:s1", null);
+
+        Assert.Contains("已新增", result);
+        Assert.DoesNotContain("已合并", result);
+        var team = await adminStore.FindByKeyAsync("task", "team-disk");
+        Assert.Equal(1, team!.Freq);
+    }
+
     [Fact]
     public async Task Save_rejects_sensitive_content()
     {

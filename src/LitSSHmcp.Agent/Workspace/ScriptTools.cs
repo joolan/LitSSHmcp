@@ -20,8 +20,11 @@ public static class ScriptTools
 
     private const int MaxManifestChars = 200_000;
 
-    public static IReadOnlyList<IAgentTool> Create(string workspaceDir, AgentMemoryService? memory)
+    public static IReadOnlyList<IAgentTool> Create(string workspaceDir, AgentMemoryService? memory, bool enabled = true)
     {
+        if (!enabled)
+            return Array.Empty<IAgentTool>();
+
         var root = Path.GetFullPath(workspaceDir);
 
         var register = new LocalFunction(

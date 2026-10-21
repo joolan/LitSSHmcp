@@ -1,4 +1,5 @@
 using LitSSHmcp.Agent;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace LitSSHmcp.Agent.Tests;
@@ -59,6 +60,34 @@ public class AgentMemoryStoreTests : IDisposable
         Assert.False(await store.DeleteByIdAsync(id));   // 已删再删返回 false
         Assert.Empty(await store.ListAsync(null, null, 50));
         Assert.Single(await store.ListAsync(null, null, 50, includeRaw: true));
+    }
+
+    [Fact]
+    public async Task Initialize_migrates_legacy_rows_as_team_memory()
+    {
+        await using (var connection = new SqliteConnection($"Data Source={_dbPath}"))
+        {
+            await connection.OpenAsync();
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = @"
+CREATE TABLE agent_memory (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    Source TEXT NOT NULL,
+    Content TEXT NOT NULL,
+    Vector BLOB NOT NULL,
+    CreatedAt TEXT NOT NULL
+);
+INSERT INTO agent_memory(Source, Content, Vector, CreatedAt)
+VALUES ('会话', '旧版记忆', @vector, '2026-01-01T00:00:00Z');";
+            cmd.Parameters.AddWithValue("@vector", new byte[8]);
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var store = NewStore();
+        await store.InitializeAsync();
+        var records = await store.ListAsync(null, null, 50, includeRaw: true);
+        Assert.Single(records);
+        Assert.Equal("旧版记忆", records[0].Content);
     }
 
     public void Dispose()

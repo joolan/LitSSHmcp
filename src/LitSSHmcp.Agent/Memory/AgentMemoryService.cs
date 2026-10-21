@@ -108,8 +108,9 @@ public sealed class AgentMemoryService
     /// <summary>在同 kind 的既有条目中找与给定向量余弦最高的超阈值条目（用于近重复合并）。</summary>
     private async Task<MemoryRecord?> FindNearDuplicateAsync(string kind, string content, float[] vector, CancellationToken ct)
     {
-        // 候选：同 kind、内容长度相近的活跃条目（按更新时间取前 50，避免全表扫）
-        var candidates = await _store.ListAsync(kind, null, 50, false, ct);
+        // 候选：同 kind、可写范围内的活跃条目（按更新时间取前 50，避免全表扫）；
+        // 隔离模式下普通成员不会把私有经验合并进只读的团队记忆
+        var candidates = await _store.ListAsync(kind, null, 50, false, ct, writableOnly: true);
         MemoryRecord? best = null;
         var bestScore = NearDuplicateThreshold;
         foreach (var c in candidates)

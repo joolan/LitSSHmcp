@@ -29,12 +29,13 @@ public sealed class McpToolHost : IAsyncDisposable
     /// 供子进程做 fileTransfer 条件白名单与默认落地路径；空 = 共享工作区（现状行为）。
     /// <paramref name="ownerUsername"/> 授权矩阵匹配用用户名（M3-4 / §10.B.4）：仅 Web 宿主注入；
     /// 空 = 子进程按用户 Id 匹配矩阵。
+    /// <paramref name="ownerRole"/> 用户角色（P0-2）：仅 Web 宿主注入 admin/user；空 = 非管理员。
     /// </summary>
     public static McpToolHost ForBuiltin(McpServerLaunch launch, string? ownerUserId = null,
-        string? sessionWorkspaceDir = null, string? ownerUsername = null)
+        string? sessionWorkspaceDir = null, string? ownerUsername = null, string? ownerRole = null)
     {
         ArgumentNullException.ThrowIfNull(launch);
-        var env = BuildBuiltinEnvironment(ownerUserId, sessionWorkspaceDir, ownerUsername);
+        var env = BuildBuiltinEnvironment(ownerUserId, sessionWorkspaceDir, ownerUsername, ownerRole);
 
         return new McpToolHost(() => new StdioClientTransport(new StdioClientTransportOptions
         {
@@ -53,7 +54,7 @@ public sealed class McpToolHost : IAsyncDisposable
     /// 经 InheritEnvironmentVariables 继承），不在会话级字典内。
     /// </summary>
     public static Dictionary<string, string?> BuildBuiltinEnvironment(
-        string? ownerUserId, string? sessionWorkspaceDir, string? ownerUsername)
+        string? ownerUserId, string? sessionWorkspaceDir, string? ownerUsername, string? ownerRole = null)
     {
         var env = new Dictionary<string, string?>
         {
@@ -63,6 +64,8 @@ public sealed class McpToolHost : IAsyncDisposable
             env[HostEnv.SessionWorkspaceDir] = sessionWorkspaceDir.Trim();
         if (!string.IsNullOrWhiteSpace(ownerUsername))
             env[HostEnv.AuthzUser] = ownerUsername.Trim();
+        if (!string.IsNullOrWhiteSpace(ownerRole))
+            env[HostEnv.AuthzRole] = ownerRole.Trim();
         return env;
     }
 

@@ -13,7 +13,7 @@ public static class MemoryTools
     {
         var save = new LocalFunction(
             "ops_memory_save",
-            "写入/合并一条核心运维经验记忆(任务复盘/脚本/资产经验); 同 kind+key 已存在则覆盖为最新有效路径并频次+1; 内容含密码/密钥/令牌会被拒绝, 过短或与既有条目高度相似时自动合并",
+            "写入/合并一条核心运维经验记忆(任务复盘/脚本/资产经验); 同 kind+key 已存在则覆盖为最新有效路径并频次+1; 内容含密码/密钥/令牌会被拒绝, 过短或与既有条目高度相似时自动合并; Web 普通成员写入私有记忆, 管理员写入团队记忆",
             """{"type":"object","properties":{"kind":{"type":"string","enum":["task","script","asset"],"description":"类别: task=任务复盘, script=脚本工具, asset=资产经验"},"key":{"type":"string","description":"语义唯一键, 如 磁盘满:ssh:web01"},"content":{"type":"string","description":"经验内容: 现象→根因→验证成功的解决路径(简明)"},"assetIds":{"type":"string","description":"关联资产ID, 逗号分隔, 如 ssh:web01,ds:mysql01"},"tags":{"type":"string","description":"标签, 逗号分隔"}},"required":["kind","key","content"]}""",
             async (args, ct) => await memory.SaveAsync(
                 ArgumentReader.ReadString(args, "kind") ?? string.Empty,
@@ -25,7 +25,7 @@ public static class MemoryTools
 
         var update = new LocalFunction(
             "ops_memory_update",
-            "修改已有记忆的字段(不增频次): 修正内容/资产/标签, 或把过时经验标记为 superseded(不再召回)",
+            "修改已有记忆的字段(不增频次): 修正内容/资产/标签, 或把过时经验标记为 superseded(不再召回); 团队记忆仅管理员可改",
             """{"type":"object","properties":{"kind":{"type":"string","enum":["task","script","asset"],"description":"类别"},"key":{"type":"string","description":"语义唯一键"},"content":{"type":"string","description":"新内容(省略则不变)"},"assetIds":{"type":"string","description":"新资产列表(省略则不变)"},"tags":{"type":"string","description":"新标签(省略则不变)"},"status":{"type":"string","enum":["active","superseded"],"description":"active=有效, superseded=已过时(召回不再出现)"}},"required":["kind","key"]}""",
             async (args, ct) => await memory.UpdateAsync(
                 ArgumentReader.ReadString(args, "kind") ?? string.Empty,
@@ -52,7 +52,7 @@ public static class MemoryTools
 
         var delete = new LocalFunction(
             "ops_memory_delete",
-            "删除一条核心记忆(按 kind+key); 仅在用户要求清理或条目明显错误时使用",
+            "删除一条核心记忆(按 kind+key); 仅在用户要求清理或条目明显错误时使用; 团队记忆仅管理员可删",
             """{"type":"object","properties":{"kind":{"type":"string","enum":["task","script","asset"],"description":"类别"},"key":{"type":"string","description":"语义唯一键"}},"required":["kind","key"]}""",
             async (args, ct) => await memory.DeleteAsync(
                 ArgumentReader.ReadString(args, "kind") ?? string.Empty,

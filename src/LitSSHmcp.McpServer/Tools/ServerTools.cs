@@ -31,18 +31,21 @@ public class ServerTools
     public async Task<SshServerListDto> ListServers()
     {
         var config = await _configService.LoadConfigAsync();
-        var servers = config.Servers.Where(s => !s.Disabled).Select(s => new SshServerSummaryDto
-        {
-            Id = s.Id,
-            Name = s.Name,
-            Host = s.Host,
-            Port = s.Port,
-            Username = s.Username,
-            AuthType = s.AuthType.ToString(),
-            Description = s.Description,
-            Tags = s.Tags,
-            LastConnectedAt = s.LastConnectedAt
-        }).ToList();
+        var policy = config.Security?.Authorization ?? new AuthorizationConfig();
+        var servers = config.Servers
+            .Where(s => !s.Disabled && McpAuthorizationFilter.IsTargetVisibleForCaller(policy, AssetNode.Ssh(s.Id)))
+            .Select(s => new SshServerSummaryDto
+            {
+                Id = s.Id,
+                Name = s.Name,
+                Host = s.Host,
+                Port = s.Port,
+                Username = s.Username,
+                AuthType = s.AuthType.ToString(),
+                Description = s.Description,
+                Tags = s.Tags,
+                LastConnectedAt = s.LastConnectedAt
+            }).ToList();
 
         await LogAuditAsync(string.Empty, string.Empty, "LIST_SERVERS", $"{servers.Count} servers", CommandStatus.Executed, AuditCategory.Meta);
         return new SshServerListDto { Success = true, Count = servers.Count, Servers = servers };

@@ -6,6 +6,7 @@
 using System.ComponentModel;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Datasource;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.McpServer.Services;
 using ModelContextProtocol.Server;
@@ -34,30 +35,44 @@ public class DatasourceTools
     public async Task<DatasourceListDto> ListDatasources()
     {
         var config = await _configService.LoadConfigAsync();
+        var policy = config.Security?.Authorization ?? new AuthorizationConfig();
+        var visibleServerIds = config.Servers
+            .Where(s => !s.Disabled && McpAuthorizationFilter.IsTargetVisibleForCaller(policy, AssetNode.Ssh(s.Id)))
+            .Select(s => s.Id)
+            .ToHashSet(StringComparer.Ordinal);
 
-        var items = config.DataSources.Select(ds => new DatasourceSummaryDto
-        {
-            Id = ds.Id,
-            Name = ds.Name,
-            Type = ds.Type,
-            Host = ds.Host,
-            Port = ds.Port,
-            Username = ds.Username,
-            DefaultDatabase = ds.DefaultDatabase,
-            AccessMode = ds.AccessMode.ToString(),
-            TunnelServerId = ds.TunnelServerId,
-            TunnelServer = ResolveTunnelServerName(config, ds),
-            Description = ds.Description,
-            Tags = ds.Tags,
-            AccessibleFromSshServers = config.Relations
-                .Where(r => r.To == AssetNode.Ds(ds.Id) && r.From.StartsWith(AssetNode.SshPrefix, StringComparison.Ordinal))
-                .Select(r => LabelOf(config, r.From))
-                .ToArray(),
-            ConnectedApplications = config.Relations
-                .Where(r => r.To == AssetNode.Ds(ds.Id) && r.From.StartsWith(AssetNode.AppPrefix, StringComparison.Ordinal))
-                .Select(r => LabelOf(config, r.From))
-                .ToArray()
-        }).ToList();
+        var items = config.DataSources
+            .Where(ds => McpAuthorizationFilter.IsTargetVisibleForCaller(policy, AssetNode.Ds(ds.Id)))
+            .Select(ds =>
+            {
+                var tunnelVisible = !string.IsNullOrWhiteSpace(ds.TunnelServerId)
+                    && visibleServerIds.Contains(ds.TunnelServerId);
+                return new DatasourceSummaryDto
+                {
+                    Id = ds.Id,
+                    Name = ds.Name,
+                    Type = ds.Type,
+                    Host = ds.Host,
+                    Port = ds.Port,
+                    Username = ds.Username,
+                    DefaultDatabase = ds.DefaultDatabase,
+                    AccessMode = ds.AccessMode.ToString(),
+                    TunnelServerId = tunnelVisible ? ds.TunnelServerId : null,
+                    TunnelServer = tunnelVisible ? ResolveTunnelServerName(config, ds) : null,
+                    Description = ds.Description,
+                    Tags = ds.Tags,
+                    AccessibleFromSshServers = config.Relations
+                        .Where(r => r.To == AssetNode.Ds(ds.Id)
+                            && r.From.StartsWith(AssetNode.SshPrefix, StringComparison.Ordinal)
+                            && visibleServerIds.Contains(r.From[AssetNode.SshPrefix.Length..]))
+                        .Select(r => LabelOf(config, r.From))
+                        .ToArray(),
+                    ConnectedApplications = config.Relations
+                        .Where(r => r.To == AssetNode.Ds(ds.Id) && r.From.StartsWith(AssetNode.AppPrefix, StringComparison.Ordinal))
+                        .Select(r => LabelOf(config, r.From))
+                        .ToArray()
+                };
+            }).ToList();
 
         await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
         {
@@ -126,8 +141,13 @@ public class DatasourceTools
         [Description("会话ID(可选): 只查某个 MCP 会话产生的记录; 当前会话ID见 mcp_self_check")] string? sessionId = null,
         [Description("工具名(可选): 只查由某个 MCP 工具产生的记录, 如 mysql_query / redis_execute")] string? tool = null,
         [Description("事件类型(可选): exec=执行 / gate=审批拦截 / probe=只读探测(测试/诊断/EXPLAIN)")] string? category = null,
+        [Description("仅管理员可用: true=查看全部用户历史; 默认false=Web强制模式仅本人/桌面保持全量")] bool allUsers = false,
         CancellationToken cancellationToken = default)
     {
+        var (userIds, scopeError) = CallerScope.Current.AuditUserFilter(allUsers);
+        if (scopeError is not null)
+            return SqlHistoryDto.Fail("authorization_denied", scopeError);
+
         var config = await _configService.LoadConfigAsync();
         string? filterId = null;
         if (!string.IsNullOrWhiteSpace(datasourceId))
@@ -141,7 +161,8 @@ public class DatasourceTools
         var effectiveLimit = ToolSupport.ClampLimit(limit);
         var records = (await _auditLogService.GetSqlLogsAsync(
                 filterId, effectiveLimit, null, false, Math.Max(0, offset), sessionId, tool,
-                Enum.TryParse<AuditCategory>(category, ignoreCase: true, out var scat) ? scat : null))
+                Enum.TryParse<AuditCategory>(category, ignoreCase: true, out var scat) ? scat : null,
+                userIds))
             .ToList();
 
         foreach (var record in records)

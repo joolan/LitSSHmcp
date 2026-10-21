@@ -145,7 +145,7 @@ public class DockerTools
     }
 
     [McpServerTool(Name = "docker_exec", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("在运行中的Docker容器内执行命令(需人工确认)。用于容器内排查: 查进程/看配置/测端口。只读排查优先用docker_logs/docker_inspect")]
+    [Description("在运行中的Docker容器内执行命令(需人工确认)。用于容器内排查: 查进程/看配置/测端口。命令按 POSIX argv 拆分并逐参数转义, 不展开变量/通配符/管道; 需要 shell 语法请显式写 sh -c '...'。只读排查优先用docker_logs/docker_inspect")]
     public async Task<RemoteCommandResultDto> DockerExec(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
         [Description("容器名或容器ID")] string container,
@@ -154,10 +154,11 @@ public class DockerTools
     {
         if (!ContainerName.IsMatch(container))
             return new RemoteCommandResultDto { Success = false, Status = "invalid_container", Error = $"非法的容器名: {container}" };
-        if (string.IsNullOrWhiteSpace(command))
-            return new RemoteCommandResultDto { Success = false, Status = "invalid_argument", Error = "容器内命令不能为空。" };
+        if (!Core.Services.Security.PosixCommandLine.TrySplit(command, out var argv, out var error))
+            return new RemoteCommandResultDto { Success = false, Status = "invalid_argument", Error = error };
 
-        var full = $"docker exec {Core.Services.Security.ShellQuote.Single(container)} {command}";
+        var full = $"docker exec {Core.Services.Security.ShellQuote.Single(container)} " +
+                   Core.Services.Security.ShellQuote.Join(argv);
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, full, cancellationToken));
     }
 

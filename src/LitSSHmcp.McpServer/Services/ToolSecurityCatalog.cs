@@ -42,6 +42,8 @@ public enum ToolAccessLevel
 /// <summary>
 /// 工具安全元数据的单一事实源：目标参数、最低访问级别、是否需要写锁、是否按参数动态判定读写。
 /// 新增工具必须在此登记；<c>ToolCatalogConsistencyTests</c> 会用反射校验注册工具与目录一致。
+/// <param name="SelfScopedGlobal">目标形态为 Global 时，工具自身按调用者裁剪返回内容（如服务器/数据源/会话清单），
+/// 强制模式下允许普通成员调用；为 false 的无目标全局工具仅管理员可用。</param>
 /// </summary>
 public sealed record ToolSecurityDescriptor(
     string Name,
@@ -49,7 +51,8 @@ public sealed record ToolSecurityDescriptor(
     string[] TargetArguments,
     ToolAccessLevel RequiredAccess,
     bool RequiresWriteLock,
-    bool IsConditionalWrite);
+    bool IsConditionalWrite,
+    bool SelfScopedGlobal = false);
 
 /// <summary>已注册 MCP 工具的安全目录。</summary>
 public static class ToolSecurityCatalog
@@ -83,13 +86,16 @@ public static class ToolSecurityCatalog
             ToolAccessLevel access,
             bool writeLock = false,
             bool conditionalWrite = false,
+            bool selfScopedGlobal = false,
             params string[] targetArguments)
         {
-            list.Add(new ToolSecurityDescriptor(name, kind, targetArguments, access, writeLock, conditionalWrite));
+            list.Add(new ToolSecurityDescriptor(
+                name, kind, targetArguments, access, writeLock, conditionalWrite, selfScopedGlobal));
         }
 
         void LocalRead(string name) => Add(name, ToolTargetKind.None, ToolAccessLevel.Read);
-        void GlobalRead(string name) => Add(name, ToolTargetKind.Global, ToolAccessLevel.Read);
+        void GlobalRead(string name, bool selfScoped = false) =>
+            Add(name, ToolTargetKind.Global, ToolAccessLevel.Read, selfScopedGlobal: selfScoped);
         void ServerRead(string name) => Add(name, ToolTargetKind.Server, ToolAccessLevel.Read, targetArguments: "serverId");
         void DatasourceRead(string name) => Add(name, ToolTargetKind.Datasource, ToolAccessLevel.Read, targetArguments: "datasourceId");
         void ServerWrite(string name) => Add(name, ToolTargetKind.Server, ToolAccessLevel.Write, writeLock: true, targetArguments: "serverId");
@@ -102,7 +108,7 @@ public static class ToolSecurityCatalog
         LocalRead("mcp_approval_round");
 
         // 服务器清单/状态。
-        GlobalRead("ssh_list_servers");
+        GlobalRead("ssh_list_servers", selfScoped: true);
         ServerRead("ssh_get_server_status");
         ServerRead("ssh_test_connection");
         ServerRead("ssh_snapshot_get");
@@ -142,7 +148,7 @@ public static class ToolSecurityCatalog
         ServerWrite("service_restart");
 
         // 数据源。
-        GlobalRead("datasource_list");
+        GlobalRead("datasource_list", selfScoped: true);
         DatasourceRead("datasource_test_connection");
         Add("datasource_get_sql_history", ToolTargetKind.OptionalDatasource, ToolAccessLevel.Read, targetArguments: "datasourceId");
         DatasourceRead("mysql_query");
@@ -172,8 +178,8 @@ public static class ToolSecurityCatalog
         // 应用聚合体检：扩展到应用关联的服务器/数据源。
         Add("app_health_snapshot", ToolTargetKind.Application, ToolAccessLevel.Read, targetArguments: "appId");
 
-        // 会话列表：当前为全局只读，后续按用户裁剪。
-        GlobalRead("mcp_list_sessions");
+        // 会话列表：全局清单，由工具按用户裁剪。
+        GlobalRead("mcp_list_sessions", selfScoped: true);
 
         var duplicate = list.GroupBy(d => d.Name, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1);
         if (duplicate is not null)

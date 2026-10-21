@@ -15,7 +15,8 @@ namespace LitSSHmcp.McpServer.Services;
 /// <item>仅当宿主 spawn 注入 <c>LITSSH_AUTHZ_MODE=enforce</c>（Web 宿主）才生效——
 /// 桌面会话不注入 = 仅归因不限权（D1）；身份取自 <c>LITSSH_AUTHZ_USER</c>/归因 Id，绝不来自工具参数（§10.A.5）；</item>
 /// <item>目标与所需访问级别来自 <see cref="ToolSecurityCatalog"/>（单一事实源），不再按工具名猜目标；</item>
-/// <item>无目标的工具（本会话/元数据类）不受矩阵约束；全局只读工具暂放行，后续按用户裁剪返回内容；</item>
+/// <item>无目标的本会话/元数据工具不受矩阵约束；全局清单工具（服务器/数据源/会话）由工具按用户裁剪，
+/// 其余无目标全局查询（拓扑搜索/邻域/路径等）非管理员一律拒绝，避免返回无法裁剪的全局资产；</item>
 /// <item>拒绝时写 Gate/Blocked 审计（Decision=authorization_denied，带 SessionId+UserId 入哈希链）；</item>
 /// <item>矩阵缺省 fail-closed：未命中用户规则 / 目标不在白名单 / 级别不足 / 工具未登记一律拒绝。</item>
 /// </list>
@@ -63,9 +64,21 @@ public static class McpAuthorizationFilter
             }
 
             // 无目标：元数据工具直接放行；可选目标未提供时暂不做目标级校验（P0-B 再按用户裁剪）；
-            // 全局只读工具当前放行，后续按用户过滤返回内容。
+            // 无目标工具：本会话/元数据直接放行；全局清单需标记 SelfScopedGlobal，其余全局查询仅管理员。
             if (resolution.TargetKeys.Count == 0)
             {
+                // 无目标全局查询（拓扑搜索/邻域/路径等）无法按目标白名单裁剪返回内容：
+                // 非管理员 fail-closed，仅管理员可用。元数据清单（服务器/数据源/会话）由工具自身按用户裁剪，
+                // 通过 SelfScopedGlobal 显式放行。
+                if (descriptor.TargetKind == ToolTargetKind.Global
+                    && !descriptor.SelfScopedGlobal
+                    && !CallerScope.Current.IsAdmin)
+                {
+                    const string globalReason = "无目标全局工具仅管理员可用（非管理员请改用带目标的工具）";
+                    await RecordDeniedAsync(services, config, tool, "(global)", globalReason).ConfigureAwait(false);
+                    return Denied(tool, "(global)", globalReason);
+                }
+
                 if (descriptor.TargetKind is ToolTargetKind.None or ToolTargetKind.Global
                     or ToolTargetKind.OptionalServer or ToolTargetKind.OptionalDatasource)
                     return await next(context, ct).ConfigureAwait(false);
@@ -101,6 +114,25 @@ public static class McpAuthorizationFilter
     /// <summary>宿主是否注入了强制模式（Web 宿主启动时设置 <c>LITSSH_AUTHZ_MODE=enforce</c>；桌面不设置）。</summary>
     public static bool EnforcementEnabled =>
         string.Equals(Environment.GetEnvironmentVariable(HostEnv.AuthzMode), HostEnv.Enforce, StringComparison.Ordinal);
+
+    /// <summary>
+    /// 返回单个目标是否对当前调用者可见（列表类工具按此裁剪）：桌面/关闭矩阵/管理员 = 全部可见；
+    /// Web 普通用户必须命中 read 级目标白名单。身份只来自宿主注入，不信任工具参数。
+    /// </summary>
+    public static bool IsTargetVisibleForCaller(AuthorizationConfig policy, string targetKey)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        if (!EnforcementEnabled || CallerScope.Current.IsAdmin)
+            return true;
+
+        var (allowed, _) = EvaluateAccess(
+            policy,
+            Environment.GetEnvironmentVariable(HostEnv.AuthzUser),
+            AuditContext.CurrentUserId,
+            new[] { targetKey },
+            ToolAccessLevel.Read);
+        return allowed;
+    }
 
     /// <summary>
     /// 解析调用所需的最低访问级别：SQL/Redis 执行按实际语句动态判定，其余按目录静态声明。

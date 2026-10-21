@@ -15,22 +15,26 @@ namespace LitSSHmcp.McpServer.Tests;
 /// 授权矩阵强制过滤器（评估报告 D1 / §10.B.4）：矩阵判定纯逻辑（用户/目标匹配、级别、fail-closed）、
 /// 强制开关（宿主 env 注入）、完整过滤器的放行/拒绝/审计语义。
 /// </summary>
+[Collection("AuthzEnvironment")]
 public class McpAuthorizationFilterTests : IDisposable
 {
     private readonly string? _savedMode = Environment.GetEnvironmentVariable(HostEnv.AuthzMode);
     private readonly string? _savedAuthzUser = Environment.GetEnvironmentVariable(HostEnv.AuthzUser);
+    private readonly string? _savedAuthzRole = Environment.GetEnvironmentVariable(HostEnv.AuthzRole);
 
     public McpAuthorizationFilterTests()
     {
         // 强制开关是进程级 env：每例开始先复位，避免同类其它用例受残留影响
         Environment.SetEnvironmentVariable(HostEnv.AuthzMode, null);
         Environment.SetEnvironmentVariable(HostEnv.AuthzUser, null);
+        Environment.SetEnvironmentVariable(HostEnv.AuthzRole, null);
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable(HostEnv.AuthzMode, _savedMode);
         Environment.SetEnvironmentVariable(HostEnv.AuthzUser, _savedAuthzUser);
+        Environment.SetEnvironmentVariable(HostEnv.AuthzRole, _savedAuthzRole);
     }
 
     private static void EnableEnforce(string? authzUser = null)
@@ -356,6 +360,43 @@ public class McpAuthorizationFilterTests : IDisposable
     }
 
     [Fact]
+    public async Task Global_query_tools_require_admin_under_enforce()
+    {
+        EnableEnforce("alice");
+        var services = BuildServices(TestConfig()); // 空矩阵：普通成员不得发起无法裁剪的全局查询
+
+        var called = false;
+        var result = await InvokeAsync("topology_search", null, services,
+            next => { called = true; return NextResult(); });
+
+        Assert.False(called);
+        Assert.True(result.IsError);
+        Assert.Contains("仅管理员", Assert.IsType<TextContentBlock>(Assert.Single(result.Content!)).Text);
+
+        Environment.SetEnvironmentVariable(HostEnv.AuthzRole, HostEnv.AdminRole);
+        var adminCalled = false;
+        var adminResult = await InvokeAsync("topology_search", null, services,
+            next => { adminCalled = true; return NextResult(); });
+
+        Assert.True(adminCalled);
+        Assert.True(adminResult.IsError is not true);
+    }
+
+    [Fact]
+    public async Task Self_scoped_global_list_tools_pass_for_member()
+    {
+        EnableEnforce("alice");
+        var services = BuildServices(TestConfig());
+
+        var called = false;
+        var result = await InvokeAsync("ssh_list_servers", null, services,
+            next => { called = true; return NextResult(); });
+
+        Assert.True(called);
+        Assert.True(result.IsError is not true);
+    }
+
+    [Fact]
     public async Task Unresolvable_target_is_denied_under_enforce()
     {
         EnableEnforce("alice");
@@ -504,7 +545,7 @@ public class McpAuthorizationFilterTests : IDisposable
         public virtual Task LogSqlAsync(SqlAuditLog log) => Task.CompletedTask;
         public virtual Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null) => Task.FromResult(Array.Empty<SqlAuditLog>());
         public virtual Task RecordSessionAsync(AuditSession session) => Task.CompletedTask;
-        public virtual Task<AuditSession[]> GetSessionsAsync(int limit = 50) => Task.FromResult(Array.Empty<AuditSession>());
+        public virtual Task<AuditSession[]> GetSessionsAsync(int limit = 50, string? ownerUserId = null) => Task.FromResult(Array.Empty<AuditSession>());
         public virtual Task<AuditVerifyResult> VerifyChainAsync(CancellationToken ct = default) => Task.FromResult(new AuditVerifyResult { Ok = true });
     }
 

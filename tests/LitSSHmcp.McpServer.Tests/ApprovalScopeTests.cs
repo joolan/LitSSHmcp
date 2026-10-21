@@ -13,48 +13,60 @@ public class ApprovalScopeTests : IDisposable
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "litssh-approvals-" + Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public void Registry_session_grant_approves_tool_always()
+    public void Registry_session_grant_is_scoped_to_tool_target_and_command()
     {
         var registry = new ApprovalExemptionRegistry();
-        registry.GrantSession("ssh_execute_command");
+        Assert.True(registry.GrantSession("ssh_execute_command", "server-1", "rm -rf x", null));
 
-        Assert.True(registry.IsApproved("ssh_execute_command", null));
-        Assert.True(registry.IsApproved("ssh_execute_command", "r1"));
-        Assert.False(registry.IsApproved("docker_rm", null));
-        Assert.False(registry.IsApproved(null, null));
+        Assert.True(registry.IsApproved("ssh_execute_command", "server-1", "rm -rf x", null, null));
+        Assert.True(registry.IsApproved("ssh_execute_command", "server-1", "rm -rf x", null, "r1"));
+
+        Assert.False(registry.IsApproved("ssh_execute_command", "server-2", "rm -rf x", null, null));   // 不跨目标
+        Assert.False(registry.IsApproved("ssh_execute_command", "server-1", "rm -rf /", null, null));  // 不跨命令
+        Assert.False(registry.IsApproved("docker_rm", "server-1", "rm -rf x", null, null));
+        Assert.False(registry.IsApproved(null, "server-1", "rm -rf x", null, null));
+        Assert.False(registry.IsApproved("ssh_execute_command", null, "rm -rf x", null, null));
+
+        Assert.True(registry.GrantSession("ssh_upload_file", "server-1", "上传 a.txt", "a.txt -> /tmp/a.txt"));
+        Assert.True(registry.IsApproved("ssh_upload_file", "server-1", "上传 a.txt", "a.txt -> /tmp/a.txt", null));
+        Assert.False(registry.IsApproved("ssh_upload_file", "server-1", "上传 a.txt", "a.txt -> /tmp/b.txt", null));
     }
 
     [Fact]
-    public void Registry_round_grant_approves_only_matching_round()
+    public void Registry_round_grant_approves_only_matching_round_and_scope()
     {
         var registry = new ApprovalExemptionRegistry();
-        Assert.True(registry.GrantRound("ssh_execute_command", "r7"));
+        Assert.True(registry.GrantRound("ssh_execute_command", "server-1", "rm -rf x", null, "r7"));
 
-        Assert.True(registry.IsApproved("ssh_execute_command", "r7"));
-        Assert.False(registry.IsApproved("ssh_execute_command", "r8"));   // 下一条消息 → 新轮次 → 恢复审批
-        Assert.False(registry.IsApproved("ssh_execute_command", null));   // 轮次信号丢失 → 只多弹窗，不误放行
-        Assert.False(registry.IsApproved("docker_rm", "r7"));
+        Assert.True(registry.IsApproved("ssh_execute_command", "server-1", "rm -rf x", null, "r7"));
+        Assert.False(registry.IsApproved("ssh_execute_command", "server-1", "rm -rf x", null, "r8"));   // 新轮次 → 恢复审批
+        Assert.False(registry.IsApproved("ssh_execute_command", "server-1", "rm -rf x", null, null));   // 轮次信号丢失 → 不误放行
+        Assert.False(registry.IsApproved("ssh_execute_command", "server-2", "rm -rf x", null, "r7"));
+        Assert.False(registry.IsApproved("ssh_execute_command", "server-1", "rm -rf /", null, "r7"));
+        Assert.False(registry.IsApproved("docker_rm", "server-1", "rm -rf x", null, "r7"));
     }
 
     [Fact]
-    public void Registry_round_grant_requires_round_id()
+    public void Registry_round_grant_requires_round_id_and_scope()
     {
         var registry = new ApprovalExemptionRegistry();
 
-        Assert.False(registry.GrantRound("ssh_execute_command", null));
-        Assert.False(registry.GrantRound("ssh_execute_command", "  "));
-        Assert.False(registry.GrantRound("  ", "r1"));
-        Assert.False(registry.IsApproved("ssh_execute_command", "r1"));
+        Assert.False(registry.GrantRound("ssh_execute_command", "server-1", "rm -rf x", null, null));
+        Assert.False(registry.GrantRound("ssh_execute_command", "server-1", "rm -rf x", null, "  "));
+        Assert.False(registry.GrantRound(null, "server-1", "rm -rf x", null, "r1"));
+        Assert.False(registry.GrantRound("ssh_execute_command", null, "rm -rf x", null, "r1"));
+        Assert.False(registry.GrantRound("ssh_execute_command", "server-1", " ", null, "r1"));
+        Assert.False(registry.IsApproved("ssh_execute_command", "server-1", "rm -rf x", null, "r1"));
     }
 
     [Fact]
     public void Registry_tool_names_are_case_insensitive()
     {
         var registry = new ApprovalExemptionRegistry();
-        registry.GrantSession("SSH_Execute_Command");
+        registry.GrantSession("SSH_Execute_Command", "server-1", "rm -rf x", null);
 
-        Assert.True(registry.IsApproved("ssh_execute_command", null));
-        Assert.Equal(new[] { "SSH_Execute_Command" }, registry.SessionGrantedTools);
+        Assert.True(registry.IsApproved("ssh_execute_command", "server-1", "rm -rf x", null, null));
+        Assert.Equal(new[] { "SSH_Execute_Command @ server-1" }, registry.SessionGrantedTools);
     }
 
     [Fact]
@@ -78,7 +90,7 @@ public class ApprovalScopeTests : IDisposable
         options.Approval.TimeoutSeconds = 15;
 
         var registry = new ApprovalExemptionRegistry();
-        registry.GrantSession("ssh_execute_command");
+        registry.GrantSession("ssh_execute_command", "server-1", "rm -rf x", null);
 
         var service = new ApprovalService(options, new DesktopApprovalService(options), new CliApprovalChannel(_dir),
             roundTracker: new ApprovalRoundTracker(), exemptions: registry);
@@ -105,7 +117,7 @@ public class ApprovalScopeTests : IDisposable
 
         var tracker = new ApprovalRoundTracker { CurrentRoundId = "r7" };
         var registry = new ApprovalExemptionRegistry();
-        registry.GrantRound("ssh_execute_command", "r7");
+        registry.GrantRound("ssh_execute_command", "server-1", "rm -rf x", null, "r7");
 
         var service = new ApprovalService(options, new DesktopApprovalService(options, roundTracker: tracker, exemptions: registry),
             new CliApprovalChannel(_dir), roundTracker: tracker, exemptions: registry);
@@ -131,7 +143,7 @@ public class ApprovalScopeTests : IDisposable
 
         var tracker = new ApprovalRoundTracker { CurrentRoundId = "r8" };
         var registry = new ApprovalExemptionRegistry();
-        registry.GrantRound("ssh_execute_command", "r6");   // 上一轮的授权
+        registry.GrantRound("ssh_execute_command", "server-1", "rm -rf x", null, "r6");   // 上一轮的授权
 
         var service = new ApprovalService(options, new DesktopApprovalService(options, roundTracker: tracker, exemptions: registry),
             new CliApprovalChannel(_dir), roundTracker: tracker, exemptions: registry);
@@ -157,7 +169,7 @@ public class ApprovalScopeTests : IDisposable
         options.Approval.Channels = new[] { "cli" };
 
         var registry = new ApprovalExemptionRegistry();
-        registry.GrantSession("ssh_execute_command");
+        registry.GrantSession("ssh_execute_command", "server-1", "rm -rf x", null);
 
         var service = new ApprovalService(options, new DesktopApprovalService(options), new CliApprovalChannel(_dir),
             roundTracker: new ApprovalRoundTracker(), exemptions: registry);

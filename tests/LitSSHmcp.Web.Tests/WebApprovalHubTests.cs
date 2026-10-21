@@ -56,6 +56,25 @@ public class WebApprovalHubTests : IDisposable
     }
 
     [Fact]
+    public void Push_queue_is_bounded_and_drops_oldest_for_slow_clients()
+    {
+        using var hub = NewHub();
+        var client = hub.Register("101");
+
+        var total = ApprovalPushClient.FrameQueueCapacity + 32;
+        for (var i = 0; i < total; i++)
+            client.Enqueue(new ApprovalClosedFrame("approval_closed", i.ToString()));
+
+        var frames = new List<object>();
+        while (client.Frames.TryRead(out var frame))
+            frames.Add(frame);
+
+        Assert.Equal(ApprovalPushClient.FrameQueueCapacity, frames.Count);
+        Assert.Equal((total - 1).ToString(),
+            Assert.IsType<ApprovalClosedFrame>(frames[^1]).Id);
+    }
+
+    [Fact]
     public async Task PollOnce_pushes_new_pending_to_matching_owner_only()
     {
         using var hub = NewHub();

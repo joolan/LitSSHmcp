@@ -65,6 +65,7 @@ builder.Services.AddSingleton<WebApprovalHub>();
 // M3-8 登录/API 层限速（§10.B.1/B.6）：进程内按 IP 固定窗口计数
 builder.Services.AddSingleton<WebRateLimitPolicy>();
 builder.Services.AddSingleton<WebRateLimitStore>();
+builder.Services.AddSingleton<WebSocketConnectionLimiter>();
 
 var app = builder.Build();
 

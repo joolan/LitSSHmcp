@@ -134,7 +134,11 @@ public class WebApprovalEndpointTests : IClassFixture<ApprovalFixture>
         var ownId = _fx.SeedPending(userId);
 
         var client = _fx.Factory.Server.CreateWebSocketClient();
-        client.ConfigureRequest = r => r.Headers["Cookie"] = $"litssh_token={token}";
+        client.ConfigureRequest = r =>
+        {
+            r.Headers["Cookie"] = $"litssh_token={token}";
+            r.Headers["Origin"] = _fx.Factory.Server.BaseAddress!.GetLeftPart(UriPartial.Authority);
+        };
         var uri = new UriBuilder(_fx.Factory.Server.BaseAddress) { Scheme = "ws", Path = "/ws/approvals" }.Uri;
         var socket = await client.ConnectAsync(uri, CancellationToken.None);
 

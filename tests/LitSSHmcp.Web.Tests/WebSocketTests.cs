@@ -54,6 +54,20 @@ public class WebSocketTests : IClassFixture<WsFixture>
     }
 
     [Fact]
+    public async Task Ws_rejects_missing_origin()
+    {
+        var (token, _) = await _fx.LoginAsync("ws-no-origin");
+        var sessionId = await _fx.CreateSessionAsync(token, "会话");
+
+        var client = _fx.Factory.Server.CreateWebSocketClient();
+        client.ConfigureRequest = r => r.Headers["Cookie"] = $"litssh_token={token}";
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.ConnectAsync(WsUri(_fx, sessionId), CancellationToken.None));
+        Assert.Contains("403", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Ws_connect_to_foreign_session_404()
     {
         var (aliceToken, _) = await _fx.LoginAsync("ws-alice");
@@ -61,7 +75,11 @@ public class WebSocketTests : IClassFixture<WsFixture>
         var (bobToken, _) = await _fx.LoginAsync("ws-bob");
 
         var client = _fx.Factory.Server.CreateWebSocketClient();
-        client.ConfigureRequest = r => r.Headers["Cookie"] = $"litssh_token={bobToken}";
+        client.ConfigureRequest = r =>
+        {
+            r.Headers["Cookie"] = $"litssh_token={bobToken}";
+            r.Headers["Origin"] = Origin(_fx);
+        };
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => client.ConnectAsync(WsUri(_fx, sessionId), CancellationToken.None));
@@ -202,7 +220,7 @@ public class WebSocketTests : IClassFixture<WsFixture>
         var sessionId = await _fx.CreateSessionAsync(token, "图片");
 
         using var form = new MultipartFormDataContent();
-        var file = new ByteArrayContent(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
+        var file = new ByteArrayContent(TestImages.Png());
         file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
         form.Add(file, "file", "a.png");
         var upload = new HttpRequestMessage(HttpMethod.Post, $"/api/sessions/{sessionId}/attachments") { Content = form };
@@ -288,10 +306,17 @@ public class WebSocketTests : IClassFixture<WsFixture>
     private static Uri WsUri(WsFixture fx, long id)
         => new(fx.Factory.Server.BaseAddress!, $"ws://localhost/ws/sessions/{id}");
 
+    private static string Origin(WsFixture fx)
+        => fx.Factory.Server.BaseAddress!.GetLeftPart(UriPartial.Authority);
+
     private async Task<WebSocket> ConnectAsync(string token, long sessionId)
     {
         var client = _fx.Factory.Server.CreateWebSocketClient();
-        client.ConfigureRequest = r => r.Headers["Cookie"] = $"litssh_token={token}";
+        client.ConfigureRequest = r =>
+        {
+            r.Headers["Cookie"] = $"litssh_token={token}";
+            r.Headers["Origin"] = Origin(_fx);
+        };
         return await client.ConnectAsync(WsUri(_fx, sessionId), CancellationToken.None);
     }
 

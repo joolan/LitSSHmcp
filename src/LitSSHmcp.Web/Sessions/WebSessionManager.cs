@@ -17,6 +17,9 @@ public sealed record WebSessionInfo(long Id, string Title, string OwnerUserId, s
 /// <summary>上传图片附件（相对会话目录的路径 + MIME）。</summary>
 public sealed record WebAttachmentInput(string RelativePath, string? ContentType = null, string? Name = null);
 
+/// <summary>图片附件落盘结果（格式/尺寸来自文件头校验，而非客户端声明）。</summary>
+public sealed record WebAttachmentSaved(string RelativePath, string ContentType, string DisplayName, int Width, int Height);
+
 /// <summary>不属于当前用户（或会话不存在）——对调用方统一表现为 404，不泄露存在性。</summary>
 public sealed class WebSessionNotFoundException() : Exception("会话不存在");
 
@@ -409,7 +412,7 @@ public sealed class WebSessionManager : IAsyncDisposable
         var toolPolicy = await LoadToolPolicyAsync(sessionId, ct);
         slot.WorkspaceDir = dir;
         slot.Runtime = await _runtimeFactory.CreateAsync(
-            new WebRuntimeRequest(sessionId, owner.UserId.ToString(), owner.Username, dir, built.History, summary,
+            new WebRuntimeRequest(sessionId, owner.UserId.ToString(), owner.Username, owner.Role, dir, built.History, summary,
                 sessionRow?.ProviderId, built.ActiveAgent, built.ActiveSkillIds, built.PlanMode, built.AssetGraph,
                 toolPolicy), ct);
     }
@@ -441,7 +444,7 @@ public sealed class WebSessionManager : IAsyncDisposable
     /// 保存聊天图片附件（仅图片；单张 ≤10MB）：会话目录 <c>attachments/</c> 下服务端生成文件名，
     /// 返回相对会话目录的路径（WS user 帧回传）。
     /// </summary>
-    public async Task<string> SaveAttachmentAsync(WebPrincipal owner, long sessionId, string? fileName,
+    public async Task<WebAttachmentSaved> SaveAttachmentAsync(WebPrincipal owner, long sessionId, string? fileName,
         string? contentType, Stream content, CancellationToken ct = default)
     {
         await EnsureOwnerAsync(owner, sessionId, ct);
@@ -449,27 +452,27 @@ public sealed class WebSessionManager : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(workspace) || !PathGuard.IsUnder(WebJobsRoot, workspace))
             throw new WebSessionNotFoundException();
 
-        var extension = ResolveImageExtension(fileName, contentType)
-            ?? throw new InvalidOperationException("仅支持图片附件（png/jpeg/webp/gif）");
-
-        const long maxBytes = 10 * 1024 * 1024;
         using var buffer = new MemoryStream();
         var chunk = new byte[81920];
         int read;
         while ((read = await content.ReadAsync(chunk, ct)) > 0)
         {
-            if (buffer.Length + read > maxBytes)
+            if (buffer.Length + read > ImageAttachmentValidator.MaxBytes)
                 throw new InvalidOperationException("图片过大（单张上限 10MB）");
             buffer.Write(chunk, 0, read);
         }
 
+        var info = ImageAttachmentValidator.Validate(buffer.GetBuffer().AsSpan(0, (int)buffer.Length));
+
         var dir = Path.Combine(workspace, "attachments");
         Directory.CreateDirectory(dir);
-        var name = Guid.NewGuid().ToString("N") + extension;
+        var name = Guid.NewGuid().ToString("N") + info.Extension;
         await File.WriteAllBytesAsync(Path.Combine(dir, name), buffer.ToArray(), ct);
         _accessLog.Write("attachment_upload", owner.Username, null,
-            $"session={sessionId} name={name} size={buffer.Length}");
-        return "attachments/" + name;
+            $"session={sessionId} name={name} size={buffer.Length} type={info.ContentType} " +
+            $"dimensions={info.Width}x{info.Height}");
+        return new WebAttachmentSaved("attachments/" + name, info.ContentType,
+            ImageAttachmentValidator.SanitizeDisplayName(fileName, info.Extension), info.Width, info.Height);
     }
 
     /// <summary>切换会话模型：校验模型存在且启用 → 落库 → 释放现有运行时（下一轮按新模型重建）。</summary>
@@ -515,13 +518,18 @@ public sealed class WebSessionManager : IAsyncDisposable
         if (attachments is not { Count: > 0 })
             return contents;
 
+        if (attachments.Count > 5)
+            throw new InvalidOperationException("单条消息最多 5 张图片");
+
         var workspace = await _store.GetSessionWorkspaceDirAsync(sessionId, ct);
         foreach (var attachment in attachments)
         {
             var full = ResolveAttachment(workspace, attachment.RelativePath);
+            if (new FileInfo(full).Length > ImageAttachmentValidator.MaxBytes)
+                throw new InvalidOperationException("图片过大（单张上限 10MB）");
             var bytes = await File.ReadAllBytesAsync(full, ct);
-            contents.Add(new DataContent(bytes,
-                string.IsNullOrWhiteSpace(attachment.ContentType) ? "image/png" : attachment.ContentType));
+            var info = ImageAttachmentValidator.Validate(bytes);
+            contents.Add(new DataContent(bytes, info.ContentType));
         }
         return contents;
     }
@@ -535,31 +543,6 @@ public sealed class WebSessionManager : IAsyncDisposable
         if (!PathGuard.IsUnder(root, full) || !File.Exists(full))
             throw new WebFilePathDeniedException();
         return full;
-    }
-
-    private static string? ResolveImageExtension(string? fileName, string? contentType)
-    {
-        var type = (contentType ?? string.Empty).Split(';')[0].Trim().ToLowerInvariant();
-        var byType = type switch
-        {
-            "image/png" => ".png",
-            "image/jpeg" or "image/jpg" => ".jpg",
-            "image/webp" => ".webp",
-            "image/gif" => ".gif",
-            _ => null
-        };
-        if (byType is not null)
-            return byType;
-
-        var extension = Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant();
-        return extension switch
-        {
-            ".png" => ".png",
-            ".jpg" or ".jpeg" => ".jpg",
-            ".webp" => ".webp",
-            ".gif" => ".gif",
-            _ => null
-        };
     }
 
     /// <summary>默认标题（"Web 任务"/"任务 …"）在首条用户消息后改为消息摘要（截断），提升会话列表可读性。</summary>
@@ -605,6 +588,7 @@ public sealed class WebSessionManager : IAsyncDisposable
             var name = string.IsNullOrWhiteSpace(attachment.Name)
                 ? Path.GetFileName(attachment.RelativePath)
                 : attachment.Name!;
+            name = ImageAttachmentValidator.SanitizeDisplayName(name, Path.GetExtension(attachment.RelativePath));
             sb.Append("\n🖼 图片: ").Append(name).Append(" [").Append(attachment.RelativePath).Append(']');
         }
         return sb.ToString();

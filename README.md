@@ -643,7 +643,7 @@ AI 的典型排查链路：
 ### Web 助手安全
 
 - **认证**：独立账号（PBKDF2-SHA256 210k 迭代），连续失败 5 次起按指数退避锁定（5 分钟起、封顶 1 小时）；令牌 Cookie `HttpOnly + SameSite`
-- **授权矩阵**：Web 会话的 MCP 目标工具按「登录用户 → 目标白名单 + read/write/exec 级别」在工具调用过滤层强制校验（`security.authorization`，**未命中规则默认拒绝** fail-closed，拒绝落 `authorization_denied` 审计）；工具目标与最低级别由安全目录统一声明，日志/Docker/Java/拓扑/应用体检等目标工具同样覆盖；可视化配置入口在桌面 **「设置 → 安全设置 → Web 授权矩阵」**（启用开关 + 规则行增删，同一用户可多行分别授权不同目标，保存热生效），无需手改 `config.json`
+- **授权矩阵**：Web 会话的 MCP 目标工具按「登录用户 → 目标白名单 + read/write/exec 级别」在工具调用过滤层强制校验（`security.authorization`，**未命中规则默认拒绝** fail-closed，拒绝落 `authorization_denied` 审计）；工具目标与最低级别由安全目录统一声明，日志/Docker/Java/拓扑/应用体检等目标工具同样覆盖；可视化配置入口在桌面 **「设置 → 安全设置 → Web 授权矩阵」**（启用开关 + 规则行增删，同一用户可多行分别授权不同目标，保存热生效），无需手改 `config.json`。**数据可见范围**：强制模式下命令 / SQL 历史与会话列表默认只返回本人数据，管理员可用 `allUsers=true` 显式查看全局；`ssh_list_servers` / `datasource_list` 按目标白名单裁剪（并隐藏未授权隧道路由/关联服务器引用）；无目标的全局拓扑查询仅管理员可用；桌面未启用强制时保持全量
 - **限速**：登录与 API 按 IP 固定窗口限速（`/api/login` 30 次/分钟、`/api/*` 600 次/分钟），超限 429 并落 `rate_limited` 访问日志
 - **会话隔离与配额**：所有会话接口逐请求校验 owner（越权统一 404 不泄露存在性）；每用户并发会话上限默认 8（`security.limits.maxSessionsPerUser`，0=不限）；LLM 成本预算按会话生效（`agent.budget.maxSessionCost`，会话数 × 成本上限即单用户上界）
 - **浏览器侧防护**：写操作 CSRF 双提交令牌、WebSocket 握手校验 Origin、全站安全响应头（`nosniff`/`X-Frame-Options: DENY`/`Referrer-Policy` + HTML `Content-Security-Policy`）、模型输出 Markdown 经白名单 sanitize 后才渲染（防存储型 XSS）

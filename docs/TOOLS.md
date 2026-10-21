@@ -192,7 +192,7 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 ### `ssh_list_servers`
 - **参数**：无
 - **返回**：`{ success, count, servers: [...] }`，每项含 `id/name/host/port/username/authType/description/tags/lastConnectedAt`（**无密码**）
-- **说明**：**已禁用的服务器不会出现在本列表中**。服务器一旦禁用：① 不出现在 `ssh_list_servers`；② 任何按服务器标识解析的工具（`ssh_*` / `docker_*` / `service_*` / `log_*` / `java_*` / 应用与文件等）都返回 `server_disabled` 并拒绝执行；③ 资产拓扑中该服务器不可建链/连接；④ 拓扑自动发现跳过它。需在桌面 App 的「服务器编辑」里取消勾选“禁用”并保存后恢复。
+- **说明**：**已禁用的服务器不会出现在本列表中**。服务器一旦禁用：① 不出现在 `ssh_list_servers`；② 任何按服务器标识解析的工具（`ssh_*` / `docker_*` / `service_*` / `log_*` / `java_*` / 应用与文件等）都返回 `server_disabled` 并拒绝执行；③ 资产拓扑中该服务器不可建链/连接；④ 拓扑自动发现跳过它。需在桌面 App 的「服务器编辑」里取消勾选“禁用”并保存后恢复。Web 强制模式下还只返回当前用户命中 `read` 白名单的 `ssh:<id>`；桌面未启用强制时保持全量。
 
 ### `ssh_get_server_status`
 - **参数**：`serverId` — 服务器标识（ID/名称/主机名，可用 `ssh_list_servers` 列出）
@@ -241,7 +241,7 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 - **说明**：仅在需要向用户解释"为什么不能提权"时使用
 
 ### `ssh_get_command_history`
-- **参数**：`serverId`（可选，不传查全部）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `docker_logs`）、`category`（可选，事件类型：`exec`=执行 / `gate`=审批拦截 / `probe`=只读探测 / `meta`=列表元数据 / `transfer`=文件传输）
+- **参数**：`serverId`（可选，不传查全部）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `docker_logs`）、`category`（可选，事件类型：`exec`=执行 / `gate`=审批拦截 / `probe`=只读探测 / `meta`=列表元数据 / `transfer`=文件传输）、`allUsers`（默认 false；仅管理员可设 true 查看全部用户历史。Web 强制模式下普通用户始终只看本人，桌面未启用强制时保持全量）
 - **返回**：`{ success, status, error, count, hasMore, records: [...] }`（每条记录含 `sessionId`/`tool`/`category`/`decision`；`result` 已截断到 4000 字符；`hasMore: true` 表示还有更早记录，配合 `offset` 翻页）
 
 **命令类错误约定**：`{ success: false, error, status, errorKind }`，`status` 可能值：`blocked`、`blocking_command`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`sudo_not_configured`、`file_not_found`、`auth_failed`、`host_key_mismatch`、`timeout`、`rate_limited`、`connection_error`、`failed`；`blocked_script`：脚本内容扫描命中危险模式（`ssh_upload_*` 上传扫描为 `status=blocked_script`；`ssh_execute_command`/`ssh_execute_sudo` 执行侧为 `status=blocked` + `reason=blocked_script`）。
@@ -280,14 +280,14 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 ### `datasource_list`
 - **参数**：无
 - **返回**：`{ success, count, dataSources: [...] }`，每项含 `id/name/type/host/port/username/defaultDatabase/accessMode/tunnelServerId/tunnelServer/description/tags/accessibleFromSshServers/connectedApplications`
-- **说明**：**密码永不出现在返回中**；`type` 为 `mysql` / `postgres` / `redis`（按类型使用对应组的工具）；`host/port/username` 可直接用于与应用日志中的连接串比对
+- **说明**：**密码永不出现在返回中**；`type` 为 `mysql` / `postgres` / `redis`（按类型使用对应组的工具）；`host/port/username` 可直接用于与应用日志中的连接串比对。Web 强制模式下只返回命中 `read` 白名单的 `ds:<id>`，并隐藏未授权隧道服务器（`tunnelServerId`/`tunnelServer` 置空）及未授权 `accessibleFromSshServers` 引用；桌面未启用强制时保持全量。
 
 ### `datasource_test_connection`
 - **参数**：`datasourceId` — 数据源标识（ID/名称，可用 `datasource_list` 列出）
 - **返回**：`{ success, status, datasourceId, name, host, port, accessMode, viaTunnelServer, version, durationMs, error }` —— 自动选择直连或建 SSH 隧道
 
 ### `datasource_get_sql_history`
-- **参数**：`datasourceId`（可选，ID/名称）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `mysql_query`）、`category`（可选，事件类型：`exec`=查询/写入执行 / `gate`=写审批拦截 / `probe`=测试/诊断/EXPLAIN）
+- **参数**：`datasourceId`（可选，ID/名称）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `mysql_query`）、`category`（可选，事件类型：`exec`=查询/写入执行 / `gate`=写审批拦截 / `probe`=测试/诊断/EXPLAIN）、`allUsers`（默认 false；仅管理员可设 true 查看全部用户历史。Web 强制模式下普通用户始终只看本人，桌面未启用强制时保持全量）
 - **返回**：`{ success, status, error, count, hasMore, records: [...] }`（含被拒绝/被驳回的操作；每条记录含 `sessionId`/`tool`/`category`/`decision`；`result` 已截断到 4000 字符）
 - **说明**：Redis 命令审计也写在同一张表，`operation` 为 `Query`/`Execute`/`Diagnostics`，SQL 列是命令原文；写操作的审批决策记在 `decision`（`manual-approved`/`auto-approve`/`manual-rejected`/`blocked`）
 
@@ -370,7 +370,7 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 
 ## Docker 容器组（docker）
 
-容器工具在目标服务器上执行 `docker` 命令，统一走命令过滤 + 审计；`docker_restart` / `docker_exec` 属敏感操作，需人工确认。容器名会做字符校验（`[A-Za-z0-9][A-Za-z0-9_.-]*`）并单引号转义，避免注入。
+容器工具在目标服务器上执行 `docker` 命令，统一走命令过滤 + 审计；`docker_restart` / `docker_exec` 属敏感操作，需人工确认。容器名会做字符校验（`[A-Za-z0-9][A-Za-z0-9_.-]*`）并单引号转义，避免注入。`docker_exec` 的 `command` 先按 POSIX argv 拆分（支持引号/反斜杠），再逐参数单引号转义，不展开变量、通配符、管道或命令替换；需要 shell 语法时请显式写 `sh -c '...'`，由容器内 shell 执行。
 
 ### `docker_ps`
 - **参数**：`serverId`、`all`（默认 false=仅运行中，true=含已停止）
@@ -399,9 +399,9 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 - **返回**：同上；**需人工确认**（短暂中断服务）
 
 ### `docker_exec`
-- **参数**：`serverId`、`container`、`command`（容器内命令，如 `ps -ef`）
+- **参数**：`serverId`、`container`、`command`（容器内命令，如 `ps -ef`；按 POSIX argv 拆分并逐参数转义，不展开变量/通配符/管道，需要 shell 语法用 `sh -c '...'`）
 - **返回**：同上；**需人工确认**
-- **错误约定**：`{ success: false, status, error }`，`status` 可能值：`invalid_container`、`blocked`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`connection_error`、`failed`
+- **错误约定**：`{ success: false, status, error }`，`status` 可能值：`invalid_container`、`invalid_argument`（命令为空/引号未闭合/含换行）、`blocked`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`connection_error`、`failed`
 
 ## systemd 服务组（service）
 
@@ -463,6 +463,8 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 - **返回**：文本结果（`jcmd <pid> VM.version` / `VM.uptime`）
 
 ## 拓扑组（topology）
+
+> Web 强制模式：无目标的全局拓扑查询（`topology_get_overview` / `topology_get_dependencies` / `topology_search` / `topology_neighbors` / `topology_path` / `topology_impact` / `topology_explain`）仅管理员可用，普通成员调用返回 `authorization_denied`；`topology_discover` / `topology_timeline` / `topology_diff` 按其 `serverId` 做目标授权校验。桌面未启用强制时不受影响。
 
 ### `topology_get_overview`
 - **参数**：无
@@ -538,8 +540,8 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 - **场景**：排查"MCP 自己是否正常"、主机密钥校验不通过、配置损坏等
 
 ### `mcp_list_sessions`
-- **参数**：`limit`（默认 50，上限 500）
-- **返回**：`{ success, error, count, sessions: [{ sessionId, clientName, clientVersion, startedAt, lastSeenAt }] }` —— 按最近活动倒序
+- **参数**：`limit`（默认 50，上限 500）、`allUsers`（默认 false；仅管理员可设 true 查看全部用户会话。Web 强制模式下普通用户始终只看本人，桌面未启用强制时保持全量）
+- **返回**：`{ success, error, count, sessions: [{ sessionId, clientName, clientVersion, ownerUserId, startedAt, lastSeenAt }] }` —— 按最近活动倒序
 - **场景**：审计记录都带 `sessionId`，用它能看出"是哪个 AI 客户端、哪次连接"产生的；再配合 `ssh_get_command_history` / `datasource_get_sql_history` 的 `sessionId` 参数下钻
 
 ### `mcp_approval_round`

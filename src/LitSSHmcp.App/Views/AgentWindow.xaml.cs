@@ -39,15 +39,15 @@ public partial class AgentWindow : FluentWindow
         DataContext = _viewModel;
         WindowLayout.Attach(this, "agent");
         _viewModel.Turns.CollectionChanged += (_, _) => ChatScroll.ScrollToEnd();
-        Loaded += async (_, _) =>
+        Loaded += (_, _) => AsyncOperation.Run("初始化 AI 助手", async () =>
         {
             // D1 收尾：先恢复桌面登录态（跨重启保持），再加载会话（新会话按登录用户归因）
             await _desktopLogin.LoadAsync();
             _desktopLogin.ApplyAttribution();
             _viewModel.NotifyDesktopLoginChanged();
             await _viewModel.InitializeAsync();
-        };
-        Closed += async (_, _) => await _viewModel.DisposeAsync();
+        });
+        Closed += (_, _) => AsyncOperation.Run("释放 AI 助手", () => _viewModel.DisposeAsync().AsTask());
     }
 
     // 点击用户指令：展开/折叠本轮工具过程

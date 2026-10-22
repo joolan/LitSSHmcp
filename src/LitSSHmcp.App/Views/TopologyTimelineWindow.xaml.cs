@@ -22,37 +22,46 @@ public partial class TopologyTimelineWindow : Wpf.Ui.Controls.FluentWindow
             AppServiceFactory.CreateAssetGraphQueryService(_configService), _configService);
         DataContext = _viewModel;
         Loaded += OnLoaded;
+        Closed += (_, _) => Loaded -= OnLoaded;
     }
 
-    private async void OnLoaded(object sender, RoutedEventArgs e)
-    {
-        await _viewModel.InitializeAsync(_initialServerId);
-        _ready = true;
-        await _viewModel.LoadAsync();
-        ScrollToSelected();
-    }
+    private void OnLoaded(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("加载拓扑时间线", async () =>
+        {
+            await _viewModel.InitializeAsync(_initialServerId);
+            _ready = true;
+            await _viewModel.LoadAsync();
+            ScrollToSelected();
+        });
 
-    private async void OnServerChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!_ready)
-            return;
-        await _viewModel.LoadAsync();
-        ScrollToSelected();
-    }
-
-    private async void OnLimitChanged(object sender, SelectionChangedEventArgs e)
+    private void OnServerChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!_ready)
             return;
-        await _viewModel.LoadAsync();
-        ScrollToSelected();
+        AsyncOperation.Run("切换拓扑时间线服务器", async () =>
+        {
+            await _viewModel.LoadAsync();
+            ScrollToSelected();
+        });
     }
 
-    private async void OnRefresh(object sender, RoutedEventArgs e)
+    private void OnLimitChanged(object sender, SelectionChangedEventArgs e)
     {
-        await _viewModel.LoadAsync();
-        ScrollToSelected();
+        if (!_ready)
+            return;
+        AsyncOperation.Run("调整拓扑时间线数量", async () =>
+        {
+            await _viewModel.LoadAsync();
+            ScrollToSelected();
+        });
     }
+
+    private void OnRefresh(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("刷新拓扑时间线", async () =>
+        {
+            await _viewModel.LoadAsync();
+            ScrollToSelected();
+        });
 
     private void OnOpenSnapshot(object sender, RoutedEventArgs e)
     {

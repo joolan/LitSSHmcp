@@ -142,11 +142,23 @@ public partial class App : Application
 
     private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
-        SafeLog(e.Exception);
+        ReportError(e.Exception, "未处理异常");
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// 统一错误日志/去重提示（P3-3）：Dispatcher 未处理异常与 AsyncOperation 共用。
+    /// 不抛出、不阻塞调用线程。
+    /// </summary>
+    internal static void ReportError(Exception? ex, string? operation = null)
+    {
+        if (ex is null)
+            return;
+
+        SafeLog(ex);
 
         // 同一条错误只提示一次，避免定时/绑定类异常反复弹窗被误认为卡死
-        var key = e.Exception.GetType().Name + ": " + e.Exception.Message;
+        var key = (operation ?? "error") + "|" + ex.GetType().Name + ": " + ex.Message;
         bool show;
         lock (_shownErrors)
         {
@@ -158,15 +170,29 @@ public partial class App : Application
         if (!show)
             return;
 
-        try
+        void Show()
         {
-            MessageBox.Show("发生未处理错误（已拦截，程序继续运行）：\n\n" + e.Exception.Message,
-                "LitSSH", MessageBoxButton.OK, MessageBoxImage.Warning);
+            try
+            {
+                var prefix = string.IsNullOrWhiteSpace(operation)
+                    ? "发生未处理错误（已拦截，程序继续运行）"
+                    : $"“{operation}”执行失败（已拦截，程序继续运行）";
+                MessageBox.Show(prefix + "：\n\n" + ex.Message,
+                    "LitSSH", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            catch
+            {
+                // 忽略弹窗失败
+            }
         }
-        catch
-        {
-            // 忽略弹窗失败
-        }
+
+        var dispatcher = Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted)
+            return;
+        if (dispatcher.CheckAccess())
+            Show();
+        else
+            dispatcher.BeginInvoke(new Action(Show));
     }
 
     private static void SafeLog(Exception? ex)

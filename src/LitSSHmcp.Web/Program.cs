@@ -88,6 +88,15 @@ catch
     // 清扫失败不阻断启动
 }
 
+// P2-7 可信代理：仅 web.trustedProxies 非空时接受 X-Forwarded-For/Proto（必须最先执行）。
+WebForwardedHeaders.TryApply(app, bootConfig.Web);
+if (https is not null)
+{
+    // 配置 HTTPS 证书后启用 HSTS，并把 HTTP 请求重定向到 HTTPS。
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
+
 app.UseWebSockets();
 // M3-8 安全响应头（§10.B 攻击面收敛）：nosniff/DENY/no-referrer/Permissions-Policy + HTML CSP
 app.UseMiddleware<WebSecurityHeadersMiddleware>();
@@ -106,10 +115,24 @@ app.UseMiddleware<WebCsrfMiddleware>();
 
 app.MapGet("/health", () => Results.Text("ok"));
 
-app.MapPost("/api/login", async (LoginRequest req, WebAuthService auth, WebAccessLog log, HttpContext ctx) =>
+app.MapPost("/api/login", async (LoginRequest req, WebAuthService auth, WebAccessLog log,
+    WebRateLimitStore rateStore, WebRateLimitPolicy ratePolicy, HttpContext ctx) =>
 {
     var ip = ctx.Connection.RemoteIpAddress?.ToString();
-    var outcome = await auth.LoginAsync(req.Username ?? string.Empty, req.Password ?? string.Empty, ctx.RequestAborted);
+    var username = req.Username ?? string.Empty;
+    var accountKey = username.Trim().ToLowerInvariant();
+    if (accountKey.Length == 0)
+        accountKey = "(empty)";
+    else if (accountKey.Length > 128)
+        accountKey = accountKey[..128];
+    if (!rateStore.TryAcquire(accountKey, "login-account", ratePolicy.LoginPerAccountPerMinute, DateTimeOffset.UtcNow))
+    {
+        log.Write("login_rate_limited", username, ip, "account");
+        return Results.Json(new { error = "登录尝试过于频繁，请稍后再试" },
+            statusCode: StatusCodes.Status429TooManyRequests);
+    }
+
+    var outcome = await auth.LoginAsync(username, req.Password ?? string.Empty, ctx.RequestAborted);
     if (outcome.Status == WebLoginStatus.Success && outcome.Token is not null && outcome.User is not null)
     {
         var expires = outcome.ExpiresAtUtc;

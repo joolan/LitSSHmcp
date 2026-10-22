@@ -202,8 +202,8 @@ public sealed class ApprovalFixture : IDisposable
     public async Task<(string Token, string Csrf, long UserId)> LoginAsync(string username)
     {
         await Factory.Services.GetRequiredService<LitSSHmcp.Core.Services.Web.WebAccountsStore>()
-            .CreateAsync(username, "secret1", iterations: 1000);
-        var resp = await Client.PostAsJsonAsync("/api/login", new { username, password = "secret1" });
+            .CreateAsync(username, "secret123", iterations: 1000);
+        var resp = await Client.PostAsJsonAsync("/api/login", new { username, password = "secret123" });
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         var body = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
         var csrf = body.RootElement.GetProperty("csrfToken").GetString()!;

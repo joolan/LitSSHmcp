@@ -42,6 +42,23 @@ public class RateLimitTests
     }
 
     [Fact]
+    public async Task Account_bucket_limits_same_username_across_attempts()
+    {
+        using var fx = new RateLimitFixture(loginPerMinute: 100, loginPerAccount: 2, apiPerMinute: 100);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await fx.Client.PostAsJsonAsync("/api/login",
+            new { username = "Target", password = "bad" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await fx.Client.PostAsJsonAsync("/api/login",
+            new { username = "target", password = "bad" })).StatusCode);
+        var blocked = await fx.Client.PostAsJsonAsync("/api/login",
+            new { username = "TARGET", password = "bad" });
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, blocked.StatusCode);
+        Assert.Contains("频繁", await blocked.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Contains("login_rate_limited", fx.ReadAccessLog(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Http_login_api_buckets_429_with_log_and_health_exempt()
     {
         using var fx = new RateLimitFixture();
@@ -77,14 +94,19 @@ public class RateLimitTests
         public WebApplicationFactory<Program> Factory { get; }
         public HttpClient Client { get; }
 
-        public RateLimitFixture()
+        public RateLimitFixture(int loginPerMinute = 2, int loginPerAccount = 10, int apiPerMinute = 3)
         {
             var logDir = _logDir;
             Factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
                 b.ConfigureServices(services =>
                 {
                     services.RemoveAll<WebRateLimitPolicy>();
-                    services.AddSingleton(new WebRateLimitPolicy { LoginPerMinute = 2, ApiPerMinute = 3 });
+                    services.AddSingleton(new WebRateLimitPolicy
+                    {
+                        LoginPerMinute = loginPerMinute,
+                        LoginPerAccountPerMinute = loginPerAccount,
+                        ApiPerMinute = apiPerMinute
+                    });
                     services.RemoveAll<WebRateLimitStore>();
                     services.AddSingleton(new WebRateLimitStore());
                     services.RemoveAll<WebAccessLog>();

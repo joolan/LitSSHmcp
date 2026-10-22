@@ -6,8 +6,8 @@ namespace LitSSHmcp.Core.Services.Web;
 /// </summary>
 public static class WebAuthPolicy
 {
-    /// <summary>密码最短长度（与 AppLockService.MinPasswordLength 一致）。</summary>
-    public const int MinPasswordLength = 6;
+    /// <summary>Web 账号密码最短长度（P2-7：由 6 提到 8；仅影响新建/改密，旧账号仍可登录）。</summary>
+    public const int MinPasswordLength = 8;
 
     public const int DefaultIterations = 210_000;
     public const int SaltSize = 16;

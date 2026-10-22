@@ -11,6 +11,9 @@ public sealed class WebRateLimitPolicy
     /// <summary>每 IP 每分钟允许的 /api/login 次数（账号级另有失败锁定 WebAuthPolicy 兜底）。</summary>
     public int LoginPerMinute { get; set; } = 30;
 
+    /// <summary>同一账号（跨 IP）每分钟允许的登录尝试次数，防分布式口令喷洒。</summary>
+    public int LoginPerAccountPerMinute { get; set; } = 10;
+
     /// <summary>每 IP 每分钟允许的其余 /api/* 请求次数。</summary>
     public int ApiPerMinute { get; set; } = 600;
 

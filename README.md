@@ -376,7 +376,7 @@ src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --create-user <用户名> -
 src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
 ```
 
-> 账号带 `admin` / `user` 角色字段（首个账号自动 admin）；当前接口权限按**登录态 + 会话 owner 归属**判定，角色细分权限待后续版本。连续登录失败 5 次起按指数退避锁定（5 分钟起、封顶 1 小时）。同一账号库也被桌面「AI 助手 → 侧栏登录」用于**归因**（不影响权限）。
+> 账号带 `admin` / `user` 角色字段（首个账号自动 admin，密码最短 8 位）；普通成员按**登录态 + 会话 owner 归属**访问，管理员能力（`allUsers` 全局历史/会话、共享工作区/脚本写、团队 Memory、全局拓扑）在服务端按角色校验；当前不提供独立 Web 管理 UI。连续登录失败 5 次起按指数退避锁定（5 分钟起、封顶 1 小时）。同一账号库也被桌面「AI 助手 → 侧栏登录」用于**归因**（不影响权限）。
 
 ## 架构与技术栈
 
@@ -642,17 +642,20 @@ AI 的典型排查链路：
 
 ### Web 助手安全
 
-- **认证**：独立账号（PBKDF2-SHA256 210k 迭代），连续失败 5 次起按指数退避锁定（5 分钟起、封顶 1 小时）；令牌 Cookie `HttpOnly + SameSite`
+- **认证**：独立账号（PBKDF2-SHA256 210k 迭代），密码最短 8 位；连续失败 5 次起按指数退避锁定（5 分钟起、封顶 1 小时）；令牌 Cookie `HttpOnly + SameSite`
 - **授权矩阵**：Web 会话的 MCP 目标工具按「登录用户 → 目标白名单 + read/write/exec 级别」在工具调用过滤层强制校验（`security.authorization`，**未命中规则默认拒绝** fail-closed，拒绝落 `authorization_denied` 审计）；工具目标与最低级别由安全目录统一声明，日志/Docker/Java/拓扑/应用体检等目标工具同样覆盖；可视化配置入口在桌面 **「设置 → 安全设置 → Web 授权矩阵」**（启用开关 + 规则行增删，同一用户可多行分别授权不同目标，保存热生效），无需手改 `config.json`。**数据可见范围**：强制模式下命令 / SQL 历史与会话列表默认只返回本人数据，管理员可用 `allUsers=true` 显式查看全局；`ssh_list_servers` / `datasource_list` 按目标白名单裁剪（并隐藏未授权隧道路由/关联服务器引用）；无目标的全局拓扑查询仅管理员可用；桌面未启用强制时保持全量
-- **限速**：登录与 API 按 IP 固定窗口限速（`/api/login` 30 次/分钟、`/api/*` 600 次/分钟），超限 429 并落 `rate_limited` 访问日志
+- **限速**：登录按 IP 30 次/分钟，另按账号（跨 IP）10 次/分钟；`/api/*` 600 次/分钟，超限 429 并落 `rate_limited` / `login_rate_limited` 访问日志
 - **会话隔离与配额**：所有会话接口逐请求校验 owner（越权统一 404 不泄露存在性）；每用户并发会话上限默认 8（`security.limits.maxSessionsPerUser`，0=不限）；LLM 成本预算按会话生效（`agent.budget.maxSessionCost`，会话数 × 成本上限即单用户上界）
 - **文件下载边界**：会话文件下载单文件上限 100 MiB（超限 413），支持单段 `Range`/206/416，每用户最多 4 个并发下载（超限 429），单次响应 5 分钟超时；流式发送，不整文件读入内存
-- **浏览器侧防护**：写操作 CSRF 双提交令牌、WebSocket 握手校验 Origin、全站安全响应头（`nosniff`/`X-Frame-Options: DENY`/`Referrer-Policy` + HTML `Content-Security-Policy`）、模型输出 Markdown 经白名单 sanitize 后才渲染（防存储型 XSS）
+- **浏览器侧防护**：写操作 CSRF 双提交令牌、WebSocket 握手校验 Origin、全站安全响应头（`nosniff`/`X-Frame-Options: DENY`/`Referrer-Policy` + HTML `Content-Security-Policy`），认证响应 `Cache-Control: no-store`；模型输出 Markdown 经白名单 sanitize 后才渲染（防存储型 XSS）
 - **访问日志**：登录成败、会话创建/删除、文件下载、越权/限速拒绝均落盘可查
-- **传输（HTTPS 建议）**：默认 **HTTP 局域网明文**——Cookie/令牌可被窃听、聊天内容可被中间人；**仅建议在可信内网使用**。启用 HTTPS：在 `config.json` 配置 `web.https` 节点（PFX 证书），Web 启动即追加 HTTPS 监听（默认端口 7443，可用 `port` 修改；证书密码支持 `enc:` DPAPI 密文）：
+- **传输（HTTPS 建议）**：默认 **HTTP 局域网明文**——Cookie/令牌可被窃听、聊天内容可被中间人；**仅建议在可信内网使用**。启用 HTTPS：在 `config.json` 配置 `web.https` 节点（PFX 证书），Web 启动即追加 HTTPS 监听（默认端口 7443，可用 `port` 修改；证书密码支持 `enc:` DPAPI 密文），并自动启用 HSTS 与 HTTP→HTTPS 重定向。反向代理部署时，在 `web.trustedProxies` 显式填写代理 IP，才会信任 `X-Forwarded-For/Proto`（为空=完全忽略，防伪造来源 IP/协议）：
 
   ```json
-  "web": { "https": { "certificatePath": "C:/certs/litssh.pfx", "certificatePassword": "enc:…", "port": 7443 } }
+  "web": {
+    "https": { "certificatePath": "C:/certs/litssh.pfx", "certificatePassword": "enc:…", "port": 7443 },
+    "trustedProxies": ["10.0.0.10"]
+  }
   ```
 
   建议使用内网 CA 或自签证书，并用防火墙/网卡绑定限制仅内网访问

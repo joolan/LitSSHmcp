@@ -62,6 +62,12 @@ public class WebHostConfig
     /// 留空 = <c>%APPDATA%\LitSSH\jobs</c>。仅接受绝对路径（相对/非法值回退默认）。改动在 Web 重启后生效。
     /// </summary>
     public string JobsRoot { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 可信反向代理 IP 列表（可选）：非空时才信任 X-Forwarded-For/X-Forwarded-Proto，
+    /// 并只接受列表内代理的转发；为空时完全忽略转发头，避免客户端伪造来源 IP/协议。
+    /// </summary>
+    public string[] TrustedProxies { get; set; } = Array.Empty<string>();
 }
 
 /// <summary>Web HTTPS 证书设置（PFX/PKCS#12）。</summary>

@@ -29,7 +29,7 @@ public class WebAccountsTests : IDisposable
     {
         var store = NewStore();
         await store.InitializeAsync();
-        var id = await store.CreateAsync("alice", "secret1", role: "admin", iterations: 1000);
+        var id = await store.CreateAsync("alice", "secret123", role: "admin", iterations: 1000);
 
         var user = await store.FindByUsernameAsync("ALICE");   // 大小写不敏感
         Assert.NotNull(user);
@@ -47,8 +47,8 @@ public class WebAccountsTests : IDisposable
     {
         var store = NewStore();
         await store.InitializeAsync();
-        await store.CreateAsync("bob", "secret1", iterations: 1000);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => store.CreateAsync("BOB", "secret2", iterations: 1000));
+        await store.CreateAsync("bob", "secret123", iterations: 1000);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.CreateAsync("BOB", "secret234", iterations: 1000));
     }
 
     [Theory]
@@ -59,7 +59,7 @@ public class WebAccountsTests : IDisposable
     {
         var store = NewStore();
         await store.InitializeAsync();
-        await Assert.ThrowsAsync<ArgumentException>(() => store.CreateAsync(name, "secret1", iterations: 1000));
+        await Assert.ThrowsAsync<ArgumentException>(() => store.CreateAsync(name, "secret123", iterations: 1000));
     }
 
     [Fact]
@@ -67,8 +67,9 @@ public class WebAccountsTests : IDisposable
     {
         var store = NewStore();
         await store.InitializeAsync();
-        await Assert.ThrowsAsync<ArgumentException>(() => store.CreateAsync("carol", "12345", iterations: 1000));
-        await Assert.ThrowsAsync<ArgumentException>(() => store.CreateAsync("carol", "secret1", role: "root", iterations: 1000));
+        await Assert.ThrowsAsync<ArgumentException>(() => store.CreateAsync("carol", "1234567", iterations: 1000));
+        await store.CreateAsync("carol", "12345678", iterations: 1000);
+        await Assert.ThrowsAsync<ArgumentException>(() => store.CreateAsync("dave", "secret123", role: "root", iterations: 1000));
     }
 
     [Fact]
@@ -76,11 +77,11 @@ public class WebAccountsTests : IDisposable
     {
         var store = NewStore();
         await store.InitializeAsync();
-        await store.CreateAsync("alice", "secret1", iterations: 1000);
+        await store.CreateAsync("alice", "secret123", iterations: 1000);
         var clock = T0;
         var auth = new WebAuthService(store, () => clock);
 
-        var outcome = await auth.LoginAsync("alice", "secret1");
+        var outcome = await auth.LoginAsync("alice", "secret123");
         Assert.Equal(WebLoginStatus.Success, outcome.Status);
         Assert.False(string.IsNullOrEmpty(outcome.Token));
         Assert.Equal(T0 + WebAuthService.TokenLifetime, outcome.ExpiresAtUtc);
@@ -100,7 +101,7 @@ public class WebAccountsTests : IDisposable
     {
         var store = NewStore();
         await store.InitializeAsync();
-        await store.CreateAsync("alice", "secret1", iterations: 1000);
+        await store.CreateAsync("alice", "secret123", iterations: 1000);
         var auth = new WebAuthService(store, () => T0);
 
         var outcome = await auth.LoginAsync("alice", "wrongpass");
@@ -125,7 +126,7 @@ public class WebAccountsTests : IDisposable
     {
         var store = NewStore();
         await store.InitializeAsync();
-        await store.CreateAsync("alice", "secret1", iterations: 1000);
+        await store.CreateAsync("alice", "secret123", iterations: 1000);
         var clock = T0;
         var auth = new WebAuthService(store, () => clock);
 
@@ -139,13 +140,13 @@ public class WebAccountsTests : IDisposable
 
         // 锁定期内：即便密码正确也拒绝（先于密码校验）
         clock = T0.AddMinutes(1);
-        var during = await auth.LoginAsync("alice", "secret1");
+        var during = await auth.LoginAsync("alice", "secret123");
         Assert.Equal(WebLoginStatus.Locked, during.Status);
         Assert.True(during.RetryAfter > TimeSpan.Zero);
 
         // 过了 5 分钟锁定：正确密码可登录且清零
         clock = T0.AddMinutes(5).AddSeconds(1);
-        var after = await auth.LoginAsync("alice", "secret1");
+        var after = await auth.LoginAsync("alice", "secret123");
         Assert.Equal(WebLoginStatus.Success, after.Status);
         var user = await store.FindByUsernameAsync("alice");
         Assert.Equal(0, user!.FailedCount);
@@ -157,11 +158,11 @@ public class WebAccountsTests : IDisposable
     {
         var store = NewStore();
         await store.InitializeAsync();
-        await store.CreateAsync("alice", "secret1", iterations: 1000);
+        await store.CreateAsync("alice", "secret123", iterations: 1000);
         var clock = T0;
         var auth = new WebAuthService(store, () => clock);
 
-        var outcome = await auth.LoginAsync("alice", "secret1");
+        var outcome = await auth.LoginAsync("alice", "secret123");
         clock = clock + WebAuthService.TokenLifetime + TimeSpan.FromMinutes(1);
         Assert.Null(await auth.ValidateTokenAsync(outcome.Token));
         Assert.Null(await auth.ValidateTokenAsync(outcome.Token));   // 已删，二次也 null
@@ -172,9 +173,9 @@ public class WebAccountsTests : IDisposable
     {
         var store = NewStore();
         await store.InitializeAsync();
-        await store.CreateAsync("alice", "secret1", iterations: 1000);
+        await store.CreateAsync("alice", "secret123", iterations: 1000);
         var auth = new WebAuthService(store, () => T0);
-        var outcome = await auth.LoginAsync("alice", "secret1");
+        var outcome = await auth.LoginAsync("alice", "secret123");
 
         Assert.NotNull(await auth.ValidateTokenAsync(outcome.Token));
         await auth.LogoutAsync(outcome.Token);
@@ -186,17 +187,17 @@ public class WebAccountsTests : IDisposable
     {
         var store = NewStore();
         await store.InitializeAsync();
-        var id = await store.CreateAsync("alice", "secret1", iterations: 1000);
+        var id = await store.CreateAsync("alice", "secret123", iterations: 1000);
         var auth = new WebAuthService(store, () => T0);
-        var outcome = await auth.LoginAsync("alice", "secret1");
+        var outcome = await auth.LoginAsync("alice", "secret123");
 
         Assert.Equal("旧密码不正确", await auth.ChangePasswordAsync(id, "nope", "newpass1"));
 
-        Assert.Null(await auth.ChangePasswordAsync(id, "secret1", "newpass1"));
+        Assert.Null(await auth.ChangePasswordAsync(id, "secret123", "newpass1"));
         Assert.Null(await auth.ValidateTokenAsync(outcome.Token));   // 改密吊销全部令牌
 
         Assert.Equal(WebLoginStatus.Success, (await auth.LoginAsync("alice", "newpass1")).Status);
-        Assert.Equal(WebLoginStatus.InvalidCredentials, (await auth.LoginAsync("alice", "secret1")).Status);
+        Assert.Equal(WebLoginStatus.InvalidCredentials, (await auth.LoginAsync("alice", "secret123")).Status);
     }
 
     [Fact]
@@ -204,9 +205,9 @@ public class WebAccountsTests : IDisposable
     {
         var store = NewStore();
         await store.InitializeAsync();
-        var id = await store.CreateAsync("alice", "secret1", iterations: 1000);
+        var id = await store.CreateAsync("alice", "secret123", iterations: 1000);
         var auth = new WebAuthService(store, () => T0);
-        var outcome = await auth.LoginAsync("alice", "secret1");
+        var outcome = await auth.LoginAsync("alice", "secret123");
 
         Assert.True(await store.DeleteUserAsync(id));
         Assert.Null(await auth.ValidateTokenAsync(outcome.Token));

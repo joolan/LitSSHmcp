@@ -391,6 +391,21 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public async Task Usage_delta_callback_receives_each_response_usage()
+    {
+        var usage = new UsageDetails { InputTokenCount = 120, OutputTokenCount = 30 };
+        long input = 0, output = 0;
+        var session = new AgentSession(new UsageEmittingChatClient(usage),
+            new AgentProviderConfig { Model = "m", ApiKey = "k" }, Array.Empty<IAgentTool>(), "sys", new AgentConfig(),
+            onUsageDelta: (i, o) => { input += i; output += o; });
+
+        await session.SendAsync("hi", null);
+
+        Assert.Equal(120L, input);
+        Assert.Equal(30L, output);
+    }
+
+    [Fact]
     public async Task Budget_check_stops_session_after_usage_exceeds_limit()
     {
         var usage = new UsageDetails { InputTokenCount = 1_000_000, OutputTokenCount = 0 };

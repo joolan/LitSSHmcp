@@ -191,6 +191,23 @@ public class SpillAndSubAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task Sub_agent_reports_usage_delta_to_shared_ledger()
+    {
+        var usage = new UsageDetails { InputTokenCount = 120, OutputTokenCount = 30 };
+        var client = new FakeChatClient(usage,
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "sub-answer") }));
+        long input = 0, output = 0;
+        var tool = SubAgents.Create(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new AgentConfig { MaxToolIterations = 3 }, Array.Empty<IAgentTool>(),
+            onUsageDelta: (i, o) => { input += i; output += o; });
+
+        await tool.InvokeAsync(Args(("task", "check server X")), default);
+
+        Assert.Equal(120L, input);
+        Assert.Equal(30L, output);
+    }
+
+    [Fact]
     public async Task Sub_agent_stops_when_budget_is_exhausted_before_tool_call()
     {
         var write = new FakeTool("danger", "ran");

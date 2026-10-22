@@ -172,33 +172,31 @@ public sealed class AgentRuntime : IAsyncDisposable
         var tools = new List<IAgentTool>(_baseTools);
         AgentSession? session = null;
 
-        Func<long, long, bool>? parentBudgetCheck = null;
-        Func<long, long, bool>? childBudgetCheck = null;
+        Func<long, long, bool>? budgetCheck = null;
+        SessionCostBudget? budget = null;
         var limit = _config.Budget?.MaxSessionCost ?? 0;
         var inputPrice = provider.InputPricePerMTok;
         var outputPrice = provider.OutputPricePerMTok;
         if (limit > 0 && (inputPrice > 0 || outputPrice > 0))
         {
-            double Cost(long input, long output) =>
-                input / 1_000_000.0 * inputPrice + output / 1_000_000.0 * outputPrice;
-
-            parentBudgetCheck = (input, output) => Cost(input, output) < limit;
-            childBudgetCheck = (input, output) => session is null
-                || Cost(session.SessionInputTokens + input, session.SessionOutputTokens + output) < limit;
+            budget = new SessionCostBudget(limit, inputPrice, outputPrice);
+            budgetCheck = (_, _) => budget.Check();
         }
 
         if (_config.EnableSubAgent)
         {
             tools.Add(SubAgents.Create(client, provider, _config, _subTools, _readOnlyNote,
                 onUsage: (input, output) => session?.AddChildUsage(input, output),
-                budgetCheck: childBudgetCheck,
+                budgetCheck: budgetCheck,
+                onUsageDelta: budget is null ? null : budget.Add,
                 toolPolicyProvider: () => _toolPolicy,
                 planModeProvider: () => _planMode));
         }
         if (_onPlan is not null)
             tools.Add(PlanTools.Create(_onPlan));
         session = new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill,
-            roundNotifier: _roundNotifier, graphContext: _graphContext, budgetCheck: parentBudgetCheck);
+            roundNotifier: _roundNotifier, graphContext: _graphContext, budgetCheck: budgetCheck,
+            onUsageDelta: budget is null ? null : budget.Add);
         session.SetToolPolicy(_toolPolicy);
         session.SetPlanMode(_planMode);
         return session;

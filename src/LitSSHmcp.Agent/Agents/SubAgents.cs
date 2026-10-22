@@ -24,6 +24,7 @@ public static class SubAgents
         bool planMode = false,
         Action<long, long>? onUsage = null,
         Func<long, long, bool>? budgetCheck = null,
+        Action<long, long>? onUsageDelta = null,
         Func<IReadOnlyDictionary<string, AgentToolPolicy>?>? toolPolicyProvider = null,
         Func<bool>? planModeProvider = null)
     {
@@ -36,7 +37,7 @@ public static class SubAgents
             "把一次独立的只读取证/调查任务委派给子代理在隔离上下文中完成, 只返回结论摘要(大量原始输出不回主上下文)。适合跨多工具的大日志/多步取证; task 需自包含(含 serverId/目标与期望)",
             """{"type":"object","properties":{"task":{"type":"string","description":"交给子代理的独立只读任务, 自包含(含 serverId/目标与期望结论)"},"groups":{"type":"string","description":"可选: 限制子代理可用工具分组(逗号分隔, 如 ssh,log,docker,java)"}},"required":["task"]}""",
             (args, ct) => RunAsync(client, provider, config, subTools, restrictionNote, toolPolicy, planMode,
-                onUsage, budgetCheck, toolPolicyProvider, planModeProvider, taskCounts, args, ct));
+                onUsage, budgetCheck, onUsageDelta, toolPolicyProvider, planModeProvider, taskCounts, args, ct));
 
         return new LocalAgentTool(function, readOnly: true);
     }
@@ -51,6 +52,7 @@ public static class SubAgents
         bool planMode,
         Action<long, long>? onUsage,
         Func<long, long, bool>? budgetCheck,
+        Action<long, long>? onUsageDelta,
         Func<IReadOnlyDictionary<string, AgentToolPolicy>?>? toolPolicyProvider,
         Func<bool>? planModeProvider,
         ConcurrentDictionary<string, int> taskCounts,
@@ -84,7 +86,7 @@ public static class SubAgents
         var effectivePolicy = toolPolicyProvider?.Invoke() ?? toolPolicy;
         var effectivePlanMode = planModeProvider?.Invoke() ?? planMode;
         var session = new AgentSession(client, provider, tools, prompt, config, maxIterationsOverride: maxIterations,
-            budgetCheck: budgetCheck);
+            budgetCheck: budgetCheck, onUsageDelta: onUsageDelta);
         session.SetToolPolicy(effectivePolicy);
         session.SetPlanMode(effectivePlanMode);
         var collector = new TextCollector();

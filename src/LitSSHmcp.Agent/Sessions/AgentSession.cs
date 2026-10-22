@@ -25,6 +25,7 @@ public sealed class AgentSession
     private readonly int? _maxIterationsOverride;
     private readonly IAgentTool? _roundNotifier;
     private readonly Func<long, long, bool>? _budgetCheck;
+    private readonly Action<long, long>? _onUsageDelta;
 
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
     private bool _planMode;
@@ -62,7 +63,8 @@ public sealed class AgentSession
         int? maxIterationsOverride = null,
         IAgentTool? roundNotifier = null,
         Func<string, CancellationToken, Task<AssetGraphContextResult?>>? graphContext = null,
-        Func<long, long, bool>? budgetCheck = null)
+        Func<long, long, bool>? budgetCheck = null,
+        Action<long, long>? onUsageDelta = null)
     {
         _client = client;
         _provider = provider;
@@ -76,6 +78,7 @@ public sealed class AgentSession
         _maxIterationsOverride = maxIterationsOverride;
         _roundNotifier = roundNotifier;
         _budgetCheck = budgetCheck;
+        _onUsageDelta = onUsageDelta;
         Messages.Add(new ChatMessage(ChatRole.System, systemPrompt));
         if (history is not null)
             Messages.AddRange(history);
@@ -511,6 +514,10 @@ public sealed class AgentSession
             LastRequestOutputTokens = output;
             Interlocked.Add(ref _sessionOutputTokens, output);
         }
+
+        // 共享预算账本按增量累加（父会话与并行子代理使用同一实例）。
+        if (input > 0 || output > 0)
+            _onUsageDelta?.Invoke(input, output);
 
         // provider 前缀缓存命中（OpenAI prompt_tokens_details.cached_tokens 等）：仅观测，不影响估算校准。
         var cached = usage.CachedInputTokenCount ?? 0;

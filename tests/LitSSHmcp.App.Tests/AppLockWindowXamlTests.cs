@@ -35,6 +35,16 @@ public class AppLockWindowXamlTests
     }
 
     [Fact]
+    public void Lock_window_allows_minimize_and_taskbar_restore()
+    {
+        var root = FindRepoRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "src", "LitSSHmcp.App", "Views", "AppLockWindow.xaml"));
+
+        Assert.Contains("ShowMinimize=\"True\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ShowInTaskbar=\"True\"", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Set_password_mode_parses_xaml()
     {
         var ex = RunSta(() => _ = new AppLockWindow(CreateLockService(), AppLockWindowMode.SetPassword, relock: false));
@@ -62,5 +72,18 @@ public class AppLockWindowXamlTests
 
         var ex = RunSta(() => _ = ctor!.Invoke(new object[] { CreateLockService(), mode }));
         Assert.Null(ex);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "LitSSHmcp.slnx")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+
+        throw new DirectoryNotFoundException("未找到仓库根目录(含 LitSSHmcp.slnx)");
     }
 }

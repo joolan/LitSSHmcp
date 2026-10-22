@@ -14,6 +14,7 @@ using System.Text.RegularExpressions;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
+using LitSSHmcp.McpServer.Services;
 using ModelContextProtocol.Server;
 
 namespace LitSSHmcp.McpServer.Tools;
@@ -33,29 +34,33 @@ public class UsageGuideTools
     public async Task<string> GetUsageGuide()
     {
         IReadOnlySet<string>? enabled = null;
+        var includeLegacy = false;
         if (_configService is not null)
         {
             try
             {
                 var config = await _configService.LoadConfigAsync();
                 enabled = ToolGroups.ResolveEnabled(config.Tools);
+                includeLegacy = LegacyToolPolicy.IsEnabled(config);
             }
             catch
             {
-                // 配置读取失败时按"全部启用"降级，不阻断工具调用
+                // 配置读取失败时按“全部启用”处理，避免指南缺失工具清单
                 enabled = null;
             }
         }
 
-        return BuildGuide(enabled);
+        return BuildGuide(enabled, includeLegacyTools: includeLegacy);
     }
 
     /// <summary>
     /// 依据启用分组构建指南：工具清单与路由文案都只保留与<b>实际暴露工具</b>相关的部分。
     /// <paramref name="enabled"/> 为 null 表示不裁剪（全部启用）。
     /// <paramref name="includeInternalTools"/> 为 null 时按宿主环境决定是否包含内部工具。
+    /// <paramref name="includeLegacyTools"/> 为 true 时包含旧工具名别名（默认不包含）。
     /// </summary>
-    internal static string BuildGuide(IReadOnlySet<string>? enabled, bool? includeInternalTools = null)
+    internal static string BuildGuide(IReadOnlySet<string>? enabled, bool? includeInternalTools = null,
+        bool includeLegacyTools = false)
     {
         var tools = EnumerateToolInfos();
         var toolGroup = tools.ToDictionary(t => t.Name, t => t.Group, StringComparer.Ordinal);
@@ -65,6 +70,7 @@ public class UsageGuideTools
             .Where(t => t.Group is null || enabled is null || enabled.Contains(t.Group))
             .Where(t => !string.Equals(t.Name, ApprovalRoundTools.ToolName, StringComparison.Ordinal)
                         || includeInternal)
+            .Where(t => includeLegacyTools || !LegacyToolPolicy.IsLegacy(t.Name))
             .OrderBy(t => t.Name, StringComparer.Ordinal)
             .Select(t => new { name = t.Name, description = t.Description })
             .Cast<object>()

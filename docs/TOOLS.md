@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器代码注册 **61 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具，仅 LitSSH 桌面/Web 宿主注入 `LITSSH_INTERNAL_TOOLS=1` 时出现在 `tools/list`，外部 MCP 客户端默认只看到 **60 个**。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
+MCP 服务器代码注册 **63 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见），`ssh_upload_file/ssh_upload_files/ssh_download_file/ssh_download_files` 是文件传输旧名兼容别名（默认隐藏，仅 `tools.legacyAliases=true` 时注册）。外部 MCP 客户端默认看到 **58 个常规工具**，宿主会话默认 **59 个**。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
 
 > **⚠ 同步约定（唯一事实来源）**：本文件是 MCP 工具说明的**唯一事实来源**。以下三处必须与本文件**双向同步**，工具发生任何变动（新增/改名/删除、参数变化、描述与路由变化）时缺一不可：
 > 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`get_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
@@ -250,25 +250,29 @@ MCP 服务器代码注册 **61 个工具**，按用途分为 14 组；其中 `mc
 
 上传/下载受 `fileTransfer.enabled` 开关与 `allowedLocalPaths` / `allowedRemotePaths` 白名单约束（越界返回 `path_not_allowed`，禁用返回 `file_transfer_disabled`），路径会做规范化并拦截 `..` 穿越。**上传源对称约束**（需求 D6）：宿主注入了会话工作目录（`LITSSH_SESSION_WORKSPACE_DIR`）时，上传源还须位于该会话目录之内（与"下载落点限会话目录"对称，`PathGuard` 物理解析防链接逃逸），否则 `path_not_allowed`；共享工作区文件可先经 `ops_doc_read`/`ops_doc_write` 复制到会话目录再上传。上传/下载过程中会通过 MCP `notifications/progress` 推送进度（字节数/百分比）。
 
-### `ssh_upload_files`
+### `ssh_upload`
 - **参数**：`serverId`、`localPaths`（每行一个：文件或目录）、`remoteDirectory`（远程目标目录，须在 `allowedRemotePaths` 内）、`recursive`（默认 false，目录递归子目录）、`maxFiles`（默认 200，1~5000）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
-- **返回**：结构同 `ssh_download_files`（`remoteDirectory` 字段替换 `localDirectory`）
-- **说明**：**用一条 SFTP 连接**批量上传（避免"上传文件夹"时每个文件重复建连/认证）；`localPaths` 中的目录会被展开（`recursive=true` 递归），**按相对路径保留子目录结构**（远程自动逐级建目录）；**整批一次人工确认**；每个源路径须在 `allowedLocalPaths` 内（会话已分配工作目录时还须在该会话目录内，见上方"上传源对称约束"）；每文件受 `fileTransfer.maxFileSizeBytes` 约束、总数受 `maxFiles` 约束（超出置 `truncated=true`）。
-- **脚本安全门**：批内全部脚本文件（`.sh/.bash/.zsh/.py/.ps1/.pl`，目录按递归标志展开，上限 500 个）逐个做服务端规则扫描，报告聚合附审批弹窗；**任一脚本命中危险模式整批拒绝**（`status=blocked_script`）。
+- **返回**：`{ success, status, error, remoteDirectory, total, succeeded, failed, truncated, files: [...] }`
+- **说明**：统一上传入口，单文件/多文件/目录均可用；**用一条 SFTP 连接**批量上传，目录按 `recursive` 展开并保留相对子目录结构；**整批一次人工确认**；源路径、脚本安全门、大小/数量限制与旧批量工具一致。
+- **兼容**：旧名 `ssh_upload_file` / `ssh_upload_files` 仅在 `tools.legacyAliases=true` 时注册。
 
-### `ssh_upload_file`
-- **参数**：`serverId`、`localPath`（本地路径，须在 `allowedLocalPaths` 内；会话已分配工作目录时源还须在该会话目录内，见"上传源对称约束"）、`remotePath`（远程路径，须在 `allowedRemotePaths` 内）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
-- **返回**：`{ success, message, bytesTransferred, durationMs, ... }`；越界返回 `path_not_allowed` 并附允许路径；超过 `fileTransfer.maxFileSizeBytes` 返回 `file_too_large`
-- **脚本安全门**：上传脚本文件时先读本地内容做服务端规则扫描（结论/命中行/sha256 附审批弹窗）；命中危险模式直接 `status=blocked_script` 不进审批。
-
-### `ssh_download_file`
-- **参数**：`serverId`、`remotePath`（须在 `allowedRemotePaths` 内）、`localPath`（可选，须在 `allowedLocalPaths` 内；**省略 = 自动落会话工作目录并沿用远端文件名，相对路径 = 会话工作目录之下**——工具级默认落地，由宿主 spawn 注入 `LITSSH_SESSION_WORKSPACE_DIR` 代码强制，非提示词约定；绝对路径原样校验。会话目录**条件注入**白名单：仅当位于配置允许根之下才进 `allowedLocalPaths`，越界不注入，须显式配置）
-- **返回**：`{ success, message, bytesTransferred, durationMs, ... }`；同样受审批与白名单约束
-
-### `ssh_download_files`
-- **参数**：`serverId`、`remotePaths`（每行一个：文件或目录）、`localDirectory`（可选，本地目标目录，须在 `allowedLocalPaths` 内；**省略 = 会话工作目录，相对路径 = 会话工作目录之下**，同 `ssh_download_file` 的条件注入规则）、`recursive`（默认 false，目录递归子目录，软链接跳过）、`maxFiles`（默认 200，1~5000）
+### `ssh_download`
+- **参数**：`serverId`、`remotePaths`（每行一个：文件或目录）、`localDirectory`（可选，本地目标目录；省略 = 会话工作目录）、`recursive`（默认 false，目录递归，软链接跳过）、`maxFiles`（默认 200，1~5000）
 - **返回**：`{ success, status, error, localDirectory, total, succeeded, failed, truncated, totalBytes, durationMs, files: [{ remotePath, localPath, success, size, error }] }`
-- **说明**：**用一条 SFTP 连接**批量下载（避免"下载文件夹"时每个文件重复建连/认证）；`remotePaths` 中的目录会被展开（`recursive=true` 递归，跳过软链接防环，深度上限 16）；**整批一次人工确认**；每个源路径均须在 `allowedRemotePaths` 内；受 `maxFiles` 上限约束（超出置 `truncated=true`）；连接复用见 `connectionPool`（SFTP 也入池）。
+- **说明**：统一下载入口，单文件/多文件/目录均可用；**用一条 SFTP 连接**批量下载，目录按 `recursive` 展开并跳过软链接；**整批一次人工确认**；源路径、落点与数量限制与旧批量工具一致。
+- **兼容**：旧名 `ssh_download_file` / `ssh_download_files` 仅在 `tools.legacyAliases=true` 时注册。
+
+### `ssh_upload_file`（兼容别名）
+- **说明**：旧名，等价于 `ssh_upload` 的单文件用法；默认隐藏，仅 `tools.legacyAliases=true` 时注册。
+
+### `ssh_upload_files`（兼容别名）
+- **说明**：旧名，等价于 `ssh_upload` 的批量用法；默认隐藏，仅 `tools.legacyAliases=true` 时注册。
+
+### `ssh_download_file`（兼容别名）
+- **说明**：旧名，等价于 `ssh_download` 的单文件用法；默认隐藏，仅 `tools.legacyAliases=true` 时注册。
+
+### `ssh_download_files`（兼容别名）
+- **说明**：旧名，等价于 `ssh_download` 的批量用法；默认隐藏，仅 `tools.legacyAliases=true` 时注册。
 
 ### `ssh_list_files`
 - **参数**：`serverId`、`remotePath`（远程目录）

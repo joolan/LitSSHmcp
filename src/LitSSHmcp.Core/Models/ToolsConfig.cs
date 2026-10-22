@@ -11,6 +11,12 @@ public class ToolsConfig
     /// docker / service / log / java / topology / app / guide；也接受 "all"（全部）。留空视为全部启用。
     /// </summary>
     public string[] EnabledGroups { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// 是否注册旧工具名别名（默认 false）。工具收敛过渡期可开启一版，便于旧客户端平滑迁移；
+    /// 新工具名始终可用，别名不进入默认 tools/list 与使用指南。
+    /// </summary>
+    public bool LegacyAliases { get; set; }
 }
 
 /// <summary>工具分组常量与解析逻辑（与 docs/TOOLS.md 的分组一一对应）。</summary>

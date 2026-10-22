@@ -41,7 +41,28 @@ public class FileTransferTools
         _scriptRisk = scriptRisk;
     }
 
-    [McpServerTool(Name = "ssh_upload_file", UseStructuredContent = true, OutputSchemaType = typeof(FileTransferResultDto), Destructive = true, OpenWorld = true)]
+    [McpServerTool(Name = "ssh_upload", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
+    [Description("上传一个或多个文件/目录到 SSH 目标：localPaths 每行一个（目录可递归）；单次操作统一人工审批，返回逐项结果。旧名 ssh_upload_file/ssh_upload_files 默认隐藏，可用 tools.legacyAliases 临时开启。")]
+    public Task<BatchTransferResultDto> Upload(
+        [Description("服务器标识（ID/名称/主机名）")] string serverId,
+        [Description("本地源路径，每行一个（文件或目录）")] string localPaths,
+        [Description("远端目标目录")] string remoteDirectory,
+        [Description("是否递归上传目录，默认 false")] bool recursive = false,
+        [Description("最多上传文件数（默认 200，1~5000）")] int maxFiles = 200,
+        [Description("助手对本操作的摘要（可选，仅供参考）")] string? riskNote = null,
+        CancellationToken cancellationToken = default)
+        => UploadFiles(serverId, localPaths, remoteDirectory, recursive, maxFiles, riskNote, cancellationToken);
+
+    [McpServerTool(Name = "ssh_download", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
+    [Description("从 SSH 目标下载一个或多个文件/目录：remotePaths 每行一个（目录可递归）；单次操作统一人工审批，返回逐项结果。旧名 ssh_download_file/ssh_download_files 默认隐藏，可用 tools.legacyAliases 临时开启。")]
+    public Task<BatchTransferResultDto> Download(
+        [Description("服务器标识（ID/名称/主机名）")] string serverId,
+        [Description("远端源路径，每行一个（文件或目录）")] string remotePaths,
+        [Description("本地目标目录（可选；省略=会话工作目录）")] string? localDirectory = null,
+        [Description("是否递归下载目录，默认 false")] bool recursive = false,
+        [Description("最多下载文件数（默认 200，1~5000）")] int maxFiles = 200,
+        CancellationToken cancellationToken = default)
+        => DownloadFiles(serverId, remotePaths, localDirectory, recursive, maxFiles, cancellationToken);
     [Description("上传本地文件到SSH服务器。需要人工确认(可返回status=rejected/approval_timeout/approval_unavailable); 路径必须在白名单内, 会话已分配工作目录时源还须在该会话目录内, 越界返回path_not_allowed并在错误里给出指引; 文件过大返回file_too_large; 上传脚本文件(.sh/.py/.ps1等)会先做服务端风险扫描并在审批弹窗展示, 扫描出危险模式直接status=blocked_script")]
     public async Task<FileTransferResultDto> UploadFile(
         [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
@@ -178,8 +199,6 @@ public class FileTransferTools
             DurationMs = result.Duration.TotalMilliseconds
         };
     }
-
-    [McpServerTool(Name = "ssh_upload_files", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
     [Description("批量/目录上传: 用**一条 SFTP 连接**上传多个本地文件或整个本地目录(可递归, 保持子目录结构)到服务器目录, 避免每个文件重复建连。localPaths 每行一个(文件或目录); **整批一次人工确认**; 受 allowedLocalPaths/allowedRemotePaths 白名单(会话已分配工作目录时源还须在该会话目录内)、单文件大小与 maxFiles 上限约束; 批内脚本文件(.sh/.py/.ps1等)会做服务端风险扫描并在审批弹窗展示, 任一脚本命中危险模式整批 status=blocked_script")]
     public async Task<BatchTransferResultDto> UploadFiles(
         [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
@@ -352,8 +371,6 @@ public class FileTransferTools
             }).ToList()
         };
     }
-
-    [McpServerTool(Name = "ssh_download_file", UseStructuredContent = true, OutputSchemaType = typeof(FileTransferResultDto), Destructive = true, OpenWorld = true)]
     [Description("从SSH服务器下载文件到本地。需要人工确认(可返回status=rejected/approval_timeout/approval_unavailable); 路径必须在白名单内, 越界返回path_not_allowed并在错误里给出允许的路径")]
     public async Task<FileTransferResultDto> DownloadFile(
         [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
@@ -446,8 +463,6 @@ public class FileTransferTools
             DurationMs = result.Duration.TotalMilliseconds
         };
     }
-
-    [McpServerTool(Name = "ssh_download_files", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
     [Description("批量/目录下载: 用**一条 SFTP 连接**下载多个文件或整个目录(可递归)到本地目录, 避免每个文件重复建连。remotePaths 每行一个(文件或目录); 目录会展开(recursive=true 递归子目录, 软链接跳过); **整批一次人工确认**; 受 allowedRemotePaths/allowedLocalPaths 白名单与 maxFiles 上限约束")]
     public async Task<BatchTransferResultDto> DownloadFiles(
         [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,

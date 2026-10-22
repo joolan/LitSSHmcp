@@ -40,11 +40,11 @@ public class UsageGuideFilterTests
     [Fact]
     public void BuildGuide_null_enabled_keeps_full_catalog_for_host()
     {
-        var json = UsageGuideTools.BuildGuide(null, includeInternalTools: true);
+        var json = UsageGuideTools.BuildGuide(null, includeInternalTools: true, includeLegacyTools: true);
         using var doc = JsonDocument.Parse(json);
 
         // 与 ToolCatalogConsistencyTests.ExpectedToolCount 一致：宿主会话包含内部工具
-        Assert.Equal(61, doc.RootElement.GetProperty("tools").GetArrayLength());
+        Assert.Equal(63, doc.RootElement.GetProperty("tools").GetArrayLength());
         Assert.False(doc.RootElement.TryGetProperty("disabled_groups", out _));
     }
 
@@ -57,7 +57,9 @@ public class UsageGuideFilterTests
         var names = doc.RootElement.GetProperty("tools").EnumerateArray()
             .Select(e => e.GetProperty("name").GetString()!)
             .ToArray();
-        Assert.Equal(60, names.Length);
+        Assert.Equal(58, names.Length);
         Assert.DoesNotContain("mcp_approval_round", names);
+        Assert.DoesNotContain("ssh_upload_file", names);
+        Assert.Contains("ssh_upload", names);
     }
 }

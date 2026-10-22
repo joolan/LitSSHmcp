@@ -114,6 +114,7 @@ public static class ToolSecurityCatalog
         ServerRead("ssh_snapshot_get");
         ServerExec("ssh_snapshot_refresh");
         ServerRead("ssh_list_files");
+        ServerRead("ssh_download");
         ServerRead("ssh_download_file");
         ServerRead("ssh_download_files");
 
@@ -124,6 +125,7 @@ public static class ToolSecurityCatalog
         Add("ssh_get_command_history", ToolTargetKind.OptionalServer, ToolAccessLevel.Read, targetArguments: "serverId");
 
         // 文件上传。
+        ServerWrite("ssh_upload");
         ServerWrite("ssh_upload_file");
         ServerWrite("ssh_upload_files");
 

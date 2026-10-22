@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
@@ -81,7 +82,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         (TestCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    private async void Load()
+    private void Load() => AsyncOperation.Run("加载数据源", async () =>
     {
         try
         {
@@ -97,9 +98,9 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"加载失败: {ex.Message}";
         }
-    }
+    });
 
-    private async void Add()
+    private void Add() => AsyncOperation.Run("打开新增数据源", async () =>
     {
         try
         {
@@ -121,9 +122,9 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"打开添加窗口失败: {ex.Message}";
         }
-    }
+    });
 
-    private async void Edit()
+    private void Edit() => AsyncOperation.Run("打开编辑数据源", async () =>
     {
         if (SelectedDataSource == null) return;
 
@@ -148,9 +149,9 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"打开编辑窗口失败: {ex.Message}";
         }
-    }
+    });
 
-    private async void Delete()
+    private void Delete() => AsyncOperation.Run("删除数据源", async () =>
     {
         if (SelectedDataSource == null) return;
 
@@ -181,7 +182,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"删除失败: {ex.Message}";
         }
-    }
+    });
 
     private async Task CleanupDiscoveredEdgesAsync(string nodeId)
     {
@@ -189,7 +190,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         catch { /* 清理失败不阻断 */ }
     }
 
-    private async void Test()
+    private void Test() => AsyncOperation.Run("测试数据源连接", async () =>
     {
         if (SelectedDataSource == null) return;
         StatusMessage = "测试连接中...";
@@ -222,7 +223,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"连接失败: {ex.Message}";
         }
-    }
+    });
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

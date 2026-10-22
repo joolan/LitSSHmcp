@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 
@@ -115,7 +116,7 @@ public class TopologyManageViewModel : INotifyPropertyChanged
         (DeleteRelationCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    private async void Load()
+    private void Load() => AsyncOperation.Run("加载拓扑关系", async () =>
     {
         try
         {
@@ -139,9 +140,9 @@ public class TopologyManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"加载失败: {ex.Message}";
         }
-    }
+    });
 
-    private async void AddRelation()
+    private void AddRelation() => AsyncOperation.Run("添加拓扑关系", async () =>
     {
         try
         {
@@ -184,9 +185,9 @@ public class TopologyManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"添加失败: {ex.Message}";
         }
-    }
+    });
 
-    private async void UpdateRelation()
+    private void UpdateRelation() => AsyncOperation.Run("更新拓扑关系", async () =>
     {
         if (SelectedRelation == null) return;
 
@@ -246,9 +247,9 @@ public class TopologyManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"更新失败: {ex.Message}";
         }
-    }
+    });
 
-    private async void DeleteRelation()
+    private void DeleteRelation() => AsyncOperation.Run("删除拓扑关系", async () =>
     {
         if (SelectedRelation == null) return;
 
@@ -268,7 +269,7 @@ public class TopologyManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"删除失败: {ex.Message}";
         }
-    }
+    });
 
     private void ClearEditor()
     {

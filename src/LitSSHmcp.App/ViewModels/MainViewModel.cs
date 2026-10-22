@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
@@ -661,7 +662,7 @@ public class MainViewModel : INotifyPropertyChanged
         StatusMessage = Sessions.Count == 0 ? "已关闭全部会话" : $"已关闭会话: {name}";
     }
 
-    private async void LoadServers()
+    private void LoadServers() => AsyncOperation.Run("加载服务器", async () =>
     {
         try
         {
@@ -686,7 +687,7 @@ public class MainViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"错误: {ex.Message}";
         }
-    }
+    });
 
     private void AddServer()
     {
@@ -720,7 +721,7 @@ public class MainViewModel : INotifyPropertyChanged
         editWindow.ShowDialog();
     }
 
-    private async void DeleteServer()
+    private void DeleteServer() => AsyncOperation.Run("删除服务器", async () =>
     {
         if (SelectedServer == null) return;
 
@@ -751,7 +752,7 @@ public class MainViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"删除失败: {ex.Message}";
         }
-    }
+    });
 
     private async Task CleanupDiscoveredEdgesAsync(string nodeId)
     {
@@ -873,7 +874,7 @@ public class MainViewModel : INotifyPropertyChanged
     // ---- 代理浏览器（经 SSH 动态转发 SOCKS，浏览器全部流量走该服务器出口） ----
     private readonly Dictionary<string, (Process Browser, string BaseDir)> _proxyBrowsers = new();
 
-    private async void OpenProxiedBrowser(SshServerConfig? server)
+    private void OpenProxiedBrowser(SshServerConfig? server) => AsyncOperation.Run("打开代理浏览器", async () =>
     {
         if (server is null)
             return;
@@ -919,7 +920,8 @@ public class MainViewModel : INotifyPropertyChanged
             var launched = ProxiedBrowserLauncher.Launch(browser, port, server.Name);
             _proxyBrowsers[forwardId] = (launched.Process, launched.BaseDir);
             launched.Process.EnableRaisingEvents = true;
-            launched.Process.Exited += (_, _) => _ = StopProxiedBrowserAsync(forwardId);
+            launched.Process.Exited += (_, _) =>
+                AsyncOperation.Run("清理代理浏览器", () => StopProxiedBrowserAsync(forwardId));
             StatusMessage = $"已打开代理浏览器：{server.Name}（SOCKS 127.0.0.1:{port}）";
         }
         catch (Exception ex)
@@ -928,7 +930,7 @@ public class MainViewModel : INotifyPropertyChanged
             StatusMessage = "打开浏览器失败: " + ex.Message;
             MessageBox.Show("打开浏览器失败：\n\n" + ex.Message, "代理浏览器", MessageBoxButton.OK, MessageBoxImage.Error);
         }
-    }
+    });
 
     private async Task StopProxiedBrowserAsync(string forwardId)
     {
@@ -1226,7 +1228,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     // 采集服务器快照(同步阻塞, 典型 10~30 秒)。单飞: 服务内 per-server 锁 + 库内 Running 唯一约束跨进程生效;
     // UI 再加一道全局忙标志避免同一窗口重复点击。完成后打开历史窗口并定位到本次快照。
-    private async void RefreshSnapshot(SshServerConfig? server)
+    private void RefreshSnapshot(SshServerConfig? server) => AsyncOperation.Run("采集服务器快照", async () =>
     {
         if (server == null) return;
         if (server.Disabled)
@@ -1267,7 +1269,7 @@ public class MainViewModel : INotifyPropertyChanged
         }
 
         OpenSnapshotHistory(server, snapshotId);
-    }
+    });
 
     // 历史快照窗口: 可切换服务器, 列表→点详情; 直接复用同一查看页面。
     private void OpenSnapshotHistory(SshServerConfig? server, long? initialSnapshotId = null)

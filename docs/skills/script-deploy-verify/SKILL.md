@@ -26,8 +26,8 @@ bash --version | head -1; ls -l /bin/sh; sh --version 2>&1 | head -1 || true
 - `/bin/sh` 若指向 dash（Debian/Ubuntu）→ **禁止 bashism**（`[[ ]]`、数组、`source`、`echo -e`），用 `sh` 脚本 + POSIX 语法；或明确用 `bash x.sh` 执行。
 - 目标机缺解释器 → 改用 POSIX `sh` 重写，不要试图装包（需用户确认的变更另说）。
 
-## 3. 上传（ssh_upload_file，需审批）
-- `ssh_upload_file(serverId, localPath="scripts/local/x.sh", remotePath="/tmp/x.sh")`（须在 `allowedRemotePaths` 白名单内）。
+## 3. 上传（ssh_upload，需审批）
+- `ssh_upload(serverId, localPaths="scripts/local/x.sh", remoteDirectory="/tmp")`（须在 `allowedRemotePaths` 白名单内）。
 - **会话已分配工作目录时**，上传源必须在本会话工作目录内（对称约束）：共享区脚本先 `ops_doc_read path="scripts/local/x.sh"` → `ops_doc_write path="x.sh"`（落会话目录）→ 从会话目录上传。
 - **脚本永不免审**：上传时服务端会扫描内容并把报告（结论/命中行/sha256）放进审批弹窗；命中危险模式直接 `status=blocked_script`。
 - 被拦 = 规则判定真的危险：**改写脚本消除风险点**，不要改扩展名/拆分命令绕过检测。
@@ -41,7 +41,7 @@ bash --version | head -1; ls -l /bin/sh; sh --version 2>&1 | head -1 || true
 ## 5. 验证（先只读，紧跟执行）
 1. 退出码/输出：脚本已打印 `OK: <关键指标>` 最好。
 2. `ssh_snapshot_get section="portmap"` / `ss -lntp | grep <port>`：端口还在/新起。
-3. `service_logs` / `log_tail` / `docker_logs`：执行后无新报错。
+3. `service_query(action="logs")` / `log_query(action="tail")` / `docker_logs`：执行后无新报错。
 4. 数值类操作：执行前后各取一次 `df -h`/`count(*)` 对比，确认符合预期。
 
 ## 6. 清理 + 沉淀

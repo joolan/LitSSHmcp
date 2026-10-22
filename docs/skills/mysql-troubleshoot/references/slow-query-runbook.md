@@ -9,7 +9,7 @@
 3. `ssh_snapshot_get section="resource"`：DB 主机 CPU/IO 是否饱和（iowait 高说明慢查询在打磁盘）。
 
 ## 2. 定位慢 SQL（按环境能力三选一或组合）
-- **有慢日志**：`SHOW VARIABLES LIKE 'slow_query_log%'` 确认开启与路径；`log_find`/`log_tail` 或 `ssh_execute_command "ls -l <slow_log>"` 看增长；mysqldumpslow 汇总：`ssh_execute_command "mysqldumpslow -s t -t 10 <slow_log>"`。
+- **有慢日志**：`SHOW VARIABLES LIKE 'slow_query_log%'` 确认开启与路径；`log_query(action="find")`/`log_query(action="tail")` 或 `ssh_execute_command "ls -l <slow_log>"` 看增长；mysqldumpslow 汇总：`ssh_execute_command "mysqldumpslow -s t -t 10 <slow_log>"`。
 - **performance_schema 可用**：查 `events_statements_summary_by_digest` 按 `SUM_TIMER_WAIT` 取 Top：
   `SELECT DIGEST_TEXT, COUNT_STAR, AVG_TIMER_WAIT/1e12 AS avg_s, SUM_ROWS_EXAMINED FROM performance_schema.events_statements_summary_by_digest ORDER BY SUM_TIMER_WAIT DESC LIMIT 10;`
 - **临时判定**：`SHOW FULL PROCESSLIST` 连续采样 2-3 次，找长期 `Query` 且 `Time` 大的语句。

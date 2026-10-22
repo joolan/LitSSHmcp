@@ -11,7 +11,7 @@ appliesTo: [ssh, command, log]
 2. **定位大目录**：从挂载点往下逐层 `du -x -h --max-depth=1 <dir> | sort -rh | head`，优先 `/var/log`、`/var/lib/docker`、`/tmp`、应用日志目录、`/home`。
 3. **定位大文件/删除但仍被占用的文件**：`lsof +L1 2>/dev/null | sort -k7 -rn | head`（进程删除但句柄未释放，是常见“df 满但 du 不大”的元凶）。
 4. **inode 满**：`find <dir> -xdev -type f | wc -l` 或按目录统计小文件（session/cache 目录常见）。
-5. **日志/临时文件**：用 `log_find` 找大日志；确认为可清理的旧日志/临时文件。
+5. **日志/临时文件**：用 `log_query(action="find")` 找大日志；确认为可清理的旧日志/临时文件。
 
 ## 处置（需用户确认）
 - 清理可安全删除的旧日志（如 `find /var/log -name '*.gz' -mtime +30 -delete`，建议先列出）。

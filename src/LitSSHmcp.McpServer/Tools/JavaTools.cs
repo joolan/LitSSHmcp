@@ -79,7 +79,27 @@ public class JavaTools
         };
     }
 
-    [McpServerTool(Name = "java_threads", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, OpenWorld = true)]
+    [McpServerTool(Name = "java_diagnostics", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, OpenWorld = true)]
+    [Description("统一 Java 进程诊断：action=threads 抓线程栈、action=heap 看堆/GC、action=info 看 JVM 版本与运行时长。传 pid，或传 appId 自动解析（唯一命中才行）。")]
+    public Task<RemoteCommandResultDto> JavaDiagnostics(
+        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("诊断类型：threads / heap / info")] string action,
+        [Description("Java进程 pid（用 java_processes 获取）；与 appId 二选一")] string? pid = null,
+        [Description("应用标识(ID/名称): 自动解析其 Java 进程 pid；与 pid 二选一")] string? appId = null,
+        CancellationToken cancellationToken = default)
+        => action.Trim().ToLowerInvariant() switch
+        {
+            "threads" => JavaThreads(serverId, pid, appId, cancellationToken),
+            "heap" => JavaHeap(serverId, pid, appId, cancellationToken),
+            "info" => JavaInfo(serverId, pid, appId, cancellationToken),
+            _ => Task.FromResult(new RemoteCommandResultDto
+            {
+                Success = false,
+                Status = "invalid_argument",
+                Error = "action 须为 threads / heap / info"
+            })
+        };
+
     [Description("抓取Java进程线程栈(jstack -l)。传 pid, 或传 appId 自动解析该应用的pid(唯一命中才行)。分析死锁/CPU飙高/线程池耗尽/阻塞时用")]
     public async Task<RemoteCommandResultDto> JavaThreads(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
@@ -95,7 +115,6 @@ public class JavaTools
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [McpServerTool(Name = "java_heap", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, OpenWorld = true)]
     [Description("查看Java堆内存与GC情况(jcmd GC.heap_info + jstat -gcutil)。传 pid, 或传 appId 自动解析pid。内存涨/频繁GC/OOM排查用")]
     public async Task<RemoteCommandResultDto> JavaHeap(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
@@ -111,7 +130,6 @@ public class JavaTools
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [McpServerTool(Name = "java_info", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
     [Description("查看Java进程的JVM版本与运行时长(jcmd VM.version / VM.uptime)。传 pid, 或传 appId 自动解析pid。确认JDK版本与是否刚重启过用")]
     public async Task<RemoteCommandResultDto> JavaInfo(
         [Description("服务器标识: ID/名称/主机名")] string serverId,

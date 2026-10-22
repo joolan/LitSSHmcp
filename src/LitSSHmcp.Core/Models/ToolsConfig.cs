@@ -11,12 +11,6 @@ public class ToolsConfig
     /// docker / service / log / java / topology / app / guide；也接受 "all"（全部）。留空视为全部启用。
     /// </summary>
     public string[] EnabledGroups { get; set; } = Array.Empty<string>();
-
-    /// <summary>
-    /// 是否注册旧工具名别名（默认 false）。工具收敛过渡期可开启一版，便于旧客户端平滑迁移；
-    /// 新工具名始终可用，别名不进入默认 tools/list 与使用指南。
-    /// </summary>
-    public bool LegacyAliases { get; set; }
 }
 
 /// <summary>工具分组常量与解析逻辑（与 docs/TOOLS.md 的分组一一对应）。</summary>
@@ -97,7 +91,7 @@ public static class ToolGroups
         _ when toolName.StartsWith("app_", StringComparison.Ordinal) => App,
         _ when toolName.StartsWith("mcp_", StringComparison.Ordinal) => Guide,
         "ssh_execute_command" or "ssh_execute_sudo" or "ssh_get_sudo_status" or "ssh_get_command_history" => Command,
-        "ssh_upload_file" or "ssh_upload_files" or "ssh_download_file" or "ssh_download_files" or "ssh_list_files" => FileTransfer,
+        "ssh_upload" or "ssh_download" or "ssh_list_files" => FileTransfer,
         _ when toolName.StartsWith("ssh_", StringComparison.Ordinal) => Ssh,
         _ => null
     };
@@ -107,7 +101,7 @@ public static class ToolGroups
     {
         Ssh => "服务器(ssh_*)",
         Command => "命令/提权(ssh_execute_*)",
-        FileTransfer => "文件传输(ssh_*_file*/*_files)",
+        FileTransfer => "文件传输(ssh_upload/ssh_download/ssh_list_files)",
         Datasource => "数据源(datasource_*)",
         Mysql => "MySQL(mysql_*)",
         Postgres => "PostgreSQL(postgres_*)",

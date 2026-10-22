@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器代码注册 **63 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见），`ssh_upload_file/ssh_upload_files/ssh_download_file/ssh_download_files` 是文件传输旧名兼容别名（默认隐藏，仅 `tools.legacyAliases=true` 时注册）。外部 MCP 客户端默认看到 **58 个常规工具**，宿主会话默认 **59 个**。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
+MCP 服务器代码注册 **53 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **52 个常规工具**，宿主会话看到 **53 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
 
 > **⚠ 同步约定（唯一事实来源）**：本文件是 MCP 工具说明的**唯一事实来源**。以下三处必须与本文件**双向同步**，工具发生任何变动（新增/改名/删除、参数变化、描述与路由变化）时缺一不可：
 > 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`get_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
@@ -66,15 +66,15 @@ MCP 服务器代码注册 **63 个工具**，按用途分为 14 组；其中 `mc
 |--------|--------|-----------|
 | `ssh` | SSH 服务器 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection`、`ssh_snapshot_get`、`ssh_snapshot_refresh` |
 | `command` | 命令执行 | `ssh_execute_command`、`ssh_get_command_history`、`ssh_execute_sudo`、`ssh_get_sudo_status` |
-| `fileTransfer` | 文件传输 | `ssh_upload_file`、`ssh_upload_files`、`ssh_download_file`、`ssh_download_files`、`ssh_list_files` |
+| `fileTransfer` | 文件传输 | `ssh_upload`、`ssh_download`、`ssh_list_files` |
 | `datasource` | 数据源 | `datasource_list`、`datasource_test_connection`、`datasource_get_sql_history` |
 | `mysql` | MySQL 执行 | `mysql_query`、`mysql_execute`、`mysql_explain`、`mysql_diagnostics` |
 | `postgres` | PostgreSQL 执行 | `postgres_query`、`postgres_execute`、`postgres_explain`、`postgres_diagnostics` |
 | `redis` | Redis | `redis_read`、`redis_execute`、`redis_diagnostics` |
 | `docker` | Docker 容器 | `docker_ps`、`docker_logs`、`docker_inspect`、`docker_stats`、`docker_images`、`docker_restart`、`docker_exec` |
-| `service` | systemd 服务 | `service_status`、`service_list`、`service_restart`、`service_logs` |
-| `log` | 日志文件 | `log_tail`、`log_grep`、`log_find` |
-| `java` | JVM 诊断 | `java_processes`、`java_threads`、`java_heap`、`java_info` |
+| `service` | systemd 服务 | `service_query`、`service_restart` |
+| `log` | 日志文件 | `log_query` |
+| `java` | JVM 诊断 | `java_processes`、`java_diagnostics` |
 | `topology` | 拓扑 | `topology_get_overview`、`topology_get_dependencies`、`topology_discover`、`topology_search`、`topology_neighbors`、`topology_path`、`topology_impact`、`topology_explain`、`topology_timeline`、`topology_diff` |
 | `app` | 应用体检 | `app_health_snapshot` |
 | `guide` | 指南/自检 | `mcp_usage_guide`、`mcp_self_check`、`mcp_list_sessions` |
@@ -118,7 +118,7 @@ MCP 服务器代码注册 **63 个工具**，按用途分为 14 组；其中 `mc
 | 权限不足 / 需要root执行 | `ssh_execute_sudo` | 不要等失败再提权，主动判断 |
 | 服务器上有哪些文件 / 看目录 | `ssh_list_files` | |
 | 这台机器能不能sudo / 有没有配置提权 | `ssh_get_sudo_status` | |
-| 上传/下载文件 | `ssh_upload_file` / `ssh_download_file` | |
+| 上传/下载文件 | `ssh_upload` / `ssh_download` | |
 | **有哪些MySQL / 数据库列表 / 数据库配置信息** | `datasource_list` | ~~ssh_list_servers~~（那是SSH） |
 | **数据库能不能连上 / 测试数据库连接 / 数据库连不上** | `datasource_test_connection` | ~~ssh_test_connection~~（那是SSH） |
 | MySQL服务正不正常 / 数据库为什么慢 / 连接数暴涨 | `mysql_diagnostics`（先做整体诊断） | |
@@ -140,17 +140,17 @@ MCP 服务器代码注册 **63 个工具**，按用途分为 14 组；其中 `mc
 | 容器占CPU/内存 | `docker_stats` | |
 | 镜像列表 / 版本 / 磁盘占用 | `docker_images` | |
 | 重启容器 / 容器内执行命令 | `docker_restart` / `docker_exec`（需人工确认） | |
-| 服务状态 / 服务起没起 / 服务退出码 | `service_status` | |
-| 有哪些服务 / 找服务名 | `service_list` | |
+| 服务状态 / 服务起没起 / 服务退出码 | `service_query`（action=status） | |
+| 有哪些服务 / 找服务名 | `service_query`（action=list） | |
 | 重启服务 | `service_restart`（需人工确认） | ~~docker_restart~~（那是容器） |
-| 服务日志 / journalctl | `service_logs` | ~~docker_logs~~（那是容器） |
-| 看日志文件尾部 | `log_tail` | ~~ssh_execute_command~~（不要自己拼 tail） |
-| 日志里搜错误/关键字 | `log_grep` | |
-| 不知道日志路径 / 找最近日志文件 | `log_find`（先发现再读） | |
+| 服务日志 / journalctl | `service_query`（action=logs） | ~~docker_logs~~（那是容器） |
+| 看日志文件尾部 | `log_query`（action=tail） | ~~ssh_execute_command~~（不要自己拼 tail） |
+| 日志里搜错误/关键字 | `log_query`（action=grep） | |
+| 不知道日志路径 / 找最近日志文件 | `log_query`（action=find，先发现再读） | |
 | 有哪些Java进程 / 应用pid | `java_processes`（可传 appId 过滤） | |
-| 线程栈 / 死锁 / CPU飙高 / 线程池满 | `java_threads`（可传 appId 自动解析 pid） | |
-| 堆内存 / 频繁GC / OOM | `java_heap`（可传 appId） | |
-| JVM版本 / 运行时长 | `java_info`（可传 appId） | |
+| 线程栈 / 死锁 / CPU飙高 / 线程池满 | `java_diagnostics`（action=threads） | |
+| 堆内存 / 频繁GC / OOM | `java_diagnostics`（action=heap） | |
+| JVM版本 / 运行时长 | `java_diagnostics`（action=info） | |
 | 某应用整体体检(跨服务器+数据库) | `app_health_snapshot` | 先看它再下钻 |
 | 系统架构 / 拓扑 / 应用部署在哪 / 依赖关系 | `topology_get_overview` | |
 | 某资产的上下游依赖 | `topology_get_dependencies` | |
@@ -253,26 +253,12 @@ MCP 服务器代码注册 **63 个工具**，按用途分为 14 组；其中 `mc
 ### `ssh_upload`
 - **参数**：`serverId`、`localPaths`（每行一个：文件或目录）、`remoteDirectory`（远程目标目录，须在 `allowedRemotePaths` 内）、`recursive`（默认 false，目录递归子目录）、`maxFiles`（默认 200，1~5000）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
 - **返回**：`{ success, status, error, remoteDirectory, total, succeeded, failed, truncated, files: [...] }`
-- **说明**：统一上传入口，单文件/多文件/目录均可用；**用一条 SFTP 连接**批量上传，目录按 `recursive` 展开并保留相对子目录结构；**整批一次人工确认**；源路径、脚本安全门、大小/数量限制与旧批量工具一致。
-- **兼容**：旧名 `ssh_upload_file` / `ssh_upload_files` 仅在 `tools.legacyAliases=true` 时注册。
+- **说明**：统一上传入口，单文件/多文件/目录均可用；**用一条 SFTP 连接**批量上传，目录按 `recursive` 展开并保留相对子目录结构；**整批一次人工确认**。
 
 ### `ssh_download`
 - **参数**：`serverId`、`remotePaths`（每行一个：文件或目录）、`localDirectory`（可选，本地目标目录；省略 = 会话工作目录）、`recursive`（默认 false，目录递归，软链接跳过）、`maxFiles`（默认 200，1~5000）
 - **返回**：`{ success, status, error, localDirectory, total, succeeded, failed, truncated, totalBytes, durationMs, files: [{ remotePath, localPath, success, size, error }] }`
-- **说明**：统一下载入口，单文件/多文件/目录均可用；**用一条 SFTP 连接**批量下载，目录按 `recursive` 展开并跳过软链接；**整批一次人工确认**；源路径、落点与数量限制与旧批量工具一致。
-- **兼容**：旧名 `ssh_download_file` / `ssh_download_files` 仅在 `tools.legacyAliases=true` 时注册。
-
-### `ssh_upload_file`（兼容别名）
-- **说明**：旧名，等价于 `ssh_upload` 的单文件用法；默认隐藏，仅 `tools.legacyAliases=true` 时注册。
-
-### `ssh_upload_files`（兼容别名）
-- **说明**：旧名，等价于 `ssh_upload` 的批量用法；默认隐藏，仅 `tools.legacyAliases=true` 时注册。
-
-### `ssh_download_file`（兼容别名）
-- **说明**：旧名，等价于 `ssh_download` 的单文件用法；默认隐藏，仅 `tools.legacyAliases=true` 时注册。
-
-### `ssh_download_files`（兼容别名）
-- **说明**：旧名，等价于 `ssh_download` 的批量用法；默认隐藏，仅 `tools.legacyAliases=true` 时注册。
+- **说明**：统一下载入口，单文件/多文件/目录均可用；**用一条 SFTP 连接**批量下载，目录按 `recursive` 展开并跳过软链接；**整批一次人工确认**。
 
 ### `ssh_list_files`
 - **参数**：`serverId`、`remotePath`（远程目录）
@@ -411,60 +397,38 @@ MCP 服务器代码注册 **63 个工具**，按用途分为 14 组；其中 `mc
 
 `service_*` 封装 `systemctl` / `journalctl`，服务名会做字符校验并单引号转义。`service_restart` 需人工确认。
 
-### `service_status`
-- **参数**：`serverId`、`service`（服务名或 unit）
-- **返回**：`{ success, status, error, output, truncated, outputChars, exitCode, durationMs }`（`systemctl status` 文本）
-
-### `service_list`
-- **参数**：`serverId`、`pattern`（可选关键字，对 unit 名 `grep -i`）
-- **返回**：同上（`systemctl list-units --type=service --all --no-legend`）
+### `service_query`
+- **参数**：`serverId`、`action`（`list` / `status` / `logs`）、`service`（status/logs 必填）、`pattern`（list 可选）、`lines`（logs 默认 200，上限 5000）、`since`（logs 可选）
+- **返回**：`{ success, status, error, output, truncated, outputChars, exitCode, durationMs }`
+- **说明**：统一 systemd 只读查询入口；`list` 列出服务单元，`status` 查看状态，`logs` 读取 journal。
 
 ### `service_restart`
 - **参数**：`serverId`、`service`
 - **返回**：同上；**需人工确认**
 
-### `service_logs`
-- **参数**：`serverId`、`service`、`lines`（默认 200，上限 5000）、`since`（可选，如 `1h` / `yesterday`）
-- **返回**：同上（`journalctl -u <service> -n <lines>`）
-
 ## 日志文件组（log）
 
-读取远端日志文件，**路径必须在 `security.logs.allowedPaths` 白名单内**（防止读取 `/etc/shadow` 等敏感文件），越界返回 `path_not_allowed`。单次行数受 `security.logs.maxLines` 限制。`log_tail`/`log_grep` 的路径可**直接传 `path`**，也可**传 `appId`**（用应用管理里配置的日志路径，须同时在该应用填「日志路径」）；两者都不确定时先用 `log_find` 发现。
+读取远端日志文件，**路径必须在 `security.logs.allowedPaths` 白名单内**（防止读取 `/etc/shadow` 等敏感文件），越界返回 `path_not_allowed`。单次行数受 `security.logs.maxLines` 限制。`tail`/`grep` 的路径可**直接传 `path`**，也可**传 `appId`**（用应用管理里配置的日志路径，须同时在该应用填「日志路径」）；两者都不确定时先用 `find` 发现。
 
-### `log_find`
-- **参数**：`serverId`、`path`（可选，限定搜索目录，须在白名单内）、`minutes`（默认 1440，只在最近 N 分钟内修改过的文件）、`maxResults`（默认 100，上限 500）
-- **返回**：`{ success, status, error, serverId, serverName, host, count, truncated, files: [{ path, modifiedAt }] }` —— 按修改时间倒序
-- **场景**：不确定日志路径时先调用它拿到候选文件，再用 `log_tail`/`log_grep`
-
-### `log_tail`
-- **参数**：`serverId`、`path`（日志绝对路径；与 `appId` 二选一）、`appId`（应用标识，用其配置的日志路径；与 `path` 二选一）、`lines`（默认 200）
-- **返回**：`{ success, status, error, serverId, serverName, host, path, pattern, count, truncated, lines: [...] }`
+### `log_query`
+- **参数**：`serverId`、`action`（`tail` / `grep` / `find`）、`path`（日志绝对路径；tail/grep 与 `appId` 二选一；find 时可选搜索目录）、`appId`（tail/grep 用其配置的日志路径）、`pattern`（grep 关键字/正则）、`lines`（tail 默认 200）、`ignoreCase`（grep 默认 true）、`maxMatches`（grep 默认 200，上限 2000）、`minutes`（find 默认 1440）、`maxResults`（find 默认 100，上限 500）
+- **返回**：`{ success, status, error, serverId, serverName, host, action, path, pattern, count, truncated, lines: [...], files: [{ path, modifiedAt }] }`
+- **说明**：`tail` 返回尾部行，`grep` 返回带行号的匹配行（无匹配 `success: true, count: 0`），`find` 返回按修改时间倒序的候选文件。
 - **错误约定**：`path_required`（未给 path/appId）、`log_path_not_configured`（应用没配日志路径）、`log_path_ambiguous`（应用配了多个可用路径，请用 `path` 指定）、`path_not_allowed`
-
-### `log_grep`
-- **参数**：`serverId`、`pattern`（关键字/正则）、`path` 或 `appId`（二选一）、`ignoreCase`（默认 true）、`maxMatches`（默认 200，上限 2000）
-- **返回**：同上（`pattern` 回显；`lines` 为带行号的匹配行；无匹配返回 `success: true, count: 0`）
 
 ## JVM 诊断组（java）
 
-`java_*` 通过 `ps` / `jstack` / `jcmd` / `jstat` 读取 JVM 状态，均为只读；`pid` 会做数字校验。需目标机安装 JDK（`jstack`/`jcmd`/`jstat`）。`java_threads`/`java_heap`/`java_info` 可传 `pid`，也可传 `appId` 自动解析该应用的 Java 进程（按应用名/容器名匹配；0 个返回 `pid_not_found`，多个返回 `pid_ambiguous`，不静默猜）。
+`java_*` 通过 `ps` / `jstack` / `jcmd` / `jstat` 读取 JVM 状态，均为只读；`pid` 会做数字校验。需目标机安装 JDK（`jstack`/`jcmd`/`jstat`）。`java_diagnostics` 可传 `pid`，也可传 `appId` 自动解析该应用的 Java 进程（按应用名/容器名匹配；0 个返回 `pid_not_found`，多个返回 `pid_ambiguous`，不静默猜）。
 
 ### `java_processes`
 - **参数**：`serverId`、`appId`（可选，只看某应用的 Java 进程）
 - **返回**：`{ success, status, error, serverId, serverName, host, count, processes: [{ pid, elapsed, cpu, mem, command }] }`
 - **场景**：先拿到应用 pid，再做线程/堆分析
 
-### `java_threads`
-- **参数**：`serverId`、`pid` 或 `appId`（二选一）
-- **返回**：文本结果（`jstack -l <pid>` 线程栈）；分析死锁/CPU 飙高/阻塞
-
-### `java_heap`
-- **参数**：`serverId`、`pid` 或 `appId`（二选一）
-- **返回**：文本结果（`jcmd <pid> GC.heap_info` + `jstat -gcutil`）；分析内存/GC/OOM
-
-### `java_info`
-- **参数**：`serverId`、`pid` 或 `appId`（二选一）
-- **返回**：文本结果（`jcmd <pid> VM.version` / `VM.uptime`）
+### `java_diagnostics`
+- **参数**：`serverId`、`action`（`threads` / `heap` / `info`）、`pid` 或 `appId`（二选一）
+- **返回**：文本结果（`threads`=`jstack -l <pid>`；`heap`=`jcmd <pid> GC.heap_info` + `jstat -gcutil`；`info`=`jcmd <pid> VM.version` / `VM.uptime`）
+- **说明**：统一 Java 诊断入口。
 
 ## 拓扑组（topology）
 
@@ -529,7 +493,7 @@ MCP 服务器代码注册 **63 个工具**，按用途分为 14 组；其中 `mc
 - **参数**：`appId`（应用 ID 或名称）、`includeDiagnostics`（默认 false；true 时对依赖数据源额外做整体诊断，更慢更全）
 - **返回**：`{ success, status, error, application: { id, name, type, containerName, port }, servers: [{ serverId, serverName, host, reachable, status, error, output, truncated }], datasources: [{ datasourceId, name, type, reachable, status, version, accessMode, viaTunnelServer, summary, error }], notes: [...] }`
 - **说明**：应用→服务器取自 `runsOn` 关系（缺失时用应用的 `host` 兜底），应用→数据源取自 `connectsTo` 关系。服务器探测命令一次聚合 **Java 进程 + Docker 容器 + 监听端口**，并**按应用过滤**：java 段按应用名 `grep`、docker 段按 `containerName` `--filter name=`、端口段按应用的 `port` 过滤（缺失则相应段列全部）。`success` 表示"快照已产出"，具体健康看每个 server/datasource 的 `reachable`；`notes` 里会说明本次的过滤范围。
-- **场景**：跨机排查某应用时**先用它**拿到全局画像，再按需下钻到 `docker_logs` / `service_logs` / `log_grep` / `java_threads` / `mysql_diagnostics` 等。
+- **场景**：跨机排查某应用时**先用它**拿到全局画像，再按需下钻到 `docker_logs` / `service_query`（action=logs） / `log_query`（action=grep） / `java_diagnostics` / `mysql_diagnostics` 等。
 
 ## 指南组（guide）
 

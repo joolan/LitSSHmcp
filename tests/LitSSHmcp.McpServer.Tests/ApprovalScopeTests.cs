@@ -27,9 +27,9 @@ public class ApprovalScopeTests : IDisposable
         Assert.False(registry.IsApproved(null, "server-1", "rm -rf x", null, null));
         Assert.False(registry.IsApproved("ssh_execute_command", null, "rm -rf x", null, null));
 
-        Assert.True(registry.GrantSession("ssh_upload_file", "server-1", "上传 a.txt", "a.txt -> /tmp/a.txt"));
-        Assert.True(registry.IsApproved("ssh_upload_file", "server-1", "上传 a.txt", "a.txt -> /tmp/a.txt", null));
-        Assert.False(registry.IsApproved("ssh_upload_file", "server-1", "上传 a.txt", "a.txt -> /tmp/b.txt", null));
+        Assert.True(registry.GrantSession("ssh_upload", "server-1", "上传 a.txt", "a.txt -> /tmp/a.txt"));
+        Assert.True(registry.IsApproved("ssh_upload", "server-1", "上传 a.txt", "a.txt -> /tmp/a.txt", null));
+        Assert.False(registry.IsApproved("ssh_upload", "server-1", "上传 a.txt", "a.txt -> /tmp/b.txt", null));
     }
 
     [Fact]

@@ -139,8 +139,6 @@ var mcp = builder.Services
 if (enabledToolGroups.Contains(ToolGroups.Ssh)) mcp = mcp.WithTools<ServerTools>().WithTools<SnapshotTools>();
 if (enabledToolGroups.Contains(ToolGroups.Command)) mcp = mcp.WithTools<CommandTools>().WithTools<SudoTools>();
 if (enabledToolGroups.Contains(ToolGroups.FileTransfer)) mcp = mcp.WithTools<FileTransferTools>();
-if (enabledToolGroups.Contains(ToolGroups.FileTransfer) && LegacyToolPolicy.IsEnabled(startupConfig))
-    mcp = mcp.WithTools<LegacyFileTransferTools>();
 if (enabledToolGroups.Contains(ToolGroups.Datasource)) mcp = mcp.WithTools<DatasourceTools>();
 if (enabledToolGroups.Contains(ToolGroups.Mysql)) mcp = mcp.WithTools<MysqlTools>();
 if (enabledToolGroups.Contains(ToolGroups.Postgres)) mcp = mcp.WithTools<PostgresTools>();

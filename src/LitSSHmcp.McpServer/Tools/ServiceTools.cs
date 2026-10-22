@@ -23,8 +23,30 @@ public class ServiceTools
         _runner = runner;
     }
 
-    [McpServerTool(Name = "service_status", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, OpenWorld = true)]
-    [Description("查看systemd服务状态(运行/退出码/最近日志)。服务异常先看它; 服务日志用service_logs, 重启用service_restart")]
+    [McpServerTool(Name = "service_query", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
+    [Description("统一查询 systemd：action=list 列服务单元（可 pattern 过滤）、action=status 看服务状态、action=logs 看 journal 日志；重启用 service_restart。")]
+    public Task<RemoteCommandResultDto> ServiceQuery(
+        [Description("服务器标识（ID/名称/主机名）")] string serverId,
+        [Description("查询类型：list / status / logs")] string action,
+        [Description("服务名（status/logs 必填，可省略 .service）")] string? service = null,
+        [Description("list 的关键字过滤（可选）")] string? pattern = null,
+        [Description("logs 返回行数（默认 200，上限 5000）")] int lines = 200,
+        [Description("logs 起始时间（可选，如 1h / yesterday / '2024-01-01 10:00:00'）")] string? since = null,
+        CancellationToken cancellationToken = default)
+        => action.Trim().ToLowerInvariant() switch
+        {
+            "list" => ServiceList(serverId, pattern, cancellationToken),
+            "status" => ServiceStatus(serverId, service ?? string.Empty, cancellationToken),
+            "logs" => ServiceLogs(serverId, service ?? string.Empty, lines, since, cancellationToken),
+            _ => Task.FromResult(new RemoteCommandResultDto
+            {
+                Success = false,
+                Status = "invalid_argument",
+                Error = "action 须为 list / status / logs"
+            })
+        };
+
+    [Description("查看 systemd 服务状态(运行/退出码/最近日志)，服务异常时优先看；完整日志用 service_query action=logs, 重启用 service_restart")]
     public async Task<RemoteCommandResultDto> ServiceStatus(
         [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
         [Description("服务名(不带.service) 或 unit, 如 nginx / docker / myapp.service")] string service,
@@ -37,7 +59,6 @@ public class ServiceTools
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [McpServerTool(Name = "service_list", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
     [Description("列出systemd服务单元(可按关键字过滤, 返回名称/状态/描述)。不确定服务名时先列出来")]
     public async Task<RemoteCommandResultDto> ServiceList(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
@@ -53,7 +74,7 @@ public class ServiceTools
     }
 
     [McpServerTool(Name = "service_restart", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("重启systemd服务(会短暂中断服务, 需人工确认)。确认服务名用service_list, 重启后看service_status")]
+    [Description("重启systemd服务(会短暂中断服务, 需人工确认)。确认服务名用 service_query action=list, 重启后看 service_query action=status")]
     public async Task<RemoteCommandResultDto> ServiceRestart(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
         [Description("服务名(不带.service) 或 unit")] string service,
@@ -66,7 +87,6 @@ public class ServiceTools
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [McpServerTool(Name = "service_logs", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, OpenWorld = true)]
     [Description("查看systemd服务日志(journalctl -u)。用lines限制行数, since按时间过滤(如 '1h'/'2024-01-01 10:00:00')")]
     public async Task<RemoteCommandResultDto> ServiceLogs(
         [Description("服务器标识: ID/名称/主机名")] string serverId,

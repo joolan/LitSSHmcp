@@ -40,11 +40,11 @@ public class UsageGuideFilterTests
     [Fact]
     public void BuildGuide_null_enabled_keeps_full_catalog_for_host()
     {
-        var json = UsageGuideTools.BuildGuide(null, includeInternalTools: true, includeLegacyTools: true);
+        var json = UsageGuideTools.BuildGuide(null, includeInternalTools: true);
         using var doc = JsonDocument.Parse(json);
 
         // 与 ToolCatalogConsistencyTests.ExpectedToolCount 一致：宿主会话包含内部工具
-        Assert.Equal(63, doc.RootElement.GetProperty("tools").GetArrayLength());
+        Assert.Equal(53, doc.RootElement.GetProperty("tools").GetArrayLength());
         Assert.False(doc.RootElement.TryGetProperty("disabled_groups", out _));
     }
 
@@ -57,9 +57,15 @@ public class UsageGuideFilterTests
         var names = doc.RootElement.GetProperty("tools").EnumerateArray()
             .Select(e => e.GetProperty("name").GetString()!)
             .ToArray();
-        Assert.Equal(58, names.Length);
+        Assert.Equal(52, names.Length);
         Assert.DoesNotContain("mcp_approval_round", names);
         Assert.DoesNotContain("ssh_upload_file", names);
+        Assert.DoesNotContain("service_status", names);
+        Assert.DoesNotContain("log_tail", names);
+        Assert.DoesNotContain("java_threads", names);
         Assert.Contains("ssh_upload", names);
+        Assert.Contains("service_query", names);
+        Assert.Contains("log_query", names);
+        Assert.Contains("java_diagnostics", names);
     }
 }

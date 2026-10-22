@@ -15,7 +15,7 @@ namespace LitSSHmcp.McpServer.Tests;
 /// </summary>
 public class ToolCatalogConsistencyTests
 {
-    private const int ExpectedToolCount = 63;
+    private const int ExpectedToolCount = 53;
 
     [Fact]
     public async Task Registered_tools_match_docs_and_usage_guide()
@@ -64,7 +64,7 @@ public class ToolCatalogConsistencyTests
 
     private static string[] GetGuideToolNames()
     {
-        var json = UsageGuideTools.BuildGuide(null, includeInternalTools: true, includeLegacyTools: true);
+        var json = UsageGuideTools.BuildGuide(null, includeInternalTools: true);
         using var document = JsonDocument.Parse(json);
         return document.RootElement.GetProperty("tools")
             .EnumerateArray()

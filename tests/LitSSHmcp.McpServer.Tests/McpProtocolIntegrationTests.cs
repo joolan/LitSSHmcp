@@ -41,13 +41,20 @@ public class McpProtocolIntegrationTests
             var tools = list.GetProperty("result").GetProperty("tools").EnumerateArray().ToList();
             var names = tools.Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
 
-            Assert.Equal(58, tools.Count);
+            Assert.Equal(52, tools.Count);
             Assert.DoesNotContain("mcp_approval_round", names);
             Assert.Contains("ssh_upload", names);
             Assert.Contains("ssh_download", names);
             Assert.DoesNotContain("ssh_upload_file", names);
             Assert.DoesNotContain("ssh_download_file", names);
-            foreach (var expected in new[] { "mysql_query", "postgres_diagnostics", "redis_read", "ssh_list_servers", "datasource_list", "topology_get_overview", "topology_search", "topology_neighbors", "topology_path", "topology_impact", "topology_explain", "topology_timeline", "topology_diff", "mcp_usage_guide", "mcp_self_check", "mcp_list_sessions", "docker_ps", "service_status", "log_tail", "log_find", "java_processes", "app_health_snapshot", "ssh_snapshot_get", "ssh_snapshot_refresh" })
+            Assert.Contains("service_query", names);
+            Assert.DoesNotContain("service_status", names);
+            Assert.DoesNotContain("service_logs", names);
+            Assert.Contains("log_query", names);
+            Assert.DoesNotContain("log_tail", names);
+            Assert.Contains("java_diagnostics", names);
+            Assert.DoesNotContain("java_threads", names);
+            foreach (var expected in new[] { "mysql_query", "postgres_diagnostics", "redis_read", "ssh_list_servers", "datasource_list", "topology_get_overview", "topology_search", "topology_neighbors", "topology_path", "topology_impact", "topology_explain", "topology_timeline", "topology_diff", "mcp_usage_guide", "mcp_self_check", "mcp_list_sessions", "docker_ps", "service_query", "log_query", "java_processes", "java_diagnostics", "app_health_snapshot", "ssh_snapshot_get", "ssh_snapshot_refresh" })
                 Assert.Contains(expected, names);
 
             foreach (var tool in tools)
@@ -128,7 +135,7 @@ public class McpProtocolIntegrationTests
                 var list = await external.RequestAsync("tools/list", new { });
                 var names = list.GetProperty("result").GetProperty("tools").EnumerateArray()
                     .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
-                Assert.Equal(58, names.Count);
+                Assert.Equal(52, names.Count);
                 Assert.DoesNotContain("mcp_approval_round", names);
             }
 
@@ -143,7 +150,7 @@ public class McpProtocolIntegrationTests
             var hostList = await host.RequestAsync("tools/list", new { });
             var hostNames = hostList.GetProperty("result").GetProperty("tools").EnumerateArray()
                 .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
-            Assert.Equal(59, hostNames.Count);
+            Assert.Equal(53, hostNames.Count);
             Assert.Contains("mcp_approval_round", hostNames);
         }
         finally
@@ -179,7 +186,7 @@ public class McpProtocolIntegrationTests
 
             // 工具仍会列出（外部客户端不含内部工具）
             var list = await client.RequestAsync("tools/list", new { });
-            Assert.Equal(58, list.GetProperty("result").GetProperty("tools").GetArrayLength());
+            Assert.Equal(52, list.GetProperty("result").GetProperty("tools").GetArrayLength());
 
             // 但任何调用都被拒绝
             var call = await client.RequestAsync("tools/call", new { name = "mcp_self_check", arguments = new { } });

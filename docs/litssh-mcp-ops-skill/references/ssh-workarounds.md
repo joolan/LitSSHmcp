@@ -12,12 +12,12 @@ ssh_execute_command(serverId, "ps -eo pid,args --no-headers | grep '[j]ava' | he
 ssh_execute_command(serverId, "find /opt/order -maxdepth 3 \\( -name 'application*.yml' -o -name 'application*.properties' -o -name 'logback*.xml' -o -name 'log4j2*.xml' \\) 2>/dev/null")
 # 读配置里的日志路径
 ssh_execute_command(serverId, "grep -nE 'logging\\.(file|path)|log\\.path|LOG_PATH' /opt/order/config/application.yml 2>/dev/null")
-# 直接读日志（若 log_tail 白名单不包含该路径，可用 tail 变通；仍受命令过滤）
+# 直接读日志（若 log_query 白名单不包含该路径，可用 tail 变通；仍受命令过滤）
 ssh_execute_command(serverId, "tail -n 200 /opt/order/logs/app.log")
 # 按关键字检索
 ssh_execute_command(serverId, "grep -n -i -- 'OutOfMemory\\|Exception' /opt/order/logs/app.log | tail -n 100")
 ```
-> 若路径应长期使用，建议把该目录加入 `security.logs.allowedPaths`（安全设置窗口），或在该应用填「日志路径」，之后就能用 `log_tail`/`log_grep`。
+> 若路径应长期使用，建议把该目录加入 `security.logs.allowedPaths`（安全设置窗口），或在该应用填「日志路径」，之后就能用 `log_query(action="tail"/"grep")`。
 
 ## 6.2 端口/进程/资源
 > 更全的整机视角（端口↔进程↔用户↔服务三元组 + 程序路径 `exe`/启动命令 `cmdline`、Docker 容器、nginx 配置与证书、systemd）**优先用 `ssh_snapshot_get(serverId)`**；需要最新数据再 `ssh_snapshot_refresh`。下列命令用于快照未启用或需更细粒度时。
@@ -49,8 +49,8 @@ ssh_execute_sudo(serverId, "last reboot | head")
 
 ## 6.6 远端配置修改（高风险，务必谨慎）
 MCP 没有“编辑远端文件”工具。稳妥做法：
-1. `ssh_download_file` 拉取配置到本地 → 本地修改；
-2. `ssh_upload_file` 回传（需审批）；
+1. `ssh_download` 拉取配置到本地 → 本地修改；
+2. `ssh_upload` 回传（需审批）；
 3. `service_restart` / `ssh_execute_sudo systemctl reload`（需审批）；
 4. 校验：`curl /actuator/health` 或看日志。
 避免用 `sed -i` 之类直接改生产配置，除非别无选择且已有备份。
@@ -70,7 +70,7 @@ MCP 没有“编辑远端文件”工具。稳妥做法：
 - **不要跟随输出**：`tail -f`→`tail -n 200`；`docker logs -f`→`docker logs --tail 200 <c>`；`journalctl -f`→`journalctl -n 200 --no-pager`；`kubectl logs -f`→`--tail=200`。
 - **不要交互式命令**：`vi/vim/nano/less/more/top/htop/watch`、`bash -i`、`read`、`nc/telnet`；`ping` 必须加 `-c`。
 - **`sudo`/`su` 走专用工具**：普通命令通道里的 `sudo`/`su` 会等密码挂起，用 `ssh_execute_sudo`（方式由服务器 `SudoType` 决定）。
-- **多行 / 嵌套引号**：命令会被 `sh -c` 包装；避免复杂嵌套引号与 heredoc（易 `unexpected EOF`）。用 `;`/`&&` 串联；复杂脚本用 `ssh_upload_file` 传上去再 `bash /path/x.sh`。
+- **多行 / 嵌套引号**：命令会被 `sh -c` 包装；避免复杂嵌套引号与 heredoc（易 `unexpected EOF`）。用 `;`/`&&` 串联；复杂脚本用 `ssh_upload` 传上去再 `bash /path/x.sh`。
 - **退出码≠失败**：`grep`/`pgrep`/`diff`/`test`/`pkill` 返回非 0 往往是**正常语义**；判断看 `exitCode` + `output`/`error`，不要仅凭 `success=false` 认为命令没执行。
 - **需要更长时间**：装包/重启等可传 `timeoutSeconds`（默认 60，最大 3600）；超时会返回 `status=timeout`。
 - **不要结束通道**：避免 `exit`/`logout`、`kill` sshd、杀当前 shell 的父进程等——会关闭会话通道导致无结果。

@@ -1,6 +1,6 @@
 ---
 name: litssh-mcp-ops-skill
-description: Use when operating or troubleshooting servers and applications through the LitSSH MCP server (LitSSHmcp) — SSH command execution, server snapshots, Docker containers, systemd services, Java/JVM diagnostics, log files, MySQL/PostgreSQL/Redis, topology and app health. Triggers on tools like ssh_execute_command, ssh_snapshot_get/ssh_snapshot_refresh, docker_ps, service_status, java_threads, log_tail/log_grep/log_find, app_health_snapshot, mysql_diagnostics, topology_search/topology_neighbors/topology_path/topology_impact/topology_explain, and on requests such as 服务器排查, 整机态势/快照, 应用日志, 容器起不来, JVM/CPU 飙高, 数据库连不上, 变更影响面, 依赖链路. Also gives SSH-based workarounds for capabilities the MCP does not expose directly. Maintains an ops asset/app-topology ledger (OPS_ASSETS.md) in the workspace — creating and correcting it while operating so servers/apps/log paths/dependencies stay accurate. Uses structured ops memory (ops_memory_* — 自动召回 + list/save/update, 查后做、成后记) and reusable remote scripts (scripts/ + ops_script_register, 永不免审) to accumulate verified ops paths across sessions.
+description: Use when operating or troubleshooting servers and applications through the LitSSH MCP server (LitSSHmcp) — SSH command execution, server snapshots, Docker containers, systemd services, Java/JVM diagnostics, log files, MySQL/PostgreSQL/Redis, topology and app health. Triggers on tools like ssh_execute_command, ssh_snapshot_get/ssh_snapshot_refresh, docker_ps, service_query, java_diagnostics, log_query, app_health_snapshot, mysql_diagnostics, topology_search/topology_neighbors/topology_path/topology_impact/topology_explain, and on requests such as 服务器排查, 整机态势/快照, 应用日志, 容器起不来, JVM/CPU 飙高, 数据库连不上, 变更影响面, 依赖链路. Also gives SSH-based workarounds for capabilities the MCP does not expose directly. Maintains an ops asset/app-topology ledger (OPS_ASSETS.md) in the workspace — creating and correcting it while operating so servers/apps/log paths/dependencies stay accurate. Uses structured ops memory (ops_memory_* — 自动召回 + list/save/update, 查后做、成后记) and reusable remote scripts (scripts/ + ops_script_register, 永不免审) to accumulate verified ops paths across sessions.
 ---
 
 # LitSSH MCP 服务器运维排障
@@ -41,11 +41,11 @@ description: Use when operating or troubleshooting servers and applications thro
 | 服务器列表/状态/连通性 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection`（已禁用的服务器不在列表中，相关工具会返回 `server_disabled`） |
 | 服务器整机快照 | `ssh_snapshot_get`（默认读本地最新快照，返回各维度概览；`section=`/`detail="full"` 取完整）、`ssh_snapshot_refresh`（重新采集，较慢） |
 | 执行命令 / 提权 / 历史 | `ssh_execute_command`、`ssh_execute_sudo`、`ssh_get_command_history`、`ssh_get_sudo_status` |
-| 文件 | `ssh_list_files`、`ssh_upload_file`、`ssh_upload_files`（批量/目录，一条连接）、`ssh_download_file`、`ssh_download_files`（批量/目录，一条连接） |
+| 文件 | `ssh_list_files`、`ssh_upload`（单文件/批量/目录，一条连接）、`ssh_download`（单文件/批量/目录，一条连接） |
 | Docker | `docker_ps`、`docker_logs`、`docker_inspect`、`docker_stats`、`docker_images`、`docker_restart`、`docker_exec` |
-| systemd | `service_status`、`service_list`、`service_restart`、`service_logs` |
-| 日志文件 | `log_find`（发现）、`log_tail`、`log_grep` |
-| JVM | `java_processes`、`java_threads`、`java_heap`、`java_info` |
+| systemd | `service_query`（action=list/status/logs）、`service_restart` |
+| 日志文件 | `log_query`（action=tail/grep/find） |
+| JVM | `java_processes`、`java_diagnostics`（action=threads/heap/info） |
 | 拓扑/图谱 | `topology_search`（定位）、`topology_neighbors`（邻域）、`topology_path`（有向链路）、`topology_impact`（变更影响面）、`topology_explain`（证据/过期）、`topology_get_overview`、`topology_get_dependencies`、`topology_discover` |
 | 应用体检 | `app_health_snapshot` |
 | 数据源 | `datasource_list`、`datasource_test_connection`、`datasource_get_sql_history` |
@@ -70,10 +70,10 @@ description: Use when operating or troubleshooting servers and applications thro
 1. **定位**：先 `topology_search` 拿准确 ID；`app_health_snapshot(appId)` 一步拿到该应用所在服务器的 Java 进程/容器/监听端口 + 依赖库连通性。看依赖/链路用 `topology_neighbors` / `topology_path`；**变更前**用 `topology_impact` 查影响面；对结论没把握时用 `topology_explain` 核实边的来源、证据与是否过期（`stale`）。
 2. **分侧取证**：
    - 服务器：`ssh_get_server_status` / `ssh_test_connection`（失败会给 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`）。
-   - 应用进程：`java_processes`（可传 `appId`）→ `java_threads` / `java_heap` / `java_info`（可传 `appId` 自动解析 pid）。
+   - 应用进程：`java_processes`（可传 `appId`）→ `java_diagnostics`（action=threads/heap/info，可传 `appId` 自动解析 pid）。
    - 容器：`docker_ps` → `docker_logs` / `docker_inspect` / `docker_stats`。
-   - systemd：`service_status` → `service_logs`。
-   - 日志：`log_find` → `log_tail` / `log_grep`。
+   - systemd：`service_query(action="status")` → `service_query(action="logs")`。
+   - 日志：`log_query`（action=find → tail/grep）。
    - 数据库：`mysql_diagnostics` / `postgres_diagnostics` / `redis_diagnostics` → 下钻 `*_query`。
 3. **给结论**：输出 时间线 / 根因假设 / 证据（工具+关键输出）/ 处置建议 / 是否需要变更审批。
 
@@ -85,24 +85,24 @@ description: Use when operating or troubleshooting servers and applications thro
 - **关系可信度核查**：`topology_explain(assetId, to?, relationType?)` 看每条边的 `source`（manual/discovered）、`evidence`、`confidence`、`lastVerifiedAt`、`lastSeenAt`、`stale`。`stale=true` 表示发现边超过 7 天未再确认，结论中应标注“可能过期”，并用快照/实时命令复核。`asset_ambiguous` 时改用 `topology_search` 返回的精确 ID。
 - **安全巡检 / 合规核查**：`ssh_snapshot_get(serverId)` 的 `security` 维度一键给出：SSH 配置（root 登录/密码登录/端口）、防火墙（ufw/firewalld）、fail2ban、MySQL 匿名账户/远程 root、系统空口令账户、sudoers `NOPASSWD`、**公网暴露的高危端口**；按 `findings[].severity`（high/medium/low/info）汇报并可给出整改建议；需最新数据用 `ssh_snapshot_refresh`。
 - **容器起不来/异常退出**：`docker_ps(all=true)` → `docker_logs(container, tail=300)` → `docker_inspect`（看退出码/挂载/健康检查）→ `docker_stats`；不知哪些容器先 `ssh_snapshot_get` 看 `docker.containers`。
-- **Java CPU 飙高/卡死**：`java_processes` 找 pid → `java_threads`（找 `RUNNABLE`/死锁）→ `java_heap`（GC/堆）→ `java_info`。
-- **服务没起来**：`service_status`（看退出码/最近日志）→ `service_logs`；需要时 `service_restart`（审批）。
+- **Java CPU 飙高/卡死**：`java_processes` 找 pid → `java_diagnostics(action="threads")`（找 `RUNNABLE`/死锁）→ `java_diagnostics(action="heap")`（GC/堆）→ `java_diagnostics(action="info")`。
+- **服务没起来**：`service_query(action="status")`（看退出码/最近日志）→ `service_query(action="logs")`；需要时 `service_restart`（审批）。
 - **数据库慢/连接暴涨**：先 `mysql_diagnostics` / `postgres_diagnostics`（整体），再 `mysql_query` 查 `processlist`/慢日志，`mysql_explain` 分析 SQL；缓存问题用 `redis_diagnostics` + `redis_read`。
 - **连不上数据库**：`datasource_test_connection`（区分直连/经隧道），再看绑定的 SSH 隧道服务器是否可用。
-- **日志排查**：不知道路径先 `log_find`；已知路径 `log_tail`/`log_grep`；容器用 `docker_logs`；systemd 用 `service_logs`。
+- **日志排查**：不知道路径先 `log_query(action="find")`；已知路径 `log_query(action="tail"/"grep")`；容器用 `docker_logs`；systemd 用 `service_query(action="logs")`。
 
 ## 5. 日志路径怎么找（重点）
 
-`log_tail`/`log_grep` **不自动发现路径**，需要 `path`（白名单 `security.logs.allowedPaths` 内）或 `appId`（应用管理里配置的「日志路径」）。找不到时按下面顺序：
+`log_query` 的 `tail`/`grep` **不自动发现路径**，需要 `path`（白名单 `security.logs.allowedPaths` 内）或 `appId`（应用管理里配置的「日志路径」）。找不到时按下面顺序：
 
-1. **先发现**：`log_find(serverId)`（或 `log_find(serverId, path="/opt/myapp")`）列出最近修改的 `.log`。
+1. **先发现**：`log_query(serverId, action="find")`（或 `path="/opt/myapp"`）列出最近修改的 `.log`。
 2. **从启动命令推断**：`java_processes(serverId, appId)` 看 `command`：
    - `-Dlogging.file=/...`、`-Dlogging.file.name=/...`
    - `-Dlog4j.configurationFile=`、`-Dlogback.configurationFile=`
    - `--spring.config.location=`、`-Dspring.profiles.active=`
    - jar 所在目录（如 `/opt/order/order.jar` → 常见 `/opt/order/logs/`）
-3. **解析配置文件**（用 `ssh_execute_command`，见第 6 节）后 `log_tail`。
-4. 配好应用「日志路径」后，后续直接 `log_tail(serverId, appId="order")`。
+3. **解析配置文件**（用 `ssh_execute_command`，见第 6 节）后 `log_query(action="tail")`。
+4. 配好应用「日志路径」后，后续直接 `log_query(serverId, action="tail", appId="order")`。
 
 ## 6. MCP 未覆盖能力 → 用 SSH 变通（关键）
 
@@ -119,7 +119,7 @@ description: Use when operating or troubleshooting servers and applications thro
 - 只读优先；任何“重启/删除/改配置”都先说明影响面并等待确认（会触发审批）。
 - 遇 `blocked`/`rejected` 不要重试轰炸；遇 `approval_timeout` 提示用户后重试；遇 `server_ambiguous`/`pid_ambiguous`/`log_path_ambiguous` 用精确标识重试。
 - **减少审批次数**：多个**只读**提权检查（读 sudoers/服务文件/端口属主等）尽量**合并成一条 `ssh_execute_sudo` 命令**一次执行，而不是逐条弹审批。
-- 不要自行编造路径、端口、ID；拿不到就用列表/发现工具（`ssh_list_servers`、`log_find`、`java_processes`）。
+- 不要自行编造路径、端口、ID；拿不到就用列表/发现工具（`ssh_list_servers`、`log_query(action="find")`、`java_processes`）。
 - 本次如确认/纠正了新事实，收尾时**增量更新资产档案**（`OPS_ASSETS.md`，见第 9 节）：**优先增量追加/定点修正，避免整份重写**；无新事实则跳过。
 
 ## 8. 参考
@@ -152,5 +152,5 @@ description: Use when operating or troubleshooting servers and applications thro
 - **脚本复用闭环**（详见 `docs/skills/script-deploy-verify/SKILL.md`）：
   - 工作区约定：`scripts/local/`（源）、`scripts/remote/`（远端副本/说明）、`scripts/MANIFEST.md`（台账：路径/用途/适用环境/已部署资产/哈希）。
   - 写完或验证通过后 `ops_script_register(path, purpose, ...)` 登记台账并同步 `kind=script` 记忆。
-  - 上传/执行走 `ssh_upload_file` + `ssh_execute_command`（照常审批，见第 1 节脚本门）；执行前先做解释器兼容性探测（`python3` vs `python2.7`、`/bin/sh` 是否 dash）。
+     - 上传/执行走 `ssh_upload` + `ssh_execute_command`（照常审批，见第 1 节脚本门）；执行前先做解释器兼容性探测（`python3` vs `python2.7`、`/bin/sh` 是否 dash）。
   - **已有等价脚本就复用**：先读 `MANIFEST.md` + `ops_memory_list(kind="script")`，再决定新写。

@@ -137,8 +137,8 @@ public class ToolTargetResolverTests
             ToolSecurityCatalog.Find("ssh_execute_command")!,
             "ssh_execute_command", Args(("command", "df -h")), null));
         Assert.Equal(ToolAccessLevel.Write, McpAuthorizationFilter.ResolveRequiredAccess(
-            ToolSecurityCatalog.Find("ssh_upload_file")!,
-            "ssh_upload_file", Args(("serverId", "s-1")), null));
+            ToolSecurityCatalog.Find("ssh_upload")!,
+            "ssh_upload", Args(("serverId", "s-1")), null));
         Assert.Equal(ToolAccessLevel.Read, McpAuthorizationFilter.ResolveRequiredAccess(
             ToolSecurityCatalog.Find("ssh_list_files")!,
             "ssh_list_files", Args(("serverId", "s-1")), null));

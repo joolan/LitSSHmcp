@@ -534,6 +534,26 @@ public sealed class LogFileListDto
         new() { Success = false, Status = status, Error = error, ServerId = serverId, ServerName = serverName, Host = host };
 }
 
+public sealed class LogQueryResultDto
+{
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
+    public string? Action { get; set; }
+    public string? Path { get; set; }
+    public string? Pattern { get; set; }
+    public int Count { get; set; }
+    public bool Truncated { get; set; }
+    public List<string> Lines { get; set; } = new();
+    public List<LogFileDto> Files { get; set; } = new();
+
+    public static LogQueryResultDto Fail(string status, string error) =>
+        new() { Success = false, Status = status, Error = error };
+}
+
 public sealed class AppInfoDto
 {
     public string Id { get; set; } = string.Empty;

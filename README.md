@@ -66,7 +66,7 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 除工具外，服务还通过 MCP **Resources** 暴露**只读上下文**（供客户端“浏览 / 挂载”，无需调用工具）：`litssh://servers`（服务器清单）、`litssh://datasources`（数据源清单）、`litssh://usage-guide`（使用指南）、`litssh://topology`（资产拓扑）、`litssh://server/{id}/snapshot/latest`（资源模板：某服务器最新快照概览）。资源**不含密码/密钥**、禁用服务器已排除，并按**启用的工具分组**暴露。
 
 <details>
-<summary><b>查看全部 58 个默认常规工具</b>（另含 4 个旧名兼容别名与 1 个宿主内部工具，点击展开）</summary>
+<summary><b>查看全部 52 个常规工具</b>（另含 1 个宿主内部工具，点击展开）</summary>
 
 > 完整参数 / 返回结构 / "用户意图 → 工具" 路由表见 **[docs/TOOLS.md](docs/TOOLS.md)**（唯一事实来源）。工具发生变动时，MCP 服务器端注解、`docs/TOOLS.md`、App 展示三处必须同步。
 
@@ -81,10 +81,8 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 | `ssh_snapshot_get` | 查询服务器整机快照（资源/端口进程服务/Docker/nginx证书/systemd/**安全巡检**）；**默认返回各维度概览**，`section=` 取单维度完整数据、`detail="full"` 取全部，可查历史 |
 | `ssh_snapshot_refresh` | 重新采集服务器整机快照（耗时较长、同机单飞；**有最短刷新间隔节流**，`force=true` 强制重采；失败也落库） |
 | `ssh_get_command_history` | 查看命令执行历史 |
-| `ssh_upload_file` | 上传本地文件到服务器 |
-| `ssh_upload_files` | **批量/目录上传**（一条 SFTP 连接、整批一次审批、保留子目录结构） |
-| `ssh_download_file` | 从服务器下载文件到本地 |
-| `ssh_download_files` | **批量/目录下载**（一条 SFTP 连接、整批一次审批、保留子目录结构） |
+| `ssh_upload` | 上传文件或目录到服务器（单个/批量统一入口，整批一次审批、保留子目录结构） |
+| `ssh_download` | 从服务器下载文件或目录到本地（单个/批量统一入口，保留子目录结构） |
 | `ssh_list_files` | 浏览服务器目录 |
 | `datasource_list` | 列出MySQL/PostgreSQL/Redis等数据源（主机/端口/账号/绑定关系，**无密码**） |
 | `datasource_test_connection` | 测试数据库连通性（直连或SSH隧道） |
@@ -107,17 +105,11 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 | `docker_images` | 镜像列表（版本/大小） |
 | `docker_restart` | 重启容器（需审批） |
 | `docker_exec` | 容器内执行命令（需审批） |
-| `service_status` | systemd 服务状态 |
-| `service_list` | 列出 systemd 服务 |
+| `service_query` | 统一 systemd 查询（action=list/status/logs） |
 | `service_restart` | 重启 systemd 服务（需审批） |
-| `service_logs` | 服务日志（journalctl） |
-| `log_tail` | 查看日志文件尾部（可传 path 或 appId） |
-| `log_grep` | 日志按关键字/正则检索（可传 path 或 appId） |
-| `log_find` | 发现最近修改的日志文件（不知路径时先用它） |
+| `log_query` | 统一日志查询（action=tail/grep/find，可传 path 或 appId） |
 | `java_processes` | 列出 Java 进程（可传 appId 过滤） |
-| `java_threads` | 抓取线程栈（jstack，可传 appId 自动解析 pid） |
-| `java_heap` | 堆内存/GC（jcmd + jstat） |
-| `java_info` | JVM 版本/运行时长 |
+| `java_diagnostics` | 统一 Java 诊断（action=threads/heap/info，可传 appId 自动解析 pid） |
 | `app_health_snapshot` | 按应用聚合体检（所在服务器进程/容器/端口 + 依赖数据源连通性） |
 | `topology_get_overview` | 资产拓扑图（服务器/应用/服务/容器/部署/数据库/域名/端口/证书及关系） |
 | `topology_get_dependencies` | 查询某资产的上下游依赖 |
@@ -135,9 +127,9 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 
 </details>
 
-**工具分组（按部署裁剪）**：默认暴露全部 58 个常规工具（文件传输旧名别名需 `tools.legacyAliases=true` 才注册，宿主内部审批工具不受分组开关影响）；可在 App 的 **设置 → 工具分组** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `docker` / `service` / `log` / `java` / `topology` / `app` / `guide`），降低 AI 上下文占用与误选。留空 / 不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。
+**工具分组（按部署裁剪）**：默认暴露全部 52 个常规工具（宿主内部审批工具不受分组开关影响）；可在 App 的 **设置 → 工具分组** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `docker` / `service` / `log` / `java` / `topology` / `app` / `guide`），降低 AI 上下文占用与误选。留空 / 不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。
 
-**AI 排障 Skill**：仓库内置 [`docs/litssh-mcp-ops-skill/SKILL.md`](docs/litssh-mcp-ops-skill/SKILL.md)（工具无关，随仓库分发），供支持 skills 的 AI 智能体（opencode / Claude 等）使用。内容包含工具路由、标准排障流程、日志路径发现，以及 **MCP 未覆盖能力经 SSH 变通**的方案（如按 Java 启动命令 / 配置文件定位日志后再用 `log_tail`）。可复制到对应智能体的 skill 目录，或在 opencode 中用 `skills.paths` 指向该目录。
+**AI 排障 Skill**：仓库内置 [`docs/litssh-mcp-ops-skill/SKILL.md`](docs/litssh-mcp-ops-skill/SKILL.md)（工具无关，随仓库分发），供支持 skills 的 AI 智能体（opencode / Claude 等）使用。内容包含工具路由、标准排障流程、日志路径发现，以及 **MCP 未覆盖能力经 SSH 变通**的方案（如按 Java 启动命令 / 配置文件定位日志后再用 `log_query`）。可复制到对应智能体的 skill 目录，或在 opencode 中用 `skills.paths` 指向该目录。
 
 ### 在 AI 客户端中配置 MCP
 
@@ -400,7 +392,7 @@ src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
 | 项目 | 框架 | 职责 |
 |------|------|------|
 | `LitSSHmcp.Core` | net8.0 | 数据模型 + 全部业务服务（SSH / 数据源 / 拓扑 / 安全 / 存储） |
-| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器（stdio）、58 个默认常规工具 + 4 个旧名别名 + 1 个宿主内部工具、授权确认弹窗 |
+| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器（stdio）、52 个常规工具 + 1 个宿主内部工具、授权确认弹窗 |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理端（服务器 / 数据源 / 应用 / 资产拓扑 / 安全 / 审计 / AI 运维助手） |
 | `LitSSHmcp.Agent` | net8.0 | 内置 AI 运维助手（大模型 + 内嵌 MCP 客户端） |
 | `LitSSHmcp.Web` | net8.0 | 浏览器 Web 助手（Kestrel + SignalR：登录 / 每会话子进程 / 流式聊天 / 审批 / 文件浏览） |
@@ -631,7 +623,7 @@ AI 的典型排查链路：
 - **敏感命令列表**：弹出桌面窗口提示用户确认后执行
 - **授权确认弹窗**：置顶确认框，默认 **45 秒无操作自动拒绝**；可选独立子进程 / 原生弹窗样式（`security.approval`）
 - **审批通道与模式**：`security.approval.channels` / `security.approval.mode`（`manual` / `auto-approve` / `auto-reject`）
-- **文件传输审批**：上传 / 下载需用户确认，并受**本地 / 远程路径白名单**与大小上限约束（`allowedLocalPaths` / `allowedRemotePaths` / `maxFileSizeBytes`）；文件夹 / 多文件用 `ssh_upload_files` / `ssh_download_files`（一条 SFTP 连接、整批一次确认、保留子目录层级）
+- **文件传输审批**：上传 / 下载需用户确认，并受**本地 / 远程路径白名单**与大小上限约束（`allowedLocalPaths` / `allowedRemotePaths` / `maxFileSizeBytes`）；单文件 / 多文件 / 文件夹统一用 `ssh_upload` / `ssh_download`（一条 SFTP 连接、整批一次确认、保留子目录层级）
 - **主机密钥校验 (TOFU)**：首次连接记录 SSH 主机指纹，之后指纹变化即拒绝（`security.sshHostKey.mode = tofu|strict|off`）
 - **按目标限流**：单服务器 / 数据源的并发数与每分钟调用上限（`security.limits`）
 - **SSH 连接复用池**：每服务器复用一条 SSH 连接、执行完不断开、空闲自动断开（`connectionPool.*`；默认开、空闲 300s、每服务器 1 条），避免 AI / 密集调用反复"连-断"触发目标机登录告警
@@ -705,7 +697,7 @@ litssh deny <审批ID>               # 拒绝
 | 文档 | 内容 |
 |------|------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计：分层结构、核心模块、安全模型、拓扑模型、线程模型、扩展点 |
-| [docs/TOOLS.md](docs/TOOLS.md) | 58 个默认常规工具 + 4 个旧名别名 + 1 个宿主内部工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
+| [docs/TOOLS.md](docs/TOOLS.md) | 52 个常规工具 + 1 个宿主内部工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 迭代历史：每个版本的新增 / 修复 / 变更记录 |
 | [docs/UPGRADE_PLAN.md](docs/UPGRADE_PLAN.md) | 升级方案（Roadmap）：安全、可视化配置、运维、质量的分期计划 |
 | [docs/litssh-mcp-ops-skill/SKILL.md](docs/litssh-mcp-ops-skill/SKILL.md) | AI 排障 Skill（工具路由、标准排障流程、SSH 变通方案） |

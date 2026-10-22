@@ -37,7 +37,7 @@
                     <TextBlock Text="端口 (可选)" Margin="0,0,0,2"/>
                     <ui:TextBox FontWeight="Normal" Text="{Binding PortText, UpdateSourceTrigger=PropertyChanged}" Width="100" HorizontalAlignment="Left" Margin="0,0,0,10"/>
 
-                    <TextBlock Text="日志路径 (每行一条, 可选; 供 log_tail/log_grep 按应用查日志)" Margin="0,0,0,2"/>
+                    <TextBlock Text="日志路径 (每行一条, 可选; 供 log_query 按应用查日志)" Margin="0,0,0,2"/>
                     <ui:TextBox FontWeight="Normal" Text="{Binding LogPaths, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="52" FontFamily="Consolas" Margin="0,0,0,10"
                                 ToolTip="如 /var/log/myapp/app.log 或 /opt/myapp/logs/；须在安全设置 security.logs.allowedPaths 白名单内"/>
 

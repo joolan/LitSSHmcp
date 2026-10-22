@@ -20,15 +20,15 @@ public class ToolGroupsViewModel : INotifyPropertyChanged
     {
         Add(ToolGroups.Ssh, "SSH 服务器", "ssh_list_servers / ssh_get_server_status / ssh_test_connection");
         Add(ToolGroups.Command, "命令执行", "ssh_execute_command / ssh_get_command_history / ssh_execute_sudo / ssh_get_sudo_status");
-        Add(ToolGroups.FileTransfer, "文件传输", "ssh_upload_file / ssh_upload_files / ssh_download_file / ssh_download_files / ssh_list_files");
+        Add(ToolGroups.FileTransfer, "文件传输", "ssh_upload / ssh_download / ssh_list_files");
         Add(ToolGroups.Datasource, "数据源", "datasource_list / datasource_test_connection / datasource_get_sql_history");
         Add(ToolGroups.Mysql, "MySQL", "mysql_query / mysql_execute / mysql_explain / mysql_diagnostics");
         Add(ToolGroups.Postgres, "PostgreSQL", "postgres_query / postgres_execute / postgres_explain / postgres_diagnostics");
         Add(ToolGroups.Redis, "Redis", "redis_read / redis_execute / redis_diagnostics");
         Add(ToolGroups.Docker, "Docker 容器", "docker_ps / docker_logs / docker_inspect / docker_stats / docker_images / docker_restart / docker_exec");
-        Add(ToolGroups.Service, "systemd 服务", "service_status / service_list / service_restart / service_logs");
-        Add(ToolGroups.Log, "日志文件", "log_tail / log_grep / log_find");
-        Add(ToolGroups.Java, "JVM 诊断", "java_processes / java_threads / java_heap / java_info");
+        Add(ToolGroups.Service, "systemd 服务", "service_query / service_restart");
+        Add(ToolGroups.Log, "日志文件", "log_query");
+        Add(ToolGroups.Java, "JVM 诊断", "java_processes / java_diagnostics");
         Add(ToolGroups.Topology, "拓扑", "topology_get_overview / topology_get_dependencies / topology_discover");
         Add(ToolGroups.App, "应用体检", "app_health_snapshot");
         Add(ToolGroups.Guide, "指南 / 自检", "mcp_usage_guide / mcp_self_check / mcp_list_sessions");

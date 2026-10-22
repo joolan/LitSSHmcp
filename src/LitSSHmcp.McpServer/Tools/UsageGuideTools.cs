@@ -34,14 +34,12 @@ public class UsageGuideTools
     public async Task<string> GetUsageGuide()
     {
         IReadOnlySet<string>? enabled = null;
-        var includeLegacy = false;
         if (_configService is not null)
         {
             try
             {
                 var config = await _configService.LoadConfigAsync();
                 enabled = ToolGroups.ResolveEnabled(config.Tools);
-                includeLegacy = LegacyToolPolicy.IsEnabled(config);
             }
             catch
             {
@@ -50,17 +48,15 @@ public class UsageGuideTools
             }
         }
 
-        return BuildGuide(enabled, includeLegacyTools: includeLegacy);
+        return BuildGuide(enabled);
     }
 
     /// <summary>
     /// 依据启用分组构建指南：工具清单与路由文案都只保留与<b>实际暴露工具</b>相关的部分。
     /// <paramref name="enabled"/> 为 null 表示不裁剪（全部启用）。
     /// <paramref name="includeInternalTools"/> 为 null 时按宿主环境决定是否包含内部工具。
-    /// <paramref name="includeLegacyTools"/> 为 true 时包含旧工具名别名（默认不包含）。
     /// </summary>
-    internal static string BuildGuide(IReadOnlySet<string>? enabled, bool? includeInternalTools = null,
-        bool includeLegacyTools = false)
+    internal static string BuildGuide(IReadOnlySet<string>? enabled, bool? includeInternalTools = null)
     {
         var tools = EnumerateToolInfos();
         var toolGroup = tools.ToDictionary(t => t.Name, t => t.Group, StringComparer.Ordinal);
@@ -70,7 +66,6 @@ public class UsageGuideTools
             .Where(t => t.Group is null || enabled is null || enabled.Contains(t.Group))
             .Where(t => !string.Equals(t.Name, ApprovalRoundTools.ToolName, StringComparison.Ordinal)
                         || includeInternal)
-            .Where(t => includeLegacyTools || !LegacyToolPolicy.IsLegacy(t.Name))
             .OrderBy(t => t.Name, StringComparer.Ordinal)
             .Select(t => new { name = t.Name, description = t.Description })
             .Cast<object>()
@@ -95,12 +90,12 @@ public class UsageGuideTools
             "用户要求重启或启停服务、改系统配置、安装软件、改权限、管理用户、看系统日志等需要root权限时,主动使用 ssh_execute_sudo",
             "用户问'这台机器能不能sudo/有没有配置提权'时,使用 ssh_get_sudo_status",
             "用户问'执行过哪些命令/命令历史/操作记录'时,使用 ssh_get_command_history",
-            "用户要求上传或下载文件时,使用 ssh_upload_file / ssh_download_file; 上传/下载**整个文件夹或多个文件**时用 ssh_upload_files / ssh_download_files(一条 SFTP 连接、整批一次审批)",
+            "用户要求上传或下载文件/目录时,使用 ssh_upload / ssh_download(支持单文件、多个文件或整个目录; 一条 SFTP 连接、整批一次审批)",
             "用户想看服务器上的目录或文件时,使用 ssh_list_files",
             "用户问容器(有哪些容器/容器状态/端口/日志/资源/镜像)时,使用 docker_ps / docker_logs / docker_inspect / docker_stats / docker_images; 重启容器用 docker_restart, 进入容器执行用 docker_exec(均需确认)",
-            "用户问systemd服务状态或要重启服务/看服务日志时,使用 service_status / service_restart / service_logs; 不确定服务名先用 service_list",
-            "用户要看日志文件尾部或在日志里搜错误/关键字时,使用 log_tail / log_grep(可传 path, 也可传 appId 用应用管理里配置的日志路径); 不知道路径时先用 log_find 发现最近修改的 .log 文件(路径受 security.logs.allowedPaths 约束)",
-            "用户问Java进程/线程/死锁/CPU飙高/内存/GC时,先用 java_processes 拿pid(可传appId过滤), 再用 java_threads / java_heap / java_info(也可直接传appId自动解析pid)",
+            "用户问systemd服务状态、服务列表或服务日志时,使用 service_query(action=list/status/logs); 重启服务用 service_restart",
+            "用户要看日志文件尾部、在日志里搜错误/关键字或发现日志路径时,使用 log_query(action=tail/grep/find; 可传 path, 也可传 appId 用应用管理里配置的日志路径; 路径受 security.logs.allowedPaths 约束)",
+            "用户问Java进程/线程/死锁/CPU飙高/内存/GC时,先用 java_processes 拿pid(可传appId过滤), 再用 java_diagnostics(action=threads/heap/info, 也可直接传appId自动解析pid)",
             "用户要对某个应用做整体体检(跨服务器+依赖数据库)时,优先用 app_health_snapshot, 再按需下钻",
             "用户问'审计记录是哪个AI客户端/哪次会话产生的'时,用 mcp_list_sessions 看会话(客户端名称/版本), 再用 ssh_get_command_history / datasource_get_sql_history 的 sessionId 过滤具体记录; 当前会话ID见 mcp_self_check"
         });
@@ -171,7 +166,7 @@ public class UsageGuideTools
 
         var fileTransferPoints = Keep(new[]
         {
-            "上传=ssh_upload_file, 下载=ssh_download_file, 列远程目录=ssh_list_files(是远程服务器目录, 不是本机文件); 文件夹/多文件批量用 ssh_upload_files / ssh_download_files(单连接、整批一次审批、保留子目录层级)",
+            "上传=ssh_upload, 下载=ssh_download, 列远程目录=ssh_list_files(是远程服务器目录, 不是本机文件); 单文件/多文件/目录统一走 ssh_upload / ssh_download(单连接、整批一次审批、保留子目录层级)",
             "三者都受 fileTransfer 开关与本地/远程路径白名单约束, 越界返回 path_not_allowed(错误里会列出允许的路径)",
             "上传/下载需审批(默认桌面+CLI双通道), 拒绝/超时分别返回 rejected / approval_timeout",
             "列目录失败(路径不存在/无权限)会明确返回失败状态, 不会用空列表冒充'目录为空'; 条目过多会置 truncated=true"

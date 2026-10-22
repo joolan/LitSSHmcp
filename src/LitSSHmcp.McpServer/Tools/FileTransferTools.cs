@@ -42,7 +42,7 @@ public class FileTransferTools
     }
 
     [McpServerTool(Name = "ssh_upload", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
-    [Description("上传一个或多个文件/目录到 SSH 目标：localPaths 每行一个（目录可递归）；单次操作统一人工审批，返回逐项结果。旧名 ssh_upload_file/ssh_upload_files 默认隐藏，可用 tools.legacyAliases 临时开启。")]
+    [Description("上传一个或多个文件/目录到 SSH 目标：localPaths 每行一个（目录可递归）；单次操作统一人工审批，返回逐项结果。")]
     public Task<BatchTransferResultDto> Upload(
         [Description("服务器标识（ID/名称/主机名）")] string serverId,
         [Description("本地源路径，每行一个（文件或目录）")] string localPaths,
@@ -54,7 +54,7 @@ public class FileTransferTools
         => UploadFiles(serverId, localPaths, remoteDirectory, recursive, maxFiles, riskNote, cancellationToken);
 
     [McpServerTool(Name = "ssh_download", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
-    [Description("从 SSH 目标下载一个或多个文件/目录：remotePaths 每行一个（目录可递归）；单次操作统一人工审批，返回逐项结果。旧名 ssh_download_file/ssh_download_files 默认隐藏，可用 tools.legacyAliases 临时开启。")]
+    [Description("从 SSH 目标下载一个或多个文件/目录：remotePaths 每行一个（目录可递归）；单次操作统一人工审批，返回逐项结果。")]
     public Task<BatchTransferResultDto> Download(
         [Description("服务器标识（ID/名称/主机名）")] string serverId,
         [Description("远端源路径，每行一个（文件或目录）")] string remotePaths,

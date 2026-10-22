@@ -504,7 +504,7 @@ public class SecurityConfig
     public SshHostKeyConfig SshHostKey { get; set; } = new();
     public DiscoveryConfig Discovery { get; set; } = new();
 
-    /// <summary>日志读取工具(log_tail / log_grep)的允许路径与行数上限。</summary>
+    /// <summary>日志读取工具(log_query)的允许路径与行数上限。</summary>
     public LogConfig Logs { get; set; } = new();
 
     public LimitsConfig Limits { get; set; } = new();
@@ -654,7 +654,7 @@ public class DiscoveryConfig
 }
 
 /// <summary>
-/// 日志读取工具(log_tail / log_grep)的约束：只允许读取白名单根目录下的日志文件，
+/// 日志读取工具(log_query)的约束：只允许读取白名单根目录下的日志文件，
 /// 避免模型读取 /etc/shadow 等敏感文件；单次返回行数也有上限。
 /// </summary>
 public class LogConfig

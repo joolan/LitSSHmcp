@@ -34,24 +34,24 @@ public class OpsToolsTests
     }
 
     [Fact]
-    public async Task Service_status_rejects_invalid_service_without_running()
+    public async Task Service_query_rejects_invalid_service_without_running()
     {
         var runner = new CapturingRunner();
         var tools = new ServiceTools(runner);
 
-        var result = await tools.ServiceStatus("s1", "nginx; rm -rf /");
+        var result = await tools.ServiceQuery("s1", "status", "nginx; rm -rf /");
 
         Assert.Equal("invalid_argument", result.Status);
         Assert.Null(runner.LastCommand);
     }
 
     [Fact]
-    public async Task Java_threads_rejects_non_numeric_pid()
+    public async Task Java_diagnostics_rejects_non_numeric_pid()
     {
         var runner = new CapturingRunner();
         var tools = new JavaTools(runner, new StubConfig(new AppConfig()));
 
-        var result = await tools.JavaThreads("s1", "abc");
+        var result = await tools.JavaDiagnostics("s1", "threads", "abc");
 
         Assert.Equal("invalid_argument", result.Status);
         Assert.Null(runner.LastCommand);
@@ -71,7 +71,7 @@ public class OpsToolsTests
         };
         var tools = new JavaTools(runner, new StubConfig(config));
 
-        var result = await tools.JavaInfo("s1", appId: "order");
+        var result = await tools.JavaDiagnostics("s1", "info", appId: "order");
 
         Assert.True(result.Success);
         Assert.Contains("jcmd 1234 VM.version", runner.LastCommand);
@@ -97,12 +97,12 @@ public class OpsToolsTests
     }
 
     [Fact]
-    public async Task Log_tail_blocks_path_outside_whitelist()
+    public async Task Log_query_tail_blocks_path_outside_whitelist()
     {
         var runner = new CapturingRunner();
         var tools = new LogTools(StubConfig.WithLogPaths("/var/log"), runner);
 
-        var result = await tools.LogTail("s1", "/etc/shadow", lines: 50);
+        var result = await tools.LogQuery("s1", "tail", "/etc/shadow", lines: 50);
 
         Assert.False(result.Success);
         Assert.Equal("path_not_allowed", result.Status);
@@ -110,19 +110,19 @@ public class OpsToolsTests
     }
 
     [Fact]
-    public async Task Log_tail_quotes_allowed_path()
+    public async Task Log_query_tail_quotes_allowed_path()
     {
         var runner = new CapturingRunner();
         var tools = new LogTools(StubConfig.WithLogPaths("/var/log"), runner);
 
-        var result = await tools.LogTail("s1", "/var/log/my app/app.log", lines: 50);
+        var result = await tools.LogQuery("s1", "tail", "/var/log/my app/app.log", lines: 50);
 
         Assert.True(result.Success);
         Assert.Equal("tail -n 50 -- '/var/log/my app/app.log'", runner.LastCommand);
     }
 
     [Fact]
-    public async Task Log_grep_treats_no_match_as_success()
+    public async Task Log_query_grep_treats_no_match_as_success()
     {
         var runner = new CapturingRunner
         {
@@ -130,14 +130,14 @@ public class OpsToolsTests
         };
         var tools = new LogTools(StubConfig.WithLogPaths("/var/log"), runner);
 
-        var result = await tools.LogGrep("s1", "Exception", "/var/log/app.log");
+        var result = await tools.LogQuery("s1", "grep", "/var/log/app.log", pattern: "Exception");
 
         Assert.True(result.Success);
         Assert.Equal(0, result.Count);
     }
 
     [Fact]
-    public async Task Log_tail_resolves_path_from_app_config()
+    public async Task Log_query_tail_resolves_path_from_app_config()
     {
         var config = new AppConfig();
         config.Security.Logs.AllowedPaths = new[] { "/var/log" };
@@ -148,14 +148,14 @@ public class OpsToolsTests
         var runner = new CapturingRunner();
         var tools = new LogTools(new StubConfig(config), runner);
 
-        var result = await tools.LogTail("s1", appId: "order", lines: 20);
+        var result = await tools.LogQuery("s1", "tail", appId: "order", lines: 20);
 
         Assert.True(result.Success);
         Assert.Equal("tail -n 20 -- '/var/log/order/app.log'", runner.LastCommand);
     }
 
     [Fact]
-    public async Task Log_tail_reports_multiple_app_paths_ambiguity()
+    public async Task Log_query_tail_reports_multiple_app_paths_ambiguity()
     {
         var config = new AppConfig();
         config.Security.Logs.AllowedPaths = new[] { "/var/log" };
@@ -166,7 +166,7 @@ public class OpsToolsTests
         var runner = new CapturingRunner();
         var tools = new LogTools(new StubConfig(config), runner);
 
-        var result = await tools.LogTail("s1", appId: "order");
+        var result = await tools.LogQuery("s1", "tail", appId: "order");
 
         Assert.False(result.Success);
         Assert.Equal("log_path_ambiguous", result.Status);

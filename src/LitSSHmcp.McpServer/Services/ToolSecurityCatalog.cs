@@ -115,8 +115,6 @@ public static class ToolSecurityCatalog
         ServerExec("ssh_snapshot_refresh");
         ServerRead("ssh_list_files");
         ServerRead("ssh_download");
-        ServerRead("ssh_download_file");
-        ServerRead("ssh_download_files");
 
         // 命令执行：任意 shell 执行都要求 exec，不再用“首词只读”降低授权。
         ServerExec("ssh_execute_command");
@@ -126,17 +124,11 @@ public static class ToolSecurityCatalog
 
         // 文件上传。
         ServerWrite("ssh_upload");
-        ServerWrite("ssh_upload_file");
-        ServerWrite("ssh_upload_files");
 
         // 日志 / Java / Docker / systemd。
-        ServerRead("log_tail");
-        ServerRead("log_grep");
-        ServerRead("log_find");
+        ServerRead("log_query");
         ServerRead("java_processes");
-        ServerRead("java_threads");
-        ServerRead("java_heap");
-        ServerRead("java_info");
+        ServerRead("java_diagnostics");
         ServerRead("docker_ps");
         ServerRead("docker_logs");
         ServerRead("docker_inspect");
@@ -144,9 +136,7 @@ public static class ToolSecurityCatalog
         ServerRead("docker_images");
         ServerWrite("docker_restart");
         ServerExec("docker_exec");
-        ServerRead("service_status");
-        ServerRead("service_list");
-        ServerRead("service_logs");
+        ServerRead("service_query");
         ServerWrite("service_restart");
 
         // 数据源。

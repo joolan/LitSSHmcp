@@ -8,7 +8,7 @@ public class AgentStepTests
     [Fact]
     public void Tail_reflects_completion_and_raises_notification()
     {
-        var step = new AgentStep("ssh_download_file", "{}");
+        var step = new AgentStep("ssh_download", "{}");
         Assert.Equal("调用中…", step.Tail);
 
         var changed = new List<string?>();

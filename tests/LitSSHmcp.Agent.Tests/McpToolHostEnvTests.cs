@@ -16,6 +16,7 @@ public class McpToolHostEnvTests
         var env = McpToolHost.BuildBuiltinEnvironment(null, null, null);
 
         Assert.Equal("local", env[HostEnv.OwnerUserId]);
+        Assert.Equal("1", env[HostEnv.InternalTools]);
         Assert.False(env.ContainsKey(HostEnv.SessionWorkspaceDir));
         Assert.False(env.ContainsKey(HostEnv.AuthzUser));
         Assert.False(env.ContainsKey(HostEnv.AuthzRole));

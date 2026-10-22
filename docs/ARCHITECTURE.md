@@ -16,7 +16,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
 │ LitSSHmcp.McpServer │  │   LitSSHmcp.App     │  │   LitSSHmcp.Cli     │  │   LitSSHmcp.Web     │
 │ LitSSHmcp.McpServer │  │ LitSSHmcp.App       │  │ LitSSHmcp.Cli       │  │ LitSSHmcp.Web       │
-│ 61个MCP Tools        │  │ 服务器/数据源/拓扑配置 │  │ list/connect/run    │  │ 登录/会话/聊天/审批  │
+│ 60外部+1内部工具      │  │ 服务器/数据源/拓扑配置 │  │ list/connect/run    │  │ 登录/会话/聊天/审批  │
 └──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
            │                        │                        │                        │
            └────────────────────────┼────────────────────────┼────────────────────────┘
@@ -38,7 +38,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 | 项目 | 目标框架 | 职责 | 关键依赖 |
 |------|---------|------|---------|
 | `LitSSHmcp.Core` | net8.0 | 数据模型 + 全部业务服务（不含任何入口逻辑） | SSH.NET 2026.0.0、MySqlConnector 2.4.0、Npgsql 8.0.5、Microsoft.Data.Sqlite、System.Security.Cryptography.ProtectedData |
-| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、61 个工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
+| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、60 个外部工具 + 1 个宿主内部工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理界面（服务器/数据源/应用/资产拓扑可视化编辑/安全设置/审计/工具说明/工具分组） | WPF、Core |
 | `LitSSHmcp.Cli` | net10.0 | 终端 SSH 工具（`litssh list/connect/run`） | Core |
 | `LitSSHmcp.Web` | net8.0 | 浏览器 Web 助手入口（Kestrel/静态 SPA/WebSocket 流式聊天：登录、每会话子进程宿主、审批桥、文件浏览） | ASP.NET Core、Core、Agent |
@@ -84,7 +84,7 @@ LitSSHmcp/
 
 - `Program.cs` 用 `Host.CreateApplicationBuilder` 组装依赖注入，然后：
   - `.WithStdioServerTransport()` —— JSON-RPC 走 stdin/stdout；
-  - `.WithTools<T>()` 注册 19 个工具类，共 61 个工具（详见 [TOOLS.md](TOOLS.md)）；每个工具带 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` 注解；
+  - `.WithTools<T>()` 注册 19 个工具类，共 61 个工具（60 个外部 + 1 个宿主内部，详见 [TOOLS.md](TOOLS.md)）；每个工具带 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` 注解；`ApprovalRoundTools` 仅在宿主注入 `LITSSH_INTERNAL_TOOLS=1` 时注册；
   - **工具分组**：启动时读取 `config.json` 的 `tools.enabledGroups`（`AppConfig.Tools` + `ToolGroups.ResolveEnabled`，留空=全部），按分组**条件注册** `WithTools<T>()`，可只暴露部分工具以降低 AI 上下文占用与误选；未知分组忽略并启动告警（见 [TOOLS.md](TOOLS.md)「工具分组」）；
   - **工具清单单一来源**：`mcp_usage_guide` 的工具清单由 `[McpServerTool]`/`[Description]` 反射生成（不手写）；`tests/LitSSHmcp.McpServer.Tests` 校验"已注册工具 ↔ `docs/TOOLS.md` ↔ 指南"一致；
   - **MCP 协议增强**：`initialize` 返回 **Server Instructions**（会话级行为约定，见 `Services/McpServerInstructions.cs`）；文件上传/下载通过注入的 `IProgress<ProgressNotificationValue>` 向前端推送 `notifications/progress`；
@@ -321,7 +321,7 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 | 配置热更新 | **安全类配置**（`security.enabled`、commandFilter/sqlFilter/fileTransfer/scriptRules、审批设置、授权矩阵等 `security.*`）按文件 mtime **即时生效**（无需重启，对运行中会话同样生效）；**其余配置**（服务器/数据源/模型/技能等）**会话启动时快照**——改动对运行中会话不生效、**下个会话生效**；Web 不提供配置写路径（D2），一切修改仅限桌面 | `SecurityOptionsProvider` + 会话装配快照 |
 | 配置并发写入 | 进程内串行 + 跨进程 `config.json.lock`；以加载快照为基线三路合并磁盘最新配置，同字段/数组冲突抛 `ConfigConflictException`，禁止静默覆盖；临时文件原子替换 | `ConfigService` + `ConfigMerge` |
 | 日志 | MCP 日志走 stderr（不污染 stdout 协议流）+ 本机文件 | `Program.cs` + `FileLoggerProvider` |
-| 工具风险提示 | 61 个工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld` | `[McpServerTool(...)]` |
+| 工具风险提示 | 61 个注册工具标注 `ReadOnly`/`Destructive`/`Idempotent`/`OpenWorld`（外部默认 60，内部审批工具仅宿主可见） | `[McpServerTool(...)]` |
 | Web 助手 | 独立账号库 `web.db`（PBKDF2-SHA256 210k、密码最短 8 位、连续失败指数锁定）；令牌 Cookie `HttpOnly+SameSite=Strict` + CSRF 双提交（`/api/login` 例外）；登录/API/WS 握手按 IP 固定窗口限速（30/600/120 每分钟），登录另按账号 10 次/分钟；认证响应 `Cache-Control: no-store`；配置 HTTPS 时启用 HSTS 与 HTTP→HTTPS 重定向；`web.trustedProxies` 非空时只信任列表内代理的 `X-Forwarded-For/Proto`；WS 还要求 Origin 的 scheme/host/port 与请求完全一致，并按用户 8、每 IP 64 限制并发连接，会话帧队列有界背压且单帧发送 10s 超时；审批推送 128 帧有界（慢客户端丢弃最旧帧）且单帧发送 10s 超时；全站安全响应头 + HTML CSP；会话 owner 逐操作校验（越权统一 404）、每用户并发会话上限与 LLM 成本预算；**授权矩阵强制**（`security.authorization`：登录用户 → 目标白名单 + read/write/exec，未命中默认拒绝；工具目标由 `ToolSecurityCatalog` 统一声明，覆盖日志/Docker/Java/拓扑/应用体检；仅 Web 宿主注入 `LITSSH_AUTHZ_MODE=enforce` 生效，桌面会话仅归因不限权；可视化编辑在桌面「设置 → 安全设置 → Web 授权矩阵」；**历史/会话按用户隔离**：强制模式下 `*_history` 与 `mcp_list_sessions` 默认仅本人，管理员显式 `allUsers=true` 才全局，`Sessions.OwnerUserId` 由宿主注入的角色/归属落库；**清单/拓扑收口**：`ssh_list_servers` / `datasource_list` 按目标白名单裁剪并隐藏未授权隧道路由/关联服务器，无目标的全局拓扑查询非管理员 fail-closed）；账号管理 CLI `--create-user/--list-users`（密码仅走 `LITSSH_NEW_PASSWORD` 环境变量）；会话目录固定根 `web.jobsRoot`（空=默认 `%APPDATA%\LitSSH\jobs`，绝对路径，重启生效；旧版 `jobs/jobs` 布局启动自动迁移；桌面安全设置可视化编辑）；**图片附件**（会话 `attachments/`，仅 PNG/JPEG/GIF/WebP，按文件头识别并解析宽高；≤10MB/张、每条 ≤5 张、宽高 ≤8192 且总像素 ≤4000 万，发送前复检，多模态发给模型）；**文件下载**（单文件 ≤100MiB，超限 413；单段 `Range`/206/416；每用户 4 并发，超限 429；5 分钟响应超时；流式发送不整文件入内存）；**会话级模型切换**（`PUT /api/sessions/{id}/provider`，落库 `ProviderId`，下一轮重建运行时）；**消息分页**（`limit/beforeId`，首屏最近 120 条 + 懒加载）；**冷启动上下文与桌面共用** `SessionContextBuilder`/`ToolTraceFormatter`（冷启动窗口、工具轨迹、智能体/技能/计划模式/资产图谱、视觉图片；Web 不含本机终端工具）；审批卡固定悬浮 + REST 对账（5s/决策后/重连）与聊天 WS 重连重放/回合后台执行（断线自愈、stop 即时）；**响应式 UI**（≤820px 抽屉侧栏/底部输入栏/底部审批弹层） | `WebAuthMiddleware`/`WebCsrfMiddleware`/`WebRateLimitMiddleware`/`WebSecurityHeadersMiddleware`/`WebForwardedHeaders`/`WebBudgetGuard`/`WebSessionManager`/`WebSocketConnectionLimiter`/`WebDownloadPolicy`/`WebDownloadLimiter`/`WebBootstrap` + `McpAuthorizationFilter` |
 | 桌面归因 | **桌面可选登录**（评估报告 D1 收尾）：复用 `web.db` 校验（失败计数/锁定与 Web 共享），登录态 DPAPI 落盘跨重启保持；登录后新会话 owner 与审计 `UserId` = 登录用户名，未登录 = `local`——**仅归因不限权**（桌面不注入 `LITSSH_AUTHZ_MODE`）；桌面每 5s 对账 `agent.db`（Web 等独立进程写入）自动刷新会话列表/选中会话（仅已落库整轮结果，非实时流式） | `DesktopLoginService` + `SessionAutoRefresh` + `AuditContext.CurrentUserId` |
 
@@ -366,7 +366,7 @@ dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publi
 2. **stdout 是协议流**：`initialize` → `notifications/initialized` → `tools/list` / `tools/call` 按 JSON-RPC 换行分帧；日志只应出现在 stderr；
 3. **中文请求体要以 UTF-8 字节写入 stdin**：PowerShell 字符串直接写管道可能按本地代码页编码，导致服务端解析失败。建议向 `$p.StandardInput.BaseStream.Write(UTF8 bytes)`。
 
-验收基线：`initialize` 成功、`tools/list` 返回 61 个工具、`mcp_usage_guide`/`datasource_list` 响应正常、`mysql_query`/`redis_read` 等错误路径返回结构化 `error`。上述 stdio 冒烟现已固化为 `tests/LitSSHmcp.McpServer.Tests` 的集成测试（真实启动服务器进程，用 `LITSSH_DATA_DIR` 指向临时目录隔离）。
+验收基线：`initialize` 成功、外部客户端 `tools/list` 返回 60 个常规工具（宿主注入 `LITSSH_INTERNAL_TOOLS=1` 时 61 个）、`mcp_usage_guide`/`datasource_list` 响应正常、`mysql_query`/`redis_read` 等错误路径返回结构化 `error`。上述 stdio 冒烟现已固化为 `tests/LitSSHmcp.McpServer.Tests` 的集成测试（真实启动服务器进程，用 `LITSSH_DATA_DIR` 指向临时目录隔离）。
 
 ### Windows 编码注意
 

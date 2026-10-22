@@ -58,7 +58,8 @@ public sealed class McpToolHost : IAsyncDisposable
     {
         var env = new Dictionary<string, string?>
         {
-            [HostEnv.OwnerUserId] = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim()
+            [HostEnv.OwnerUserId] = string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId.Trim(),
+            [HostEnv.InternalTools] = "1"
         };
         if (!string.IsNullOrWhiteSpace(sessionWorkspaceDir))
             env[HostEnv.SessionWorkspaceDir] = sessionWorkspaceDir.Trim();

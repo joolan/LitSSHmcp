@@ -150,8 +150,9 @@ if (enabledToolGroups.Contains(ToolGroups.Java)) mcp = mcp.WithTools<JavaTools>(
         if (enabledToolGroups.Contains(ToolGroups.Topology)) mcp = mcp.WithTools<TopologyTools>().WithTools<GraphTools>();
 if (enabledToolGroups.Contains(ToolGroups.App)) mcp = mcp.WithTools<AppTools>();
 if (enabledToolGroups.Contains(ToolGroups.Guide)) mcp = mcp.WithTools<UsageGuideTools>().WithTools<HealthTools>();
-// 内部工具：审批轮次边界（不随分组停用；Agent 端会把它从模型可见工具中过滤掉）
-mcp = mcp.WithTools<ApprovalRoundTools>();
+// 内部工具：审批轮次边界。仅 LitSSH 宿主注入 LITSSH_INTERNAL_TOOLS=1 时注册，外部 MCP 客户端不可见。
+if (HostEnv.InternalToolsEnabled)
+    mcp = mcp.WithTools<ApprovalRoundTools>();
 
 // MCP 资源：只读数据（供客户端“浏览/挂载”为上下文），按启用分组裁剪，与工具/说明保持一致。
 if (enabledToolGroups.Contains(ToolGroups.Ssh)) mcp = mcp.WithResources<SshResources>().WithResources<SnapshotResources>();

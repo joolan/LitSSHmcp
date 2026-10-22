@@ -22,7 +22,7 @@ public class ToolCatalogConsistencyTests
     {
         var registered = GetRegisteredTools();      // name -> description (来自 [McpServerTool]/[Description])
         var docs = ParseDocsTools();                // (分组键, 工具名) 来自 docs/TOOLS.md
-        var guide = await GetGuideToolNamesAsync(); // 来自 get_usage_guide 的返回
+        var guide = GetGuideToolNames();             // get_usage_guide（宿主模式包含内部工具）
 
         // 1) 数量与集合: 注册工具 == docs == 安全目录 == 期望数量
         Assert.Equal(ExpectedToolCount, registered.Count);
@@ -62,9 +62,9 @@ public class ToolCatalogConsistencyTests
         return result;
     }
 
-    private static async Task<string[]> GetGuideToolNamesAsync()
+    private static string[] GetGuideToolNames()
     {
-        var json = await new UsageGuideTools().GetUsageGuide();
+        var json = UsageGuideTools.BuildGuide(null, includeInternalTools: true);
         using var document = JsonDocument.Parse(json);
         return document.RootElement.GetProperty("tools")
             .EnumerateArray()

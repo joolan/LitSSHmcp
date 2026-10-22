@@ -12,6 +12,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using ModelContextProtocol.Server;
 
@@ -52,14 +53,18 @@ public class UsageGuideTools
     /// <summary>
     /// 依据启用分组构建指南：工具清单与路由文案都只保留与<b>实际暴露工具</b>相关的部分。
     /// <paramref name="enabled"/> 为 null 表示不裁剪（全部启用）。
+    /// <paramref name="includeInternalTools"/> 为 null 时按宿主环境决定是否包含内部工具。
     /// </summary>
-    internal static string BuildGuide(IReadOnlySet<string>? enabled)
+    internal static string BuildGuide(IReadOnlySet<string>? enabled, bool? includeInternalTools = null)
     {
         var tools = EnumerateToolInfos();
         var toolGroup = tools.ToDictionary(t => t.Name, t => t.Group, StringComparer.Ordinal);
+        var includeInternal = includeInternalTools ?? HostEnv.InternalToolsEnabled;
 
         var visibleTools = tools
             .Where(t => t.Group is null || enabled is null || enabled.Contains(t.Group))
+            .Where(t => !string.Equals(t.Name, ApprovalRoundTools.ToolName, StringComparison.Ordinal)
+                        || includeInternal)
             .OrderBy(t => t.Name, StringComparer.Ordinal)
             .Select(t => new { name = t.Name, description = t.Description })
             .Cast<object>()

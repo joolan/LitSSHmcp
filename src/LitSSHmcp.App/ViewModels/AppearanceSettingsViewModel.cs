@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
@@ -68,7 +69,7 @@ public class AppearanceSettingsViewModel : INotifyPropertyChanged
         _ => "系统默认"
     };
 
-    public async void Load()
+    public void Load() => AsyncOperation.Run("加载外观设置", async () =>
     {
         try
         {
@@ -81,9 +82,9 @@ public class AppearanceSettingsViewModel : INotifyPropertyChanged
         {
             StatusMessage = "加载失败: " + ex.Message;
         }
-    }
+    });
 
-    public async void Save()
+    public void Save() => AsyncOperation.Run("保存外观设置", async () =>
     {
         try
         {
@@ -98,7 +99,7 @@ public class AppearanceSettingsViewModel : INotifyPropertyChanged
         {
             StatusMessage = "保存失败: " + ex.Message;
         }
-    }
+    });
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
@@ -125,7 +126,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
         set => Set(ref _statusMessage, value);
     }
 
-    public async void Load()
+    public void Load() => AsyncOperation.Run("加载安全设置", async () =>
     {
         try
         {
@@ -197,9 +198,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"加载失败: {ex.Message}";
         }
-    }
+    });
 
-    public async void Save()
+    public void Save() => AsyncOperation.Run("保存安全设置", async () =>
     {
         try
         {
@@ -292,7 +293,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"保存失败: {ex.Message}";
         }
-    }
+    });
 
     private static int ResolveChannelIndex(string[]? channels)
     {

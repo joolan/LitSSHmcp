@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.Agent;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
@@ -713,7 +714,7 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
         }
     }
 
-    public async void Load()
+    public void Load() => AsyncOperation.Run("加载助手设置", async () =>
     {
         try
         {
@@ -794,9 +795,9 @@ public class AgentSettingsViewModel : INotifyPropertyChanged
         {
             StatusMessage = "加载失败: " + ex.Message;
         }
-    }
+    });
 
-    public async void Save() => await SaveAsync();
+    public void Save() => AsyncOperation.Run("保存助手设置", SaveAsync);
 
     public async Task SaveAsync()
     {

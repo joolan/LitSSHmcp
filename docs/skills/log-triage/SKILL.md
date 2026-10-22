@@ -18,7 +18,7 @@ appliesTo: [ssh, log, command]
    - 错类 TOP：`grep -Eho 'ERROR[^,;]*' <file> | sort | uniq -c | sort -rn | head`
    - 按小时分布：`grep ERROR <file> | awk '{print $1" "$2}' | cut -d: -f1 | sort | uniq -c`
    - 首次/末次：`grep -n -m1 ERROR <file>` 与 `tac <file> | grep -m1 ERROR`
-6. **关联变更**：把错误首次时间点与部署/重启/发布对齐——看 `service_query(action="logs")`、`journalctl`、`ssh_get_command_history`。
+6. **关联变更**：把错误首次时间点与部署/重启/发布对齐——看 `service_query(action="logs")`、`journalctl` 与变更记录。
 7. **大日志**：`log_query(action="grep")` 精确关键字 + 时间窗/行数，避免整文件拉取；超大结果会自动落盘为 `spill://` 句柄，用 `spill_read`/`spill_grep` 分段读取。
 
 ## 处置

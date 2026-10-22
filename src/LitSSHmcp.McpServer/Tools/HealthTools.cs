@@ -159,25 +159,4 @@ public class HealthTools
         };
     }
 
-    [McpServerTool(Name = "mcp_list_sessions", UseStructuredContent = true, OutputSchemaType = typeof(SessionListDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("列出最近的 MCP 会话(会话ID/客户端名称与版本/首末活动时间)。审计记录带 sessionId, 用它能知道是哪个AI客户端、哪次连接产生的; 配合 *_history 工具的 sessionId 参数过滤具体记录")]
-    public async Task<SessionListDto> ListSessions(
-        [Description("返回条数(默认50, 上限500)")] int limit = 50,
-        [Description("仅管理员可用: true=查看全部用户会话; 默认false=Web强制模式仅本人/桌面保持全量")] bool allUsers = false,
-        CancellationToken cancellationToken = default)
-    {
-        var (ownerUserId, scopeError) = CallerScope.Current.SessionOwnerFilter(allUsers);
-        if (scopeError is not null)
-            return SessionListDto.Fail(scopeError);
-
-        try
-        {
-            var sessions = await _auditLogService.GetSessionsAsync(Math.Clamp(limit, 1, 500), ownerUserId);
-            return new SessionListDto { Success = true, Count = sessions.Length, Sessions = sessions.ToList() };
-        }
-        catch (Exception ex)
-        {
-            return SessionListDto.Fail(ex.Message);
-        }
-    }
 }

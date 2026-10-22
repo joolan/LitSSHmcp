@@ -7,7 +7,7 @@ using Xunit;
 namespace LitSSHmcp.McpServer.Tests;
 
 /// <summary>
-/// P0-2：Web 强制模式下历史/会话工具默认只返回当前用户数据，管理员需显式 allUsers 才能看全局。
+/// P0-2：Web 强制模式下全局清单按当前用户授权裁剪（MCP 已不再暴露历史/会话查询工具）。
 /// 与授权过滤器共用进程级 env 集合，避免测试并行互相污染。
 /// </summary>
 [Collection("AuthzEnvironment")]
@@ -36,93 +36,6 @@ public class CallerDataScopeTests : IDisposable
         Environment.SetEnvironmentVariable(HostEnv.AuthzMode, HostEnv.Enforce);
         Environment.SetEnvironmentVariable(HostEnv.AuthzRole, role);
         AuditContext.CurrentUserId = userId;
-    }
-
-    [Fact]
-    public async Task Command_history_is_forced_to_caller_in_enforce_mode()
-    {
-        Enforce("alice");
-        var audit = new CapturingAudit();
-        var tools = new CommandTools(StubConfig.Instance, null!, null!, null!, audit, null!, null!);
-
-        var result = await tools.GetCommandHistory();
-
-        Assert.True(result.Success);
-        Assert.Equal(new[] { "alice" }, audit.LastUserIds);
-    }
-
-    [Fact]
-    public async Task Command_history_allUsers_is_denied_for_member()
-    {
-        Enforce("alice");
-        var audit = new CapturingAudit();
-        var tools = new CommandTools(StubConfig.Instance, null!, null!, null!, audit, null!, null!);
-
-        var result = await tools.GetCommandHistory(allUsers: true);
-
-        Assert.False(result.Success);
-        Assert.Equal("authorization_denied", result.Status);
-        Assert.Null(audit.LastUserIds);
-        Assert.Equal(0, audit.LogCalls);
-    }
-
-    [Fact]
-    public async Task Admin_defaults_to_self_and_can_explicitly_query_all_users()
-    {
-        Enforce("7", HostEnv.AdminRole);
-        var audit = new CapturingAudit();
-        var tools = new CommandTools(StubConfig.Instance, null!, null!, null!, audit, null!, null!);
-
-        await tools.GetCommandHistory();
-        Assert.Equal(new[] { "7" }, audit.LastUserIds);
-
-        await tools.GetCommandHistory(allUsers: true);
-        Assert.Null(audit.LastUserIds);
-        Assert.Equal(2, audit.LogCalls);
-    }
-
-    [Fact]
-    public async Task Sql_history_is_forced_to_caller_in_enforce_mode()
-    {
-        Enforce("alice");
-        var audit = new CapturingAudit();
-        var tools = new DatasourceTools(StubConfig.Instance, null!, audit);
-
-        var result = await tools.GetSqlHistory();
-
-        Assert.True(result.Success);
-        Assert.Equal(new[] { "alice" }, audit.LastSqlUserIds);
-    }
-
-    [Fact]
-    public async Task Session_list_is_forced_to_caller_in_enforce_mode()
-    {
-        Enforce("alice");
-        var audit = new CapturingAudit();
-        var tools = new HealthTools(null!, audit, null!, null!, null!, null!);
-
-        var result = await tools.ListSessions();
-
-        Assert.True(result.Success);
-        Assert.Equal("alice", audit.LastSessionOwnerUserId);
-    }
-
-    [Fact]
-    public async Task Session_list_allUsers_requires_admin()
-    {
-        Enforce("alice");
-        var audit = new CapturingAudit();
-        var tools = new HealthTools(null!, audit, null!, null!, null!, null!);
-
-        var denied = await tools.ListSessions(allUsers: true);
-        Assert.False(denied.Success);
-        Assert.Contains("仅管理员", denied.Error);
-        Assert.Equal(0, audit.SessionCalls);
-
-        Environment.SetEnvironmentVariable(HostEnv.AuthzRole, HostEnv.AdminRole);
-        var allowed = await tools.ListSessions(allUsers: true);
-        Assert.True(allowed.Success);
-        Assert.Null(audit.LastSessionOwnerUserId);
     }
 
     [Fact]

@@ -15,7 +15,7 @@ namespace LitSSHmcp.McpServer.Tests;
 /// </summary>
 public class ToolCatalogConsistencyTests
 {
-    private const int ExpectedToolCount = 41;
+    private const int ExpectedToolCount = 37;
 
     [Fact]
     public async Task Registered_tools_match_docs_and_usage_guide()

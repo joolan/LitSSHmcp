@@ -109,7 +109,6 @@ public static class ToolSecurityCatalog
 
         // 服务器清单/状态。
         GlobalRead("ssh_list_servers", selfScoped: true);
-        ServerRead("ssh_get_server_status");
         ServerRead("ssh_test_connection");
         ServerRead("ssh_snapshot_get");
         ServerExec("ssh_snapshot_refresh");
@@ -120,7 +119,6 @@ public static class ToolSecurityCatalog
         ServerExec("ssh_execute_command");
         ServerExec("ssh_execute_sudo");
         ServerRead("ssh_get_sudo_status");
-        Add("ssh_get_command_history", ToolTargetKind.OptionalServer, ToolAccessLevel.Read, targetArguments: "serverId");
 
         // 文件上传。
         ServerWrite("ssh_upload");
@@ -138,7 +136,6 @@ public static class ToolSecurityCatalog
         // 数据源。
         GlobalRead("datasource_list", selfScoped: true);
         DatasourceRead("datasource_test_connection");
-        Add("datasource_get_sql_history", ToolTargetKind.OptionalDatasource, ToolAccessLevel.Read, targetArguments: "datasourceId");
         DatasourceRead("mysql_query");
         DatasourceConditional("mysql_execute");
         DatasourceRead("postgres_query");
@@ -159,7 +156,6 @@ public static class ToolSecurityCatalog
         Add("app_health_snapshot", ToolTargetKind.Application, ToolAccessLevel.Read, targetArguments: "appId");
 
         // 会话列表：全局清单，由工具按用户裁剪。
-        GlobalRead("mcp_list_sessions", selfScoped: true);
 
         var duplicate = list.GroupBy(d => d.Name, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1);
         if (duplicate is not null)

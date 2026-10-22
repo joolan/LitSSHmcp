@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器代码注册 **41 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **40 个常规工具**，宿主会话看到 **41 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
+MCP 服务器代码注册 **37 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **36 个常规工具**，宿主会话看到 **37 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
 
 > **⚠ 同步约定（唯一事实来源）**：本文件是 MCP 工具说明的**唯一事实来源**。以下三处必须与本文件**双向同步**，工具发生任何变动（新增/改名/删除、参数变化、描述与路由变化）时缺一不可：
 > 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`get_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
@@ -64,10 +64,10 @@ MCP 服务器代码注册 **41 个工具**，按用途分为 14 组；其中 `mc
 
 | 分组键 | 中文名 | 包含的工具 |
 |--------|--------|-----------|
-| `ssh` | SSH 服务器 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection`、`ssh_snapshot_get`、`ssh_snapshot_refresh` |
-| `command` | 命令执行 | `ssh_execute_command`、`ssh_get_command_history`、`ssh_execute_sudo`、`ssh_get_sudo_status` |
+| `ssh` | SSH 服务器 | `ssh_list_servers`、`ssh_test_connection`、`ssh_snapshot_get`、`ssh_snapshot_refresh` |
+| `command` | 命令执行 | `ssh_execute_command`、`ssh_execute_sudo`、`ssh_get_sudo_status` |
 | `fileTransfer` | 文件传输 | `ssh_upload`、`ssh_download`、`ssh_list_files` |
-| `datasource` | 数据源 | `datasource_list`、`datasource_test_connection`、`datasource_get_sql_history` |
+| `datasource` | 数据源 | `datasource_list`、`datasource_test_connection` |
 | `mysql` | MySQL 执行 | `mysql_query`、`mysql_execute` |
 | `postgres` | PostgreSQL 执行 | `postgres_query`、`postgres_execute` |
 | `redis` | Redis | `redis_read`、`redis_execute`、`redis_diagnostics` |
@@ -77,7 +77,7 @@ MCP 服务器代码注册 **41 个工具**，按用途分为 14 组；其中 `mc
 | `java` | JVM 诊断 | `java_processes`、`java_diagnostics` |
 | `topology` | 拓扑 | `topology_get_overview`、`topology_get_dependencies`、`topology_discover`、`topology_query`、`topology_timeline`、`topology_diff` |
 | `app` | 应用体检 | `app_health_snapshot` |
-| `guide` | 指南/自检 | `mcp_usage_guide`、`mcp_self_check`、`mcp_list_sessions` |
+| `guide` | 指南/自检 | `mcp_usage_guide`、`mcp_self_check` |
 
 > 注意：只启用 `mysql`/`redis` 而不启用 `datasource` 时，AI 将没有 `datasource_list` 来获取 `datasourceId`（启动日志会给出告警）。
 
@@ -111,8 +111,7 @@ MCP 服务器代码注册 **41 个工具**，按用途分为 14 组；其中 `mc
 | 用户问法 | 使用工具 | 不要用 |
 |---------|---------|--------|
 | 有哪些服务器 / SSH服务器列表 / 连了哪些机器 | `ssh_list_servers` | ~~datasource_list~~（那是数据库） |
-| 某台服务器的状态 | `ssh_get_server_status` | |
-| SSH能不能连上 / 测试服务器连接 | `ssh_test_connection` | ~~datasource_test_connection~~（那是数据库） |
+| 某台服务器的状态 / SSH能不能连上 / 测试服务器连接 | `ssh_test_connection` | ~~datasource_test_connection~~（那是数据库） |
 | 服务器整体态势 / 资源占用(CPU/内存/磁盘/负载) / 端口进程服务 / Docker 容器 / 证书到期 / systemd健康 / 安全巡检 | `ssh_snapshot_get`（先查已存快照）; 需最新数据用 `ssh_snapshot_refresh` | 不要为看态势反复拼 `ssh_execute_command` |
 | 在服务器上执行命令 | `ssh_execute_command` | |
 | 权限不足 / 需要root执行 | `ssh_execute_sudo` | 不要等失败再提权，主动判断 |
@@ -129,7 +128,6 @@ MCP 服务器代码注册 **41 个工具**，按用途分为 14 组；其中 `mc
 | PG查数据 / 看表结构 | `postgres_query`（action=query） | |
 | PG改数据 / 建表 / 加字段 | `postgres_execute` | |
 | PG这条SQL为什么慢 / 执行计划 | `postgres_query`（action=explain） | |
-| 谁执行了什么SQL / SQL审计记录 | `datasource_get_sql_history` | |
 | Redis正不正常 / 缓存为什么慢 / 内存涨 / 命中率低 / 卡 | `redis_diagnostics`（先做整体诊断） | |
 | 查缓存 / 读key / 看集合内容 / 慢日志 | `redis_read` | ~~redis_execute~~（那是写） |
 | 写缓存 / 删key / 设过期时间 / 改Redis配置 / 踢客户端 | `redis_execute`（弹桌面确认） | ~~redis_read~~（只读，非白名单会拒绝） |
@@ -162,10 +160,8 @@ MCP 服务器代码注册 **41 个工具**，按用途分为 14 组；其中 `mc
 | 某台机器最近新增或消失了哪些服务/端口 | `topology_timeline` | 按快照历史重放并标出增量 |
 | 两次快照之间具体变了什么 | `topology_diff` | 默认比较最近两次快照 |
 | 拓扑缺失或过期 | `topology_discover` | |
-| 命令执行历史 | `ssh_get_command_history` | |
 | 不确定用哪个 | `mcp_usage_guide`（返回内置使用指南） | |
 | MCP是否正常 / 工具用不了 / 自检 | `mcp_self_check` | |
-| 审计按客户端/会话区分 / 有哪些会话 | `mcp_list_sessions` → 再用 `*_history` 的 `sessionId` 过滤 | |
 
 ### ID 获取约定
 
@@ -193,10 +189,6 @@ MCP 服务器代码注册 **41 个工具**，按用途分为 14 组；其中 `mc
 - **参数**：无
 - **返回**：`{ success, count, servers: [...] }`，每项含 `id/name/host/port/username/authType/description/tags/lastConnectedAt`（**无密码**）
 - **说明**：**已禁用的服务器不会出现在本列表中**。服务器一旦禁用：① 不出现在 `ssh_list_servers`；② 任何按服务器标识解析的工具（`ssh_*` / `docker_*` / `service_*` / `log_*` / `java_*` / 应用与文件等）都返回 `server_disabled` 并拒绝执行；③ 资产拓扑中该服务器不可建链/连接；④ 拓扑自动发现跳过它。需在桌面 App 的「服务器编辑」里取消勾选“禁用”并保存后恢复。Web 强制模式下还只返回当前用户命中 `read` 白名单的 `ssh:<id>`；桌面未启用强制时保持全量。
-
-### `ssh_get_server_status`
-- **参数**：`serverId` — 服务器标识（ID/名称/主机名，可用 `ssh_list_servers` 列出）
-- **返回**：`{ success, id, name, host, status, errorKind, durationMs }`（`status` 为 `connected`，失败时取 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`；服务器被禁用时为 `server_disabled`）
 
 ### `ssh_test_connection`
 - **参数**：`serverId` — 服务器标识（ID/名称/主机名）
@@ -240,10 +232,6 @@ MCP 服务器代码注册 **41 个工具**，按用途分为 14 组；其中 `mc
 - **返回**：`{ success, serverId, serverName, sudoType, sudoUsername, isConfigured, description }`
 - **说明**：仅在需要向用户解释"为什么不能提权"时使用
 
-### `ssh_get_command_history`
-- **参数**：`serverId`（可选，不传查全部）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `docker_query`）、`category`（可选，事件类型：`exec`=执行 / `gate`=审批拦截 / `probe`=只读探测 / `meta`=列表元数据 / `transfer`=文件传输）、`allUsers`（默认 false；仅管理员可设 true 查看全部用户历史。Web 强制模式下普通用户始终只看本人，桌面未启用强制时保持全量）
-- **返回**：`{ success, status, error, count, hasMore, records: [...] }`（每条记录含 `sessionId`/`tool`/`category`/`decision`；`result` 已截断到 4000 字符；`hasMore: true` 表示还有更早记录，配合 `offset` 翻页）
-
 **命令类错误约定**：`{ success: false, error, status, errorKind }`，`status` 可能值：`blocked`、`blocking_command`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`sudo_not_configured`、`file_not_found`、`auth_failed`、`host_key_mismatch`、`timeout`、`rate_limited`、`connection_error`、`failed`；`blocked_script`：脚本内容扫描命中危险模式（`ssh_upload_*` 上传扫描为 `status=blocked_script`；`ssh_execute_command`/`ssh_execute_sudo` 执行侧为 `status=blocked` + `reason=blocked_script`）。
 
 ## 文件传输组（fileTransfer）
@@ -275,11 +263,6 @@ MCP 服务器代码注册 **41 个工具**，按用途分为 14 组；其中 `mc
 ### `datasource_test_connection`
 - **参数**：`datasourceId` — 数据源标识（ID/名称，可用 `datasource_list` 列出）
 - **返回**：`{ success, status, datasourceId, name, host, port, accessMode, viaTunnelServer, version, durationMs, error }` —— 自动选择直连或建 SSH 隧道
-
-### `datasource_get_sql_history`
-- **参数**：`datasourceId`（可选，ID/名称）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `mysql_query`）、`category`（可选，事件类型：`exec`=查询/写入执行 / `gate`=写审批拦截 / `probe`=测试/诊断/EXPLAIN）、`allUsers`（默认 false；仅管理员可设 true 查看全部用户历史。Web 强制模式下普通用户始终只看本人，桌面未启用强制时保持全量）
-- **返回**：`{ success, status, error, count, hasMore, records: [...] }`（含被拒绝/被驳回的操作；每条记录含 `sessionId`/`tool`/`category`/`decision`；`result` 已截断到 4000 字符）
-- **说明**：Redis 命令审计也写在同一张表，`operation` 为 `Query`/`Execute`/`Diagnostics`，SQL 列是命令原文；写操作的审批决策记在 `decision`（`manual-approved`/`auto-approve`/`manual-rejected`/`blocked`）
 
 ## MySQL 执行组（mysql）
 
@@ -453,13 +436,8 @@ MCP 服务器代码注册 **41 个工具**，按用途分为 14 组；其中 `mc
 
 ### `mcp_self_check`
 - **参数**：`serverId`（可选，ID/名称/主机名）、`datasourceId`（可选，ID/名称）
-- **返回**：`{ success, sessionId, clientName, clientVersion, checks: [{ name, status, detail }] }` —— `sessionId` 是当前 MCP 会话 ID（每次启动服务生成）、`clientName`/`clientVersion` 为当前 AI 客户端（`initialize` 握手后获取，首次工具调用前可能为空）；可用于 `ssh_get_command_history`/`datasource_get_sql_history` 的 `sessionId` 过滤；检查配置可读、审计库可写、已知主机库可读；带参数时额外做连通性测试（服务器失败会给出 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error` 分类）
+- **返回**：`{ success, sessionId, clientName, clientVersion, checks: [{ name, status, detail }] }` —— `sessionId` 是当前 MCP 会话 ID（每次启动服务生成）、`clientName`/`clientVersion` 为当前 AI 客户端（`initialize` 握手后获取，首次工具调用前可能为空）；检查配置可读、审计库可写、已知主机库可读；带参数时额外做连通性测试（服务器失败会给出 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error` 分类）
 - **场景**：排查"MCP 自己是否正常"、主机密钥校验不通过、配置损坏等
-
-### `mcp_list_sessions`
-- **参数**：`limit`（默认 50，上限 500）、`allUsers`（默认 false；仅管理员可设 true 查看全部用户会话。Web 强制模式下普通用户始终只看本人，桌面未启用强制时保持全量）
-- **返回**：`{ success, error, count, sessions: [{ sessionId, clientName, clientVersion, ownerUserId, startedAt, lastSeenAt }] }` —— 按最近活动倒序
-- **场景**：审计记录都带 `sessionId`，用它能看出"是哪个 AI 客户端、哪次连接"产生的；再配合 `ssh_get_command_history` / `datasource_get_sql_history` 的 `sessionId` 参数下钻
 
 ### `mcp_approval_round`
 - **参数**：`roundId`（本轮次标识，由助手生成的随机串）

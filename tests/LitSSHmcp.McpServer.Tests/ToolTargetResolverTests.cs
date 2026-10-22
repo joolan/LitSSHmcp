@@ -36,26 +36,6 @@ public class ToolTargetResolverTests
     }
 
     [Fact]
-    public void Resolve_optional_target_without_argument_is_allowed()
-    {
-        var result = ToolTargetResolver.Resolve(
-            Config(), ToolSecurityCatalog.Find("ssh_get_command_history")!, null);
-
-        Assert.Empty(result.TargetKeys);
-        Assert.Null(result.Error);
-    }
-
-    [Fact]
-    public void Resolve_optional_target_with_unknown_argument_is_denied()
-    {
-        var result = ToolTargetResolver.Resolve(
-            Config(), ToolSecurityCatalog.Find("ssh_get_command_history")!, Args(("serverId", "ghost")));
-
-        Assert.Empty(result.TargetKeys);
-        Assert.NotNull(result.Error);
-    }
-
-    [Fact]
     public void Resolve_multi_server_uses_all_enabled_servers_when_omitted()
     {
         var config = Config();

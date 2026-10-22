@@ -90,7 +90,7 @@ public static class ToolGroups
         _ when toolName.StartsWith("topology_", StringComparison.Ordinal) => Topology,
         _ when toolName.StartsWith("app_", StringComparison.Ordinal) => App,
         _ when toolName.StartsWith("mcp_", StringComparison.Ordinal) => Guide,
-        "ssh_execute_command" or "ssh_execute_sudo" or "ssh_get_sudo_status" or "ssh_get_command_history" => Command,
+        "ssh_execute_command" or "ssh_execute_sudo" or "ssh_get_sudo_status" => Command,
         "ssh_upload" or "ssh_download" or "ssh_list_files" => FileTransfer,
         _ when toolName.StartsWith("ssh_", StringComparison.Ordinal) => Ssh,
         _ => null

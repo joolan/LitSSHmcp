@@ -31,16 +31,16 @@ description: Use when operating or troubleshooting servers and applications thro
 - 结果统一含 `success` + `status` + `error`，并回显 `serverId/serverName/host`。常见 `status`：`blocked` / `rejected` / `approval_timeout` / `approval_unavailable` / `server_not_found` / `server_ambiguous` / `server_disabled` / `datasource_not_found` / `datasource_ambiguous` / `app_not_found` / `path_not_allowed` / `readonly_statement` / `not_readonly_statement` / `auth_failed` / `host_key_mismatch` / `timeout` / `rate_limited` / `connection_error` / `pid_not_found` / `pid_ambiguous` / `log_path_ambiguous`。
 - `host_key_mismatch` 可能是安全事件：先人工核对 SSH 指纹，**不要**自动忽略。
 - 命令输出超过 2 万字符会截断（`truncated: true`）；用更精确的条件重查。
-- **审计按会话/工具区分**：`mcp_self_check` 返回当前 `sessionId` 与客户端信息；`mcp_list_sessions` 列出最近会话；`ssh_get_command_history` / `datasource_get_sql_history` 支持 `sessionId=` / `tool=` 过滤。
+- **审计查看**：MCP 不再暴露历史查询工具；`mcp_self_check` 返回当前 `sessionId` 与客户端信息，审计记录请在 App/Web 审计页面查看。
 - 任何工具的入参/出参都**不含密码**；提权命令的 `output`/`error` 中口令一律脱敏为 `******`。
 
 ## 2. 工具分组速查
 
 | 意图 | 工具 |
 |---|---|
-| 服务器列表/状态/连通性 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection`（已禁用的服务器不在列表中，相关工具会返回 `server_disabled`） |
+| 服务器列表/连通性 | `ssh_list_servers`、`ssh_test_connection`（已禁用的服务器不在列表中，相关工具会返回 `server_disabled`） |
 | 服务器整机快照 | `ssh_snapshot_get`（默认读本地最新快照，返回各维度概览；`section=`/`detail="full"` 取完整）、`ssh_snapshot_refresh`（重新采集，较慢） |
-| 执行命令 / 提权 / 历史 | `ssh_execute_command`、`ssh_execute_sudo`、`ssh_get_command_history`、`ssh_get_sudo_status` |
+| 执行命令 / 提权 | `ssh_execute_command`、`ssh_execute_sudo`、`ssh_get_sudo_status` |
 | 文件 | `ssh_list_files`、`ssh_upload`（单文件/批量/目录，一条连接）、`ssh_download`（单文件/批量/目录，一条连接） |
 | Docker | `docker_query`（action=ps/logs/inspect/stats/images）、`docker_restart`、`docker_exec` |
 | systemd | `service_query`（action=list/status/logs）、`service_restart` |
@@ -48,7 +48,7 @@ description: Use when operating or troubleshooting servers and applications thro
 | JVM | `java_processes`、`java_diagnostics`（action=threads/heap/info） |
 | 拓扑/图谱 | `topology_query`（action=search/neighbors/path/impact/explain）、`topology_get_overview`、`topology_get_dependencies`、`topology_discover` |
 | 应用体检 | `app_health_snapshot` |
-| 数据源 | `datasource_list`、`datasource_test_connection`、`datasource_get_sql_history` |
+| 数据源 | `datasource_list`、`datasource_test_connection` |
 | MySQL/PG/Redis | `mysql_*` / `postgres_*` / `redis_*`（query/execute/explain/diagnostics；Redis 为 read/execute/diagnostics） |
 
 ### 服务器快照（整机态势，优先用）
@@ -69,7 +69,7 @@ description: Use when operating or troubleshooting servers and applications thro
 0. **整机态势**：先 `ssh_snapshot_get(serverId)`（默认概览）；仅当**无快照**或**确需最新**时 `ssh_snapshot_refresh(serverId)`（较慢、同机单飞、**有最短刷新间隔节流，不要在同一任务内重复刷新**）。需要某维度细节用 `section=`，全部才用 `detail="full"`。
 1. **定位**：先 `topology_query(action="search")` 拿准确 ID；`app_health_snapshot(appId)` 一步拿到该应用所在服务器的 Java 进程/容器/监听端口 + 依赖库连通性。看依赖/链路用 `topology_query(action="neighbors"/"path")`；**变更前**用 `topology_query(action="impact")` 查影响面；对结论没把握时用 `topology_query(action="explain")` 核实边的来源、证据与是否过期（`stale`）。
 2. **分侧取证**：
-   - 服务器：`ssh_get_server_status` / `ssh_test_connection`（失败会给 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`）。
+   - 服务器：`ssh_test_connection`（失败会给 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`）。
    - 应用进程：`java_processes`（可传 `appId`）→ `java_diagnostics`（action=threads/heap/info，可传 `appId` 自动解析 pid）。
    - 容器：`docker_query(action="ps")` → `docker_query(action="logs"/"inspect"/"stats")`。
    - systemd：`service_query(action="status")` → `service_query(action="logs")`。

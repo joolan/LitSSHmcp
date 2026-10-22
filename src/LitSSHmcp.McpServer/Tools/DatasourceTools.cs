@@ -132,54 +132,6 @@ public class DatasourceTools
         };
     }
 
-    [McpServerTool(Name = "datasource_get_sql_history", UseStructuredContent = true, OutputSchemaType = typeof(SqlHistoryDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("查看SQL与Redis命令审计历史, 返回的result已截断到4000字符。支持limit/offset翻页; SSH命令历史用ssh_get_command_history")]
-    public async Task<SqlHistoryDto> GetSqlHistory(
-        [Description("数据源标识(可选, 留空查全部, 可用datasource_list列出)")] string? datasourceId = null,
-        [Description(ToolSupport.HistoryLimitDescription)] int limit = ToolSupport.DefaultHistoryLimit,
-        [Description("跳过的条数, 与limit配合翻页(默认0)")] int offset = 0,
-        [Description("会话ID(可选): 只查某个 MCP 会话产生的记录; 当前会话ID见 mcp_self_check")] string? sessionId = null,
-        [Description("工具名(可选): 只查由某个 MCP 工具产生的记录, 如 mysql_query / redis_execute")] string? tool = null,
-        [Description("事件类型(可选): exec=执行 / gate=审批拦截 / probe=只读探测(测试/诊断/EXPLAIN)")] string? category = null,
-        [Description("仅管理员可用: true=查看全部用户历史; 默认false=Web强制模式仅本人/桌面保持全量")] bool allUsers = false,
-        CancellationToken cancellationToken = default)
-    {
-        var (userIds, scopeError) = CallerScope.Current.AuditUserFilter(allUsers);
-        if (scopeError is not null)
-            return SqlHistoryDto.Fail("authorization_denied", scopeError);
-
-        var config = await _configService.LoadConfigAsync();
-        string? filterId = null;
-        if (!string.IsNullOrWhiteSpace(datasourceId))
-        {
-            var (ds, resolveStatus, resolveError) = ToolSupport.ResolveDatasource(config, datasourceId!);
-            if (ds == null)
-                return SqlHistoryDto.Fail(resolveStatus!, resolveError!);
-            filterId = ds.Id;
-        }
-
-        var effectiveLimit = ToolSupport.ClampLimit(limit);
-        var records = (await _auditLogService.GetSqlLogsAsync(
-                filterId, effectiveLimit, null, false, Math.Max(0, offset), sessionId, tool,
-                Enum.TryParse<AuditCategory>(category, ignoreCase: true, out var scat) ? scat : null,
-                userIds))
-            .ToList();
-
-        foreach (var record in records)
-        {
-            if (record.Result != null && record.Result.Length > ToolSupport.MaxAuditResultChars)
-                record.Result = record.Result[..ToolSupport.MaxAuditResultChars] + "...[已截断]";
-        }
-
-        return new SqlHistoryDto
-        {
-            Success = true,
-            Count = records.Count,
-            HasMore = records.Count >= effectiveLimit,
-            Records = records
-        };
-    }
-
     private static string ResolveTunnelServerName(AppConfig config, DataSourceConfig ds)
     {
         if (!string.IsNullOrEmpty(ds.TunnelServerId))

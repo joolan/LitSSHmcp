@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
@@ -306,7 +307,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         private set { _impactSummary = value; OnPropertyChanged(); }
     }
 
-    public async void Load()
+    public void Load() => AsyncOperation.Run("加载拓扑图", async () =>
     {
         try
         {
@@ -318,7 +319,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"加载拓扑失败: {ex.Message}";
         }
-    }
+    });
 
     private void ApplyGraph(TopologyGraph graph)
     {
@@ -1865,7 +1866,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsLinking));
     }
 
-    public async void FinishLink(Point drop)
+    public void FinishLink(Point drop) => AsyncOperation.Run("建立拓扑关系", async () =>
     {
         var from = _linkFrom;
         CancelLink();
@@ -1915,7 +1916,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"添加关系失败: {ex.Message}";
         }
-    }
+    });
 
     private static string InferType(string fromId, string toId)
     {
@@ -2083,7 +2084,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         StatusMessage = $"已选关系: {edge.From} --{edge.Type}--> {edge.To}" + (edge.IsDiscovered ? " (自动发现)" : " (手动)");
     }
 
-    private async void LoadSelectedEdgeNote(GraphEdgeVm edge)
+    private void LoadSelectedEdgeNote(GraphEdgeVm edge) => AsyncOperation.Run("加载关系备注", async () =>
     {
         try
         {
@@ -2096,10 +2097,10 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             // 读取备注失败忽略
         }
-    }
+    });
 
     /// <summary>保存选中关系的类型与备注（仅手动关系）。</summary>
-    public async void SaveSelectedEdge()
+    public void SaveSelectedEdge() => AsyncOperation.Run("保存关系属性", async () =>
     {
         if (_selectedEdge is not { IsDiscovered: false } edge)
             return;
@@ -2143,7 +2144,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             SelectedEdgeHint = $"保存失败: {ex.Message}";
         }
-    }
+    });
 
     public void ClearEdgeSelection()
     {
@@ -2165,7 +2166,7 @@ public class TopologyViewModel : INotifyPropertyChanged
     public bool SelectedEdgeCanConfirm => _selectedEdge is { IsDiscovered: true, IsDisputed: true };
 
     /// <summary>人工确认冲突已核实：清除 Disputed 并刷新末次核实时间。</summary>
-    public async void ConfirmSelectedEdge()
+    public void ConfirmSelectedEdge() => AsyncOperation.Run("确认拓扑关系", async () =>
     {
         if (_selectedEdge is not { IsDiscovered: true, IsDisputed: true } edge)
             return;
@@ -2199,7 +2200,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             SelectedEdgeHint = $"确认失败: {ex.Message}";
         }
-    }
+    });
 
     private void RebuildEdgeAnchors()
     {
@@ -2282,7 +2283,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         return "bottom";
     }
 
-    public async void DeleteSelectedEdge()
+    public void DeleteSelectedEdge() => AsyncOperation.Run("删除拓扑关系", async () =>
     {
         if (_selectedEdge is not { } edge)
             return;
@@ -2311,7 +2312,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"删除关系失败: {ex.Message}";
         }
-    }
+    });
 
     private static double DistanceToSegment(Point p, Point a, Point b)
     {
@@ -2333,7 +2334,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         private set { _discoveryReport = value; OnPropertyChanged(); }
     }
 
-    public async void Discover(string serverIds)
+    public void Discover(string serverIds) => AsyncOperation.Run("自动发现拓扑", async () =>
     {
         try
         {
@@ -2358,7 +2359,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"自动发现失败: {ex.Message}";
         }
-    }
+    });
 
     private static string BuildDiscoveryReport(DiscoveryResult r)
     {
@@ -2402,10 +2403,10 @@ public class TopologyViewModel : INotifyPropertyChanged
     }
 
     /// <summary>把选中的"待确认"节点确认为已登记资产（弹出对应新增窗口并预填），再把发现边重定向到新资产。</summary>
-    public async void ConfirmSelectedNode() => ConfirmNode(_selectedId);
+    public void ConfirmSelectedNode() => ConfirmNode(_selectedId);
 
     /// <summary>把指定的"待确认"节点确认为已登记资产。</summary>
-    public async void ConfirmNode(string? id)
+    public void ConfirmNode(string? id) => AsyncOperation.Run("确认拓扑节点", async () =>
     {
         if (string.IsNullOrWhiteSpace(id) || !id.Contains(":disc:", StringComparison.Ordinal))
         {
@@ -2427,10 +2428,10 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"确认失败: {ex.Message}";
         }
-    }
+    });
 
     /// <summary>删除一个"待确认"节点（清理其所有发现边）。</summary>
-    public async void DeleteDiscoveredNode(string id)
+    public void DeleteDiscoveredNode(string id) => AsyncOperation.Run("删除待确认节点", async () =>
     {
         if (string.IsNullOrWhiteSpace(id) || !id.Contains(":disc:", StringComparison.Ordinal))
             return;
@@ -2447,7 +2448,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"删除节点失败: {ex.Message}";
         }
-    }
+    });
 
     private async Task<string?> RegisterPendingNodeAsync(string id)
     {

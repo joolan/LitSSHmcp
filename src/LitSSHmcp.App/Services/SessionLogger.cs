@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.Services;
@@ -19,11 +20,13 @@ public sealed class SessionLogger : IDisposable
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly object _gate = new();
 
-    public SessionLogger(string serverName, string host, int cols = 80, int rows = 24)
+    public SessionLogger(string serverName, string host, int cols = 80, int rows = 24, string? logRoot = null)
     {
         try
         {
-            var dir = Path.Combine(ConfigPaths.AppDataDir, "terminal-logs");
+            var dir = string.IsNullOrWhiteSpace(logRoot)
+                ? Path.Combine(ConfigPaths.AppDataDir, "terminal-logs")
+                : logRoot!;
             Directory.CreateDirectory(dir);
             var safe = new string(serverName.Where(c => !Path.GetInvalidFileNameChars().Contains(c)).ToArray());
             if (string.IsNullOrWhiteSpace(safe))
@@ -60,6 +63,7 @@ public sealed class SessionLogger : IDisposable
     {
         if (string.IsNullOrEmpty(text))
             return;
+        text = SecretRedactor.Redact(text);
         lock (_gate)
         {
             try { _writer?.Write(text); } catch { /* ignore */ }
@@ -73,7 +77,7 @@ public sealed class SessionLogger : IDisposable
         if (string.IsNullOrEmpty(text))
             return;
         lock (_gate)
-            AppendCast("i", text);
+            AppendCast("i", SecretRedactor.Redact(text));
     }
 
     /// <summary>兼容旧调用：等价于 <see cref="WriteOutput"/>。</summary>

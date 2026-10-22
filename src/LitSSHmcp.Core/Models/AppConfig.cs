@@ -230,7 +230,10 @@ public class LocalTerminalConfig
     /// <summary>硬白名单：允许执行的 CLI（按可执行文件名匹配，忽略大小写与路径）。其余命令一律拒绝。</summary>
     public string[] AllowedCommands { get; set; } = DefaultAllowedCommands();
 
-    /// <summary>已记住「总是允许」的完整命令（与原命令完全一致时跳过审批）。</summary>
+    /// <summary>
+    /// 已记住「总是允许」的命令规则：新格式为 <c>sha256:&lt;hash&gt; | &lt;脱敏展示&gt;</c>，
+    /// 不落明文；旧纯文本规则在配置加载时自动迁移。完整命令哈希一致时跳过审批。
+    /// </summary>
     public string[] AutoApprovedCommands { get; set; } = Array.Empty<string>();
 
     /// <summary>本地安全硬上限（字符，超出保留尾部）。常规截断/落盘由中央 ToolResultMaxChars + spill 处理，这里只兜底极端输出。</summary>

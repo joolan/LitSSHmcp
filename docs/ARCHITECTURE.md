@@ -315,7 +315,8 @@ topology_get_overview (全局拓扑) → topology_get_dependencies(app:xx) (定�
 | 主机密钥 | TOFU 校验 SSH 指纹，变化即拒绝（`security.sshHostKey.mode`）；桌面主界面/终端/远程文件夹选择/同步与数据源、端口转发、拓扑发现统一经 `SshClientFactory`，无绕过路径；「测试连接」返回 `auth`/`host_key`/`timeout`/`network` 根因 | `SshClientFactory` + `FileSshKnownHostsStore` + `AppServiceFactory` |
 | 限流 | 按目标限制并发/每分钟调用（`security.limits`） | `TargetLimiter` |
 | 拓扑发现 | 扫描路径受白名单约束（`security.discovery.allowedSearchPaths`） | `TopologyTools` + `PathPolicy` |
-| 审计 | 命令、SQL（含被拒绝/被驳回）全部落 SQLite（WAL + 索引）；原文开关/字面量脱敏/超期清理见 `security.audit` | `AuditLogService` + `SqlRedactor` |
+| 审计 | 命令、SQL（含被拒绝/被驳回）全部落 SQLite（WAL + 索引）；落盘前 `SecretRedactor` 不可逆脱敏密码/token/连接串/私钥等，命中追加标记；原文开关/字面量脱敏/超期清理见 `security.audit` | `AuditLogService` + `SqlRedactor` + `SecretRedactor` |
+| 会话日志/自动放行 | 终端 `.log/.cast` 落盘前脱敏；AlwaysAllow 只存命令 SHA-256 + 脱敏展示文本，旧明文规则加载时迁移 | `SessionLogger` + `AutoApprovedCommandRule` |
 | 工作区清理 | 会话删除即清理会话目录；**孤儿会话目录**（删除失败/会话被保留策略剪除后残留）按 `agent.orphanSessionDirRetentionDays`（默认 30，0=关闭）在启动/裁剪后清扫——仅删 `jobs/<用户>/s<id>`、跳过重解析点、保护未超期目录（§8.2） | `WorkspaceLayout.SweepOrphanSessionDirs` |
 | 配置热更新 | **安全类配置**（`security.enabled`、commandFilter/sqlFilter/fileTransfer/scriptRules、审批设置、授权矩阵等 `security.*`）按文件 mtime **即时生效**（无需重启，对运行中会话同样生效）；**其余配置**（服务器/数据源/模型/技能等）**会话启动时快照**——改动对运行中会话不生效、**下个会话生效**；Web 不提供配置写路径（D2），一切修改仅限桌面 | `SecurityOptionsProvider` + 会话装配快照 |
 | 日志 | MCP 日志走 stderr（不污染 stdout 协议流）+ 本机文件 | `Program.cs` + `FileLoggerProvider` |

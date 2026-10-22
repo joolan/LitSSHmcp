@@ -2,6 +2,7 @@ using System.Linq;
 using LitSSHmcp.Agent;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
 
@@ -166,7 +167,7 @@ public sealed class LocalTerminalTool : IAgentTool
                     break;
                 case LocalApprovalDecision.AlwaysAllow:
                     _config.AutoApprovedCommands = _config.AutoApprovedCommands
-                        .Append(command).Distinct(StringComparer.Ordinal).ToArray();
+                        .Append(AutoApprovedCommandRule.Create(command)).Distinct(StringComparer.Ordinal).ToArray();
                     _persist();
                     manualApproval = true;
                     break;

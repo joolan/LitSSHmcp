@@ -1,5 +1,6 @@
 using LitSSHmcp.App.Services.LocalTerminal;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using Xunit;
 
 namespace LitSSHmcp.App.Tests;
@@ -91,6 +92,17 @@ public class LocalCommandPolicyTests
         Assert.True(LocalCommandPolicy.IsAutoApproved("git status", new[] { "git status" }));
         Assert.False(LocalCommandPolicy.IsAutoApproved("git status --short", new[] { "git status" }));
         Assert.False(LocalCommandPolicy.IsAutoApproved("git status && evil", new[] { "git status" }));
+    }
+
+    [Fact]
+    public void Auto_approval_supports_hashed_rules_without_storing_raw_secret()
+    {
+        const string command = "curl --password hunter2 https://example";
+        var rule = AutoApprovedCommandRule.Create(command);
+
+        Assert.True(LocalCommandPolicy.IsAutoApproved(command, new[] { rule }));
+        Assert.False(LocalCommandPolicy.IsAutoApproved("curl --password other https://example", new[] { rule }));
+        Assert.DoesNotContain("hunter2", rule, StringComparison.Ordinal);
     }
 
     [Theory]

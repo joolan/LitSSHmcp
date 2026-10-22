@@ -7,6 +7,55 @@ namespace LitSSHmcp.Tests;
 public class AuditSessionTests
 {
     [Fact]
+    public async Task Audit_command_and_sql_redact_secrets_before_persistence_and_chain_stays_valid()
+    {
+        var db = Path.Combine(Path.GetTempPath(), "litssh-audit-" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            var audit = new AuditLogService(new FakeSecurityOptions(), db);
+            await audit.InitializeAsync();
+
+            await audit.LogCommandAsync(new CommandAuditLog
+            {
+                ServerId = "s",
+                ServerName = "n",
+                Command = "curl --password hunter2 https://user:pass@example",
+                Result = "token=abcdef123456",
+                Status = CommandStatus.Executed
+            });
+            await audit.LogSqlAsync(new SqlAuditLog
+            {
+                DataSourceId = "d",
+                DataSourceName = "db",
+                Operation = SqlOperation.Query,
+                Sql = "select * from users where password='hunter2'",
+                Result = "Authorization: Bearer abcdefghijklmnop",
+                Status = CommandStatus.Executed
+            });
+
+            var commands = await audit.GetLogsAsync();
+            var command = Assert.Single(commands);
+            Assert.DoesNotContain("hunter2", command.Command, StringComparison.Ordinal);
+            Assert.DoesNotContain("abcdef123456", command.Result!, StringComparison.Ordinal);
+            Assert.Contains("******", command.Command, StringComparison.Ordinal);
+            Assert.Contains("[敏感内容已自动脱敏]", command.Result!, StringComparison.Ordinal);
+
+            var sqls = await audit.GetSqlLogsAsync();
+            var sql = Assert.Single(sqls);
+            Assert.DoesNotContain("hunter2", sql.Sql, StringComparison.Ordinal);
+            Assert.DoesNotContain("abcdefghijklmnop", sql.Result!, StringComparison.Ordinal);
+            Assert.Contains("[敏感内容已自动脱敏]", sql.Result!, StringComparison.Ordinal);
+
+            Assert.True((await audit.VerifyChainAsync()).Ok);
+        }
+        finally
+        {
+            TryDelete(db);
+            TryDelete(db + ".key");
+        }
+    }
+
+    [Fact]
     public async Task Session_id_is_auto_filled_and_filterable()
     {
         var db = Path.Combine(Path.GetTempPath(), "litssh-audit-" + Guid.NewGuid().ToString("N") + ".db");

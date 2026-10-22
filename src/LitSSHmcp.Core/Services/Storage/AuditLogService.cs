@@ -292,6 +292,12 @@ public class AuditLogService : IAuditLogService
             await SetBusyTimeoutAsync(connection);
             using var tx = connection.BeginTransaction();
 
+            var (command, commandRedacted) = SecretRedactor.RedactWithChange(log.Command);
+            var (result, resultRedacted) = SecretRedactor.RedactWithChange(log.Result);
+            var (filePath, pathRedacted) = SecretRedactor.RedactWithChange(log.FilePath);
+            if (commandRedacted || resultRedacted || pathRedacted)
+                result = AppendRedactionMarker(result);
+
             long id;
             await using (var insert = connection.CreateCommand())
             {
@@ -302,13 +308,13 @@ public class AuditLogService : IAuditLogService
                     SELECT last_insert_rowid();";
                 insert.Parameters.AddWithValue("@ServerId", log.ServerId);
                 insert.Parameters.AddWithValue("@ServerName", log.ServerName);
-                insert.Parameters.AddWithValue("@Command", log.Command);
-                insert.Parameters.AddWithValue("@Result", log.Result ?? (object)DBNull.Value);
+                insert.Parameters.AddWithValue("@Command", command);
+                insert.Parameters.AddWithValue("@Result", string.IsNullOrEmpty(result) ? DBNull.Value : result);
                 insert.Parameters.AddWithValue("@Status", log.Status.ToString());
                 insert.Parameters.AddWithValue("@Timestamp", log.Timestamp.ToString("O"));
                 insert.Parameters.AddWithValue("@ExitCode", log.ExitCode ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@IsFileTransfer", log.IsFileTransfer ? 1 : 0);
-                insert.Parameters.AddWithValue("@FilePath", log.FilePath ?? (object)DBNull.Value);
+                insert.Parameters.AddWithValue("@FilePath", string.IsNullOrEmpty(filePath) ? DBNull.Value : filePath);
                 insert.Parameters.AddWithValue("@FileSize", log.FileSize ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@SessionId", (log.SessionId ?? SessionId) ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@Tool", (log.Tool ?? AuditContext.CurrentTool) ?? (object)DBNull.Value);
@@ -338,6 +344,11 @@ public class AuditLogService : IAuditLogService
             await SetBusyTimeoutAsync(connection);
             using var tx = connection.BeginTransaction();
 
+            var (sql, sqlRedacted) = SecretRedactor.RedactWithChange(log.Sql);
+            var (result, resultRedacted) = SecretRedactor.RedactWithChange(log.Result);
+            if (sqlRedacted || resultRedacted)
+                result = AppendRedactionMarker(result);
+
             long id;
             await using (var insert = connection.CreateCommand())
             {
@@ -349,9 +360,9 @@ public class AuditLogService : IAuditLogService
                 insert.Parameters.AddWithValue("@DataSourceId", log.DataSourceId);
                 insert.Parameters.AddWithValue("@DataSourceName", log.DataSourceName);
                 insert.Parameters.AddWithValue("@Operation", log.Operation.ToString());
-                insert.Parameters.AddWithValue("@Sql", log.Sql);
+                insert.Parameters.AddWithValue("@Sql", sql);
                 insert.Parameters.AddWithValue("@Status", log.Status.ToString());
-                insert.Parameters.AddWithValue("@Result", log.Result ?? (object)DBNull.Value);
+                insert.Parameters.AddWithValue("@Result", string.IsNullOrEmpty(result) ? DBNull.Value : result);
                 insert.Parameters.AddWithValue("@RowsAffected", log.RowsAffected ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@DurationMs", log.DurationMs ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@Timestamp", log.Timestamp.ToString("O"));
@@ -925,6 +936,14 @@ public class AuditLogService : IAuditLogService
             // 无法建立签名密钥时退化为纯 SHA-256（仍可检测常规篡改）
             return null;
         }
+    }
+
+    private static string AppendRedactionMarker(string? result)
+    {
+        const string marker = "[敏感内容已自动脱敏]";
+        if (string.IsNullOrEmpty(result))
+            return marker;
+        return result.Contains(marker, StringComparison.Ordinal) ? result : result + "\n" + marker;
     }
 
     private static CommandAuditLog ReadCommandRow(SqliteDataReader reader) => new()

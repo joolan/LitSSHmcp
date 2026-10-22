@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using LitSSHmcp.Core.Services.Security;
 
 namespace LitSSHmcp.App.Services.LocalTerminal;
 
@@ -163,8 +164,7 @@ public static class LocalCommandPolicy
 
     public static bool IsAutoApproved(string? command, IReadOnlyCollection<string>? rules)
         => !string.IsNullOrWhiteSpace(command) &&
-           (rules ?? Array.Empty<string>()).Any(rule =>
-               string.Equals(rule?.Trim(), command.Trim(), StringComparison.Ordinal));
+           (rules ?? Array.Empty<string>()).Any(rule => AutoApprovedCommandRule.Matches(command, rule));
 
     private static bool IsNestedShell(string? exe)
         => exe is not null && exe.ToLowerInvariant() is

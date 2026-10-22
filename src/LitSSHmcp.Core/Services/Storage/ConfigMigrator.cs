@@ -1,4 +1,5 @@
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 
 namespace LitSSHmcp.Core.Services.Storage;
 
@@ -101,6 +102,18 @@ public static class ConfigMigrator
         if (config.Agent.Memory == null)
         {
             config.Agent.Memory = new AgentMemoryConfig();
+            changed = true;
+        }
+
+        if (config.Agent.LocalTerminal == null)
+        {
+            config.Agent.LocalTerminal = new LocalTerminalConfig();
+            changed = true;
+        }
+        else if (AutoApprovedCommandRule.Migrate(
+                     config.Agent.LocalTerminal.AutoApprovedCommands, out var autoApproved))
+        {
+            config.Agent.LocalTerminal.AutoApprovedCommands = autoApproved;
             changed = true;
         }
 

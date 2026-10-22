@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Win32;
@@ -33,7 +34,7 @@ public class ConfigTransferViewModel : INotifyPropertyChanged
         set { _statusMessage = value; OnPropertyChanged(); }
     }
 
-    private async void Export()
+    private void Export() => AsyncOperation.Run("导出配置", async () =>
     {
         var dialog = new SaveFileDialog
         {
@@ -79,9 +80,9 @@ public class ConfigTransferViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"导出失败: {ex.Message}";
         }
-    }
+    });
 
-    private async void Import()
+    private void Import() => AsyncOperation.Run("导入配置", async () =>
     {
         var dialog = new OpenFileDialog { Filter = "JSON 文件|*.json|所有文件|*.*" };
         if (dialog.ShowDialog() != true)
@@ -108,7 +109,7 @@ public class ConfigTransferViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"导入失败: {ex.Message}";
         }
-    }
+    });
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

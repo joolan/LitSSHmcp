@@ -130,7 +130,7 @@ public partial class NodeRelationsWindow : Wpf.Ui.Controls.FluentWindow
         NoteBox.Text = _selected?.Note ?? string.Empty;
     }
 
-    private async void OnSave(object sender, RoutedEventArgs e)
+    private void OnSave(object sender, RoutedEventArgs e) => AsyncOperation.Run("保存节点关系", async () =>
     {
         if (_selected is not { IsManual: true } row)
         {
@@ -179,9 +179,9 @@ public partial class NodeRelationsWindow : Wpf.Ui.Controls.FluentWindow
         {
             MessageBox.Show(this, $"保存失败：{ex.Message}", "节点关系", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
-    }
+    });
 
-    private async void OnDelete(object sender, RoutedEventArgs e)
+    private void OnDelete(object sender, RoutedEventArgs e) => AsyncOperation.Run("删除节点关系", async () =>
     {
         if (_selected is not { } row)
             return;
@@ -212,7 +212,7 @@ public partial class NodeRelationsWindow : Wpf.Ui.Controls.FluentWindow
         {
             MessageBox.Show(this, $"删除失败：{ex.Message}", "节点关系", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
-    }
+    });
 
     /// <summary>节点 id 指向的服务器若处于禁用状态则返回该服务器（禁用的服务器不允许在可视化窗口里建链/改链）。</summary>
     private static SshServerConfig? DisabledServerOf(AppConfig config, string nodeId) =>

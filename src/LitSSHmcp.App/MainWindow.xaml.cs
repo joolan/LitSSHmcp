@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.ViewModels;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
@@ -271,7 +272,7 @@ public partial class MainWindow : FluentWindow
         _tray.DoubleClick += (_, _) => RestoreFromTray();
     }
 
-    private async void RestoreFromTray()
+    private void RestoreFromTray() => AsyncOperation.Run("从托盘恢复", async () =>
     {
         // 主界面本来就可见（仅最小化到任务栏等）：只激活，不解锁也不做窗口恢复
         if (IsVisible)
@@ -338,7 +339,7 @@ public partial class MainWindow : FluentWindow
         WindowState = WindowState.Normal;
         Activate();
         FocusHomeAsk();
-    }
+    });
 
     private void ExitFromTray()
     {

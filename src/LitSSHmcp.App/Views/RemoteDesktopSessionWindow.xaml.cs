@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -236,7 +237,7 @@ public partial class RemoteDesktopSessionWindow : FluentWindow
 
     // ---- 工具栏 / 标签 ----
 
-    private async void OnNewConnection(object sender, RoutedEventArgs e)
+    private void OnNewConnection(object sender, RoutedEventArgs e) => AsyncOperation.Run("新建远程桌面连接", async () =>
     {
         var config = await _configService.LoadConfigAsync();
         if (config.RemoteDesktops.Length == 0)
@@ -270,9 +271,9 @@ public partial class RemoteDesktopSessionWindow : FluentWindow
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         }
         menu.IsOpen = true;
-    }
+    });
 
-    private async void OnExternalOpen(object sender, RoutedEventArgs e)
+    private void OnExternalOpen(object sender, RoutedEventArgs e) => AsyncOperation.Run("外部客户端打开远程桌面", async () =>
     {
         var sessionVm = _vm.SelectedSession;
         if (sessionVm is null)
@@ -285,7 +286,7 @@ public partial class RemoteDesktopSessionWindow : FluentWindow
         sessionVm.Status = message;
         if (!ok)
             MessageBox.Show(message, "远程桌面", MessageBoxButton.OK, MessageBoxImage.Warning);
-    }
+    });
 
     private void OnTabsSelectionChanged(object sender, SelectionChangedEventArgs e)
     {

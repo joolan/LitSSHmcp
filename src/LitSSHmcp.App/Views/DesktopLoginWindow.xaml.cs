@@ -1,4 +1,5 @@
 using System.Windows;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using Wpf.Ui.Controls;
 
@@ -19,7 +20,7 @@ public partial class DesktopLoginWindow : FluentWindow
         Loaded += (_, _) => UsernameBox.Focus();
     }
 
-    private async void OnLogin(object sender, RoutedEventArgs e)
+    private void OnLogin(object sender, RoutedEventArgs e) => AsyncOperation.Run("桌面登录", async () =>
     {
         LoginButton.IsEnabled = false;
         ErrorText.Visibility = Visibility.Collapsed;
@@ -38,7 +39,7 @@ public partial class DesktopLoginWindow : FluentWindow
         {
             LoginButton.IsEnabled = true;
         }
-    }
+    });
 
     private void OnCancel(object sender, RoutedEventArgs e) => DialogResult = false;
 }

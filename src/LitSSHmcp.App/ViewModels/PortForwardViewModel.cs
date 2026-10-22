@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
@@ -148,7 +149,7 @@ public sealed class PortForwardViewModel : INotifyPropertyChanged, IDisposable
             row.Status = message;
         }));
 
-    private async void Load()
+    private void Load() => AsyncOperation.Run("加载端口转发", async () =>
     {
         try
         {
@@ -178,7 +179,7 @@ public sealed class PortForwardViewModel : INotifyPropertyChanged, IDisposable
         {
             StatusMessage = "加载失败: " + ex.Message;
         }
-    }
+    });
 
     private void HookDirty(PortForwardRow row)
         => row.PropertyChanged += (_, e) =>

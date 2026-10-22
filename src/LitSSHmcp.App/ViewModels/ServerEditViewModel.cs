@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
@@ -331,7 +332,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
         }
     }
 
-    private async void TestConnection()
+    private void TestConnection() => AsyncOperation.Run("测试服务器连接", async () =>
     {
         _isTestRunning = true;
         StatusMessage = "测试连接中...";
@@ -355,7 +356,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
         {
             _isTestRunning = false;
         }
-    }
+    });
 
     private void BrowseKeyFile()
     {
@@ -371,7 +372,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
         }
     }
 
-    private async void Save()
+    private void Save() => AsyncOperation.Run("保存服务器", async () =>
     {
         try
         {
@@ -421,7 +422,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"保存失败: {ex.Message}";
         }
-    }
+    });
 
     private void Cancel()
     {

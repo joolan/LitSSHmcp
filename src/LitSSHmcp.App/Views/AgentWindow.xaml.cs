@@ -132,7 +132,7 @@ public partial class AgentWindow : FluentWindow
     }
 
     // 「连接器」按钮：弹出 MCP 服务器清单，勾选启用/停用（改完立即保存 + 重建连接）
-    private async void OnConnectorsClick(object sender, RoutedEventArgs e)
+    private void OnConnectorsClick(object sender, RoutedEventArgs e) => AsyncOperation.Run("加载 MCP 连接器", async () =>
     {
         if (sender is not FrameworkElement element)
             return;
@@ -159,7 +159,7 @@ public partial class AgentWindow : FluentWindow
         menu.Closed += (_, _) => element.ContextMenu = null;
         element.ContextMenu = menu;
         menu.IsOpen = true;
-    }
+    });
 
     private void BuildConnectorMenuItems(System.Windows.Controls.ContextMenu menu)
     {
@@ -199,7 +199,7 @@ public partial class AgentWindow : FluentWindow
         menu.Items.Add(openSettings);
     }
 
-    private async void OnConnectorToggle(object sender, RoutedEventArgs e)
+    private void OnConnectorToggle(object sender, RoutedEventArgs e) => AsyncOperation.Run("切换 MCP 连接器", async () =>
     {
         if ((sender as System.Windows.Controls.MenuItem)?.Tag is not McpConnectorItem item)
             return;
@@ -240,7 +240,7 @@ public partial class AgentWindow : FluentWindow
             try { await _viewModel.RefreshConnectorsAsync(); } catch { /* 忽略刷新失败 */ }
             BuildConnectorMenuItems(menu);
         }
-    }
+    });
 
     // 技能选择：/技能 命令、+ 菜单、chip 上的「技能…」按钮共用
     private void OnSelectSkills(object sender, RoutedEventArgs e) => OpenSkillPicker();
@@ -470,7 +470,7 @@ public partial class AgentWindow : FluentWindow
         e.Handled = true;
     }
 
-    private async void OnGroupHeaderDrop(object sender, DragEventArgs e)
+    private void OnGroupHeaderDrop(object sender, DragEventArgs e) => AsyncOperation.Run("移动会话分组", async () =>
     {
         e.Handled = true;
         if ((sender as FrameworkElement)?.DataContext is not SidebarItemVM { IsHeader: true } header)
@@ -487,7 +487,7 @@ public partial class AgentWindow : FluentWindow
             if (header.GroupName.Length > 0)   // 不能以「未分组」为排序目标
                 await _viewModel.ReorderGroupAsync(src, header.GroupName);
         }
-    }
+    });
 
     // 会话行：接住落点 → 移到该会话所在分组，并排到它之后
     private void OnSessionRowDragOver(object sender, DragEventArgs e)
@@ -496,7 +496,7 @@ public partial class AgentWindow : FluentWindow
         e.Handled = true;
     }
 
-    private async void OnSessionRowDrop(object sender, DragEventArgs e)
+    private void OnSessionRowDrop(object sender, DragEventArgs e) => AsyncOperation.Run("移动会话", async () =>
     {
         e.Handled = true;
         if ((sender as FrameworkElement)?.DataContext is not SidebarItemVM { Session: { } target })
@@ -508,28 +508,28 @@ public partial class AgentWindow : FluentWindow
             if (dragged is not null)
                 await _viewModel.MoveSessionAsync(dragged, target.Group, after: target);
         }
-    }
+    });
 
     // 新建分组
-    private async void OnNewGroup(object sender, RoutedEventArgs e)
+    private void OnNewGroup(object sender, RoutedEventArgs e) => AsyncOperation.Run("新建会话分组", async () =>
     {
         var name = TextInputDialog.Prompt(this, "新建分组", "分组名称:", string.Empty);
         if (!string.IsNullOrWhiteSpace(name))
             await _viewModel.AddGroupAsync(name);
-    }
+    });
 
     // 分组标题右键：重命名
-    private async void OnRenameGroup(object sender, RoutedEventArgs e)
+    private void OnRenameGroup(object sender, RoutedEventArgs e) => AsyncOperation.Run("重命名会话分组", async () =>
     {
         if ((sender as FrameworkElement)?.DataContext is not SidebarItemVM { IsHeader: true } header)
             return;
         var name = TextInputDialog.Prompt(this, "重命名分组", "分组名称:", header.HeaderText);
         if (!string.IsNullOrWhiteSpace(name))
             await _viewModel.RenameGroupAsync(header.GroupName, name);
-    }
+    });
 
     // 分组标题右键：删除（其下任务归入未分组）
-    private async void OnDeleteGroup(object sender, RoutedEventArgs e)
+    private void OnDeleteGroup(object sender, RoutedEventArgs e) => AsyncOperation.Run("删除会话分组", async () =>
     {
         if ((sender as FrameworkElement)?.DataContext is not SidebarItemVM { IsHeader: true } header)
             return;
@@ -542,7 +542,7 @@ public partial class AgentWindow : FluentWindow
                 System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.OK)
             return;
         await _viewModel.DeleteGroupAsync(header.GroupName);
-    }
+    });
 
     // 会话右键菜单打开：构建「移动到分组」子菜单（未分组 + 各分组，带勾选）
     private void OnSessionMenuOpened(object sender, RoutedEventArgs e)
@@ -942,7 +942,7 @@ public partial class AgentWindow : FluentWindow
     private static bool IsImageFile(string path) =>
         Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp";
 
-    private async void OnExport(object sender, RoutedEventArgs e)
+    private void OnExport(object sender, RoutedEventArgs e) => AsyncOperation.Run("导出会话", async () =>
     {
         var session = _contextSession ?? _viewModel.SelectedSession;
         if (session is null)
@@ -1013,5 +1013,5 @@ public partial class AgentWindow : FluentWindow
         {
             // 导出失败忽略
         }
-    }
+    });
 }

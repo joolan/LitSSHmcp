@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Datasource;
@@ -212,7 +213,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
         return index < 0 ? 0 : index + 1;
     }
 
-    private async void TestConnection()
+    private void TestConnection() => AsyncOperation.Run("测试数据源连接", async () =>
     {
         _isTestRunning = true;
         StatusMessage = "测试连接中...";
@@ -250,9 +251,9 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
         {
             _isTestRunning = false;
         }
-    }
+    });
 
-    private async void Save()
+    private void Save() => AsyncOperation.Run("保存数据源", async () =>
     {
         try
         {
@@ -287,7 +288,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"保存失败: {ex.Message}";
         }
-    }
+    });
 
     private void Cancel()
     {

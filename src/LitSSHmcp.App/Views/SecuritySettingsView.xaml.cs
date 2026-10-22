@@ -56,7 +56,7 @@ public partial class SecuritySettingsView : UserControl
         }
     }
 
-    private async void OnAppLockSetPassword(object sender, RoutedEventArgs e)
+    private void OnAppLockSetPassword(object sender, RoutedEventArgs e) => AsyncOperation.Run("设置应用锁", async () =>
     {
         try
         {
@@ -67,11 +67,11 @@ public partial class SecuritySettingsView : UserControl
         }
         catch (Exception ex)
         {
-            AppLockStatusText.Text = "操作失败：" + ex.Message;
+            AppLockStatusText.Text = "设置失败：" + ex.Message;
         }
-    }
+    });
 
-    private async void OnAppLockDisable(object sender, RoutedEventArgs e)
+    private void OnAppLockDisable(object sender, RoutedEventArgs e) => AsyncOperation.Run("关闭应用锁", async () =>
     {
         try
         {
@@ -87,7 +87,7 @@ public partial class SecuritySettingsView : UserControl
         }
         catch (Exception ex)
         {
-            AppLockStatusText.Text = "操作失败：" + ex.Message;
+            AppLockStatusText.Text = "关闭失败：" + ex.Message;
         }
-    }
+    });
 }

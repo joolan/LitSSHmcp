@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
@@ -57,7 +58,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
     public ICommand EditCommand { get; }
     public ICommand DeleteCommand { get; }
 
-    private async void Load()
+    private void Load() => AsyncOperation.Run("加载应用", async () =>
     {
         try
         {
@@ -71,7 +72,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"加载失败: {ex.Message}";
         }
-    }
+    });
 
     private void Add()
     {
@@ -93,7 +94,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
         window.ShowDialog();
     }
 
-    private async void Delete()
+    private void Delete() => AsyncOperation.Run("删除应用", async () =>
     {
         if (SelectedApplication == null) return;
 
@@ -124,7 +125,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"删除失败: {ex.Message}";
         }
-    }
+    });
 
     private async Task CleanupDiscoveredEdgesAsync(string nodeId)
     {

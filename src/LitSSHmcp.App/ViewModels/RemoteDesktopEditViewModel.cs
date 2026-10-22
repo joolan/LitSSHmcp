@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
@@ -164,7 +165,7 @@ public class RemoteDesktopEditViewModel : INotifyPropertyChanged
             ViewerPath = dialog.FileName;
     }
 
-    private async void Save()
+    private void Save() => AsyncOperation.Run("保存远程桌面", async () =>
     {
         try
         {
@@ -216,7 +217,7 @@ public class RemoteDesktopEditViewModel : INotifyPropertyChanged
         {
             StatusMessage = "保存失败: " + ex.Message;
         }
-    }
+    });
 
     private RemoteDesktopConfig Build()
     {

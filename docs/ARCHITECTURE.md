@@ -98,7 +98,8 @@ LitSSHmcp/
 | `ISshService` | `SshService` | 命令执行/文件传输/连接测试（经 `ISshConnectionPool` 复用连接） |
 | `IAuditLogService` | `AuditLogService` | SQLite 审计（命令 + SQL） |
 | `IApprovalService` | `ApprovalService`（桌面通道 `DesktopApprovalService`） | 多通道审批分发（`security.approval.channels`：`desktop`/`cli`），并发等待、首个决定者生效、超时/弃权→拒绝（fail-closed）；`security.approval.mode`：`manual`(默认)/`auto-approve`(危险,全放行)/`auto-reject`(全拒绝) |
-| `ICommandFilterService` | `CommandFilterService` | 命令黑名单/敏感规则（经 `ISecurityOptionsProvider` 按文件 mtime 热更新） |
+| `ICommandFilterService` | `CommandFilterService` | 命令黑名单/敏感规则（经 `ISecurityOptionsProvider` 按文件 mtime 热更新）；命令语法解析统一由 `CommandLineSyntax` 提供 |
+| `CommandLineSyntax` | 静态解析器 | Windows 单命令语法边界、首命令/参数拆分、POSIX argv 拆分；策略层（白名单/危险规则/审批/脚本扫描）只消费解析结果 |
 | `ISqlFilterService` | `SqlFilterService` | SQL 只读/危险/敏感过滤（同上，热更新） |
 | `ISecurityOptionsProvider` | `SecurityOptionsProvider` | 按 `config.json` 最后写入时间缓存安全配置，改规则无需重启 |
 | `ISshKnownHostsStore` | `FileSshKnownHostsStore` | SSH 主机密钥指纹存储（TOFU） |
@@ -118,6 +119,7 @@ LitSSHmcp/
 - `SshClientFactory`：按 `SshServerConfig` 构造 SSH.NET `SshClient`/`SftpClient`（密码认证）。
 - `SshService`：执行命令（含超时[`ExecuteCommandAsync` 支持 `timeoutSeconds`]、sudo 包装）、文件上传/下载（进度回调）、目录列举、连接测试。命令/文件传输经 `ISshConnectionPool` 获取连接：**命令与 SFTP 通道各自**每服务器复用最多 `connectionPool.maxPerServer` 条（执行完不断开、放回池；每条连接各自串行化，并发调用分配到不同连接），空闲 `connectionPool.idleTimeoutSeconds` 自动断开，`keepAliveSeconds` 防静默掉线，`connectTimeoutSeconds` 设连接超时；连接池禁用时退回"每次新建→执行→断开"。`ssh_test_connection` 仍用独立新连接做真实探测。批量下载 `DownloadBatchAsync` 复用**同一条 SFTP 连接**下载多文件/目录（一次审批）。
 - 所有命令执行前先过 `ICommandFilterService`：`Blocked` 直接拒绝、`Sensitive` 交 `IApprovalService` 弹窗确认，结果无论成败写入审计。用户直传命令还会先过“防挂起”检查（`tail -f`/交互式/`sudo` 等直接返回 `blocking_command`）。
+- 命令语法解析统一走 `CommandLineSyntax`：本机终端使用 Windows 单命令档案（拒绝拼接/重定向/子表达式/嵌套 shell），远端 argv 工具（如 `docker_exec`）使用 POSIX 拆分；`McpWriteGateFilter` 对 SQL/Redis 的只读判定属于语句语义分类，不自行解析 shell。
 - `ExecuteStreamingAsync`：执行命令并**实时回调 stdout / stderr 行**（`SshCommand.OutputStream`/`ExtendedOutputStream` 流式读取），用于解析传输进度；可选 `stdinText`（经 `CreateInputStream` 写入并关闭，用于把密码安全传给 `sshpass` 而**不进命令行**）。
 - `CopyRemoteToRemoteAsync`：**跨机文件复制**（源→目标，数据走服务器间通道，不经本机磁盘）。流程：源机探测免密/`rsync`/`tar`/`sshpass`/`pv` → 认证决策（源机免密优先，否则 `sshpass -f` + 经 stdin 写入的 0600 临时文件）→ 由源机执行 `rsync -a -s --partial --info=progress2 [-z]`（退化 `tar | ssh`，可选 `pv` 进度）→ 解析百分比回传进度。直连不可用且允许时回退 **`RelayCopyAsync`**（SFTP 读源→写目标，内存中转、不落盘）。命令构建/进度解析抽在 `RemoteCopyCommandBuilder`（纯函数、可单测）。`SshServerConfig.InternalHost`/`InternalPort` 为可选内网地址/端口，复制时在「主机地址 / 内网地址」间选择。源机到目标的 SSH **不再关闭主机密钥校验**：优先 `StrictHostKeyChecking=accept-new`（首次 TOFU、后续指纹变化拒绝），探测到旧版 OpenSSH 不支持时回退 `yes` 并提示需预置 known_hosts；所有 rsync/tar/探测命令统一走该策略。
 

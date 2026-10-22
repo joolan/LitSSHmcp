@@ -31,6 +31,11 @@
 - **图查询歧义防护**：`topology_*` 的资产解析对大小写 ID、后缀、Label 多命中返回 `asset_ambiguous` 并列出候选，空 ID 返回 `asset_id_required`，避免静默命中错误资产；补充搜索/邻域/影响面截断、过期边与 1000 节点规模测试。
 - **GitHub Actions CI**：新增 `.github/workflows/ci.yml`，在 Windows runner 上执行 `dotnet restore/build` + 5 个测试项目 + Web 前端 JS `node --check`。
 
+### 重构
+
+- **命令安全解析器统一**：新增 Core `CommandLineSyntax` 作为唯一解析实现，集中 Windows 单命令语法校验、首命令/参数拆分与 POSIX argv 拆分；`PosixCommandLine` 保留为兼容外观，`LocalCommandPolicy` 只保留白名单/危险规则/交互策略，不再各自维护扫描逻辑。补齐语法错误分类与两入口一致性测试。
+- **质量门禁**：新增 `.editorconfig` 与 `Directory.Build.props`（警告即错误）；CI 增加分程序集覆盖率阈值，以及工具目录、授权、路径、命令、脱敏、Web 六个风险域的测试门禁（含最小用例数，防止测试被静默删除）。
+
 ### 修复
 
 - **审批推送资源治理（P2-2 收尾）**：`ApprovalPushClient` 由无界 Channel 改为容量 128 的有界队列，慢客户端积压时丢弃最旧帧；审批与主会话 WS 单帧发送均增加 10 秒超时，审批连接与取消联动，主会话泵发送失败即停止，半开/慢连接不再无限占用推送泵。前端既有的 5 秒 REST 对账与重连快照负责恢复完整状态。补有界队列丢弃旧帧回归测试。

@@ -37,138 +37,22 @@ public static class LocalCommandPolicy
         new(@"\bdd\s+if=", RegexOptions.IgnoreCase | RegexOptions.Compiled)
     };
 
-    /// <summary>取出命令行首的可执行文件名（忽略前导 & / call、引号、路径与 .exe 扩展名）。</summary>
-    public static string? FirstExecutable(string? command)
-    {
-        if (string.IsNullOrWhiteSpace(command))
-            return null;
-
-        var s = command.TrimStart();
-        if (s.StartsWith('&'))
-            s = s[1..].TrimStart();
-        else if (s.StartsWith("call ", StringComparison.OrdinalIgnoreCase))
-            s = s[5..].TrimStart();
-
-        if (s.Length == 0)
-            return null;
-
-        string token;
-        if (s[0] is '"' or '\'')
-        {
-            var quote = s[0];
-            var end = s.IndexOf(quote, 1);
-            if (end <= 1)
-                return null;
-            token = s[1..end];
-        }
-        else
-        {
-            var idx = s.IndexOfAny(new[] { ' ', '\t', '\r', '\n' });
-            token = idx < 0 ? s : s[..idx];
-        }
-
-        token = token.Trim();
-        if (token.Length == 0)
-            return null;
-
-        try { token = System.IO.Path.GetFileNameWithoutExtension(token); }
-        catch { /* 非法路径字符：按原样 */ }
-
-        return token.Length == 0 ? null : token;
-    }
+    /// <summary>取出命令行首的可执行文件名（忽略前导 &amp; / call、引号、路径与 .exe 扩展名）。</summary>
+    public static string? FirstExecutable(string? command) => CommandLineSyntax.FirstExecutableWindows(command);
 
     /// <summary>
     /// 拒绝 shell 拼接、管道、重定向、子表达式、脚本块、成员访问等可绕开“单条命令”边界的语法。
     /// 引号内的普通字符（如提交信息里的 <c>|</c>）不受影响；双引号内的子表达式仍拒绝。
+    /// 解析实现统一在 <see cref="CommandLineSyntax"/>，此处仅保留策略入口。
     /// </summary>
-    public static bool ContainsUnsafeShellSyntax(string? command)
-    {
-        if (string.IsNullOrEmpty(command))
-            return false;
-
-        var inSingle = false;
-        var inDouble = false;
-        var sawToken = false;
-        for (var i = 0; i < command.Length; i++)
-        {
-            var c = command[i];
-            if (c is '\r' or '\n')
-                return true;
-
-            if (inSingle)
-            {
-                // PowerShell 单引号内用两个单引号表示一个字面单引号。
-                if (c == '\'')
-                {
-                    if (i + 1 < command.Length && command[i + 1] == '\'')
-                        i++;
-                    else
-                        inSingle = false;
-                }
-                continue;
-            }
-
-            if (inDouble)
-            {
-                if (c == '`')
-                    return true;
-                if (c == '$' && i + 1 < command.Length && command[i + 1] is '(' or '{')
-                    return true;
-                if (c == '"')
-                {
-                    if (i + 1 < command.Length && command[i + 1] == '"')
-                        i++;
-                    else
-                        inDouble = false;
-                }
-                continue;
-            }
-
-            if (c is ' ' or '\t')
-                continue;
-            if (char.IsWhiteSpace(c))
-                return true;
-
-            if (c == '\'')
-            {
-                inSingle = true;
-                sawToken = true;
-                continue;
-            }
-            if (c == '"')
-            {
-                inDouble = true;
-                sawToken = true;
-                continue;
-            }
-
-            // 仅允许行首的 PowerShell 调用运算符：& 'C:\Program Files\git.exe' status
-            if (c == '&' && !sawToken && (i + 1 >= command.Length || command[i + 1] != '&'))
-            {
-                sawToken = true;
-                continue;
-            }
-
-            if (c is ';' or '|' or '&' or '>' or '<' or '`' or '{' or '}' or '(' or ')' or '[' or ']')
-                return true;
-            if (c == '$' && i + 1 < command.Length && command[i + 1] is '(' or '{')
-                return true;
-            if (c == '@' && i + 1 < command.Length && command[i + 1] == '(')
-                return true;
-
-            sawToken = true;
-        }
-
-        return inSingle || inDouble;
-    }
+    public static bool ContainsUnsafeShellSyntax(string? command) =>
+        CommandLineSyntax.ContainsUnsafeWindowsShellSyntax(command);
 
     public static bool IsAutoApproved(string? command, IReadOnlyCollection<string>? rules)
         => !string.IsNullOrWhiteSpace(command) &&
            (rules ?? Array.Empty<string>()).Any(rule => AutoApprovedCommandRule.Matches(command, rule));
 
-    private static bool IsNestedShell(string? exe)
-        => exe is not null && exe.ToLowerInvariant() is
-            "cmd" or "powershell" or "pwsh" or "bash" or "sh" or "zsh" or "wsl" or "cscript" or "wscript";
+    private static bool IsNestedShell(string? exe) => CommandLineSyntax.IsNestedShell(exe);
 
     /// <summary>判定命令是否可执行：白名单 + 危险规则 + 单条命令语法。</summary>
     public static LocalPolicyResult Check(string? command, IReadOnlyCollection<string>? allowedCommands)
@@ -331,13 +215,6 @@ public static class LocalCommandPolicy
         return false;
     }
 
-    private static List<string> SplitTokens(string command)
-    {
-        var s = command.TrimStart();
-        if (s.StartsWith('&'))
-            s = s[1..].TrimStart();
-        else if (s.StartsWith("call ", StringComparison.OrdinalIgnoreCase))
-            s = s[5..].TrimStart();
-        return s.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
-    }
+    private static List<string> SplitTokens(string command) =>
+        CommandLineSyntax.SplitWindowsTokens(command).ToList();
 }

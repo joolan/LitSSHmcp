@@ -145,8 +145,8 @@ public class UsageGuideTools
         var topologyWorkflow = Keep(new[]
         {
             "1. topology_get_overview 获取全局拓扑: 哪些Java应用跑在哪台SSH服务器、连了哪些MySQL",
-            "2. 不知道资产ID时先用 topology_search(名称/主机/端口/标签) 找到精确ID; 再用 topology_get_dependencies(app:应用ID) 拿到其所在服务器和依赖的数据源",
-            "3. 查链路用 topology_path(from,to)(有向); 查影响面用 topology_impact(机器/库/证书变更影响谁); 核实依据用 topology_explain(来源/证据/末次发现/是否过期)",
+            "2. 不知道资产ID时先用 topology_query(action=search, query=名称/主机/端口/标签) 找到精确ID; 再用 topology_get_dependencies(app:应用ID) 拿到其所在服务器和依赖的数据源",
+            "3. 查链路用 topology_query(action=path, from=..., to=...)(有向); 查影响面用 topology_query(action=impact, assetId=...)(机器/库/证书变更影响谁); 核实依据用 topology_query(action=explain, assetId=...)(来源/证据/末次发现/是否过期)",
             "4. SSH侧取证: ssh_execute_command 查看 java 进程/端口/应用日志(netstat/ss/journalctl/tail)",
             "5. 数据库侧取证: mysql_query(action=diagnostics) 看连接数/慢查询/锁/复制, mysql_query(action=query) 查 processlist 和慢日志, mysql_query(action=explain) 分析问题SQL; 涉及缓存时用 redis_diagnostics 看内存/命中率/慢日志, redis_read 查具体key",
             "6. 跨机关联: 应用日志或配置文件中的数据库IP, 与 datasource_list 返回的 host/port 对应即可定位是哪个数据源",
@@ -159,7 +159,7 @@ public class UsageGuideTools
             {
                 description = "【重要】跨服务器/应用/数据库的故障排查要先看拓扑, 再分侧取证",
                 workflow = topologyWorkflow,
-                asset_id_format = "节点ID格式: ssh:服务器ID, ds:数据源ID, app:应用ID; 图查询工具也接受纯ID或名称, 不确定时先 topology_search",
+                asset_id_format = "节点ID格式: ssh:服务器ID, ds:数据源ID, app:应用ID; 图查询工具也接受纯ID或名称, 不确定时先 topology_query(action=search)",
                 relation_sources = "拓扑边来自两部分: 配置文件人工声明(relations) + topology_discover 自动发现(缓存于本机SQLite)"
             };
         }

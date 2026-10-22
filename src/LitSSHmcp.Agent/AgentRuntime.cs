@@ -316,8 +316,7 @@ public sealed class AgentRuntime : IAsyncDisposable
 
         // Graph-RAG：仅在内置 topology 工具存在时启用；每次发送前自动解析资产并拉 1 跳邻域。
         var graphContext = AssetGraphContextProvider.Create(
-            builtinTools.FirstOrDefault(t => string.Equals(t.Name, "topology_search", StringComparison.Ordinal)),
-            builtinTools.FirstOrDefault(t => string.Equals(t.Name, "topology_neighbors", StringComparison.Ordinal)),
+            builtinTools.FirstOrDefault(t => string.Equals(t.Name, "topology_query", StringComparison.Ordinal)),
             assetGraph);
 
         var mcpTools = new List<IAgentTool>(builtinTools);

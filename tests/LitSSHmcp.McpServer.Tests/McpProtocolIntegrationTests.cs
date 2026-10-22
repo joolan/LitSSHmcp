@@ -41,7 +41,7 @@ public class McpProtocolIntegrationTests
             var tools = list.GetProperty("result").GetProperty("tools").EnumerateArray().ToList();
             var names = tools.Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
 
-            Assert.Equal(44, tools.Count);
+            Assert.Equal(40, tools.Count);
             Assert.DoesNotContain("mcp_approval_round", names);
             Assert.Contains("ssh_upload", names);
             Assert.Contains("ssh_download", names);
@@ -54,7 +54,7 @@ public class McpProtocolIntegrationTests
             Assert.DoesNotContain("log_tail", names);
             Assert.Contains("java_diagnostics", names);
             Assert.DoesNotContain("java_threads", names);
-            foreach (var expected in new[] { "mysql_query", "postgres_query", "redis_read", "ssh_list_servers", "datasource_list", "topology_get_overview", "topology_search", "topology_neighbors", "topology_path", "topology_impact", "topology_explain", "topology_timeline", "topology_diff", "mcp_usage_guide", "mcp_self_check", "mcp_list_sessions", "docker_query", "service_query", "log_query", "java_processes", "java_diagnostics", "app_health_snapshot", "ssh_snapshot_get", "ssh_snapshot_refresh" })
+            foreach (var expected in new[] { "mysql_query", "postgres_query", "redis_read", "ssh_list_servers", "datasource_list", "topology_get_overview", "topology_query", "topology_timeline", "topology_diff", "mcp_usage_guide", "mcp_self_check", "mcp_list_sessions", "docker_query", "service_query", "log_query", "java_processes", "java_diagnostics", "app_health_snapshot", "ssh_snapshot_get", "ssh_snapshot_refresh" })
                 Assert.Contains(expected, names);
 
             foreach (var tool in tools)
@@ -78,13 +78,15 @@ public class McpProtocolIntegrationTests
             // 图查询工具：空拓扑下也应返回结构化结果而不是协议错误
             var graphSearch = await client.RequestAsync("tools/call", new
             {
-                name = "topology_search",
-                arguments = new { query = "no-such-asset" }
+                name = "topology_query",
+                arguments = new { action = "search", query = "no-such-asset" }
             });
             var graphStructured = graphSearch.GetProperty("result").GetProperty("structuredContent");
-            Assert.Equal(0, graphStructured.GetProperty("items").GetArrayLength());
-            Assert.False(graphStructured.GetProperty("truncated").GetBoolean());
-            Assert.Contains("未找到", graphStructured.GetProperty("summary").GetString());
+            var graphResult = graphStructured.GetProperty("result");
+            Assert.True(graphResult.TryGetProperty("items", out var graphItems), graphResult.ToString());
+            Assert.Equal(0, graphItems.GetArrayLength());
+            Assert.False(graphResult.GetProperty("truncated").GetBoolean());
+            Assert.Contains("未找到", graphResult.GetProperty("summary").GetString());
 
             // 会话列表应包含当前会话
             var sessions = await client.RequestAsync("tools/call", new { name = "mcp_list_sessions", arguments = new { } });
@@ -135,7 +137,7 @@ public class McpProtocolIntegrationTests
                 var list = await external.RequestAsync("tools/list", new { });
                 var names = list.GetProperty("result").GetProperty("tools").EnumerateArray()
                     .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
-                Assert.Equal(44, names.Count);
+                Assert.Equal(40, names.Count);
                 Assert.DoesNotContain("mcp_approval_round", names);
             }
 
@@ -150,7 +152,7 @@ public class McpProtocolIntegrationTests
             var hostList = await host.RequestAsync("tools/list", new { });
             var hostNames = hostList.GetProperty("result").GetProperty("tools").EnumerateArray()
                 .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
-            Assert.Equal(45, hostNames.Count);
+            Assert.Equal(41, hostNames.Count);
             Assert.Contains("mcp_approval_round", hostNames);
         }
         finally
@@ -186,7 +188,7 @@ public class McpProtocolIntegrationTests
 
             // 工具仍会列出（外部客户端不含内部工具）
             var list = await client.RequestAsync("tools/list", new { });
-            Assert.Equal(44, list.GetProperty("result").GetProperty("tools").GetArrayLength());
+            Assert.Equal(40, list.GetProperty("result").GetProperty("tools").GetArrayLength());
 
             // 但任何调用都被拒绝
             var call = await client.RequestAsync("tools/call", new { name = "mcp_self_check", arguments = new { } });

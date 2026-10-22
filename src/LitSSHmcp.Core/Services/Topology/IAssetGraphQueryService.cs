@@ -242,7 +242,7 @@ public sealed class AssetGraphQueryService : IAssetGraphQueryService
         if (paths.Count == 0)
         {
             result.Error = $"未找到从 {from.Id} 到 {to.Id} 的有向路径（最大 {cappedHops} 跳）。"
-                + "可尝试 topology_neighbors 查看邻域，或 topology_impact 反向查影响面。";
+                + "可尝试 topology_query action=neighbors 查看邻域，或 action=impact 反向查影响面。";
             result.Summary = result.Error;
             return result;
         }

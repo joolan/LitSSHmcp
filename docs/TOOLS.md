@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器代码注册 **45 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **44 个常规工具**，宿主会话看到 **45 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
+MCP 服务器代码注册 **41 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **40 个常规工具**，宿主会话看到 **41 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
 
 > **⚠ 同步约定（唯一事实来源）**：本文件是 MCP 工具说明的**唯一事实来源**。以下三处必须与本文件**双向同步**，工具发生任何变动（新增/改名/删除、参数变化、描述与路由变化）时缺一不可：
 > 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`get_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
@@ -75,7 +75,7 @@ MCP 服务器代码注册 **45 个工具**，按用途分为 14 组；其中 `mc
 | `service` | systemd 服务 | `service_query`、`service_restart` |
 | `log` | 日志文件 | `log_query` |
 | `java` | JVM 诊断 | `java_processes`、`java_diagnostics` |
-| `topology` | 拓扑 | `topology_get_overview`、`topology_get_dependencies`、`topology_discover`、`topology_search`、`topology_neighbors`、`topology_path`、`topology_impact`、`topology_explain`、`topology_timeline`、`topology_diff` |
+| `topology` | 拓扑 | `topology_get_overview`、`topology_get_dependencies`、`topology_discover`、`topology_query`、`topology_timeline`、`topology_diff` |
 | `app` | 应用体检 | `app_health_snapshot` |
 | `guide` | 指南/自检 | `mcp_usage_guide`、`mcp_self_check`、`mcp_list_sessions` |
 
@@ -154,11 +154,11 @@ MCP 服务器代码注册 **45 个工具**，按用途分为 14 组；其中 `mc
 | 某应用整体体检(跨服务器+数据库) | `app_health_snapshot` | 先看它再下钻 |
 | 系统架构 / 拓扑 / 应用部署在哪 / 依赖关系 | `topology_get_overview` | |
 | 某资产的上下游依赖 | `topology_get_dependencies` | |
-| 不知道资产 ID / 按名称或端口找资产 | `topology_search` | 先拿到精确 ID 再用其它图工具 |
-| 看某资产周围连了谁 | `topology_neighbors` | 入边+出边，可多跳 |
-| 两个资产之间怎么走（域名→应用→库） | `topology_path` | 有向路径；无路径会说明原因 |
-| 机器/库/证书变更影响谁 | `topology_impact` | 反向多跳影响面（爆炸半径） |
-| 为什么认为 A 依赖 B / 证据是否过期 | `topology_explain` | 来源/证据/末次发现/冲突原因 |
+| 不知道资产 ID / 按名称或端口找资产 | `topology_query`（action=search） | 先拿到精确 ID 再用其它图工具 |
+| 看某资产周围连了谁 | `topology_query`（action=neighbors） | 入边+出边，可多跳 |
+| 两个资产之间怎么走（域名→应用→库） | `topology_query`（action=path） | 有向路径；无路径会说明原因 |
+| 机器/库/证书变更影响谁 | `topology_query`（action=impact） | 反向多跳影响面（爆炸半径） |
+| 为什么认为 A 依赖 B / 证据是否过期 | `topology_query`（action=explain） | 来源/证据/末次发现/冲突原因 |
 | 某台机器最近新增或消失了哪些服务/端口 | `topology_timeline` | 按快照历史重放并标出增量 |
 | 两次快照之间具体变了什么 | `topology_diff` | 默认比较最近两次快照 |
 | 拓扑缺失或过期 | `topology_discover` | |
@@ -400,7 +400,7 @@ MCP 服务器代码注册 **45 个工具**，按用途分为 14 组；其中 `mc
 
 ## 拓扑组（topology）
 
-> Web 强制模式：无目标的全局拓扑查询（`topology_get_overview` / `topology_get_dependencies` / `topology_search` / `topology_neighbors` / `topology_path` / `topology_impact` / `topology_explain`）仅管理员可用，普通成员调用返回 `authorization_denied`；`topology_discover` / `topology_timeline` / `topology_diff` 按其 `serverId` 做目标授权校验。桌面未启用强制时不受影响。
+> Web 强制模式：无目标的全局拓扑查询（`topology_get_overview` / `topology_get_dependencies` / `topology_query`）仅管理员可用，普通成员调用返回 `authorization_denied`；`topology_discover` / `topology_timeline` / `topology_diff` 按其 `serverId` 做目标授权校验。桌面未启用强制时不受影响。
 
 ### `topology_get_overview`
 - **参数**：无
@@ -420,30 +420,11 @@ MCP 服务器代码注册 **45 个工具**，按用途分为 14 组；其中 `mc
 - **端口信息**：解析 `ss -ltnp` 得到监听端口（可见 root 服务进程名时精确；否则用常见端口兜底），显示在待确认节点标签与节点信息里。可开启 `security.discovery.useSudo`（安全设置）让端口/配置扫描走提权以识别 root 服务。
 - **快照入库（P1）**：发现完成后读取每台服务器最近一次快照，把 `systemd` 的 service 单元、`docker` 容器、`portmap` 监听端口和 `nginx_tls` 域名/证书转成 `service:*` / `container:*` / `deploy:*` / `port:*` / `domain:*` / `cert:*` 节点及 `runsOn` / `listensOn` / `deployedFrom` / `hostedOn` / `exposes` / `tlsBy` / `resolvesTo` 边；边含 `confidence`、`lastVerifiedAt`，节点信息含 `label`、`lastVerifiedAt`，证书含 `expiresAt`/`daysRemaining`。已登记应用按 `containerName` + 镜像 tag 推导 `deploy:<appId>@<version>`。无快照时只记录说明，不影响 SSH 发现结果。
 
-### `topology_search`
-- **参数**：`query`（名称/ID/主机/端口/标签片段）、`kinds`（可选，`ssh,datasource,application,service,container,deploy,system,domain,port,cert,mq`，逗号或空格分隔）、`limit`（默认 20，最大 50）
-- **返回**：`{ query, items: [{ node: { id, label, type, detail, degree }, score }], truncated, summary }`
-- **说明**：先搜到精确资产 ID，再交给 `topology_path` / `topology_impact` / `topology_explain`；`detail` 含主机、端口、类型、标签等摘要（不返回密码/凭据）。
-
-### `topology_neighbors`
-- **参数**：`assetId`（ID 或名称）、`depth`（默认 1，最大 6）、`relationTypes`（可选，如 `runsOn,connectsTo,hostedOn,listensOn,exposes,tlsBy,resolvesTo,upstreamOf,deployedFrom,partOf`）
-- **返回**：`{ root, nodes: [...], edges: [...], truncated, summary }`，入边和出边都算，适合快速看某资产周围连了谁。
-
-### `topology_path`
-- **参数**：`from`（起点 ID/名称）、`to`（终点 ID/名称）、`maxHops`（默认 6，最大 6）
-- **返回**：`{ from, to, paths: [{ nodes, edges, hops, complete, summary }], truncated, error, summary }`
-- **说明**：按**有向边**查找（如 `domain → app → port → ssh`，或 `domain → cert`），最多返回 5 条；无路径时 `error` 会说明是方向问题还是关系缺失，可改用 `topology_neighbors` / `topology_impact`。
-
-### `topology_impact`
-- **参数**：`assetId`（ID/名称）、`maxDepth`（默认 6，最大 6）、`includeUnconfirmed`（默认 false）
-- **返回**：`{ root, impacted: [{ node, hops, via, path, unconfirmed }], unknownCount, truncated, summary }`
-- **说明**：反向遍历“谁依赖它”，用于机器下线、端口关闭、数据库维护、证书更换前的影响面评估（如 `topology_impact("cert:...")` 可找到使用该证书的域名）；默认排除 `:disc:` 待确认节点，`unknownCount` 单独计数。结论基于现有拓扑，建议先用 `topology_explain` 核实关键边。
-
-### `topology_explain`
-- **参数**：`assetId`（ID/名称）、`to`（可选，只看与另一资产之间的边）、`relationType`（可选，如 `runsOn`）
-- **返回**：`{ entity, edges: [{ from, to, type, source, evidence, confidence, disputed, disputeReason, disputeAcknowledged, validFrom, validTo, lastSeenAt, lastVerifiedAt, stale }], facts, summary }`
-- **说明**：用于回答“为什么认为 A 依赖 B”。`source` 为 `manual` / `discovered`，人工边 `confidence=1.0`、快照边约 `0.9`；`stale=true` 表示自动发现边超过 7 天未再次核实（优先看 `lastVerifiedAt`），影响面结论需谨慎。
-- **冲突检测**：读取图谱时自动核对 `runsOn` / `hostedOn` 的发现边——同一 `(from, type)` 出现多个目标，或与人工配置目标不一致时标记 `disputed=true`，并在 `disputeReason` 说明冲突目标；App 中人工确认后 `disputeAcknowledged=true`，冲突仍存在但不再标红；冲突消失后自动清空原因与确认状态。
+### `topology_query`
+- **参数**：`action`（`search` / `neighbors` / `path` / `impact` / `explain`）、`query`（search 搜索词）、`assetId`（neighbors/impact/explain）、`from` / `to`（path 起终点）、`kinds`（search 类型过滤）、`relationTypes`（neighbors 关系过滤）、`relationType` / `targetAssetId`（explain 可选过滤）、`limit`（search 默认 20，最大 50）、`depth`（neighbors 默认 1，最大 6）、`maxHops`（path 默认 6）、`maxDepth`（impact 默认 6）、`includeUnconfirmed`（impact 默认 false）
+- **返回**：`{ action, success, status, error, summary, result }`；`result` 为对应动作的结构化结果（搜索项/邻域/路径/影响面/边解释）。
+- **说明**：`search` 先找到精确 ID；`neighbors` 看入边+出边；`path` 按有向边查链路；`impact` 反向查爆炸半径；`explain` 核实依赖边来源与是否过期。`detail`/`evidence` 不返回密码或凭据。
+- **冲突检测**：`explain` 会核对 `runsOn` / `hostedOn` 的发现边——同一 `(from, type)` 出现多个目标，或与人工配置目标不一致时标记 `disputed=true`，并在 `disputeReason` 说明冲突目标；App 中人工确认后 `disputeAcknowledged=true`，冲突仍存在但不再标红；冲突消失后自动清空原因与确认状态。
 
 ### `topology_timeline`
 - **参数**：`serverId`（服务器 ID/名称）、`limit`（最近快照数，默认 10，最大 20）

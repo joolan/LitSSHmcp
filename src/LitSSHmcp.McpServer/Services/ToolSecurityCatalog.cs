@@ -150,11 +150,7 @@ public static class ToolSecurityCatalog
         // 拓扑查询：当前为全局只读，后续按用户裁剪图数据。
         GlobalRead("topology_get_overview");
         GlobalRead("topology_get_dependencies");
-        GlobalRead("topology_search");
-        GlobalRead("topology_neighbors");
-        GlobalRead("topology_path");
-        GlobalRead("topology_impact");
-        GlobalRead("topology_explain");
+        GlobalRead("topology_query");
         Add("topology_timeline", ToolTargetKind.Server, ToolAccessLevel.Read, targetArguments: "serverId");
         Add("topology_diff", ToolTargetKind.Server, ToolAccessLevel.Read, targetArguments: "serverId");
         Add("topology_discover", ToolTargetKind.MultiServer, ToolAccessLevel.Exec, targetArguments: "serverIds");

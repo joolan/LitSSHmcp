@@ -366,7 +366,7 @@ public class McpAuthorizationFilterTests : IDisposable
         var services = BuildServices(TestConfig()); // 空矩阵：普通成员不得发起无法裁剪的全局查询
 
         var called = false;
-        var result = await InvokeAsync("topology_search", null, services,
+        var result = await InvokeAsync("topology_query", Args(("action", "search")), services,
             next => { called = true; return NextResult(); });
 
         Assert.False(called);
@@ -375,7 +375,7 @@ public class McpAuthorizationFilterTests : IDisposable
 
         Environment.SetEnvironmentVariable(HostEnv.AuthzRole, HostEnv.AdminRole);
         var adminCalled = false;
-        var adminResult = await InvokeAsync("topology_search", null, services,
+        var adminResult = await InvokeAsync("topology_query", Args(("action", "search")), services,
             next => { adminCalled = true; return NextResult(); });
 
         Assert.True(adminCalled);

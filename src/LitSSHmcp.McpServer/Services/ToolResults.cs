@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LitSSHmcp.Core.Models;
 
 namespace LitSSHmcp.McpServer.Services;
@@ -7,6 +8,16 @@ namespace LitSSHmcp.McpServer.Services;
 /// SDK 会同时产出 <c>structuredContent</c>（按 DTO 生成的 outputSchema）与等价的 text(JSON)，兼容旧客户端。
 /// 字段同时覆盖成功与失败：失败时 <see cref="Success"/>=false 且带 <see cref="Status"/>/<see cref="Error"/>。
 /// </summary>
+
+public sealed class TopologyQueryResultDto
+{
+    public string Action { get; set; } = string.Empty;
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public string? Summary { get; set; }
+    public JsonElement? Result { get; set; }
+}
 
 public sealed class QueryResultDto
 {

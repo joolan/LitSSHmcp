@@ -22,7 +22,7 @@
 
 ## 服务面（端口 / 进程 / 容器 / 证书；来源：ssh_snapshot_get + 拓扑图）
 > 每台服务器「采集快照」后可由此补全；快照维度：resource / portmap(含 exe、cmdline) / docker / nginx_tls(域名与证书) / systemd。
-> `topology_discover` 会把最近快照转成 `service:*` / `container:*` / `deploy:*` / `domain:*` / `port:*` / `cert:*` 图节点，可用 `topology_search(kinds=service,container,deploy,port,cert,domain)` 与 `topology_impact(cert:...)` 反查影响面。
+> `topology_discover` 会把最近快照转成 `service:*` / `container:*` / `deploy:*` / `domain:*` / `port:*` / `cert:*` 图节点，可用 `topology_query(action="search", kinds=service,container,deploy,port,cert,domain)` 与 `topology_query(action="impact", assetId="cert:...")` 反查影响面。
 | 服务器 | 端口 | 进程/服务 | 程序路径 | 容器(名称:镜像) | 证书域名(到期) | 备注 |
 |---|---|---|---|---|---|---|
 

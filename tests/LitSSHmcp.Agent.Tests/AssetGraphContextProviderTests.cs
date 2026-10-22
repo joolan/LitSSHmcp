@@ -11,14 +11,15 @@ public class AssetGraphContextProviderTests
     public async Task Builds_neighborhood_for_known_asset_without_search()
     {
         var searchCalls = 0;
-        var search = new FakeTool("topology_search", _ =>
+        var topology = new FakeTool("topology_query", args =>
         {
-            searchCalls++;
-            return Json("""{"items":[]}""");
-        });
-        var neighbors = new FakeTool("topology_neighbors", args =>
-        {
-            Assert.Equal("app:order", args!["assetId"]);
+            if (Equals(args!["action"], "search"))
+            {
+                searchCalls++;
+                return Json("""{"items":[]}""");
+            }
+            Assert.Equal("neighbors", args["action"]);
+            Assert.Equal("app:order", args["assetId"]);
             Assert.Equal(1, args["depth"]);
             return Json("""
                 {"root":{"id":"app:order","type":"application"},
@@ -27,7 +28,7 @@ public class AssetGraphContextProviderTests
                 """);
         });
         var graph = "- app:order | order-service | 10.0.0.1\n- ssh:s1 | web1";
-        var provider = AssetGraphContextProvider.Create(search, neighbors, graph);
+        var provider = AssetGraphContextProvider.Create(topology, graph);
 
         var context = await provider!("check app:order health", CancellationToken.None);
 
@@ -42,21 +43,22 @@ public class AssetGraphContextProviderTests
     public async Task Falls_back_to_search_when_asset_not_in_prompt_graph()
     {
         var searched = new List<string>();
-        var search = new FakeTool("topology_search", args =>
+        var topology = new FakeTool("topology_query", args =>
         {
-            searched.Add((string)args!["query"]!);
-            return Json("""{"items":[{"node":{"id":"service:s1:nginx","type":"service"}}]}""");
-        });
-        var neighbors = new FakeTool("topology_neighbors", args =>
-        {
-            Assert.Equal("service:s1:nginx", args!["assetId"]);
+            if (Equals(args!["action"], "search"))
+            {
+                searched.Add((string)args["query"]!);
+                return Json("""{"items":[{"node":{"id":"service:s1:nginx","type":"service"}}]}""");
+            }
+            Assert.Equal("neighbors", args["action"]);
+            Assert.Equal("service:s1:nginx", args["assetId"]);
             return Json("""
                 {"root":{"id":"service:s1:nginx","type":"service"},
                  "nodes":[{"id":"service:s1:nginx","type":"service"}],
                  "edges":[]}
                 """);
         });
-        var provider = AssetGraphContextProvider.Create(search, neighbors, null);
+        var provider = AssetGraphContextProvider.Create(topology, null);
 
         var context = await provider!("nginx 为什么没启动", CancellationToken.None);
 
@@ -69,7 +71,7 @@ public class AssetGraphContextProviderTests
     [Fact]
     public void Returns_null_when_topology_tools_are_missing()
     {
-        Assert.Null(AssetGraphContextProvider.Create(null, null, "- ssh:s1 | web1"));
+        Assert.Null(AssetGraphContextProvider.Create(null, "- ssh:s1 | web1"));
     }
 
     private static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement.Clone();

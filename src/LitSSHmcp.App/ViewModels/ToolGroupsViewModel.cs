@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 
@@ -54,7 +55,7 @@ public class ToolGroupsViewModel : INotifyPropertyChanged
 
     private bool IsEnabled(string key) => Groups.FirstOrDefault(g => g.Key == key)?.IsEnabled ?? false;
 
-    public async void Load()
+    public void Load() => AsyncOperation.Run("加载工具分组", async () =>
     {
         try
         {
@@ -70,9 +71,9 @@ public class ToolGroupsViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"加载失败: {ex.Message}";
         }
-    }
+    });
 
-    public async void Save()
+    public void Save() => AsyncOperation.Run("保存工具分组", async () =>
     {
         try
         {
@@ -93,7 +94,7 @@ public class ToolGroupsViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"保存失败: {ex.Message}";
         }
-    }
+    });
 
     public void EnableAll()
     {

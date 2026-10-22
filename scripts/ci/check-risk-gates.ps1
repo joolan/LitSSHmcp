@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [ValidateSet("catalog", "authorization", "paths", "commands", "secrets", "web", "all")]
+    [ValidateSet("catalog", "authorization", "paths", "commands", "secrets", "web", "structure", "all")]
     [string]$Domain = "all",
     [string]$Configuration = "Release",
     [string]$Solution = "LitSSHmcp.slnx"
@@ -38,6 +38,11 @@ $domains = @(
         Name    = "web"
         Filter  = "FullyQualifiedName~WebSocketGuardTests|FullyQualifiedName~WebSocketTests|FullyQualifiedName~RateLimitTests|FullyQualifiedName~SecurityHeadersTests|FullyQualifiedName~ImageAttachmentValidatorTests|FullyQualifiedName~WebPolicyTests|FullyQualifiedName~WebConnectorSubsetTests|FullyQualifiedName~WebForwardedHeadersTests|FullyQualifiedName~MarkdownSanitizerTests"
         Minimum = 31
+    },
+    @{
+        Name    = "structure"
+        Filter  = "FullyQualifiedName~StructureGuardTests|FullyQualifiedName~AsyncBoundaryTests"
+        Minimum = 2
     }
 )
 

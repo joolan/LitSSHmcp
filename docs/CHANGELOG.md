@@ -34,7 +34,7 @@
 ### 重构
 
 - **命令安全解析器统一**：新增 Core `CommandLineSyntax` 作为唯一解析实现，集中 Windows 单命令语法校验、首命令/参数拆分与 POSIX argv 拆分；`PosixCommandLine` 保留为兼容外观，`LocalCommandPolicy` 只保留白名单/危险规则/交互策略，不再各自维护扫描逻辑。补齐语法错误分类与两入口一致性测试。
-- **质量门禁**：新增 `.editorconfig` 与 `Directory.Build.props`（警告即错误）；CI 增加分程序集覆盖率阈值，以及工具目录、授权、路径、命令、脱敏、Web 六个风险域的测试门禁（含最小用例数，防止测试被静默删除）。
+- **质量门禁**：新增 `.editorconfig` 与 `Directory.Build.props`（警告即错误）；CI 增加分程序集覆盖率阈值，以及工具目录、授权、路径、命令、脱敏、Web、结构七个风险域的测试门禁（含最小用例数，防止测试被静默删除）。结构域新增 ViewModel 行数预算与 `MessageBox.Show`/`new ConfigService()`/`Process.Start` 基线，禁止拆分前继续膨胀。
 
 ### 修复
 

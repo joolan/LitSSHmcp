@@ -456,6 +456,8 @@ dotnet run --project src/LitSSHmcp.App
 
 配置文件位置：`%APPDATA%\LitSSH\config.json`（也可参考 [`config/config.example.json`](config/config.example.json)），完整字段见 [配置](#配置)。
 
+多窗口/后台任务同时保存时，配置写入会进程内串行并加跨进程 `config.json.lock`；保存基于加载快照与磁盘最新内容做字段级三路合并，不同字段修改自动保留，同一字段/数组冲突则返回明确错误，不静默覆盖。写入仍使用临时文件原子替换，避免读到半份 JSON。
+
 ### 4. 在 AI 客户端中配置 MCP
 
 见上文 [在 AI 客户端中配置 MCP](#mcp-服务)。

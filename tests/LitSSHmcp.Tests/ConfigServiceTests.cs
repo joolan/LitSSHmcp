@@ -174,6 +174,67 @@ public class ConfigServiceTests
             try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
         }
     }
+
+    [Fact]
+    public async Task Concurrent_disjoint_saves_merge_without_lost_update()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "config.json");
+        try
+        {
+            var a = new ConfigService(path, new DpapiSecretProtector());
+            var cfgA = await a.LoadConfigAsync();
+            var b = new ConfigService(path, new DpapiSecretProtector());
+            var cfgB = await b.LoadConfigAsync();
+
+            cfgA.Ui ??= new UiConfig();
+            cfgA.Ui.Theme = "dark";
+            cfgB.Agent ??= new AgentConfig();
+            cfgB.Agent.ContextLimit = 12345;
+
+            await Task.WhenAll(a.SaveConfigAsync(cfgA), b.SaveConfigAsync(cfgB));
+
+            var final = await new ConfigService(path, new DpapiSecretProtector()).LoadConfigAsync();
+            Assert.Equal("dark", final.Ui!.Theme);
+            Assert.Equal(12345, final.Agent!.ContextLimit);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public async Task Same_field_concurrent_change_throws_conflict_instead_of_overwriting()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "config.json");
+        try
+        {
+            var a = new ConfigService(path, new DpapiSecretProtector());
+            var cfgA = await a.LoadConfigAsync();
+            var b = new ConfigService(path, new DpapiSecretProtector());
+            var cfgB = await b.LoadConfigAsync();
+
+            cfgA.Ui ??= new UiConfig();
+            cfgA.Ui.Theme = "dark";
+            cfgB.Ui ??= new UiConfig();
+            cfgB.Ui.Theme = "light";
+
+            await a.SaveConfigAsync(cfgA);
+            var ex = await Assert.ThrowsAsync<ConfigConflictException>(() => b.SaveConfigAsync(cfgB));
+            Assert.Contains("ui.Theme", ex.ConflictPaths, StringComparer.OrdinalIgnoreCase);
+
+            var final = await new ConfigService(path, new DpapiSecretProtector()).LoadConfigAsync();
+            Assert.Equal("dark", final.Ui!.Theme);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
 }
 
 public class RemoteDesktopConfigTests

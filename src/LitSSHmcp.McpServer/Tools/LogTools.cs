@@ -54,7 +54,7 @@ public class LogTools
         }
     }
 
-    [Description("查看服务器上日志文件的尾部(按行)。可传 path(绝对路径) 或 appId(用应用管理里配置的日志路径); 路径须在白名单内。不确定路径时先用 log_query action=find; 按关键字过滤用 log_query action=grep; 容器日志用 docker_logs")]
+    [Description("查看服务器上日志文件的尾部(按行)。可传 path(绝对路径) 或 appId(用应用管理里配置的日志路径); 路径须在白名单内。不确定路径时先用 log_query action=find; 按关键字过滤用 log_query action=grep; 容器日志用 docker_query action=logs")]
     public async Task<LogResultDto> LogTail(
         [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
         [Description("日志文件绝对路径, 如 /var/log/myapp/app.log; 与 appId 二选一")] string? path = null,

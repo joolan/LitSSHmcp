@@ -18,7 +18,7 @@ appliesTo: [ssh, log, command, service, docker, topology]
    - `worker_connections are not enough` → 连接数不足。
 3. **定位 upstream 指向**：用 `ssh_execute_sudo` 跑 `nginx -T 2>/dev/null | grep -A5 upstream` 或直接看站点配置，拿到后端 host:port。
 4. **检查后端进程/端口**：`ssh_snapshot_get section="portmap"` 或 `ssh_execute_command "ss -lntp | grep <port>"`；确认进程存活、端口监听。
-5. **后端应用侧**：若是 Java → `java_processes` / `java_diagnostics(action="threads")` 看线程池/死锁；`log_query(action="tail", appId=...)` 看应用错误。若是容器 → `docker_ps`/`docker_logs`。
+5. **后端应用侧**：若是 Java → `java_processes` / `java_diagnostics(action="threads")` 看线程池/死锁；`log_query(action="tail", appId=...)` 看应用错误。若是容器 → `docker_query(action="ps"/"logs")`。
 6. **系统级**：`ssh_snapshot_get section="resource"` 看负载/内存/文件句柄；`dmesg`/`journalctl -u nginx` 看 OOM。
 
 ## 判定与处置

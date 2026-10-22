@@ -160,7 +160,7 @@ public static class ToolSupport
         if (Regex.IsMatch(command, @"(?i)\btail\b[^\r\n|;&]*(\s-f\b|\s-F\b|--follow)"))
             return "检测到 `tail -f/-F/--follow`：会一直跟随文件、连接不返回。请改用一次性查看 `tail -n 200 <file>`，或直接用 log_query 工具（action=tail/grep）。";
         if (Regex.IsMatch(command, @"(?i)\bdocker\s+(compose\s+)?logs\b[^\r\n|;&]*(--follow|\s-f\b)"))
-            return "检测到 `docker logs -f/--follow`：会持续跟随。请用 `docker logs --tail 200 <container>`，或直接用 docker_logs 工具。";
+            return "检测到 `docker logs -f/--follow`：会持续跟随。请用 `docker logs --tail 200 <container>`，或直接用 docker_query 工具（action=logs）。";
         if (Regex.IsMatch(command, @"(?i)\bjournalctl\b[^\r\n|;&]*(--follow|\s-f\b)"))
             return "检测到 `journalctl -f/--follow`。请用 `journalctl -n 200 --no-pager`，或直接用 service_query 工具（action=logs）。";
         if (Regex.IsMatch(command, @"(?i)\bkubectl\s+logs\b[^\r\n|;&]*(--follow|\s-f\b)"))

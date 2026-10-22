@@ -225,7 +225,7 @@ public class CommandTools
         [Description(ToolSupport.HistoryLimitDescription)] int limit = ToolSupport.DefaultHistoryLimit,
         [Description("跳过的条数, 与limit配合翻页(默认0)")] int offset = 0,
         [Description("会话ID(可选): 只查某个 MCP 会话产生的记录; 当前会话ID见 mcp_self_check")] string? sessionId = null,
-        [Description("工具名(可选): 只查由某个 MCP 工具产生的记录, 如 ssh_execute_command / docker_logs")] string? tool = null,
+        [Description("工具名(可选): 只查由某个 MCP 工具产生的记录, 如 ssh_execute_command / docker_query")] string? tool = null,
         [Description("事件类型(可选): exec=执行 / gate=审批拦截 / probe=只读探测 / meta=列表元数据 / transfer=文件传输")] string? category = null,
         [Description("仅管理员可用: true=查看全部用户历史; 默认false=Web强制模式仅本人/桌面保持全量")] bool allUsers = false)
     {

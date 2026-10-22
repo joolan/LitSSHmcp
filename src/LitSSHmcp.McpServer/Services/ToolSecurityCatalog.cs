@@ -129,11 +129,7 @@ public static class ToolSecurityCatalog
         ServerRead("log_query");
         ServerRead("java_processes");
         ServerRead("java_diagnostics");
-        ServerRead("docker_ps");
-        ServerRead("docker_logs");
-        ServerRead("docker_inspect");
-        ServerRead("docker_stats");
-        ServerRead("docker_images");
+        ServerRead("docker_query");
         ServerWrite("docker_restart");
         ServerExec("docker_exec");
         ServerRead("service_query");
@@ -145,12 +141,8 @@ public static class ToolSecurityCatalog
         Add("datasource_get_sql_history", ToolTargetKind.OptionalDatasource, ToolAccessLevel.Read, targetArguments: "datasourceId");
         DatasourceRead("mysql_query");
         DatasourceConditional("mysql_execute");
-        DatasourceRead("mysql_explain");
-        DatasourceRead("mysql_diagnostics");
         DatasourceRead("postgres_query");
         DatasourceConditional("postgres_execute");
-        DatasourceRead("postgres_explain");
-        DatasourceRead("postgres_diagnostics");
         DatasourceRead("redis_read");
         DatasourceConditional("redis_execute");
         DatasourceRead("redis_diagnostics");

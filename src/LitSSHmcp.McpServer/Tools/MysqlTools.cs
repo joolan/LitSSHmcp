@@ -40,12 +40,53 @@ public class MysqlTools
     }
 
     [McpServerTool(Name = "mysql_query", UseStructuredContent = true, OutputSchemaType = typeof(QueryResultDto), ReadOnly = true, OpenWorld = true)]
-    [Description("在MySQL数据源执行只读SQL(SELECT/SHOW/EXPLAIN/DESC/WITH)。写SQL用mysql_execute, 整体诊断用mysql_diagnostics")]
+    [Description("MySQL 只读入口：action=query 执行 SELECT/SHOW/EXPLAIN/DESC/WITH；action=explain 分析执行计划；action=diagnostics 做连接数/慢查询/锁/复制/进程整体诊断。写 SQL 用 mysql_execute。")]
     public async Task<QueryResultDto> MysqlQuery(
         [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
-        [Description("只读SQL语句")] string sql,
-        [Description("最大返回行数(默认100, 上限1000)")] int maxRows = 100,
+        [Description("读取类型：query / explain / diagnostics")] string action,
+        [Description("query/explain 的只读 SQL；diagnostics 可留空")] string? sql = null,
+        [Description("query 最大返回行数(默认100, 上限1000)")] int maxRows = 100,
         CancellationToken cancellationToken = default)
+    {
+        var kind = action.Trim().ToLowerInvariant();
+        switch (kind)
+        {
+            case "query":
+                if (string.IsNullOrWhiteSpace(sql))
+                    return QueryResultDto.Fail("invalid_argument", "action=query 时必须提供 sql。");
+                var query = await MysqlQueryCore(datasourceId, sql, maxRows, cancellationToken);
+                query.Action = kind;
+                return query;
+            case "explain":
+                if (string.IsNullOrWhiteSpace(sql))
+                    return QueryResultDto.Fail("invalid_argument", "action=explain 时必须提供 sql。");
+                var explain = await MysqlExplain(datasourceId, sql, cancellationToken);
+                explain.Action = kind;
+                return explain;
+            case "diagnostics":
+                var diagnostics = await MysqlDiagnostics(datasourceId, cancellationToken);
+                return new QueryResultDto
+                {
+                    Success = diagnostics.Success,
+                    Status = diagnostics.Status,
+                    Error = diagnostics.Error,
+                    DatasourceId = diagnostics.DatasourceId,
+                    Name = diagnostics.Name,
+                    Action = kind,
+                    Summary = diagnostics.Summary,
+                    Data = diagnostics.Data,
+                    DurationMs = diagnostics.DurationMs
+                };
+            default:
+                return QueryResultDto.Fail("invalid_argument", "action 须为 query / explain / diagnostics");
+        }
+    }
+
+    private async Task<QueryResultDto> MysqlQueryCore(
+        string datasourceId,
+        string sql,
+        int maxRows,
+        CancellationToken cancellationToken)
     {
         var (ds, driver, config, status, error) = await ResolveAsync(datasourceId);
         if (ds == null || driver == null) return QueryResultDto.Fail(status!, error!);
@@ -170,9 +211,7 @@ public class MysqlTools
         };
     }
 
-    [McpServerTool(Name = "mysql_explain", UseStructuredContent = true, OutputSchemaType = typeof(QueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("对SQL执行EXPLAIN分析执行计划(排查慢查询/优化)")]
-    public async Task<QueryResultDto> MysqlExplain(
+    private async Task<QueryResultDto> MysqlExplain(
         [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
         [Description("要分析的SELECT语句")] string sql,
         CancellationToken cancellationToken = default)
@@ -185,7 +224,7 @@ public class MysqlTools
             return QueryResultDto.Fail("blocked", "EXPLAIN 仅接受只读SELECT/WITH语句。");
         if (filterResult == SqlFilterResult.Sensitive)
             return QueryResultDto.Fail("not_readonly_statement",
-                "该语句含写操作(数据修改 CTE 或 EXPLAIN ANALYZE <DML>), 不能在 mysql_explain 中执行, 请改用 mysql_execute。");
+                "该语句含写操作(数据修改 CTE 或 EXPLAIN ANALYZE <DML>), 不能在 mysql_query action=explain 中执行, 请改用 mysql_execute。");
 
         using var cts = CreateTimeout(ds, cancellationToken);
         var result = await driver.ExplainAsync(ds, sql, cts.Token);
@@ -209,9 +248,7 @@ public class MysqlTools
         };
     }
 
-    [McpServerTool(Name = "mysql_diagnostics", UseStructuredContent = true, OutputSchemaType = typeof(DiagnosticsResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("MySQL整体诊断: 连接数/慢查询/锁/复制/进程列表。问'数据库慢/卡/连接数暴涨'时优先用; 查具体数据用mysql_query")]
-    public async Task<DiagnosticsResultDto> MysqlDiagnostics(
+    private async Task<DiagnosticsResultDto> MysqlDiagnostics(
         [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
         CancellationToken cancellationToken = default)
     {

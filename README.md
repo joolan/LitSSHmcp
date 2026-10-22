@@ -66,7 +66,7 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 除工具外，服务还通过 MCP **Resources** 暴露**只读上下文**（供客户端“浏览 / 挂载”，无需调用工具）：`litssh://servers`（服务器清单）、`litssh://datasources`（数据源清单）、`litssh://usage-guide`（使用指南）、`litssh://topology`（资产拓扑）、`litssh://server/{id}/snapshot/latest`（资源模板：某服务器最新快照概览）。资源**不含密码/密钥**、禁用服务器已排除，并按**启用的工具分组**暴露。
 
 <details>
-<summary><b>查看全部 52 个常规工具</b>（另含 1 个宿主内部工具，点击展开）</summary>
+<summary><b>查看全部 44 个常规工具</b>（另含 1 个宿主内部工具，点击展开）</summary>
 
 > 完整参数 / 返回结构 / "用户意图 → 工具" 路由表见 **[docs/TOOLS.md](docs/TOOLS.md)**（唯一事实来源）。工具发生变动时，MCP 服务器端注解、`docs/TOOLS.md`、App 展示三处必须同步。
 
@@ -86,23 +86,15 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 | `ssh_list_files` | 浏览服务器目录 |
 | `datasource_list` | 列出MySQL/PostgreSQL/Redis等数据源（主机/端口/账号/绑定关系，**无密码**） |
 | `datasource_test_connection` | 测试数据库连通性（直连或SSH隧道） |
-| `mysql_query` | 只读SQL查询（SELECT/SHOW/EXPLAIN） |
+| `mysql_query` | MySQL 只读入口（action=query/explain/diagnostics） |
 | `mysql_execute` | 写SQL（危险语句拒绝，敏感语句桌面审批） |
-| `mysql_explain` | SQL执行计划分析 |
-| `mysql_diagnostics` | MySQL诊断：连接数/慢查询/锁/复制/进程列表 |
-| `postgres_query` | 只读SQL查询（PostgreSQL） |
+| `postgres_query` | PostgreSQL 只读入口（action=query/explain/diagnostics） |
 | `postgres_execute` | 写SQL（PostgreSQL，危险语句拒绝，敏感语句审批） |
-| `postgres_explain` | SQL执行计划分析（PostgreSQL） |
-| `postgres_diagnostics` | PostgreSQL诊断：连接/活动会话/等待锁/复制/缓存命中/死锁 |
 | `redis_read` | Redis只读命令（GET/HGETALL/INFO/SCAN/SLOWLOG等白名单） |
 | `redis_execute` | Redis写/管理命令（一律桌面审批，危险命令直接拒绝） |
 | `redis_diagnostics` | Redis诊断：内存/客户端/命中率/键空间/慢日志/主从/持久化 |
 | `datasource_get_sql_history` | SQL与Redis命令审计历史（带 sessionId/tool，可过滤） |
-| `docker_ps` | 列出Docker容器（结构化：名称/镜像/状态/端口） |
-| `docker_logs` | 查看容器日志 |
-| `docker_inspect` | 容器详情（inspect：环境/挂载/网络/健康检查） |
-| `docker_stats` | 容器资源占用快照（CPU/内存/网络/磁盘IO） |
-| `docker_images` | 镜像列表（版本/大小） |
+| `docker_query` | Docker 只读入口（action=ps/logs/inspect/stats/images） |
 | `docker_restart` | 重启容器（需审批） |
 | `docker_exec` | 容器内执行命令（需审批） |
 | `service_query` | 统一 systemd 查询（action=list/status/logs） |
@@ -127,7 +119,7 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 
 </details>
 
-**工具分组（按部署裁剪）**：默认暴露全部 52 个常规工具（宿主内部审批工具不受分组开关影响）；可在 App 的 **设置 → 工具分组** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `docker` / `service` / `log` / `java` / `topology` / `app` / `guide`），降低 AI 上下文占用与误选。留空 / 不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。
+**工具分组（按部署裁剪）**：默认暴露全部 44 个常规工具（宿主内部审批工具不受分组开关影响）；可在 App 的 **设置 → 工具分组** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `docker` / `service` / `log` / `java` / `topology` / `app` / `guide`），降低 AI 上下文占用与误选。留空 / 不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。
 
 **AI 排障 Skill**：仓库内置 [`docs/litssh-mcp-ops-skill/SKILL.md`](docs/litssh-mcp-ops-skill/SKILL.md)（工具无关，随仓库分发），供支持 skills 的 AI 智能体（opencode / Claude 等）使用。内容包含工具路由、标准排障流程、日志路径发现，以及 **MCP 未覆盖能力经 SSH 变通**的方案（如按 Java 启动命令 / 配置文件定位日志后再用 `log_query`）。可复制到对应智能体的 skill 目录，或在 opencode 中用 `skills.paths` 指向该目录。
 
@@ -392,7 +384,7 @@ src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
 | 项目 | 框架 | 职责 |
 |------|------|------|
 | `LitSSHmcp.Core` | net8.0 | 数据模型 + 全部业务服务（SSH / 数据源 / 拓扑 / 安全 / 存储） |
-| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器（stdio）、52 个常规工具 + 1 个宿主内部工具、授权确认弹窗 |
+| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器（stdio）、44 个常规工具 + 1 个宿主内部工具、授权确认弹窗 |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理端（服务器 / 数据源 / 应用 / 资产拓扑 / 安全 / 审计 / AI 运维助手） |
 | `LitSSHmcp.Agent` | net8.0 | 内置 AI 运维助手（大模型 + 内嵌 MCP 客户端） |
 | `LitSSHmcp.Web` | net8.0 | 浏览器 Web 助手（Kestrel + SignalR：登录 / 每会话子进程 / 流式聊天 / 审批 / 文件浏览） |
@@ -599,7 +591,7 @@ AI 的典型排查链路：
 2. 不确定 ID 时先用 `topology_search`（名称/主机/端口/标签）找到精确资产，再 `topology_get_dependencies(app:order-service)` 获取上下游依赖
 3. 需要链路/影响面时用 `topology_path`（域名→应用→库）、`topology_impact`（机器/库/证书变更影响谁）、`topology_explain`（来源/证据/是否过期）
 4. SSH 侧：`ssh_execute_command` 查看 java 进程、端口、应用日志中的数据库连接异常
-5. 数据库侧：`mysql_diagnostics` 看连接数 / 慢查询 / 锁等待 / 复制状态，`mysql_query` 查 `SHOW FULL PROCESSLIST` 与慢日志，`mysql_explain` 分析问题 SQL；涉及缓存时用 `redis_diagnostics` 看内存 / 命中率 / 慢日志、`redis_read` 查具体 key
+5. 数据库侧：`mysql_query(action="diagnostics")` 看连接数 / 慢查询 / 锁等待 / 复制状态，`mysql_query(action="query")` 查 `SHOW FULL PROCESSLIST` 与慢日志，`mysql_query(action="explain")` 分析问题 SQL；涉及缓存时用 `redis_diagnostics` 看内存 / 命中率 / 慢日志、`redis_read` 查具体 key
 6. 跨机关联：应用日志里的数据库 IP 与 `datasource_list` 返回的 `host/port` 对应，即可确认是哪个数据源（MySQL 3306 / Redis 6379 皆可匹配）
 7. 拓扑过期时用 `topology_discover` 自动补全（扫描 java / 通用服务进程、监听端口、ESTAB 连接、配置文件 JDBC / Redis / RabbitMQ / Kafka / Nginx、docker 容器、MySQL processlist）；发现做了**节流**（同时只跑一个）；未登记的应用 / 数据源 / 客户端会以 `*:disc:*` "待确认"节点出现，可在拓扑页**右键 → 确认节点**登记为资产。
 
@@ -697,7 +689,7 @@ litssh deny <审批ID>               # 拒绝
 | 文档 | 内容 |
 |------|------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计：分层结构、核心模块、安全模型、拓扑模型、线程模型、扩展点 |
-| [docs/TOOLS.md](docs/TOOLS.md) | 52 个常规工具 + 1 个宿主内部工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
+| [docs/TOOLS.md](docs/TOOLS.md) | 44 个常规工具 + 1 个宿主内部工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 迭代历史：每个版本的新增 / 修复 / 变更记录 |
 | [docs/UPGRADE_PLAN.md](docs/UPGRADE_PLAN.md) | 升级方案（Roadmap）：安全、可视化配置、运维、质量的分期计划 |
 | [docs/litssh-mcp-ops-skill/SKILL.md](docs/litssh-mcp-ops-skill/SKILL.md) | AI 排障 Skill（工具路由、标准排障流程、SSH 变通方案） |

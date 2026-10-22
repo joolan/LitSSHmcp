@@ -815,9 +815,10 @@ public sealed class AgentSession
         }
     }
 
-    /// <summary>日志类工具（<c>*_logs</c>/<c>log_query</c>）的截断保留**尾部最新内容**，其余保留头部。</summary>
+    /// <summary>日志类工具（<c>*_logs</c>/<c>log_query</c>/<c>docker_query</c>）的截断保留**尾部最新内容**，其余保留头部。</summary>
     private static bool PreferTail(string toolName) =>
         toolName.Equals("log_query", StringComparison.OrdinalIgnoreCase) ||
+        toolName.Equals("docker_query", StringComparison.OrdinalIgnoreCase) ||
         toolName.Equals("local_shell", StringComparison.OrdinalIgnoreCase) ||
         toolName.EndsWith("_logs", StringComparison.OrdinalIgnoreCase);
 

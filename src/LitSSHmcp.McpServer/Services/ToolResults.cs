@@ -15,10 +15,13 @@ public sealed class QueryResultDto
     public string? Error { get; set; }
     public string? DatasourceId { get; set; }
     public string? Name { get; set; }
+    public string? Action { get; set; }
     public string[]? Columns { get; set; }
     public List<Dictionary<string, object?>>? Rows { get; set; }
     public long RowCount { get; set; }
     public bool Truncated { get; set; }
+    public string? Summary { get; set; }
+    public Dictionary<string, object?>? Data { get; set; }
     public double DurationMs { get; set; }
 
     public static QueryResultDto Fail(string status, string error) =>
@@ -465,6 +468,27 @@ public sealed class DockerPsDto
     public List<DockerContainerDto> Containers { get; set; } = new();
 
     public static DockerPsDto Fail(string status, string error) =>
+        new() { Success = false, Status = status, Error = error };
+}
+
+public sealed class DockerQueryResultDto
+{
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public string? ServerId { get; set; }
+    public string? ServerName { get; set; }
+    public string? Host { get; set; }
+    public string? Action { get; set; }
+    public int Count { get; set; }
+    public bool Truncated { get; set; }
+    public List<DockerContainerDto> Containers { get; set; } = new();
+    public string? Output { get; set; }
+    public long OutputChars { get; set; }
+    public int ExitCode { get; set; }
+    public double DurationMs { get; set; }
+
+    public static DockerQueryResultDto Fail(string status, string error) =>
         new() { Success = false, Status = status, Error = error };
 }
 

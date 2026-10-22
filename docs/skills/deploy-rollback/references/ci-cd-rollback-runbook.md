@@ -9,8 +9,8 @@
 
 ## 1. 取证（只读，5 分钟内完成）
 1. 记录现场：当前版本号/镜像 tag、发布时间、流水线失败点。
-2. 状态：`service_query(action="status")` 或 `docker_ps`（重启次数、退出码）。
-3. 日志：`service_query(action="logs")`/`docker_logs`/`log_query(action="tail")` 抓启动后首个异常栈与启动失败原因。
+2. 状态：`service_query(action="status")` 或 `docker_query(action="ps")`（重启次数、退出码）。
+3. 日志：`service_query(action="logs")`/`docker_query(action="logs")`/`log_query(action="tail")` 抓启动后首个异常栈与启动失败原因。
 4. 健康：`curl -sS -m 8 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:<port>/health`；端口 `ssh_snapshot_get section="portmap"`。
 5. 依赖：`app_health_snapshot(appId)` 排除「回滚也救不了」的外部依赖故障（数据库/上游挂了，回滚无效）。
 

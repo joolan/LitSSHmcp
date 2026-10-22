@@ -22,7 +22,7 @@ appliesTo: [ssh, log, command]
 7. **大日志**：`log_query(action="grep")` 精确关键字 + 时间窗/行数，避免整文件拉取；超大结果会自动落盘为 `spill://` 句柄，用 `spill_read`/`spill_grep` 分段读取。
 
 ## 处置
-- 高频同类错误 → 定位根因（结合 `service_query(action="status")`、`docker_logs`、`java_diagnostics(action="threads")`、`mysql_diagnostics`）。
+- 高频同类错误 → 定位根因（结合 `service_query(action="status")`、`docker_query(action="logs")`、`java_diagnostics(action="threads")`、`mysql_query(action="diagnostics")`）。
 - 变更后复看日志确认不再新增同类错误。
 
 ## 注意

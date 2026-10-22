@@ -15,7 +15,7 @@ appliesTo: [ssh, command, topology]
 
 ## 处置
 - 残留进程占用 → 确认后停掉（`kill <pid>` 属敏感操作，经 `ssh_execute_sudo`，需确认）。
-- 端口未监听 → 看服务状态（`service_query(action="status")`/`docker_ps`）与启动日志，定位启动失败原因。
+- 端口未监听 → 看服务状态（`service_query(action="status")`/`docker_query(action="ps")`）与启动日志，定位启动失败原因。
 - 改端口/配置 → 变更后复测 `ss -lntup | grep`。
 
 ## 注意

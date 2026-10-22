@@ -1,6 +1,6 @@
 ---
 name: litssh-mcp-ops-skill
-description: Use when operating or troubleshooting servers and applications through the LitSSH MCP server (LitSSHmcp) — SSH command execution, server snapshots, Docker containers, systemd services, Java/JVM diagnostics, log files, MySQL/PostgreSQL/Redis, topology and app health. Triggers on tools like ssh_execute_command, ssh_snapshot_get/ssh_snapshot_refresh, docker_ps, service_query, java_diagnostics, log_query, app_health_snapshot, mysql_diagnostics, topology_search/topology_neighbors/topology_path/topology_impact/topology_explain, and on requests such as 服务器排查, 整机态势/快照, 应用日志, 容器起不来, JVM/CPU 飙高, 数据库连不上, 变更影响面, 依赖链路. Also gives SSH-based workarounds for capabilities the MCP does not expose directly. Maintains an ops asset/app-topology ledger (OPS_ASSETS.md) in the workspace — creating and correcting it while operating so servers/apps/log paths/dependencies stay accurate. Uses structured ops memory (ops_memory_* — 自动召回 + list/save/update, 查后做、成后记) and reusable remote scripts (scripts/ + ops_script_register, 永不免审) to accumulate verified ops paths across sessions.
+description: Use when operating or troubleshooting servers and applications through the LitSSH MCP server (LitSSHmcp) — SSH command execution, server snapshots, Docker containers, systemd services, Java/JVM diagnostics, log files, MySQL/PostgreSQL/Redis, topology and app health. Triggers on tools like ssh_execute_command, ssh_snapshot_get/ssh_snapshot_refresh, docker_query, service_query, java_diagnostics, log_query, app_health_snapshot, mysql_query, postgres_query, topology_search/topology_neighbors/topology_path/topology_impact/topology_explain, and on requests such as 服务器排查, 整机态势/快照, 应用日志, 容器起不来, JVM/CPU 飙高, 数据库连不上, 变更影响面, 依赖链路. Also gives SSH-based workarounds for capabilities the MCP does not expose directly. Maintains an ops asset/app-topology ledger (OPS_ASSETS.md) in the workspace — creating and correcting it while operating so servers/apps/log paths/dependencies stay accurate. Uses structured ops memory (ops_memory_* — 自动召回 + list/save/update, 查后做、成后记) and reusable remote scripts (scripts/ + ops_script_register, 永不免审) to accumulate verified ops paths across sessions.
 ---
 
 # LitSSH MCP 服务器运维排障
@@ -42,7 +42,7 @@ description: Use when operating or troubleshooting servers and applications thro
 | 服务器整机快照 | `ssh_snapshot_get`（默认读本地最新快照，返回各维度概览；`section=`/`detail="full"` 取完整）、`ssh_snapshot_refresh`（重新采集，较慢） |
 | 执行命令 / 提权 / 历史 | `ssh_execute_command`、`ssh_execute_sudo`、`ssh_get_command_history`、`ssh_get_sudo_status` |
 | 文件 | `ssh_list_files`、`ssh_upload`（单文件/批量/目录，一条连接）、`ssh_download`（单文件/批量/目录，一条连接） |
-| Docker | `docker_ps`、`docker_logs`、`docker_inspect`、`docker_stats`、`docker_images`、`docker_restart`、`docker_exec` |
+| Docker | `docker_query`（action=ps/logs/inspect/stats/images）、`docker_restart`、`docker_exec` |
 | systemd | `service_query`（action=list/status/logs）、`service_restart` |
 | 日志文件 | `log_query`（action=tail/grep/find） |
 | JVM | `java_processes`、`java_diagnostics`（action=threads/heap/info） |
@@ -71,10 +71,10 @@ description: Use when operating or troubleshooting servers and applications thro
 2. **分侧取证**：
    - 服务器：`ssh_get_server_status` / `ssh_test_connection`（失败会给 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`）。
    - 应用进程：`java_processes`（可传 `appId`）→ `java_diagnostics`（action=threads/heap/info，可传 `appId` 自动解析 pid）。
-   - 容器：`docker_ps` → `docker_logs` / `docker_inspect` / `docker_stats`。
+   - 容器：`docker_query(action="ps")` → `docker_query(action="logs"/"inspect"/"stats")`。
    - systemd：`service_query(action="status")` → `service_query(action="logs")`。
    - 日志：`log_query`（action=find → tail/grep）。
-   - 数据库：`mysql_diagnostics` / `postgres_diagnostics` / `redis_diagnostics` → 下钻 `*_query`。
+   - 数据库：`mysql_query(action="diagnostics")` / `postgres_query(action="diagnostics")` / `redis_diagnostics` → 下钻 `*_query`。
 3. **给结论**：输出 时间线 / 根因假设 / 证据（工具+关键输出）/ 处置建议 / 是否需要变更审批。
 
 ## 4. 常见场景处方
@@ -84,12 +84,12 @@ description: Use when operating or troubleshooting servers and applications thro
 - **依赖链路排查**：`topology_path(from, to)` 查有向链路（如 `domain → app → port → ssh`、`domain → cert`、`app → ds`）；反向不通时用 `topology_neighbors` 看实际边，或 `topology_impact` 从下游反查上游。图谱现覆盖服务器/应用/服务/容器/部署/数据源/域名/端口/证书（服务/容器/部署/域名/端口/证书由最近快照入库）；需要实时细节时再用 `ssh_snapshot_get` 的 `systemd`/`docker`/`nginx_tls`/`portmap` 复核。
 - **关系可信度核查**：`topology_explain(assetId, to?, relationType?)` 看每条边的 `source`（manual/discovered）、`evidence`、`confidence`、`lastVerifiedAt`、`lastSeenAt`、`stale`。`stale=true` 表示发现边超过 7 天未再确认，结论中应标注“可能过期”，并用快照/实时命令复核。`asset_ambiguous` 时改用 `topology_search` 返回的精确 ID。
 - **安全巡检 / 合规核查**：`ssh_snapshot_get(serverId)` 的 `security` 维度一键给出：SSH 配置（root 登录/密码登录/端口）、防火墙（ufw/firewalld）、fail2ban、MySQL 匿名账户/远程 root、系统空口令账户、sudoers `NOPASSWD`、**公网暴露的高危端口**；按 `findings[].severity`（high/medium/low/info）汇报并可给出整改建议；需最新数据用 `ssh_snapshot_refresh`。
-- **容器起不来/异常退出**：`docker_ps(all=true)` → `docker_logs(container, tail=300)` → `docker_inspect`（看退出码/挂载/健康检查）→ `docker_stats`；不知哪些容器先 `ssh_snapshot_get` 看 `docker.containers`。
+- **容器起不来/异常退出**：`docker_query(action="ps", all=true)` → `docker_query(action="logs", container=..., tail=300)` → `docker_query(action="inspect", container=...)`（看退出码/挂载/健康检查）→ `docker_query(action="stats")`；不知哪些容器先 `ssh_snapshot_get` 看 `docker.containers`。
 - **Java CPU 飙高/卡死**：`java_processes` 找 pid → `java_diagnostics(action="threads")`（找 `RUNNABLE`/死锁）→ `java_diagnostics(action="heap")`（GC/堆）→ `java_diagnostics(action="info")`。
 - **服务没起来**：`service_query(action="status")`（看退出码/最近日志）→ `service_query(action="logs")`；需要时 `service_restart`（审批）。
-- **数据库慢/连接暴涨**：先 `mysql_diagnostics` / `postgres_diagnostics`（整体），再 `mysql_query` 查 `processlist`/慢日志，`mysql_explain` 分析 SQL；缓存问题用 `redis_diagnostics` + `redis_read`。
+- **数据库慢/连接暴涨**：先 `mysql_query(action="diagnostics")` / `postgres_query(action="diagnostics")`（整体），再 `mysql_query(action="query")` 查 `processlist`/慢日志，`mysql_query(action="explain")` 分析 SQL；缓存问题用 `redis_diagnostics` + `redis_read`。
 - **连不上数据库**：`datasource_test_connection`（区分直连/经隧道），再看绑定的 SSH 隧道服务器是否可用。
-- **日志排查**：不知道路径先 `log_query(action="find")`；已知路径 `log_query(action="tail"/"grep")`；容器用 `docker_logs`；systemd 用 `service_query(action="logs")`。
+- **日志排查**：不知道路径先 `log_query(action="find")`；已知路径 `log_query(action="tail"/"grep")`；容器用 `docker_query(action="logs")`；systemd 用 `service_query(action="logs")`。
 
 ## 5. 日志路径怎么找（重点）
 

@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器代码注册 **53 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **52 个常规工具**，宿主会话看到 **53 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
+MCP 服务器代码注册 **45 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **44 个常规工具**，宿主会话看到 **45 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
 
 > **⚠ 同步约定（唯一事实来源）**：本文件是 MCP 工具说明的**唯一事实来源**。以下三处必须与本文件**双向同步**，工具发生任何变动（新增/改名/删除、参数变化、描述与路由变化）时缺一不可：
 > 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`get_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
@@ -68,10 +68,10 @@ MCP 服务器代码注册 **53 个工具**，按用途分为 14 组；其中 `mc
 | `command` | 命令执行 | `ssh_execute_command`、`ssh_get_command_history`、`ssh_execute_sudo`、`ssh_get_sudo_status` |
 | `fileTransfer` | 文件传输 | `ssh_upload`、`ssh_download`、`ssh_list_files` |
 | `datasource` | 数据源 | `datasource_list`、`datasource_test_connection`、`datasource_get_sql_history` |
-| `mysql` | MySQL 执行 | `mysql_query`、`mysql_execute`、`mysql_explain`、`mysql_diagnostics` |
-| `postgres` | PostgreSQL 执行 | `postgres_query`、`postgres_execute`、`postgres_explain`、`postgres_diagnostics` |
+| `mysql` | MySQL 执行 | `mysql_query`、`mysql_execute` |
+| `postgres` | PostgreSQL 执行 | `postgres_query`、`postgres_execute` |
 | `redis` | Redis | `redis_read`、`redis_execute`、`redis_diagnostics` |
-| `docker` | Docker 容器 | `docker_ps`、`docker_logs`、`docker_inspect`、`docker_stats`、`docker_images`、`docker_restart`、`docker_exec` |
+| `docker` | Docker 容器 | `docker_query`、`docker_restart`、`docker_exec` |
 | `service` | systemd 服务 | `service_query`、`service_restart` |
 | `log` | 日志文件 | `log_query` |
 | `java` | JVM 诊断 | `java_processes`、`java_diagnostics` |
@@ -121,29 +121,29 @@ MCP 服务器代码注册 **53 个工具**，按用途分为 14 组；其中 `mc
 | 上传/下载文件 | `ssh_upload` / `ssh_download` | |
 | **有哪些MySQL / 数据库列表 / 数据库配置信息** | `datasource_list` | ~~ssh_list_servers~~（那是SSH） |
 | **数据库能不能连上 / 测试数据库连接 / 数据库连不上** | `datasource_test_connection` | ~~ssh_test_connection~~（那是SSH） |
-| MySQL服务正不正常 / 数据库为什么慢 / 连接数暴涨 | `mysql_diagnostics`（先做整体诊断） | |
-| 查数据 / 看表结构 / 建表语句 / 查processlist | `mysql_query` | |
+| MySQL服务正不正常 / 数据库为什么慢 / 连接数暴涨 | `mysql_query`（action=diagnostics，先做整体诊断） | |
+| 查数据 / 看表结构 / 建表语句 / 查processlist | `mysql_query`（action=query） | |
 | 改数据 / 建表 / 加字段 / 清数据 | `mysql_execute` | |
-| 这条SQL为什么慢 / 执行计划 | `mysql_explain` | |
-| PostgreSQL正不正常 / PG为什么慢 / 连接数暴涨 | `postgres_diagnostics`（先做整体诊断） | |
-| PG查数据 / 看表结构 | `postgres_query` | |
+| 这条SQL为什么慢 / 执行计划 | `mysql_query`（action=explain） | |
+| PostgreSQL正不正常 / PG为什么慢 / 连接数暴涨 | `postgres_query`（action=diagnostics，先做整体诊断） | |
+| PG查数据 / 看表结构 | `postgres_query`（action=query） | |
 | PG改数据 / 建表 / 加字段 | `postgres_execute` | |
-| PG这条SQL为什么慢 / 执行计划 | `postgres_explain` | |
+| PG这条SQL为什么慢 / 执行计划 | `postgres_query`（action=explain） | |
 | 谁执行了什么SQL / SQL审计记录 | `datasource_get_sql_history` | |
 | Redis正不正常 / 缓存为什么慢 / 内存涨 / 命中率低 / 卡 | `redis_diagnostics`（先做整体诊断） | |
 | 查缓存 / 读key / 看集合内容 / 慢日志 | `redis_read` | ~~redis_execute~~（那是写） |
 | 写缓存 / 删key / 设过期时间 / 改Redis配置 / 踢客户端 | `redis_execute`（弹桌面确认） | ~~redis_read~~（只读，非白名单会拒绝） |
 | 清库/关服/换主从/阻塞类Redis命令 | 任何工具都返回 `blocked`（不会执行） | 不要改写绕过 |
-| 有哪些容器 / 容器状态 / 容器端口 | `docker_ps` | |
-| 看某容器日志 / 容器起不来 | `docker_logs` | |
-| 容器配置 / 环境变量 / 挂载 / 网络 | `docker_inspect` | |
-| 容器占CPU/内存 | `docker_stats` | |
-| 镜像列表 / 版本 / 磁盘占用 | `docker_images` | |
+| 有哪些容器 / 容器状态 / 容器端口 | `docker_query`（action=ps） | |
+| 看某容器日志 / 容器起不来 | `docker_query`（action=logs） | |
+| 容器配置 / 环境变量 / 挂载 / 网络 | `docker_query`（action=inspect） | |
+| 容器占CPU/内存 | `docker_query`（action=stats） | |
+| 镜像列表 / 版本 / 磁盘占用 | `docker_query`（action=images） | |
 | 重启容器 / 容器内执行命令 | `docker_restart` / `docker_exec`（需人工确认） | |
 | 服务状态 / 服务起没起 / 服务退出码 | `service_query`（action=status） | |
 | 有哪些服务 / 找服务名 | `service_query`（action=list） | |
 | 重启服务 | `service_restart`（需人工确认） | ~~docker_restart~~（那是容器） |
-| 服务日志 / journalctl | `service_query`（action=logs） | ~~docker_logs~~（那是容器） |
+| 服务日志 / journalctl | `service_query`（action=logs） | ~~docker_query(action=logs)~~（那是容器） |
 | 看日志文件尾部 | `log_query`（action=tail） | ~~ssh_execute_command~~（不要自己拼 tail） |
 | 日志里搜错误/关键字 | `log_query`（action=grep） | |
 | 不知道日志路径 / 找最近日志文件 | `log_query`（action=find，先发现再读） | |
@@ -241,7 +241,7 @@ MCP 服务器代码注册 **53 个工具**，按用途分为 14 组；其中 `mc
 - **说明**：仅在需要向用户解释"为什么不能提权"时使用
 
 ### `ssh_get_command_history`
-- **参数**：`serverId`（可选，不传查全部）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `docker_logs`）、`category`（可选，事件类型：`exec`=执行 / `gate`=审批拦截 / `probe`=只读探测 / `meta`=列表元数据 / `transfer`=文件传输）、`allUsers`（默认 false；仅管理员可设 true 查看全部用户历史。Web 强制模式下普通用户始终只看本人，桌面未启用强制时保持全量）
+- **参数**：`serverId`（可选，不传查全部）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `docker_query`）、`category`（可选，事件类型：`exec`=执行 / `gate`=审批拦截 / `probe`=只读探测 / `meta`=列表元数据 / `transfer`=文件传输）、`allUsers`（默认 false；仅管理员可设 true 查看全部用户历史。Web 强制模式下普通用户始终只看本人，桌面未启用强制时保持全量）
 - **返回**：`{ success, status, error, count, hasMore, records: [...] }`（每条记录含 `sessionId`/`tool`/`category`/`decision`；`result` 已截断到 4000 字符；`hasMore: true` 表示还有更早记录，配合 `offset` 翻页）
 
 **命令类错误约定**：`{ success: false, error, status, errorKind }`，`status` 可能值：`blocked`、`blocking_command`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`sudo_not_configured`、`file_not_found`、`auth_failed`、`host_key_mismatch`、`timeout`、`rate_limited`、`connection_error`、`failed`；`blocked_script`：脚本内容扫描命中危险模式（`ssh_upload_*` 上传扫描为 `status=blocked_script`；`ssh_execute_command`/`ssh_execute_sudo` 执行侧为 `status=blocked` + `reason=blocked_script`）。
@@ -286,8 +286,9 @@ MCP 服务器代码注册 **53 个工具**，按用途分为 14 组；其中 `mc
 所有 MySQL 工具都要求先有数据源配置（WPF 界面或 `config.json` 录入），且入参只有 `datasourceId`，**不含账号密码**。
 
 ### `mysql_query`（只读）
-- **参数**：`datasourceId`（ID/名称）、`sql`（只读语句：SELECT/SHOW/EXPLAIN/DESC/WITH）、`maxRows`（默认 100，上限 1000）
-- **返回**：`{ success, status, datasourceId, name, columns, rows, rowCount, truncated, durationMs, error }`
+- **参数**：`datasourceId`（ID/名称）、`action`（`query` / `explain` / `diagnostics`）、`sql`（query/explain 必填）、`maxRows`（query 默认 100，上限 1000）
+- **返回**：`{ success, status, datasourceId, name, action, columns, rows, rowCount, truncated, summary, data, durationMs, error }`
+- **action**：`query` 执行 SELECT/SHOW/EXPLAIN/DESC/WITH；`explain` 分析执行计划；`diagnostics` 返回连接数/慢查询/锁等待/复制/进程列表等整体诊断（`summary` + `data`）
 - **限制**：单条语句；非只读语句返回 `status: "blocked"`；**数据修改型 CTE（`WITH ... DELETE/UPDATE/INSERT`）与 `EXPLAIN ANALYZE <DML>`** 会被识别为写操作返回 `status: "not_readonly_statement"`，均提示改用 `mysql_execute`
 
 ### `mysql_execute`（写操作）
@@ -296,15 +297,6 @@ MCP 服务器代码注册 **53 个工具**，按用途分为 14 组；其中 `mc
 - **安全链路**：危险语句（DROP/无WHERE的DELETE等）直接拒绝 → 敏感语句人工确认 → 执行 → 全部写审计
 - **提示**：只读语句传入会返回 `status: "readonly_statement"`，提示改用 `mysql_query`；数据源只读时返回 `status: "readonly_datasource"`
 
-### `mysql_explain`
-- **参数**：`datasourceId`（ID/名称）、`sql`（SELECT语句）
-- **返回**：`{ success, status, columns, rows, durationMs, error }`（EXPLAIN 计划表）
-
-### `mysql_diagnostics`
-- **参数**：`datasourceId`（ID/名称）
-- **返回**：`{ success, status, datasourceId, name, summary, data, durationMs, error }`（`data` 内含连接数/慢查询/锁等待/复制/进程列表等）
-- **场景**：用户问"MySQL正不正常/为什么慢/卡住/连接数暴涨"时**优先用它**做整体诊断，再按需下钻
-
 **MySQL 错误约定**：`{ success: false, status, error }`，`status` 可能值：`datasource_not_found`、`unsupported_type`、`blocked`、`readonly_statement`、`not_readonly_statement`、`readonly_datasource`、`rejected`、`approval_timeout`、`approval_unavailable`、`execute_error`、`query_error`。
 
 ## PostgreSQL 执行组（postgres）
@@ -312,8 +304,9 @@ MCP 服务器代码注册 **53 个工具**，按用途分为 14 组；其中 `mc
 所有 PostgreSQL 工具都要求数据源 `type = postgres`（桌面 App"添加数据源"→类型选 PostgreSQL，端口默认 5432），入参只有 `datasourceId`，**不含账号密码**。连接自动选择直连或经 SSH 隧道（复用同一套隧道/限流/密钥校验链路）。仅读/写/敏感过滤与 MySQL 共用同一套 SQL 安全策略。
 
 ### `postgres_query`（只读）
-- **参数**：`datasourceId`（ID/名称）、`sql`（只读语句：SELECT/SHOW/EXPLAIN/WITH）、`maxRows`（默认 100，上限 1000）
-- **返回**：`{ success, status, datasourceId, name, columns, rows, rowCount, truncated, durationMs, error }`
+- **参数**：`datasourceId`（ID/名称）、`action`（`query` / `explain` / `diagnostics`）、`sql`（query/explain 必填）、`maxRows`（query 默认 100，上限 1000）
+- **返回**：`{ success, status, datasourceId, name, action, columns, rows, rowCount, truncated, summary, data, durationMs, error }`
+- **action**：`query` 执行 SELECT/SHOW/EXPLAIN/DESC/WITH；`explain` 分析执行计划；`diagnostics` 返回连接/活动会话/等待锁/复制/缓存命中/死锁等整体诊断（`summary` + `data`）
 - **限制**：单条语句；非只读语句返回 `status: "blocked"`；数据修改型 CTE 与 `EXPLAIN ANALYZE <DML>` 返回 `status: "not_readonly_statement"`，提示改用 `postgres_execute`
 
 ### `postgres_execute`（写操作）
@@ -321,15 +314,6 @@ MCP 服务器代码注册 **53 个工具**，按用途分为 14 组；其中 `mc
 - **返回**：`{ success, status, datasourceId, name, rowsAffected, durationMs, error }`
 - **安全链路**：危险语句（DROP/无WHERE的DELETE等）直接拒绝 → 敏感语句人工确认（或按数据源 `WriteApproval=AutoApprove` 放行）→ 执行 → 全部写审计
 - **提示**：只读语句传入会返回 `status: "readonly_statement"`；数据源只读时返回 `status: "readonly_datasource"`
-
-### `postgres_explain`
-- **参数**：`datasourceId`（ID/名称）、`sql`（SELECT语句）
-- **返回**：`{ success, status, columns, rows, durationMs, error }`（EXPLAIN 计划）
-
-### `postgres_diagnostics`
-- **参数**：`datasourceId`（ID/名称）
-- **返回**：`{ success, status, summary, data, ... }` —— 含版本/当前库、连接数(当前/活动/上限)、活动会话按状态、最耗时查询、等待锁、复制、死锁、缓存命中率、数据库大小
-- **场景**：用户问"PG 正不正常 / 为什么慢 / 卡 / 连接数暴涨"时**优先用它**做整体诊断
 
 **PostgreSQL 错误约定**：`{ success: false, status, error }`，`status` 可能值：`datasource_not_found`、`unsupported_type`、`blocked`、`readonly_statement`、`not_readonly_statement`、`readonly_datasource`、`rejected`、`approval_timeout`、`approval_unavailable`、`execute_error`、`query_error`。
 
@@ -362,27 +346,11 @@ MCP 服务器代码注册 **53 个工具**，按用途分为 14 组；其中 `mc
 
 容器工具在目标服务器上执行 `docker` 命令，统一走命令过滤 + 审计；`docker_restart` / `docker_exec` 属敏感操作，需人工确认。容器名会做字符校验（`[A-Za-z0-9][A-Za-z0-9_.-]*`）并单引号转义，避免注入。`docker_exec` 的 `command` 先按 POSIX argv 拆分（支持引号/反斜杠），再逐参数单引号转义，不展开变量、通配符、管道或命令替换；需要 shell 语法时请显式写 `sh -c '...'`，由容器内 shell 执行。
 
-### `docker_ps`
-- **参数**：`serverId`、`all`（默认 false=仅运行中，true=含已停止）
-- **返回**：`{ success, status, error, count, truncated, containers: [{ id, names, image, status, state, ports }] }`
-- **场景**："有哪些容器 / 容器状态 / 端口映射"时首选
-
-### `docker_logs`
-- **参数**：`serverId`、`container`、`tail`（默认 200，上限 5000）、`since`（可选，如 `10m` / `2h` / ISO 时间）
-- **返回**：`{ success, status, error, output, truncated, outputChars, exitCode, durationMs }`
-- **场景**：容器启动失败 / 报错时首选
-
-### `docker_inspect`
-- **参数**：`serverId`、`container`
-- **返回**：同上的文本结果（body 为 `docker inspect` 的 JSON）
-
-### `docker_stats`
-- **参数**：`serverId`
-- **返回**：同上；每行 `Name | CPU | MEM | NET | BLOCK | PIDs` 快照
-
-### `docker_images`
-- **参数**：`serverId`
-- **返回**：同上；每行 `仓库:标签 | ID | 大小 | 创建时间`
+### `docker_query`
+- **参数**：`serverId`、`action`（`ps` / `logs` / `inspect` / `stats` / `images`）、`container`（logs/inspect 必填）、`all`（ps，默认 false=仅运行中）、`tail`（logs 默认 200，上限 5000）、`since`（logs 可选，如 `10m` / `2h` / ISO 时间）
+- **返回**：`{ success, status, error, serverId, serverName, host, action, count, truncated, containers, output, outputChars, exitCode, durationMs }`
+- **action**：`ps` 返回结构化容器列表（`containers`）；`logs`/`inspect`/`stats`/`images` 返回对应 Docker 命令文本（`output`）
+- **场景**：容器状态/日志/配置/资源/镜像统一从这里进；重启或容器内执行用 `docker_restart` / `docker_exec`
 
 ### `docker_restart`
 - **参数**：`serverId`、`container`
@@ -493,7 +461,7 @@ MCP 服务器代码注册 **53 个工具**，按用途分为 14 组；其中 `mc
 - **参数**：`appId`（应用 ID 或名称）、`includeDiagnostics`（默认 false；true 时对依赖数据源额外做整体诊断，更慢更全）
 - **返回**：`{ success, status, error, application: { id, name, type, containerName, port }, servers: [{ serverId, serverName, host, reachable, status, error, output, truncated }], datasources: [{ datasourceId, name, type, reachable, status, version, accessMode, viaTunnelServer, summary, error }], notes: [...] }`
 - **说明**：应用→服务器取自 `runsOn` 关系（缺失时用应用的 `host` 兜底），应用→数据源取自 `connectsTo` 关系。服务器探测命令一次聚合 **Java 进程 + Docker 容器 + 监听端口**，并**按应用过滤**：java 段按应用名 `grep`、docker 段按 `containerName` `--filter name=`、端口段按应用的 `port` 过滤（缺失则相应段列全部）。`success` 表示"快照已产出"，具体健康看每个 server/datasource 的 `reachable`；`notes` 里会说明本次的过滤范围。
-- **场景**：跨机排查某应用时**先用它**拿到全局画像，再按需下钻到 `docker_logs` / `service_query`（action=logs） / `log_query`（action=grep） / `java_diagnostics` / `mysql_diagnostics` 等。
+- **场景**：跨机排查某应用时**先用它**拿到全局画像，再按需下钻到 `docker_query`（action=logs） / `service_query`（action=logs） / `log_query`（action=grep） / `java_diagnostics` / `mysql_query`（action=diagnostics） 等。
 
 ## 指南组（guide）
 

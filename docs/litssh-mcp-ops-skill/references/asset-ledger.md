@@ -67,6 +67,6 @@
 - 定位与关系：`topology_search` 按名称/ID/主机/端口找资产；`topology_neighbors` 看邻域；`topology_path` 查两个资产的有向链路；`topology_impact` 反查变更影响面；`topology_explain` 核对边的来源、证据、`lastSeenAt` 与 `stale`。模糊 ID 命中多个会返回 `asset_ambiguous`，用精确 ID 重试。
 - 服务/容器/部署/域名/端口/证书：图谱已从最近快照生成 `service:*` / `container:*` / `deploy:*` / `domain:*` / `port:*` / `cert:*` 节点（`runsOn`/`listensOn`/`deployedFrom`/`exposes`/`tlsBy`/`hostedOn`/`resolvesTo`）；需要实时值或快照未覆盖时，再用 `ssh_snapshot_get` 的 `systemd`/`docker`/`nginx_tls`/`portmap` 取证，并在“更新日志”注明来源。
 - **整机盘点**：`ssh_snapshot_get(serverId)` 一次拿到 资源/端口↔进程↔服务（含程序路径 `exe` 与启动命令 `cmdline`）/Docker 容器/nginx 域名与证书/systemd/**安全巡检（security）**，快速补全“端口/进程/容器/证书/服务归属”，并作为安全基线证据；需要最新数据用 `ssh_snapshot_refresh`。
-- 补全应用细节：`java_processes`（启动命令/jar/工作目录）、`docker_ps`/`docker_inspect`（端口/挂载）、`log_query(action="find")`（日志路径）、`service_query(action="status")`（systemd 单元）。
+- 补全应用细节：`java_processes`（启动命令/jar/工作目录）、`docker_query(action="ps"/"inspect")`（端口/挂载）、`log_query(action="find")`（日志路径）、`service_query(action="status")`（systemd 单元）。
 - 对账发现：`topology_discover`；把 `UnmatchedEndpoints`/notes 里的“未匹配端点、占位符主机、疑似外部依赖”写进“待确认”。
 - 提速回顾：档案里存好每个应用的**日志路径**后，后续直接 `log_query(action="tail"/"grep", appId=...)`，无需再 `action="find"`。

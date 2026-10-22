@@ -308,7 +308,7 @@ public class AuditSessionTests
             {
                 AuditContext.CurrentTool = "ssh_execute_command";
                 await audit.LogCommandAsync(new CommandAuditLog { ServerId = "s", ServerName = "n", Command = "ls" });
-                AuditContext.CurrentTool = "docker_logs";
+                AuditContext.CurrentTool = "docker_query";
                 await audit.LogCommandAsync(new CommandAuditLog { ServerId = "s", ServerName = "n", Command = "docker logs web" });
                 await audit.LogSqlAsync(new SqlAuditLog { DataSourceId = "d", DataSourceName = "db", Operation = SqlOperation.Query, Sql = "select 1" });
             }
@@ -319,14 +319,14 @@ public class AuditSessionTests
 
             var all = await audit.GetLogsAsync();
             Assert.Contains(all, r => r.Tool == "ssh_execute_command");
-            Assert.Contains(all, r => r.Tool == "docker_logs");
+            Assert.Contains(all, r => r.Tool == "docker_query");
 
-            var byTool = await audit.GetLogsAsync(tool: "docker_logs");
+            var byTool = await audit.GetLogsAsync(tool: "docker_query");
             Assert.Single(byTool);
             Assert.Equal("docker logs web", byTool[0].Command);
 
             var sql = await audit.GetSqlLogsAsync();
-            Assert.Equal("docker_logs", sql[0].Tool);
+            Assert.Equal("docker_query", sql[0].Tool);
         }
         finally
         {

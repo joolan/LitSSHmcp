@@ -52,7 +52,7 @@ public class CommandAuditLog
     /// <summary>产生该记录的 MCP 会话 ID（每次启动 MCP 服务生成，用于按会话区分/筛选审计）。</summary>
     public string? SessionId { get; set; }
 
-    /// <summary>产生该记录的 MCP 工具名（如 ssh_execute_command / docker_logs），由请求过滤器自动填充。</summary>
+    /// <summary>产生该记录的 MCP 工具名（如 ssh_execute_command / docker_query），由请求过滤器自动填充。</summary>
     public string? Tool { get; set; }
 
     /// <summary>

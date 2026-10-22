@@ -10,23 +10,23 @@ namespace LitSSHmcp.McpServer.Tests;
 public class OpsToolsTests
 {
     [Fact]
-    public async Task Docker_logs_quotes_container_and_since()
+    public async Task Docker_query_logs_quotes_container_and_since()
     {
         var runner = new CapturingRunner();
         var tools = new DockerTools(runner);
 
-        await tools.DockerLogs("s1", "web-1", tail: 10, since: "10m");
+        await tools.DockerQuery("s1", "logs", "web-1", tail: 10, since: "10m");
 
         Assert.Equal("docker logs --tail 10 --since '10m' -- 'web-1'", runner.LastCommand);
     }
 
     [Fact]
-    public async Task Docker_logs_rejects_invalid_container_without_running()
+    public async Task Docker_query_logs_rejects_invalid_container_without_running()
     {
         var runner = new CapturingRunner();
         var tools = new DockerTools(runner);
 
-        var result = await tools.DockerLogs("s1", "bad name; rm -rf /", tail: 10);
+        var result = await tools.DockerQuery("s1", "logs", "bad name; rm -rf /", tail: 10);
 
         Assert.False(result.Success);
         Assert.Equal("invalid_container", result.Status);

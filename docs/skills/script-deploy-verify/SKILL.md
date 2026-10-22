@@ -41,7 +41,7 @@ bash --version | head -1; ls -l /bin/sh; sh --version 2>&1 | head -1 || true
 ## 5. 验证（先只读，紧跟执行）
 1. 退出码/输出：脚本已打印 `OK: <关键指标>` 最好。
 2. `ssh_snapshot_get section="portmap"` / `ss -lntp | grep <port>`：端口还在/新起。
-3. `service_query(action="logs")` / `log_query(action="tail")` / `docker_logs`：执行后无新报错。
+3. `service_query(action="logs")` / `log_query(action="tail")` / `docker_query(action="logs")`：执行后无新报错。
 4. 数值类操作：执行前后各取一次 `df -h`/`count(*)` 对比，确认符合预期。
 
 ## 6. 清理 + 沉淀

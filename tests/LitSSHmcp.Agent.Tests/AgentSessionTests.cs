@@ -488,13 +488,13 @@ public class AgentSessionTests
     [Fact]
     public async Task Log_tool_result_keeps_tail_of_oversized_output()
     {
-        var call = new FunctionCallContent("c1", "docker_logs", new Dictionary<string, object?>());
+        var call = new FunctionCallContent("c1", "docker_query", new Dictionary<string, object?>());
         var client = new FakeChatClient(
             new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, new AIContent[] { call }) }),
             new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
 
         var content = "START-MARKER" + new string('x', 400) + "LATEST-LINE";
-        var tool = new FakeTool("docker_logs", content);
+        var tool = new FakeTool("docker_query", content);
         var config = new AgentConfig { ContextLimit = 0, ContextTokenLimit = 0, ToolResultMaxChars = 100 };
         var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
             new[] { tool }, "sys", config);

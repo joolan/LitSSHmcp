@@ -40,12 +40,53 @@ public class PostgresTools
     }
 
     [McpServerTool(Name = "postgres_query", UseStructuredContent = true, OutputSchemaType = typeof(QueryResultDto), ReadOnly = true, OpenWorld = true)]
-    [Description("在PostgreSQL数据源执行只读SQL(SELECT/SHOW/EXPLAIN/WITH)。写SQL用postgres_execute, 整体诊断用postgres_diagnostics")]
+    [Description("PostgreSQL 只读入口：action=query 执行 SELECT/SHOW/EXPLAIN/DESC/WITH；action=explain 分析执行计划；action=diagnostics 做连接/活动会话/等待锁/复制/缓存/死锁整体诊断。写 SQL 用 postgres_execute。")]
     public async Task<QueryResultDto> PostgresQuery(
         [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
-        [Description("只读SQL语句")] string sql,
-        [Description("最大返回行数(默认100, 上限1000)")] int maxRows = 100,
+        [Description("读取类型：query / explain / diagnostics")] string action,
+        [Description("query/explain 的只读 SQL；diagnostics 可留空")] string? sql = null,
+        [Description("query 最大返回行数(默认100, 上限1000)")] int maxRows = 100,
         CancellationToken cancellationToken = default)
+    {
+        var kind = action.Trim().ToLowerInvariant();
+        switch (kind)
+        {
+            case "query":
+                if (string.IsNullOrWhiteSpace(sql))
+                    return QueryResultDto.Fail("invalid_argument", "action=query 时必须提供 sql。");
+                var query = await PostgresQueryCore(datasourceId, sql, maxRows, cancellationToken);
+                query.Action = kind;
+                return query;
+            case "explain":
+                if (string.IsNullOrWhiteSpace(sql))
+                    return QueryResultDto.Fail("invalid_argument", "action=explain 时必须提供 sql。");
+                var explain = await PostgresExplain(datasourceId, sql, cancellationToken);
+                explain.Action = kind;
+                return explain;
+            case "diagnostics":
+                var diagnostics = await PostgresDiagnostics(datasourceId, cancellationToken);
+                return new QueryResultDto
+                {
+                    Success = diagnostics.Success,
+                    Status = diagnostics.Status,
+                    Error = diagnostics.Error,
+                    DatasourceId = diagnostics.DatasourceId,
+                    Name = diagnostics.Name,
+                    Action = kind,
+                    Summary = diagnostics.Summary,
+                    Data = diagnostics.Data,
+                    DurationMs = diagnostics.DurationMs
+                };
+            default:
+                return QueryResultDto.Fail("invalid_argument", "action 须为 query / explain / diagnostics");
+        }
+    }
+
+    private async Task<QueryResultDto> PostgresQueryCore(
+        string datasourceId,
+        string sql,
+        int maxRows,
+        CancellationToken cancellationToken)
     {
         var (ds, driver, config, status, error) = await ResolveAsync(datasourceId);
         if (ds == null || driver == null) return QueryResultDto.Fail(status!, error!);
@@ -170,9 +211,7 @@ public class PostgresTools
         };
     }
 
-    [McpServerTool(Name = "postgres_explain", UseStructuredContent = true, OutputSchemaType = typeof(QueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("对SQL执行EXPLAIN分析执行计划(PostgreSQL)")]
-    public async Task<QueryResultDto> PostgresExplain(
+    private async Task<QueryResultDto> PostgresExplain(
         [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
         [Description("要分析的SELECT语句")] string sql,
         CancellationToken cancellationToken = default)
@@ -185,7 +224,7 @@ public class PostgresTools
             return QueryResultDto.Fail("blocked", "EXPLAIN 仅接受只读SELECT/WITH语句。");
         if (filterResult == SqlFilterResult.Sensitive)
             return QueryResultDto.Fail("not_readonly_statement",
-                "该语句含写操作(数据修改 CTE 或 EXPLAIN ANALYZE <DML>), 不能在 postgres_explain 中执行, 请改用 postgres_execute。");
+                "该语句含写操作(数据修改 CTE 或 EXPLAIN ANALYZE <DML>), 不能在 postgres_query action=explain 中执行, 请改用 postgres_execute。");
 
         using var cts = CreateTimeout(ds, cancellationToken);
         var result = await driver.ExplainAsync(ds, sql, cts.Token);
@@ -209,9 +248,7 @@ public class PostgresTools
         };
     }
 
-    [McpServerTool(Name = "postgres_diagnostics", UseStructuredContent = true, OutputSchemaType = typeof(DiagnosticsResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("PostgreSQL整体诊断: 连接/活动会话/等待锁/复制/缓存命中/死锁。问'PG慢/卡/连接数暴涨'时优先用; 查具体数据用postgres_query")]
-    public async Task<DiagnosticsResultDto> PostgresDiagnostics(
+    private async Task<DiagnosticsResultDto> PostgresDiagnostics(
         [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
         CancellationToken cancellationToken = default)
     {

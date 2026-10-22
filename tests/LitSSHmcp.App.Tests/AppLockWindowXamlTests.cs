@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Threading;
+using System.Windows;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
@@ -41,7 +42,23 @@ public class AppLockWindowXamlTests
         var xaml = File.ReadAllText(Path.Combine(root, "src", "LitSSHmcp.App", "Views", "AppLockWindow.xaml"));
 
         Assert.Contains("ShowMinimize=\"True\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ResizeMode=\"CanMinimize\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ShowInTaskbar=\"True\"", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Lock_window_can_minimize()
+    {
+        ResizeMode? resizeMode = null;
+        var ex = RunSta(() =>
+        {
+            var window = new AppLockWindow(CreateLockService(), AppLockWindowMode.Unlock, relock: false);
+            resizeMode = window.ResizeMode;
+            window.Close();
+        });
+
+        Assert.Null(ex);
+        Assert.Equal(ResizeMode.CanMinimize, resizeMode);
     }
 
     [Fact]

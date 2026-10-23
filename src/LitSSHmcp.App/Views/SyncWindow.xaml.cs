@@ -9,10 +9,10 @@ public partial class SyncWindow : FluentWindow
 {
     private readonly SyncViewModel _vm;
 
-    public SyncWindow()
+    public SyncWindow(IAppServices? services = null)
     {
         InitializeComponent();
-        _vm = new SyncViewModel();
+        _vm = new SyncViewModel(services: services);
         _vm.ResultRequested += (title, headline, message, isError) =>
             ResultDialog.Show(this, title, headline, message, isError);
         DataContext = _vm;

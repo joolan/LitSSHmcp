@@ -25,16 +25,18 @@ public sealed class RemoteCopyViewModel : INotifyPropertyChanged
     private readonly ISshService _ssh;
     private readonly SshServerConfig _source;
     private readonly IUserDialogService _dialogs;
+    private readonly IAppServices? _services;
     private List<SshServerConfig> _allServers = new();
     private CancellationTokenSource? _cts;
 
     /// <summary>构造：items 为 null 时进入「浏览模式」——左右两侧均为可切换的服务器文件浏览器，源侧现场多选。</summary>
     public RemoteCopyViewModel(SshServerConfig source, IEnumerable<RemoteFileItem>? items,
-        IUserDialogService? dialogs = null)
+        IUserDialogService? dialogs = null, IAppServices? services = null)
     {
         _source = source;
         _dialogs = dialogs ?? new UserDialogService();
-        _ssh = AppServiceFactory.CreateSshService();
+        _services = services;
+        _ssh = services?.CreateSshService() ?? AppServiceFactory.CreateSshService();
         IsBrowserMode = items is null;
         Sources = new ObservableCollection<RemoteFileItem>(items ?? Enumerable.Empty<RemoteFileItem>());
         Targets = new ObservableCollection<SshServerConfig>();
@@ -109,7 +111,7 @@ public sealed class RemoteCopyViewModel : INotifyPropertyChanged
     {
         try
         {
-            var config = await AppServiceFactory.CreateConfigService().LoadConfigAsync();
+            var config = await (_services?.Config ?? AppServiceFactory.CreateConfigService()).LoadConfigAsync();
             _allServers = config.Servers.ToList();
 
             if (IsBrowserMode)

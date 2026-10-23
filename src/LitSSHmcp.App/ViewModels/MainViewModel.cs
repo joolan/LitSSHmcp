@@ -1107,7 +1107,7 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
 
     private void NavigateRemoteDesktops()
     {
-        RemoteDesktopPage ??= new RemoteDesktopManageViewModel(_configService);
+        RemoteDesktopPage ??= new RemoteDesktopManageViewModel(_configService, services: _services);
         RemoteDesktopPage.RefreshCommand.Execute(null);
         CurrentPage = MainPage.RemoteDesktops;
     }

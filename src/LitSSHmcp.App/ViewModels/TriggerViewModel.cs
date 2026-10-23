@@ -83,16 +83,21 @@ public sealed class TriggerActionItem : INotifyPropertyChanged
 /// 触发事件设置：触发事件增删改、目标（本机/远程）、触发源（手动 / 定时 / 被同步任务事件触发）、
 /// 动作流水线（git / webhook / 备份，卡片式：每张卡片可编辑、上移、下移、删除）；手动「立即执行」调用 TriggerRunner。
 /// </summary>
-public sealed class TriggerViewModel : INotifyPropertyChanged
+public sealed class TriggerViewModel : INotifyPropertyChanged, IConfigReloadable
 {
-    private readonly IConfigService _config = new ConfigService();
-    private readonly TriggerRunner _runner = new(AppServiceFactory.CreateSshService(), new AuditLogService(), TriggerStateStore.Default);
+    private readonly IConfigService _config;
+    private readonly TriggerRunner _runner;
     private readonly IUserDialogService _dialogs;
     private bool _suppressOptions;
     private bool _suppressActionSync;
 
-    public TriggerViewModel(IUserDialogService? dialogs = null)
+    public TriggerViewModel(IUserDialogService? dialogs = null, IAppServices? services = null)
     {
+        _config = services?.Config ?? AppServiceFactory.CreateConfigService();
+        _runner = new TriggerRunner(
+            services?.CreateSshService() ?? AppServiceFactory.CreateSshService(),
+            services?.CreateAuditLog() ?? new AuditLogService(),
+            TriggerStateStore.Default);
         _dialogs = dialogs ?? new UserDialogService();
         BuildOptions();
         NewTriggerCommand = new RelayCommand(_ => NewTrigger());
@@ -312,6 +317,8 @@ public sealed class TriggerViewModel : INotifyPropertyChanged
     }
 
     // ---- 数据 ----
+
+    public void ReloadConfig() => _ = LoadAsync();
 
     private async Task LoadAsync()
     {

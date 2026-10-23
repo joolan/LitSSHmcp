@@ -19,10 +19,10 @@ public partial class DbWorkbenchWindow : FluentWindow
 {
     private readonly DbWorkbenchViewModel _vm;
 
-    public DbWorkbenchWindow(DataSourceConfig? initial = null)
+    public DbWorkbenchWindow(DataSourceConfig? initial = null, IAppServices? services = null)
     {
         InitializeComponent();
-        _vm = new DbWorkbenchViewModel();
+        _vm = new DbWorkbenchViewModel(services: services);
         DataContext = _vm;
         _vm.ConfirmWrite = info => DbWritePreviewWindow.Show(this, info);
         WindowLayout.Attach(this, "dbworkbench");

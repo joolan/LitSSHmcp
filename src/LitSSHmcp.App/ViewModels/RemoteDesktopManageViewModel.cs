@@ -13,19 +13,20 @@ using LitSSHmcp.Core.Services.Storage;
 namespace LitSSHmcp.App.ViewModels;
 
 /// <summary>远程桌面（RDP / VNC）连接管理页视图模型。</summary>
-public class RemoteDesktopManageViewModel : INotifyPropertyChanged
+public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService;
-    private readonly RemoteDesktopService _service = AppServiceFactory.RemoteDesktopService;
+    private readonly RemoteDesktopService _service;
     private readonly IUserDialogService _dialogs;
     private readonly IWindowService _windows;
     private RemoteDesktopConfig? _selected;
     private string _statusMessage = string.Empty;
 
     public RemoteDesktopManageViewModel(IConfigService configService, IUserDialogService? dialogs = null,
-        IWindowService? windows = null)
+        IWindowService? windows = null, IAppServices? services = null)
     {
         _configService = configService;
+        _service = services?.RemoteDesktop ?? AppServiceFactory.RemoteDesktopService;
         _dialogs = dialogs ?? new UserDialogService();
         _windows = windows ?? new WpfWindowService();
 
@@ -84,6 +85,8 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
             if (Selected?.Id == id)
                 StatusMessage = message;
         }));
+
+    public void ReloadConfig() => Load();
 
     private void Load() => AsyncOperation.Run("加载远程桌面连接", async () =>
     {

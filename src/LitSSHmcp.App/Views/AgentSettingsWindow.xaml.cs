@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using LitSSHmcp.Agent;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Services.Storage;
 using Wpf.Ui.Controls;
@@ -10,12 +11,14 @@ namespace LitSSHmcp.App.Views;
 
 public partial class AgentSettingsWindow : FluentWindow
 {
-    private readonly AgentSettingsViewModel _viewModel = new();
+    private readonly AgentSettingsViewModel _viewModel;
     private readonly LitSSHmcp.App.Services.UserDialogService _dialogs = new();
 
-    public AgentSettingsWindow(IConfigService configService, string? initialTab = null)
+    public AgentSettingsWindow(IConfigService configService, string? initialTab = null,
+        IAppServices? services = null)
     {
         InitializeComponent();
+        _viewModel = new AgentSettingsViewModel(services?.Config ?? configService);
         DataContext = _viewModel;
         LitSSHmcp.App.Services.WindowLayout.Attach(this, "agent-settings");
 

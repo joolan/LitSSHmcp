@@ -9,8 +9,8 @@ namespace LitSSHmcp.App.Views;
 
 public partial class SecuritySettingsView : UserControl
 {
-    private readonly SecuritySettingsViewModel _viewModel = new();
-    private readonly AppLockService _appLockService = new(new ConfigService());
+    private SecuritySettingsViewModel _viewModel = new();
+    private AppLockService _appLockService = new(new ConfigService());
 
     public SecuritySettingsView()
     {
@@ -19,6 +19,15 @@ public partial class SecuritySettingsView : UserControl
         HostKeyModeBox.ItemsSource = new[] { "Tofu", "Strict", "Off" };
         ApprovalStyleBox.ItemsSource = new[] { "process", "dialog", "native" };
         Loaded += async (_, _) => await RefreshAppLockStatusAsync();
+    }
+
+    public void Initialize(IAppServices? services)
+    {
+        _viewModel = new SecuritySettingsViewModel(services?.Config);
+        _appLockService = services is null
+            ? new AppLockService(new ConfigService())
+            : new AppLockService(services.Config);
+        DataContext = _viewModel;
     }
 
     private void OnReload(object sender, RoutedEventArgs e) => _viewModel.Load();

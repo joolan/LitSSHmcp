@@ -15,10 +15,14 @@ namespace LitSSHmcp.App.ViewModels;
 /// <summary>AI 助手设置：多模型接入（启用/停用）+ 系统提示/技能/上下文/只读/服务器路径。</summary>
 public partial class AgentSettingsViewModel : INotifyPropertyChanged
 {
-    private readonly IConfigService _configService = new ConfigService();
+    private readonly IConfigService _configService;
     private readonly IContextStore _contextStore = new ContextStore();
 
-    public AgentSettingsViewModel() => Load();
+    public AgentSettingsViewModel(IConfigService? configService = null)
+    {
+        _configService = configService ?? AppServiceFactory.CreateConfigService();
+        Load();
+    }
 
     public ObservableCollection<AgentProviderEdit> Providers { get; } = new();
 

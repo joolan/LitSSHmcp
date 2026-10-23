@@ -7,7 +7,7 @@ namespace LitSSHmcp.App.Views;
 
 public partial class StorageSettingsView : UserControl
 {
-    private readonly StorageSettingsViewModel _viewModel = new();
+    private StorageSettingsViewModel _viewModel = new();
     private readonly UserDialogService _dialogs = new();
 
     public StorageSettingsView()
@@ -15,6 +15,13 @@ public partial class StorageSettingsView : UserControl
         InitializeComponent();
         DataContext = _viewModel;
         Loaded += (_, _) => AsyncOperation.Run("刷新存储统计", _viewModel.RefreshAsync);
+    }
+
+    public void Initialize(IAppServices? services)
+    {
+        _viewModel = new StorageSettingsViewModel(services?.Config);
+        DataContext = _viewModel;
+        _ = _viewModel.RefreshAsync();
     }
 
     private void OnRefresh(object sender, RoutedEventArgs e) =>

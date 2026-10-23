@@ -11,7 +11,7 @@ using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.ViewModels;
 
-public class ApplicationManageViewModel : INotifyPropertyChanged
+public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService;
     private readonly Window? _owner;
@@ -62,6 +62,8 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
     public ICommand AddCommand { get; }
     public ICommand EditCommand { get; }
     public ICommand DeleteCommand { get; }
+
+    public void ReloadConfig() => Load();
 
     private void Load() => AsyncOperation.Run("加载应用", async () =>
     {

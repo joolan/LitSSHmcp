@@ -15,13 +15,16 @@ namespace LitSSHmcp.App.Services;
 /// </summary>
 public sealed class WpfWindowService : IWindowService
 {
+    /// <summary>组合根（由 AppServices 注入）；用于给新窗口传递共享服务。</summary>
+    public IAppServices? Services { get; set; }
+
     public SshSessionWindow CreateSessionWindow(object dataContext) =>
         new() { DataContext = dataContext, Topmost = false };
 
     public SshSessionFloatWindow CreateSessionFloat(MainViewModel host, object session) =>
         new(host, session) { Topmost = false };
 
-    public TopologyWindow CreateTopologyWindow() => new() { Topmost = false };
+    public TopologyWindow CreateTopologyWindow() => new(Services) { Topmost = false };
 
     public AuditWindow CreateAuditWindow() => new() { Topmost = false };
 
@@ -36,18 +39,18 @@ public sealed class WpfWindowService : IWindowService
     public PortForwardWindow CreatePortForwardWindow(PortForwardViewModel viewModel) =>
         new(viewModel) { Topmost = false };
 
-    public SyncWindow CreateSyncWindow() => new() { Topmost = false };
+    public SyncWindow CreateSyncWindow() => new(Services) { Topmost = false };
 
-    public TriggerWindow CreateTriggerWindow() => new() { Topmost = false };
+    public TriggerWindow CreateTriggerWindow() => new(Services) { Topmost = false };
 
     public SftpManagerWindow CreateSftpManagerWindow(SftpManagerViewModel viewModel) =>
         new(viewModel) { Topmost = false };
 
     public RemoteCopyWindow CreateRemoteCopyWindow(SshServerConfig server) =>
-        new(server) { Topmost = false };
+        new(server, services: Services) { Topmost = false };
 
     public AppSettingsWindow CreateAppSettingsWindow(IConfigService configService) =>
-        new(configService);
+        new(configService, Services);
 
     public AgentWindow CreateAgentWindow(
         IConfigService configService,
@@ -55,7 +58,7 @@ public sealed class WpfWindowService : IWindowService
         string skillsDir,
         Func<string, LocalTerminalSessionViewModel?>? localTerminalResolver = null,
         IAiTerminalBroker? localTerminalBroker = null) =>
-        new(configService, store, skillsDir, localTerminalResolver, localTerminalBroker) { Topmost = false };
+        new(configService, store, skillsDir, localTerminalResolver, localTerminalBroker, Services) { Topmost = false };
 
     public SnapshotHistoryWindow CreateSnapshotHistoryWindow(
         ISnapshotStore store,
@@ -104,7 +107,7 @@ public sealed class WpfWindowService : IWindowService
 
     public DbWorkbenchWindow CreateDbWorkbenchWindow(DataSourceConfig? initial = null, Window? owner = null)
     {
-        var window = new DbWorkbenchWindow(initial) { Topmost = false };
+        var window = new DbWorkbenchWindow(initial, Services) { Topmost = false };
         if (owner is not null)
             window.Owner = owner;
         return window;

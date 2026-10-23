@@ -17,7 +17,7 @@ namespace LitSSHmcp.App.Views;
 
 public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
 {
-    private readonly TopologyViewModel _viewModel = new();
+    private readonly TopologyViewModel _viewModel;
 
     private bool _dragging;
     private bool _dragMoved;
@@ -53,9 +53,10 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
     private double _renderMaxMs;
     private int _probeMoveEvents;
 
-    public TopologyWindow()
+    public TopologyWindow(IAppServices? services = null)
     {
         InitializeComponent();
+        _viewModel = new TopologyViewModel(services: services);
 #if DEBUG
         foreach (var item in MoreActionsButton.ContextMenu.Items)
         {

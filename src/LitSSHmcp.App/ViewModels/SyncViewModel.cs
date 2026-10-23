@@ -71,16 +71,18 @@ public sealed class SyncEventHookOption : INotifyPropertyChanged
 }
 
 /// <summary>文件/文件夹同步设置（单向）：任务增删改、方向联动、调度三选一、文件过滤；保存仅校验必填项（测试为可选自检）。</summary>
-public sealed class SyncViewModel : INotifyPropertyChanged
-{    private readonly IConfigService _config = new ConfigService();
-    private readonly SyncService _sync = AppServiceFactory.CreateSyncService();
+public sealed class SyncViewModel : INotifyPropertyChanged, IConfigReloadable
+{    private readonly IConfigService _config;
+    private readonly SyncService _sync;
     private readonly IUserDialogService _dialogs;
 
     private string? _testedSignature;
     private bool _suppressOptions;
 
-    public SyncViewModel(IUserDialogService? dialogs = null)
+    public SyncViewModel(IUserDialogService? dialogs = null, IAppServices? services = null)
     {
+        _config = services?.Config ?? AppServiceFactory.CreateConfigService();
+        _sync = services?.CreateSyncService() ?? AppServiceFactory.CreateSyncService();
         _dialogs = dialogs ?? new UserDialogService();
         BuildOptions();
         NewTaskCommand = new RelayCommand(_ => NewTask());
@@ -301,6 +303,8 @@ public sealed class SyncViewModel : INotifyPropertyChanged
     }
 
     // ---- 数据 ----
+
+    public void ReloadConfig() => _ = LoadAsync();
 
     private async Task LoadAsync()
     {

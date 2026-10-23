@@ -11,7 +11,7 @@ using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.ViewModels;
 
-public class DatasourceManageViewModel : INotifyPropertyChanged
+public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService;
     private readonly ITopologyStore _topologyStore;
@@ -88,6 +88,8 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         (DeleteCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (TestCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
+
+    public void ReloadConfig() => Load();
 
     private void Load() => AsyncOperation.Run("加载数据源", async () =>
     {

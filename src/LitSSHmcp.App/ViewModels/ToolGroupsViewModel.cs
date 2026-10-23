@@ -12,13 +12,14 @@ namespace LitSSHmcp.App.ViewModels;
 // 结果写入 config.json 的 tools.enabledGroups, 需重启 MCP 服务器(或 AI 客户端重连)后生效。
 public class ToolGroupsViewModel : INotifyPropertyChanged, IConfigReloadable
 {
-    private readonly IConfigService _configService = new ConfigService();
+    private readonly IConfigService _configService;
     private string _statusMessage = string.Empty;
 
     public ObservableCollection<ToolGroupItem> Groups { get; } = new();
 
-    public ToolGroupsViewModel()
+    public ToolGroupsViewModel(IConfigService? configService = null)
     {
+        _configService = configService ?? AppServiceFactory.CreateConfigService();
         Add(ToolGroups.Ssh, "SSH 服务器", "ssh_list_servers / ssh_test_connection");
         Add(ToolGroups.Command, "命令执行", "ssh_execute_command / ssh_execute_sudo / ssh_get_sudo_status");
         Add(ToolGroups.FileTransfer, "文件传输", "ssh_upload / ssh_download / ssh_list_files");

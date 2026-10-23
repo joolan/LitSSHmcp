@@ -23,13 +23,13 @@
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
                     <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Web 助手（浏览器端，全新）：Kestrel 零构建 SPA，独立账号库（PBKDF2-SHA256 210k 迭代、连续失败指数锁定），每个 AI 会话运行在独立 AgentRuntime 子进程；WebSocket 流式聊天、审批实时推送与 REST 对账，会话目录文件浏览 / 下载，图片附件与全屏预览、会话级模型切换，手机端响应式布局。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 桌面可选登录（仅归因）：AI 助手侧栏可登录 / 注销，复用 Web 账号库校验（失败计数与锁定共享），登录态经 DPAPI 加密跨重启保持；登录后新会话 owner 与 App 审计 UserId 记为用户名，桌面权限不变。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 审计格式 v5→v6 保留迁移：四张审计表补齐 UserId 并纳入 HMAC-SHA256 哈希链，升级不再清空历史；审计链跨进程文件锁串行追加，并行子进程不再链分叉。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 并行与隔离：按会话隔离的运行状态机（运行 / 待审批 / 完成 / 停止互不干扰），切换、删除、归档、关窗按池元素收口；跨进程目标写互斥与限流共享，审批超时改为弹窗可见后起算。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 工作区与安全加固：两级工作区 + 会话级工作目录，PathGuard 逐段解析 junction / 符号链接防越界；脚本安全门（服务端扫描权威、脚本永不免审）、上传侧本地扫描硬拒、跨进程写门禁；Web 授权矩阵可视化配置。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 会话体验提升：会话历史分页 / 懒加载，Web 与桌面共用冷启动上下文与工具轨迹格式（跨端前缀缓存复用）；Web 结论丢帧按落库内容自愈、审批与聊天断线自动对账，桌面 5 秒轻量对账同步 Web 写入的会话进度。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 运维能力延续：应用锁与 Windows Hello、本机 PowerShell 终端 + AI 本地 CLI、外部 MCP 接入与三档审批放行、RDP / VNC 远程桌面、MCP Resources、资产拓扑、数据库工作台与 Redis 键浏览、智能体体系与结构化经验记忆。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Memory 可回滚：新增历史快照表，更新 / 删除 / 归档前自动留存（含向量与 owner/scope）；每个 MemoryId 保留最近 40 版、孤儿快照 30 天清理；桌面「记忆管理」与 Web「记忆库」支持右键查看历史 / 回滚 / 归档，管理员 API 同步提供。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 存储维护：设置新增「存储维护」Tab，统计 config / agent.db / audit.db / snapshots.db / spill / jobs / logs / skills 占用；支持清理 Memory 历史、过期 spill、孤儿会话目录与审计归档（清理后重建剩余哈希链），并展示配置 / 库迁移状态。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• App 结构治理：IUserDialogService / IWindowService 收敛 UI 边界，Agent / Topology / DbWorkbench 多轮拆分；新增 IAppServices 最小组合根与 IConfigReloadable，配置冲突时可统一重新加载已打开窗口。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本地工具精简：工作区 / 记忆 / 落盘 / 本机终端合并为 18 个工具，统一 mode/action 语义；系统提示、技能与工具清单门禁同步。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 质量门禁：全量测试与覆盖率分程序集阈值、七域风险门禁（工具目录 / 授权 / 路径 / 命令 / 脱敏 / Web / 结构预算）持续守住回归。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Web 助手：Kestrel 零构建 SPA，独立账号库（PBKDF2-SHA256 210k 迭代、连续失败指数锁定），每个 AI 会话运行在独立 AgentRuntime 子进程；WebSocket 流式聊天、审批实时推送与 REST 对账，会话目录文件浏览 / 下载，图片附件与全屏预览、会话级模型切换，手机端响应式布局。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 运维与安全：审计 UserId / HMAC-SHA256 链、按会话隔离状态机、PathGuard 防越界、脚本永不免审、应用锁与 Windows Hello、本机 PowerShell 终端 + AI 本地 CLI、外部 MCP 接入、RDP / VNC、MCP Resources、资产拓扑与数据库工作台。"/>
                 </StackPanel>
             </Border>
 
@@ -53,7 +53,7 @@
                 <StackPanel>
                     <TextBlock Text="MCP 核心能力（AI 可调用的工具）" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,6"
-                               Text="通过 Model Context Protocol（stdio）向任意 MCP 客户端暴露 61 个工具，覆盖以下能力域（可在「工具分组」按部署裁剪）："/>
+                               Text="通过 Model Context Protocol（stdio）向任意 MCP 客户端暴露 36 个默认外部工具（另有 1 个宿主内部审批工具），覆盖以下能力域（可在「工具分组」按部署裁剪）："/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 运维：命令执行、sudo 提权、连接测试/状态、批量与目录文件上传下载、目录浏览。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源：MySQL / PostgreSQL 只读查询、执行计划、写操作与诊断（连接数/慢查询/锁/复制），Redis 只读与写/管理命令、诊断；支持直连或 SSH 隧道，密码仅本机保存、不暴露给 AI。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 容器与服务：Docker 容器/镜像/日志/inspect/stats，systemd 服务状态与日志。"/>

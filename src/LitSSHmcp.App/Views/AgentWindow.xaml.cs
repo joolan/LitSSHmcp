@@ -16,13 +16,16 @@ public partial class AgentWindow : FluentWindow
     private readonly AgentViewModel _viewModel;
     private readonly IConfigService _configService;
     private readonly DesktopLoginService _desktopLogin;
+    private readonly IAppServices? _services;
 
     public AgentWindow(IConfigService configService, IContextStore store, string skillsDir,
         Func<string, LocalTerminalSessionViewModel?>? localTerminalResolver = null,
-        Services.LocalTerminal.IAiTerminalBroker? localTerminalBroker = null)
+        Services.LocalTerminal.IAiTerminalBroker? localTerminalBroker = null,
+        IAppServices? services = null)
     {
         InitializeComponent();
         _configService = configService;
+        _services = services;
         _desktopLogin = AppServiceFactory.DesktopLogin;
 
         _viewModel = new AgentViewModel(configService, store, skillsDir,
@@ -108,7 +111,7 @@ public partial class AgentWindow : FluentWindow
             return;
         }
 
-        _settingsWindow = new AgentSettingsWindow(_configService, tab) { Owner = this };
+        _settingsWindow = new AgentSettingsWindow(_configService, tab, _services) { Owner = this };
         _settingsWindow.Closed += (_, _) =>
         {
             _settingsWindow = null;

@@ -11,7 +11,7 @@ namespace LitSSHmcp.App.ViewModels;
 
 public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadable
 {
-    private readonly IConfigService _configService = new ConfigService();
+    private readonly IConfigService _configService;
 
     private bool _mcpEnabled = true;
     private string _blockedCommands = string.Empty;
@@ -58,8 +58,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
     private string _webJobsRoot = string.Empty;
     private string _statusMessage = string.Empty;
 
-    public SecuritySettingsViewModel()
+    public SecuritySettingsViewModel(IConfigService? configService = null)
     {
+        _configService = configService ?? AppServiceFactory.CreateConfigService();
         Load();
     }
 

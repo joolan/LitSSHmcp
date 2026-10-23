@@ -83,7 +83,7 @@ public class StructureGuardTests
             .ToArray();
 
         Assert.True(Count(sources, "MessageBox.Show") <= 75, "MessageBox.Show 数量超出基线(75)，请改用 IUserDialogService。");
-        Assert.True(Count(sources, "new ConfigService(") <= 17, "new ConfigService() 数量超出基线(17)，请注入 IConfigService。");
+        Assert.True(Count(sources, "new ConfigService(") <= 11, "new ConfigService() 数量超出基线(11)，请注入 IConfigService。");
         Assert.True(Count(sources, "Process.Start") <= 8, "Process.Start 数量超出基线(8)，请集中到宿主服务。");
     }
 

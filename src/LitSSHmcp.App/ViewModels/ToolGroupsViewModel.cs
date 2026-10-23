@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 
@@ -9,7 +10,7 @@ namespace LitSSHmcp.App.ViewModels;
 
 // 工具分组的可视化开关。分组与工具的对应关系与 docs/TOOLS.md「工具分组」保持一致;
 // 结果写入 config.json 的 tools.enabledGroups, 需重启 MCP 服务器(或 AI 客户端重连)后生效。
-public class ToolGroupsViewModel : INotifyPropertyChanged
+public class ToolGroupsViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService = new ConfigService();
     private string _statusMessage = string.Empty;
@@ -54,6 +55,8 @@ public class ToolGroupsViewModel : INotifyPropertyChanged
     private void Add(string key, string label, string tools) => Groups.Add(new ToolGroupItem(key, label, tools));
 
     private bool IsEnabled(string key) => Groups.FirstOrDefault(g => g.Key == key)?.IsEnabled ?? false;
+
+    public void ReloadConfig() => Load();
 
     public void Load() => AsyncOperation.Run("加载工具分组", async () =>
     {

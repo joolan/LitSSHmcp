@@ -13,7 +13,7 @@ namespace LitSSHmcp.App.ViewModels;
 /// 本机数据目录维护：统计各存储占用，清理 Memory 历史、过期 spill 与孤儿会话目录。
 /// 只处理本机 AppData；Web/MCP 各自的运行目录仍按各自配置管理。
 /// </summary>
-public class StorageSettingsViewModel : INotifyPropertyChanged
+public class StorageSettingsViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService;
     private readonly string _dataDir;
@@ -53,6 +53,8 @@ public class StorageSettingsViewModel : INotifyPropertyChanged
     }
 
     /// <summary>重新读取配置并统计占用（目录遍历放到后台线程，避免卡 UI）。</summary>
+    public void ReloadConfig() => _ = RefreshAsync();
+
     public async Task RefreshAsync()
     {
         if (Busy)

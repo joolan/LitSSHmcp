@@ -16,7 +16,8 @@ public class StructureGuardTests
         ("ViewModels/AgentSessionSidebar.cs", 175),
         ("ViewModels/AgentAttachmentManager.cs", 120),
         ("ViewModels/AgentSessionOrder.cs", 60),
-        ("ViewModels/TopologyViewModel.cs", 2440),
+        ("ViewModels/TopologyViewModel.cs", 2415),
+        ("ViewModels/TopologyLayoutHistory.cs", 110),
         ("ViewModels/TopologyGraphItems.cs", 190),
         ("ViewModels/TopologyGeometry.cs", 130),
         ("ViewModels/DbWorkbenchViewModel.cs", 1920),
@@ -29,7 +30,8 @@ public class StructureGuardTests
         ("ViewModels/MainViewModel.cs", 1400),
         ("ViewModels/StorageSettingsViewModel.cs", 260),
         ("Services/IWindowService.cs", 70),
-        ("Services/WpfWindowService.cs", 130)
+        ("Services/WpfWindowService.cs", 130),
+        ("Services/AppServices.cs", 130)
     };
 
     // 已迁移到 IUserDialogService 的 VM 不得退回直接 MessageBox。
@@ -81,7 +83,7 @@ public class StructureGuardTests
             .ToArray();
 
         Assert.True(Count(sources, "MessageBox.Show") <= 75, "MessageBox.Show 数量超出基线(75)，请改用 IUserDialogService。");
-        Assert.True(Count(sources, "new ConfigService(") <= 18, "new ConfigService() 数量超出基线(18)，请注入 IConfigService。");
+        Assert.True(Count(sources, "new ConfigService(") <= 17, "new ConfigService() 数量超出基线(17)，请注入 IConfigService。");
         Assert.True(Count(sources, "Process.Start") <= 8, "Process.Start 数量超出基线(8)，请集中到宿主服务。");
     }
 

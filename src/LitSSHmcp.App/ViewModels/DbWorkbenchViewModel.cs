@@ -63,11 +63,13 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
     private QueryTab? _selectedTab;
     private int _tabSeq;
 
-    public DbWorkbenchViewModel(IConfigService? configService = null, IUserDialogService? dialogs = null)
+    public DbWorkbenchViewModel(IConfigService? configService = null, IUserDialogService? dialogs = null,
+        IAppServices? services = null)
     {
-        _configService = configService ?? new ConfigService();
+        _configService = configService ?? services?.Config ?? AppServiceFactory.CreateConfigService();
         _dialogs = dialogs ?? new UserDialogService();
-        _registry = AppServiceFactory.CreateWorkbenchDriverRegistry(_configService);
+        _registry = services?.CreateWorkbenchDriverRegistry()
+                    ?? AppServiceFactory.CreateWorkbenchDriverRegistry(_configService);
         _objects = new WorkbenchObjectBrowser(this);
         _objects.Changed += () =>
         {

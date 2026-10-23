@@ -222,10 +222,20 @@ public partial class App : Application
                     ? "（未提供具体字段）"
                     : string.Join("\n", paths.Take(10)) +
                       (paths.Length > 10 ? $"\n… 另 {paths.Length - 10} 项" : string.Empty);
-                new UserDialogService().Warn(
-                    $"配置已被其他窗口或进程修改，以下字段存在冲突：\n\n{detail}\n\n" +
-                    "请关闭并重新打开当前窗口（或重新加载配置）后再保存，避免覆盖他人的修改。",
-                    "配置冲突");
+                var dialogs = new UserDialogService();
+                if (!dialogs.Confirm(
+                        $"配置已被其他窗口或进程修改，以下字段存在冲突：\n\n{detail}\n\n" +
+                        "是否立即重新加载已打开窗口？未保存的修改会丢失。",
+                        "配置冲突", defaultNo: true))
+                    return;
+
+                foreach (Window window in Current.Windows)
+                {
+                    if (window.DataContext is not IConfigReloadable reloadable)
+                        continue;
+                    try { reloadable.ReloadConfig(); }
+                    catch { /* 单个窗口重新加载失败不阻断其它窗口 */ }
+                }
             }
             catch
             {

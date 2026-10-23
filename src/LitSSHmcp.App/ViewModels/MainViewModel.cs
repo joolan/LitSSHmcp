@@ -18,19 +18,20 @@ using Microsoft.Win32;
 
 namespace LitSSHmcp.App.ViewModels;
 
-public class MainViewModel : INotifyPropertyChanged
+public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
 {
+    private readonly IAppServices _services;
     private readonly IConfigService _configService;
     private readonly ISshService _sshService;
     private readonly IAuditLogService _auditLogService;
-    private readonly ITopologyStore _topologyStore = new TopologyStore();
-    private readonly PortForwardService _portForwardService = AppServiceFactory.PortForwardService;
+    private readonly ITopologyStore _topologyStore;
+    private readonly PortForwardService _portForwardService;
     private readonly IUserDialogService _dialogs;
     private readonly IWindowService _windows;
 
     // 快照: 采集服务实例须长期复用(内存单飞锁绑定实例); 库供历史窗口读取。
-    private readonly ISnapshotService _snapshotService = AppServiceFactory.CreateSnapshotService();
-    private readonly ISnapshotStore _snapshotStore = AppServiceFactory.CreateSnapshotStore();
+    private readonly ISnapshotService _snapshotService;
+    private readonly ISnapshotStore _snapshotStore;
     private bool _snapshotBusy;
 
     private SshServerConfig? _selectedServer;
@@ -76,15 +77,21 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand SnapshotRefreshCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
 
-    public MainViewModel(IUserDialogService? dialogs = null, IWindowService? windows = null)
+    public MainViewModel(IUserDialogService? dialogs = null, IWindowService? windows = null,
+        IAppServices? services = null)
     {
-        _dialogs = dialogs ?? new UserDialogService();
-        _windows = windows ?? new WpfWindowService();
-        _configService = new ConfigService();
+        _services = services ?? new AppServices(dialogs, windows);
+        _dialogs = _services.Dialogs;
+        _windows = _services.Windows;
+        _configService = _services.Config;
+        _topologyStore = _services.CreateTopologyStore();
+        _portForwardService = _services.PortForward;
+        _snapshotService = _services.CreateSnapshotService();
+        _snapshotStore = _services.CreateSnapshotStore();
         // 与数据源 / 端口转发 / 拓扑发现一致：携带 known-hosts 与安全设置（Tofu/Strict/Off），
         // 避免主界面终端绕过主机密钥校验、而弹窗"测试连接"走另一套策略。
-        _sshService = AppServiceFactory.CreateSshService();
-        _auditLogService = new AuditLogService();
+        _sshService = _services.CreateSshService();
+        _auditLogService = _services.CreateAuditLog();
         AiTerminals = new Services.LocalTerminal.AiTerminalBroker(
             name => CreateLocalTerminal(isAi: true, aiName: name),
             RemoveLocalTerminal,
@@ -664,6 +671,8 @@ public class MainViewModel : INotifyPropertyChanged
         StatusMessage = Sessions.Count == 0 ? "已关闭全部会话" : $"已关闭会话: {name}";
     }
 
+    public void ReloadConfig() => LoadServers();
+
     private void LoadServers() => AsyncOperation.Run("加载服务器", async () =>
     {
         try
@@ -1068,7 +1077,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     private void NavigateDataSources()
     {
-        DatasourcePage ??= new DatasourceManageViewModel(_configService);
+            DatasourcePage ??= new DatasourceManageViewModel(_configService, services: _services);
         DatasourcePage.RefreshCommand.Execute(null);
         CurrentPage = MainPage.DataSources;
     }
@@ -1117,8 +1126,8 @@ public class MainViewModel : INotifyPropertyChanged
 
         _agentWindow = _windows.CreateAgentWindow(
             _configService,
-            AppServiceFactory.CreateAgentContextStore(),
-            AppServiceFactory.BundledSkillsDir,
+            _services.CreateAgentContextStore(),
+            _services.BundledSkillsDir,
             ResolveSessionTerminal,
             AiTerminals);
         _agentWindow.ViewModel.SessionRemoved += CloseSessionTerminal;

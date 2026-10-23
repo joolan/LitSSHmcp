@@ -17,16 +17,18 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
     private readonly ITopologyStore _topologyStore;
     private readonly IUserDialogService _dialogs;
     private readonly IWindowService _windows;
+    private readonly IAppServices? _services;
     private DataSourceConfig? _selectedDataSource;
     private string _statusMessage = string.Empty;
 
     public DatasourceManageViewModel(IConfigService configService, ITopologyStore? topologyStore = null,
-        IUserDialogService? dialogs = null, IWindowService? windows = null)
+        IUserDialogService? dialogs = null, IWindowService? windows = null, IAppServices? services = null)
     {
         _configService = configService;
         _topologyStore = topologyStore ?? new TopologyStore();
         _dialogs = dialogs ?? new UserDialogService();
         _windows = windows ?? new WpfWindowService();
+        _services = services;
 
         RefreshCommand = new RelayCommand(_ => Load());
         AddCommand = new RelayCommand(_ => Add());
@@ -210,7 +212,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
                 return;
             }
 
-            var registry = AppServiceFactory.CreateDriverRegistry(_configService);
+            var registry = _services?.CreateDriverRegistry() ?? AppServiceFactory.CreateDriverRegistry(_configService);
             var driver = registry.Get(ds.Type);
             if (driver == null)
             {

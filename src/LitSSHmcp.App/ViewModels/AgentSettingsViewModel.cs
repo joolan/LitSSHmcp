@@ -624,6 +624,8 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
         return active?.ToModel().ApiKey;
     }
 
+    public void ReloadConfig() => Load();
+
     public void Load() => AsyncOperation.Run("加载助手设置", async () =>
     {
         try

@@ -1,17 +1,17 @@
 [CmdletBinding()]
 param(
     [string]$ResultsDirectory = "artifacts/coverage",
-    [double]$OverallMinimumLineRate = 35.0
+    [double]$OverallMinimumLineRate = 36.0
 )
 
 $ErrorActionPreference = "Stop"
 
 $assemblyThresholds = [ordered]@{
-    "LitSSHmcp.Core"      = 35.0
-    "LitSSHmcp.App"       = 24.0
-    "LitSSHmcp.McpServer" = 34.5
-    "LitSSHmcp.Agent"     = 70.5
-    "LitSSHmcp.Web"       = 79.0
+    "LitSSHmcp.Core"      = 36.0
+    "LitSSHmcp.App"       = 24.5
+    "LitSSHmcp.McpServer" = 35.0
+    "LitSSHmcp.Agent"     = 73.0
+    "LitSSHmcp.Web"       = 81.0
 }
 
 if (-not (Test-Path -LiteralPath $ResultsDirectory)) {

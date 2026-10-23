@@ -8,7 +8,7 @@ using LitSSHmcp.Core.Services.Storage;
 namespace LitSSHmcp.App.ViewModels;
 
 /// <summary>外观设置（全局）：界面主题（跟随系统/浅色/深色）与强调色；写入 <c>ui.theme</c> / <c>ui.accent</c>，切换即时生效。</summary>
-public class AppearanceSettingsViewModel : INotifyPropertyChanged
+public class AppearanceSettingsViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService = new ConfigService();
 
@@ -68,6 +68,8 @@ public class AppearanceSettingsViewModel : INotifyPropertyChanged
         "#EF4444" => "红色",
         _ => "系统默认"
     };
+
+    public void ReloadConfig() => Load();
 
     public void Load() => AsyncOperation.Run("加载外观设置", async () =>
     {

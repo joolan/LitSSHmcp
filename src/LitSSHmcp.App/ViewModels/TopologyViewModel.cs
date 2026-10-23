@@ -16,7 +16,7 @@ using LitSSHmcp.Core.Services.Topology;
 
 namespace LitSSHmcp.App.ViewModels;
 
-public class TopologyViewModel : INotifyPropertyChanged
+public class TopologyViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private const double ServerX = 20;
     private const double ServerWidth = 320;
@@ -31,9 +31,10 @@ public class TopologyViewModel : INotifyPropertyChanged
     private const double DsHeight = 48;
     private const double LaneGap = 0;
 
-    private readonly IConfigService _configService = AppServiceFactory.CreateConfigService();
+    private readonly IAppServices _services;
+    private readonly IConfigService _configService;
     private readonly ITopologyService _topology;
-    private readonly ITopologyLayoutStore _layoutStore = new TopologyLayoutStore();
+    private readonly TopologyLayoutHistory _layoutHistory = new(new TopologyLayoutStore());
     private TopologyGraph? _graph;
     private readonly Dictionary<string, (double X, double Y, double W, double H)> _geometry = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _parentOf = new(StringComparer.Ordinal);
@@ -71,7 +72,6 @@ public class TopologyViewModel : INotifyPropertyChanged
     private double _frameMaxMs;
 
     // 手动布局缓存：避免每次重算连线都读盘/反序列化 topology-layout.json
-    private TopologyLayout? _layout;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private long _lastFastMs;
     private bool _fastPending;
@@ -80,10 +80,12 @@ public class TopologyViewModel : INotifyPropertyChanged
     private const int FastIntervalMs = 25;
     private readonly IWindowService _windows;
 
-    public TopologyViewModel(IWindowService? windows = null)
+    public TopologyViewModel(IWindowService? windows = null, IAppServices? services = null)
     {
-        _windows = windows ?? new WpfWindowService();
-        _topology = AppServiceFactory.CreateTopologyService(_configService);
+        _services = services ?? new AppServices(windows: windows);
+        _windows = _services.Windows;
+        _configService = _services.Config;
+        _topology = _services.CreateTopologyService();
         Load();
     }
 
@@ -159,6 +161,8 @@ public class TopologyViewModel : INotifyPropertyChanged
         get => _impactSummary;
         private set { _impactSummary = value; OnPropertyChanged(); }
     }
+
+    public void ReloadConfig() => Load();
 
     public void Load() => AsyncOperation.Run("加载拓扑图", async () =>
     {
@@ -484,18 +488,11 @@ public class TopologyViewModel : INotifyPropertyChanged
     public bool IsServerNode(string id) =>
         _itemsById.TryGetValue(id, out var item) && item is GraphBoxVm;
 
-    private TopologyLayout GetLayout() => _layout ??= _layoutStore.Load();
-
-    private void SaveLayout(TopologyLayout layout)
-    {
-        _layout = layout;
-        _layoutStore.Save(layout);
-    }
 
     /// <summary>应用手动布局覆盖（节点位置/尺寸）。</summary>
     private void ApplyManualLayout()
     {
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         if (!layout.IsManual)
             return;
 
@@ -527,7 +524,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             .GroupBy(e => e.From)
             .ToDictionary(g => g.Key, g => g.First().To);
 
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         var evidenceByKey = _graph.Edges
             .Where(e => !string.IsNullOrEmpty(e.Evidence))
             .GroupBy(e => $"{e.From}|{e.Type}|{e.To}")
@@ -907,7 +904,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             return;
 
         _childrenOf.TryGetValue(id, out var children);
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         foreach (var e in Edges)
         {
             if (e.From != id && e.To != id &&
@@ -1057,8 +1054,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         _fastPending = false;
 
         // 撤销快照: 保存修改前的布局
-        _undo.Push(GetLayout());
-        _redo.Clear();
+        _layoutHistory.PushUndo();
 
         // 压测图不写 topology-layout.json（避免合成 id 污染真实布局）
         if (!_synthetic)
@@ -1067,7 +1063,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             foreach (var kv in _geometry)
                 layout.Nodes[kv.Key] = new NodeLayout { X = kv.Value.X, Y = kv.Value.Y, Width = kv.Value.W, Height = kv.Value.H };
 
-            SaveLayout(layout);
+            _layoutHistory.Save(layout);
         }
         CanvasWidth = Math.Max(MaxRight() + 40, 2000);
         CanvasHeight = Math.Max(MaxBottom() + 40, 1400);
@@ -1397,11 +1393,11 @@ public class TopologyViewModel : INotifyPropertyChanged
         if (!changed)
             return;
 
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         layout.IsManual = true;
         foreach (var node in Nodes)
             layout.Nodes[node.Id] = new NodeLayout { X = node.X, Y = node.Y, Width = node.Width, Height = node.Height };
-        SaveLayout(layout);
+        _layoutHistory.Save(layout);
     }
 
     /// <summary>
@@ -1414,7 +1410,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         if (_synthetic)
             return;
 
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         if (!layout.IsManual)
             return; // 全自动布局按列堆叠，不会重叠
 
@@ -1457,7 +1453,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         layout.IsManual = true;
         foreach (var i in all)
             layout.Nodes[i.Id] = new NodeLayout { X = i.X, Y = i.Y, Width = i.Width, Height = i.Height };
-        SaveLayout(layout);
+        _layoutHistory.Save(layout);
     }
 
     /// <summary>是否与其它节点重叠（排除自身、父容器、以及自己的托管子节点）。</summary>
@@ -1538,35 +1534,26 @@ public class TopologyViewModel : INotifyPropertyChanged
     /// <summary>清除手动布局并重新自动布局。</summary>
     public void ResetLayout()
     {
-        _undo.Push(GetLayout());
-        _redo.Clear();
-        _layoutStore.Clear();
-        _layout = null;
+        _layoutHistory.PushUndo();
+        _layoutHistory.Clear();
         Load();
     }
 
-    private readonly Stack<TopologyLayout> _undo = new();
-    private readonly Stack<TopologyLayout> _redo = new();
-
-    public bool CanUndo => _undo.Count > 0;
-    public bool CanRedo => _redo.Count > 0;
+    public bool CanUndo => _layoutHistory.CanUndo;
+    public bool CanRedo => _layoutHistory.CanRedo;
 
     public void Undo()
     {
-        if (_undo.Count == 0)
+        if (!_layoutHistory.Undo())
             return;
-        _redo.Push(GetLayout());
-        SaveLayout(_undo.Pop());
         Load();
         StatusMessage = "已撤销";
     }
 
     public void Redo()
     {
-        if (_redo.Count == 0)
+        if (!_layoutHistory.Redo())
             return;
-        _undo.Push(GetLayout());
-        SaveLayout(_redo.Pop());
         Load();
         StatusMessage = "已重做";
     }
@@ -2002,7 +1989,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             return;
 
         var side = NearestSide(box, drop);
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         layout.IsManual = true;
         var key = $"{edge.From}|{edge.Type}|{edge.To}";
         if (!layout.Edges.TryGetValue(key, out var edgeLayout))
@@ -2013,7 +2000,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         else
             edgeLayout.To = new AnchorSpec { Side = side };
 
-        SaveLayout(layout);
+        _layoutHistory.Save(layout);
         RebuildEdges(false);
 
         var updated = Edges.FirstOrDefault(e => e.From == edge.From && e.To == edge.To && e.Type == edge.Type);
@@ -2296,7 +2283,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             var host = id[(AssetNode.SshPrefix.Length + 5)..];
             var window = _windows.CreateServerEditWindow(owner);
-            var vm = new ServerEditViewModel(_configService, AppServiceFactory.CreateSshService(), window, null,
+            var vm = new ServerEditViewModel(_configService, _services.CreateSshService(), window, null,
                 new SshServerConfig { Name = host, Host = host, Port = 22 });
             window.DataContext = vm;
             var ok = false;

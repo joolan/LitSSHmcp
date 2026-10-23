@@ -2,13 +2,14 @@ using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
 using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.ViewModels;
 
-public class SecuritySettingsViewModel : INotifyPropertyChanged
+public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService = new ConfigService();
 
@@ -125,6 +126,8 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged
         get => _statusMessage;
         set => Set(ref _statusMessage, value);
     }
+
+    public void ReloadConfig() => Load();
 
     public void Load() => AsyncOperation.Run("加载安全设置", async () =>
     {

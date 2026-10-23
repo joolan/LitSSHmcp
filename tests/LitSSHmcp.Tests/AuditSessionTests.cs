@@ -7,6 +7,55 @@ namespace LitSSHmcp.Tests;
 public class AuditSessionTests
 {
     [Fact]
+    public async Task Audit_command_and_sql_redact_secrets_before_persistence_and_chain_stays_valid()
+    {
+        var db = Path.Combine(Path.GetTempPath(), "litssh-audit-" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            var audit = new AuditLogService(new FakeSecurityOptions(), db);
+            await audit.InitializeAsync();
+
+            await audit.LogCommandAsync(new CommandAuditLog
+            {
+                ServerId = "s",
+                ServerName = "n",
+                Command = "curl --password hunter2 https://user:pass@example",
+                Result = "token=abcdef123456",
+                Status = CommandStatus.Executed
+            });
+            await audit.LogSqlAsync(new SqlAuditLog
+            {
+                DataSourceId = "d",
+                DataSourceName = "db",
+                Operation = SqlOperation.Query,
+                Sql = "select * from users where password='hunter2'",
+                Result = "Authorization: Bearer abcdefghijklmnop",
+                Status = CommandStatus.Executed
+            });
+
+            var commands = await audit.GetLogsAsync();
+            var command = Assert.Single(commands);
+            Assert.DoesNotContain("hunter2", command.Command, StringComparison.Ordinal);
+            Assert.DoesNotContain("abcdef123456", command.Result!, StringComparison.Ordinal);
+            Assert.Contains("******", command.Command, StringComparison.Ordinal);
+            Assert.Contains("[敏感内容已自动脱敏]", command.Result!, StringComparison.Ordinal);
+
+            var sqls = await audit.GetSqlLogsAsync();
+            var sql = Assert.Single(sqls);
+            Assert.DoesNotContain("hunter2", sql.Sql, StringComparison.Ordinal);
+            Assert.DoesNotContain("abcdefghijklmnop", sql.Result!, StringComparison.Ordinal);
+            Assert.Contains("[敏感内容已自动脱敏]", sql.Result!, StringComparison.Ordinal);
+
+            Assert.True((await audit.VerifyChainAsync()).Ok);
+        }
+        finally
+        {
+            TryDelete(db);
+            TryDelete(db + ".key");
+        }
+    }
+
+    [Fact]
     public async Task Session_id_is_auto_filled_and_filterable()
     {
         var db = Path.Combine(Path.GetTempPath(), "litssh-audit-" + Guid.NewGuid().ToString("N") + ".db");
@@ -135,19 +184,107 @@ public class AuditSessionTests
             await audit.InitializeAsync();
 
             var start = DateTime.UtcNow;
-            await audit.RecordSessionAsync(new AuditSession { SessionId = "S1", ClientName = "claude", ClientVersion = "1.0", StartedAt = start, LastSeenAt = start });
+            await audit.RecordSessionAsync(new AuditSession { SessionId = "S1", ClientName = "claude", ClientVersion = "1.0", OwnerUserId = "alice", StartedAt = start, LastSeenAt = start });
             await audit.RecordSessionAsync(new AuditSession { SessionId = "S1", ClientName = "claude", ClientVersion = "1.1", StartedAt = start, LastSeenAt = start.AddSeconds(5) });
 
             var sessions = await audit.GetSessionsAsync();
             Assert.Single(sessions);
             Assert.Equal("claude", sessions[0].ClientName);
             Assert.Equal("1.1", sessions[0].ClientVersion);
+            Assert.Equal("alice", sessions[0].OwnerUserId);
 
-            // 后续客户端信息缺失时不应覆盖已有值（COALESCE）
+            // 后续客户端信息/归属缺失时不应覆盖已有值（COALESCE）
             await audit.RecordSessionAsync(new AuditSession { SessionId = "S1", ClientName = null, ClientVersion = null, StartedAt = start, LastSeenAt = start.AddSeconds(9) });
             var again = await audit.GetSessionsAsync();
             Assert.Equal("claude", again[0].ClientName);
             Assert.Equal("1.1", again[0].ClientVersion);
+            Assert.Equal("alice", again[0].OwnerUserId);
+        }
+        finally
+        {
+            TryDelete(db);
+            TryDelete(db + ".key");
+        }
+    }
+
+    [Fact]
+    public async Task Sessions_are_filtered_by_owner()
+    {
+        var db = Path.Combine(Path.GetTempPath(), "litssh-audit-" + Guid.NewGuid().ToString("N") + ".db");
+        var previousUser = AuditContext.CurrentUserId;
+        try
+        {
+            var audit = new AuditLogService(new FakeSecurityOptions(), db);
+            await audit.InitializeAsync();
+            var start = DateTime.UtcNow;
+
+            AuditContext.CurrentUserId = "alice";
+            await audit.RecordSessionAsync(new AuditSession { SessionId = "S1", StartedAt = start, LastSeenAt = start });
+            AuditContext.CurrentUserId = null;
+            await audit.RecordSessionAsync(new AuditSession { SessionId = "S2", OwnerUserId = "bob", StartedAt = start, LastSeenAt = start });
+            await audit.RecordSessionAsync(new AuditSession { SessionId = "S3", StartedAt = start, LastSeenAt = start });
+
+            var all = await audit.GetSessionsAsync();
+            Assert.Equal(3, all.Length);
+
+            var alice = await audit.GetSessionsAsync(ownerUserId: "alice");
+            Assert.Equal("S1", Assert.Single(alice).SessionId);
+            Assert.Equal("alice", alice[0].OwnerUserId);
+
+            var bob = await audit.GetSessionsAsync(ownerUserId: "bob");
+            Assert.Equal("S2", Assert.Single(bob).SessionId);
+
+            // 未显式归属且无上下文的桌面会话按 local 归因
+            var local = await audit.GetSessionsAsync(ownerUserId: "local");
+            Assert.Equal("S3", Assert.Single(local).SessionId);
+
+            Assert.Empty(await audit.GetSessionsAsync(ownerUserId: "nobody"));
+        }
+        finally
+        {
+            AuditContext.CurrentUserId = previousUser;
+            TryDelete(db);
+            TryDelete(db + ".key");
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_sessions_table_gains_owner_column_and_backfills_on_next_record()
+    {
+        var db = Path.Combine(Path.GetTempPath(), "litssh-audit-" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            using (var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={db}"))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    CREATE TABLE Sessions (
+                        SessionId TEXT PRIMARY KEY,
+                        ClientName TEXT,
+                        ClientVersion TEXT,
+                        StartedAt TEXT NOT NULL,
+                        LastSeenAt TEXT NOT NULL);";
+                cmd.ExecuteNonQuery();
+                cmd.CommandText = "INSERT INTO Sessions (SessionId, StartedAt, LastSeenAt) VALUES ('S0', @t, @t)";
+                cmd.Parameters.AddWithValue("@t", DateTime.UtcNow.ToString("O"));
+                cmd.ExecuteNonQuery();
+            }
+
+            var audit = new AuditLogService(new FakeSecurityOptions(), db);
+            await audit.InitializeAsync();
+
+            var migrated = Assert.Single(await audit.GetSessionsAsync());
+            Assert.Null(migrated.OwnerUserId);
+
+            await audit.RecordSessionAsync(new AuditSession
+            {
+                SessionId = "S0", OwnerUserId = "alice", StartedAt = migrated.StartedAt, LastSeenAt = DateTime.UtcNow
+            });
+
+            var backfilled = Assert.Single(await audit.GetSessionsAsync(ownerUserId: "alice"));
+            Assert.Equal("S0", backfilled.SessionId);
+            Assert.Equal("alice", backfilled.OwnerUserId);
         }
         finally
         {
@@ -171,7 +308,7 @@ public class AuditSessionTests
             {
                 AuditContext.CurrentTool = "ssh_execute_command";
                 await audit.LogCommandAsync(new CommandAuditLog { ServerId = "s", ServerName = "n", Command = "ls" });
-                AuditContext.CurrentTool = "docker_logs";
+                AuditContext.CurrentTool = "docker_query";
                 await audit.LogCommandAsync(new CommandAuditLog { ServerId = "s", ServerName = "n", Command = "docker logs web" });
                 await audit.LogSqlAsync(new SqlAuditLog { DataSourceId = "d", DataSourceName = "db", Operation = SqlOperation.Query, Sql = "select 1" });
             }
@@ -182,14 +319,14 @@ public class AuditSessionTests
 
             var all = await audit.GetLogsAsync();
             Assert.Contains(all, r => r.Tool == "ssh_execute_command");
-            Assert.Contains(all, r => r.Tool == "docker_logs");
+            Assert.Contains(all, r => r.Tool == "docker_query");
 
-            var byTool = await audit.GetLogsAsync(tool: "docker_logs");
+            var byTool = await audit.GetLogsAsync(tool: "docker_query");
             Assert.Single(byTool);
             Assert.Equal("docker logs web", byTool[0].Command);
 
             var sql = await audit.GetSqlLogsAsync();
-            Assert.Equal("docker_logs", sql[0].Tool);
+            Assert.Equal("docker_query", sql[0].Tool);
         }
         finally
         {

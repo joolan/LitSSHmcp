@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using Microsoft.Win32;
@@ -16,7 +17,7 @@ namespace LitSSHmcp.App.Views;
 
 public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
 {
-    private readonly TopologyViewModel _viewModel = new();
+    private readonly TopologyViewModel _viewModel;
 
     private bool _dragging;
     private bool _dragMoved;
@@ -52,9 +53,10 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
     private double _renderMaxMs;
     private int _probeMoveEvents;
 
-    public TopologyWindow()
+    public TopologyWindow(IAppServices? services = null)
     {
         InitializeComponent();
+        _viewModel = new TopologyViewModel(services: services);
 #if DEBUG
         foreach (var item in MoreActionsButton.ContextMenu.Items)
         {
@@ -667,7 +669,7 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
         PerfLog.Write($"FrameProbe({kind}): frames={_renderCount} avg={avg:F1} ms max={_renderMaxMs:F1} ms events={_probeMoveEvents} tier={RenderCapability.Tier}");
     }
 
-    private async void OnCanvasMouseUp(object sender, MouseButtonEventArgs e)
+    private void OnCanvasMouseUp(object sender, MouseButtonEventArgs e) => AsyncOperation.Run("完成拓扑拖拽", async () =>
     {
         var draggedId = (_dragging || _resizing) ? _dragId : null;
         var dragMoved = _dragMoved;
@@ -727,7 +729,7 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
             _viewModel.RefreshSelection();
             _viewModel.FlushDragPerf();
         }
-    }
+    });
 
     // ---- 关系属性面板拖动 ----
 

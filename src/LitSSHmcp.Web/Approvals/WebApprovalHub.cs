@@ -26,10 +26,19 @@ public enum ApprovalDecideResult
 /// 推送客户端句柄：端点注册后从 <see cref="Frames"/> 消费，Hub 经内部队列保序推送。
 /// <see cref="Known"/> = 已推给该客户端的 pending id 集合（Hub 的 _gate 下读写），
 /// 每轮据此做 per-client 增量 diff，保证新增/消失对每个连接都不漏。
+/// 队列有界：慢客户端积压时丢弃最旧帧，前端仍会通过 5s REST 对账和重连快照恢复完整状态。
 /// </summary>
 public sealed class ApprovalPushClient
 {
-    private readonly Channel<object> _frames = Channel.CreateUnbounded<object>();
+    internal const int FrameQueueCapacity = 128;
+
+    private readonly Channel<object> _frames = Channel.CreateBounded<object>(
+        new BoundedChannelOptions(FrameQueueCapacity)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.DropOldest
+        });
 
     internal ApprovalPushClient(string userId) => UserId = userId;
 

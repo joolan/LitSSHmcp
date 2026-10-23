@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
@@ -17,17 +18,20 @@ using Microsoft.Win32;
 
 namespace LitSSHmcp.App.ViewModels;
 
-public class MainViewModel : INotifyPropertyChanged
+public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
 {
+    private readonly IAppServices _services;
     private readonly IConfigService _configService;
     private readonly ISshService _sshService;
     private readonly IAuditLogService _auditLogService;
-    private readonly ITopologyStore _topologyStore = new TopologyStore();
-    private readonly PortForwardService _portForwardService = AppServiceFactory.PortForwardService;
+    private readonly ITopologyStore _topologyStore;
+    private readonly PortForwardService _portForwardService;
+    private readonly IUserDialogService _dialogs;
+    private readonly IWindowService _windows;
 
     // 快照: 采集服务实例须长期复用(内存单飞锁绑定实例); 库供历史窗口读取。
-    private readonly ISnapshotService _snapshotService = AppServiceFactory.CreateSnapshotService();
-    private readonly ISnapshotStore _snapshotStore = AppServiceFactory.CreateSnapshotStore();
+    private readonly ISnapshotService _snapshotService;
+    private readonly ISnapshotStore _snapshotStore;
     private bool _snapshotBusy;
 
     private SshServerConfig? _selectedServer;
@@ -73,13 +77,21 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand SnapshotRefreshCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
 
-    public MainViewModel()
+    public MainViewModel(IUserDialogService? dialogs = null, IWindowService? windows = null,
+        IAppServices? services = null)
     {
-        _configService = new ConfigService();
+        _services = services ?? new AppServices(dialogs, windows);
+        _dialogs = _services.Dialogs;
+        _windows = _services.Windows;
+        _configService = _services.Config;
+        _topologyStore = _services.CreateTopologyStore();
+        _portForwardService = _services.PortForward;
+        _snapshotService = _services.CreateSnapshotService();
+        _snapshotStore = _services.CreateSnapshotStore();
         // 与数据源 / 端口转发 / 拓扑发现一致：携带 known-hosts 与安全设置（Tofu/Strict/Off），
         // 避免主界面终端绕过主机密钥校验、而弹窗"测试连接"走另一套策略。
-        _sshService = AppServiceFactory.CreateSshService();
-        _auditLogService = new AuditLogService();
+        _sshService = _services.CreateSshService();
+        _auditLogService = _services.CreateAuditLog();
         AiTerminals = new Services.LocalTerminal.AiTerminalBroker(
             name => CreateLocalTerminal(isAi: true, aiName: name),
             RemoveLocalTerminal,
@@ -495,7 +507,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        _sessionWindow = new SshSessionWindow { DataContext = this, Topmost = false };
+        _sessionWindow = _windows.CreateSessionWindow(this);
         _sessionWindow.Closed += (_, _) =>
         {
             _sessionWindow = null;
@@ -533,7 +545,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        var window = new SshSessionFloatWindow(this, session) { Topmost = false };
+        var window = _windows.CreateSessionFloat(this, session);
         window.DockRequested += DockSession;
         window.CloseRequested += CloseSession;
         var index = DockedSessions.IndexOf(session);
@@ -631,9 +643,7 @@ public class MainViewModel : INotifyPropertyChanged
             _ => string.Empty
         };
         var extra = session is TerminalSessionViewModel or LocalTerminalSessionViewModel ? "终端连接将断开。" : string.Empty;
-        var confirm = MessageBox.Show($"确定关闭会话「{name}」？{extra}",
-            "关闭会话", MessageBoxButton.YesNo, MessageBoxImage.Question);
-        if (confirm != MessageBoxResult.Yes)
+        if (!_dialogs.Confirm($"确定关闭会话「{name}」？{extra}", "关闭会话", warning: false))
             return;
 
         var index = Sessions.IndexOf(session);
@@ -661,7 +671,9 @@ public class MainViewModel : INotifyPropertyChanged
         StatusMessage = Sessions.Count == 0 ? "已关闭全部会话" : $"已关闭会话: {name}";
     }
 
-    private async void LoadServers()
+    public void ReloadConfig() => LoadServers();
+
+    private void LoadServers() => AsyncOperation.Run("加载服务器", async () =>
     {
         try
         {
@@ -686,11 +698,11 @@ public class MainViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"错误: {ex.Message}";
         }
-    }
+    });
 
     private void AddServer()
     {
-        var editWindow = new ServerEditWindow { Owner = Application.Current.MainWindow };
+        var editWindow = _windows.CreateServerEditWindow(Application.Current.MainWindow);
         var editViewModel = new ServerEditViewModel(_configService, _sshService, editWindow);
         editWindow.DataContext = editViewModel;
 
@@ -707,7 +719,7 @@ public class MainViewModel : INotifyPropertyChanged
     {
         if (SelectedServer == null) return;
 
-        var editWindow = new ServerEditWindow { Owner = Application.Current.MainWindow };
+        var editWindow = _windows.CreateServerEditWindow(Application.Current.MainWindow);
         var editViewModel = new ServerEditViewModel(_configService, _sshService, editWindow, SelectedServer);
         editWindow.DataContext = editViewModel;
 
@@ -720,7 +732,7 @@ public class MainViewModel : INotifyPropertyChanged
         editWindow.ShowDialog();
     }
 
-    private async void DeleteServer()
+    private void DeleteServer() => AsyncOperation.Run("删除服务器", async () =>
     {
         if (SelectedServer == null) return;
 
@@ -735,7 +747,7 @@ public class MainViewModel : INotifyPropertyChanged
                 ? $"\n\n存在 {references.Length} 条关系记录引用它，将一并删除：\n{RelationHelper.Describe(references)}"
                 : "\n\n（未发现引用它的关系记录）";
 
-            if (MessageBox.Show(message, "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            if (!_dialogs.Confirm(message, "确认删除"))
                 return;
 
             config.Servers = config.Servers.Where(s => s.Id != SelectedServer.Id).ToArray();
@@ -751,7 +763,7 @@ public class MainViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"删除失败: {ex.Message}";
         }
-    }
+    });
 
     private async Task CleanupDiscoveredEdgesAsync(string nodeId)
     {
@@ -777,7 +789,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        _topologyWindow = new TopologyWindow { Topmost = false };
+        _topologyWindow = _windows.CreateTopologyWindow();
         _topologyWindow.Closed += (_, _) => _topologyWindow = null;
         _topologyWindow.Show();
     }
@@ -793,7 +805,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        _auditWindow = new AuditWindow { Topmost = false };
+        _auditWindow = _windows.CreateAuditWindow();
         _auditWindow.Closed += (_, _) => _auditWindow = null;
         _auditWindow.Show();
     }
@@ -810,7 +822,7 @@ public class MainViewModel : INotifyPropertyChanged
         }
 
         var vm = new BatchExecViewModel(Servers, _sshService);
-        _batchExecWindow = new BatchExecWindow { DataContext = vm, Topmost = false };
+        _batchExecWindow = _windows.CreateBatchExecWindow(vm);
         _batchExecWindow.Closed += (_, _) => _batchExecWindow = null;
         _batchExecWindow.Show();
     }
@@ -828,7 +840,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        _monitorWindow = new ServerMonitorWindow(new ServerMonitorViewModel(server, _sshService)) { Topmost = false };
+        _monitorWindow = _windows.CreateServerMonitorWindow(new ServerMonitorViewModel(server, _sshService));
         _monitorWindow.Closed += (_, _) => _monitorWindow = null;
         _monitorWindow.Show();
     }
@@ -844,7 +856,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        _logWindow = new TerminalLogWindow { Topmost = false };
+        _logWindow = _windows.CreateTerminalLogWindow();
         _logWindow.Closed += (_, _) => _logWindow = null;
         _logWindow.Show();
     }
@@ -861,7 +873,7 @@ public class MainViewModel : INotifyPropertyChanged
         }
 
         var vm = new PortForwardViewModel(_configService, _portForwardService, Servers);
-        _portForwardWindow = new PortForwardWindow(vm) { Topmost = false };
+        _portForwardWindow = _windows.CreatePortForwardWindow(vm);
         _portForwardWindow.Closed += (_, _) =>
         {
             _portForwardWindow = null;
@@ -873,7 +885,7 @@ public class MainViewModel : INotifyPropertyChanged
     // ---- 代理浏览器（经 SSH 动态转发 SOCKS，浏览器全部流量走该服务器出口） ----
     private readonly Dictionary<string, (Process Browser, string BaseDir)> _proxyBrowsers = new();
 
-    private async void OpenProxiedBrowser(SshServerConfig? server)
+    private void OpenProxiedBrowser(SshServerConfig? server) => AsyncOperation.Run("打开代理浏览器", async () =>
     {
         if (server is null)
             return;
@@ -886,9 +898,9 @@ public class MainViewModel : INotifyPropertyChanged
         var browser = ProxiedBrowserLauncher.FindChromiumBrowser();
         if (browser is null)
         {
-            MessageBox.Show(
+            _dialogs.Warn(
                 "未找到 Chromium 系浏览器（Edge / Chrome / Brave / Chromium）。\n请安装其中之一后重试。",
-                "打开代理浏览器", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "打开代理浏览器");
             return;
         }
 
@@ -910,7 +922,7 @@ public class MainViewModel : INotifyPropertyChanged
         if (!ok)
         {
             StatusMessage = "启动 SOCKS 代理失败";
-            MessageBox.Show("启动 SOCKS 代理失败：\n\n" + message, "代理浏览器", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogs.Error("启动 SOCKS 代理失败：\n\n" + message, "代理浏览器");
             return;
         }
 
@@ -919,16 +931,17 @@ public class MainViewModel : INotifyPropertyChanged
             var launched = ProxiedBrowserLauncher.Launch(browser, port, server.Name);
             _proxyBrowsers[forwardId] = (launched.Process, launched.BaseDir);
             launched.Process.EnableRaisingEvents = true;
-            launched.Process.Exited += (_, _) => _ = StopProxiedBrowserAsync(forwardId);
+            launched.Process.Exited += (_, _) =>
+                AsyncOperation.Run("清理代理浏览器", () => StopProxiedBrowserAsync(forwardId));
             StatusMessage = $"已打开代理浏览器：{server.Name}（SOCKS 127.0.0.1:{port}）";
         }
         catch (Exception ex)
         {
             await _portForwardService.StopAsync(forwardId);
             StatusMessage = "打开浏览器失败: " + ex.Message;
-            MessageBox.Show("打开浏览器失败：\n\n" + ex.Message, "代理浏览器", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogs.Error("打开浏览器失败：\n\n" + ex.Message, "代理浏览器");
         }
-    }
+    });
 
     private async Task StopProxiedBrowserAsync(string forwardId)
     {
@@ -947,7 +960,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        _syncWindow = new SyncWindow { Topmost = false };
+        _syncWindow = _windows.CreateSyncWindow();
         _syncWindow.Closed += (_, _) =>
         {
             _syncWindow = null;
@@ -967,7 +980,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        _triggerWindow = new TriggerWindow { Topmost = false };
+        _triggerWindow = _windows.CreateTriggerWindow();
         _triggerWindow.Closed += (_, _) =>
         {
             _triggerWindow = null;
@@ -1009,7 +1022,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        var window = new SftpManagerWindow(new SftpManagerViewModel(server, _sshService)) { Topmost = false };
+        var window = _windows.CreateSftpManagerWindow(new SftpManagerViewModel(server, _sshService));
         window.Closed += (_, _) => _sftpWindows.Remove(server.Id);
         _sftpWindows[server.Id] = window;
         window.Show();
@@ -1028,7 +1041,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        var window = new RemoteCopyWindow(server) { Topmost = false };
+        var window = _windows.CreateRemoteCopyWindow(server);
         window.Closed += (_, _) => _remoteCopyWindows.Remove(server.Id);
         _remoteCopyWindows[server.Id] = window;
         window.Show();
@@ -1045,7 +1058,7 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        _settingsWindow = new AppSettingsWindow(_configService);
+        _settingsWindow = _windows.CreateAppSettingsWindow(_configService);
         _settingsWindow.Closed += (_, _) =>
         {
             _settingsWindow = null;
@@ -1064,7 +1077,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     private void NavigateDataSources()
     {
-        DatasourcePage ??= new DatasourceManageViewModel(_configService);
+            DatasourcePage ??= new DatasourceManageViewModel(_configService, services: _services);
         DatasourcePage.RefreshCommand.Execute(null);
         CurrentPage = MainPage.DataSources;
     }
@@ -1094,7 +1107,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     private void NavigateRemoteDesktops()
     {
-        RemoteDesktopPage ??= new RemoteDesktopManageViewModel(_configService);
+        RemoteDesktopPage ??= new RemoteDesktopManageViewModel(_configService, services: _services);
         RemoteDesktopPage.RefreshCommand.Execute(null);
         CurrentPage = MainPage.RemoteDesktops;
     }
@@ -1111,12 +1124,12 @@ public class MainViewModel : INotifyPropertyChanged
             return _agentWindow;
         }
 
-        _agentWindow = new AgentWindow(
+        _agentWindow = _windows.CreateAgentWindow(
             _configService,
-            AppServiceFactory.CreateAgentContextStore(),
-            AppServiceFactory.BundledSkillsDir,
+            _services.CreateAgentContextStore(),
+            _services.BundledSkillsDir,
             ResolveSessionTerminal,
-            AiTerminals) { Topmost = false };
+            AiTerminals);
         _agentWindow.ViewModel.SessionRemoved += CloseSessionTerminal;
         _agentWindow.Closed += (_, _) =>
         {
@@ -1174,10 +1187,9 @@ public class MainViewModel : INotifyPropertyChanged
         var vm = window.ViewModel;
         if (!string.IsNullOrWhiteSpace(vm.Input) || vm.HasAttachments)
         {
-            var result = MessageBox.Show(
-                "AI 运维助手的输入区已有内容，是否覆盖？",
-                "AI 快捷提问", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (result != MessageBoxResult.Yes)
+            if (!_dialogs.Confirm(
+                    "AI 运维助手的输入区已有内容，是否覆盖？",
+                    "AI 快捷提问", warning: false))
                 return;
 
             vm.ClearAttachments();
@@ -1226,7 +1238,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     // 采集服务器快照(同步阻塞, 典型 10~30 秒)。单飞: 服务内 per-server 锁 + 库内 Running 唯一约束跨进程生效;
     // UI 再加一道全局忙标志避免同一窗口重复点击。完成后打开历史窗口并定位到本次快照。
-    private async void RefreshSnapshot(SshServerConfig? server)
+    private void RefreshSnapshot(SshServerConfig? server) => AsyncOperation.Run("采集服务器快照", async () =>
     {
         if (server == null) return;
         if (server.Disabled)
@@ -1267,15 +1279,13 @@ public class MainViewModel : INotifyPropertyChanged
         }
 
         OpenSnapshotHistory(server, snapshotId);
-    }
+    });
 
     // 历史快照窗口: 可切换服务器, 列表→点详情; 直接复用同一查看页面。
     private void OpenSnapshotHistory(SshServerConfig? server, long? initialSnapshotId = null)
     {
-        var window = new SnapshotHistoryWindow(_snapshotStore, _configService, server?.Id, initialSnapshotId)
-        {
-            Owner = Application.Current.MainWindow
-        };
+        var window = _windows.CreateSnapshotHistoryWindow(
+            _snapshotStore, _configService, server?.Id, initialSnapshotId, Application.Current.MainWindow);
         window.ShowDialog();
     }
 

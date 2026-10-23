@@ -10,10 +10,10 @@ public partial class TriggerWindow : FluentWindow
 {
     private readonly TriggerViewModel _vm;
 
-    public TriggerWindow()
+    public TriggerWindow(IAppServices? services = null)
     {
         InitializeComponent();
-        _vm = new TriggerViewModel();
+        _vm = new TriggerViewModel(services: services);
         _vm.ResultRequested += (title, headline, message, isError) =>
             ResultDialog.Show(this, title, headline, message, isError);
         DataContext = _vm;

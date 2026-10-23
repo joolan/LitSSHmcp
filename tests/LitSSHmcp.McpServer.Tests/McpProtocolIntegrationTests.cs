@@ -41,8 +41,20 @@ public class McpProtocolIntegrationTests
             var tools = list.GetProperty("result").GetProperty("tools").EnumerateArray().ToList();
             var names = tools.Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
 
-            Assert.Equal(61, tools.Count);
-            foreach (var expected in new[] { "mysql_query", "postgres_diagnostics", "redis_read", "ssh_list_servers", "datasource_list", "topology_get_overview", "topology_search", "topology_neighbors", "topology_path", "topology_impact", "topology_explain", "topology_timeline", "topology_diff", "mcp_usage_guide", "mcp_self_check", "mcp_list_sessions", "mcp_approval_round", "docker_ps", "service_status", "log_tail", "log_find", "java_processes", "app_health_snapshot", "ssh_snapshot_get", "ssh_snapshot_refresh" })
+            Assert.Equal(36, tools.Count);
+            Assert.DoesNotContain("mcp_approval_round", names);
+            Assert.Contains("ssh_upload", names);
+            Assert.Contains("ssh_download", names);
+            Assert.DoesNotContain("ssh_upload_file", names);
+            Assert.DoesNotContain("ssh_download_file", names);
+            Assert.Contains("service_query", names);
+            Assert.DoesNotContain("service_status", names);
+            Assert.DoesNotContain("service_logs", names);
+            Assert.Contains("log_query", names);
+            Assert.DoesNotContain("log_tail", names);
+            Assert.Contains("java_diagnostics", names);
+            Assert.DoesNotContain("java_threads", names);
+            foreach (var expected in new[] { "mysql_query", "postgres_query", "redis_read", "ssh_list_servers", "datasource_list", "topology_get_overview", "topology_query", "topology_timeline", "topology_diff", "mcp_usage_guide", "mcp_self_check", "docker_query", "service_query", "log_query", "java_processes", "java_diagnostics", "app_health_snapshot", "ssh_snapshot_get", "ssh_snapshot_refresh" })
                 Assert.Contains(expected, names);
 
             foreach (var tool in tools)
@@ -66,25 +78,21 @@ public class McpProtocolIntegrationTests
             // 图查询工具：空拓扑下也应返回结构化结果而不是协议错误
             var graphSearch = await client.RequestAsync("tools/call", new
             {
-                name = "topology_search",
-                arguments = new { query = "no-such-asset" }
+                name = "topology_query",
+                arguments = new { action = "search", query = "no-such-asset" }
             });
             var graphStructured = graphSearch.GetProperty("result").GetProperty("structuredContent");
-            Assert.Equal(0, graphStructured.GetProperty("items").GetArrayLength());
-            Assert.False(graphStructured.GetProperty("truncated").GetBoolean());
-            Assert.Contains("未找到", graphStructured.GetProperty("summary").GetString());
-
-            // 会话列表应包含当前会话
-            var sessions = await client.RequestAsync("tools/call", new { name = "mcp_list_sessions", arguments = new { } });
-            var sessionsStructured = sessions.GetProperty("result").GetProperty("structuredContent");
-            Assert.True(sessionsStructured.GetProperty("success").GetBoolean());
-            Assert.True(sessionsStructured.GetProperty("count").GetInt32() >= 1);
+            var graphResult = graphStructured.GetProperty("result");
+            Assert.True(graphResult.TryGetProperty("items", out var graphItems), graphResult.ToString());
+            Assert.Equal(0, graphItems.GetArrayLength());
+            Assert.False(graphResult.GetProperty("truncated").GetBoolean());
+            Assert.Contains("未找到", graphResult.GetProperty("summary").GetString());
 
             // 4) tools/call: mysql_query 非法数据源 → 结构化错误
             var badQuery = await client.RequestAsync("tools/call", new
             {
                 name = "mysql_query",
-                arguments = new { datasourceId = "nope", sql = "select 1" }
+                arguments = new { datasourceId = "nope", action = "query", sql = "select 1" }
             });
             var badResult = badQuery.GetProperty("result");
             Assert.Equal("datasource_not_found", badResult.GetProperty("structuredContent").GetProperty("status").GetString());
@@ -95,10 +103,55 @@ public class McpProtocolIntegrationTests
             var guide = await client.RequestAsync("tools/call", new { name = "mcp_usage_guide", arguments = new { } });
             var guideText = guide.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString();
             Assert.Contains("mysql_query", guideText);
+            Assert.DoesNotContain("mcp_approval_round", guideText);
         }
         finally
         {
             try { Directory.Delete(dataDir, recursive: true); } catch { /* 忽略清理失败 */ }
+        }
+    }
+
+    [Fact]
+    public async Task Internal_round_tool_is_only_visible_to_host()
+    {
+        var exe = LocateServerExecutable();
+        var dataDir = Path.Combine(Path.GetTempPath(), "litssh-mcp-int-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dataDir);
+        try
+        {
+            using (var external = new McpStdioClient(exe, dataDir))
+            {
+                await external.RequestAsync("initialize", new
+                {
+                    protocolVersion = "2024-11-05",
+                    capabilities = new { },
+                    clientInfo = new { name = "external", version = "1.0" }
+                });
+                await external.NotifyAsync("notifications/initialized");
+                var list = await external.RequestAsync("tools/list", new { });
+                var names = list.GetProperty("result").GetProperty("tools").EnumerateArray()
+                    .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
+                Assert.Equal(36, names.Count);
+                Assert.DoesNotContain("mcp_approval_round", names);
+            }
+
+            using var host = new McpStdioClient(exe, dataDir, internalTools: true);
+            await host.RequestAsync("initialize", new
+            {
+                protocolVersion = "2024-11-05",
+                capabilities = new { },
+                clientInfo = new { name = "host", version = "1.0" }
+            });
+            await host.NotifyAsync("notifications/initialized");
+            var hostList = await host.RequestAsync("tools/list", new { });
+            var hostNames = hostList.GetProperty("result").GetProperty("tools").EnumerateArray()
+                .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
+            Assert.Equal(37, hostNames.Count);
+            Assert.Contains("mcp_approval_round", hostNames);
+        }
+        finally
+        {
+            try { Directory.Delete(dataDir, recursive: true); } catch { /* ignore */ }
         }
     }
 
@@ -127,9 +180,9 @@ public class McpProtocolIntegrationTests
             });
             await client.NotifyAsync("notifications/initialized");
 
-            // 工具仍会列出
+            // 工具仍会列出（外部客户端不含内部工具）
             var list = await client.RequestAsync("tools/list", new { });
-            Assert.Equal(61, list.GetProperty("result").GetProperty("tools").GetArrayLength());
+            Assert.Equal(36, list.GetProperty("result").GetProperty("tools").GetArrayLength());
 
             // 但任何调用都被拒绝
             var call = await client.RequestAsync("tools/call", new { name = "mcp_self_check", arguments = new { } });
@@ -180,7 +233,7 @@ public class McpProtocolIntegrationTests
         private readonly StreamWriter _stdin;
         private int _nextId;
 
-        public McpStdioClient(string exe, string dataDir)
+        public McpStdioClient(string exe, string dataDir, bool internalTools = false)
         {
             var psi = new ProcessStartInfo(exe)
             {
@@ -192,6 +245,8 @@ public class McpProtocolIntegrationTests
                 StandardErrorEncoding = Encoding.UTF8
             };
             psi.Environment["LITSSH_DATA_DIR"] = dataDir;
+            if (internalTools)
+                psi.Environment[LitSSHmcp.Core.Services.Security.HostEnv.InternalTools] = "1";
 
             _process = Process.Start(psi) ?? throw new InvalidOperationException("无法启动 MCP 服务器进程");
             _stdin = _process.StandardInput;

@@ -15,22 +15,26 @@ namespace LitSSHmcp.McpServer.Tests;
 /// 授权矩阵强制过滤器（评估报告 D1 / §10.B.4）：矩阵判定纯逻辑（用户/目标匹配、级别、fail-closed）、
 /// 强制开关（宿主 env 注入）、完整过滤器的放行/拒绝/审计语义。
 /// </summary>
+[Collection("AuthzEnvironment")]
 public class McpAuthorizationFilterTests : IDisposable
 {
     private readonly string? _savedMode = Environment.GetEnvironmentVariable(HostEnv.AuthzMode);
     private readonly string? _savedAuthzUser = Environment.GetEnvironmentVariable(HostEnv.AuthzUser);
+    private readonly string? _savedAuthzRole = Environment.GetEnvironmentVariable(HostEnv.AuthzRole);
 
     public McpAuthorizationFilterTests()
     {
         // 强制开关是进程级 env：每例开始先复位，避免同类其它用例受残留影响
         Environment.SetEnvironmentVariable(HostEnv.AuthzMode, null);
         Environment.SetEnvironmentVariable(HostEnv.AuthzUser, null);
+        Environment.SetEnvironmentVariable(HostEnv.AuthzRole, null);
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable(HostEnv.AuthzMode, _savedMode);
         Environment.SetEnvironmentVariable(HostEnv.AuthzUser, _savedAuthzUser);
+        Environment.SetEnvironmentVariable(HostEnv.AuthzRole, _savedAuthzRole);
     }
 
     private static void EnableEnforce(string? authzUser = null)
@@ -85,8 +89,10 @@ public class McpAuthorizationFilterTests : IDisposable
         Assert.Equal(expected, McpAuthorizationFilter.MatchesTarget(new[] { pattern }, targetKey));
 
     [Theory]
-    [InlineData("exec", 2)]
-    [InlineData("EXEC", 2)]
+    [InlineData("exec", 3)]
+    [InlineData("EXEC", 3)]
+    [InlineData("write", 2)]
+    [InlineData("WRITE", 2)]
     [InlineData("read", 1)]
     [InlineData("bogus", 1)]   // 未知级别按只读，宁严勿松
     [InlineData("", 1)]
@@ -122,7 +128,7 @@ public class McpAuthorizationFilterTests : IDisposable
 
         var (writeAllowed, reason) = McpAuthorizationFilter.Evaluate(policy, "alice", null, "ssh:s-1", isWrite: true);
         Assert.False(writeAllowed);
-        Assert.Contains("只读", reason);
+        Assert.Contains("低于要求", reason);
     }
 
     [Fact]
@@ -133,6 +139,38 @@ public class McpAuthorizationFilterTests : IDisposable
         Assert.True(McpAuthorizationFilter.Evaluate(policy, "bob", "9", "ds:ds-1", isWrite: false).Allowed);
         // 兜底规则给了 bob 只读 ds，但写操作仍拒
         Assert.False(McpAuthorizationFilter.Evaluate(policy, "bob", "9", "ds:ds-1", isWrite: true).Allowed);
+    }
+
+    [Fact]
+    public void Evaluate_write_level_allows_writes_but_not_exec()
+    {
+        var policy = Policy(("alice", new[] { "ssh:s-1" }, "write"));
+
+        Assert.True(McpAuthorizationFilter.EvaluateAccess(
+            policy, "alice", null, new[] { "ssh:s-1" }, ToolAccessLevel.Read).Allowed);
+        Assert.True(McpAuthorizationFilter.EvaluateAccess(
+            policy, "alice", null, new[] { "ssh:s-1" }, ToolAccessLevel.Write).Allowed);
+
+        var (allowed, reason) = McpAuthorizationFilter.EvaluateAccess(
+            policy, "alice", null, new[] { "ssh:s-1" }, ToolAccessLevel.Exec);
+        Assert.False(allowed);
+        Assert.Contains("exec", reason);
+    }
+
+    [Fact]
+    public void EvaluateAccess_requires_every_target()
+    {
+        var policy = Policy(
+            ("alice", new[] { "ssh:s-1" }, "exec"),
+            ("alice", new[] { "ds:ds-1" }, "read"));
+
+        Assert.True(McpAuthorizationFilter.EvaluateAccess(
+            policy, "alice", null, new[] { "ssh:s-1", "ds:ds-1" }, ToolAccessLevel.Read).Allowed);
+
+        var (allowed, reason) = McpAuthorizationFilter.EvaluateAccess(
+            policy, "alice", null, new[] { "ssh:s-1", "ds:ds-1" }, ToolAccessLevel.Write);
+        Assert.False(allowed);
+        Assert.Contains("ds:ds-1", reason);
     }
 
     [Fact]
@@ -234,7 +272,7 @@ public class McpAuthorizationFilterTests : IDisposable
             next => { writeCalled = true; return NextResult(); });
         Assert.False(writeCalled);
         Assert.True(write.IsError);
-        Assert.Contains("只读", Assert.IsType<TextContentBlock>(Assert.Single(write.Content!)).Text);
+        Assert.Contains("write", Assert.IsType<TextContentBlock>(Assert.Single(write.Content!)).Text);
     }
 
     [Fact]
@@ -251,6 +289,29 @@ public class McpAuthorizationFilterTests : IDisposable
 
         Assert.True(called);
         Assert.True(result.IsError is not true);
+    }
+
+    [Fact]
+    public async Task Enforce_write_level_allows_restart_but_denies_shell_exec()
+    {
+        EnableEnforce("alice");
+        var config = TestConfig();
+        config.Security.Authorization = Policy(("alice", new[] { "ssh:*" }, "write"));
+        var services = BuildServices(config);
+
+        var restartCalled = false;
+        var restart = await InvokeAsync("service_restart", Args(("serverId", "web1")), services,
+            next => { restartCalled = true; return NextResult(); });
+        Assert.True(restartCalled);
+        Assert.True(restart.IsError is not true);
+
+        var shellCalled = false;
+        var shell = await InvokeAsync("ssh_execute_command",
+            Args(("serverId", "web1"), ("command", "df -h")), services,
+            next => { shellCalled = true; return NextResult(); });
+        Assert.False(shellCalled);
+        Assert.True(shell.IsError);
+        Assert.Contains("exec", Assert.IsType<TextContentBlock>(Assert.Single(shell.Content!)).Text);
     }
 
     [Fact]
@@ -299,7 +360,44 @@ public class McpAuthorizationFilterTests : IDisposable
     }
 
     [Fact]
-    public async Task Unresolvable_target_passes_through_to_tool()
+    public async Task Global_query_tools_require_admin_under_enforce()
+    {
+        EnableEnforce("alice");
+        var services = BuildServices(TestConfig()); // 空矩阵：普通成员不得发起无法裁剪的全局查询
+
+        var called = false;
+        var result = await InvokeAsync("topology_query", Args(("action", "search")), services,
+            next => { called = true; return NextResult(); });
+
+        Assert.False(called);
+        Assert.True(result.IsError);
+        Assert.Contains("仅管理员", Assert.IsType<TextContentBlock>(Assert.Single(result.Content!)).Text);
+
+        Environment.SetEnvironmentVariable(HostEnv.AuthzRole, HostEnv.AdminRole);
+        var adminCalled = false;
+        var adminResult = await InvokeAsync("topology_query", Args(("action", "search")), services,
+            next => { adminCalled = true; return NextResult(); });
+
+        Assert.True(adminCalled);
+        Assert.True(adminResult.IsError is not true);
+    }
+
+    [Fact]
+    public async Task Self_scoped_global_list_tools_pass_for_member()
+    {
+        EnableEnforce("alice");
+        var services = BuildServices(TestConfig());
+
+        var called = false;
+        var result = await InvokeAsync("ssh_list_servers", null, services,
+            next => { called = true; return NextResult(); });
+
+        Assert.True(called);
+        Assert.True(result.IsError is not true);
+    }
+
+    [Fact]
+    public async Task Unresolvable_target_is_denied_under_enforce()
     {
         EnableEnforce("alice");
         var services = BuildServices(TestConfig());
@@ -308,32 +406,45 @@ public class McpAuthorizationFilterTests : IDisposable
         var result = await InvokeAsync("service_restart", Args(("serverId", "ghost")), services,
             next => { called = true; return NextResult(); });
 
-        Assert.True(called);
-        Assert.True(result.IsError is not true); // 归一失败 = 工具自身报错，不属矩阵
+        Assert.False(called);
+        Assert.True(result.IsError);
+        Assert.Contains("authorization_denied", Assert.IsType<TextContentBlock>(Assert.Single(result.Content!)).Text);
     }
 
     [Fact]
-    public async Task Read_shell_command_with_exec_rule_passes_and_write_without_denied()
+    public async Task Shell_command_requires_exec_even_for_read_only_command()
     {
-        // 条件写工具的读/写细分复用写互斥判定：df -h=读（read 级放行），reboot=写（read 级拒绝）
+        // shell 不再按“首词只读”降级授权：read 级用户执行 df -h 也拒绝。
         var config = TestConfig();
         config.Security.Authorization = Policy(("alice", new[] { "ssh:s-1" }, "read"));
         var services = BuildServices(config);
         EnableEnforce("alice");
 
-        var readCalled = false;
-        var read = await InvokeAsync("ssh_execute_command",
+        var called = false;
+        var result = await InvokeAsync("ssh_execute_command",
             Args(("serverId", "web1"), ("command", "df -h")), services,
-            next => { readCalled = true; return NextResult(); });
-        Assert.True(readCalled);
-        Assert.True(read.IsError is not true);
+            next => { called = true; return NextResult(); });
 
-        var writeCalled = false;
-        var write = await InvokeAsync("ssh_execute_command",
-            Args(("serverId", "web1"), ("command", "reboot")), services,
-            next => { writeCalled = true; return NextResult(); });
-        Assert.False(writeCalled);
-        Assert.True(write.IsError);
+        Assert.False(called);
+        Assert.True(result.IsError);
+        Assert.Contains("exec", Assert.IsType<TextContentBlock>(Assert.Single(result.Content!)).Text);
+    }
+
+    [Fact]
+    public async Task Shell_command_allowed_with_exec_rule()
+    {
+        var config = TestConfig();
+        config.Security.Authorization = Policy(("alice", new[] { "ssh:s-1" }, "exec"));
+        var services = BuildServices(config);
+        EnableEnforce("alice");
+
+        var called = false;
+        var result = await InvokeAsync("ssh_execute_command",
+            Args(("serverId", "web1"), ("command", "df -h")), services,
+            next => { called = true; return NextResult(); });
+
+        Assert.True(called);
+        Assert.True(result.IsError is not true);
     }
 
     // ---------- 辅助 ----------
@@ -434,7 +545,7 @@ public class McpAuthorizationFilterTests : IDisposable
         public virtual Task LogSqlAsync(SqlAuditLog log) => Task.CompletedTask;
         public virtual Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null) => Task.FromResult(Array.Empty<SqlAuditLog>());
         public virtual Task RecordSessionAsync(AuditSession session) => Task.CompletedTask;
-        public virtual Task<AuditSession[]> GetSessionsAsync(int limit = 50) => Task.FromResult(Array.Empty<AuditSession>());
+        public virtual Task<AuditSession[]> GetSessionsAsync(int limit = 50, string? ownerUserId = null) => Task.FromResult(Array.Empty<AuditSession>());
         public virtual Task<AuditVerifyResult> VerifyChainAsync(CancellationToken ct = default) => Task.FromResult(new AuditVerifyResult { Ok = true });
     }
 

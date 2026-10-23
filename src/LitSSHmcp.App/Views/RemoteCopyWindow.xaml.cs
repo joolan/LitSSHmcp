@@ -1,4 +1,5 @@
 using System.Windows;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Models;
 using Wpf.Ui.Controls;
@@ -9,10 +10,11 @@ public partial class RemoteCopyWindow : FluentWindow
 {
     private readonly RemoteCopyViewModel _vm;
 
-    public RemoteCopyWindow(SshServerConfig source, IEnumerable<RemoteFileItem>? items = null)
+    public RemoteCopyWindow(SshServerConfig source, IEnumerable<RemoteFileItem>? items = null,
+        IAppServices? services = null)
     {
         InitializeComponent();
-        _vm = new RemoteCopyViewModel(source, items) { Owner = this };
+        _vm = new RemoteCopyViewModel(source, items, services: services) { Owner = this };
         DataContext = _vm;
         Closed += (_, _) => _vm.CancelIfRunning();
     }

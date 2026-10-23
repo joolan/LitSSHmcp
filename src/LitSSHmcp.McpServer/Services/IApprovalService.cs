@@ -157,7 +157,7 @@ public class DesktopApprovalService : IApprovalService
             };
 
             if (outcome == ApprovalOutcome.Approved)
-                RecordGrant(toolName, scope);
+                RecordGrant(toolName, serverName, command, filePath, scope);
 
             return outcome;
         }
@@ -171,15 +171,15 @@ public class DesktopApprovalService : IApprovalService
     /// 登记用户勾选的授权范围：会话级直接登记；轮次级要求当前轮次 ID 已知
     /// （轮次信号缺失时降级为仅本次放行，fail-safe——只会多弹窗，不会误放行）。
     /// </summary>
-    private void RecordGrant(string? toolName, ApprovalScope scope)
+    private void RecordGrant(string? toolName, string serverName, string command, string? filePath, ApprovalScope scope)
     {
         if (scope == ApprovalScope.Once || _exemptions is null || toolName is null)
             return;
 
         if (scope == ApprovalScope.Session)
         {
-            _exemptions.GrantSession(toolName);
-            _logger?.LogWarning("用户授权: 工具 {Tool} 在本次会话期间自动放行", toolName);
+            if (_exemptions.GrantSession(toolName, serverName, command, filePath))
+                _logger?.LogWarning("用户授权: 工具 {Tool} 对目标 {Target} 的相同操作在本次会话期间自动放行", toolName, serverName);
             return;
         }
 
@@ -190,8 +190,11 @@ public class DesktopApprovalService : IApprovalService
             return;
         }
 
-        _exemptions.GrantRound(toolName, roundId);
-        _logger?.LogInformation("用户授权: 工具 {Tool} 在本轮次(Round={Round})内自动放行", toolName, roundId);
+        if (_exemptions.GrantRound(toolName, serverName, command, filePath, roundId))
+        {
+            _logger?.LogInformation("用户授权: 工具 {Tool} 对目标 {Target} 的相同操作在本轮次(Round={Round})内自动放行",
+                toolName, serverName, roundId);
+        }
     }
 
     private async Task<(ApprovalOutcome Outcome, ApprovalScope Scope)> RequestInProcessAsync(

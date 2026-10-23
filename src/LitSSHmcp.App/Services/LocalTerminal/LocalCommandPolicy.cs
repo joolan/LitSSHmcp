@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using LitSSHmcp.Core.Services.Security;
 
 namespace LitSSHmcp.App.Services.LocalTerminal;
 
@@ -11,6 +12,8 @@ public enum LocalPolicyResult
     NotInAllowlist,
     /// <summary>命中危险/无效规则（硬拒绝）。</summary>
     Blocked,
+    /// <summary>包含 shell 拼接/重定向/子表达式，或嵌套 shell（硬拒绝）。</summary>
+    UnsafeSyntax,
     /// <summary>疑似交互式/长驻命令，会一直占住终端（硬拒绝）。</summary>
     Interactive
 }
@@ -34,51 +37,31 @@ public static class LocalCommandPolicy
         new(@"\bdd\s+if=", RegexOptions.IgnoreCase | RegexOptions.Compiled)
     };
 
-    /// <summary>取出命令行首的可执行文件名（忽略前导 & / call、引号、路径与 .exe 扩展名）。</summary>
-    public static string? FirstExecutable(string? command)
-    {
-        if (string.IsNullOrWhiteSpace(command))
-            return null;
+    /// <summary>取出命令行首的可执行文件名（忽略前导 &amp; / call、引号、路径与 .exe 扩展名）。</summary>
+    public static string? FirstExecutable(string? command) => CommandLineSyntax.FirstExecutableWindows(command);
 
-        var s = command.TrimStart();
-        if (s.StartsWith('&'))
-            s = s[1..].TrimStart();
-        else if (s.StartsWith("call ", StringComparison.OrdinalIgnoreCase))
-            s = s[5..].TrimStart();
+    /// <summary>
+    /// 拒绝 shell 拼接、管道、重定向、子表达式、脚本块、成员访问等可绕开“单条命令”边界的语法。
+    /// 引号内的普通字符（如提交信息里的 <c>|</c>）不受影响；双引号内的子表达式仍拒绝。
+    /// 解析实现统一在 <see cref="CommandLineSyntax"/>，此处仅保留策略入口。
+    /// </summary>
+    public static bool ContainsUnsafeShellSyntax(string? command) =>
+        CommandLineSyntax.ContainsUnsafeWindowsShellSyntax(command);
 
-        if (s.Length == 0)
-            return null;
+    public static bool IsAutoApproved(string? command, IReadOnlyCollection<string>? rules)
+        => !string.IsNullOrWhiteSpace(command) &&
+           (rules ?? Array.Empty<string>()).Any(rule => AutoApprovedCommandRule.Matches(command, rule));
 
-        string token;
-        if (s[0] is '"' or '\'')
-        {
-            var quote = s[0];
-            var end = s.IndexOf(quote, 1);
-            if (end <= 1)
-                return null;
-            token = s[1..end];
-        }
-        else
-        {
-            var idx = s.IndexOfAny(new[] { ' ', '\t', '\r', '\n' });
-            token = idx < 0 ? s : s[..idx];
-        }
+    private static bool IsNestedShell(string? exe) => CommandLineSyntax.IsNestedShell(exe);
 
-        token = token.Trim();
-        if (token.Length == 0)
-            return null;
-
-        try { token = System.IO.Path.GetFileNameWithoutExtension(token); }
-        catch { /* 非法路径字符：按原样 */ }
-
-        return token.Length == 0 ? null : token;
-    }
-
-    /// <summary>判定命令是否可执行：白名单 + 危险规则。</summary>
+    /// <summary>判定命令是否可执行：白名单 + 危险规则 + 单条命令语法。</summary>
     public static LocalPolicyResult Check(string? command, IReadOnlyCollection<string>? allowedCommands)
     {
         if (string.IsNullOrWhiteSpace(command))
             return LocalPolicyResult.Blocked;
+
+        if (ContainsUnsafeShellSyntax(command))
+            return LocalPolicyResult.UnsafeSyntax;
 
         foreach (var pattern in DangerousPatterns)
         {
@@ -92,6 +75,8 @@ public static class LocalCommandPolicy
         var exe = FirstExecutable(command);
         if (exe is null)
             return LocalPolicyResult.Blocked;
+        if (IsNestedShell(exe))
+            return LocalPolicyResult.UnsafeSyntax;
 
         var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in allowedCommands ?? Array.Empty<string>())
@@ -115,14 +100,16 @@ public static class LocalCommandPolicy
         if (string.IsNullOrWhiteSpace(command))
             return LocalPolicyResult.Blocked;
 
+        if (ContainsUnsafeShellSyntax(command))
+            return LocalPolicyResult.UnsafeSyntax;
+
         foreach (var pattern in DangerousPatterns)
         {
             if (pattern.IsMatch(command))
                 return LocalPolicyResult.Blocked;
         }
 
-        if (Regex.IsMatch(command, @"(^|\s)&\s*$", RegexOptions.Compiled) ||
-            Regex.IsMatch(command, @"\bStart-(Process|Job)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled))
+        if (Regex.IsMatch(command, @"\bStart-(Process|Job)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled))
             return LocalPolicyResult.Blocked;
 
         if (IsUnsupportedForBackground(command))
@@ -228,13 +215,6 @@ public static class LocalCommandPolicy
         return false;
     }
 
-    private static List<string> SplitTokens(string command)
-    {
-        var s = command.TrimStart();
-        if (s.StartsWith('&'))
-            s = s[1..].TrimStart();
-        else if (s.StartsWith("call ", StringComparison.OrdinalIgnoreCase))
-            s = s[5..].TrimStart();
-        return s.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
-    }
+    private static List<string> SplitTokens(string command) =>
+        CommandLineSyntax.SplitWindowsTokens(command).ToList();
 }

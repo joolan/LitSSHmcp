@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
@@ -38,6 +39,16 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
         Assert.Equal("nosniff", Header(resp, "X-Content-Type-Options"));
         Assert.Equal("DENY", Header(resp, "X-Frame-Options"));
+    }
+
+    [Fact]
+    public async Task Auth_responses_are_not_cacheable()
+    {
+        var resp = await _factory.CreateClient().PostAsJsonAsync("/api/login",
+            new { username = "nobody", password = "bad" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+        Assert.Equal("no-store", Header(resp, "Cache-Control"));
     }
 
     [Fact]

@@ -3,6 +3,16 @@ using Microsoft.Data.Sqlite;
 
 namespace LitSSHmcp.Agent;
 
+/// <summary>
+/// 记忆访问范围（Web 强制隔离）：普通成员读团队 + 自己私有、写自己私有；
+/// 管理员读团队 + 自己私有、写团队。null = 桌面/管理界面，保持全量行为。
+/// </summary>
+public sealed record MemoryAccessScope(string OwnerUserId, bool IsAdmin)
+{
+    /// <summary>写入作用域：管理员写团队，普通成员写私有。</summary>
+    public string WriteScope => IsAdmin ? "team" : "private";
+}
+
 /// <summary>本地向量记忆存储（agent.db 的 agent_memory 表）。</summary>
 public interface IAgentMemoryStore
 {
@@ -29,7 +39,9 @@ public interface IAgentMemoryStore
     /// <summary>删除一条结构化记忆（按 Kind+Key）；返回是否存在。</summary>
     Task<bool> DeleteAsync(string kind, string key, CancellationToken ct = default);
     /// <summary>列出结构化记忆（kind/assetId 可选过滤，按 UpdatedAt 倒序）；includeRaw=true 时含 kind=raw 的会话/文档片段。</summary>
-    Task<List<MemoryRecord>> ListAsync(string? kind, string? assetId, int limit, bool includeRaw = false, CancellationToken ct = default);
+    /// <param name="writableOnly">true 时仅返回当前用户可修改的条目（近重复合并用，避免成员改写团队记忆）。</param>
+    Task<List<MemoryRecord>> ListAsync(string? kind, string? assetId, int limit, bool includeRaw = false,
+        CancellationToken ct = default, bool writableOnly = false);
     /// <summary>按 Id 删除任意记忆（含 raw；管理界面用）。</summary>
     Task<bool> DeleteByIdAsync(long id, CancellationToken ct = default);
     /// <summary>统计记忆条数（总数、按 kind 分组、已过时条数）。</summary>
@@ -38,6 +50,15 @@ public interface IAgentMemoryStore
     Task<float[]?> GetVectorAsync(long id, CancellationToken ct = default);
     /// <summary>同源 raw 条数超出 keep 时删除最旧的；返回删除条数。</summary>
     Task<int> PruneRawAsync(string source, int keep, CancellationToken ct = default);
+
+    /// <summary>列出指定记忆的历史快照（每次更新/删除前归档一版，Version 倒序）。</summary>
+    Task<List<MemoryVersion>> ListVersionsAsync(long memoryId, CancellationToken ct = default);
+    /// <summary>按记忆裁剪历史快照（默认每个 MemoryId 仅保留最近 <paramref name="keep"/> 个）；返回删除条数。</summary>
+    Task<int> PruneHistoryAsync(int keep, long? memoryId = null, CancellationToken ct = default);
+    /// <summary>把历史快照恢复为当前版本（先归档当前状态，版本号继续递增）；返回是否成功。</summary>
+    Task<bool> RestoreVersionAsync(long memoryId, int version, CancellationToken ct = default);
+    /// <summary>归档一条记忆：状态置为 superseded 并保留历史（可回滚）；返回是否存在。</summary>
+    Task<bool> ArchiveByIdAsync(long id, CancellationToken ct = default);
 }
 
 /// <summary>记忆库统计（设置页"查看记忆统计"用）。</summary>
@@ -47,6 +68,11 @@ public sealed record MemoryStats(int Total, IReadOnlyDictionary<string, int> ByK
 public sealed record MemoryRecord(long Id, string Source, string Content, string Kind, string Key,
     string AssetIds, string Tags, int Freq, string Status, string CreatedAt, string UpdatedAt);
 
+/// <summary>一条记忆的历史快照（更新/删除/归档前的状态，用于审计与回滚）。</summary>
+public sealed record MemoryVersion(long MemoryId, int Version, string Source, string Content, string Kind,
+    string Key, string AssetIds, string Tags, int Freq, string Status, string CreatedAt, string UpdatedAt,
+    string OwnerUserId, string Scope, string ArchivedAt);
+
 public sealed record MemoryHit(string Source, string Content, double Score,
     string Kind = "raw", string Key = "", int Freq = 1, string Status = "active", string AssetIds = "");
 
@@ -54,12 +80,47 @@ public class AgentMemoryStore : IAgentMemoryStore
 {
     private const string RawKind = "raw";
 
+    /// <summary>每个 MemoryId 默认保留的历史版本数（自动清理；防止长期运行无限膨胀）。</summary>
+    public const int DefaultHistoryKeep = 40;
+
+    /// <summary>已删除记忆的历史快照保留天数（过期由全局清理删除，避免孤儿历史累积）。</summary>
+    public const int OrphanHistoryRetentionDays = 30;
+
     private readonly string _dbPath;
+    private readonly MemoryAccessScope? _access;
+    private readonly SemaphoreSlim _initGate = new(1, 1);
+    private volatile bool _initialized;
 
     public AgentMemoryStore() : this(null) { }
-    public AgentMemoryStore(string? dbPath) => _dbPath = string.IsNullOrWhiteSpace(dbPath) ? ConfigPaths.AgentDb : dbPath!;
+    public AgentMemoryStore(string? dbPath, MemoryAccessScope? access = null)
+    {
+        if (access is not null && string.IsNullOrWhiteSpace(access.OwnerUserId))
+            throw new ArgumentException("隔离记忆必须提供 OwnerUserId", nameof(access));
+        _dbPath = string.IsNullOrWhiteSpace(dbPath) ? ConfigPaths.AgentDb : dbPath!;
+        _access = access;
+    }
 
     private string ConnectionString => $"Data Source={_dbPath};Default Timeout=3";
+
+    /// <summary>可见范围：团队记忆 + 当前用户私有记忆；不限定时返回 null。</summary>
+    private string? AddVisibleFilter(SqliteCommand cmd)
+    {
+        if (_access is null)
+            return null;
+        cmd.Parameters.AddWithValue("@scopeOwner", _access.OwnerUserId);
+        return "(Scope='team' OR (Scope='private' AND OwnerUserId=@scopeOwner))";
+    }
+
+    /// <summary>可写范围：管理员可写团队 + 自己的私有；普通成员只能写自己的私有。</summary>
+    private string? AddWritableFilter(SqliteCommand cmd)
+    {
+        if (_access is null)
+            return null;
+        cmd.Parameters.AddWithValue("@scopeOwner", _access.OwnerUserId);
+        return _access.IsAdmin
+            ? "(Scope='team' OR (Scope='private' AND OwnerUserId=@scopeOwner))"
+            : "(Scope='private' AND OwnerUserId=@scopeOwner)";
+    }
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
@@ -81,10 +142,32 @@ CREATE TABLE IF NOT EXISTS agent_memory (
     Tags TEXT NOT NULL DEFAULT '',
     Freq INTEGER NOT NULL DEFAULT 1,
     UpdatedAt TEXT NOT NULL DEFAULT '',
-    Status TEXT NOT NULL DEFAULT 'active'
+    Status TEXT NOT NULL DEFAULT 'active',
+    OwnerUserId TEXT NOT NULL DEFAULT '',
+    Scope TEXT NOT NULL DEFAULT 'team',
+    Version INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS IX_agent_memory_Source ON agent_memory(Source);
-CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
+CREATE TABLE IF NOT EXISTS agent_memory_history (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    MemoryId INTEGER NOT NULL,
+    Version INTEGER NOT NULL,
+    Source TEXT NOT NULL,
+    Content TEXT NOT NULL,
+    Vector BLOB NOT NULL,
+    Kind TEXT NOT NULL,
+    Key TEXT NOT NULL,
+    AssetIds TEXT NOT NULL DEFAULT '',
+    Tags TEXT NOT NULL DEFAULT '',
+    Freq INTEGER NOT NULL DEFAULT 1,
+    Status TEXT NOT NULL DEFAULT 'active',
+    CreatedAt TEXT NOT NULL,
+    UpdatedAt TEXT NOT NULL,
+    OwnerUserId TEXT NOT NULL DEFAULT '',
+    Scope TEXT NOT NULL DEFAULT 'team',
+    ArchivedAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS IX_agent_memory_history_Memory ON agent_memory_history(MemoryId, Version);";
             await cmd.ExecuteNonQueryAsync(ct);
         }
 
@@ -106,6 +189,9 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
             ("Freq", "ALTER TABLE agent_memory ADD COLUMN Freq INTEGER NOT NULL DEFAULT 1;"),
             ("UpdatedAt", "ALTER TABLE agent_memory ADD COLUMN UpdatedAt TEXT NOT NULL DEFAULT '';"),
             ("Status", "ALTER TABLE agent_memory ADD COLUMN Status TEXT NOT NULL DEFAULT 'active';"),
+            ("OwnerUserId", "ALTER TABLE agent_memory ADD COLUMN OwnerUserId TEXT NOT NULL DEFAULT '';"),
+            ("Scope", "ALTER TABLE agent_memory ADD COLUMN Scope TEXT NOT NULL DEFAULT 'team';"),
+            ("Version", "ALTER TABLE agent_memory ADD COLUMN Version INTEGER NOT NULL DEFAULT 1;"),
         })
         {
             if (existing.Contains(column))
@@ -116,8 +202,27 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         }
         await using (var cmd = connection.CreateCommand())
         {
-            cmd.CommandText = "CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
+            cmd.CommandText = "CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key); " +
+                              "CREATE INDEX IF NOT EXISTS IX_agent_memory_OwnerScope ON agent_memory(OwnerUserId, Scope);";
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+        _initialized = true;
+    }
+
+    /// <summary>写入/删除/历史接口的懒初始化：旧库在首次使用前没有历史表。</summary>
+    private async Task EnsureInitializedAsync(CancellationToken ct)
+    {
+        if (_initialized)
+            return;
+        await _initGate.WaitAsync(ct);
+        try
+        {
+            if (!_initialized)
+                await InitializeAsync(ct);
+        }
+        finally
+        {
+            _initGate.Release();
         }
     }
 
@@ -126,13 +231,15 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "INSERT INTO agent_memory(Source, Content, Vector, CreatedAt, Kind, Key, AssetIds, Tags, Freq, UpdatedAt, Status) " +
-                          "VALUES (@s, @c, @v, @now, @k, '', '', '', 1, @now, 'active');";
+        cmd.CommandText = "INSERT INTO agent_memory(Source, Content, Vector, CreatedAt, Kind, Key, AssetIds, Tags, Freq, UpdatedAt, Status, OwnerUserId, Scope, Version) " +
+                          "VALUES (@s, @c, @v, @now, @k, '', '', '', 1, @now, 'active', @owner, @scope, 1);";
         cmd.Parameters.AddWithValue("@s", source);
         cmd.Parameters.AddWithValue("@c", content);
         cmd.Parameters.AddWithValue("@v", ToBytes(vector));
         cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
         cmd.Parameters.AddWithValue("@k", RawKind);
+        cmd.Parameters.AddWithValue("@owner", _access?.OwnerUserId ?? string.Empty);
+        cmd.Parameters.AddWithValue("@scope", _access is null ? "team" : "private");
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -141,7 +248,9 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT 1 FROM agent_memory WHERE Source=@s AND Content=@c LIMIT 1;";
+        var scope = AddVisibleFilter(cmd);
+        cmd.CommandText = "SELECT 1 FROM agent_memory WHERE Source=@s AND Content=@c" +
+                          (scope is null ? string.Empty : " AND " + scope) + " LIMIT 1;";
         cmd.Parameters.AddWithValue("@s", source);
         cmd.Parameters.AddWithValue("@c", content);
         return await cmd.ExecuteScalarAsync(ct) is not null;
@@ -152,7 +261,8 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(*) FROM agent_memory;";
+        var scope = AddVisibleFilter(cmd);
+        cmd.CommandText = "SELECT COUNT(*) FROM agent_memory" + (scope is null ? string.Empty : " WHERE " + scope) + ";";
         return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
     }
 
@@ -177,6 +287,9 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         }
         if (activeOnly)
             sql += " AND Status='active'";
+        var visible = AddVisibleFilter(cmd);
+        if (visible is not null)
+            sql += " AND " + visible;
         if (assets.Length > 0)
         {
             // raw 与无资产归属的通用经验保留；结构化经验要求资产交集（逗号边界 + LIKE 转义，避免 ssh:s1 命中 ssh:s10、ssh:web_1 命中 ssh:web01）。
@@ -208,10 +321,21 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
 
     public async Task ClearAsync(CancellationToken ct = default)
     {
+        await EnsureInitializedAsync(ct);
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "DELETE FROM agent_memory;";
+        // 清空用于更换 Embeddings 模型/维度：历史向量同样失效，一并清理，避免回滚出不可用向量。
+        if (_access is null)
+        {
+            cmd.CommandText = "DELETE FROM agent_memory_history; DELETE FROM agent_memory;";
+        }
+        else
+        {
+            cmd.CommandText = "DELETE FROM agent_memory_history WHERE Scope='private' AND OwnerUserId=@scopeOwner; " +
+                              "DELETE FROM agent_memory WHERE Scope='private' AND OwnerUserId=@scopeOwner;";
+            cmd.Parameters.AddWithValue("@scopeOwner", _access.OwnerUserId);
+        }
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -220,8 +344,11 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
+        var writable = AddWritableFilter(cmd);
         cmd.CommandText = "SELECT Id, Source, Content, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt " +
-                          "FROM agent_memory WHERE Kind=@k AND Key=@key LIMIT 1;";
+                          "FROM agent_memory WHERE Kind=@k AND Key=@key" +
+                          (writable is null ? string.Empty : " AND " + writable) +
+                          " ORDER BY CASE Scope WHEN 'team' THEN 0 ELSE 1 END LIMIT 1;";
         cmd.Parameters.AddWithValue("@k", kind);
         cmd.Parameters.AddWithValue("@key", key);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -234,8 +361,8 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "INSERT INTO agent_memory(Source, Content, Vector, CreatedAt, Kind, Key, AssetIds, Tags, Freq, UpdatedAt, Status) " +
-                          "VALUES (@s, @c, @v, @now, @k, @key, @a, @t, @f, @now, 'active'); " +
+        cmd.CommandText = "INSERT INTO agent_memory(Source, Content, Vector, CreatedAt, Kind, Key, AssetIds, Tags, Freq, UpdatedAt, Status, OwnerUserId, Scope, Version) " +
+                          "VALUES (@s, @c, @v, @now, @k, @key, @a, @t, @f, @now, 'active', @owner, @scope, 1); " +
                           "SELECT last_insert_rowid();";
         var now = DateTime.UtcNow.ToString("O");
         cmd.Parameters.AddWithValue("@s", source);
@@ -247,17 +374,27 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         cmd.Parameters.AddWithValue("@a", assetIds);
         cmd.Parameters.AddWithValue("@t", tags);
         cmd.Parameters.AddWithValue("@f", Math.Max(1, freq));
+        cmd.Parameters.AddWithValue("@owner", _access?.OwnerUserId ?? string.Empty);
+        cmd.Parameters.AddWithValue("@scope", _access?.WriteScope ?? "team");
         return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
     }
 
     public async Task UpdateStructuredAsync(long id, string content, float[] vector, string assetIds, string tags,
         string status, int freqIncrement, CancellationToken ct = default)
     {
+        await EnsureInitializedAsync(ct);
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "UPDATE agent_memory SET Content=@c, Vector=@v, AssetIds=@a, Tags=@t, Status=@st, " +
-                          "Freq=Freq+@inc, UpdatedAt=@now WHERE Id=@id;";
+        var writable = AddWritableFilter(cmd);
+        var scopeFilter = writable is null ? string.Empty : " AND " + writable;
+        // 更新前把当前版本写入历史，保证任何一次覆盖都可回滚。
+        cmd.CommandText =
+            "INSERT INTO agent_memory_history(MemoryId, Version, Source, Content, Vector, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, ArchivedAt) " +
+            "SELECT Id, Version, Source, Content, Vector, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, @now " +
+            "FROM agent_memory WHERE Id=@id" + scopeFilter + "; " +
+            "UPDATE agent_memory SET Content=@c, Vector=@v, AssetIds=@a, Tags=@t, Status=@st, " +
+            "Freq=Freq+@inc, UpdatedAt=@now, Version=Version+1 WHERE Id=@id" + scopeFilter + ";";
         cmd.Parameters.AddWithValue("@c", content);
         cmd.Parameters.AddWithValue("@v", ToBytes(vector));
         cmd.Parameters.AddWithValue("@a", assetIds);
@@ -267,14 +404,24 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
         cmd.Parameters.AddWithValue("@id", id);
         await cmd.ExecuteNonQueryAsync(ct);
+        await PruneHistoryAsync(connection, id, ct);
     }
 
     public async Task<bool> DeleteAsync(string kind, string key, CancellationToken ct = default)
     {
+        await EnsureInitializedAsync(ct);
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "DELETE FROM agent_memory WHERE Kind=@k AND Key=@key;";
+        var writable = AddWritableFilter(cmd);
+        var scopeFilter = writable is null ? string.Empty : " AND " + writable;
+        // 删除前归档当前版本；历史保留，后续可由管理员恢复到指定版本。
+        cmd.CommandText =
+            "INSERT INTO agent_memory_history(MemoryId, Version, Source, Content, Vector, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, ArchivedAt) " +
+            "SELECT Id, Version, Source, Content, Vector, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, @now " +
+            "FROM agent_memory WHERE Kind=@k AND Key=@key" + scopeFilter + "; " +
+            "DELETE FROM agent_memory WHERE Kind=@k AND Key=@key" + scopeFilter + ";";
+        cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
         cmd.Parameters.AddWithValue("@k", kind);
         cmd.Parameters.AddWithValue("@key", key);
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
@@ -282,15 +429,24 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
 
     public async Task<bool> DeleteByIdAsync(long id, CancellationToken ct = default)
     {
+        await EnsureInitializedAsync(ct);
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "DELETE FROM agent_memory WHERE Id=@id;";
+        var writable = AddWritableFilter(cmd);
+        var scopeFilter = writable is null ? string.Empty : " AND " + writable;
+        cmd.CommandText =
+            "INSERT INTO agent_memory_history(MemoryId, Version, Source, Content, Vector, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, ArchivedAt) " +
+            "SELECT Id, Version, Source, Content, Vector, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, @now " +
+            "FROM agent_memory WHERE Id=@id" + scopeFilter + "; " +
+            "DELETE FROM agent_memory WHERE Id=@id" + scopeFilter + ";";
+        cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
         cmd.Parameters.AddWithValue("@id", id);
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
     }
 
-    public async Task<List<MemoryRecord>> ListAsync(string? kind, string? assetId, int limit, bool includeRaw = false, CancellationToken ct = default)
+    public async Task<List<MemoryRecord>> ListAsync(string? kind, string? assetId, int limit, bool includeRaw = false,
+        CancellationToken ct = default, bool writableOnly = false)
     {
         var result = new List<MemoryRecord>();
         await using var connection = new SqliteConnection(ConnectionString);
@@ -300,6 +456,9 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
                   "FROM agent_memory WHERE 1=1";
         if (!includeRaw)
             sql += " AND Kind<>'raw'";
+        var scope = writableOnly ? AddWritableFilter(cmd) : AddVisibleFilter(cmd);
+        if (scope is not null)
+            sql += " AND " + scope;
         if (!string.IsNullOrWhiteSpace(kind))
         {
             sql += " AND Kind=@kind";
@@ -336,7 +495,9 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         }
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT IFNULL(Kind,''), IFNULL(Status,''), COUNT(*) FROM agent_memory GROUP BY Kind, Status;";
+        var scope = AddVisibleFilter(cmd);
+        cmd.CommandText = "SELECT IFNULL(Kind,''), IFNULL(Status,''), COUNT(*) FROM agent_memory" +
+                          (scope is null ? string.Empty : " WHERE " + scope) + " GROUP BY Kind, Status;";
         var byKind = new Dictionary<string, int>(StringComparer.Ordinal);
         var superseded = 0;
         var total = 0L;
@@ -373,13 +534,219 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key);";
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        // 保留最近 keep 条（按 Id 倒序），其余同源 raw 删除
-        cmd.CommandText = "DELETE FROM agent_memory WHERE Source=@s AND Kind='raw' AND Id NOT IN " +
-                          "(SELECT Id FROM agent_memory WHERE Source=@s AND Kind='raw' ORDER BY Id DESC LIMIT @keep);";
+        // 保留最近 keep 条（按 Id 倒序），其余同源 raw 删除；隔离模式下只清理当前用户的私有 raw
+        var owned = _access is null
+            ? string.Empty
+            : " AND Scope='private' AND OwnerUserId=@scopeOwner";
+        if (_access is not null)
+            cmd.Parameters.AddWithValue("@scopeOwner", _access.OwnerUserId);
+        cmd.CommandText = "DELETE FROM agent_memory WHERE Source=@s AND Kind='raw'" + owned + " AND Id NOT IN " +
+                          "(SELECT Id FROM agent_memory WHERE Source=@s AND Kind='raw'" + owned +
+                          " ORDER BY Id DESC LIMIT @keep);";
         cmd.Parameters.AddWithValue("@s", source);
         cmd.Parameters.AddWithValue("@keep", keep);
         return await cmd.ExecuteNonQueryAsync(ct);
     }
+
+    public async Task<List<MemoryVersion>> ListVersionsAsync(long memoryId, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        var result = new List<MemoryVersion>();
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        var visible = AddVisibleFilter(cmd);
+        cmd.CommandText =
+            "SELECT MemoryId, Version, Source, Content, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, ArchivedAt " +
+            "FROM agent_memory_history WHERE MemoryId=@id" +
+            (visible is null ? string.Empty : " AND " + visible) +
+            " ORDER BY Version DESC, Id DESC;";
+        cmd.Parameters.AddWithValue("@id", memoryId);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            result.Add(ReadVersion(reader));
+        return result;
+    }
+
+    public async Task<int> PruneHistoryAsync(int keep, long? memoryId = null, CancellationToken ct = default)
+    {
+        keep = Math.Clamp(keep, 1, 1000);
+        await EnsureInitializedAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        var visible = AddVisibleFilter(cmd);
+        var scopeFilter = visible is null ? string.Empty : " AND " + visible;
+        var idFilter = memoryId is null ? string.Empty : " AND MemoryId=@id";
+        cmd.CommandText =
+            "DELETE FROM agent_memory_history WHERE Id IN (" +
+            "SELECT Id FROM (SELECT Id, ROW_NUMBER() OVER (PARTITION BY MemoryId ORDER BY Version DESC, Id DESC) AS rn " +
+            "FROM agent_memory_history WHERE 1=1" + idFilter + scopeFilter + ") WHERE rn > @keep);";
+        cmd.Parameters.AddWithValue("@keep", keep);
+        if (memoryId is not null)
+            cmd.Parameters.AddWithValue("@id", memoryId.Value);
+        var deleted = await cmd.ExecuteNonQueryAsync(ct);
+
+        if (memoryId is null)
+        {
+            // 全局清理时顺带删除「记忆已不存在且超过保留期」的孤儿历史。
+            await using var orphan = connection.CreateCommand();
+            var orphanVisible = AddVisibleFilter(orphan);
+            orphan.CommandText =
+                "DELETE FROM agent_memory_history WHERE MemoryId NOT IN (SELECT Id FROM agent_memory) " +
+                "AND ArchivedAt < @cutoff" +
+                (orphanVisible is null ? string.Empty : " AND " + orphanVisible) + ";";
+            orphan.Parameters.AddWithValue("@cutoff",
+                DateTime.UtcNow.AddDays(-OrphanHistoryRetentionDays).ToString("O"));
+            deleted += await orphan.ExecuteNonQueryAsync(ct);
+        }
+
+        return deleted;
+    }
+
+    public async Task<bool> RestoreVersionAsync(long memoryId, int version, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+
+        var snapshot = await ReadVersionAsync(connection, memoryId, version, ct);
+        if (snapshot is null || !CanWriteSnapshot(snapshot))
+            return false;
+
+        var vector = await ReadVersionVectorAsync(connection, memoryId, version, ct) ?? Array.Empty<float>();
+        var now = DateTime.UtcNow.ToString("O");
+
+        // 回滚本身也可撤销：先把当前版本归档，再写入历史快照（版本号继续递增）。
+        await using (var snapshotCmd = connection.CreateCommand())
+        {
+            snapshotCmd.CommandText =
+                "INSERT INTO agent_memory_history(MemoryId, Version, Source, Content, Vector, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, ArchivedAt) " +
+                "SELECT Id, Version, Source, Content, Vector, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, @now " +
+                "FROM agent_memory WHERE Id=@id;";
+            snapshotCmd.Parameters.AddWithValue("@now", now);
+            snapshotCmd.Parameters.AddWithValue("@id", memoryId);
+            await snapshotCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        var exists = false;
+        await using (var check = connection.CreateCommand())
+        {
+            check.CommandText = "SELECT COUNT(*) FROM agent_memory WHERE Id=@id;";
+            check.Parameters.AddWithValue("@id", memoryId);
+            exists = Convert.ToInt64(await check.ExecuteScalarAsync(ct)) > 0;
+        }
+
+        int next;
+        await using (var max = connection.CreateCommand())
+        {
+            max.CommandText = "SELECT IFNULL(MAX(Version),0)+1 FROM agent_memory_history WHERE MemoryId=@id;";
+            max.Parameters.AddWithValue("@id", memoryId);
+            next = Convert.ToInt32(await max.ExecuteScalarAsync(ct));
+        }
+
+        await using var write = connection.CreateCommand();
+        write.Parameters.AddWithValue("@s", snapshot.Source);
+        write.Parameters.AddWithValue("@c", snapshot.Content);
+        write.Parameters.AddWithValue("@v", ToBytes(vector));
+        write.Parameters.AddWithValue("@k", snapshot.Kind);
+        write.Parameters.AddWithValue("@key", snapshot.Key);
+        write.Parameters.AddWithValue("@a", snapshot.AssetIds);
+        write.Parameters.AddWithValue("@t", snapshot.Tags);
+        write.Parameters.AddWithValue("@f", snapshot.Freq);
+        write.Parameters.AddWithValue("@st", snapshot.Status);
+        write.Parameters.AddWithValue("@created", snapshot.CreatedAt);
+        write.Parameters.AddWithValue("@now", now);
+        write.Parameters.AddWithValue("@owner", snapshot.OwnerUserId);
+        write.Parameters.AddWithValue("@scope", snapshot.Scope);
+        write.Parameters.AddWithValue("@id", memoryId);
+        write.Parameters.AddWithValue("@next", next);
+        write.CommandText = exists
+            ? "UPDATE agent_memory SET Source=@s, Content=@c, Vector=@v, Kind=@k, Key=@key, AssetIds=@a, Tags=@t, " +
+              "Freq=@f, Status=@st, UpdatedAt=@now, Version=@next WHERE Id=@id;"
+            : "INSERT INTO agent_memory(Id, Source, Content, Vector, CreatedAt, Kind, Key, AssetIds, Tags, Freq, UpdatedAt, Status, OwnerUserId, Scope, Version) " +
+              "VALUES (@id, @s, @c, @v, @created, @k, @key, @a, @t, @f, @now, @st, @owner, @scope, @next);";
+        var restored = await write.ExecuteNonQueryAsync(ct) > 0;
+        if (restored)
+            await PruneHistoryAsync(connection, memoryId, ct);
+        return restored;
+    }
+
+    public async Task<bool> ArchiveByIdAsync(long id, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        var writable = AddWritableFilter(cmd);
+        var scopeFilter = writable is null ? string.Empty : " AND " + writable;
+        var now = DateTime.UtcNow.ToString("O");
+        cmd.CommandText =
+            "INSERT INTO agent_memory_history(MemoryId, Version, Source, Content, Vector, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, ArchivedAt) " +
+            "SELECT Id, Version, Source, Content, Vector, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, @now " +
+            "FROM agent_memory WHERE Id=@id" + scopeFilter + "; " +
+            "UPDATE agent_memory SET Status='superseded', Version=Version+1, UpdatedAt=@now WHERE Id=@id" + scopeFilter + ";";
+        cmd.Parameters.AddWithValue("@now", now);
+        cmd.Parameters.AddWithValue("@id", id);
+        var archived = await cmd.ExecuteNonQueryAsync(ct) > 0;
+        if (archived)
+            await PruneHistoryAsync(connection, id, ct);
+        return archived;
+    }
+
+    /// <summary>同一连接内按 MemoryId 保留最近 N 版（DefaultHistoryKeep）。</summary>
+    private static async Task PruneHistoryAsync(SqliteConnection connection, long memoryId, CancellationToken ct)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText =
+            "DELETE FROM agent_memory_history WHERE MemoryId=@id AND Id NOT IN (" +
+            "SELECT Id FROM agent_memory_history WHERE MemoryId=@id ORDER BY Version DESC, Id DESC LIMIT @keep);";
+        cmd.Parameters.AddWithValue("@id", memoryId);
+        cmd.Parameters.AddWithValue("@keep", DefaultHistoryKeep);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task<MemoryVersion?> ReadVersionAsync(SqliteConnection connection, long memoryId, int version,
+        CancellationToken ct)
+    {
+        await using var cmd = connection.CreateCommand();
+        var visible = AddVisibleFilter(cmd);
+        cmd.CommandText =
+            "SELECT MemoryId, Version, Source, Content, Kind, Key, AssetIds, Tags, Freq, Status, CreatedAt, UpdatedAt, OwnerUserId, Scope, ArchivedAt " +
+            "FROM agent_memory_history WHERE MemoryId=@id AND Version=@version" +
+            (visible is null ? string.Empty : " AND " + visible) +
+            " ORDER BY Id DESC LIMIT 1;";
+        cmd.Parameters.AddWithValue("@id", memoryId);
+        cmd.Parameters.AddWithValue("@version", version);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct) ? ReadVersion(reader) : null;
+    }
+
+    private static async Task<float[]?> ReadVersionVectorAsync(SqliteConnection connection, long memoryId, int version,
+        CancellationToken ct)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Vector FROM agent_memory_history WHERE MemoryId=@id AND Version=@version ORDER BY Id DESC LIMIT 1;";
+        cmd.Parameters.AddWithValue("@id", memoryId);
+        cmd.Parameters.AddWithValue("@version", version);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is byte[] bytes ? ToFloats(bytes) : null;
+    }
+
+    private bool CanWriteSnapshot(MemoryVersion snapshot)
+    {
+        if (_access is null)
+            return true;
+        if (string.Equals(snapshot.Scope, "team", StringComparison.OrdinalIgnoreCase))
+            return _access.IsAdmin;
+        return string.Equals(snapshot.Scope, "private", StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(snapshot.OwnerUserId, _access.OwnerUserId, StringComparison.Ordinal);
+    }
+
+    private static MemoryVersion ReadVersion(SqliteDataReader reader) => new(
+        reader.GetInt64(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3), reader.GetString(4),
+        reader.GetString(5), reader.GetString(6), reader.GetString(7), reader.GetInt32(8), reader.GetString(9),
+        reader.GetString(10), reader.GetString(11), reader.GetString(12), reader.GetString(13), reader.GetString(14));
 
     private static MemoryRecord ReadRecord(SqliteDataReader reader) => new(
         reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4),

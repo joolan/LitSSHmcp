@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.SSH;
 
 namespace LitSSHmcp.App.ViewModels;
@@ -17,6 +18,7 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
 {
     private readonly ISshService _ssh;
     private readonly SshServerConfig _server;
+    private readonly IUserDialogService _dialogs;
     private bool _initialized;
 
     private FileSystemWatcher? _editWatch;
@@ -24,10 +26,12 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
     private string? _editRemotePath;
     private CancellationTokenSource? _editDebounce;
 
-    public RemoteFileBrowserViewModel(SshServerConfig server, ISshService ssh)
+    public RemoteFileBrowserViewModel(SshServerConfig server, ISshService ssh,
+        IUserDialogService? dialogs = null)
     {
         _server = server;
         _ssh = ssh;
+        _dialogs = dialogs ?? new UserDialogService();
         CurrentPath = ".";
     }
 
@@ -359,10 +363,8 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         var overwrite = false;
         if (conflicts > 0)
         {
-            var answer = MessageBox.Show(
-                $"目标目录已存在 {conflicts} 个同名文件/文件夹，是否覆盖？",
-                "粘贴", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            overwrite = answer == MessageBoxResult.Yes;
+            overwrite = _dialogs.Confirm(
+                $"目标目录已存在 {conflicts} 个同名文件/文件夹，是否覆盖？", "粘贴");
         }
 
         var commands = new List<string>();
@@ -603,12 +605,24 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
 
     public static bool IsArchive(string name) => IsZip(name) || IsTarGz(name);
 
-    /// <summary>下载到临时目录、用系统默认程序打开，并监视改动自动回传 SFTP。</summary>
+    /// <summary>下载到临时目录、交给用户选择程序打开，并监视改动自动回传 SFTP。</summary>
     public async Task<string?> OpenFileForEditAsync(RemoteFileItem item)
     {
+        if (!RemotePathGuard.TryFileName(item.Name, out var safeName))
+        {
+            StatusMessage = $"远端文件名不安全，已拒绝打开: {item.Name}";
+            return null;
+        }
+
         var dir = Path.Combine(Path.GetTempPath(), "litssh-remote");
         Directory.CreateDirectory(dir);
-        var local = Path.Combine(dir, item.Name);
+        var local = RemotePathGuard.ResolveLocalUnder(dir, safeName);
+        if (local is null)
+        {
+            StatusMessage = $"远端文件名无法安全落盘，已拒绝打开: {item.Name}";
+            return null;
+        }
+
         await DownloadAsync(item, local);
         if (!File.Exists(local))
             return null;
@@ -673,10 +687,9 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         var yes = false;
         if (dispatcher is not null)
         {
-            yes = dispatcher.Invoke(() => System.Windows.MessageBox.Show(
-                $"文件已被修改：\n{Path.GetFileName(remote)}\n\n是否回传并覆盖服务器上的文件？",
-                "回传修改", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question)
-                == System.Windows.MessageBoxResult.Yes);
+            yes = dispatcher.Invoke(() => _dialogs.Confirm(
+                $"文件已被修改：\n{Path.GetFileName(remote)}\n\n是否回传覆盖服务器上的文件？",
+                "回写修改", warning: false));
         }
 
         // 无论选择如何，本次编辑会话不再重复提示

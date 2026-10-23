@@ -43,8 +43,8 @@ public class WorkspaceToolsAuditTests : IDisposable
         var full = Path.Combine(_root, rel);
 
         await Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "v1"), ("path", rel)), default);
-        await Tool(tools, "ops_doc_append").InvokeAsync(Args(("content", "v2"), ("path", rel)), default);
-        await Tool(tools, "ops_doc_patch").InvokeAsync(Args(("find", "v1"), ("replace", "v1x"), ("path", rel)), default);
+        await Tool(tools, "ops_doc_write").InvokeAsync(Args(("mode", "append"), ("content", "v2"), ("path", rel)), default);
+        await Tool(tools, "ops_doc_write").InvokeAsync(Args(("mode", "patch"), ("find", "v1"), ("replace", "v1x"), ("path", rel)), default);
         var readsBefore = Snapshot().Count(r => r.FilePath == full);
         await Tool(tools, "ops_doc_read").InvokeAsync(Args(("path", rel)), default);
         await Tool(tools, "ops_doc_list").InvokeAsync(Args(), default);
@@ -87,6 +87,12 @@ public class WorkspaceToolsAuditTests : IDisposable
         Assert.Equal("agent-77", record.SessionId);
         Assert.EndsWith("MANIFEST.md", record.FilePath!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(scriptRel, record.Command);
+    }
+
+    [Fact]
+    public void Script_register_is_hidden_when_shared_is_read_only()
+    {
+        Assert.Empty(ScriptTools.Create(_root, null, enabled: false));
     }
 
     private static IAgentTool Tool(IReadOnlyList<IAgentTool> tools, string name) => tools.First(t => t.Name == name);

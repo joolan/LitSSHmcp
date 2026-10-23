@@ -24,6 +24,8 @@ public sealed class AgentSession
     private readonly SpillStore? _spill;
     private readonly int? _maxIterationsOverride;
     private readonly IAgentTool? _roundNotifier;
+    private readonly Func<long, long, bool>? _budgetCheck;
+    private readonly Action<long, long>? _onUsageDelta;
 
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
     private bool _planMode;
@@ -42,6 +44,8 @@ public sealed class AgentSession
     private const int MaxSummarizeInputChars = 8000;
     /// <summary>同一轮内连续工具失败的熔断阈值（含审批被拒；达到即停止本轮，避免空转）。</summary>
     private const int MaxConsecutiveToolFailures = 4;
+    private const string BudgetExceededMessage =
+        "会话成本预算已耗尽，停止本轮模型调用。请提高 agent.budget.maxSessionCost 或切换到更便宜的模型。";
     private const string ToolResultOmitted = "[较早的工具结果已省略以节省上下文；如需完整内容请重新调用该工具]";
     private const string SummaryPromptPrefix = "以下是更早对话的摘要(仅供参考, 以实际工具结果为准):\n";
 
@@ -58,7 +62,9 @@ public sealed class AgentSession
         SpillStore? spill = null,
         int? maxIterationsOverride = null,
         IAgentTool? roundNotifier = null,
-        Func<string, CancellationToken, Task<AssetGraphContextResult?>>? graphContext = null)
+        Func<string, CancellationToken, Task<AssetGraphContextResult?>>? graphContext = null,
+        Func<long, long, bool>? budgetCheck = null,
+        Action<long, long>? onUsageDelta = null)
     {
         _client = client;
         _provider = provider;
@@ -71,6 +77,8 @@ public sealed class AgentSession
         _spill = spill;
         _maxIterationsOverride = maxIterationsOverride;
         _roundNotifier = roundNotifier;
+        _budgetCheck = budgetCheck;
+        _onUsageDelta = onUsageDelta;
         Messages.Add(new ChatMessage(ChatRole.System, systemPrompt));
         if (history is not null)
             Messages.AddRange(history);
@@ -250,6 +258,11 @@ public sealed class AgentSession
 
             var response = updates.ToChatResponse();
             RecordUsage(response, estimatedBeforeRequest);
+            if (_budgetCheck is not null && !_budgetCheck(SessionInputTokens, SessionOutputTokens))
+            {
+                progress?.Report(new AgentEvent(AgentEventKind.Error, Text: BudgetExceededMessage));
+                return;
+            }
             var assistantMessages = response.Messages;
             foreach (var message in assistantMessages)
             {
@@ -444,11 +457,23 @@ public sealed class AgentSession
     /// <summary>上一次模型请求的真实输出 token 数。</summary>
     public long? LastRequestOutputTokens { get; private set; }
 
-    /// <summary>本会话累计真实输入 token。</summary>
-    public long SessionInputTokens { get; private set; }
+    private long _sessionInputTokens;
+    private long _sessionOutputTokens;
 
-    /// <summary>本会话累计真实输出 token。</summary>
-    public long SessionOutputTokens { get; private set; }
+    /// <summary>本会话累计真实输入 token（含子代理回传）。</summary>
+    public long SessionInputTokens => Interlocked.Read(ref _sessionInputTokens);
+
+    /// <summary>本会话累计真实输出 token（含子代理回传）。</summary>
+    public long SessionOutputTokens => Interlocked.Read(ref _sessionOutputTokens);
+
+    /// <summary>把子代理消耗的 token 回传父会话，纳入同一成本预算。</summary>
+    public void AddChildUsage(long inputTokens, long outputTokens)
+    {
+        if (inputTokens > 0)
+            Interlocked.Add(ref _sessionInputTokens, inputTokens);
+        if (outputTokens > 0)
+            Interlocked.Add(ref _sessionOutputTokens, outputTokens);
+    }
 
     /// <summary>上一次模型请求中命中 provider 前缀缓存的输入 token 数（null=未返回用量）。</summary>
     public long? LastRequestCachedInputTokens { get; private set; }
@@ -482,13 +507,17 @@ public sealed class AgentSession
         if (input > 0)
         {
             LastRequestInputTokens = input;
-            SessionInputTokens += input;
+            Interlocked.Add(ref _sessionInputTokens, input);
         }
         if (output > 0)
         {
             LastRequestOutputTokens = output;
-            SessionOutputTokens += output;
+            Interlocked.Add(ref _sessionOutputTokens, output);
         }
+
+        // 共享预算账本按增量累加（父会话与并行子代理使用同一实例）。
+        if (input > 0 || output > 0)
+            _onUsageDelta?.Invoke(input, output);
 
         // provider 前缀缓存命中（OpenAI prompt_tokens_details.cached_tokens 等）：仅观测，不影响估算校准。
         var cached = usage.CachedInputTokenCount ?? 0;
@@ -786,9 +815,10 @@ public sealed class AgentSession
         }
     }
 
-    /// <summary>日志类工具（<c>*_logs</c>/<c>log_tail</c>）的截断保留**尾部最新内容**，其余保留头部。</summary>
+    /// <summary>日志类工具（<c>*_logs</c>/<c>log_query</c>/<c>docker_query</c>）的截断保留**尾部最新内容**，其余保留头部。</summary>
     private static bool PreferTail(string toolName) =>
-        toolName.Equals("log_tail", StringComparison.OrdinalIgnoreCase) ||
+        toolName.Equals("log_query", StringComparison.OrdinalIgnoreCase) ||
+        toolName.Equals("docker_query", StringComparison.OrdinalIgnoreCase) ||
         toolName.Equals("local_shell", StringComparison.OrdinalIgnoreCase) ||
         toolName.EndsWith("_logs", StringComparison.OrdinalIgnoreCase);
 
@@ -814,7 +844,7 @@ public sealed class AgentSession
                 var label = tail ? "以下为最新内容" : "预览";
                 return preview +
                     $"\n…[结果过大({resultText.Length} 字符/{lines} 行), 已落盘为 {SpillStore.Scheme}{handle}; " +
-                    $"用 spill_read(handle=\"{handle}\", offset, limit) 分段读取, spill_grep 搜索, spill_list 列出; {label}]";
+                    $"用 spill_read(handle=\"{handle}\", mode=\"read\", offset, limit) 分段读取, spill_read(mode=\"grep\", pattern) 搜索, spill_list 列出; {label}]";
             }
             catch
             {

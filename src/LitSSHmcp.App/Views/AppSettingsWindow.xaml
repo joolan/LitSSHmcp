@@ -15,7 +15,7 @@
 
         <TabControl Grid.Row="1" Margin="10,0,10,10">
             <TabItem Header="外观">
-                <views:AppearanceSettingsView/>
+                <views:AppearanceSettingsView x:Name="AppearanceView"/>
             </TabItem>
             <TabItem Header="终端">
                 <views:TerminalSettingsView/>
@@ -24,13 +24,16 @@
                 <views:SnippetEditorView/>
             </TabItem>
             <TabItem Header="安全设置">
-                <views:SecuritySettingsView/>
+                <views:SecuritySettingsView x:Name="SecurityView"/>
             </TabItem>
             <TabItem Header="工具分组">
-                <views:ToolGroupsView/>
+                <views:ToolGroupsView x:Name="ToolGroupsView"/>
             </TabItem>
             <TabItem Header="导入 / 导出">
                 <views:ConfigTransferView x:Name="TransferView"/>
+            </TabItem>
+            <TabItem Header="存储维护">
+                <views:StorageSettingsView x:Name="StorageView"/>
             </TabItem>
             <TabItem Header="MCP 工具说明">
                 <views:McpToolsView/>

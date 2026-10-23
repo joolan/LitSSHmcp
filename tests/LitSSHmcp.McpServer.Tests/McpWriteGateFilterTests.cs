@@ -12,8 +12,8 @@ using Xunit;
 namespace LitSSHmcp.McpServer.Tests;
 
 /// <summary>
-/// 目标级写互斥过滤器（评估报告 §4.3 / M2-1）：写类工具判定、Shell 只读白名单、
-/// 目标键归一化，以及完整过滤器的占锁/放行/超时/释放语义。
+/// 目标级写互斥过滤器（评估报告 §4.3 / M2-1）：安全目录驱动的写类判定、条件写工具的
+/// 只读判定、目标键归一化，以及完整过滤器的占锁/放行/超时/释放语义。
 /// </summary>
 public class McpWriteGateFilterTests : IDisposable
 {
@@ -41,75 +41,33 @@ public class McpWriteGateFilterTests : IDisposable
     [InlineData("service_restart", true)]
     [InlineData("docker_restart", true)]
     [InlineData("docker_exec", true)]
-    [InlineData("ssh_upload_file", true)]
-    [InlineData("ssh_upload_files", true)]
+    [InlineData("ssh_upload", true)]
     [InlineData("ssh_execute_sudo", true)]
     [InlineData("ssh_execute_command", true)]
     [InlineData("mysql_execute", true)]
     [InlineData("postgres_execute", true)]
     [InlineData("redis_execute", true)]
     [InlineData("ssh_list_files", false)]
-    [InlineData("ssh_download_file", false)]
+    [InlineData("ssh_download", false)]
     [InlineData("mysql_query", false)]
     [InlineData("redis_read", false)]
-    [InlineData("ssh_snapshot_refresh", false)]
+    [InlineData("ssh_snapshot_refresh", true)]
+    [InlineData("topology_discover", false)]
+    [InlineData("app_health_snapshot", false)]
     [InlineData("unknown_tool", false)]
     [InlineData(null, false)]
     public void RequiresWriteGate_classifies_tools(string? tool, bool expected) =>
         Assert.Equal(expected, McpWriteGateFilter.RequiresWriteGate(tool));
 
-    // ---------- Shell 只读白名单（宁严勿松） ----------
-
-    [Theory]
-    [InlineData("df -h", true)]
-    [InlineData("cat /etc/ssh/sshd_config", true)]
-    [InlineData("dmesg | grep -i error", true)]
-    [InlineData("cat a.conf && grep b c.conf", true)]
-    [InlineData("df -h 2>/dev/null", true)]
-    [InlineData("docker ps", true)]
-    [InlineData("docker logs app --tail 100", true)]
-    [InlineData("systemctl status nginx", true)]
-    [InlineData("journalctl -u nginx -n 100", true)]
-    [InlineData("find /etc -name '*.conf'", true)]
-    [InlineData("sysctl -a", true)]
-    [InlineData("echo hello", true)]
-    [InlineData("date", true)]
-    [InlineData("env", true)]
-    [InlineData("systemctl restart nginx", false)]
-    [InlineData("systemctl start nginx", false)]
-    [InlineData("docker exec app sh", false)]
-    [InlineData("docker run -d nginx", false)]
-    [InlineData("cat /var/log/app.log > /tmp/x", false)]
-    [InlineData("echo x > /etc/cron.d/backdoor", false)]
-    [InlineData("cat `ls`", false)]
-    [InlineData("echo $(reboot)", false)]
-    [InlineData("find /tmp -delete", false)]
-    [InlineData("find /tmp -name x -exec rm {} ;", false)]
-    [InlineData("journalctl --vacuum-size=100M", false)]
-    [InlineData("sysctl -w net.ipv4.ip_forward=1", false)]
-    [InlineData("sysctl net.ipv4.ip_forward=1", false)]
-    [InlineData("sudo systemctl status nginx", false)]
-    [InlineData("rm -rf /tmp/x", false)]
-    [InlineData("cat a.conf && rm b.conf", false)]
-    [InlineData("cat a.conf | tee /etc/b.conf", false)]
-    [InlineData("grep 'a>b' f", false)]
-    [InlineData("date -s '2026-01-01'", false)]
-    [InlineData("env FOO=bar ps", false)]
-    [InlineData("", false)]
-    [InlineData(null, false)]
-    public void LooksReadOnlyShellCommand_is_conservative(string? command, bool expected) =>
-        Assert.Equal(expected, McpWriteGateFilter.LooksReadOnlyShellCommand(command));
-
     // ---------- 条件写工具的只读判定 ----------
 
     [Fact]
-    public void IsReadCall_shell_command_classification()
+    public void IsReadCall_shell_command_always_requires_write_lock()
     {
-        Assert.True(McpWriteGateFilter.IsReadCall("ssh_execute_command", Args(("command", "df -h")), null));
+        // 任意 shell 都可能写；不再用“首词只读”降低授权或并发保护。
+        Assert.False(McpWriteGateFilter.IsReadCall("ssh_execute_command", Args(("command", "df -h")), null));
         Assert.False(McpWriteGateFilter.IsReadCall("ssh_execute_command", Args(("command", "reboot")), null));
-        // sudo 一律写类，即使参数看起来是只读命令
         Assert.False(McpWriteGateFilter.IsReadCall("ssh_execute_sudo", Args(("command", "cat x")), null));
-        // 常写工具永远按写类
         Assert.False(McpWriteGateFilter.IsReadCall("service_restart", null, null));
     }
 
@@ -201,7 +159,7 @@ public class McpWriteGateFilterTests : IDisposable
     }
 
     [Fact]
-    public async Task Read_shell_command_passes_even_when_target_write_lock_is_held()
+    public async Task Read_looking_shell_command_is_blocked_when_target_write_lock_is_held()
     {
         var config = TestConfig();
         using var services = BuildServices(config, _lockRoot);
@@ -214,8 +172,9 @@ public class McpWriteGateFilterTests : IDisposable
             Args(("serverId", "web1"), ("command", "df -h")), services,
             next => { called = true; return NextResult(); });
 
-        Assert.True(called);
-        Assert.True(result.IsError is not true);
+        Assert.False(called);
+        Assert.True(result.IsError);
+        Assert.Contains("write_busy", Assert.IsType<TextContentBlock>(Assert.Single(result.Content!)).Text);
         held!.Dispose();
     }
 

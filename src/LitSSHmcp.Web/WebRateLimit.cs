@@ -11,8 +11,20 @@ public sealed class WebRateLimitPolicy
     /// <summary>每 IP 每分钟允许的 /api/login 次数（账号级另有失败锁定 WebAuthPolicy 兜底）。</summary>
     public int LoginPerMinute { get; set; } = 30;
 
-    /// <summary>每 IP 每分钟允许的其余 /api/* 请求次数（WS 不经 HTTP 限速，另有 owner/Origin 校验）。</summary>
+    /// <summary>同一账号（跨 IP）每分钟允许的登录尝试次数，防分布式口令喷洒。</summary>
+    public int LoginPerAccountPerMinute { get; set; } = 10;
+
+    /// <summary>每 IP 每分钟允许的其余 /api/* 请求次数。</summary>
     public int ApiPerMinute { get; set; } = 600;
+
+    /// <summary>每 IP 每分钟允许的 WebSocket 握手次数（聊天 + 审批共用）。</summary>
+    public int WsHandshakesPerMinute { get; set; } = 120;
+
+    /// <summary>同一登录用户允许同时保持的 WebSocket 连接数。</summary>
+    public int WsMaxConnectionsPerUser { get; set; } = 8;
+
+    /// <summary>同一客户端 IP 允许同时保持的 WebSocket 连接数（防多账号占满连接）。</summary>
+    public int WsMaxConnectionsPerIp { get; set; } = 64;
 }
 
 /// <summary>
@@ -56,7 +68,7 @@ public sealed class WebRateLimitStore
 
 /// <summary>
 /// HTTP 层限速中间件：/api/login 与 /api/* 分桶计数，超限 429 + 落 rate_limited 访问日志（§10.A.3）。
-/// 静态资源与 /health 不限速（登录页与健康检查可用）；WS 握手不走此中间件。
+/// 静态资源与 /health 不限速（登录页与健康检查可用）；WS 握手不走此中间件，改用端点内的 WS 专用桶。
 /// </summary>
 public sealed class WebRateLimitMiddleware
 {

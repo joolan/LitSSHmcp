@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="LitSSH 应用锁" Height="360" Width="430" MinWidth="400"
-        WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen" ResizeMode="CanMinimize"
         ShowInTaskbar="True"
         ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Grid>
@@ -13,7 +13,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="LitSSH 应用锁" ShowMaximize="False" ShowMinimize="False"/>
+        <ui:TitleBar Grid.Row="0" Title="LitSSH 应用锁" ShowMaximize="False" ShowMinimize="True"/>
 
         <StackPanel Grid.Row="1" Margin="20,8,20,0">
             <TextBlock x:Name="HeaderText" Text="设置应用锁密码" FontSize="16" FontWeight="SemiBold"/>

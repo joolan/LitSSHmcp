@@ -69,6 +69,7 @@ public sealed class McpSessionTracker
                 SessionId = SessionId,
                 ClientName = _clientName,
                 ClientVersion = _clientVersion,
+                OwnerUserId = AuditContext.CurrentUserId ?? "local",
                 StartedAt = StartedAt,
                 LastSeenAt = DateTime.UtcNow
             };

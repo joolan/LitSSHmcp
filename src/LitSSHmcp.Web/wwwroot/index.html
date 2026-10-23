@@ -29,6 +29,7 @@
     <span id="turn-status" class="status"></span>
     <span class="spacer"></span>
     <button id="approval-badge" class="badge" hidden title="有待审批操作，点击展开">待审批 <b id="approval-count">0</b></button>
+    <button id="memory-admin-btn" class="ghost" hidden title="团队记忆库（管理员）：查看历史、回滚、归档">记忆库</button>
     <span id="whoami" class="whoami"></span>
     <button id="logout-btn" class="ghost" title="退出登录">退出</button>
   </header>
@@ -91,6 +92,34 @@
       <button id="model-close" class="ghost">关闭</button>
     </div>
     <div id="model-list" class="sheet-body"></div>
+  </div>
+
+  <!-- 管理员团队记忆库：列表 + 历史版本 + 回滚/归档（仅 admin 显示入口，服务端再次校验角色） -->
+  <div id="memory-admin" class="sheet memory-sheet" hidden>
+    <div class="sheet-head">
+      <span>团队记忆库</span>
+      <span class="spacer"></span>
+      <button id="memory-refresh" class="ghost" title="刷新列表">刷新</button>
+      <button id="memory-close" class="ghost">关闭</button>
+    </div>
+    <div class="sheet-body memory-body">
+      <div class="memory-toolbar">
+        <label for="memory-kind">类别</label>
+        <select id="memory-kind">
+          <option value="">全部</option>
+          <option value="task">task</option>
+          <option value="script">script</option>
+          <option value="asset">asset</option>
+          <option value="raw">raw</option>
+        </select>
+        <span class="spacer"></span>
+        <button id="memory-archive" class="ghost" disabled title="把选中记忆标记为 superseded（保留历史可回滚）">归档选中</button>
+        <button id="memory-prune" class="ghost" title="每记忆保留最近 40 个历史版本；同时清理超过 30 天的孤儿历史">清理历史</button>
+      </div>
+      <div id="memory-list" class="memory-list"></div>
+      <div class="memory-versions-head">历史版本 <span id="memory-current"></span></div>
+      <div id="memory-versions" class="memory-versions"></div>
+    </div>
   </div>
 
   <!-- 审批操作区：固定悬浮（不随聊天滚动），长会话历史下也一定可见；可收起（顶栏徽标可再展开） -->

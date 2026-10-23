@@ -62,9 +62,13 @@ builder.Services.AddSingleton<IContextStore, ContextStore>();
 builder.Services.AddSingleton<IWebRuntimeFactory, AgentWebRuntimeFactory>();
 builder.Services.AddSingleton<WebSessionManager>();
 builder.Services.AddSingleton<WebApprovalHub>();
+builder.Services.AddSingleton<IWebMemoryStoreFactory, WebMemoryStoreFactory>();
 // M3-8 登录/API 层限速（§10.B.1/B.6）：进程内按 IP 固定窗口计数
 builder.Services.AddSingleton<WebRateLimitPolicy>();
 builder.Services.AddSingleton<WebRateLimitStore>();
+builder.Services.AddSingleton<WebSocketConnectionLimiter>();
+builder.Services.AddSingleton<WebDownloadPolicy>();
+builder.Services.AddSingleton<WebDownloadLimiter>();
 
 var app = builder.Build();
 
@@ -85,6 +89,15 @@ catch
     // 清扫失败不阻断启动
 }
 
+// P2-7 可信代理：仅 web.trustedProxies 非空时接受 X-Forwarded-For/Proto（必须最先执行）。
+WebForwardedHeaders.TryApply(app, bootConfig.Web);
+if (https is not null)
+{
+    // 配置 HTTPS 证书后启用 HSTS，并把 HTTP 请求重定向到 HTTPS。
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
+
 app.UseWebSockets();
 // M3-8 安全响应头（§10.B 攻击面收敛）：nosniff/DENY/no-referrer/Permissions-Policy + HTML CSP
 app.UseMiddleware<WebSecurityHeadersMiddleware>();
@@ -103,10 +116,24 @@ app.UseMiddleware<WebCsrfMiddleware>();
 
 app.MapGet("/health", () => Results.Text("ok"));
 
-app.MapPost("/api/login", async (LoginRequest req, WebAuthService auth, WebAccessLog log, HttpContext ctx) =>
+app.MapPost("/api/login", async (LoginRequest req, WebAuthService auth, WebAccessLog log,
+    WebRateLimitStore rateStore, WebRateLimitPolicy ratePolicy, HttpContext ctx) =>
 {
     var ip = ctx.Connection.RemoteIpAddress?.ToString();
-    var outcome = await auth.LoginAsync(req.Username ?? string.Empty, req.Password ?? string.Empty, ctx.RequestAborted);
+    var username = req.Username ?? string.Empty;
+    var accountKey = username.Trim().ToLowerInvariant();
+    if (accountKey.Length == 0)
+        accountKey = "(empty)";
+    else if (accountKey.Length > 128)
+        accountKey = accountKey[..128];
+    if (!rateStore.TryAcquire(accountKey, "login-account", ratePolicy.LoginPerAccountPerMinute, DateTimeOffset.UtcNow))
+    {
+        log.Write("login_rate_limited", username, ip, "account");
+        return Results.Json(new { error = "登录尝试过于频繁，请稍后再试" },
+            statusCode: StatusCodes.Status429TooManyRequests);
+    }
+
+    var outcome = await auth.LoginAsync(username, req.Password ?? string.Empty, ctx.RequestAborted);
     if (outcome.Status == WebLoginStatus.Success && outcome.Token is not null && outcome.User is not null)
     {
         var expires = outcome.ExpiresAtUtc;
@@ -174,6 +201,7 @@ app.MapGet("/api/agent/providers", async (HttpContext ctx, IConfigService config
 app.MapWebSessionEndpoints();
 app.MapWebApprovalEndpoints();
 app.MapWebFileEndpoints();
+app.MapWebMemoryEndpoints();
 
 // 审批桥就绪即启轮询（§3.3.1：cli 文件通道 → 浏览器推送）；单例首次解析触发后台循环
 _ = app.Services.GetRequiredService<WebApprovalHub>();

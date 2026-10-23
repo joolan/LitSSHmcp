@@ -7,7 +7,7 @@ namespace LitSSHmcp.App.ViewModels;
 /// 「设置 → 安全设置 → Web 授权矩阵」的一条可编辑规则行：
 /// <see cref="UserText"/> 对应 <c>security.authorization.users[].user</c>，
 /// <see cref="TargetsText"/>（空格/逗号分隔）对应 <c>targets</c>，
-/// <see cref="LevelIndex"/>（0=read，1=exec）对应 <c>level</c>。
+/// <see cref="LevelIndex"/>（0=read，1=write，2=exec）对应 <c>level</c>。
 /// </summary>
 public sealed class AuthzRuleRow : INotifyPropertyChanged
 {

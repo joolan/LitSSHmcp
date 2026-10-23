@@ -86,13 +86,13 @@ public class UnreviewedStampTests : IDisposable
         var target = Path.Combine(_sharedRoot, "scripts", "local", "a.sh");
 
         // 新建(append 落到不存在的文件): 打标
-        await tools.First(t => t.Name == "ops_doc_append")
-            .InvokeAsync(Args(("content", "first"), ("path", "shared/scripts/local/a.sh")), default);
+        await tools.First(t => t.Name == "ops_doc_write")
+            .InvokeAsync(Args(("mode", "append"), ("content", "first"), ("path", "shared/scripts/local/a.sh")), default);
         Assert.StartsWith("# 未审阅:", File.ReadAllText(target), StringComparison.Ordinal);
 
         // 追加既有文件: 保留原头部, 不重复打标
-        await tools.First(t => t.Name == "ops_doc_append")
-            .InvokeAsync(Args(("content", "second"), ("path", "shared/scripts/local/a.sh")), default);
+        await tools.First(t => t.Name == "ops_doc_write")
+            .InvokeAsync(Args(("mode", "append"), ("content", "second"), ("path", "shared/scripts/local/a.sh")), default);
         var text = File.ReadAllText(target);
         Assert.Single(text.Split("# 未审阅:").Skip(1));           // 标记只出现一次
         Assert.Contains("first", text);

@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
@@ -10,18 +11,23 @@ using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.ViewModels;
 
-public class ApplicationManageViewModel : INotifyPropertyChanged
+public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService;
     private readonly Window? _owner;
     private readonly ITopologyStore _topologyStore;
+    private readonly IUserDialogService _dialogs;
+    private readonly IWindowService _windows;
     private ApplicationConfig? _selectedApplication;
     private string _statusMessage = string.Empty;
 
-    public ApplicationManageViewModel(IConfigService configService, Window? owner, ITopologyStore? topologyStore = null)
+    public ApplicationManageViewModel(IConfigService configService, Window? owner, ITopologyStore? topologyStore = null,
+        IUserDialogService? dialogs = null, IWindowService? windows = null)
     {
         _configService = configService;
         _owner = owner;
+        _dialogs = dialogs ?? new UserDialogService();
+        _windows = windows ?? new WpfWindowService();
         _topologyStore = topologyStore ?? new TopologyStore();
 
         RefreshCommand = new RelayCommand(_ => Load());
@@ -57,7 +63,9 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
     public ICommand EditCommand { get; }
     public ICommand DeleteCommand { get; }
 
-    private async void Load()
+    public void ReloadConfig() => Load();
+
+    private void Load() => AsyncOperation.Run("加载应用", async () =>
     {
         try
         {
@@ -71,11 +79,11 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"加载失败: {ex.Message}";
         }
-    }
+    });
 
     private void Add()
     {
-        var window = new ApplicationEditWindow { Owner = _owner };
+        var window = _windows.CreateApplicationEditWindow(_owner);
         var vm = new ApplicationEditViewModel(_configService);
         window.DataContext = vm;
         vm.DialogClosed += (_, ok) => { window.Close(); if (ok) Load(); };
@@ -86,14 +94,14 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
     {
         if (SelectedApplication == null) return;
 
-        var window = new ApplicationEditWindow { Owner = _owner };
+        var window = _windows.CreateApplicationEditWindow(_owner);
         var vm = new ApplicationEditViewModel(_configService, SelectedApplication);
         window.DataContext = vm;
         vm.DialogClosed += (_, ok) => { window.Close(); if (ok) Load(); };
         window.ShowDialog();
     }
 
-    private async void Delete()
+    private void Delete() => AsyncOperation.Run("删除应用", async () =>
     {
         if (SelectedApplication == null) return;
 
@@ -108,7 +116,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
                 ? $"\n\n存在 {references.Length} 条关系记录引用它，将一并删除：\n{RelationHelper.Describe(references)}"
                 : "\n\n（未发现引用它的关系记录）";
 
-            if (MessageBox.Show(message, "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            if (!_dialogs.Confirm(message, "确认删除"))
                 return;
 
             config.Applications = config.Applications.Where(a => a.Id != SelectedApplication.Id).ToArray();
@@ -124,7 +132,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"删除失败: {ex.Message}";
         }
-    }
+    });
 
     private async Task CleanupDiscoveredEdgesAsync(string nodeId)
     {

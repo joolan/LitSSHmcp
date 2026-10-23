@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
@@ -15,156 +16,7 @@ using LitSSHmcp.Core.Services.Topology;
 
 namespace LitSSHmcp.App.ViewModels;
 
-public abstract class GraphItemVm : INotifyPropertyChanged
-{
-    private double _x;
-    private double _y;
-    private double _width;
-    private double _height;
-
-    public string Id { get; set; } = string.Empty;
-    public string Tooltip { get; set; } = string.Empty;
-
-    /// <summary>证书等资产已过期：红色高亮。</summary>
-    public bool IsExpired { get; set; }
-
-    /// <summary>证书等资产即将过期（30 天内）：橙色高亮。</summary>
-    public bool IsExpiringSoon { get; set; }
-
-    private bool _isDimmed;
-
-    /// <summary>选中节点后，非影响面节点降低透明度。</summary>
-    public bool IsDimmed { get => _isDimmed; set => Set(ref _isDimmed, value); }
-
-    public double X { get => _x; set => Set(ref _x, value); }
-    public double Y { get => _y; set => Set(ref _y, value); }
-    public double Width { get => _width; set => Set(ref _width, value); }
-    public double Height { get => _height; set => Set(ref _height, value); }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    protected void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value))
-            return;
-        field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    }
-}
-
-public class GraphBoxVm : GraphItemVm
-{
-    public string Label { get; set; } = string.Empty;
-    public string SubLabel { get; set; } = string.Empty;
-
-    /// <summary>服务器已禁用：不可建链、不可连接，图上以灰化 + "已禁用"角标提示。</summary>
-    public bool IsDisabled { get; set; }
-}
-
-public class GraphChipVm : GraphItemVm
-{
-    public string Label { get; set; } = string.Empty;
-    public string Type { get; set; } = string.Empty;
-}
-
-public class GraphNodeVm : GraphItemVm
-{
-    public string Label { get; set; } = string.Empty;
-    public string Type { get; set; } = string.Empty;
-}
-
-public class GraphEdgeVm : INotifyPropertyChanged
-{
-    private Geometry _line = Geometry.Empty;
-    private Geometry _dot = Geometry.Empty;
-    private Geometry _arrow = Geometry.Empty;
-    private Brush _stroke = Brushes.SteelBlue;
-    private string _label = string.Empty;
-    private double _labelX;
-    private double _labelY;
-    private bool _isDiscovered;
-    private bool _isDisputed;
-    private bool _isDimmed;
-
-    /// <summary>正交折线路径（拐角圆角化）。</summary>
-    public Geometry Line { get => _line; set => Set(ref _line, value); }
-
-    /// <summary>起点圆点。</summary>
-    public Geometry Dot { get => _dot; set => Set(ref _dot, value); }
-
-    /// <summary>终点箭头。</summary>
-    public Geometry Arrow { get => _arrow; set => Set(ref _arrow, value); }
-
-    /// <summary>线条/圆点/箭头颜色（按关系类型，静态缓存同引用）。</summary>
-    public Brush Stroke { get => _stroke; set => Set(ref _stroke, value); }
-
-    public string Type { get; set; } = string.Empty;
-    public string Label { get => _label; set => Set(ref _label, value); }
-    public string From { get; set; } = string.Empty;
-    public string To { get; set; } = string.Empty;
-
-    /// <summary>关系证据（自动发现时说明来源：ESTAB 连接 / mysql processlist 客户端 / 配置扫描文件等）。</summary>
-    public string Evidence { get; set; } = string.Empty;
-
-    /// <summary>冲突原因（自动检测写入）。</summary>
-    public string? DisputeReason { get; set; }
-
-    /// <summary>布局锚点键（From|Type|To，建边时算一次；拖动热路径免字符串分配）。</summary>
-    public string Key { get; set; } = string.Empty;
-    public List<Point> Points { get; set; } = new();
-    public double LabelX { get => _labelX; set => Set(ref _labelX, value); }
-    public double LabelY { get => _labelY; set => Set(ref _labelY, value); }
-    public bool IsDiscovered { get => _isDiscovered; set => Set(ref _isDiscovered, value); }
-
-    /// <summary>人工配置与自动发现不一致：红色显示，确认后清除。</summary>
-    public bool IsDisputed { get => _isDisputed; set => Set(ref _isDisputed, value); }
-
-    /// <summary>选中节点后，不在影响面路径上的边降低透明度。</summary>
-    public bool IsDimmed { get => _isDimmed; set => Set(ref _isDimmed, value); }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value))
-            return;
-        field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    }
-}
-
-/// <summary>交叉"过桥"：白色遮罩 + 下层直线补段 + 上层拱形跳线。</summary>
-public class GraphHopVm
-{
-    public Geometry Disc { get; set; } = Geometry.Empty;
-    public Geometry Bridge { get; set; } = Geometry.Empty;
-    public Geometry Arc { get; set; } = Geometry.Empty;
-    public Brush BridgeStroke { get; set; } = Brushes.SteelBlue;
-    public Brush ArcStroke { get; set; } = Brushes.SteelBlue;
-}
-
-/// <summary>缩放手柄（选中节点时显示）。INPC 以支持就地更新（避免每次 mousemove 重建容器）。</summary>
-public class GraphHandleVm : INotifyPropertyChanged
-{
-    private Geometry _shape = Geometry.Empty;
-    private Rect _bounds;
-
-    public Geometry Shape { get => _shape; set => Set(ref _shape, value); }
-    public string Tag { get; set; } = string.Empty;
-    public Rect Bounds { get => _bounds; set => Set(ref _bounds, value); }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value))
-            return;
-        field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    }
-}
-
-public class TopologyViewModel : INotifyPropertyChanged
+public class TopologyViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private const double ServerX = 20;
     private const double ServerWidth = 320;
@@ -179,9 +31,10 @@ public class TopologyViewModel : INotifyPropertyChanged
     private const double DsHeight = 48;
     private const double LaneGap = 0;
 
-    private readonly IConfigService _configService = AppServiceFactory.CreateConfigService();
+    private readonly IAppServices _services;
+    private readonly IConfigService _configService;
     private readonly ITopologyService _topology;
-    private readonly ITopologyLayoutStore _layoutStore = new TopologyLayoutStore();
+    private readonly TopologyLayoutHistory _layoutHistory = new(new TopologyLayoutStore());
     private TopologyGraph? _graph;
     private readonly Dictionary<string, (double X, double Y, double W, double H)> _geometry = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _parentOf = new(StringComparer.Ordinal);
@@ -219,17 +72,20 @@ public class TopologyViewModel : INotifyPropertyChanged
     private double _frameMaxMs;
 
     // 手动布局缓存：避免每次重算连线都读盘/反序列化 topology-layout.json
-    private TopologyLayout? _layout;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private long _lastFastMs;
     private bool _fastPending;
     private string? _fastNodeId;
     private DispatcherTimer? _fastTimer;
     private const int FastIntervalMs = 25;
+    private readonly IWindowService _windows;
 
-    public TopologyViewModel()
+    public TopologyViewModel(IWindowService? windows = null, IAppServices? services = null)
     {
-        _topology = AppServiceFactory.CreateTopologyService(_configService);
+        _services = services ?? new AppServices(windows: windows);
+        _windows = _services.Windows;
+        _configService = _services.Config;
+        _topology = _services.CreateTopologyService();
         Load();
     }
 
@@ -306,7 +162,9 @@ public class TopologyViewModel : INotifyPropertyChanged
         private set { _impactSummary = value; OnPropertyChanged(); }
     }
 
-    public async void Load()
+    public void ReloadConfig() => Load();
+
+    public void Load() => AsyncOperation.Run("加载拓扑图", async () =>
     {
         try
         {
@@ -318,7 +176,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"加载拓扑失败: {ex.Message}";
         }
-    }
+    });
 
     private void ApplyGraph(TopologyGraph graph)
     {
@@ -630,18 +488,11 @@ public class TopologyViewModel : INotifyPropertyChanged
     public bool IsServerNode(string id) =>
         _itemsById.TryGetValue(id, out var item) && item is GraphBoxVm;
 
-    private TopologyLayout GetLayout() => _layout ??= _layoutStore.Load();
-
-    private void SaveLayout(TopologyLayout layout)
-    {
-        _layout = layout;
-        _layoutStore.Save(layout);
-    }
 
     /// <summary>应用手动布局覆盖（节点位置/尺寸）。</summary>
     private void ApplyManualLayout()
     {
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         if (!layout.IsManual)
             return;
 
@@ -673,7 +524,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             .GroupBy(e => e.From)
             .ToDictionary(g => g.Key, g => g.First().To);
 
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         var evidenceByKey = _graph.Edges
             .Where(e => !string.IsNullOrEmpty(e.Evidence))
             .GroupBy(e => $"{e.From}|{e.Type}|{e.To}")
@@ -835,7 +686,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         }
 
         var visible = _geometry.Keys.ToHashSet(StringComparer.Ordinal);
-        var (impacted, impactedEdges) = ComputeImpact(rootId, _graph.Edges, visible);
+        var (impacted, impactedEdges) = TopologyGeometry.ComputeImpact(rootId, _graph.Edges, visible);
 
         foreach (var item in _allItems)
             item.IsDimmed = !impacted.Contains(item.Id);
@@ -849,37 +700,6 @@ public class TopologyViewModel : INotifyPropertyChanged
     }
 
     /// <summary>反向影响面：沿 incoming 边最多 maxHops 跳，返回节点与路径边键。</summary>
-    public static (HashSet<string> Nodes, HashSet<string> EdgeKeys) ComputeImpact(
-        string rootId, IEnumerable<TopologyEdge> edges, ISet<string> visible, int maxHops = 2)
-    {
-        var incoming = edges
-            .Where(e => visible.Contains(e.From) && visible.Contains(e.To))
-            .GroupBy(e => e.To, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
-
-        var impacted = new HashSet<string>(StringComparer.Ordinal) { rootId };
-        var impactedEdges = new HashSet<string>(StringComparer.Ordinal);
-        var queue = new Queue<(string Id, int Hops)>();
-        queue.Enqueue((rootId, 0));
-
-        while (queue.Count > 0)
-        {
-            var (current, hops) = queue.Dequeue();
-            if (hops >= maxHops || !incoming.TryGetValue(current, out var parents))
-                continue;
-
-            foreach (var edge in parents)
-            {
-                impactedEdges.Add($"{edge.From}|{edge.Type}|{edge.To}");
-                if (!impacted.Add(edge.From))
-                    continue;
-                queue.Enqueue((edge.From, hops + 1));
-            }
-        }
-
-        return (impacted, impactedEdges);
-    }
-
     public void ClearSelection() => SelectNode(null);
 
     /// <summary>按当前几何刷新选中框/手柄/端口（落点回退后调用）。</summary>
@@ -906,7 +726,6 @@ public class TopologyViewModel : INotifyPropertyChanged
 
     private static readonly string[] HandleTags = { "nw", "ne", "se", "sw" };
     private static readonly string[] PortTags = { "left", "right", "top", "bottom" };
-    private const double PortRadius = 5;
 
     private static void EnsureCount(ObservableCollection<GraphHandleVm> items, string[] tags)
     {
@@ -917,31 +736,18 @@ public class TopologyViewModel : INotifyPropertyChanged
             items.Add(new GraphHandleVm { Tag = tag });
     }
 
-    private const double PortGap = 3;
 
-    /// <summary>端口圆心：在节点对应边的外侧（圆半径 PortRadius + PortGap 间隙），与边缩放带互不重叠。</summary>
-    public static Point PortCenterFor(Rect r, string side)
-    {
-        var off = PortRadius + PortGap;
-        return side switch
-        {
-            "left" => new Point(r.X - off, r.Y + r.Height / 2),
-            "right" => new Point(r.X + r.Width + off, r.Y + r.Height / 2),
-            "top" => new Point(r.X + r.Width / 2, r.Y - off),
-            _ => new Point(r.X + r.Width / 2, r.Y + r.Height + off)
-        };
-    }
-
+    /// <summary>端口圆心：在节点对应边的外侧（圆半径 TopologyGeometry.PortRadius + PortGap 间隙），与边缩放带互不重叠。</summary>
     private void UpdatePorts()
     {
         EnsureCount(Ports, PortTags);
         var sel = new Rect(SelX, SelY, SelW, SelH);
         for (var i = 0; i < PortTags.Length; i++)
         {
-            var c = PortCenterFor(sel, PortTags[i]);
-            var bounds = new Rect(c.X - PortRadius, c.Y - PortRadius, PortRadius * 2, PortRadius * 2);
+            var c = TopologyGeometry.PortCenterFor(sel, PortTags[i]);
+            var bounds = new Rect(c.X - TopologyGeometry.PortRadius, c.Y - TopologyGeometry.PortRadius, TopologyGeometry.PortRadius * 2, TopologyGeometry.PortRadius * 2);
             Ports[i].Bounds = bounds;
-            Ports[i].Shape = Freeze(new EllipseGeometry(c, PortRadius, PortRadius));
+            Ports[i].Shape = Freeze(new EllipseGeometry(c, TopologyGeometry.PortRadius, TopologyGeometry.PortRadius));
         }
     }
 
@@ -982,34 +788,13 @@ public class TopologyViewModel : INotifyPropertyChanged
     }
 
     /// <summary>四边内侧缩放带厚度（节点边内侧），与角手柄(±6px)以 cornerGap 分隔。</summary>
-    private const double EdgeBand = 6;
-    private const double EdgeCornerGap = 8;
 
     /// <summary>
     /// 选中节点四边内侧的缩放带命中：返回 "n"/"s"/"w"/"e"，否则 null。
     /// 纯函数：带在节点边内侧 6px、两端各避开角手柄 8px（角手柄优先，用于对角缩放）。
     /// </summary>
-    public static string? EdgeHandleAt(Rect sel, Point p)
-    {
-        var innerL = sel.X + EdgeCornerGap;
-        var innerT = sel.Y + EdgeCornerGap;
-        var innerR = sel.Right - EdgeCornerGap;
-        var innerB = sel.Bottom - EdgeCornerGap;
-        if (innerL >= innerR || innerT >= innerB)
-            return null;
-
-        var inX = p.X >= innerL && p.X <= innerR;
-        var inY = p.Y >= innerT && p.Y <= innerB;
-        if (inX && p.Y >= sel.Y && p.Y <= sel.Y + EdgeBand) return "n";
-        if (inX && p.Y >= sel.Bottom - EdgeBand && p.Y <= sel.Bottom) return "s";
-        if (inY && p.X >= sel.X && p.X <= sel.X + EdgeBand) return "w";
-        if (inY && p.X >= sel.Right - EdgeBand && p.X <= sel.Right) return "e";
-        return null;
-    }
-
-    /// <summary>选中节点四边缩放带命中（无选中时 null；命中 n/e/s/w 可直接进入 ResizeSelected）。</summary>
     public string? HitEdgeHandle(Point point) =>
-        _selectedId == null ? null : EdgeHandleAt(new Rect(SelX, SelY, SelW, SelH), point);
+        _selectedId == null ? null : TopologyGeometry.EdgeHandleAt(new Rect(SelX, SelY, SelW, SelH), point);
 
     /// <summary>
     /// 鼠标拖动：位置 = 快照起点 + 相对锚点的总位移（再做 10px 吸附）。
@@ -1119,7 +904,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             return;
 
         _childrenOf.TryGetValue(id, out var children);
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         foreach (var e in Edges)
         {
             if (e.From != id && e.To != id &&
@@ -1180,43 +965,18 @@ public class TopologyViewModel : INotifyPropertyChanged
         ApplyGeometry(id, x, y, g.W, g.H);
     }
 
-    private const double ResizeMinW = 80;
-    private const double ResizeMinH = 36;
 
     /// <summary>
     /// 按相对锚点的总位移计算缩放候选（对边固定、最小尺寸钳制、10px 吸附）。
     /// 纯函数：结果只取决于 (start, total) —— 与事件路径无关，来回拖动不漂移。
     /// </summary>
-    public static (double X, double Y, double W, double H) ComputeResize(
-        string handle, Rect start, double tx, double ty, double minW = ResizeMinW, double minH = ResizeMinH)
-    {
-        var right = start.X + start.Width;
-        var bottom = start.Y + start.Height;
-        var x = start.X;
-        var y = start.Y;
-        var w = start.Width;
-        var h = start.Height;
-
-        if (handle.Contains('e')) w = Math.Max(minW, start.Width + tx);
-        if (handle.Contains('s')) h = Math.Max(minH, start.Height + ty);
-        if (handle.Contains('w')) { w = Math.Max(minW, start.Width - tx); x = right - w; }
-        if (handle.Contains('n')) { h = Math.Max(minH, start.Height - ty); y = bottom - h; }
-
-        // 自动对齐网格(10px)
-        x = Math.Round(x / 10.0) * 10.0;
-        y = Math.Round(y / 10.0) * 10.0;
-        w = Math.Max(minW, Math.Round(w / 10.0) * 10.0);
-        h = Math.Max(minH, Math.Round(h / 10.0) * 10.0);
-        return (x, y, w, h);
-    }
-
     public void ResizeSelected(string handle, Point point)
     {
         if (_selectedId == null || _dragAnchor is not { } anchor ||
             _dragStartRect is not { } start || !_geometry.TryGetValue(_selectedId, out var g))
             return;
 
-        var (x, y, w, h) = ComputeResize(handle, start, point.X - anchor.X, point.Y - anchor.Y);
+        var (x, y, w, h) = TopologyGeometry.ComputeResize(handle, start, point.X - anchor.X, point.Y - anchor.Y);
 
         // 网格吸附后未变化时先早退（高频 mousemove 下跳过后续校验）
         if (Math.Abs(x - g.X) < 0.01 && Math.Abs(y - g.Y) < 0.01 &&
@@ -1244,7 +1004,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             {
                 if (!_geometry.TryGetValue(child, out var cg))
                     continue;
-                var clamped = ClampChildTo(candidate, new Rect(cg.X, cg.Y, cg.W, cg.H), ServerHeader);
+                var clamped = TopologyGeometry.ClampChildTo(candidate, new Rect(cg.X, cg.Y, cg.W, cg.H), ServerHeader);
                 ApplyGeometry(child, clamped.X, clamped.Y, clamped.Width, clamped.Height);
             }
         }
@@ -1269,13 +1029,6 @@ public class TopologyViewModel : INotifyPropertyChanged
     /// 把子节点矩形夹进父容器矩形（左右/底留 6px，顶部留出标题栏 header）。
     /// 容器过小时 <see cref="Clamp"/> 按 (min+max)/2 居中放置（不会产生反向钳制）。纯函数，便于单测。
     /// </summary>
-    public static Rect ClampChildTo(Rect parent, Rect child, double header)
-    {
-        var x = Clamp(child.X, parent.X + 6, parent.X + parent.Width - child.Width - 6);
-        var y = Clamp(child.Y, parent.Y + header - 6, parent.Y + parent.Height - child.Height - 6);
-        return new Rect(x, y, child.Width, child.Height);
-    }
-
     private void ClampChild(string childId)
     {
         if (!_parentOf.TryGetValue(childId, out var parentId) ||
@@ -1283,7 +1036,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             !_geometry.TryGetValue(childId, out var child))
             return;
 
-        var clamped = ClampChildTo(
+        var clamped = TopologyGeometry.ClampChildTo(
             new Rect(parent.X, parent.Y, parent.W, parent.H),
             new Rect(child.X, child.Y, child.W, child.H),
             ServerHeader);
@@ -1301,8 +1054,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         _fastPending = false;
 
         // 撤销快照: 保存修改前的布局
-        _undo.Push(GetLayout());
-        _redo.Clear();
+        _layoutHistory.PushUndo();
 
         // 压测图不写 topology-layout.json（避免合成 id 污染真实布局）
         if (!_synthetic)
@@ -1311,7 +1063,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             foreach (var kv in _geometry)
                 layout.Nodes[kv.Key] = new NodeLayout { X = kv.Value.X, Y = kv.Value.Y, Width = kv.Value.W, Height = kv.Value.H };
 
-            SaveLayout(layout);
+            _layoutHistory.Save(layout);
         }
         CanvasWidth = Math.Max(MaxRight() + 40, 2000);
         CanvasHeight = Math.Max(MaxBottom() + 40, 1400);
@@ -1641,11 +1393,11 @@ public class TopologyViewModel : INotifyPropertyChanged
         if (!changed)
             return;
 
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         layout.IsManual = true;
         foreach (var node in Nodes)
             layout.Nodes[node.Id] = new NodeLayout { X = node.X, Y = node.Y, Width = node.Width, Height = node.Height };
-        SaveLayout(layout);
+        _layoutHistory.Save(layout);
     }
 
     /// <summary>
@@ -1658,7 +1410,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         if (_synthetic)
             return;
 
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         if (!layout.IsManual)
             return; // 全自动布局按列堆叠，不会重叠
 
@@ -1701,7 +1453,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         layout.IsManual = true;
         foreach (var i in all)
             layout.Nodes[i.Id] = new NodeLayout { X = i.X, Y = i.Y, Width = i.Width, Height = i.Height };
-        SaveLayout(layout);
+        _layoutHistory.Save(layout);
     }
 
     /// <summary>是否与其它节点重叠（排除自身、父容器、以及自己的托管子节点）。</summary>
@@ -1782,35 +1534,26 @@ public class TopologyViewModel : INotifyPropertyChanged
     /// <summary>清除手动布局并重新自动布局。</summary>
     public void ResetLayout()
     {
-        _undo.Push(GetLayout());
-        _redo.Clear();
-        _layoutStore.Clear();
-        _layout = null;
+        _layoutHistory.PushUndo();
+        _layoutHistory.Clear();
         Load();
     }
 
-    private readonly Stack<TopologyLayout> _undo = new();
-    private readonly Stack<TopologyLayout> _redo = new();
-
-    public bool CanUndo => _undo.Count > 0;
-    public bool CanRedo => _redo.Count > 0;
+    public bool CanUndo => _layoutHistory.CanUndo;
+    public bool CanRedo => _layoutHistory.CanRedo;
 
     public void Undo()
     {
-        if (_undo.Count == 0)
+        if (!_layoutHistory.Undo())
             return;
-        _redo.Push(GetLayout());
-        SaveLayout(_undo.Pop());
         Load();
         StatusMessage = "已撤销";
     }
 
     public void Redo()
     {
-        if (_redo.Count == 0)
+        if (!_layoutHistory.Redo())
             return;
-        _undo.Push(GetLayout());
-        SaveLayout(_redo.Pop());
         Load();
         StatusMessage = "已重做";
     }
@@ -1835,7 +1578,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         if (FindItem(id) is not { } item)
             return default;
 
-        return PortCenterFor(new Rect(item.X, item.Y, item.Width, item.Height), side);
+        return TopologyGeometry.PortCenterFor(new Rect(item.X, item.Y, item.Width, item.Height), side);
     }
 
     public void StartLink(string id, string side)
@@ -1865,7 +1608,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsLinking));
     }
 
-    public async void FinishLink(Point drop)
+    public void FinishLink(Point drop) => AsyncOperation.Run("建立拓扑关系", async () =>
     {
         var from = _linkFrom;
         CancelLink();
@@ -1915,7 +1658,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"添加关系失败: {ex.Message}";
         }
-    }
+    });
 
     private static string InferType(string fromId, string toId)
     {
@@ -2083,7 +1826,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         StatusMessage = $"已选关系: {edge.From} --{edge.Type}--> {edge.To}" + (edge.IsDiscovered ? " (自动发现)" : " (手动)");
     }
 
-    private async void LoadSelectedEdgeNote(GraphEdgeVm edge)
+    private void LoadSelectedEdgeNote(GraphEdgeVm edge) => AsyncOperation.Run("加载关系备注", async () =>
     {
         try
         {
@@ -2096,10 +1839,10 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             // 读取备注失败忽略
         }
-    }
+    });
 
     /// <summary>保存选中关系的类型与备注（仅手动关系）。</summary>
-    public async void SaveSelectedEdge()
+    public void SaveSelectedEdge() => AsyncOperation.Run("保存关系属性", async () =>
     {
         if (_selectedEdge is not { IsDiscovered: false } edge)
             return;
@@ -2143,7 +1886,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             SelectedEdgeHint = $"保存失败: {ex.Message}";
         }
-    }
+    });
 
     public void ClearEdgeSelection()
     {
@@ -2165,7 +1908,7 @@ public class TopologyViewModel : INotifyPropertyChanged
     public bool SelectedEdgeCanConfirm => _selectedEdge is { IsDiscovered: true, IsDisputed: true };
 
     /// <summary>人工确认冲突已核实：清除 Disputed 并刷新末次核实时间。</summary>
-    public async void ConfirmSelectedEdge()
+    public void ConfirmSelectedEdge() => AsyncOperation.Run("确认拓扑关系", async () =>
     {
         if (_selectedEdge is not { IsDiscovered: true, IsDisputed: true } edge)
             return;
@@ -2199,7 +1942,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             SelectedEdgeHint = $"确认失败: {ex.Message}";
         }
-    }
+    });
 
     private void RebuildEdgeAnchors()
     {
@@ -2246,7 +1989,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             return;
 
         var side = NearestSide(box, drop);
-        var layout = GetLayout();
+        var layout = _layoutHistory.Get();
         layout.IsManual = true;
         var key = $"{edge.From}|{edge.Type}|{edge.To}";
         if (!layout.Edges.TryGetValue(key, out var edgeLayout))
@@ -2257,7 +2000,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         else
             edgeLayout.To = new AnchorSpec { Side = side };
 
-        SaveLayout(layout);
+        _layoutHistory.Save(layout);
         RebuildEdges(false);
 
         var updated = Edges.FirstOrDefault(e => e.From == edge.From && e.To == edge.To && e.Type == edge.Type);
@@ -2282,7 +2025,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         return "bottom";
     }
 
-    public async void DeleteSelectedEdge()
+    public void DeleteSelectedEdge() => AsyncOperation.Run("删除拓扑关系", async () =>
     {
         if (_selectedEdge is not { } edge)
             return;
@@ -2311,7 +2054,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"删除关系失败: {ex.Message}";
         }
-    }
+    });
 
     private static double DistanceToSegment(Point p, Point a, Point b)
     {
@@ -2333,7 +2076,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         private set { _discoveryReport = value; OnPropertyChanged(); }
     }
 
-    public async void Discover(string serverIds)
+    public void Discover(string serverIds) => AsyncOperation.Run("自动发现拓扑", async () =>
     {
         try
         {
@@ -2358,7 +2101,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"自动发现失败: {ex.Message}";
         }
-    }
+    });
 
     private static string BuildDiscoveryReport(DiscoveryResult r)
     {
@@ -2402,10 +2145,10 @@ public class TopologyViewModel : INotifyPropertyChanged
     }
 
     /// <summary>把选中的"待确认"节点确认为已登记资产（弹出对应新增窗口并预填），再把发现边重定向到新资产。</summary>
-    public async void ConfirmSelectedNode() => ConfirmNode(_selectedId);
+    public void ConfirmSelectedNode() => ConfirmNode(_selectedId);
 
     /// <summary>把指定的"待确认"节点确认为已登记资产。</summary>
-    public async void ConfirmNode(string? id)
+    public void ConfirmNode(string? id) => AsyncOperation.Run("确认拓扑节点", async () =>
     {
         if (string.IsNullOrWhiteSpace(id) || !id.Contains(":disc:", StringComparison.Ordinal))
         {
@@ -2427,10 +2170,10 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"确认失败: {ex.Message}";
         }
-    }
+    });
 
     /// <summary>删除一个"待确认"节点（清理其所有发现边）。</summary>
-    public async void DeleteDiscoveredNode(string id)
+    public void DeleteDiscoveredNode(string id) => AsyncOperation.Run("删除待确认节点", async () =>
     {
         if (string.IsNullOrWhiteSpace(id) || !id.Contains(":disc:", StringComparison.Ordinal))
             return;
@@ -2447,7 +2190,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"删除节点失败: {ex.Message}";
         }
-    }
+    });
 
     private async Task<string?> RegisterPendingNodeAsync(string id)
     {
@@ -2478,7 +2221,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         if (id.StartsWith(AssetNode.AppPrefix + "disc:", StringComparison.Ordinal))
         {
             var name = id[(AssetNode.AppPrefix.Length + 5)..];
-            var window = new ApplicationEditWindow { Owner = owner };
+            var window = _windows.CreateApplicationEditWindow(owner);
             var vm = new ApplicationEditViewModel(_configService, null,
                 new ApplicationConfig { Name = name, Type = infoType ?? "java", Port = infoPort, Path = infoPath });
             window.DataContext = vm;
@@ -2518,7 +2261,7 @@ public class TopologyViewModel : INotifyPropertyChanged
 
             var dsType = string.IsNullOrWhiteSpace(infoType) ? "mysql" : infoType!;
             var config = await _configService.LoadConfigAsync();
-            var window = new DatasourceEditWindow { Owner = owner };
+            var window = _windows.CreateDatasourceEditWindow(owner);
             var vm = new DatasourceEditViewModel(_configService, window, config.Servers, null,
                 new DataSourceConfig { Name = string.IsNullOrEmpty(host) ? rest : host, Host = host, Port = port, Type = dsType });
             window.DataContext = vm;
@@ -2539,8 +2282,8 @@ public class TopologyViewModel : INotifyPropertyChanged
         if (id.StartsWith(AssetNode.SshPrefix + "disc:", StringComparison.Ordinal))
         {
             var host = id[(AssetNode.SshPrefix.Length + 5)..];
-            var window = new ServerEditWindow { Owner = owner };
-            var vm = new ServerEditViewModel(_configService, AppServiceFactory.CreateSshService(), window, null,
+            var window = _windows.CreateServerEditWindow(owner);
+            var vm = new ServerEditViewModel(_configService, _services.CreateSshService(), window, null,
                 new SshServerConfig { Name = host, Host = host, Port = 22 });
             window.DataContext = vm;
             var ok = false;
@@ -2570,9 +2313,6 @@ public class TopologyViewModel : INotifyPropertyChanged
         geometry.Freeze();
         return geometry;
     }
-
-    private static double Clamp(double value, double min, double max) =>
-        max < min ? (min + max) / 2 : Math.Min(Math.Max(value, min), max);
 
     private static string LabelWithPort(TopologyNode node)
     {

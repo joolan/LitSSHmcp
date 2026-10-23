@@ -8,7 +8,7 @@ namespace LitSSHmcp.Agent;
 public sealed record AssetGraphContextResult(string Text, IReadOnlyList<string> AssetIds);
 
 /// <summary>
-/// Graph-RAG：发送前从用户问题里解析资产，再通过 topology_search / topology_neighbors
+/// Graph-RAG：发送前从用户问题里解析资产，再通过 topology_query（action=search/neighbors）
 /// 拉取 1 跳邻域，压成一段临时系统上下文。只读、失败静默，不改变工具调用链。
 /// </summary>
 public static class AssetGraphContextProvider
@@ -24,16 +24,16 @@ public static class AssetGraphContextProvider
     };
 
     public static Func<string, CancellationToken, Task<AssetGraphContextResult?>>? Create(
-        IAgentTool? searchTool, IAgentTool? neighborsTool, string? assetGraph)
+        IAgentTool? topologyTool, string? assetGraph)
     {
-        if (searchTool is null || neighborsTool is null)
+        if (topologyTool is null)
             return null;
 
         return async (query, ct) =>
         {
             try
             {
-                return await BuildAsync(searchTool, neighborsTool, assetGraph, query, ct);
+                return await BuildAsync(topologyTool, assetGraph, query, ct);
             }
             catch
             {
@@ -43,7 +43,7 @@ public static class AssetGraphContextProvider
     }
 
     private static async Task<AssetGraphContextResult?> BuildAsync(
-        IAgentTool searchTool, IAgentTool neighborsTool, string? assetGraph, string query, CancellationToken ct)
+        IAgentTool topologyTool, string? assetGraph, string query, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(query))
             return null;
@@ -54,7 +54,7 @@ public static class AssetGraphContextProvider
         {
             foreach (var token in ExtractTokens(query))
             {
-                var found = await SearchAsync(searchTool, token, ct);
+                var found = await SearchAsync(topologyTool, token, ct);
                 foreach (var id in found)
                     if (!seeds.Contains(id, StringComparer.Ordinal))
                         seeds.Add(id);
@@ -71,8 +71,8 @@ public static class AssetGraphContextProvider
         foreach (var seed in seeds.Take(MaxKnownEntities))
         {
             ct.ThrowIfCancellationRequested();
-            var neighborhood = await InvokeAsync(neighborsTool,
-                new Dictionary<string, object?> { ["assetId"] = seed, ["depth"] = 1 }, ct);
+            var neighborhood = await InvokeAsync(topologyTool,
+                new Dictionary<string, object?> { ["action"] = "neighbors", ["assetId"] = seed, ["depth"] = 1 }, ct);
             if (neighborhood is null)
                 continue;
 
@@ -98,10 +98,10 @@ public static class AssetGraphContextProvider
         return new AssetGraphContextResult(text, seeds.Take(MaxKnownEntities).ToArray());
     }
 
-    private static async Task<List<string>> SearchAsync(IAgentTool searchTool, string query, CancellationToken ct)
+    private static async Task<List<string>> SearchAsync(IAgentTool topologyTool, string query, CancellationToken ct)
     {
-        var result = await InvokeAsync(searchTool,
-            new Dictionary<string, object?> { ["query"] = query, ["limit"] = 5 }, ct);
+        var result = await InvokeAsync(topologyTool,
+            new Dictionary<string, object?> { ["action"] = "search", ["query"] = query, ["limit"] = 5 }, ct);
         var ids = new List<string>();
         if (result is null)
             return ids;
@@ -127,13 +127,13 @@ public static class AssetGraphContextProvider
         if (result is null)
             return null;
         if (result is JsonElement element)
-            return UnwrapStructured(element);
+            return UnwrapResult(UnwrapStructured(element));
 
         var json = result as string ?? JsonSerializer.Serialize(result);
         try
         {
             using var doc = JsonDocument.Parse(json);
-            return UnwrapStructured(doc.RootElement.Clone());
+            return UnwrapResult(UnwrapStructured(doc.RootElement.Clone()));
         }
         catch (JsonException)
         {
@@ -146,6 +146,13 @@ public static class AssetGraphContextProvider
         if (element.ValueKind == JsonValueKind.Object &&
             Property(element, "structuredContent") is { } structured)
             return structured;
+        return element;
+    }
+
+    private static JsonElement UnwrapResult(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object && Property(element, "result") is { } result)
+            return result.ValueKind == JsonValueKind.Null ? element : result;
         return element;
     }
 

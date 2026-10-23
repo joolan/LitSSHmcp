@@ -90,8 +90,8 @@ public static class ToolGroups
         _ when toolName.StartsWith("topology_", StringComparison.Ordinal) => Topology,
         _ when toolName.StartsWith("app_", StringComparison.Ordinal) => App,
         _ when toolName.StartsWith("mcp_", StringComparison.Ordinal) => Guide,
-        "ssh_execute_command" or "ssh_execute_sudo" or "ssh_get_sudo_status" or "ssh_get_command_history" => Command,
-        "ssh_upload_file" or "ssh_upload_files" or "ssh_download_file" or "ssh_download_files" or "ssh_list_files" => FileTransfer,
+        "ssh_execute_command" or "ssh_execute_sudo" or "ssh_get_sudo_status" => Command,
+        "ssh_upload" or "ssh_download" or "ssh_list_files" => FileTransfer,
         _ when toolName.StartsWith("ssh_", StringComparison.Ordinal) => Ssh,
         _ => null
     };
@@ -101,7 +101,7 @@ public static class ToolGroups
     {
         Ssh => "服务器(ssh_*)",
         Command => "命令/提权(ssh_execute_*)",
-        FileTransfer => "文件传输(ssh_*_file*/*_files)",
+        FileTransfer => "文件传输(ssh_upload/ssh_download/ssh_list_files)",
         Datasource => "数据源(datasource_*)",
         Mysql => "MySQL(mysql_*)",
         Postgres => "PostgreSQL(postgres_*)",

@@ -5,6 +5,7 @@
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
 using LitSSHmcp.Core.Services.Datasource;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.McpServer.Services;
@@ -158,20 +159,4 @@ public class HealthTools
         };
     }
 
-    [McpServerTool(Name = "mcp_list_sessions", UseStructuredContent = true, OutputSchemaType = typeof(SessionListDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("列出最近的 MCP 会话(会话ID/客户端名称与版本/首末活动时间)。审计记录带 sessionId, 用它能知道是哪个AI客户端、哪次连接产生的; 配合 *_history 工具的 sessionId 参数过滤具体记录")]
-    public async Task<SessionListDto> ListSessions(
-        [Description("返回条数(默认50, 上限500)")] int limit = 50,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var sessions = await _auditLogService.GetSessionsAsync(Math.Clamp(limit, 1, 500));
-            return new SessionListDto { Success = true, Count = sessions.Length, Sessions = sessions.ToList() };
-        }
-        catch (Exception ex)
-        {
-            return SessionListDto.Fail(ex.Message);
-        }
-    }
 }

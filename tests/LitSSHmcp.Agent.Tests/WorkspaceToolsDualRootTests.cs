@@ -54,15 +54,75 @@ public class WorkspaceToolsDualRootTests : IDisposable
         Assert.DoesNotContain("shared/jobs/", listed);
     }
 
-    [Fact]
-    public async Task Shared_prefix_cannot_reach_session_tree()
+    [Theory]
+    [InlineData("shared/jobs/local/s99/evil.md")]
+    [InlineData("shared/./jobs/local/s99/evil.md")]
+    [InlineData("shared//jobs/local/s99/evil.md")]
+    [InlineData("shared\\jobs\\local\\s99\\evil.md")]
+    [InlineData("SHARED/JOBS/local/s99/evil.md")]
+    [InlineData("shared/jobs")]
+    public async Task Shared_prefix_cannot_reach_session_tree(string path)
     {
         var tools = DualRootTools();
 
         var ex = await Assert.ThrowsAnyAsync<Exception>(() =>
-            Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "x"), ("path", "shared/jobs/local/s99/evil.md")), default));
+            Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "x"), ("path", path)), default));
         Assert.Contains("会话目录", ex.GetBaseException().Message);
         Assert.False(File.Exists(Path.Combine(_shared, "jobs", "local", "s99", "evil.md")));
+    }
+
+    [Fact]
+    public async Task Shared_jobs_tree_is_not_listed()
+    {
+        var secret = Path.Combine(_shared, "jobs", "local", "s99", "secret.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(secret)!);
+        await File.WriteAllTextAsync(secret, "secret");
+        var tools = DualRootTools();
+        await Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "NOTE"), ("path", "shared/notes.md")), default);
+
+        var listed = (string)(await Tool(tools, "ops_doc_list").InvokeAsync(Args(), default))!;
+        Assert.Contains("shared/notes.md", listed);
+        Assert.DoesNotContain("secret.md", listed);
+        Assert.DoesNotContain("shared/jobs/", listed);
+    }
+
+    [Fact]
+    public async Task Shared_jobs_lookalike_is_allowed()
+    {
+        var tools = DualRootTools();
+
+        await Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "x"), ("path", "shared/jobs2/notes.md")), default);
+        Assert.True(File.Exists(Path.Combine(_shared, "jobs2", "notes.md")));
+    }
+
+    [Fact]
+    public async Task Member_can_write_session_but_not_shared()
+    {
+        Directory.CreateDirectory(_session);
+        Directory.CreateDirectory(_shared);
+        await File.WriteAllTextAsync(Path.Combine(_shared, "OPS_ASSETS.md"), "ASSET");
+        var tools = WorkspaceTools.Create(_session, _shared, sharedWritable: false);
+
+        await Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "REPORT"), ("path", "report.md")), default);
+        Assert.True(File.Exists(Path.Combine(_session, "report.md")));
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "X"), ("path", "shared/notes.md")), default));
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "X")), default));
+        Assert.False(File.Exists(Path.Combine(_shared, "notes.md")));
+        Assert.Equal("ASSET", await Tool(tools, "ops_doc_read").InvokeAsync(Args(), default));
+    }
+
+    [Fact]
+    public async Task Admin_can_write_shared()
+    {
+        Directory.CreateDirectory(_session);
+        Directory.CreateDirectory(_shared);
+        var tools = WorkspaceTools.Create(_session, _shared, sharedWritable: true);
+
+        await Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "ASSET")), default);
+        Assert.True(File.Exists(Path.Combine(_shared, "OPS_ASSETS.md")));
     }
 
     [Fact]

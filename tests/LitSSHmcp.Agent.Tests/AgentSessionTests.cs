@@ -378,6 +378,49 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public void AddChildUsage_accumulates_into_parent_session_totals()
+    {
+        var session = new AgentSession(new CapturingChatClient(),
+            new AgentProviderConfig { Model = "m", ApiKey = "k" }, Array.Empty<IAgentTool>(), "sys", new AgentConfig());
+
+        session.AddChildUsage(120, 30);
+        session.AddChildUsage(5, 0);
+
+        Assert.Equal(125L, session.SessionInputTokens);
+        Assert.Equal(30L, session.SessionOutputTokens);
+    }
+
+    [Fact]
+    public async Task Usage_delta_callback_receives_each_response_usage()
+    {
+        var usage = new UsageDetails { InputTokenCount = 120, OutputTokenCount = 30 };
+        long input = 0, output = 0;
+        var session = new AgentSession(new UsageEmittingChatClient(usage),
+            new AgentProviderConfig { Model = "m", ApiKey = "k" }, Array.Empty<IAgentTool>(), "sys", new AgentConfig(),
+            onUsageDelta: (i, o) => { input += i; output += o; });
+
+        await session.SendAsync("hi", null);
+
+        Assert.Equal(120L, input);
+        Assert.Equal(30L, output);
+    }
+
+    [Fact]
+    public async Task Budget_check_stops_session_after_usage_exceeds_limit()
+    {
+        var usage = new UsageDetails { InputTokenCount = 1_000_000, OutputTokenCount = 0 };
+        var checks = 0;
+        var session = new AgentSession(new UsageEmittingChatClient(usage),
+            new AgentProviderConfig { Model = "m", ApiKey = "k" }, Array.Empty<IAgentTool>(), "sys", new AgentConfig(),
+            budgetCheck: (_, _) => { checks++; return false; });
+
+        await session.SendAsync("hi", null);
+
+        Assert.Equal(1, checks);
+        Assert.Equal(1_000_000L, session.SessionInputTokens);
+    }
+
+    [Fact]
     public async Task Executes_readonly_calls_in_parallel_keeping_call_order()
     {
         var callA = new FunctionCallContent("c1", "read_a", new Dictionary<string, object?>());
@@ -445,13 +488,13 @@ public class AgentSessionTests
     [Fact]
     public async Task Log_tool_result_keeps_tail_of_oversized_output()
     {
-        var call = new FunctionCallContent("c1", "docker_logs", new Dictionary<string, object?>());
+        var call = new FunctionCallContent("c1", "docker_query", new Dictionary<string, object?>());
         var client = new FakeChatClient(
             new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, new AIContent[] { call }) }),
             new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
 
         var content = "START-MARKER" + new string('x', 400) + "LATEST-LINE";
-        var tool = new FakeTool("docker_logs", content);
+        var tool = new FakeTool("docker_query", content);
         var config = new AgentConfig { ContextLimit = 0, ContextTokenLimit = 0, ToolResultMaxChars = 100 };
         var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
             new[] { tool }, "sys", config);

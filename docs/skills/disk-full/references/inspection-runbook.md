@@ -6,7 +6,7 @@
 1. 水位：`ssh_execute_command "df -hP; df -iP"`——记录使用率 ≥80% 的挂载点（含 inode）。
 2. 增长定位（仅对风险挂载点）：`ssh_execute_command "du -x -h --max-depth=1 <mount> 2>/dev/null | sort -rh | head -15"`。
 3. 删除未释放句柄：`ssh_execute_command "lsof +L1 2>/dev/null | awk 'NR==1 || \$8+0>1073741824' | head"`（>1G 的占用户列重点标出）。
-4. 日志体量：`log_find` 结合应用日志目录；关注单文件 >1G 且无轮转。
+4. 日志体量：`log_query(action="find")` 结合应用日志目录；关注单文件 >1G 且无轮转。
 5. Docker 主机：`ssh_execute_command "docker system df"` 看可回收空间。
 
 ## 2. 判定阈值（巡检报告分级）

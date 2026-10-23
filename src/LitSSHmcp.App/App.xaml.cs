@@ -1,4 +1,6 @@
 using System.IO;
+using System.Linq;
+using System.Threading;
 using System.Windows;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Services.Storage;
@@ -19,6 +21,7 @@ public partial class App : Application
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += (_, args) => SafeLog(args.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, args) => { SafeLog(args.Exception); args.SetObserved(); };
+        ConfigConflictNotifier.ConflictDetected += OnConfigConflict;
 
         // 异步读取配置并应用主题：**不能**在 UI 线程同步等待（GetAwaiter().GetResult() 会死锁，
         // 导致 OnStartup 不返回、主窗口永不创建——表现为"双击没反应"）。
@@ -84,12 +87,21 @@ public partial class App : Application
         bool configured;
         try
         {
-            var config = await configService.LoadConfigAsync().ConfigureAwait(false);
+            var config = await configService.LoadStrictAsync().ConfigureAwait(false);
             configured = Core.Services.Security.AppLockService.IsConfigured(config.AppLock);
         }
-        catch
+        catch (Exception ex)
         {
-            configured = false;   // 配置读不了：不拦（避免把自己锁死在损坏状态）
+            // 配置损坏时不能当作“未设置密码”继续进入，否则应用锁被绕过。保持 fail-closed 并退出。
+            await Dispatcher.InvokeAsync(() =>
+            {
+                System.Windows.MessageBox.Show(
+                    "无法读取配置文件，为避免绕过应用锁，程序将退出。\n\n" + ex.Message +
+                    "\n\n请修复或从备份恢复配置后重试。",
+                    "LitSSH", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown();
+            });
+            return;
         }
 
         var tcs = new TaskCompletionSource<bool>();
@@ -133,11 +145,23 @@ public partial class App : Application
 
     private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
-        SafeLog(e.Exception);
+        ReportError(e.Exception, "未处理异常");
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// 统一错误日志/去重提示（P3-3）：Dispatcher 未处理异常与 AsyncOperation 共用。
+    /// 不抛出、不阻塞调用线程。
+    /// </summary>
+    internal static void ReportError(Exception? ex, string? operation = null)
+    {
+        if (ex is null)
+            return;
+
+        SafeLog(ex);
 
         // 同一条错误只提示一次，避免定时/绑定类异常反复弹窗被误认为卡死
-        var key = e.Exception.GetType().Name + ": " + e.Exception.Message;
+        var key = (operation ?? "error") + "|" + ex.GetType().Name + ": " + ex.Message;
         bool show;
         lock (_shownErrors)
         {
@@ -149,15 +173,84 @@ public partial class App : Application
         if (!show)
             return;
 
-        try
+        void Show()
         {
-            MessageBox.Show("发生未处理错误（已拦截，程序继续运行）：\n\n" + e.Exception.Message,
-                "LitSSH", MessageBoxButton.OK, MessageBoxImage.Warning);
+            try
+            {
+                var prefix = string.IsNullOrWhiteSpace(operation)
+                    ? "发生未处理错误（已拦截，程序继续运行）"
+                    : $"“{operation}”执行失败（已拦截，程序继续运行）";
+                MessageBox.Show(prefix + "：\n\n" + ex.Message,
+                    "LitSSH", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            catch
+            {
+                // 忽略弹窗失败
+            }
         }
-        catch
+
+        var dispatcher = Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted)
+            return;
+        if (dispatcher.CheckAccess())
+            Show();
+        else
+            dispatcher.BeginInvoke(new Action(Show));
+    }
+
+    private static int _configConflictPrompting;
+
+    /// <summary>同一时刻只弹一个配置冲突提示；提示后由用户关闭/重开窗口加载最新配置。</summary>
+    private static void OnConfigConflict(ConfigConflictException ex)
+    {
+        if (Interlocked.Exchange(ref _configConflictPrompting, 1) == 1)
+            return;
+
+        var dispatcher = Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted)
         {
-            // 忽略弹窗失败
+            Volatile.Write(ref _configConflictPrompting, 0);
+            return;
         }
+
+        void Show()
+        {
+            try
+            {
+                var paths = ex.ConflictPaths.Where(p => !string.IsNullOrWhiteSpace(p)).Distinct().ToArray();
+                var detail = paths.Length == 0
+                    ? "（未提供具体字段）"
+                    : string.Join("\n", paths.Take(10)) +
+                      (paths.Length > 10 ? $"\n… 另 {paths.Length - 10} 项" : string.Empty);
+                var dialogs = new UserDialogService();
+                if (!dialogs.Confirm(
+                        $"配置已被其他窗口或进程修改，以下字段存在冲突：\n\n{detail}\n\n" +
+                        "是否立即重新加载已打开窗口？未保存的修改会丢失。",
+                        "配置冲突", defaultNo: true))
+                    return;
+
+                foreach (Window window in Current.Windows)
+                {
+                    if (window.DataContext is not IConfigReloadable reloadable)
+                        continue;
+                    try { reloadable.ReloadConfig(); }
+                    catch { /* 单个窗口重新加载失败不阻断其它窗口 */ }
+                }
+            }
+            catch
+            {
+                // 弹窗失败不掩盖原始保存结果是调用方自身提示的职责
+            }
+            finally
+            {
+                Volatile.Write(ref _configConflictPrompting, 0);
+            }
+        }
+
+        if (dispatcher.CheckAccess())
+            Show();
+        else
+            dispatcher.BeginInvoke(new Action(Show));
     }
 
     private static void SafeLog(Exception? ex)

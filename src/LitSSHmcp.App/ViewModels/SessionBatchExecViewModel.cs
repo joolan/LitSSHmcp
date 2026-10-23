@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 
 namespace LitSSHmcp.App.ViewModels;
@@ -15,10 +16,12 @@ namespace LitSSHmcp.App.ViewModels;
 public sealed class SessionBatchExecViewModel : INotifyPropertyChanged
 {
     private readonly MainViewModel _main;
+    private readonly IUserDialogService _dialogs;
 
-    public SessionBatchExecViewModel(MainViewModel main, IEnumerable<SshServerConfig> servers)
+    public SessionBatchExecViewModel(MainViewModel main, IEnumerable<SshServerConfig> servers, IUserDialogService? dialogs = null)
     {
         _main = main;
+        _dialogs = dialogs ?? new UserDialogService();
         foreach (var server in servers.Where(s => !s.Disabled))
             Servers.Add(new BatchServerItem(server));
         RunCommand = new RelayCommand(_ => _ = RunAsync(), _ => !IsRunning);
@@ -73,10 +76,9 @@ public sealed class SessionBatchExecViewModel : INotifyPropertyChanged
         var openNotOpen = false;
         if (notOpen.Count > 0)
         {
-            var answer = MessageBox.Show(
+            openNotOpen = _dialogs.Confirm(
                 $"有 {notOpen.Count} 台服务器尚未打开终端连接。\n是否新建终端连接后再执行该命令？\n（选“否”将跳过这些服务器）",
-                "批量执行", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            openNotOpen = answer == MessageBoxResult.Yes;
+                "批量执行", warning: false);
         }
 
         IsRunning = true;

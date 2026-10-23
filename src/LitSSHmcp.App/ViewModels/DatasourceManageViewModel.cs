@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
@@ -10,17 +11,24 @@ using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.ViewModels;
 
-public class DatasourceManageViewModel : INotifyPropertyChanged
+public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService;
     private readonly ITopologyStore _topologyStore;
+    private readonly IUserDialogService _dialogs;
+    private readonly IWindowService _windows;
+    private readonly IAppServices? _services;
     private DataSourceConfig? _selectedDataSource;
     private string _statusMessage = string.Empty;
 
-    public DatasourceManageViewModel(IConfigService configService, ITopologyStore? topologyStore = null)
+    public DatasourceManageViewModel(IConfigService configService, ITopologyStore? topologyStore = null,
+        IUserDialogService? dialogs = null, IWindowService? windows = null, IAppServices? services = null)
     {
         _configService = configService;
         _topologyStore = topologyStore ?? new TopologyStore();
+        _dialogs = dialogs ?? new UserDialogService();
+        _windows = windows ?? new WpfWindowService();
+        _services = services;
 
         RefreshCommand = new RelayCommand(_ => Load());
         AddCommand = new RelayCommand(_ => Add());
@@ -68,7 +76,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
             }
         }
 
-        var window = new DbWorkbenchWindow(target) { Owner = Application.Current.MainWindow, Topmost = false };
+        var window = _windows.CreateDbWorkbenchWindow(target, Application.Current.MainWindow);
         _workbenches.Add(window);
         window.Closed += (_, _) => _workbenches.Remove(window);
         window.Show();
@@ -81,7 +89,9 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         (TestCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    private async void Load()
+    public void ReloadConfig() => Load();
+
+    private void Load() => AsyncOperation.Run("加载数据源", async () =>
     {
         try
         {
@@ -97,15 +107,15 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"加载失败: {ex.Message}";
         }
-    }
+    });
 
-    private async void Add()
+    private void Add() => AsyncOperation.Run("打开新增数据源", async () =>
     {
         try
         {
             var config = await _configService.LoadConfigAsync();
 
-            var window = new DatasourceEditWindow { Owner = Application.Current.MainWindow };
+            var window = _windows.CreateDatasourceEditWindow(Application.Current.MainWindow);
             var vm = new DatasourceEditViewModel(_configService, window, config.Servers);
             window.DataContext = vm;
 
@@ -121,9 +131,9 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"打开添加窗口失败: {ex.Message}";
         }
-    }
+    });
 
-    private async void Edit()
+    private void Edit() => AsyncOperation.Run("打开编辑数据源", async () =>
     {
         if (SelectedDataSource == null) return;
 
@@ -132,7 +142,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
             var config = await _configService.LoadConfigAsync();
             var ds = config.DataSources.FirstOrDefault(d => d.Id == SelectedDataSource.Id) ?? SelectedDataSource;
 
-            var window = new DatasourceEditWindow { Owner = Application.Current.MainWindow };
+            var window = _windows.CreateDatasourceEditWindow(Application.Current.MainWindow);
             var vm = new DatasourceEditViewModel(_configService, window, config.Servers, ds);
             window.DataContext = vm;
 
@@ -148,9 +158,9 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"打开编辑窗口失败: {ex.Message}";
         }
-    }
+    });
 
-    private async void Delete()
+    private void Delete() => AsyncOperation.Run("删除数据源", async () =>
     {
         if (SelectedDataSource == null) return;
 
@@ -165,7 +175,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
                 ? $"\n\n存在 {references.Length} 条关系记录引用它，将一并删除：\n{RelationHelper.Describe(references)}"
                 : "\n\n（未发现引用它的关系记录）";
 
-            if (MessageBox.Show(message, "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            if (!_dialogs.Confirm(message, "确认删除"))
                 return;
 
             config.DataSources = config.DataSources.Where(d => d.Id != SelectedDataSource.Id).ToArray();
@@ -181,7 +191,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"删除失败: {ex.Message}";
         }
-    }
+    });
 
     private async Task CleanupDiscoveredEdgesAsync(string nodeId)
     {
@@ -189,7 +199,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         catch { /* 清理失败不阻断 */ }
     }
 
-    private async void Test()
+    private void Test() => AsyncOperation.Run("测试数据源连接", async () =>
     {
         if (SelectedDataSource == null) return;
         StatusMessage = "测试连接中...";
@@ -204,7 +214,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
                 return;
             }
 
-            var registry = AppServiceFactory.CreateDriverRegistry(_configService);
+            var registry = _services?.CreateDriverRegistry() ?? AppServiceFactory.CreateDriverRegistry(_configService);
             var driver = registry.Get(ds.Type);
             if (driver == null)
             {
@@ -222,7 +232,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"连接失败: {ex.Message}";
         }
-    }
+    });
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

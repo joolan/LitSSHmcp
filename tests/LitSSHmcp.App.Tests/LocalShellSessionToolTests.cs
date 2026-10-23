@@ -31,20 +31,31 @@ public class LocalShellSessionToolTests
         var read = await WaitForReadAsync(harness.Broker, "test", "term-1", marker);
         Assert.Contains(marker, read);
 
-        var list = new LocalShellListTool(() => "test", harness.Broker);
-        var listText = (await list.InvokeAsync(null, CancellationToken.None))?.ToString();
+        var manage = new LocalShellManageTool(() => "test", harness.Broker);
+        var listText = (await manage.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["action"] = "list"
+        }, CancellationToken.None))?.ToString();
         Assert.Contains("term-1", listText);
         Assert.Contains("probe", listText);
 
-        var readTool = new LocalShellReadTool(() => "test", harness.Broker);
-        var readText = (await readTool.InvokeAsync(new Dictionary<string, object?>
+        var readText = (await manage.InvokeAsync(new Dictionary<string, object?>
         {
+            ["action"] = "read",
             ["terminalId"] = "term-1",
             ["cursor"] = 0,
             ["maxChars"] = 8000
         }, CancellationToken.None))?.ToString();
         Assert.Contains(marker, readText);
         Assert.Contains("cursor", readText);
+
+        var invalid = (await manage.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["action"] = "stop"
+        }, CancellationToken.None))?.ToString();
+        Assert.Contains("仅支持 list/read", invalid);
+        Assert.Equal("local_shell_manage", manage.Name);
+        Assert.True(manage.ReadOnly);
 
         var stop = new LocalShellStopTool(() => "test", harness.Broker);
         var stopText = (await stop.InvokeAsync(new Dictionary<string, object?>

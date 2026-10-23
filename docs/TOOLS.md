@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
+MCP 服务器代码注册 **37 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **36 个常规工具**，宿主会话看到 **37 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
 
 > **⚠ 同步约定（唯一事实来源）**：本文件是 MCP 工具说明的**唯一事实来源**。以下三处必须与本文件**双向同步**，工具发生任何变动（新增/改名/删除、参数变化、描述与路由变化）时缺一不可：
 > 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`get_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
@@ -64,20 +64,20 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 
 | 分组键 | 中文名 | 包含的工具 |
 |--------|--------|-----------|
-| `ssh` | SSH 服务器 | `ssh_list_servers`、`ssh_get_server_status`、`ssh_test_connection`、`ssh_snapshot_get`、`ssh_snapshot_refresh` |
-| `command` | 命令执行 | `ssh_execute_command`、`ssh_get_command_history`、`ssh_execute_sudo`、`ssh_get_sudo_status` |
-| `fileTransfer` | 文件传输 | `ssh_upload_file`、`ssh_upload_files`、`ssh_download_file`、`ssh_download_files`、`ssh_list_files` |
-| `datasource` | 数据源 | `datasource_list`、`datasource_test_connection`、`datasource_get_sql_history` |
-| `mysql` | MySQL 执行 | `mysql_query`、`mysql_execute`、`mysql_explain`、`mysql_diagnostics` |
-| `postgres` | PostgreSQL 执行 | `postgres_query`、`postgres_execute`、`postgres_explain`、`postgres_diagnostics` |
+| `ssh` | SSH 服务器 | `ssh_list_servers`、`ssh_test_connection`、`ssh_snapshot_get`、`ssh_snapshot_refresh` |
+| `command` | 命令执行 | `ssh_execute_command`、`ssh_execute_sudo`、`ssh_get_sudo_status` |
+| `fileTransfer` | 文件传输 | `ssh_upload`、`ssh_download`、`ssh_list_files` |
+| `datasource` | 数据源 | `datasource_list`、`datasource_test_connection` |
+| `mysql` | MySQL 执行 | `mysql_query`、`mysql_execute` |
+| `postgres` | PostgreSQL 执行 | `postgres_query`、`postgres_execute` |
 | `redis` | Redis | `redis_read`、`redis_execute`、`redis_diagnostics` |
-| `docker` | Docker 容器 | `docker_ps`、`docker_logs`、`docker_inspect`、`docker_stats`、`docker_images`、`docker_restart`、`docker_exec` |
-| `service` | systemd 服务 | `service_status`、`service_list`、`service_restart`、`service_logs` |
-| `log` | 日志文件 | `log_tail`、`log_grep`、`log_find` |
-| `java` | JVM 诊断 | `java_processes`、`java_threads`、`java_heap`、`java_info` |
-| `topology` | 拓扑 | `topology_get_overview`、`topology_get_dependencies`、`topology_discover`、`topology_search`、`topology_neighbors`、`topology_path`、`topology_impact`、`topology_explain`、`topology_timeline`、`topology_diff` |
+| `docker` | Docker 容器 | `docker_query`、`docker_restart`、`docker_exec` |
+| `service` | systemd 服务 | `service_query`、`service_restart` |
+| `log` | 日志文件 | `log_query` |
+| `java` | JVM 诊断 | `java_processes`、`java_diagnostics` |
+| `topology` | 拓扑 | `topology_get_overview`、`topology_get_dependencies`、`topology_discover`、`topology_query`、`topology_timeline`、`topology_diff` |
 | `app` | 应用体检 | `app_health_snapshot` |
-| `guide` | 指南/自检 | `mcp_usage_guide`、`mcp_self_check`、`mcp_list_sessions` |
+| `guide` | 指南/自检 | `mcp_usage_guide`、`mcp_self_check` |
 
 > 注意：只启用 `mysql`/`redis` 而不启用 `datasource` 时，AI 将没有 `datasource_list` 来获取 `datasourceId`（启动日志会给出告警）。
 
@@ -111,61 +111,57 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 | 用户问法 | 使用工具 | 不要用 |
 |---------|---------|--------|
 | 有哪些服务器 / SSH服务器列表 / 连了哪些机器 | `ssh_list_servers` | ~~datasource_list~~（那是数据库） |
-| 某台服务器的状态 | `ssh_get_server_status` | |
-| SSH能不能连上 / 测试服务器连接 | `ssh_test_connection` | ~~datasource_test_connection~~（那是数据库） |
+| 某台服务器的状态 / SSH能不能连上 / 测试服务器连接 | `ssh_test_connection` | ~~datasource_test_connection~~（那是数据库） |
 | 服务器整体态势 / 资源占用(CPU/内存/磁盘/负载) / 端口进程服务 / Docker 容器 / 证书到期 / systemd健康 / 安全巡检 | `ssh_snapshot_get`（先查已存快照）; 需最新数据用 `ssh_snapshot_refresh` | 不要为看态势反复拼 `ssh_execute_command` |
 | 在服务器上执行命令 | `ssh_execute_command` | |
 | 权限不足 / 需要root执行 | `ssh_execute_sudo` | 不要等失败再提权，主动判断 |
 | 服务器上有哪些文件 / 看目录 | `ssh_list_files` | |
 | 这台机器能不能sudo / 有没有配置提权 | `ssh_get_sudo_status` | |
-| 上传/下载文件 | `ssh_upload_file` / `ssh_download_file` | |
+| 上传/下载文件 | `ssh_upload` / `ssh_download` | |
 | **有哪些MySQL / 数据库列表 / 数据库配置信息** | `datasource_list` | ~~ssh_list_servers~~（那是SSH） |
 | **数据库能不能连上 / 测试数据库连接 / 数据库连不上** | `datasource_test_connection` | ~~ssh_test_connection~~（那是SSH） |
-| MySQL服务正不正常 / 数据库为什么慢 / 连接数暴涨 | `mysql_diagnostics`（先做整体诊断） | |
-| 查数据 / 看表结构 / 建表语句 / 查processlist | `mysql_query` | |
+| MySQL服务正不正常 / 数据库为什么慢 / 连接数暴涨 | `mysql_query`（action=diagnostics，先做整体诊断） | |
+| 查数据 / 看表结构 / 建表语句 / 查processlist | `mysql_query`（action=query） | |
 | 改数据 / 建表 / 加字段 / 清数据 | `mysql_execute` | |
-| 这条SQL为什么慢 / 执行计划 | `mysql_explain` | |
-| PostgreSQL正不正常 / PG为什么慢 / 连接数暴涨 | `postgres_diagnostics`（先做整体诊断） | |
-| PG查数据 / 看表结构 | `postgres_query` | |
+| 这条SQL为什么慢 / 执行计划 | `mysql_query`（action=explain） | |
+| PostgreSQL正不正常 / PG为什么慢 / 连接数暴涨 | `postgres_query`（action=diagnostics，先做整体诊断） | |
+| PG查数据 / 看表结构 | `postgres_query`（action=query） | |
 | PG改数据 / 建表 / 加字段 | `postgres_execute` | |
-| PG这条SQL为什么慢 / 执行计划 | `postgres_explain` | |
-| 谁执行了什么SQL / SQL审计记录 | `datasource_get_sql_history` | |
+| PG这条SQL为什么慢 / 执行计划 | `postgres_query`（action=explain） | |
 | Redis正不正常 / 缓存为什么慢 / 内存涨 / 命中率低 / 卡 | `redis_diagnostics`（先做整体诊断） | |
 | 查缓存 / 读key / 看集合内容 / 慢日志 | `redis_read` | ~~redis_execute~~（那是写） |
 | 写缓存 / 删key / 设过期时间 / 改Redis配置 / 踢客户端 | `redis_execute`（弹桌面确认） | ~~redis_read~~（只读，非白名单会拒绝） |
 | 清库/关服/换主从/阻塞类Redis命令 | 任何工具都返回 `blocked`（不会执行） | 不要改写绕过 |
-| 有哪些容器 / 容器状态 / 容器端口 | `docker_ps` | |
-| 看某容器日志 / 容器起不来 | `docker_logs` | |
-| 容器配置 / 环境变量 / 挂载 / 网络 | `docker_inspect` | |
-| 容器占CPU/内存 | `docker_stats` | |
-| 镜像列表 / 版本 / 磁盘占用 | `docker_images` | |
+| 有哪些容器 / 容器状态 / 容器端口 | `docker_query`（action=ps） | |
+| 看某容器日志 / 容器起不来 | `docker_query`（action=logs） | |
+| 容器配置 / 环境变量 / 挂载 / 网络 | `docker_query`（action=inspect） | |
+| 容器占CPU/内存 | `docker_query`（action=stats） | |
+| 镜像列表 / 版本 / 磁盘占用 | `docker_query`（action=images） | |
 | 重启容器 / 容器内执行命令 | `docker_restart` / `docker_exec`（需人工确认） | |
-| 服务状态 / 服务起没起 / 服务退出码 | `service_status` | |
-| 有哪些服务 / 找服务名 | `service_list` | |
+| 服务状态 / 服务起没起 / 服务退出码 | `service_query`（action=status） | |
+| 有哪些服务 / 找服务名 | `service_query`（action=list） | |
 | 重启服务 | `service_restart`（需人工确认） | ~~docker_restart~~（那是容器） |
-| 服务日志 / journalctl | `service_logs` | ~~docker_logs~~（那是容器） |
-| 看日志文件尾部 | `log_tail` | ~~ssh_execute_command~~（不要自己拼 tail） |
-| 日志里搜错误/关键字 | `log_grep` | |
-| 不知道日志路径 / 找最近日志文件 | `log_find`（先发现再读） | |
+| 服务日志 / journalctl | `service_query`（action=logs） | ~~docker_query(action=logs)~~（那是容器） |
+| 看日志文件尾部 | `log_query`（action=tail） | ~~ssh_execute_command~~（不要自己拼 tail） |
+| 日志里搜错误/关键字 | `log_query`（action=grep） | |
+| 不知道日志路径 / 找最近日志文件 | `log_query`（action=find，先发现再读） | |
 | 有哪些Java进程 / 应用pid | `java_processes`（可传 appId 过滤） | |
-| 线程栈 / 死锁 / CPU飙高 / 线程池满 | `java_threads`（可传 appId 自动解析 pid） | |
-| 堆内存 / 频繁GC / OOM | `java_heap`（可传 appId） | |
-| JVM版本 / 运行时长 | `java_info`（可传 appId） | |
+| 线程栈 / 死锁 / CPU飙高 / 线程池满 | `java_diagnostics`（action=threads） | |
+| 堆内存 / 频繁GC / OOM | `java_diagnostics`（action=heap） | |
+| JVM版本 / 运行时长 | `java_diagnostics`（action=info） | |
 | 某应用整体体检(跨服务器+数据库) | `app_health_snapshot` | 先看它再下钻 |
 | 系统架构 / 拓扑 / 应用部署在哪 / 依赖关系 | `topology_get_overview` | |
 | 某资产的上下游依赖 | `topology_get_dependencies` | |
-| 不知道资产 ID / 按名称或端口找资产 | `topology_search` | 先拿到精确 ID 再用其它图工具 |
-| 看某资产周围连了谁 | `topology_neighbors` | 入边+出边，可多跳 |
-| 两个资产之间怎么走（域名→应用→库） | `topology_path` | 有向路径；无路径会说明原因 |
-| 机器/库/证书变更影响谁 | `topology_impact` | 反向多跳影响面（爆炸半径） |
-| 为什么认为 A 依赖 B / 证据是否过期 | `topology_explain` | 来源/证据/末次发现/冲突原因 |
+| 不知道资产 ID / 按名称或端口找资产 | `topology_query`（action=search） | 先拿到精确 ID 再用其它图工具 |
+| 看某资产周围连了谁 | `topology_query`（action=neighbors） | 入边+出边，可多跳 |
+| 两个资产之间怎么走（域名→应用→库） | `topology_query`（action=path） | 有向路径；无路径会说明原因 |
+| 机器/库/证书变更影响谁 | `topology_query`（action=impact） | 反向多跳影响面（爆炸半径） |
+| 为什么认为 A 依赖 B / 证据是否过期 | `topology_query`（action=explain） | 来源/证据/末次发现/冲突原因 |
 | 某台机器最近新增或消失了哪些服务/端口 | `topology_timeline` | 按快照历史重放并标出增量 |
 | 两次快照之间具体变了什么 | `topology_diff` | 默认比较最近两次快照 |
 | 拓扑缺失或过期 | `topology_discover` | |
-| 命令执行历史 | `ssh_get_command_history` | |
 | 不确定用哪个 | `mcp_usage_guide`（返回内置使用指南） | |
 | MCP是否正常 / 工具用不了 / 自检 | `mcp_self_check` | |
-| 审计按客户端/会话区分 / 有哪些会话 | `mcp_list_sessions` → 再用 `*_history` 的 `sessionId` 过滤 | |
 
 ### ID 获取约定
 
@@ -192,11 +188,7 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 ### `ssh_list_servers`
 - **参数**：无
 - **返回**：`{ success, count, servers: [...] }`，每项含 `id/name/host/port/username/authType/description/tags/lastConnectedAt`（**无密码**）
-- **说明**：**已禁用的服务器不会出现在本列表中**。服务器一旦禁用：① 不出现在 `ssh_list_servers`；② 任何按服务器标识解析的工具（`ssh_*` / `docker_*` / `service_*` / `log_*` / `java_*` / 应用与文件等）都返回 `server_disabled` 并拒绝执行；③ 资产拓扑中该服务器不可建链/连接；④ 拓扑自动发现跳过它。需在桌面 App 的「服务器编辑」里取消勾选“禁用”并保存后恢复。
-
-### `ssh_get_server_status`
-- **参数**：`serverId` — 服务器标识（ID/名称/主机名，可用 `ssh_list_servers` 列出）
-- **返回**：`{ success, id, name, host, status, errorKind, durationMs }`（`status` 为 `connected`，失败时取 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`；服务器被禁用时为 `server_disabled`）
+- **说明**：**已禁用的服务器不会出现在本列表中**。服务器一旦禁用：① 不出现在 `ssh_list_servers`；② 任何按服务器标识解析的工具（`ssh_*` / `docker_*` / `service_*` / `log_*` / `java_*` / 应用与文件等）都返回 `server_disabled` 并拒绝执行；③ 资产拓扑中该服务器不可建链/连接；④ 拓扑自动发现跳过它。需在桌面 App 的「服务器编辑」里取消勾选“禁用”并保存后恢复。Web 强制模式下还只返回当前用户命中 `read` 白名单的 `ssh:<id>`；桌面未启用强制时保持全量。
 
 ### `ssh_test_connection`
 - **参数**：`serverId` — 服务器标识（ID/名称/主机名）
@@ -240,35 +232,21 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 - **返回**：`{ success, serverId, serverName, sudoType, sudoUsername, isConfigured, description }`
 - **说明**：仅在需要向用户解释"为什么不能提权"时使用
 
-### `ssh_get_command_history`
-- **参数**：`serverId`（可选，不传查全部）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `docker_logs`）、`category`（可选，事件类型：`exec`=执行 / `gate`=审批拦截 / `probe`=只读探测 / `meta`=列表元数据 / `transfer`=文件传输）
-- **返回**：`{ success, status, error, count, hasMore, records: [...] }`（每条记录含 `sessionId`/`tool`/`category`/`decision`；`result` 已截断到 4000 字符；`hasMore: true` 表示还有更早记录，配合 `offset` 翻页）
-
 **命令类错误约定**：`{ success: false, error, status, errorKind }`，`status` 可能值：`blocked`、`blocking_command`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`sudo_not_configured`、`file_not_found`、`auth_failed`、`host_key_mismatch`、`timeout`、`rate_limited`、`connection_error`、`failed`；`blocked_script`：脚本内容扫描命中危险模式（`ssh_upload_*` 上传扫描为 `status=blocked_script`；`ssh_execute_command`/`ssh_execute_sudo` 执行侧为 `status=blocked` + `reason=blocked_script`）。
 
 ## 文件传输组（fileTransfer）
 
 上传/下载受 `fileTransfer.enabled` 开关与 `allowedLocalPaths` / `allowedRemotePaths` 白名单约束（越界返回 `path_not_allowed`，禁用返回 `file_transfer_disabled`），路径会做规范化并拦截 `..` 穿越。**上传源对称约束**（需求 D6）：宿主注入了会话工作目录（`LITSSH_SESSION_WORKSPACE_DIR`）时，上传源还须位于该会话目录之内（与"下载落点限会话目录"对称，`PathGuard` 物理解析防链接逃逸），否则 `path_not_allowed`；共享工作区文件可先经 `ops_doc_read`/`ops_doc_write` 复制到会话目录再上传。上传/下载过程中会通过 MCP `notifications/progress` 推送进度（字节数/百分比）。
 
-### `ssh_upload_files`
+### `ssh_upload`
 - **参数**：`serverId`、`localPaths`（每行一个：文件或目录）、`remoteDirectory`（远程目标目录，须在 `allowedRemotePaths` 内）、`recursive`（默认 false，目录递归子目录）、`maxFiles`（默认 200，1~5000）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
-- **返回**：结构同 `ssh_download_files`（`remoteDirectory` 字段替换 `localDirectory`）
-- **说明**：**用一条 SFTP 连接**批量上传（避免"上传文件夹"时每个文件重复建连/认证）；`localPaths` 中的目录会被展开（`recursive=true` 递归），**按相对路径保留子目录结构**（远程自动逐级建目录）；**整批一次人工确认**；每个源路径须在 `allowedLocalPaths` 内（会话已分配工作目录时还须在该会话目录内，见上方"上传源对称约束"）；每文件受 `fileTransfer.maxFileSizeBytes` 约束、总数受 `maxFiles` 约束（超出置 `truncated=true`）。
-- **脚本安全门**：批内全部脚本文件（`.sh/.bash/.zsh/.py/.ps1/.pl`，目录按递归标志展开，上限 500 个）逐个做服务端规则扫描，报告聚合附审批弹窗；**任一脚本命中危险模式整批拒绝**（`status=blocked_script`）。
+- **返回**：`{ success, status, error, remoteDirectory, total, succeeded, failed, truncated, files: [...] }`
+- **说明**：统一上传入口，单文件/多文件/目录均可用；**用一条 SFTP 连接**批量上传，目录按 `recursive` 展开并保留相对子目录结构；**整批一次人工确认**。
 
-### `ssh_upload_file`
-- **参数**：`serverId`、`localPath`（本地路径，须在 `allowedLocalPaths` 内；会话已分配工作目录时源还须在该会话目录内，见"上传源对称约束"）、`remotePath`（远程路径，须在 `allowedRemotePaths` 内）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
-- **返回**：`{ success, message, bytesTransferred, durationMs, ... }`；越界返回 `path_not_allowed` 并附允许路径；超过 `fileTransfer.maxFileSizeBytes` 返回 `file_too_large`
-- **脚本安全门**：上传脚本文件时先读本地内容做服务端规则扫描（结论/命中行/sha256 附审批弹窗）；命中危险模式直接 `status=blocked_script` 不进审批。
-
-### `ssh_download_file`
-- **参数**：`serverId`、`remotePath`（须在 `allowedRemotePaths` 内）、`localPath`（可选，须在 `allowedLocalPaths` 内；**省略 = 自动落会话工作目录并沿用远端文件名，相对路径 = 会话工作目录之下**——工具级默认落地，由宿主 spawn 注入 `LITSSH_SESSION_WORKSPACE_DIR` 代码强制，非提示词约定；绝对路径原样校验。会话目录**条件注入**白名单：仅当位于配置允许根之下才进 `allowedLocalPaths`，越界不注入，须显式配置）
-- **返回**：`{ success, message, bytesTransferred, durationMs, ... }`；同样受审批与白名单约束
-
-### `ssh_download_files`
-- **参数**：`serverId`、`remotePaths`（每行一个：文件或目录）、`localDirectory`（可选，本地目标目录，须在 `allowedLocalPaths` 内；**省略 = 会话工作目录，相对路径 = 会话工作目录之下**，同 `ssh_download_file` 的条件注入规则）、`recursive`（默认 false，目录递归子目录，软链接跳过）、`maxFiles`（默认 200，1~5000）
+### `ssh_download`
+- **参数**：`serverId`、`remotePaths`（每行一个：文件或目录）、`localDirectory`（可选，本地目标目录；省略 = 会话工作目录）、`recursive`（默认 false，目录递归，软链接跳过）、`maxFiles`（默认 200，1~5000）
 - **返回**：`{ success, status, error, localDirectory, total, succeeded, failed, truncated, totalBytes, durationMs, files: [{ remotePath, localPath, success, size, error }] }`
-- **说明**：**用一条 SFTP 连接**批量下载（避免"下载文件夹"时每个文件重复建连/认证）；`remotePaths` 中的目录会被展开（`recursive=true` 递归，跳过软链接防环，深度上限 16）；**整批一次人工确认**；每个源路径均须在 `allowedRemotePaths` 内；受 `maxFiles` 上限约束（超出置 `truncated=true`）；连接复用见 `connectionPool`（SFTP 也入池）。
+- **说明**：统一下载入口，单文件/多文件/目录均可用；**用一条 SFTP 连接**批量下载，目录按 `recursive` 展开并跳过软链接；**整批一次人工确认**。
 
 ### `ssh_list_files`
 - **参数**：`serverId`、`remotePath`（远程目录）
@@ -280,24 +258,20 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 ### `datasource_list`
 - **参数**：无
 - **返回**：`{ success, count, dataSources: [...] }`，每项含 `id/name/type/host/port/username/defaultDatabase/accessMode/tunnelServerId/tunnelServer/description/tags/accessibleFromSshServers/connectedApplications`
-- **说明**：**密码永不出现在返回中**；`type` 为 `mysql` / `postgres` / `redis`（按类型使用对应组的工具）；`host/port/username` 可直接用于与应用日志中的连接串比对
+- **说明**：**密码永不出现在返回中**；`type` 为 `mysql` / `postgres` / `redis`（按类型使用对应组的工具）；`host/port/username` 可直接用于与应用日志中的连接串比对。Web 强制模式下只返回命中 `read` 白名单的 `ds:<id>`，并隐藏未授权隧道服务器（`tunnelServerId`/`tunnelServer` 置空）及未授权 `accessibleFromSshServers` 引用；桌面未启用强制时保持全量。
 
 ### `datasource_test_connection`
 - **参数**：`datasourceId` — 数据源标识（ID/名称，可用 `datasource_list` 列出）
 - **返回**：`{ success, status, datasourceId, name, host, port, accessMode, viaTunnelServer, version, durationMs, error }` —— 自动选择直连或建 SSH 隧道
-
-### `datasource_get_sql_history`
-- **参数**：`datasourceId`（可选，ID/名称）、`limit`（默认 50，上限 200）、`offset`（翻页偏移，默认 0）、`sessionId`（可选，只查某个 MCP 会话）、`tool`（可选，只查某个 MCP 工具产生的记录，如 `mysql_query`）、`category`（可选，事件类型：`exec`=查询/写入执行 / `gate`=写审批拦截 / `probe`=测试/诊断/EXPLAIN）
-- **返回**：`{ success, status, error, count, hasMore, records: [...] }`（含被拒绝/被驳回的操作；每条记录含 `sessionId`/`tool`/`category`/`decision`；`result` 已截断到 4000 字符）
-- **说明**：Redis 命令审计也写在同一张表，`operation` 为 `Query`/`Execute`/`Diagnostics`，SQL 列是命令原文；写操作的审批决策记在 `decision`（`manual-approved`/`auto-approve`/`manual-rejected`/`blocked`）
 
 ## MySQL 执行组（mysql）
 
 所有 MySQL 工具都要求先有数据源配置（WPF 界面或 `config.json` 录入），且入参只有 `datasourceId`，**不含账号密码**。
 
 ### `mysql_query`（只读）
-- **参数**：`datasourceId`（ID/名称）、`sql`（只读语句：SELECT/SHOW/EXPLAIN/DESC/WITH）、`maxRows`（默认 100，上限 1000）
-- **返回**：`{ success, status, datasourceId, name, columns, rows, rowCount, truncated, durationMs, error }`
+- **参数**：`datasourceId`（ID/名称）、`action`（`query` / `explain` / `diagnostics`）、`sql`（query/explain 必填）、`maxRows`（query 默认 100，上限 1000）
+- **返回**：`{ success, status, datasourceId, name, action, columns, rows, rowCount, truncated, summary, data, durationMs, error }`
+- **action**：`query` 执行 SELECT/SHOW/EXPLAIN/DESC/WITH；`explain` 分析执行计划；`diagnostics` 返回连接数/慢查询/锁等待/复制/进程列表等整体诊断（`summary` + `data`）
 - **限制**：单条语句；非只读语句返回 `status: "blocked"`；**数据修改型 CTE（`WITH ... DELETE/UPDATE/INSERT`）与 `EXPLAIN ANALYZE <DML>`** 会被识别为写操作返回 `status: "not_readonly_statement"`，均提示改用 `mysql_execute`
 
 ### `mysql_execute`（写操作）
@@ -306,15 +280,6 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 - **安全链路**：危险语句（DROP/无WHERE的DELETE等）直接拒绝 → 敏感语句人工确认 → 执行 → 全部写审计
 - **提示**：只读语句传入会返回 `status: "readonly_statement"`，提示改用 `mysql_query`；数据源只读时返回 `status: "readonly_datasource"`
 
-### `mysql_explain`
-- **参数**：`datasourceId`（ID/名称）、`sql`（SELECT语句）
-- **返回**：`{ success, status, columns, rows, durationMs, error }`（EXPLAIN 计划表）
-
-### `mysql_diagnostics`
-- **参数**：`datasourceId`（ID/名称）
-- **返回**：`{ success, status, datasourceId, name, summary, data, durationMs, error }`（`data` 内含连接数/慢查询/锁等待/复制/进程列表等）
-- **场景**：用户问"MySQL正不正常/为什么慢/卡住/连接数暴涨"时**优先用它**做整体诊断，再按需下钻
-
 **MySQL 错误约定**：`{ success: false, status, error }`，`status` 可能值：`datasource_not_found`、`unsupported_type`、`blocked`、`readonly_statement`、`not_readonly_statement`、`readonly_datasource`、`rejected`、`approval_timeout`、`approval_unavailable`、`execute_error`、`query_error`。
 
 ## PostgreSQL 执行组（postgres）
@@ -322,8 +287,9 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 所有 PostgreSQL 工具都要求数据源 `type = postgres`（桌面 App"添加数据源"→类型选 PostgreSQL，端口默认 5432），入参只有 `datasourceId`，**不含账号密码**。连接自动选择直连或经 SSH 隧道（复用同一套隧道/限流/密钥校验链路）。仅读/写/敏感过滤与 MySQL 共用同一套 SQL 安全策略。
 
 ### `postgres_query`（只读）
-- **参数**：`datasourceId`（ID/名称）、`sql`（只读语句：SELECT/SHOW/EXPLAIN/WITH）、`maxRows`（默认 100，上限 1000）
-- **返回**：`{ success, status, datasourceId, name, columns, rows, rowCount, truncated, durationMs, error }`
+- **参数**：`datasourceId`（ID/名称）、`action`（`query` / `explain` / `diagnostics`）、`sql`（query/explain 必填）、`maxRows`（query 默认 100，上限 1000）
+- **返回**：`{ success, status, datasourceId, name, action, columns, rows, rowCount, truncated, summary, data, durationMs, error }`
+- **action**：`query` 执行 SELECT/SHOW/EXPLAIN/DESC/WITH；`explain` 分析执行计划；`diagnostics` 返回连接/活动会话/等待锁/复制/缓存命中/死锁等整体诊断（`summary` + `data`）
 - **限制**：单条语句；非只读语句返回 `status: "blocked"`；数据修改型 CTE 与 `EXPLAIN ANALYZE <DML>` 返回 `status: "not_readonly_statement"`，提示改用 `postgres_execute`
 
 ### `postgres_execute`（写操作）
@@ -331,15 +297,6 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 - **返回**：`{ success, status, datasourceId, name, rowsAffected, durationMs, error }`
 - **安全链路**：危险语句（DROP/无WHERE的DELETE等）直接拒绝 → 敏感语句人工确认（或按数据源 `WriteApproval=AutoApprove` 放行）→ 执行 → 全部写审计
 - **提示**：只读语句传入会返回 `status: "readonly_statement"`；数据源只读时返回 `status: "readonly_datasource"`
-
-### `postgres_explain`
-- **参数**：`datasourceId`（ID/名称）、`sql`（SELECT语句）
-- **返回**：`{ success, status, columns, rows, durationMs, error }`（EXPLAIN 计划）
-
-### `postgres_diagnostics`
-- **参数**：`datasourceId`（ID/名称）
-- **返回**：`{ success, status, summary, data, ... }` —— 含版本/当前库、连接数(当前/活动/上限)、活动会话按状态、最耗时查询、等待锁、复制、死锁、缓存命中率、数据库大小
-- **场景**：用户问"PG 正不正常 / 为什么慢 / 卡 / 连接数暴涨"时**优先用它**做整体诊断
 
 **PostgreSQL 错误约定**：`{ success: false, status, error }`，`status` 可能值：`datasource_not_found`、`unsupported_type`、`blocked`、`readonly_statement`、`not_readonly_statement`、`readonly_datasource`、`rejected`、`approval_timeout`、`approval_unavailable`、`execute_error`、`query_error`。
 
@@ -370,99 +327,63 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 
 ## Docker 容器组（docker）
 
-容器工具在目标服务器上执行 `docker` 命令，统一走命令过滤 + 审计；`docker_restart` / `docker_exec` 属敏感操作，需人工确认。容器名会做字符校验（`[A-Za-z0-9][A-Za-z0-9_.-]*`）并单引号转义，避免注入。
+容器工具在目标服务器上执行 `docker` 命令，统一走命令过滤 + 审计；`docker_restart` / `docker_exec` 属敏感操作，需人工确认。容器名会做字符校验（`[A-Za-z0-9][A-Za-z0-9_.-]*`）并单引号转义，避免注入。`docker_exec` 的 `command` 先按 POSIX argv 拆分（支持引号/反斜杠），再逐参数单引号转义，不展开变量、通配符、管道或命令替换；需要 shell 语法时请显式写 `sh -c '...'`，由容器内 shell 执行。
 
-### `docker_ps`
-- **参数**：`serverId`、`all`（默认 false=仅运行中，true=含已停止）
-- **返回**：`{ success, status, error, count, truncated, containers: [{ id, names, image, status, state, ports }] }`
-- **场景**："有哪些容器 / 容器状态 / 端口映射"时首选
-
-### `docker_logs`
-- **参数**：`serverId`、`container`、`tail`（默认 200，上限 5000）、`since`（可选，如 `10m` / `2h` / ISO 时间）
-- **返回**：`{ success, status, error, output, truncated, outputChars, exitCode, durationMs }`
-- **场景**：容器启动失败 / 报错时首选
-
-### `docker_inspect`
-- **参数**：`serverId`、`container`
-- **返回**：同上的文本结果（body 为 `docker inspect` 的 JSON）
-
-### `docker_stats`
-- **参数**：`serverId`
-- **返回**：同上；每行 `Name | CPU | MEM | NET | BLOCK | PIDs` 快照
-
-### `docker_images`
-- **参数**：`serverId`
-- **返回**：同上；每行 `仓库:标签 | ID | 大小 | 创建时间`
+### `docker_query`
+- **参数**：`serverId`、`action`（`ps` / `logs` / `inspect` / `stats` / `images`）、`container`（logs/inspect 必填）、`all`（ps，默认 false=仅运行中）、`tail`（logs 默认 200，上限 5000）、`since`（logs 可选，如 `10m` / `2h` / ISO 时间）
+- **返回**：`{ success, status, error, serverId, serverName, host, action, count, truncated, containers, output, outputChars, exitCode, durationMs }`
+- **action**：`ps` 返回结构化容器列表（`containers`）；`logs`/`inspect`/`stats`/`images` 返回对应 Docker 命令文本（`output`）
+- **场景**：容器状态/日志/配置/资源/镜像统一从这里进；重启或容器内执行用 `docker_restart` / `docker_exec`
 
 ### `docker_restart`
 - **参数**：`serverId`、`container`
 - **返回**：同上；**需人工确认**（短暂中断服务）
 
 ### `docker_exec`
-- **参数**：`serverId`、`container`、`command`（容器内命令，如 `ps -ef`）
+- **参数**：`serverId`、`container`、`command`（容器内命令，如 `ps -ef`；按 POSIX argv 拆分并逐参数转义，不展开变量/通配符/管道，需要 shell 语法用 `sh -c '...'`）
 - **返回**：同上；**需人工确认**
-- **错误约定**：`{ success: false, status, error }`，`status` 可能值：`invalid_container`、`blocked`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`connection_error`、`failed`
+- **错误约定**：`{ success: false, status, error }`，`status` 可能值：`invalid_container`、`invalid_argument`（命令为空/引号未闭合/含换行）、`blocked`、`rejected`、`approval_timeout`、`approval_unavailable`、`server_not_found`、`server_disabled`、`connection_error`、`failed`
 
 ## systemd 服务组（service）
 
 `service_*` 封装 `systemctl` / `journalctl`，服务名会做字符校验并单引号转义。`service_restart` 需人工确认。
 
-### `service_status`
-- **参数**：`serverId`、`service`（服务名或 unit）
-- **返回**：`{ success, status, error, output, truncated, outputChars, exitCode, durationMs }`（`systemctl status` 文本）
-
-### `service_list`
-- **参数**：`serverId`、`pattern`（可选关键字，对 unit 名 `grep -i`）
-- **返回**：同上（`systemctl list-units --type=service --all --no-legend`）
+### `service_query`
+- **参数**：`serverId`、`action`（`list` / `status` / `logs`）、`service`（status/logs 必填）、`pattern`（list 可选）、`lines`（logs 默认 200，上限 5000）、`since`（logs 可选）
+- **返回**：`{ success, status, error, output, truncated, outputChars, exitCode, durationMs }`
+- **说明**：统一 systemd 只读查询入口；`list` 列出服务单元，`status` 查看状态，`logs` 读取 journal。
 
 ### `service_restart`
 - **参数**：`serverId`、`service`
 - **返回**：同上；**需人工确认**
 
-### `service_logs`
-- **参数**：`serverId`、`service`、`lines`（默认 200，上限 5000）、`since`（可选，如 `1h` / `yesterday`）
-- **返回**：同上（`journalctl -u <service> -n <lines>`）
-
 ## 日志文件组（log）
 
-读取远端日志文件，**路径必须在 `security.logs.allowedPaths` 白名单内**（防止读取 `/etc/shadow` 等敏感文件），越界返回 `path_not_allowed`。单次行数受 `security.logs.maxLines` 限制。`log_tail`/`log_grep` 的路径可**直接传 `path`**，也可**传 `appId`**（用应用管理里配置的日志路径，须同时在该应用填「日志路径」）；两者都不确定时先用 `log_find` 发现。
+读取远端日志文件，**路径必须在 `security.logs.allowedPaths` 白名单内**（防止读取 `/etc/shadow` 等敏感文件），越界返回 `path_not_allowed`。单次行数受 `security.logs.maxLines` 限制。`tail`/`grep` 的路径可**直接传 `path`**，也可**传 `appId`**（用应用管理里配置的日志路径，须同时在该应用填「日志路径」）；两者都不确定时先用 `find` 发现。
 
-### `log_find`
-- **参数**：`serverId`、`path`（可选，限定搜索目录，须在白名单内）、`minutes`（默认 1440，只在最近 N 分钟内修改过的文件）、`maxResults`（默认 100，上限 500）
-- **返回**：`{ success, status, error, serverId, serverName, host, count, truncated, files: [{ path, modifiedAt }] }` —— 按修改时间倒序
-- **场景**：不确定日志路径时先调用它拿到候选文件，再用 `log_tail`/`log_grep`
-
-### `log_tail`
-- **参数**：`serverId`、`path`（日志绝对路径；与 `appId` 二选一）、`appId`（应用标识，用其配置的日志路径；与 `path` 二选一）、`lines`（默认 200）
-- **返回**：`{ success, status, error, serverId, serverName, host, path, pattern, count, truncated, lines: [...] }`
+### `log_query`
+- **参数**：`serverId`、`action`（`tail` / `grep` / `find`）、`path`（日志绝对路径；tail/grep 与 `appId` 二选一；find 时可选搜索目录）、`appId`（tail/grep 用其配置的日志路径）、`pattern`（grep 关键字/正则）、`lines`（tail 默认 200）、`ignoreCase`（grep 默认 true）、`maxMatches`（grep 默认 200，上限 2000）、`minutes`（find 默认 1440）、`maxResults`（find 默认 100，上限 500）
+- **返回**：`{ success, status, error, serverId, serverName, host, action, path, pattern, count, truncated, lines: [...], files: [{ path, modifiedAt }] }`
+- **说明**：`tail` 返回尾部行，`grep` 返回带行号的匹配行（无匹配 `success: true, count: 0`），`find` 返回按修改时间倒序的候选文件。
 - **错误约定**：`path_required`（未给 path/appId）、`log_path_not_configured`（应用没配日志路径）、`log_path_ambiguous`（应用配了多个可用路径，请用 `path` 指定）、`path_not_allowed`
-
-### `log_grep`
-- **参数**：`serverId`、`pattern`（关键字/正则）、`path` 或 `appId`（二选一）、`ignoreCase`（默认 true）、`maxMatches`（默认 200，上限 2000）
-- **返回**：同上（`pattern` 回显；`lines` 为带行号的匹配行；无匹配返回 `success: true, count: 0`）
 
 ## JVM 诊断组（java）
 
-`java_*` 通过 `ps` / `jstack` / `jcmd` / `jstat` 读取 JVM 状态，均为只读；`pid` 会做数字校验。需目标机安装 JDK（`jstack`/`jcmd`/`jstat`）。`java_threads`/`java_heap`/`java_info` 可传 `pid`，也可传 `appId` 自动解析该应用的 Java 进程（按应用名/容器名匹配；0 个返回 `pid_not_found`，多个返回 `pid_ambiguous`，不静默猜）。
+`java_*` 通过 `ps` / `jstack` / `jcmd` / `jstat` 读取 JVM 状态，均为只读；`pid` 会做数字校验。需目标机安装 JDK（`jstack`/`jcmd`/`jstat`）。`java_diagnostics` 可传 `pid`，也可传 `appId` 自动解析该应用的 Java 进程（按应用名/容器名匹配；0 个返回 `pid_not_found`，多个返回 `pid_ambiguous`，不静默猜）。
 
 ### `java_processes`
 - **参数**：`serverId`、`appId`（可选，只看某应用的 Java 进程）
 - **返回**：`{ success, status, error, serverId, serverName, host, count, processes: [{ pid, elapsed, cpu, mem, command }] }`
 - **场景**：先拿到应用 pid，再做线程/堆分析
 
-### `java_threads`
-- **参数**：`serverId`、`pid` 或 `appId`（二选一）
-- **返回**：文本结果（`jstack -l <pid>` 线程栈）；分析死锁/CPU 飙高/阻塞
-
-### `java_heap`
-- **参数**：`serverId`、`pid` 或 `appId`（二选一）
-- **返回**：文本结果（`jcmd <pid> GC.heap_info` + `jstat -gcutil`）；分析内存/GC/OOM
-
-### `java_info`
-- **参数**：`serverId`、`pid` 或 `appId`（二选一）
-- **返回**：文本结果（`jcmd <pid> VM.version` / `VM.uptime`）
+### `java_diagnostics`
+- **参数**：`serverId`、`action`（`threads` / `heap` / `info`）、`pid` 或 `appId`（二选一）
+- **返回**：文本结果（`threads`=`jstack -l <pid>`；`heap`=`jcmd <pid> GC.heap_info` + `jstat -gcutil`；`info`=`jcmd <pid> VM.version` / `VM.uptime`）
+- **说明**：统一 Java 诊断入口。
 
 ## 拓扑组（topology）
+
+> Web 强制模式：无目标的全局拓扑查询（`topology_get_overview` / `topology_get_dependencies` / `topology_query`）仅管理员可用，普通成员调用返回 `authorization_denied`；`topology_discover` / `topology_timeline` / `topology_diff` 按其 `serverId` 做目标授权校验。桌面未启用强制时不受影响。
 
 ### `topology_get_overview`
 - **参数**：无
@@ -482,30 +403,11 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 - **端口信息**：解析 `ss -ltnp` 得到监听端口（可见 root 服务进程名时精确；否则用常见端口兜底），显示在待确认节点标签与节点信息里。可开启 `security.discovery.useSudo`（安全设置）让端口/配置扫描走提权以识别 root 服务。
 - **快照入库（P1）**：发现完成后读取每台服务器最近一次快照，把 `systemd` 的 service 单元、`docker` 容器、`portmap` 监听端口和 `nginx_tls` 域名/证书转成 `service:*` / `container:*` / `deploy:*` / `port:*` / `domain:*` / `cert:*` 节点及 `runsOn` / `listensOn` / `deployedFrom` / `hostedOn` / `exposes` / `tlsBy` / `resolvesTo` 边；边含 `confidence`、`lastVerifiedAt`，节点信息含 `label`、`lastVerifiedAt`，证书含 `expiresAt`/`daysRemaining`。已登记应用按 `containerName` + 镜像 tag 推导 `deploy:<appId>@<version>`。无快照时只记录说明，不影响 SSH 发现结果。
 
-### `topology_search`
-- **参数**：`query`（名称/ID/主机/端口/标签片段）、`kinds`（可选，`ssh,datasource,application,service,container,deploy,system,domain,port,cert,mq`，逗号或空格分隔）、`limit`（默认 20，最大 50）
-- **返回**：`{ query, items: [{ node: { id, label, type, detail, degree }, score }], truncated, summary }`
-- **说明**：先搜到精确资产 ID，再交给 `topology_path` / `topology_impact` / `topology_explain`；`detail` 含主机、端口、类型、标签等摘要（不返回密码/凭据）。
-
-### `topology_neighbors`
-- **参数**：`assetId`（ID 或名称）、`depth`（默认 1，最大 6）、`relationTypes`（可选，如 `runsOn,connectsTo,hostedOn,listensOn,exposes,tlsBy,resolvesTo,upstreamOf,deployedFrom,partOf`）
-- **返回**：`{ root, nodes: [...], edges: [...], truncated, summary }`，入边和出边都算，适合快速看某资产周围连了谁。
-
-### `topology_path`
-- **参数**：`from`（起点 ID/名称）、`to`（终点 ID/名称）、`maxHops`（默认 6，最大 6）
-- **返回**：`{ from, to, paths: [{ nodes, edges, hops, complete, summary }], truncated, error, summary }`
-- **说明**：按**有向边**查找（如 `domain → app → port → ssh`，或 `domain → cert`），最多返回 5 条；无路径时 `error` 会说明是方向问题还是关系缺失，可改用 `topology_neighbors` / `topology_impact`。
-
-### `topology_impact`
-- **参数**：`assetId`（ID/名称）、`maxDepth`（默认 6，最大 6）、`includeUnconfirmed`（默认 false）
-- **返回**：`{ root, impacted: [{ node, hops, via, path, unconfirmed }], unknownCount, truncated, summary }`
-- **说明**：反向遍历“谁依赖它”，用于机器下线、端口关闭、数据库维护、证书更换前的影响面评估（如 `topology_impact("cert:...")` 可找到使用该证书的域名）；默认排除 `:disc:` 待确认节点，`unknownCount` 单独计数。结论基于现有拓扑，建议先用 `topology_explain` 核实关键边。
-
-### `topology_explain`
-- **参数**：`assetId`（ID/名称）、`to`（可选，只看与另一资产之间的边）、`relationType`（可选，如 `runsOn`）
-- **返回**：`{ entity, edges: [{ from, to, type, source, evidence, confidence, disputed, disputeReason, disputeAcknowledged, validFrom, validTo, lastSeenAt, lastVerifiedAt, stale }], facts, summary }`
-- **说明**：用于回答“为什么认为 A 依赖 B”。`source` 为 `manual` / `discovered`，人工边 `confidence=1.0`、快照边约 `0.9`；`stale=true` 表示自动发现边超过 7 天未再次核实（优先看 `lastVerifiedAt`），影响面结论需谨慎。
-- **冲突检测**：读取图谱时自动核对 `runsOn` / `hostedOn` 的发现边——同一 `(from, type)` 出现多个目标，或与人工配置目标不一致时标记 `disputed=true`，并在 `disputeReason` 说明冲突目标；App 中人工确认后 `disputeAcknowledged=true`，冲突仍存在但不再标红；冲突消失后自动清空原因与确认状态。
+### `topology_query`
+- **参数**：`action`（`search` / `neighbors` / `path` / `impact` / `explain`）、`query`（search 搜索词）、`assetId`（neighbors/impact/explain）、`from` / `to`（path 起终点）、`kinds`（search 类型过滤）、`relationTypes`（neighbors 关系过滤）、`relationType` / `targetAssetId`（explain 可选过滤）、`limit`（search 默认 20，最大 50）、`depth`（neighbors 默认 1，最大 6）、`maxHops`（path 默认 6）、`maxDepth`（impact 默认 6）、`includeUnconfirmed`（impact 默认 false）
+- **返回**：`{ action, success, status, error, summary, result }`；`result` 为对应动作的结构化结果（搜索项/邻域/路径/影响面/边解释）。
+- **说明**：`search` 先找到精确 ID；`neighbors` 看入边+出边；`path` 按有向边查链路；`impact` 反向查爆炸半径；`explain` 核实依赖边来源与是否过期。`detail`/`evidence` 不返回密码或凭据。
+- **冲突检测**：`explain` 会核对 `runsOn` / `hostedOn` 的发现边——同一 `(from, type)` 出现多个目标，或与人工配置目标不一致时标记 `disputed=true`，并在 `disputeReason` 说明冲突目标；App 中人工确认后 `disputeAcknowledged=true`，冲突仍存在但不再标红；冲突消失后自动清空原因与确认状态。
 
 ### `topology_timeline`
 - **参数**：`serverId`（服务器 ID/名称）、`limit`（最近快照数，默认 10，最大 20）
@@ -523,7 +425,7 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 - **参数**：`appId`（应用 ID 或名称）、`includeDiagnostics`（默认 false；true 时对依赖数据源额外做整体诊断，更慢更全）
 - **返回**：`{ success, status, error, application: { id, name, type, containerName, port }, servers: [{ serverId, serverName, host, reachable, status, error, output, truncated }], datasources: [{ datasourceId, name, type, reachable, status, version, accessMode, viaTunnelServer, summary, error }], notes: [...] }`
 - **说明**：应用→服务器取自 `runsOn` 关系（缺失时用应用的 `host` 兜底），应用→数据源取自 `connectsTo` 关系。服务器探测命令一次聚合 **Java 进程 + Docker 容器 + 监听端口**，并**按应用过滤**：java 段按应用名 `grep`、docker 段按 `containerName` `--filter name=`、端口段按应用的 `port` 过滤（缺失则相应段列全部）。`success` 表示"快照已产出"，具体健康看每个 server/datasource 的 `reachable`；`notes` 里会说明本次的过滤范围。
-- **场景**：跨机排查某应用时**先用它**拿到全局画像，再按需下钻到 `docker_logs` / `service_logs` / `log_grep` / `java_threads` / `mysql_diagnostics` 等。
+- **场景**：跨机排查某应用时**先用它**拿到全局画像，再按需下钻到 `docker_query`（action=logs） / `service_query`（action=logs） / `log_query`（action=grep） / `java_diagnostics` / `mysql_query`（action=diagnostics） 等。
 
 ## 指南组（guide）
 
@@ -534,15 +436,10 @@ MCP 服务器当前注册 **61 个工具**，按用途分为 14 组。本文档�
 
 ### `mcp_self_check`
 - **参数**：`serverId`（可选，ID/名称/主机名）、`datasourceId`（可选，ID/名称）
-- **返回**：`{ success, sessionId, clientName, clientVersion, checks: [{ name, status, detail }] }` —— `sessionId` 是当前 MCP 会话 ID（每次启动服务生成）、`clientName`/`clientVersion` 为当前 AI 客户端（`initialize` 握手后获取，首次工具调用前可能为空）；可用于 `ssh_get_command_history`/`datasource_get_sql_history` 的 `sessionId` 过滤；检查配置可读、审计库可写、已知主机库可读；带参数时额外做连通性测试（服务器失败会给出 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error` 分类）
+- **返回**：`{ success, sessionId, clientName, clientVersion, checks: [{ name, status, detail }] }` —— `sessionId` 是当前 MCP 会话 ID（每次启动服务生成）、`clientName`/`clientVersion` 为当前 AI 客户端（`initialize` 握手后获取，首次工具调用前可能为空）；检查配置可读、审计库可写、已知主机库可读；带参数时额外做连通性测试（服务器失败会给出 `auth_failed`/`host_key_mismatch`/`timeout`/`connection_error` 分类）
 - **场景**：排查"MCP 自己是否正常"、主机密钥校验不通过、配置损坏等
-
-### `mcp_list_sessions`
-- **参数**：`limit`（默认 50，上限 500）
-- **返回**：`{ success, error, count, sessions: [{ sessionId, clientName, clientVersion, startedAt, lastSeenAt }] }` —— 按最近活动倒序
-- **场景**：审计记录都带 `sessionId`，用它能看出"是哪个 AI 客户端、哪次连接"产生的；再配合 `ssh_get_command_history` / `datasource_get_sql_history` 的 `sessionId` 参数下钻
 
 ### `mcp_approval_round`
 - **参数**：`roundId`（本轮次标识，由助手生成的随机串）
 - **返回**：`ok` —— 标记新的对话轮次开始
-- **场景**：内部工具，由 LitSSH 桌面助手在每条用户消息开始时自动调用，作为审批弹窗「本轮次内放行该工具」授权的失效边界（下一条消息即恢复审批）；其它 MCP 客户端无需调用
+- **场景**：内部工具，由 LitSSH 桌面/Web 助手在每条用户消息开始时自动调用，作为审批弹窗「本轮次内放行该工具」授权的失效边界（下一条消息即恢复审批）；仅宿主注入 `LITSSH_INTERNAL_TOOLS=1` 时暴露，其它 MCP 客户端不会看到该工具，也无需调用

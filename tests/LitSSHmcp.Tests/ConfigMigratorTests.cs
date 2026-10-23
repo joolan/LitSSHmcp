@@ -1,4 +1,5 @@
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using Xunit;
 
@@ -35,6 +36,30 @@ public class ConfigMigratorTests
 
         Assert.True(ConfigMigrator.Migrate(config));
         Assert.NotNull(config.Security.CommandFilter);
+    }
+
+    [Fact]
+    public void Legacy_auto_approved_commands_are_hashed_and_redacted()
+    {
+        const string command = "curl --password hunter2 https://example";
+        var config = new AppConfig
+        {
+            SchemaVersion = AppConfig.CurrentSchemaVersion,
+            Agent = new AgentConfig
+            {
+                LocalTerminal = new LocalTerminalConfig
+                {
+                    AutoApprovedCommands = new[] { command }
+                }
+            }
+        };
+
+        Assert.True(ConfigMigrator.Migrate(config));
+
+        var rule = Assert.Single(config.Agent.LocalTerminal.AutoApprovedCommands);
+        Assert.StartsWith(AutoApprovedCommandRule.Prefix, rule, StringComparison.Ordinal);
+        Assert.DoesNotContain("hunter2", rule, StringComparison.Ordinal);
+        Assert.True(AutoApprovedCommandRule.Matches(command, rule));
     }
 
     [Fact]

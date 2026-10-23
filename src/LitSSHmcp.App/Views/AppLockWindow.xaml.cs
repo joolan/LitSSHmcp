@@ -83,7 +83,7 @@ public partial class AppLockWindow : FluentWindow
         }
     }
 
-    private async void OnLoaded(object sender, RoutedEventArgs e)
+    private void OnLoaded(object sender, RoutedEventArgs e) => AsyncOperation.Run("初始化应用锁", async () =>
     {
         PasswordBox.Focus();
 
@@ -92,9 +92,10 @@ public partial class AppLockWindow : FluentWindow
             HelloButton.Visibility = Visibility.Visible;
             Height += 44;
         }
-    }
+    });
 
-    private async void OnPrimary(object sender, RoutedEventArgs e) => await SubmitAsync();
+    private void OnPrimary(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("提交应用锁", SubmitAsync);
 
     private void OnBoxKeyDown(object sender, KeyEventArgs e)
     {
@@ -182,7 +183,7 @@ public partial class AppLockWindow : FluentWindow
         }
     }
 
-    private async void OnHello(object sender, RoutedEventArgs e)
+    private void OnHello(object sender, RoutedEventArgs e) => AsyncOperation.Run("Windows Hello 解锁", async () =>
     {
         if (_busy)
             return;
@@ -207,7 +208,7 @@ public partial class AppLockWindow : FluentWindow
             HelloButton.IsEnabled = true;
             _busy = false;
         }
-    }
+    });
 
     private void OnSecondary(object sender, RoutedEventArgs e)
     {

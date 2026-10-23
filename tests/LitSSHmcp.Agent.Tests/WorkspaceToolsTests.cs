@@ -68,17 +68,17 @@ public class WorkspaceToolsTests : IDisposable
         Directory.CreateDirectory(root);
         var tools = WorkspaceTools.Create(root);
 
-        var append1 = await Tool(tools, "ops_doc_append").InvokeAsync(Args(("content", "line1")), default);
+        var append1 = await Tool(tools, "ops_doc_write").InvokeAsync(Args(("mode", "append"), ("content", "line1")), default);
         Assert.Contains("已追加", (string)append1!);
-        var append2 = await Tool(tools, "ops_doc_append").InvokeAsync(Args(("content", "line2")), default);
+        var append2 = await Tool(tools, "ops_doc_write").InvokeAsync(Args(("mode", "append"), ("content", "line2")), default);
         Assert.Contains("已追加", (string)append2!);
         Assert.Equal("line1" + Environment.NewLine + "line2", File.ReadAllText(Path.Combine(root, "OPS_ASSETS.md")));
 
-        var patch = await Tool(tools, "ops_doc_patch").InvokeAsync(Args(("find", "line1"), ("replace", "LINE-1")), default);
+        var patch = await Tool(tools, "ops_doc_write").InvokeAsync(Args(("mode", "patch"), ("find", "line1"), ("replace", "LINE-1")), default);
         Assert.Contains("已更新", (string)patch!);
         Assert.StartsWith("LINE-1", File.ReadAllText(Path.Combine(root, "OPS_ASSETS.md")));
 
-        var miss = await Tool(tools, "ops_doc_patch").InvokeAsync(Args(("find", "nope"), ("replace", "x")), default);
+        var miss = await Tool(tools, "ops_doc_write").InvokeAsync(Args(("mode", "patch"), ("find", "nope"), ("replace", "x")), default);
         Assert.Contains("未找到", (string)miss!);
     }
 

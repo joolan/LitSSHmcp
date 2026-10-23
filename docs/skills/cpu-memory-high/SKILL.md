@@ -10,7 +10,7 @@ appliesTo: [ssh, command, java, log]
 1. **总体态势**：`ssh_snapshot_get section="resource"` 看 CPU/内存/swap/负载与 `topByCpu`/`topByMemory`/`warnings`/`riskLevel`。
 2. **定位进程**：`ssh_execute_command "ps -eo pid,ppid,pcpu,pmem,rss,comm --sort=-pcpu | head -15"`（内存把 `-pcpu` 换 `-rss`）。
 3. **单进程深挖**：
-   - Java → `java_threads(pid=)` 找高 CPU 线程（记下 nid 转十六进制），`java_heap` 看堆/GC。
+   - Java → `java_diagnostics(action="threads", pid=...)` 找高 CPU 线程（记下 nid 转十六进制），`java_diagnostics(action="heap", pid=...)` 看堆/GC。
    - 其他 → `top -H -p <pid>` 或 `cat /proc/<pid>/status | grep -i vm`。
 4. **内存专项**：`free -h`；`dmesg -T | grep -i "killed process|oom"` 确认是否 OOM；`smem`/`ps_mem` 看真实占用。
 5. **系统级**：`vmstat 1 5`、`iostat -x 1 3`（是否 IO 等待导致 load 高）、`ss -s`（连接数）。

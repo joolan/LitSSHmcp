@@ -335,12 +335,12 @@ internal sealed class ApprovalDialog : Form
             Margin = new Padding(0, 0, 0, 6)
         };
 
-        _chkRound.Text = "本轮次内自动放行该工具（发送下一条用户消息后恢复审批）";
+        _chkRound.Text = "本轮次内自动放行同一目标与相同操作（发送下一条用户消息后恢复审批）";
         _chkRound.AutoSize = true;
         _chkRound.ForeColor = TextPrimary;
         _chkRound.Margin = new Padding(4, 2, 0, 2);
 
-        _chkSession.Text = "整个助手运行期间自动放行该工具（不建议）";
+        _chkSession.Text = "整个助手运行期间自动放行同一目标与相同操作（不建议）";
         _chkSession.AutoSize = true;
         _chkSession.ForeColor = DangerText;
         _chkSession.Margin = new Padding(4, 2, 0, 2);
@@ -371,7 +371,7 @@ internal sealed class ApprovalDialog : Form
         {
             var hint = new Label
             {
-                Text = "已有会话级授权：" + string.Join("、", sessionGrantedTools),
+                Text = "已有会话级授权（工具 @ 目标）：" + string.Join("、", sessionGrantedTools),
                 ForeColor = TextMuted,
                 Font = new Font("Microsoft YaHei UI", 8F),
                 AutoSize = true,

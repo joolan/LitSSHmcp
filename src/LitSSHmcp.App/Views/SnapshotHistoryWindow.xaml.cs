@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Services.Storage;
 
@@ -24,25 +25,29 @@ public partial class SnapshotHistoryWindow : Wpf.Ui.Controls.FluentWindow
         _initialServerId = initialServerId;
         _initialSnapshotId = initialSnapshotId;
         Loaded += OnLoaded;
+        Closed += (_, _) => Loaded -= OnLoaded;
     }
 
-    private async void OnLoaded(object sender, RoutedEventArgs e)
-    {
-        await _viewModel.InitializeAsync(_initialServerId);
-        _suppressServerChanged = false;
-        await _viewModel.LoadSnapshotsAsync(_initialSnapshotId);
-    }
+    private void OnLoaded(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("加载快照历史", async () =>
+        {
+            await _viewModel.InitializeAsync(_initialServerId);
+            _suppressServerChanged = false;
+            await _viewModel.LoadSnapshotsAsync(_initialSnapshotId);
+        });
 
-    private async void OnServerChanged(object sender, SelectionChangedEventArgs e)
+    private void OnServerChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressServerChanged)
             return;
-        await _viewModel.LoadSnapshotsAsync();
+        AsyncOperation.Run("加载快照列表", () => _viewModel.LoadSnapshotsAsync());
     }
 
-    private async void OnSnapshotChanged(object sender, SelectionChangedEventArgs e) => await _viewModel.ShowSelectedAsync();
+    private void OnSnapshotChanged(object sender, SelectionChangedEventArgs e) =>
+        AsyncOperation.Run("加载快照详情", () => _viewModel.ShowSelectedAsync());
 
-    private async void OnRefresh(object sender, RoutedEventArgs e) => await _viewModel.LoadSnapshotsAsync();
+    private void OnRefresh(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("刷新快照列表", () => _viewModel.LoadSnapshotsAsync());
 
     private void OnTrend(object sender, RoutedEventArgs e) =>
         new SnapshotTrendWindow(_store, _configService, _viewModel.SelectedServer?.Id) { Owner = this }.Show();

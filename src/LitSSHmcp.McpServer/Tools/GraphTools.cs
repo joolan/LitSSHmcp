@@ -4,6 +4,7 @@
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
+using System.Text.Json;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Topology;
@@ -19,6 +20,8 @@ namespace LitSSHmcp.McpServer.Tools;
 [McpServerToolType]
 public class GraphTools
 {
+    private static readonly JsonSerializerOptions ResultJson = new(JsonSerializerDefaults.Web);
+
     private readonly IAssetGraphQueryService _query;
     private readonly IAuditLogService _auditLogService;
 
@@ -28,9 +31,60 @@ public class GraphTools
         _auditLogService = auditLogService;
     }
 
-    [McpServerTool(Name = "topology_search", UseStructuredContent = true, OutputSchemaType = typeof(GraphSearchResult), ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [McpServerTool(Name = "topology_query", UseStructuredContent = true, OutputSchemaType = typeof(TopologyQueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("拓扑图统一查询入口：action=search 搜索资产、neighbors 看邻域、path 查有向链路、impact 查变更影响面、explain 解释依赖边来源/证据/过期。返回 result 为对应动作的结构化结果。")]
+    public async Task<TopologyQueryResultDto> TopologyQuery(
+        [Description("查询类型：search / neighbors / path / impact / explain")] string action,
+        [Description("search 的搜索词：名称/ID/主机/端口/标签片段")] string? query = null,
+        [Description("neighbors/impact/explain 的资产 ID/名称")] string? assetId = null,
+        [Description("path 的起点资产 ID/名称")] string? from = null,
+        [Description("path 的终点资产 ID/名称")] string? to = null,
+        [Description("search 的类型过滤，逗号/空格分隔；留空=全部")] string? kinds = null,
+        [Description("neighbors 的关系类型过滤，逗号/空格分隔；留空=全部")] string? relationTypes = null,
+        [Description("explain 的关系类型过滤，如 runsOn")] string? relationType = null,
+        [Description("explain 可选：只看与另一资产之间的边")] string? targetAssetId = null,
+        [Description("search 返回上限，默认20，最大50")] int limit = 20,
+        [Description("neighbors 跳数，默认1，最大6")] int depth = 1,
+        [Description("path 最大跳数，默认6，最大6")] int maxHops = 6,
+        [Description("impact 最大反向跳数，默认6，最大6")] int maxDepth = 6,
+        [Description("impact 是否包含待确认(:disc:)节点，默认false")] bool includeUnconfirmed = false,
+        CancellationToken cancellationToken = default)
+    {
+        var kind = action.Trim().ToLowerInvariant();
+        switch (kind)
+        {
+            case "search":
+                if (string.IsNullOrWhiteSpace(query))
+                    return Fail(kind, "invalid_argument", "action=search 时必须提供 query。");
+                var search = await Search(query, kinds, limit, cancellationToken);
+                return Wrap(kind, search.Summary, search.Error, search);
+            case "neighbors":
+                if (string.IsNullOrWhiteSpace(assetId))
+                    return Fail(kind, "invalid_argument", "action=neighbors 时必须提供 assetId。");
+                var neighbors = await GetNeighbors(assetId, depth, relationTypes, cancellationToken);
+                return Wrap(kind, neighbors.Summary, neighbors.Error, neighbors);
+            case "path":
+                if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
+                    return Fail(kind, "invalid_argument", "action=path 时必须提供 from 和 to。");
+                var path = await FindPaths(from, to, maxHops, cancellationToken);
+                return Wrap(kind, path.Summary, path.Error, path);
+            case "impact":
+                if (string.IsNullOrWhiteSpace(assetId))
+                    return Fail(kind, "invalid_argument", "action=impact 时必须提供 assetId。");
+                var impact = await GetImpact(assetId, maxDepth, includeUnconfirmed, cancellationToken);
+                return Wrap(kind, impact.Summary, impact.Error, impact);
+            case "explain":
+                if (string.IsNullOrWhiteSpace(assetId))
+                    return Fail(kind, "invalid_argument", "action=explain 时必须提供 assetId。");
+                var explain = await Explain(assetId, targetAssetId, relationType, cancellationToken);
+                return Wrap(kind, explain.Summary, explain.Error, explain);
+            default:
+                return Fail(kind, "invalid_argument", "action 须为 search / neighbors / path / impact / explain");
+        }
+    }
+
     [Description("按名称/ID/主机/端口/标签搜索资产(服务器/应用/服务/容器/部署/数据库/域名/端口/证书)。定位排查前先找准确切 ID")]
-    public async Task<GraphSearchResult> Search(
+    private async Task<GraphSearchResult> Search(
         [Description("搜索词: 名称、ID、主机、端口或标签片段")] string query,
         [Description("可选类型过滤: ssh,datasource,application,service,container,deploy,system,domain,port,cert,mq(逗号/空格分隔); 留空=全部")] string? kinds = null,
         [Description("返回上限, 默认20, 最大50")] int limit = 20,
@@ -41,9 +95,8 @@ public class GraphTools
         return result;
     }
 
-    [McpServerTool(Name = "topology_neighbors", UseStructuredContent = true, OutputSchemaType = typeof(GraphNeighborhood), ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("查询某资产的邻域子图(入边+出边, 可多跳)。看它连了谁、谁连了它")]
-    public async Task<GraphNeighborhood> GetNeighbors(
+    private async Task<GraphNeighborhood> GetNeighbors(
         [Description("资产ID, 如 ssh:web-01 / ds:mysql-01 / app:order-service, 也接受纯ID或名称")] string assetId,
         [Description("跳数, 默认1, 最大6")] int depth = 1,
         [Description("可选关系类型过滤, 如 runsOn,connectsTo,hostedOn,listensOn,exposes,tlsBy,resolvesTo,upstreamOf,deployedFrom,partOf; 留空=全部")] string? relationTypes = null,
@@ -54,9 +107,8 @@ public class GraphTools
         return result;
     }
 
-    [McpServerTool(Name = "topology_path", UseStructuredContent = true, OutputSchemaType = typeof(GraphPathResult), ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("查询两个资产之间的有向链路(如域名→应用→端口→服务器)。无路径时返回明确原因")]
-    public async Task<GraphPathResult> FindPaths(
+    private async Task<GraphPathResult> FindPaths(
         [Description("起点资产ID/名称")] string from,
         [Description("终点资产ID/名称")] string to,
         [Description("最大跳数, 默认6, 最大6")] int maxHops = 6,
@@ -67,9 +119,8 @@ public class GraphTools
         return result;
     }
 
-    [McpServerTool(Name = "topology_impact", UseStructuredContent = true, OutputSchemaType = typeof(GraphImpactResult), ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("反向查询影响面: 某服务器/数据库/应用/证书变更会影响哪些资产(爆炸半径)。默认排除待确认节点")]
-    public async Task<GraphImpactResult> GetImpact(
+    private async Task<GraphImpactResult> GetImpact(
         [Description("资产ID, 如 ssh:web-01 / ds:mysql-01 / app:order-service, 也接受纯ID或名称")] string assetId,
         [Description("最大反向跳数, 默认6, 最大6")] int maxDepth = 6,
         [Description("是否包含待确认(:disc:)节点, 默认false")] bool includeUnconfirmed = false,
@@ -80,9 +131,8 @@ public class GraphTools
         return result;
     }
 
-    [McpServerTool(Name = "topology_explain", UseStructuredContent = true, OutputSchemaType = typeof(GraphExplainResult), ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("解释某资产的关联边: 来源(manual/discovered)、证据、末次发现时间、是否过期。用于核实 AI 的依赖结论")]
-    public async Task<GraphExplainResult> Explain(
+    private async Task<GraphExplainResult> Explain(
         [Description("资产ID/名称")] string assetId,
         [Description("可选: 只看与另一资产之间的边")] string? to = null,
         [Description("可选: 只过滤某关系类型, 如 runsOn")] string? relationType = null,
@@ -117,6 +167,24 @@ public class GraphTools
         await LogAuditAsync($"TOPOLOGY_DIFF: {serverId}", result.Summary, result.Error is null);
         return result;
     }
+
+    private static TopologyQueryResultDto Wrap<T>(string action, string summary, string? error, T result) => new()
+    {
+        Action = action,
+        Success = error is null,
+        Status = error is null ? null : "query_error",
+        Error = error,
+        Summary = summary,
+        Result = JsonSerializer.SerializeToElement(result, ResultJson)
+    };
+
+    private static TopologyQueryResultDto Fail(string action, string status, string error) => new()
+    {
+        Action = action,
+        Success = false,
+        Status = status,
+        Error = error
+    };
 
     private Task LogAuditAsync(string command, string? result, bool ok) =>
         ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog

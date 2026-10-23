@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.McpServer.Services;
 using LitSSHmcp.McpServer.Tools;
 using ModelContextProtocol.Server;
 using Xunit;
@@ -9,25 +10,28 @@ using Xunit;
 namespace LitSSHmcp.McpServer.Tests;
 
 /// <summary>
-/// 保证"已注册工具 ↔ docs/TOOLS.md ↔ get_usage_guide 内置清单"三者一致(单一事实来源的一致性守门测试)。
-/// 工具新增/改名/删除后若忘记同步文档, 本测试会失败。
+/// 保证"已注册工具 ↔ docs/TOOLS.md ↔ get_usage_guide 内置清单 ↔ ToolSecurityCatalog"四者一致
+/// (单一事实来源的一致性守门测试)。工具新增/改名/删除后若忘记同步文档或安全目录, 本测试会失败。
 /// </summary>
 public class ToolCatalogConsistencyTests
 {
-    private const int ExpectedToolCount = 61;
+    private const int ExpectedToolCount = 37;
 
     [Fact]
     public async Task Registered_tools_match_docs_and_usage_guide()
     {
         var registered = GetRegisteredTools();      // name -> description (来自 [McpServerTool]/[Description])
         var docs = ParseDocsTools();                // (分组键, 工具名) 来自 docs/TOOLS.md
-        var guide = await GetGuideToolNamesAsync(); // 来自 get_usage_guide 的返回
+        var guide = GetGuideToolNames();             // get_usage_guide（宿主模式包含内部工具）
 
-        // 1) 数量与集合: 注册工具 == docs == 期望数量
+        // 1) 数量与集合: 注册工具 == docs == 安全目录 == 期望数量
         Assert.Equal(ExpectedToolCount, registered.Count);
         var registeredNames = registered.Keys.OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var docNames = docs.Select(d => d.Name).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        var securityNames = ToolSecurityCatalog.Names.OrderBy(x => x, StringComparer.Ordinal).ToArray();
         Assert.Equal(registeredNames, docNames);
+        Assert.Equal(registeredNames, securityNames);
+        Assert.All(registeredNames, name => Assert.NotNull(ToolSecurityCatalog.Find(name)));
 
         // 2) get_usage_guide 内置清单 == 注册工具
         Assert.Equal(registeredNames, guide.OrderBy(x => x, StringComparer.Ordinal).ToArray());
@@ -58,9 +62,9 @@ public class ToolCatalogConsistencyTests
         return result;
     }
 
-    private static async Task<string[]> GetGuideToolNamesAsync()
+    private static string[] GetGuideToolNames()
     {
-        var json = await new UsageGuideTools().GetUsageGuide();
+        var json = UsageGuideTools.BuildGuide(null, includeInternalTools: true);
         using var document = JsonDocument.Parse(json);
         return document.RootElement.GetProperty("tools")
             .EnumerateArray()

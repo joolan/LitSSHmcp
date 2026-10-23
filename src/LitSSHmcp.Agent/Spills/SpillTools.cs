@@ -5,7 +5,7 @@ using Microsoft.Extensions.AI;
 namespace LitSSHmcp.Agent;
 
 /// <summary>
-/// 大结果落盘句柄的读取工具（本地、非 MCP）：<c>spill_list</c> / <c>spill_read</c> / <c>spill_grep</c>。
+/// 大结果落盘句柄的读取工具（本地、非 MCP）：<c>spill_list</c> / <c>spill_read(mode=read|grep)</c>。
 /// 工具结果过大时上下文里只放预览 + <c>spill://&lt;handle&gt;</c>，模型用这些工具按需分段读取。
 /// </summary>
 public static class SpillTools
@@ -23,21 +23,25 @@ public static class SpillTools
 
         var read = new LocalFunction(
             "spill_read",
-            "分段读取此前落盘的大工具结果; 传 handle(如 spill://xxx 或文件名), 可指定行偏移与条数",
-            """{"type":"object","properties":{"handle":{"type":"string","description":"句柄(spill://xxx 或文件名)"},"offset":{"type":"integer","description":"起始行(0 起), 默认 0"},"limit":{"type":"integer","description":"读取行数, 默认 200, 上限 2000"}},"required":["handle"]}""",
-            args => Read(store, ArgumentReader.ReadString(args, "handle"), ArgumentReader.ReadInt(args, "offset"), ArgumentReader.ReadInt(args, "limit")));
-
-        var grep = new LocalFunction(
-            "spill_grep",
-            "在落盘结果中按正则搜索匹配行(返回行号+内容, 最多 max 条)",
-            """{"type":"object","properties":{"handle":{"type":"string","description":"句柄(spill://xxx 或文件名)"},"pattern":{"type":"string","description":"正则表达式"},"max":{"type":"integer","description":"最多返回条数, 默认 100"}},"required":["handle","pattern"]}""",
-            args => Grep(store, ArgumentReader.ReadString(args, "handle"), ArgumentReader.ReadString(args, "pattern"), ArgumentReader.ReadInt(args, "max")));
+            "读取此前落盘的大工具结果: mode=read 分段读取(默认), mode=grep 按正则搜索匹配行; 传 handle(如 spill://xxx 或文件名)",
+            """{"type":"object","properties":{"mode":{"type":"string","enum":["read","grep"],"description":"read=分段读取(默认), grep=正则搜索"},"handle":{"type":"string","description":"句柄(spill://xxx 或文件名)"},"offset":{"type":"integer","description":"read: 起始行(0 起), 默认 0"},"limit":{"type":"integer","description":"read: 读取行数, 默认 200, 上限 2000"},"pattern":{"type":"string","description":"grep: 正则表达式"},"max":{"type":"integer","description":"grep: 最多返回条数, 默认 100"}},"required":["handle"]}""",
+            args =>
+            {
+                var mode = (ArgumentReader.ReadString(args, "mode") ?? "read").Trim().ToLowerInvariant();
+                return mode switch
+                {
+                    "read" => Read(store, ArgumentReader.ReadString(args, "handle"),
+                        ArgumentReader.ReadInt(args, "offset"), ArgumentReader.ReadInt(args, "limit")),
+                    "grep" => Grep(store, ArgumentReader.ReadString(args, "handle"),
+                        ArgumentReader.ReadString(args, "pattern"), ArgumentReader.ReadInt(args, "max")),
+                    _ => "错误: mode 仅支持 read/grep"
+                };
+            });
 
         return new IAgentTool[]
         {
             new LocalAgentTool(list, readOnly: true),
-            new LocalAgentTool(read, readOnly: true),
-            new LocalAgentTool(grep, readOnly: true)
+            new LocalAgentTool(read, readOnly: true)
         };
     }
 

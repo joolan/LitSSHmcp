@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
@@ -12,16 +13,22 @@ using LitSSHmcp.Core.Services.Storage;
 namespace LitSSHmcp.App.ViewModels;
 
 /// <summary>远程桌面（RDP / VNC）连接管理页视图模型。</summary>
-public class RemoteDesktopManageViewModel : INotifyPropertyChanged
+public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService;
-    private readonly RemoteDesktopService _service = AppServiceFactory.RemoteDesktopService;
+    private readonly RemoteDesktopService _service;
+    private readonly IUserDialogService _dialogs;
+    private readonly IWindowService _windows;
     private RemoteDesktopConfig? _selected;
     private string _statusMessage = string.Empty;
 
-    public RemoteDesktopManageViewModel(IConfigService configService)
+    public RemoteDesktopManageViewModel(IConfigService configService, IUserDialogService? dialogs = null,
+        IWindowService? windows = null, IAppServices? services = null)
     {
         _configService = configService;
+        _service = services?.RemoteDesktop ?? AppServiceFactory.RemoteDesktopService;
+        _dialogs = dialogs ?? new UserDialogService();
+        _windows = windows ?? new WpfWindowService();
 
         RefreshCommand = new RelayCommand(_ => Load());
         AddCommand = new RelayCommand(_ => Add());
@@ -79,7 +86,9 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
                 StatusMessage = message;
         }));
 
-    private async void Load()
+    public void ReloadConfig() => Load();
+
+    private void Load() => AsyncOperation.Run("加载远程桌面连接", async () =>
     {
         try
         {
@@ -93,14 +102,14 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = "加载失败: " + ex.Message;
         }
-    }
+    });
 
-    private async void Add()
+    private void Add() => AsyncOperation.Run("打开新增远程桌面", async () =>
     {
         try
         {
             var config = await _configService.LoadConfigAsync();
-            var window = new RemoteDesktopEditWindow { Owner = Application.Current.MainWindow };
+            var window = _windows.CreateRemoteDesktopEditWindow(Application.Current.MainWindow);
             var vm = new RemoteDesktopEditViewModel(_configService, window, config.Servers);
             window.DataContext = vm;
             vm.DialogClosed += (_, result) =>
@@ -114,9 +123,9 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = "打开添加窗口失败: " + ex.Message;
         }
-    }
+    });
 
-    private async void Edit()
+    private void Edit() => AsyncOperation.Run("打开编辑远程桌面", async () =>
     {
         if (Selected == null) return;
         try
@@ -124,7 +133,7 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
             var config = await _configService.LoadConfigAsync();
             var rd = config.RemoteDesktops.FirstOrDefault(r => r.Id == Selected.Id) ?? Selected;
 
-            var window = new RemoteDesktopEditWindow { Owner = Application.Current.MainWindow };
+            var window = _windows.CreateRemoteDesktopEditWindow(Application.Current.MainWindow);
             var vm = new RemoteDesktopEditViewModel(_configService, window, config.Servers, rd);
             window.DataContext = vm;
             vm.DialogClosed += (_, result) =>
@@ -138,13 +147,12 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = "打开编辑窗口失败: " + ex.Message;
         }
-    }
+    });
 
-    private async void Delete()
+    private void Delete() => AsyncOperation.Run("删除远程桌面", async () =>
     {
         if (Selected == null) return;
-        if (MessageBox.Show($"确定删除远程桌面连接 \"{Selected.DisplayName}\" 吗？", "确认删除",
-                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        if (!_dialogs.Confirm($"确定删除远程桌面连接 \"{Selected.DisplayName}\" 吗？", "确认删除"))
             return;
 
         try
@@ -160,9 +168,9 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
         {
             StatusMessage = "删除失败: " + ex.Message;
         }
-    }
+    });
 
-    private async void Connect()
+    private void Connect() => AsyncOperation.Run("连接远程桌面", async () =>
     {
         var (rd, tunnel, error) = await ResolveAsync();
         if (error is not null) { StatusMessage = error; return; }
@@ -174,7 +182,7 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
         }
         else
         {
-            _sessionWindow = new RemoteDesktopSessionWindow(_configService) { Topmost = false };
+            _sessionWindow = _windows.CreateRemoteDesktopSessionWindow(_configService);
             _sessionWindow.Closed += (_, _) => _sessionWindow = null;
             _sessionWindow.Show();
         }
@@ -182,9 +190,9 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
         _sessionWindow.AddOrActivateSession(rd, tunnel);
         StatusMessage = $"已在内嵌窗口打开 {rd.DisplayName}";
         await TouchLastConnectedAsync(rd.Id);
-    }
+    });
 
-    private async void OpenExternal()
+    private void OpenExternal() => AsyncOperation.Run("用外部客户端打开远程桌面", async () =>
     {
         var (rd, tunnel, error) = await ResolveAsync();
         if (error is not null) { StatusMessage = error; return; }
@@ -195,7 +203,7 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
         StatusMessage = message;
         if (ok)
             await TouchLastConnectedAsync(rd.Id);
-    }
+    });
 
     private async Task<(RemoteDesktopConfig? Desktop, SshServerConfig? Tunnel, string? Error)> ResolveAsync()
     {

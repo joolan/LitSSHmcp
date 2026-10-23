@@ -9,6 +9,8 @@ public class AuditSession
     public string SessionId { get; set; } = string.Empty;
     public string? ClientName { get; set; }
     public string? ClientVersion { get; set; }
+    /// <summary>会话归属用户 Id；空 = 旧库/未归因会话（按 local 处理）。</summary>
+    public string? OwnerUserId { get; set; }
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;
     public DateTime LastSeenAt { get; set; } = DateTime.UtcNow;
 }

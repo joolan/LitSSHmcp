@@ -286,9 +286,13 @@ public class WebSessionManagerTests
     {
         var session = await _manager.CreateSessionAsync(_alice, "附件");
 
-        await using var png = new MemoryStream(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
-        var path = await _manager.SaveAttachmentAsync(_alice, session.Id, "a.png", "image/png", png);
+        await using var png = new MemoryStream(TestImages.Png());
+        var saved = await _manager.SaveAttachmentAsync(_alice, session.Id, "a.png", "image/png", png);
+        var path = saved.RelativePath;
         Assert.StartsWith("attachments/", path);
+        Assert.EndsWith(".png", path);
+        Assert.Equal("image/png", saved.ContentType);
+        Assert.Equal(1, saved.Width);
         var full = Path.Combine(session.WorkspaceDir, path.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(full));
 

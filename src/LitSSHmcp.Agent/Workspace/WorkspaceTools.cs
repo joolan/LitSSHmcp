@@ -32,7 +32,8 @@ public static class WorkspaceTools
 
     /// <param name="workspaceDir">主根：会话工作目录（已分配）或共享工作区（未分配=现状）。</param>
     /// <param name="sharedDir">共享工作区根；与 <paramref name="workspaceDir"/> 相同或空 = 单根模式（行为与既往一致）。</param>
-    public static IReadOnlyList<IAgentTool> Create(string workspaceDir, string? sharedDir = null)
+    /// <param name="sharedWritable">共享区是否可写（Web 普通成员为 false，会话目录始终可写；桌面默认 true）。</param>
+    public static IReadOnlyList<IAgentTool> Create(string workspaceDir, string? sharedDir = null, bool sharedWritable = true)
     {
         var root = Path.GetFullPath(workspaceDir);
         Directory.CreateDirectory(root);
@@ -57,26 +58,32 @@ public static class WorkspaceTools
 
         var write = new LocalFunction(
             "ops_doc_write",
-            "写入/覆盖工作区文档; 用于维护资产档案(共享区)与任务产出文档(本会话目录)" +
+            "写入/增量更新工作区文档; mode=overwrite 覆盖全文(默认), append 末尾追加(不存在则创建), patch 把第一处 find 替换为 replace; " +
+            "用于维护资产档案(共享区)与任务产出文档(本会话目录)" +
             (shared is null ? string.Empty : "; 脚本类文件(.sh/.py/.ps1等)直接写入共享区会自动在文件头标记『未审阅』(建议改经 ops_promote 提升以桌面确认)"),
-            "{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"description\":\"要写入的完整文本内容\"}," +
-            PathProp(pathDoc + "; 省略则写 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"content\"]}",
-            async (args, ct) => await Write(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty, ct));
-
-        var append = new LocalFunction(
-            "ops_doc_append",
-            "向工作区文档末尾追加内容(文件不存在则创建); 增量更新资产档案时优先用它, 避免整份重写",
-            "{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"description\":\"要追加的文本(会自动补换行)\"}," +
-            PathProp(pathDoc + "; 省略则用 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"content\"]}",
-            async (args, ct) => await Append(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty, ct));
-
-        var patch = new LocalFunction(
-            "ops_doc_patch",
-            "在工作区文档中做定点替换: 把第一处 find 文本替换为 replace; 用于增量修正文档中的条目",
-            "{\"type\":\"object\",\"properties\":{\"find\":{\"type\":\"string\",\"description\":\"要查找的原文(须精确匹配, 含空白)\"}," +
-            "\"replace\":{\"type\":\"string\",\"description\":\"替换为的新文本\"}," +
-            PathProp(pathDoc + "; 省略则用 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"find\",\"replace\"]}",
-            async (args, ct) => await Patch(root, shared, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "find") ?? string.Empty, ArgumentReader.ReadString(args, "replace") ?? string.Empty, ct));
+            "{\"type\":\"object\",\"properties\":{" +
+            "\"mode\":{\"type\":\"string\",\"enum\":[\"overwrite\",\"append\",\"patch\"],\"description\":\"overwrite=覆盖全文(默认), append=末尾追加, patch=定点替换\"}," +
+            "\"content\":{\"type\":\"string\",\"description\":\"overwrite/append 的文本内容\"}," +
+            "\"find\":{\"type\":\"string\",\"description\":\"patch 要查找的原文(须精确匹配, 含空白)\"}," +
+            "\"replace\":{\"type\":\"string\",\"description\":\"patch 替换为的新文本\"}," +
+            PathProp(pathDoc + "; 省略则写 OPS_ASSETS.md(共享资产档案)") + "}}",
+            async (args, ct) =>
+            {
+                var mode = (ArgumentReader.ReadString(args, "mode") ?? "overwrite").Trim().ToLowerInvariant();
+                var path = ArgumentReader.ReadString(args, "path");
+                var content = ArgumentReader.ReadString(args, "content");
+                if (mode is "overwrite" or "append" && content is null)
+                    return $"错误: mode={mode} 需要 content";
+                return mode switch
+                {
+                    "overwrite" => await Write(root, shared, sharedWritable, path, content!, ct),
+                    "append" => await Append(root, shared, sharedWritable, path, content!, ct),
+                    "patch" => await Patch(root, shared, sharedWritable, path,
+                        ArgumentReader.ReadString(args, "find") ?? string.Empty,
+                        ArgumentReader.ReadString(args, "replace") ?? string.Empty, ct),
+                    _ => "错误: mode 仅支持 overwrite/append/patch"
+                };
+            });
 
         var list = new LocalFunction(
             "ops_doc_list",
@@ -88,8 +95,6 @@ public static class WorkspaceTools
         {
             new LocalAgentTool(read, readOnly: true),
             new LocalAgentTool(write),
-            new LocalAgentTool(append),
-            new LocalAgentTool(patch),
             new LocalAgentTool(list, readOnly: true)
         };
     }
@@ -136,9 +141,10 @@ public static class WorkspaceTools
 
     // 写/追加/打补丁三类**变更**操作写审计（评估报告 §10.A.1 本地工具补审计；读/list 为只读不记, 避免噪音）。
 
-    private static async Task<string> Write(string root, string? shared, string? path, string content, CancellationToken ct = default)
+    private static async Task<string> Write(string root, string? shared, bool sharedWritable, string? path, string content, CancellationToken ct = default)
     {
-        var full = Resolve(root, shared, path);
+        var full = ResolveTarget(root, shared, path, out var isShared);
+        EnsureSharedWriteAllowed(sharedWritable, isShared);
         content = MaybeStampUnreviewed(root, shared, full, content);
         if (content.Length > MaxWriteChars)
             return $"(内容过长 {content.Length} 字符, 超过上限 {MaxWriteChars}, 未写入)";
@@ -150,9 +156,10 @@ public static class WorkspaceTools
         return $"已写入 {Rel(root, full, shared)} ({bytes} 字节)";
     }
 
-    private static async Task<string> Append(string root, string? shared, string? path, string content, CancellationToken ct = default)
+    private static async Task<string> Append(string root, string? shared, bool sharedWritable, string? path, string content, CancellationToken ct = default)
     {
-        var full = Resolve(root, shared, path);
+        var full = ResolveTarget(root, shared, path, out var isShared);
+        EnsureSharedWriteAllowed(sharedWritable, isShared);
         if (!File.Exists(full))
             content = MaybeStampUnreviewed(root, shared, full, content);   // 新建文件才打标, 追加既有文件保留原头部
         if (content.Length > MaxWriteChars)
@@ -166,9 +173,10 @@ public static class WorkspaceTools
         return $"已追加到 {Rel(root, full, shared)} ({bytes} 字节)";
     }
 
-    private static async Task<string> Patch(string root, string? shared, string? path, string find, string replace, CancellationToken ct = default)
+    private static async Task<string> Patch(string root, string? shared, bool sharedWritable, string? path, string find, string replace, CancellationToken ct = default)
     {
-        var full = Resolve(root, shared, path);
+        var full = ResolveTarget(root, shared, path, out var isShared);
+        EnsureSharedWriteAllowed(sharedWritable, isShared);
         if (!File.Exists(full))
             return $"(文件不存在) {Rel(root, full, shared)}";
         if (string.IsNullOrEmpty(find))
@@ -188,6 +196,12 @@ public static class WorkspaceTools
         return $"已更新 {Rel(root, full, shared)} (替换 1 处)";
     }
 
+    private static void EnsureSharedWriteAllowed(bool sharedWritable, bool isShared)
+    {
+        if (isShared && !sharedWritable)
+            throw new InvalidOperationException("共享工作区只读(仅管理员可写), 请写入本会话工作目录");
+    }
+
     private static string List(string root, string? shared)
     {
         // 不跟随 reparse point（junction/符号链接）：避免枚举沿链接遍历到工作区之外（§10.C.3）
@@ -199,8 +213,9 @@ public static class WorkspaceTools
         {
             // 共享区只展示资产相关子树的根级与脚本/记忆文档，避免 jobs/ 其他会话目录混入清单
             var sharedFiles = Directory.EnumerateFiles(shared, "*", options)
-                .Select(f => Rel(root, f, shared))
-                .Where(rel => !rel.StartsWith(WorkspaceLayout.JobsDirName + "/", StringComparison.OrdinalIgnoreCase));
+                .Select(f => Path.GetRelativePath(shared, f).Replace('\\', '/'))
+                .Where(rel => !IsSessionTreePath(rel))
+                .Select(rel => SharedPrefix + rel);
             files.AddRange(sharedFiles);
         }
 
@@ -219,27 +234,30 @@ public static class WorkspaceTools
     /// 其余 → 主根（会话目录）。共享区禁止经 <c>shared/jobs/</c> 触达其他会话目录；
     /// 逃逸（<c>..</c>、绝对路径、链接）由 <see cref="PathGuard"/> 按物理路径判定。
     /// </summary>
-    private static string Resolve(string root, string? shared, string? path)
+    private static string Resolve(string root, string? shared, string? path) =>
+        ResolveTarget(root, shared, path, out _);
+
+    private static string ResolveTarget(string root, string? shared, string? path, out bool isShared)
     {
         var useDefault = string.IsNullOrWhiteSpace(path);
-        var rel = useDefault ? DefaultDoc : path!.Trim();
-        rel = rel.Replace('\\', '/').TrimStart('/');
-        if (rel.Contains("..", StringComparison.Ordinal))
-            throw new InvalidOperationException("非法路径(禁止 .. 越界)");
+        var rel = NormalizeRelative(useDefault ? DefaultDoc : path!.Trim());
 
         string target;
+        isShared = false;
         if (shared is not null && !useDefault &&
             rel.StartsWith(SharedPrefix, StringComparison.OrdinalIgnoreCase))
         {
             target = shared;
+            isShared = true;
             rel = rel[SharedPrefix.Length..];
-            if (rel.StartsWith(WorkspaceLayout.JobsDirName + "/", StringComparison.OrdinalIgnoreCase))
+            if (IsSessionTreePath(rel))
                 throw new InvalidOperationException("非法路径(禁止经 shared/ 访问会话目录)");
         }
         else if (shared is not null && useDefault)
         {
             // 会话模式下省略 path = 共享区资产档案（跨会话共享，不落会话目录）
             target = shared;
+            isShared = true;
             rel = DefaultDoc;
         }
         else
@@ -258,6 +276,31 @@ public static class WorkspaceTools
         if (!underRoot || isRootItself || canonicalFull is null)
             throw new InvalidOperationException("非法路径(越出工作区)");
         return full;
+    }
+
+    /// <summary>
+    /// 字面归一化相对路径：统一分隔符、去掉空段与 <c>.</c> 段，拒绝任何含 <c>..</c> 的输入。
+    /// 必须先归一化再判断 <c>shared/jobs</c>，否则 <c>shared/./jobs</c> 可绕过会话树隔离。
+    /// </summary>
+    private static string NormalizeRelative(string path)
+    {
+        var rel = path.Replace('\\', '/').TrimStart('/');
+        if (rel.Contains("..", StringComparison.Ordinal))
+            throw new InvalidOperationException("非法路径(禁止 .. 越界)");
+
+        var segments = rel.Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Where(segment => segment != ".");
+        return string.Join('/', segments);
+    }
+
+    /// <summary>相对路径的首段是否为会话树 <c>jobs</c>（含该目录自身，大小写不敏感）。</summary>
+    private static bool IsSessionTreePath(string relative)
+    {
+        if (relative.Length == 0)
+            return false;
+        var slash = relative.IndexOf('/');
+        var first = slash < 0 ? relative : relative[..slash];
+        return string.Equals(first, WorkspaceLayout.JobsDirName, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>相对展示路径：共享区条目带 shared/ 前缀，主根条目为相对主根路径。</summary>

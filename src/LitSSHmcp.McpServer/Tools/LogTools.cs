@@ -24,8 +24,37 @@ public class LogTools
         _runner = runner;
     }
 
-    [McpServerTool(Name = "log_tail", UseStructuredContent = true, OutputSchemaType = typeof(LogResultDto), ReadOnly = true, OpenWorld = true)]
-    [Description("查看服务器上日志文件的尾部(按行)。可传 path(绝对路径) 或 appId(用应用管理里配置的日志路径); 路径须在白名单内。不确定路径时先用 log_find; 按关键字过滤用 log_grep; 容器日志用 docker_logs")]
+    [McpServerTool(Name = "log_query", UseStructuredContent = true, OutputSchemaType = typeof(LogQueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
+    [Description("统一日志文件查询：action=tail 看尾部、action=grep 按关键字/正则检索、action=find 发现最近日志。可传 path 或 appId，路径须在 security.logs.allowedPaths 白名单内。")]
+    public async Task<LogQueryResultDto> LogQuery(
+        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("查询类型：tail / grep / find")] string action,
+        [Description("日志文件绝对路径（tail/grep 与 appId 二选一；find 时可作搜索目录）")] string? path = null,
+        [Description("应用标识(ID/名称): 用应用管理里配置的日志路径（tail/grep）")] string? appId = null,
+        [Description("grep 检索关键字或正则")] string? pattern = null,
+        [Description("tail 返回最后 N 行（默认200）；grep 时忽略")] int lines = 200,
+        [Description("grep 是否忽略大小写（默认true）")] bool ignoreCase = true,
+        [Description("grep 返回最近匹配数上限（默认200，上限2000）")] int maxMatches = 200,
+        [Description("find 只列最近 N 分钟内修改的文件（默认1440=24小时）")] int minutes = 1440,
+        [Description("find 最多返回数量（默认100，上限500）")] int maxResults = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var kind = action.Trim().ToLowerInvariant();
+        switch (kind)
+        {
+            case "tail":
+                return FromResult(await LogTail(serverId, path, appId, lines, cancellationToken), kind);
+            case "grep":
+                return FromResult(await LogGrep(serverId, pattern ?? string.Empty, path, appId,
+                    ignoreCase, maxMatches, cancellationToken), kind);
+            case "find":
+                return FromResult(await LogFind(serverId, path, minutes, maxResults, cancellationToken), kind);
+            default:
+                return LogQueryResultDto.Fail("invalid_argument", "action 须为 tail / grep / find");
+        }
+    }
+
+    [Description("查看服务器上日志文件的尾部(按行)。可传 path(绝对路径) 或 appId(用应用管理里配置的日志路径); 路径须在白名单内。不确定路径时先用 log_query action=find; 按关键字过滤用 log_query action=grep; 容器日志用 docker_query action=logs")]
     public async Task<LogResultDto> LogTail(
         [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
         [Description("日志文件绝对路径, 如 /var/log/myapp/app.log; 与 appId 二选一")] string? path = null,
@@ -50,8 +79,7 @@ public class LogTools
         return ToLogResult(resolved, pattern: null, outcome);
     }
 
-    [McpServerTool(Name = "log_grep", UseStructuredContent = true, OutputSchemaType = typeof(LogResultDto), ReadOnly = true, OpenWorld = true)]
-    [Description("在服务器日志文件中按关键字/正则检索(返回匹配行的行号)。可传 path 或 appId; 路径须在白名单内。只看尾部用 log_tail, 不确定路径先用 log_find")]
+    [Description("在服务器日志文件中按关键字/正则检索(返回匹配行的行号)。可传 path 或 appId; 路径须在白名单内。只看尾部用 log_query action=tail, 不确定路径先用 log_query action=find")]
     public async Task<LogResultDto> LogGrep(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
         [Description("检索关键字或正则, 如 Exception / 'OutOfMemory|GC overhead'")] string pattern,
@@ -95,8 +123,7 @@ public class LogTools
         return ToLogResult(resolved, pattern, outcome);
     }
 
-    [McpServerTool(Name = "log_find", UseStructuredContent = true, OutputSchemaType = typeof(LogFileListDto), ReadOnly = true, OpenWorld = true)]
-    [Description("发现服务器上最近被写入的日志文件(.log, 按修改时间倒序)。不确定日志路径时先用它, 再用 log_tail/log_grep 读取; 搜索范围限于 security.logs.allowedPaths")]
+    [Description("发现服务器上最近被写入的日志文件(.log, 按修改时间倒序)。不确定日志路径时先用它, 再用 log_query action=tail/grep 读取; 搜索范围限于 security.logs.allowedPaths")]
     public async Task<LogFileListDto> LogFind(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
         [Description("可选: 限定搜索目录(须在白名单内); 留空则在 security.logs.allowedPaths 全部路径下搜索")] string? path = null,
@@ -182,7 +209,7 @@ public class LogTools
         }
 
         if (string.IsNullOrWhiteSpace(appId))
-            return (null, "path_required", "必须提供 path(日志文件绝对路径) 或 appId(在应用管理里配置了日志路径) 之一。不确定路径时先用 log_find。");
+            return (null, "path_required", "必须提供 path(日志文件绝对路径) 或 appId(在应用管理里配置了日志路径) 之一。不确定路径时先用 log_query action=find。");
 
         var (app, status, error) = ToolSupport.ResolveApplication(config, appId!);
         if (app == null)
@@ -200,6 +227,36 @@ public class LogTools
 
         return (usable[0], null, null);
     }
+
+    private static LogQueryResultDto FromResult(LogResultDto r, string action) => new()
+    {
+        Success = r.Success,
+        Status = r.Status,
+        Error = r.Error,
+        ServerId = r.ServerId,
+        ServerName = r.ServerName,
+        Host = r.Host,
+        Action = action,
+        Path = r.Path,
+        Pattern = r.Pattern,
+        Count = r.Count,
+        Truncated = r.Truncated,
+        Lines = r.Lines
+    };
+
+    private static LogQueryResultDto FromResult(LogFileListDto r, string action) => new()
+    {
+        Success = r.Success,
+        Status = r.Status,
+        Error = r.Error,
+        ServerId = r.ServerId,
+        ServerName = r.ServerName,
+        Host = r.Host,
+        Action = action,
+        Count = r.Count,
+        Truncated = r.Truncated,
+        Files = r.Files
+    };
 
     private static LogResultDto ToLogResult(string path, string? pattern, GuardedCommandOutcome outcome)
     {

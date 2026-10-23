@@ -4,7 +4,7 @@ namespace LitSSHmcp.Agent;
 
 /// <summary>
 /// 大工具结果的落盘存储：把超长结果写入文件，上下文只保留预览 + <c>spill://&lt;handle&gt;</c> 句柄，
-/// 模型再用 <c>spill_read</c>/<c>spill_grep</c> 按需分段读取，避免一次性把大输出灌进上下文。
+/// 模型再用 <c>spill_read(mode=read|grep)</c> 按需分段读取/搜索，避免一次性把大输出灌进上下文。
 /// </summary>
 public sealed class SpillStore
 {
@@ -12,9 +12,12 @@ public sealed class SpillStore
 
     private readonly string _dir;
 
-    public SpillStore(string dir, int retentionDays)
+    public SpillStore(string dir, int retentionDays, string? ownerUserId = null)
     {
-        _dir = Path.GetFullPath(dir);
+        var root = Path.GetFullPath(dir);
+        if (!string.IsNullOrWhiteSpace(ownerUserId))
+            root = Path.Combine(root, WorkspaceLayout.SanitizeSegment(ownerUserId, "local"));
+        _dir = root;
         Directory.CreateDirectory(_dir);
         if (retentionDays > 0)
             Prune(retentionDays);
@@ -43,7 +46,7 @@ public sealed class SpillStore
 
         var full = Path.GetFullPath(Path.Combine(_dir, id));
         var prefix = _dir.EndsWith(Path.DirectorySeparatorChar) ? _dir : _dir + Path.DirectorySeparatorChar;
-        return full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? full : null;
+        return full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && File.Exists(full) ? full : null;
     }
 
     public IReadOnlyList<string> List() =>

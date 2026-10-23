@@ -30,7 +30,7 @@
                 <TextBlock Text="Web 授权矩阵 (security.authorization)" FontWeight="Bold" Margin="0,4,0,4"
                            ToolTip="仅 Web 助手会话强制执行（桌面会话仅归因不限权）。规则按 Web 登录用户名生效；未命中任何规则的用户默认拒绝（fail-closed）。"/>
                 <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                           Text="给 Web 助手登录用户分配可操作目标与级别。目标可填 ssh:&lt;服务器Id&gt; / ds:&lt;数据源Id&gt;，或通配 ssh:* / ds:* / *（空格或逗号分隔多个）；级别 read=仅只读调用（查询/日志/下载），exec=另允许执行命令、上传、重启等写操作；* 用户行为未单独成条用户的兜底规则。保存后热生效。"/>
+                           Text="给 Web 助手登录用户分配可操作目标与级别。目标可填 ssh:&lt;服务器Id&gt; / ds:&lt;数据源Id&gt;，或通配 ssh:* / ds:* / *（空格或逗号分隔多个）；级别 read=只读查询/日志/下载，write=允许上传/重启/SQL写，exec=另允许执行命令/docker exec/快照刷新（exec 包含 write）；同一用户可多行分别授权不同目标。* 用户行为未单独成条用户的兜底规则。保存后热生效。"/>
                 <CheckBox Content="启用授权矩阵（关闭 = 放弃该 Web 防线，不建议）" IsChecked="{Binding AuthzEnabled}" Margin="0,0,0,6"
                           ToolTip="开启时：Web 用户不在下方规则表中、或目标不在其白名单 → 工具调用直接拒绝并写审计（authorization_denied）"/>
                 <ItemsControl ItemsSource="{Binding AuthzRules}" Margin="0,0,0,4">
@@ -44,9 +44,10 @@
                                 <TextBox Text="{Binding TargetsText, UpdateSourceTrigger=PropertyChanged}" Width="260" Margin="0,0,8,0"
                                          ToolTip="ssh:&lt;服务器Id&gt; / ds:&lt;数据源Id&gt; / ssh:* / ds:* / *，空格或逗号分隔多个"/>
                                 <TextBlock Text="级别:" VerticalAlignment="Center" Width="36"/>
-                                <ComboBox SelectedIndex="{Binding LevelIndex}" Width="96" Margin="0,0,8,0"
-                                          ToolTip="read=仅只读调用; exec=另允许写类调用（执行命令/上传/SQL写等）">
+                                <ComboBox SelectedIndex="{Binding LevelIndex}" Width="112" Margin="0,0,8,0"
+                                          ToolTip="read=只读查询/日志/下载; write=上传/重启/SQL写; exec=命令执行/docker exec/快照刷新（包含 write）">
                                     <ComboBoxItem Content="read 只读"/>
+                                    <ComboBoxItem Content="write 可写"/>
                                     <ComboBoxItem Content="exec 可执行"/>
                                 </ComboBox>
                                 <Button Content="✕" Width="26" Padding="0" Click="OnAuthzRemoveRule"
@@ -145,7 +146,7 @@
                 <TextBox Text="{Binding DiscoveryPaths, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="40" FontFamily="Consolas" Margin="0,0,0,4"/>
                 <CheckBox Content="自动发现使用提权 (sudo, 以便识别 root 服务的监听端口)" IsChecked="{Binding DiscoveryUseSudo}" Margin="0,0,0,8"
                           ToolTip="仅当该服务器配置了 SudoType 时生效；只读探测，提权密码由服务端注入、不会暴露给 AI"/>
-                <TextBlock Text="日志读取允许路径 (每行一条, 供 log_tail/log_grep):" Margin="0,0,0,2"/>
+                <TextBlock Text="日志读取允许路径 (每行一条, 供 log_query):" Margin="0,0,0,2"/>
                 <TextBox Text="{Binding LogAllowedPaths, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="40" FontFamily="Consolas" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                     <TextBlock Text="每目标并发上限:" VerticalAlignment="Center"/>

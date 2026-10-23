@@ -25,6 +25,24 @@ public static class HostEnv
     /// </summary>
     public const string AuthzUser = "LITSSH_AUTHZ_USER";
 
+    /// <summary>
+    /// 当前会话用户角色（M3-4 / §10.B.9）：Web 宿主按登录账号注入 <c>admin</c> 或 <c>user</c>；
+    /// 缺省 = 非管理员。与 OwnerUserId 同信任模型，<b>绝不接受工具参数或前端传入</b>。
+    /// </summary>
+    public const string AuthzRole = "LITSSH_AUTHZ_ROLE";
+
+    /// <summary><see cref="AuthzRole"/> 的管理员值（Web 宿主注入）。</summary>
+    public const string AdminRole = "admin";
+
     /// <summary><see cref="AuthzMode"/> 的强制值（Web 宿主启动时设置）。</summary>
     public const string Enforce = "enforce";
+
+    /// <summary>
+    /// 内部工具开关（P3-1）：仅 LitSSH 宿主 spawn 内置 MCP 子进程时注入 <c>1</c>，
+    /// 用于暴露 <c>mcp_approval_round</c> 等内部工具；外部 MCP 客户端不注入，工具列表默认隐藏。
+    /// </summary>
+    public const string InternalTools = "LITSSH_INTERNAL_TOOLS";
+
+    public static bool InternalToolsEnabled =>
+        string.Equals(Environment.GetEnvironmentVariable(InternalTools), "1", StringComparison.Ordinal);
 }

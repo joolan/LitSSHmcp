@@ -10,6 +10,7 @@ public sealed record WebRuntimeRequest(
     long SessionId,
     string OwnerUserId,
     string OwnerUsername,
+    string OwnerRole,
     string WorkspaceDir,
     IReadOnlyList<ChatMessage> History,
     string Summary,
@@ -67,7 +68,10 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
             assetGraph: request.AssetGraph,
             ownerUserId: request.OwnerUserId,
             enabledMcpIds: ComputeWebEnabledMcpIds(config.Security?.Authorization ?? new AuthorizationConfig()),
-            ownerUsername: request.OwnerUsername);
+            ownerUsername: request.OwnerUsername,
+            ownerRole: request.OwnerRole,
+            scopeSpillByOwner: true,
+            scopeMemoryByOwner: true);
         if (!string.IsNullOrEmpty(request.Summary))
             runtime.Session.RestoreSummary(request.Summary);
         if (request.ToolPolicy is { Count: > 0 })

@@ -16,16 +16,6 @@ public class McpToolsViewTests
         using var reader = new StreamReader(stream!);
         var text = reader.ReadToEnd();
 
-        foreach (var name in new[]
-                 {
-                     "topology_search",
-                     "topology_neighbors",
-                     "topology_path",
-                     "topology_impact",
-                     "topology_explain"
-                 })
-        {
-            Assert.Contains($"### `{name}`", text);
-        }
+        Assert.Contains("### `topology_query`", text);
     }
 }

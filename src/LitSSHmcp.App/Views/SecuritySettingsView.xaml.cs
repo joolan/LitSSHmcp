@@ -9,8 +9,8 @@ namespace LitSSHmcp.App.Views;
 
 public partial class SecuritySettingsView : UserControl
 {
-    private readonly SecuritySettingsViewModel _viewModel = new();
-    private readonly AppLockService _appLockService = new(new ConfigService());
+    private SecuritySettingsViewModel _viewModel = new();
+    private AppLockService _appLockService = new(new ConfigService());
 
     public SecuritySettingsView()
     {
@@ -19,6 +19,15 @@ public partial class SecuritySettingsView : UserControl
         HostKeyModeBox.ItemsSource = new[] { "Tofu", "Strict", "Off" };
         ApprovalStyleBox.ItemsSource = new[] { "process", "dialog", "native" };
         Loaded += async (_, _) => await RefreshAppLockStatusAsync();
+    }
+
+    public void Initialize(IAppServices? services)
+    {
+        _viewModel = new SecuritySettingsViewModel(services?.Config);
+        _appLockService = services is null
+            ? new AppLockService(new ConfigService())
+            : new AppLockService(services.Config);
+        DataContext = _viewModel;
     }
 
     private void OnReload(object sender, RoutedEventArgs e) => _viewModel.Load();
@@ -56,7 +65,7 @@ public partial class SecuritySettingsView : UserControl
         }
     }
 
-    private async void OnAppLockSetPassword(object sender, RoutedEventArgs e)
+    private void OnAppLockSetPassword(object sender, RoutedEventArgs e) => AsyncOperation.Run("设置应用锁", async () =>
     {
         try
         {
@@ -67,11 +76,11 @@ public partial class SecuritySettingsView : UserControl
         }
         catch (Exception ex)
         {
-            AppLockStatusText.Text = "操作失败：" + ex.Message;
+            AppLockStatusText.Text = "设置失败：" + ex.Message;
         }
-    }
+    });
 
-    private async void OnAppLockDisable(object sender, RoutedEventArgs e)
+    private void OnAppLockDisable(object sender, RoutedEventArgs e) => AsyncOperation.Run("关闭应用锁", async () =>
     {
         try
         {
@@ -87,7 +96,7 @@ public partial class SecuritySettingsView : UserControl
         }
         catch (Exception ex)
         {
-            AppLockStatusText.Text = "操作失败：" + ex.Message;
+            AppLockStatusText.Text = "关闭失败：" + ex.Message;
         }
-    }
+    });
 }

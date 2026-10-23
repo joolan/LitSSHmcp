@@ -45,10 +45,10 @@ public class WebHostTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task Login_success_sets_cookies_and_me_returns_user()
     {
-        await Store.CreateAsync("alice", "secret1", iterations: 1000);
+        await Store.CreateAsync("alice", "secret123", iterations: 1000);
         var client = _factory.CreateClient();
 
-        var resp = await client.PostAsJsonAsync("/api/login", new { username = "alice", password = "secret1" });
+        var resp = await client.PostAsJsonAsync("/api/login", new { username = "alice", password = "secret123" });
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         var body = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
         Assert.Equal("alice", body.RootElement.GetProperty("user").GetProperty("username").GetString());
@@ -70,7 +70,7 @@ public class WebHostTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task Login_wrong_password_401_and_logged()
     {
-        await Store.CreateAsync("bob", "secret1", iterations: 1000);
+        await Store.CreateAsync("bob", "secret123", iterations: 1000);
         var client = _factory.CreateClient();
 
         var resp = await client.PostAsJsonAsync("/api/login", new { username = "bob", password = "nope" });
@@ -84,7 +84,7 @@ public class WebHostTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task Login_locked_after_five_failures_423()
     {
-        await Store.CreateAsync("carol", "secret1", iterations: 1000);
+        await Store.CreateAsync("carol", "secret123", iterations: 1000);
         var client = _factory.CreateClient();
 
         for (var i = 0; i < WebAuthPolicy.MaxFailedAttempts - 1; i++)
@@ -99,7 +99,7 @@ public class WebHostTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.True(lockedBody.RootElement.GetProperty("retryAfterSeconds").GetInt32() > 0);
 
         // 锁定期内正确密码同样 423
-        var correct = await client.PostAsJsonAsync("/api/login", new { username = "carol", password = "secret1" });
+        var correct = await client.PostAsJsonAsync("/api/login", new { username = "carol", password = "secret123" });
         Assert.Equal((HttpStatusCode)423, correct.StatusCode);
     }
 
@@ -114,10 +114,10 @@ public class WebHostTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task Logout_revokes_token_then_me_401()
     {
-        await Store.CreateAsync("dave", "secret1", iterations: 1000);
+        await Store.CreateAsync("dave", "secret123", iterations: 1000);
         var client = _factory.CreateClient();
 
-        var login = await client.PostAsJsonAsync("/api/login", new { username = "dave", password = "secret1" });
+        var login = await client.PostAsJsonAsync("/api/login", new { username = "dave", password = "secret123" });
         var token = CookieFrom(login, "litssh_token")!;
         var csrf = JsonDocument.Parse(await login.Content.ReadAsStringAsync()).RootElement.GetProperty("csrfToken").GetString()!;
 
@@ -131,10 +131,10 @@ public class WebHostTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task Csrf_missing_header_on_logout_403()
     {
-        await Store.CreateAsync("erin", "secret1", iterations: 1000);
+        await Store.CreateAsync("erin", "secret123", iterations: 1000);
         var client = _factory.CreateClient();
 
-        var login = await client.PostAsJsonAsync("/api/login", new { username = "erin", password = "secret1" });
+        var login = await client.PostAsJsonAsync("/api/login", new { username = "erin", password = "secret123" });
         var token = CookieFrom(login, "litssh_token")!;
 
         var req = new HttpRequestMessage(HttpMethod.Post, "/api/logout");
@@ -149,10 +149,10 @@ public class WebHostTests : IClassFixture<WebApplicationFactory<Program>>
         var store = new WebAccountsStore(Path.Combine(WebTestEnv.DataDir, "bootstrap.db"));
         await store.InitializeAsync();
 
-        Assert.Null(await WebBootstrap.CreateUserAsync(store, "rootadmin", role: null, password: "secret1"));
+        Assert.Null(await WebBootstrap.CreateUserAsync(store, "rootadmin", role: null, password: "secret123"));
         Assert.Equal("admin", (await store.FindByUsernameAsync("rootadmin"))!.Role);
 
-        Assert.Null(await WebBootstrap.CreateUserAsync(store, "second", role: null, password: "secret1"));
+        Assert.Null(await WebBootstrap.CreateUserAsync(store, "second", role: null, password: "secret123"));
         Assert.Equal("user", (await store.FindByUsernameAsync("second"))!.Role);
 
         Assert.NotNull(await WebBootstrap.CreateUserAsync(store, "x", role: null, password: null));

@@ -19,7 +19,14 @@ public static class SubAgents
         AgentProviderConfig provider,
         AgentConfig config,
         IReadOnlyList<IAgentTool> subTools,
-        string? restrictionNote = null)
+        string? restrictionNote = null,
+        IReadOnlyDictionary<string, AgentToolPolicy>? toolPolicy = null,
+        bool planMode = false,
+        Action<long, long>? onUsage = null,
+        Func<long, long, bool>? budgetCheck = null,
+        Action<long, long>? onUsageDelta = null,
+        Func<IReadOnlyDictionary<string, AgentToolPolicy>?>? toolPolicyProvider = null,
+        Func<bool>? planModeProvider = null)
     {
         // 同一子任务的调用计数（防止主模型对着“无输出”的子任务反复重试导致卡住）。
         // 并行会话下工具可能被并发调用，必须线程安全（评估报告 §4.2）。
@@ -29,7 +36,8 @@ public static class SubAgents
             ToolName,
             "把一次独立的只读取证/调查任务委派给子代理在隔离上下文中完成, 只返回结论摘要(大量原始输出不回主上下文)。适合跨多工具的大日志/多步取证; task 需自包含(含 serverId/目标与期望)",
             """{"type":"object","properties":{"task":{"type":"string","description":"交给子代理的独立只读任务, 自包含(含 serverId/目标与期望结论)"},"groups":{"type":"string","description":"可选: 限制子代理可用工具分组(逗号分隔, 如 ssh,log,docker,java)"}},"required":["task"]}""",
-            (args, ct) => RunAsync(client, provider, config, subTools, restrictionNote, taskCounts, args, ct));
+            (args, ct) => RunAsync(client, provider, config, subTools, restrictionNote, toolPolicy, planMode,
+                onUsage, budgetCheck, onUsageDelta, toolPolicyProvider, planModeProvider, taskCounts, args, ct));
 
         return new LocalAgentTool(function, readOnly: true);
     }
@@ -40,6 +48,13 @@ public static class SubAgents
         AgentConfig config,
         IReadOnlyList<IAgentTool> subTools,
         string? restrictionNote,
+        IReadOnlyDictionary<string, AgentToolPolicy>? toolPolicy,
+        bool planMode,
+        Action<long, long>? onUsage,
+        Func<long, long, bool>? budgetCheck,
+        Action<long, long>? onUsageDelta,
+        Func<IReadOnlyDictionary<string, AgentToolPolicy>?>? toolPolicyProvider,
+        Func<bool>? planModeProvider,
         ConcurrentDictionary<string, int> taskCounts,
         IDictionary<string, object?> args,
         CancellationToken ct)
@@ -60,12 +75,20 @@ public static class SubAgents
             "你是主代理委派的**子代理**：只做**只读**调查取证，用工具收集事实后**只返回简洁结论**(要点/证据/未决)，不要提问、不要做任何写操作。"
             + (string.IsNullOrEmpty(restrictionNote) ? string.Empty : restrictionNote);
 
+        if (budgetCheck is not null && !budgetCheck(0, 0))
+            return "(子代理已取消：会话成本预算已耗尽；请提高 agent.budget.maxSessionCost 或切换更便宜的模型)";
+
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromMinutes(4));
 
         // 子代理轮数上限压低（避免长时间空转）：默认不超过 8 轮。
         var maxIterations = config.MaxToolIterations > 0 ? Math.Min(config.MaxToolIterations, 8) : 8;
-        var session = new AgentSession(client, provider, tools, prompt, config, maxIterationsOverride: maxIterations);
+        var effectivePolicy = toolPolicyProvider?.Invoke() ?? toolPolicy;
+        var effectivePlanMode = planModeProvider?.Invoke() ?? planMode;
+        var session = new AgentSession(client, provider, tools, prompt, config, maxIterationsOverride: maxIterations,
+            budgetCheck: budgetCheck, onUsageDelta: onUsageDelta);
+        session.SetToolPolicy(effectivePolicy);
+        session.SetPlanMode(effectivePlanMode);
         var collector = new TextCollector();
         try
         {
@@ -78,6 +101,10 @@ public static class SubAgents
         catch (Exception ex)
         {
             return "(子代理失败) " + ex.Message;
+        }
+        finally
+        {
+            onUsage?.Invoke(session.SessionInputTokens, session.SessionOutputTokens);
         }
 
         var text = collector.Result.Trim();

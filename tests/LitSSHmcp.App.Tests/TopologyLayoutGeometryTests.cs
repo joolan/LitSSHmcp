@@ -14,7 +14,7 @@ public class TopologyLayoutGeometryTests
         var parent = new Rect(0, 0, 300, 200);
         var child = new Rect(-50, -50, 120, 30);
 
-        var r = TopologyViewModel.ClampChildTo(parent, child, Header);
+        var r = TopologyGeometry.ClampChildTo(parent, child, Header);
 
         Assert.True(r.X >= parent.X + 6 - 0.01, $"x={r.X}");
         Assert.True(r.Y >= parent.Y + Header - 6 - 0.01, $"y={r.Y}");
@@ -30,7 +30,7 @@ public class TopologyLayoutGeometryTests
         var parent = new Rect(10, 20, 300, 200);
         var child = new Rect(50, 80, 120, 30);
 
-        var r = TopologyViewModel.ClampChildTo(parent, child, Header);
+        var r = TopologyGeometry.ClampChildTo(parent, child, Header);
 
         Assert.Equal(child.X, r.X);
         Assert.Equal(child.Y, r.Y);
@@ -44,7 +44,7 @@ public class TopologyLayoutGeometryTests
         var parent = new Rect(0, 0, 200, 100);
         var child = new Rect(500, 500, 120, 30);
 
-        var r = TopologyViewModel.ClampChildTo(parent, child, Header);
+        var r = TopologyGeometry.ClampChildTo(parent, child, Header);
 
         Assert.Equal(parent.X + parent.Width - child.Width - 6, r.X, 3);
         Assert.Equal(parent.Y + parent.Height - child.Height - 6, r.Y, 3);
@@ -57,7 +57,7 @@ public class TopologyLayoutGeometryTests
         var parent = new Rect(0, 0, 80, 36);
         var child = new Rect(0, 0, 120, 30);
 
-        var r = TopologyViewModel.ClampChildTo(parent, child, Header);
+        var r = TopologyGeometry.ClampChildTo(parent, child, Header);
 
         var minX = parent.X + 6;
         var maxX = parent.X + parent.Width - child.Width - 6;
@@ -72,7 +72,7 @@ public class TopologyLayoutGeometryTests
     {
         var start = new Rect(100, 100, 200, 100);
 
-        var r = TopologyViewModel.ComputeResize("se", start, 4, -7);
+        var r = TopologyGeometry.ComputeResize("se", start, 4, -7);
 
         Assert.Equal(100, r.X);
         Assert.Equal(100, r.Y);
@@ -86,7 +86,7 @@ public class TopologyLayoutGeometryTests
         var start = new Rect(100, 100, 200, 100);
 
         // 新模型：结果只取决于「起点 + 总位移」——+4 再 -6 与直接 -2 完全等价
-        var direct = TopologyViewModel.ComputeResize("e", start, -2, 0);
+        var direct = TopologyGeometry.ComputeResize("e", start, -2, 0);
         Assert.Equal(200, direct.W);
 
         // 旧增量模型（每步吸附）：+4 再 -6 会把吸附误差累积成 10px 漂移
@@ -102,7 +102,7 @@ public class TopologyLayoutGeometryTests
     {
         var start = new Rect(100, 100, 200, 100);
 
-        var r = TopologyViewModel.ComputeResize("nw", start, 7, 7);
+        var r = TopologyGeometry.ComputeResize("nw", start, 7, 7);
 
         Assert.Equal(110, r.X);
         Assert.Equal(110, r.Y);
@@ -117,7 +117,7 @@ public class TopologyLayoutGeometryTests
     {
         var start = new Rect(100, 100, 200, 100);
 
-        var r = TopologyViewModel.ComputeResize("w", start, 500, 0);
+        var r = TopologyGeometry.ComputeResize("w", start, 500, 0);
 
         Assert.Equal(80, r.W);
         Assert.Equal(220, r.X);
@@ -129,7 +129,7 @@ public class TopologyLayoutGeometryTests
     {
         var start = new Rect(100, 100, 200, 100);
 
-        var r = TopologyViewModel.ComputeResize("n", start, 0, 500);
+        var r = TopologyGeometry.ComputeResize("n", start, 0, 500);
 
         Assert.True(r.H >= 36, $"h={r.H}");
         Assert.Equal(200, r.Y + r.H);
@@ -140,10 +140,10 @@ public class TopologyLayoutGeometryTests
     {
         var sel = new Rect(100, 100, 200, 100);
 
-        Assert.Equal("n", TopologyViewModel.EdgeHandleAt(sel, new Point(200, 103)));
-        Assert.Equal("s", TopologyViewModel.EdgeHandleAt(sel, new Point(200, 197)));
-        Assert.Equal("w", TopologyViewModel.EdgeHandleAt(sel, new Point(103, 150)));
-        Assert.Equal("e", TopologyViewModel.EdgeHandleAt(sel, new Point(297, 150)));
+        Assert.Equal("n", TopologyGeometry.EdgeHandleAt(sel, new Point(200, 103)));
+        Assert.Equal("s", TopologyGeometry.EdgeHandleAt(sel, new Point(200, 197)));
+        Assert.Equal("w", TopologyGeometry.EdgeHandleAt(sel, new Point(103, 150)));
+        Assert.Equal("e", TopologyGeometry.EdgeHandleAt(sel, new Point(297, 150)));
     }
 
     [Fact]
@@ -152,20 +152,20 @@ public class TopologyLayoutGeometryTests
         var sel = new Rect(100, 100, 200, 100);
 
         // 角落区域归角手柄（对角缩放），中心区域用于移动节点
-        Assert.Null(TopologyViewModel.EdgeHandleAt(sel, new Point(101, 101)));
-        Assert.Null(TopologyViewModel.EdgeHandleAt(sel, new Point(299, 199)));
-        Assert.Null(TopologyViewModel.EdgeHandleAt(sel, new Point(200, 150)));
+        Assert.Null(TopologyGeometry.EdgeHandleAt(sel, new Point(101, 101)));
+        Assert.Null(TopologyGeometry.EdgeHandleAt(sel, new Point(299, 199)));
+        Assert.Null(TopologyGeometry.EdgeHandleAt(sel, new Point(200, 150)));
 
         // 选中框外侧不算边带
-        Assert.Null(TopologyViewModel.EdgeHandleAt(sel, new Point(50, 150)));
-        Assert.Null(TopologyViewModel.EdgeHandleAt(sel, new Point(200, 80)));
+        Assert.Null(TopologyGeometry.EdgeHandleAt(sel, new Point(50, 150)));
+        Assert.Null(TopologyGeometry.EdgeHandleAt(sel, new Point(200, 80)));
     }
 
     [Fact]
     public void EdgeHandleAt_TooSmallNode_ReturnsNull()
     {
         // 小于 2*cornerGap 的节点没有可用边带（只保留角手柄）
-        Assert.Null(TopologyViewModel.EdgeHandleAt(new Rect(0, 0, 10, 10), new Point(5, 0)));
+        Assert.Null(TopologyGeometry.EdgeHandleAt(new Rect(0, 0, 10, 10), new Point(5, 0)));
     }
 
     [Fact]
@@ -174,10 +174,10 @@ public class TopologyLayoutGeometryTests
         var r = new Rect(100, 100, 200, 100);
         const double off = 8; // PortRadius 5 + PortGap 3
 
-        var left = TopologyViewModel.PortCenterFor(r, "left");
-        var right = TopologyViewModel.PortCenterFor(r, "right");
-        var top = TopologyViewModel.PortCenterFor(r, "top");
-        var bottom = TopologyViewModel.PortCenterFor(r, "bottom");
+        var left = TopologyGeometry.PortCenterFor(r, "left");
+        var right = TopologyGeometry.PortCenterFor(r, "right");
+        var top = TopologyGeometry.PortCenterFor(r, "top");
+        var bottom = TopologyGeometry.PortCenterFor(r, "bottom");
 
         Assert.Equal(r.X - off, left.X);
         Assert.Equal(r.Y + r.Height / 2, left.Y);

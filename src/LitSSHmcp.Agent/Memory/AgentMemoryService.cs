@@ -108,8 +108,9 @@ public sealed class AgentMemoryService
     /// <summary>在同 kind 的既有条目中找与给定向量余弦最高的超阈值条目（用于近重复合并）。</summary>
     private async Task<MemoryRecord?> FindNearDuplicateAsync(string kind, string content, float[] vector, CancellationToken ct)
     {
-        // 候选：同 kind、内容长度相近的活跃条目（按更新时间取前 50，避免全表扫）
-        var candidates = await _store.ListAsync(kind, null, 50, false, ct);
+        // 候选：同 kind、可写范围内的活跃条目（按更新时间取前 50，避免全表扫）；
+        // 隔离模式下普通成员不会把私有经验合并进只读的团队记忆
+        var candidates = await _store.ListAsync(kind, null, 50, false, ct, writableOnly: true);
         MemoryRecord? best = null;
         var bestScore = NearDuplicateThreshold;
         foreach (var c in candidates)
@@ -173,6 +174,73 @@ public sealed class AgentMemoryService
             sb.Append("  ").AppendLine(Truncate(r.Content, 400));
         }
         return sb.ToString().Trim();
+    }
+
+    /// <summary>列出一条记忆的历史版本（每次更新/删除/归档前归档，供审计与回滚）。</summary>
+    public async Task<string> HistoryAsync(string kind, string key, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(kind) || string.IsNullOrWhiteSpace(key))
+            return "错误: kind 与 key 为必填";
+        kind = kind.Trim();
+        key = key.Trim();
+
+        var existing = await _store.FindByKeyAsync(kind, key, ct);
+        if (existing is null)
+            return $"(未找到记忆 [{kind}:{key}], 无法查看历史)";
+
+        var versions = await _store.ListVersionsAsync(existing.Id, ct);
+        if (versions.Count == 0)
+            return $"(记忆 [{kind}:{key}] 暂无历史版本)";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"记忆 [{kind}:{key}] 的历史版本 (当前使用 {existing.Freq} 次, 共 {versions.Count} 个快照):");
+        foreach (var v in versions)
+        {
+            sb.Append("- v").Append(v.Version)
+                .Append(" 状态=").Append(v.Status)
+                .Append(" 使用=").Append(v.Freq)
+                .Append(" 归档=").Append(ShortDate(v.ArchivedAt));
+            if (!string.IsNullOrEmpty(v.AssetIds)) sb.Append(" 资产=").Append(v.AssetIds);
+            sb.AppendLine();
+            sb.Append("  ").AppendLine(Truncate(v.Content, 300));
+        }
+        return sb.ToString().Trim();
+    }
+
+    /// <summary>把记忆回滚到指定历史版本（当前状态会先归档，回滚本身可撤销）。</summary>
+    public async Task<string> RollbackAsync(string kind, string key, int version, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(kind) || string.IsNullOrWhiteSpace(key))
+            return "错误: kind 与 key 为必填";
+        if (version <= 0)
+            return "错误: version 必须为正整数";
+        kind = kind.Trim();
+        key = key.Trim();
+
+        var existing = await _store.FindByKeyAsync(kind, key, ct);
+        if (existing is null)
+            return $"(未找到记忆 [{kind}:{key}], 无法回滚)";
+        if (!await _store.RestoreVersionAsync(existing.Id, version, ct))
+            return $"错误: 记忆 [{kind}:{key}] 没有 v{version} 的历史版本, 或当前身份无权回滚团队记忆";
+
+        return $"已回滚记忆 [{kind}:{key}] 到 v{version}; 回滚前状态已归档, 可继续用历史/回滚撤销。";
+    }
+
+    /// <summary>归档一条记忆（状态 superseded，不再被召回，但保留历史可回滚）。</summary>
+    public async Task<string> ArchiveAsync(string kind, string key, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(kind) || string.IsNullOrWhiteSpace(key))
+            return "错误: kind 与 key 为必填";
+        kind = kind.Trim();
+        key = key.Trim();
+
+        var existing = await _store.FindByKeyAsync(kind, key, ct);
+        if (existing is null)
+            return $"(未找到记忆 [{kind}:{key}], 未归档)";
+        if (!await _store.ArchiveByIdAsync(existing.Id, ct))
+            return $"错误: 无法归档 [{kind}:{key}] (无权限或条目已变化)";
+
+        return $"已归档记忆 [{kind}:{key}] (状态 superseded, 召回不再出现; 可查看历史并回滚恢复)";
     }
 
     /// <summary>删除一条结构化记忆。</summary>
@@ -280,4 +348,7 @@ public sealed class AgentMemoryService
     }
 
     private static string Truncate(string text, int max) => text.Length <= max ? text : text[..max] + "…";
+
+    private static string ShortDate(string value) =>
+        string.IsNullOrEmpty(value) ? "-" : value[..Math.Min(19, value.Length)];
 }

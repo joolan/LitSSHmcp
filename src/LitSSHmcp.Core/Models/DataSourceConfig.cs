@@ -66,7 +66,7 @@ public class ApplicationConfig
     public string? Path { get; set; }
 
     /// <summary>
-    /// 该应用的日志文件路径（可多条）。供 log_tail/log_grep 在只传 appId 时解析路径；
+    /// 该应用的日志文件路径（可多条）。供 log_query 在只传 appId 时解析路径；
     /// 仍受 security.logs.allowedPaths 白名单约束。
     /// </summary>
     public string[] LogPaths { get; set; } = Array.Empty<string>();

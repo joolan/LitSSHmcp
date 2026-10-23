@@ -75,7 +75,7 @@ public class SkillTests : IDisposable
     public void Load_caveats_partially_disabled_domains()
     {
         using var dir = new TempDir();
-        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "先 docker_ps 看容器, 再 mysql_query 查库");
+        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "先 docker_query 看容器, 再 mysql_query 查库");
         var enabled = new HashSet<string>(new[] { "mysql" }, StringComparer.OrdinalIgnoreCase);
 
         var text = SkillRegistry.Load(dir.Path, null, enabled, new[] { "SKILL" });
@@ -89,7 +89,7 @@ public class SkillTests : IDisposable
     public void Load_skips_skill_when_all_referenced_domains_disabled()
     {
         using var dir = new TempDir();
-        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "先 docker_ps 看容器");
+        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "先 docker_query 看容器");
         var enabled = new HashSet<string>(new[] { "mysql" }, StringComparer.OrdinalIgnoreCase);
 
         var text = SkillRegistry.Load(dir.Path, null, enabled);
@@ -101,11 +101,11 @@ public class SkillTests : IDisposable
     public void Load_without_groups_keeps_skills_uncaveated()
     {
         using var dir = new TempDir();
-        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "先 docker_ps 看容器");
+        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "先 docker_query 看容器");
 
         var text = SkillRegistry.Load(dir.Path, null, null, new[] { "SKILL" });
 
-        Assert.Contains("docker_ps", text);
+        Assert.Contains("docker_query", text);
         Assert.DoesNotContain("未启用的能力域", text);
     }
 
@@ -116,7 +116,7 @@ public class SkillTests : IDisposable
         var skillDir = Path.Combine(dir.Path, "nginx-5xx");
         Directory.CreateDirectory(skillDir);
         File.WriteAllText(Path.Combine(skillDir, "SKILL.md"),
-            "---\nname: nginx-5xx\ndescription: 排查 nginx 5xx\nappliesTo: [ssh, log]\n---\n# nginx\n... docker_ps ...");
+            "---\nname: nginx-5xx\ndescription: 排查 nginx 5xx\nappliesTo: [ssh, log]\n---\n# nginx\n... docker_query ...");
 
         var enabled = new HashSet<string>(new[] { "ssh" }, StringComparer.OrdinalIgnoreCase);
         var list = SkillRegistry.List(dir.Path, enabled);
@@ -135,7 +135,7 @@ public class SkillTests : IDisposable
     public void Load_index_mode_lists_skills_without_body()
     {
         using var dir = new TempDir();
-        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "正文包含 docker_ps 的细节");
+        File.WriteAllText(Path.Combine(dir.Path, "SKILL.md"), "正文包含 docker_query 的细节");
         var enabled = new HashSet<string>(new[] { "docker" }, StringComparer.OrdinalIgnoreCase);
 
         var text = SkillRegistry.Load(dir.Path, null, enabled);   // 未指定激活技能 → 索引模式

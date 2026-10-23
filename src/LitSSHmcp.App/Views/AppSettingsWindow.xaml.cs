@@ -8,10 +8,14 @@ namespace LitSSHmcp.App.Views;
 /// <summary>统一设置窗口：安全设置 / 工具分组 / 配置导入导出（多 Tab）。</summary>
 public partial class AppSettingsWindow : FluentWindow
 {
-    public AppSettingsWindow(IConfigService configService)
+    public AppSettingsWindow(IConfigService configService, IAppServices? services = null)
     {
         InitializeComponent();
-        TransferView.DataContext = new ConfigTransferViewModel(configService);
+        TransferView.DataContext = new ConfigTransferViewModel(configService, services?.Dialogs);
+        AppearanceView.Initialize(services);
+        SecurityView.Initialize(services);
+        ToolGroupsView.Initialize(services);
+        StorageView.Initialize(services);
         WindowLayout.Attach(this, "app-settings");
     }
 }

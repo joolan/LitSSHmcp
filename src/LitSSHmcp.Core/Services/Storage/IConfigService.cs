@@ -1,3 +1,6 @@
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
@@ -11,10 +14,67 @@ public interface IConfigService
     string GetConfigPath();
 }
 
-public class ConfigService : IConfigService
+/// <summary>
+/// 安全入口使用的严格配置读取：配置文件存在但无法读取/解析/迁移时抛 <see cref="ConfigLoadException"/>，
+/// 而不是静默回退默认配置，避免损坏配置被当作“未设置应用锁”而绕过。
+/// </summary>
+public interface IStrictConfigService
 {
+    Task<AppConfig> LoadStrictAsync();
+}
+
+/// <summary>配置文件存在但无法读取、解析或迁移。</summary>
+public sealed class ConfigLoadException : Exception
+{
+    public string ConfigPath { get; }
+
+    public ConfigLoadException(string message, string configPath, Exception? inner = null)
+        : base(message, inner)
+    {
+        ConfigPath = configPath;
+    }
+}
+
+/// <summary>并发保存时同一字段被多个窗口/进程修改，拒绝静默覆盖。</summary>
+public sealed class ConfigConflictException : Exception
+{
+    public ConfigConflictException(IReadOnlyList<string> conflictPaths)
+        : base("配置已被其他窗口/进程修改，且存在同字段冲突；请重新加载后再保存。")
+    {
+        ConflictPaths = conflictPaths;
+    }
+
+    public IReadOnlyList<string> ConflictPaths { get; }
+}
+
+/// <summary>
+/// 配置冲突通知（Core 不依赖 UI）：保存遇到同字段冲突时触发，App 订阅后统一弹窗提示重新加载。
+/// 通知失败不影响原始异常继续抛给调用方。
+/// </summary>
+public static class ConfigConflictNotifier
+{
+    public static event Action<ConfigConflictException>? ConflictDetected;
+
+    internal static void Notify(ConfigConflictException ex)
+    {
+        try { ConflictDetected?.Invoke(ex); } catch { /* 通知失败不掩盖保存冲突 */ }
+    }
+}
+
+public class ConfigService : IConfigService, IStrictConfigService
+{
+    private static readonly SemaphoreSlim SaveGate = new(1, 1);
+    private static readonly ConditionalWeakTable<AppConfig, ConfigSnapshot> Snapshots = new();
+    private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(5);
+
     private readonly string _configPath;
     private readonly ISecretProtector _protector;
+
+    private sealed class ConfigSnapshot(AppConfig config, string fingerprint)
+    {
+        public AppConfig Config { get; } = config;
+        public string Fingerprint { get; } = fingerprint;
+    }
 
     public ConfigService() : this(ConfigPaths.ConfigFile, new DpapiSecretProtector())
     {
@@ -28,12 +88,17 @@ public class ConfigService : IConfigService
 
     public string GetConfigPath() => _configPath;
 
-    public async Task<AppConfig> LoadConfigAsync()
+    public Task<AppConfig> LoadConfigAsync() => LoadConfigCoreAsync(failOnCorrupt: false);
+
+    public Task<AppConfig> LoadStrictAsync() => LoadConfigCoreAsync(failOnCorrupt: true);
+
+    private async Task<AppConfig> LoadConfigCoreAsync(bool failOnCorrupt)
     {
         if (!File.Exists(_configPath))
         {
             var defaultConfig = CreateDefaultConfig();
             await SaveConfigAsync(defaultConfig);
+            Remember(config: defaultConfig, persisted: defaultConfig);
             return defaultConfig;
         }
 
@@ -48,8 +113,14 @@ public class ConfigService : IConfigService
             if (ConfigMigrator.Migrate(config) || needsMigration)
                 await SaveConfigAsync(config);
 
+            Remember(config: config, persisted: config);
             ServerConfigCache.Update(config.Servers);
             return config;
+        }
+        catch (Exception ex) when (failOnCorrupt)
+        {
+            throw new ConfigLoadException(
+                $"配置文件损坏或无法读取：{_configPath}。请修复或从备份恢复后重试。", _configPath, ex);
         }
         catch
         {
@@ -59,19 +130,109 @@ public class ConfigService : IConfigService
 
     public async Task SaveConfigAsync(AppConfig config)
     {
-        // 深拷贝后加密，避免密文污染调用方内存中的配置对象
-        var clone = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(config, AppConfigJson.Options), AppConfigJson.Options)
-                    ?? new AppConfig();
-        EncryptSecrets(clone);
-        var json = JsonSerializer.Serialize(clone, AppConfigJson.Options);
+        await SaveGate.WaitAsync();
+        try
+        {
+            await using var fileLock = await AcquireFileLockAsync();
+            var current = await TryReadConfigForMergeAsync();
+            var merged = config;
 
-        // 原子写：先写同目录临时文件，再整体替换目标文件。
-        // 若不原子，MCP 侧按 mtime 热加载时可能读到"写了一半"的 JSON（截断/空文件），
-        // 导致这一次修改被当成损坏而丢弃，表现为"在界面改了但 MCP 没生效"。
-        await WriteAtomicAsync(json);
+            if (current is not null &&
+                Snapshots.TryGetValue(config, out var snapshot) &&
+                !string.Equals(snapshot.Fingerprint, Fingerprint(current), StringComparison.Ordinal))
+            {
+                // 其他窗口/进程已写入新配置：把本地修改三路合并到最新内容；
+                // 同一字段双方都改则抛 ConfigConflictException，禁止静默覆盖。
+                try
+                {
+                    merged = ConfigMerge.Merge(snapshot.Config, config, current);
+                }
+                catch (ConfigConflictException ex)
+                {
+                    ConfigConflictNotifier.Notify(ex);
+                    throw;
+                }
+            }
 
-        // 刷新跳板机解析用的服务器快照（明文配置，连接工厂同步读取）。
-        ServerConfigCache.Update(config.Servers);
+            // 深拷贝后加密，避免密文污染调用方内存中的配置对象
+            var clone = Clone(merged);
+            EncryptSecrets(clone);
+            var json = JsonSerializer.Serialize(clone, AppConfigJson.Options);
+
+            // 原子写：先写同目录临时文件，再整体替换目标文件。
+            // 若不原子，MCP 侧按 mtime 热加载时可能读到"写了一半"的 JSON（截断/空文件），
+            // 导致这一次修改被当成损坏而丢弃，表现为"在界面改了但 MCP 没生效"。
+            await WriteAtomicAsync(json);
+
+            // 刷新跳板机解析用的服务器快照（明文配置，连接工厂同步读取）。
+            ServerConfigCache.Update(merged.Servers);
+            Remember(config, merged);
+        }
+        finally
+        {
+            SaveGate.Release();
+        }
+    }
+
+    private async Task<FileStream> AcquireFileLockAsync()
+    {
+        var lockPath = _configPath + ".lock";
+        var dir = Path.GetDirectoryName(lockPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        var deadline = DateTime.UtcNow + LockTimeout;
+        while (true)
+        {
+            try
+            {
+                return new FileStream(lockPath, FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException) when (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(50);
+            }
+            catch (UnauthorizedAccessException) when (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(50);
+            }
+        }
+    }
+
+    private async Task<AppConfig?> TryReadConfigForMergeAsync()
+    {
+        if (!File.Exists(_configPath))
+            return null;
+        try
+        {
+            var json = await File.ReadAllTextAsync(_configPath);
+            var config = JsonSerializer.Deserialize<AppConfig>(json, AppConfigJson.Options);
+            if (config is null)
+                return null;
+            DecryptSecrets(config);
+            ConfigMigrator.Migrate(config);
+            return config;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static AppConfig Clone(AppConfig config)
+        => JsonSerializer.Deserialize<AppConfig>(
+               JsonSerializer.Serialize(config, AppConfigJson.Options), AppConfigJson.Options)
+           ?? new AppConfig();
+
+    private static string Fingerprint(AppConfig config)
+        => Convert.ToHexString(SHA256.HashData(
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(config, AppConfigJson.Options))));
+
+    private static void Remember(AppConfig config, AppConfig persisted)
+    {
+        var snapshot = Clone(persisted);
+        Snapshots.AddOrUpdate(config, new ConfigSnapshot(snapshot, Fingerprint(snapshot)));
     }
 
     private async Task WriteAtomicAsync(string json)

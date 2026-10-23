@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.Core.Services.Security;
 using Wpf.Ui.Controls;
 
@@ -70,7 +71,8 @@ public partial class AppLockPasswordDialog : FluentWindow
         return dialog._success;
     }
 
-    private async void OnOk(object sender, RoutedEventArgs e) => await SubmitAsync();
+    private void OnOk(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("提交应用锁密码", SubmitAsync);
 
     private void OnBoxKeyDown(object sender, KeyEventArgs e)
     {

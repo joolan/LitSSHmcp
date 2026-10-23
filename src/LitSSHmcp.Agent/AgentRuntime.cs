@@ -1,4 +1,5 @@
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
@@ -169,12 +170,33 @@ public sealed class AgentRuntime : IAsyncDisposable
     {
         var client = ChatClientFactory.Create(provider);
         var tools = new List<IAgentTool>(_baseTools);
+        AgentSession? session = null;
+
+        Func<long, long, bool>? budgetCheck = null;
+        SessionCostBudget? budget = null;
+        var limit = _config.Budget?.MaxSessionCost ?? 0;
+        var inputPrice = provider.InputPricePerMTok;
+        var outputPrice = provider.OutputPricePerMTok;
+        if (limit > 0 && (inputPrice > 0 || outputPrice > 0))
+        {
+            budget = new SessionCostBudget(limit, inputPrice, outputPrice);
+            budgetCheck = (_, _) => budget.Check();
+        }
+
         if (_config.EnableSubAgent)
-            tools.Add(SubAgents.Create(client, provider, _config, _subTools, _readOnlyNote));
+        {
+            tools.Add(SubAgents.Create(client, provider, _config, _subTools, _readOnlyNote,
+                onUsage: (input, output) => session?.AddChildUsage(input, output),
+                budgetCheck: budgetCheck,
+                onUsageDelta: budget is null ? null : budget.Add,
+                toolPolicyProvider: () => _toolPolicy,
+                planModeProvider: () => _planMode));
+        }
         if (_onPlan is not null)
             tools.Add(PlanTools.Create(_onPlan));
-        var session = new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill,
-            roundNotifier: _roundNotifier, graphContext: _graphContext);
+        session = new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill,
+            roundNotifier: _roundNotifier, graphContext: _graphContext, budgetCheck: budgetCheck,
+            onUsageDelta: budget is null ? null : budget.Add);
         session.SetToolPolicy(_toolPolicy);
         session.SetPlanMode(_planMode);
         return session;
@@ -184,6 +206,9 @@ public sealed class AgentRuntime : IAsyncDisposable
     /// 连接 MCP 服务器、装配工具与系统提示、构建对话会话（含可选长期记忆）。
     /// <paramref name="sessionWorkspaceDir"/>：本会话工作目录（需求 D；空=共享工作区，现状行为）；
     /// <paramref name="ownerUserId"/>：会话归属用户，随宿主 spawn 注入 MCP 子进程做审计归因（D1，空=local）。
+    /// <paramref name="ownerRole"/>：会话用户角色（Web 注入 admin/user），供子进程判断能否查看全局历史/会话。
+    /// <paramref name="scopeSpillByOwner"/>：大结果落盘按 owner 子目录隔离（Web 多用户必开；桌面默认关闭）。
+    /// <paramref name="scopeMemoryByOwner"/>：长期记忆按 owner/scope 隔离（Web 多用户必开；桌面默认关闭）。
     /// </summary>
     public static async Task<AgentRuntime> StartAsync(
         AgentConfig config,
@@ -200,7 +225,10 @@ public sealed class AgentRuntime : IAsyncDisposable
         string? sessionWorkspaceDir = null,
         string? ownerUserId = null,
         IReadOnlyCollection<string>? enabledMcpIds = null,
-        string? ownerUsername = null)
+        string? ownerUsername = null,
+        string? ownerRole = null,
+        bool scopeSpillByOwner = false,
+        bool scopeMemoryByOwner = false)
     {
         // D8 启用层：会话级连接器子集只在全局启用集合内收窄（null=继承全局默认集合；全局停用恒出局）
         var servers = McpSubsetPolicy.EffectiveServers(AgentMcpServerConfig.Normalize(config.McpServers), enabledMcpIds);
@@ -221,8 +249,8 @@ public sealed class AgentRuntime : IAsyncDisposable
                     ?? throw new InvalidOperationException(
                         "未找到 MCP 服务器(LitSSHmcp.McpServer.exe): 请将服务器放到 App 的 mcp/ 目录, 或在「AI 助手设置」中指定路径。");
                 // 归因身份与会话工作目录都由宿主 spawn 时注入（评估报告 D1 / §10.A.5、需求 D / §5.3.1），子进程不自行决定；
-                // ownerUsername 供子进程按用户名匹配授权矩阵（M3-4，仅 Web 宿主注入）
-                var host = McpToolHost.ForBuiltin(launch, ownerUserId, sessionWorkspaceDir, ownerUsername);
+                // ownerUsername/ownerRole 供子进程匹配授权矩阵与数据可见范围（M3-4 / P0-2，仅 Web 宿主注入）
+                var host = McpToolHost.ForBuiltin(launch, ownerUserId, sessionWorkspaceDir, ownerUsername, ownerRole);
                 try
                 {
                     await host.ConnectAsync(ct);
@@ -288,8 +316,7 @@ public sealed class AgentRuntime : IAsyncDisposable
 
         // Graph-RAG：仅在内置 topology 工具存在时启用；每次发送前自动解析资产并拉 1 跳邻域。
         var graphContext = AssetGraphContextProvider.Create(
-            builtinTools.FirstOrDefault(t => string.Equals(t.Name, "topology_search", StringComparison.Ordinal)),
-            builtinTools.FirstOrDefault(t => string.Equals(t.Name, "topology_neighbors", StringComparison.Ordinal)),
+            builtinTools.FirstOrDefault(t => string.Equals(t.Name, "topology_query", StringComparison.Ordinal)),
             assetGraph);
 
         var mcpTools = new List<IAgentTool>(builtinTools);
@@ -335,18 +362,22 @@ public sealed class AgentRuntime : IAsyncDisposable
             ? null
             : Path.GetFullPath(sessionWorkspaceDir);
         var workspaceRoot = sessionRoot ?? sharedRoot;
-        var workspaceTools = WorkspaceTools.Create(workspaceRoot, sessionRoot is null ? null : sharedRoot).ToList();
+        var isAdmin = string.Equals(ownerRole, HostEnv.AdminRole, StringComparison.OrdinalIgnoreCase);
+        var sharedWritable = ownerRole is null || isAdmin;
+        var workspaceTools = WorkspaceTools.Create(workspaceRoot, sessionRoot is null ? null : sharedRoot,
+            sharedWritable).ToList();
         var skillsDir = SkillRegistry.ResolveDir(config.SkillsDir, bundledSkillsDir);
         var skillTools = skillsDir is null ? new List<IAgentTool>() : SkillTools.Create(skillsDir).ToList();
 
-        var spill = TryCreateSpill(config);
+        var spill = TryCreateSpill(config, ownerUserId, scopeSpillByOwner);
         var spillTools = spill is null ? new List<IAgentTool>() : SpillTools.Create(spill).ToList();
 
         // 记忆先于工具装配：memory != null 时注册 ops_memory_*（否则不暴露，提示词同步不注入该段）
-        var (memory, memoryDisabledReason) = await TryCreateMemoryAsync(config, provider, ct);
+        var (memory, memoryDisabledReason) = await TryCreateMemoryAsync(config, provider, ownerUserId,
+            scopeMemoryByOwner, isAdmin, ct);
         var memoryTools = memory is null ? new List<IAgentTool>() : MemoryTools.Create(memory).ToList();
         // 脚本复用登记（写 MANIFEST + 可选同步记忆）：台账恒在共享区（D6 scripts/ 留共享，不随会话割裂）
-        var scriptTools = ScriptTools.Create(sharedRoot, memory).ToList();
+        var scriptTools = ScriptTools.Create(sharedRoot, memory, sharedWritable).ToList();
         Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? recall =
             memory is null
                 ? null
@@ -370,7 +401,7 @@ public sealed class AgentRuntime : IAsyncDisposable
             externalMcp: externalInfos,
             builtinMcpDisabled: builtin is not { Enabled: true },   // 全局停用或本会话子集排除（D8 例外：会话级整体关闭）
             memoryTools: memory is not null,
-            scriptTools: true,
+            scriptTools: scriptTools.Count > 0,
             assetGraph: availableGroups.Contains(ToolGroups.Topology) ? assetGraph : null,
             sessionWorkspaceDir: sessionRoot,
             sharedWorkspaceDir: sessionRoot is null ? null : sharedRoot);
@@ -413,7 +444,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         return runtime;
     }
 
-    private static SpillStore? TryCreateSpill(AgentConfig config)
+    private static SpillStore? TryCreateSpill(AgentConfig config, string? ownerUserId, bool scopeByOwner)
     {
         if (!config.SpillLargeToolResults)
             return null;
@@ -422,7 +453,8 @@ public sealed class AgentRuntime : IAsyncDisposable
             var dir = string.IsNullOrWhiteSpace(config.SpillDir)
                 ? Path.Combine(ConfigPaths.AppDataDir, "spills")
                 : config.SpillDir;
-            return new SpillStore(dir, config.SpillRetentionDays);
+            return new SpillStore(dir, config.SpillRetentionDays,
+                scopeByOwner ? (string.IsNullOrWhiteSpace(ownerUserId) ? "local" : ownerUserId) : null);
         }
         catch
         {
@@ -456,16 +488,21 @@ public sealed class AgentRuntime : IAsyncDisposable
     /// 尝试创建长期记忆服务。返回 (服务, 禁用原因)：
     /// 未启用 → (null, null)；已启用但配置不全/初始化失败 → (null, 原因)，由 UI 展示（不再静默）。
     /// </summary>
-    private static async Task<(AgentMemoryService? Memory, string? Reason)> TryCreateMemoryAsync(AgentConfig config, AgentProviderConfig provider, CancellationToken ct)
+    private static async Task<(AgentMemoryService? Memory, string? Reason)> TryCreateMemoryAsync(
+        AgentConfig config, AgentProviderConfig provider, string? ownerUserId, bool scopeByOwner, bool isAdmin,
+        CancellationToken ct)
     {
         if (config.Memory?.Enabled != true)
             return (null, null);
         if (string.IsNullOrWhiteSpace(config.Memory.Model))
             return (null, "已启用但未填写 Embeddings 模型名");
+        if (scopeByOwner && string.IsNullOrWhiteSpace(ownerUserId))
+            return (null, "无法确定当前用户，已禁用长期记忆");
         try
         {
             var embedder = EmbeddingClientFactory.Create(config.Memory, provider.ApiKey);
-            var memory = new AgentMemoryService(new AgentMemoryStore(), embedder, config.Memory.TopK,
+            var access = scopeByOwner ? new MemoryAccessScope(ownerUserId!, isAdmin) : null;
+            var memory = new AgentMemoryService(new AgentMemoryStore(null, access), embedder, config.Memory.TopK,
                 config.Memory.RecallThreshold);
             await memory.InitializeAsync(ct);
             return (memory, null);

@@ -88,7 +88,7 @@
                                 <CheckBox Content="只读模式（仅向模型暴露只读工具）" IsChecked="{Binding ReadOnly, Mode=TwoWay}" Margin="0,0,0,6"/>
                                 <TextBlock TextWrapping="Wrap" Margin="26,0,0,8" FontSize="11"
                                            Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                           Text="只读模式保留的工具（按 MCP 只读注解 readOnlyHint）：查询/读取/诊断/巡检类——ssh_list_servers、ssh_get_server_status、ssh_get_sudo_status、ssh_test_connection、ssh_snapshot_get、ssh_get_command_history、ssh_list_files；datasource_list、datasource_test_connection、*_get_sql_history、mysql_query/mysql_explain/mysql_diagnostics、postgres_query/explain/diagnostics、redis_read/redis_diagnostics；docker_ps/logs/inspect/stats/images、service_status/list/logs、log_tail/grep/find、java_processes/threads/heap/info、topology_get_overview/get_dependencies/discover、app_health_snapshot、mcp_usage_guide/self_check/list_sessions；以及本地只读工具（skill_list/read、spill_list/read/grep、ops_doc_read/list、update_plan、run_subagent）。不含执行/写入/审批类：ssh_execute_command/sudo、ssh_upload*/download*、mysql/postgres/redis 的 *_execute、docker_restart/exec、service_restart 等。"/>
+                                           Text="只读模式保留的工具（按 MCP 只读注解 readOnlyHint）：查询/读取/诊断/巡检类——ssh_list_servers、ssh_get_sudo_status、ssh_test_connection、ssh_snapshot_get、ssh_list_files；datasource_list、datasource_test_connection、mysql_query、postgres_query、redis_read/redis_diagnostics；docker_query、service_query、log_query、java_processes/java_diagnostics、topology_get_overview/get_dependencies/query/discover、app_health_snapshot、mcp_usage_guide/self_check；以及本地只读工具（skill_list/read、spill_list/read/grep、ops_doc_read/list、update_plan、run_subagent）。不含执行/写入/审批类：ssh_execute_command/sudo、ssh_upload*/download*、mysql/postgres/redis 的 *_execute、docker_restart/exec、service_restart 等。"/>
 
                                 <TextBlock Text="允许的工具分组（全勾 = 不限制）" FontWeight="SemiBold" Margin="0,10,0,6"/>
                                 <ItemsControl ItemsSource="{Binding ToolGroupOptions}">
@@ -390,38 +390,94 @@
                                           Width="110" Margin="0,0,12,0"
                                           ToolTip="全部=不限；task=任务复盘 / script=脚本经验 / asset=资产经验 / raw=会话与文档片段"/>
                                 <ui:Button Content="刷新" Padding="12,4" Margin="0,0,8,0" Click="OnReloadMemories"/>
-                                <ui:Button Content="删除选中" Padding="12,4" Margin="0,0,8,0" Click="OnDeleteMemory"/>
                                 <ui:Button Content="清空全部记忆" Padding="12,4" Click="OnClearMemory"
                                            ToolTip="删除记忆库全部条目（含会话片段/任务复盘/脚本/资产经验）。更换 Embeddings 模型或向量维度时必须清空，否则历史向量不可检索。需二次确认"/>
                             </StackPanel>
                             <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                       Text="记忆是 AI 的长期经验库（本机 agent.db）。删除单条用于纠错；更换 Embeddings 模型前请「清空全部」，否则旧维度向量无法检索。"/>
+                                       Text="记忆是 AI 的长期经验库（本机 agent.db）。右键记忆可查看历史/归档/删除，右键右侧历史版本可回滚；更换 Embeddings 模型前请「清空全部」。"/>
                         </DockPanel>
-                        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}">
-                            <ListBox ItemsSource="{Binding MemoryEntries}" SelectedItem="{Binding SelectedMemoryEntry, Mode=TwoWay}"
-                                     Background="Transparent" BorderThickness="0"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                        <Setter Property="Padding" Value="10,7"/>
-                                        <Setter Property="Margin" Value="0,0,0,2"/>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel ToolTip="{Binding Content}">
-                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontFamily="Microsoft YaHei"/>
-                                            <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                            <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </Border>
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="360"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{DynamicResource CardBorderStyle}">
+                                <ListBox ItemsSource="{Binding MemoryEntries}" SelectedItem="{Binding SelectedMemoryEntry, Mode=TwoWay}"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ContextMenuOpening="OnMemoryListContextOpening">
+                                    <ListBox.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="查看历史版本" Click="OnMemoryHistory"
+                                                      ToolTip="加载该记忆的历史快照（每次更新/删除/归档前自动留存）"/>
+                                            <Separator/>
+                                            <MenuItem Header="归档（标记为过时）" Click="OnArchiveMemory"
+                                                      ToolTip="标记为 superseded：不再被召回，但保留历史，可随时回滚恢复"/>
+                                            <MenuItem Header="删除记忆…" Click="OnDeleteMemory"/>
+                                        </ContextMenu>
+                                    </ListBox.ContextMenu>
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Padding" Value="10,7"/>
+                                            <Setter Property="Margin" Value="0,0,0,2"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel ToolTip="{Binding Content}">
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontFamily="Microsoft YaHei"/>
+                                                <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+                            <Border Grid.Column="1" Margin="8,0,0,0" Style="{DynamicResource CardBorderStyle}">
+                                <DockPanel>
+                                    <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="2,0,0,6">
+                                        <TextBlock Text="历史版本（回滚前状态）" FontWeight="SemiBold"
+                                                   FontFamily="Microsoft YaHei" VerticalAlignment="Center"/>
+                                        <ui:Button DockPanel.Dock="Right" Content="清理历史" Padding="8,2"
+                                                   Click="OnPruneMemoryHistory"
+                                                   ToolTip="每记忆仅保留最近 40 个历史版本；清理全部时同时移除超过 30 天的孤儿历史"/>
+                                    </DockPanel>
+                                    <ListBox ItemsSource="{Binding MemoryVersions}" SelectedItem="{Binding SelectedMemoryVersion, Mode=TwoWay}"
+                                             Background="Transparent" BorderThickness="0"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                             ContextMenuOpening="OnMemoryVersionListContextOpening">
+                                        <ListBox.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="回滚到该版本…" Click="OnRollbackMemory"
+                                                          ToolTip="把记忆恢复到该历史版本；当前状态会先归档，回滚本身可撤销"/>
+                                            </ContextMenu>
+                                        </ListBox.ContextMenu>
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                                <Setter Property="Padding" Value="8,6"/>
+                                                <Setter Property="Margin" Value="0,0,0,2"/>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel ToolTip="{Binding Content}">
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontFamily="Microsoft YaHei"/>
+                                                    <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                    <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
+                                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </TabItem>
                 <!-- ===== Tab：智能体（可切换的角色设定：系统提示附加段 + 回答风格覆盖）===== -->

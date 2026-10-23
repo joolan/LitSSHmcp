@@ -1,4 +1,5 @@
 using System.Windows;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.ViewModels;
 using Wpf.Ui.Controls;
 
@@ -138,7 +139,7 @@ public partial class RemoteFilePropertiesWindow : FluentWindow
         try { Clipboard.SetText(_item.FullName); } catch { /* ignore */ }
     }
 
-    private async void OnApply(object sender, RoutedEventArgs e)
+    private void OnApply(object sender, RoutedEventArgs e) => AsyncOperation.Run("修改远端文件权限", async () =>
     {
         var owner = OwnerBox.SelectedItem as string;
         var group = GroupBox.SelectedItem as string;
@@ -150,7 +151,7 @@ public partial class RemoteFilePropertiesWindow : FluentWindow
             return;
         }
         Close();
-    }
+    });
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
 }

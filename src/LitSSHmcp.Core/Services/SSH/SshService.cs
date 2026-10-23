@@ -1125,17 +1125,22 @@ public class SshService : ISshService
 
                 var localRoot = Path.GetFullPath(localDirectory);
                 Directory.CreateDirectory(localRoot);
-                var rootPrefix = localRoot.EndsWith(Path.DirectorySeparatorChar) ? localRoot : localRoot + Path.DirectorySeparatorChar;
 
                 foreach (var (remote, relative) in items)
                 {
                     if (ct.IsCancellationRequested)
                         break;
 
-                    var localPath = Path.GetFullPath(Path.Combine(localRoot, relative));
-                    if (!localPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+                    var localPath = RemotePathGuard.ResolveLocalUnder(localRoot, relative);
+                    if (localPath is null)
                     {
-                        result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = localPath, Success = false, Error = "本地路径越界" });
+                        result.Files.Add(new BatchFileResult
+                        {
+                            RemotePath = remote,
+                            LocalPath = string.Empty,
+                            Success = false,
+                            Error = "远端路径不安全或本地路径越界"
+                        });
                         continue;
                     }
 
@@ -1709,6 +1714,9 @@ public class SshService : ISshService
             var hasSshpass = probeOut.Contains("LITSSH_HAS_SSHPASS", StringComparison.Ordinal);
             var hasPv = probeOut.Contains("LITSSH_HAS_PV", StringComparison.Ordinal);
             var keyOk = probeOut.Contains("LITSSH_KEY_OK", StringComparison.Ordinal);
+            var acceptNewHostKey = probeOut.Contains(RemoteCopyCommandBuilder.HostKeyAcceptNewMarker, StringComparison.Ordinal);
+            if (!acceptNewHostKey)
+                result.Warning = "源机 OpenSSH 不支持 accept-new，已改用严格主机密钥校验；目标须已记录在源机 known_hosts，否则直连会失败。";
 
             // 2) 总大小（供进度；失败不影响）
             try
@@ -1836,7 +1844,7 @@ public class SshService : ISshService
 
             // 5) 构建并执行（密码经 stdin 传给 sshpass 临时文件，不进 argv）
             var command = RemoteCopyCommandBuilder.BuildDirectCommand(request, usePassword, useRsync, hasPv, result.TotalBytes, tarSkipOldFiles,
-                ServerConfigCache.JumpEndpoint(request.Target.ProxyJumpServerId));
+                ServerConfigCache.JumpEndpoint(request.Target.ProxyJumpServerId), acceptNewHostKey);
             var lastPct = -1;
             var gate = new object();
             void Report(int pct)

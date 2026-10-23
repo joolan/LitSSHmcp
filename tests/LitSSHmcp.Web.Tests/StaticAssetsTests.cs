@@ -41,7 +41,7 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
     [Fact]
     public async Task Frontend_modules_are_served()
     {
-        foreach (var path in new[] { "/js/app.js", "/js/sanitize.js", "/js/chat.js", "/js/approvals.js", "/js/files.js", "/js/api.js", "/css/app.css" })
+        foreach (var path in new[] { "/js/app.js", "/js/sanitize.js", "/js/chat.js", "/js/approvals.js", "/js/files.js", "/js/api.js", "/js/memory.js", "/css/app.css" })
         {
             var resp = await _fx.Client.GetAsync(path);
             Assert.True(resp.StatusCode == HttpStatusCode.OK, $"{path} → {resp.StatusCode}");
@@ -107,6 +107,25 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
         var css = await _fx.Client.GetStringAsync("/css/app.css");
         var normalized = System.Text.RegularExpressions.Regex.Replace(css, @"\s+", " ");
         Assert.Contains(".image-viewer { position: fixed;", normalized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Admin_memory_panel_entry_is_present_for_admin_only()
+    {
+        var html = await _fx.Client.GetStringAsync("/");
+        Assert.Contains("id=\"memory-admin-btn\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"memory-admin\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"memory-list\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"memory-versions\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"memory-prune\"", html, StringComparison.Ordinal);
+
+        var js = await _fx.Client.GetStringAsync("/js/memory.js");
+        Assert.Contains("MemoryAdminPanel", js, StringComparison.Ordinal);
+        Assert.Contains("/api/admin/memory", js, StringComparison.Ordinal);
+
+        var css = await _fx.Client.GetStringAsync("/css/app.css");
+        var normalized = System.Text.RegularExpressions.Regex.Replace(css, @"\s+", " ");
+        Assert.Contains(".memory-sheet {", normalized, StringComparison.Ordinal);
     }
 
     [Fact]

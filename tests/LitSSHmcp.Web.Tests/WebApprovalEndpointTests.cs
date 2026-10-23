@@ -134,7 +134,11 @@ public class WebApprovalEndpointTests : IClassFixture<ApprovalFixture>
         var ownId = _fx.SeedPending(userId);
 
         var client = _fx.Factory.Server.CreateWebSocketClient();
-        client.ConfigureRequest = r => r.Headers["Cookie"] = $"litssh_token={token}";
+        client.ConfigureRequest = r =>
+        {
+            r.Headers["Cookie"] = $"litssh_token={token}";
+            r.Headers["Origin"] = _fx.Factory.Server.BaseAddress!.GetLeftPart(UriPartial.Authority);
+        };
         var uri = new UriBuilder(_fx.Factory.Server.BaseAddress) { Scheme = "ws", Path = "/ws/approvals" }.Uri;
         var socket = await client.ConnectAsync(uri, CancellationToken.None);
 
@@ -198,8 +202,8 @@ public sealed class ApprovalFixture : IDisposable
     public async Task<(string Token, string Csrf, long UserId)> LoginAsync(string username)
     {
         await Factory.Services.GetRequiredService<LitSSHmcp.Core.Services.Web.WebAccountsStore>()
-            .CreateAsync(username, "secret1", iterations: 1000);
-        var resp = await Client.PostAsJsonAsync("/api/login", new { username, password = "secret1" });
+            .CreateAsync(username, "secret123", iterations: 1000);
+        var resp = await Client.PostAsJsonAsync("/api/login", new { username, password = "secret123" });
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         var body = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
         var csrf = body.RootElement.GetProperty("csrfToken").GetString()!;

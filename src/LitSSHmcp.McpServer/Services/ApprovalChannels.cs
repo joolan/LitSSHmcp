@@ -263,9 +263,10 @@ public class ApprovalService : IApprovalService
         }
         // 预检：用户在弹窗勾选的「本轮次/整个会话」授权命中则直接放行（不再弹窗、不再等通道）。
         var exemptTool = AuditContext.CurrentTool;
-        if (_exemptions is not null && _exemptions.IsApproved(exemptTool, _roundTracker?.CurrentRoundId))
+        if (_exemptions is not null
+            && _exemptions.IsApproved(exemptTool, serverName, command, filePath, _roundTracker?.CurrentRoundId))
         {
-            _logger?.LogInformation("敏感操作命中已有授权(工具={Tool}), 自动放行", exemptTool);
+            _logger?.LogInformation("敏感操作命中已有授权(工具={Tool}, 目标={Target}), 自动放行", exemptTool, serverName);
             return ApprovalOutcome.Approved;
         }
 

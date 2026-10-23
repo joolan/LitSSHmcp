@@ -1,4 +1,5 @@
 using System.Windows;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Services.Storage;
 using Wpf.Ui.Controls;
@@ -14,14 +15,15 @@ public partial class TriggerOverviewWindow : FluentWindow
     {
         InitializeComponent();
         DataContext = _viewModel;
-        Loaded += async (_, _) => await _viewModel.LoadAsync();
+        Loaded += (_, _) => AsyncOperation.Run("加载触发器概览", _viewModel.LoadAsync);
     }
 
-    private async void OnRefresh(object sender, RoutedEventArgs e) => await _viewModel.LoadAsync();
+    private void OnRefresh(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("刷新触发器概览", _viewModel.LoadAsync);
 
     private void OnEdit(object sender, RoutedEventArgs e)
     {
         new TriggerWindow { Owner = this }.ShowDialog();
-        _ = _viewModel.LoadAsync();
+        AsyncOperation.Run("刷新触发器概览", _viewModel.LoadAsync);
     }
 }

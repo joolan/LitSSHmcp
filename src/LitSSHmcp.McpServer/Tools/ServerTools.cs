@@ -31,48 +31,24 @@ public class ServerTools
     public async Task<SshServerListDto> ListServers()
     {
         var config = await _configService.LoadConfigAsync();
-        var servers = config.Servers.Where(s => !s.Disabled).Select(s => new SshServerSummaryDto
-        {
-            Id = s.Id,
-            Name = s.Name,
-            Host = s.Host,
-            Port = s.Port,
-            Username = s.Username,
-            AuthType = s.AuthType.ToString(),
-            Description = s.Description,
-            Tags = s.Tags,
-            LastConnectedAt = s.LastConnectedAt
-        }).ToList();
+        var policy = config.Security?.Authorization ?? new AuthorizationConfig();
+        var servers = config.Servers
+            .Where(s => !s.Disabled && McpAuthorizationFilter.IsTargetVisibleForCaller(policy, AssetNode.Ssh(s.Id)))
+            .Select(s => new SshServerSummaryDto
+            {
+                Id = s.Id,
+                Name = s.Name,
+                Host = s.Host,
+                Port = s.Port,
+                Username = s.Username,
+                AuthType = s.AuthType.ToString(),
+                Description = s.Description,
+                Tags = s.Tags,
+                LastConnectedAt = s.LastConnectedAt
+            }).ToList();
 
         await LogAuditAsync(string.Empty, string.Empty, "LIST_SERVERS", $"{servers.Count} servers", CommandStatus.Executed, AuditCategory.Meta);
         return new SshServerListDto { Success = true, Count = servers.Count, Servers = servers };
-    }
-
-    [McpServerTool(Name = "ssh_get_server_status", UseStructuredContent = true, OutputSchemaType = typeof(ServerStatusDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("探测SSH服务器是否在线, 失败时给出固定分类(auth_failed/host_key_mismatch/timeout/connection_error)。全面连通性诊断用ssh_test_connection")]
-    public async Task<ServerStatusDto> GetServerStatus(
-        [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
-        CancellationToken cancellationToken = default)
-    {
-        var config = await _configService.LoadConfigAsync();
-        var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverId);
-        if (server == null)
-            return ServerStatusDto.Fail(resolveStatus ?? "server_not_found", resolveError!);
-
-        var probe = await _sshService.ProbeConnectionAsync(server, cancellationToken);
-        await LogAuditAsync(server.Id, server.Name, "GET_STATUS",
-            probe.Success ? "connected" : probe.ErrorKind, probe.Success ? CommandStatus.Executed : CommandStatus.Failed, AuditCategory.Probe);
-        return new ServerStatusDto
-        {
-            Success = probe.Success,
-            Status = probe.Success ? "connected" : ToolSupport.ConnectionFailureStatus(probe.ErrorKind),
-            Error = probe.Success ? null : probe.Error,
-            ErrorKind = probe.Success ? null : probe.ErrorKind,
-            Id = server.Id,
-            Name = server.Name,
-            Host = server.Host,
-            DurationMs = probe.Duration.TotalMilliseconds
-        };
     }
 
     [McpServerTool(Name = "ssh_test_connection", UseStructuredContent = true, OutputSchemaType = typeof(SshTestConnectionDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]

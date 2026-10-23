@@ -12,7 +12,9 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
+using LitSSHmcp.McpServer.Services;
 using ModelContextProtocol.Server;
 
 namespace LitSSHmcp.McpServer.Tools;
@@ -41,7 +43,7 @@ public class UsageGuideTools
             }
             catch
             {
-                // 配置读取失败时按"全部启用"降级，不阻断工具调用
+                // 配置读取失败时按“全部启用”处理，避免指南缺失工具清单
                 enabled = null;
             }
         }
@@ -52,14 +54,18 @@ public class UsageGuideTools
     /// <summary>
     /// 依据启用分组构建指南：工具清单与路由文案都只保留与<b>实际暴露工具</b>相关的部分。
     /// <paramref name="enabled"/> 为 null 表示不裁剪（全部启用）。
+    /// <paramref name="includeInternalTools"/> 为 null 时按宿主环境决定是否包含内部工具。
     /// </summary>
-    internal static string BuildGuide(IReadOnlySet<string>? enabled)
+    internal static string BuildGuide(IReadOnlySet<string>? enabled, bool? includeInternalTools = null)
     {
         var tools = EnumerateToolInfos();
         var toolGroup = tools.ToDictionary(t => t.Name, t => t.Group, StringComparer.Ordinal);
+        var includeInternal = includeInternalTools ?? HostEnv.InternalToolsEnabled;
 
         var visibleTools = tools
             .Where(t => t.Group is null || enabled is null || enabled.Contains(t.Group))
+            .Where(t => !string.Equals(t.Name, ApprovalRoundTools.ToolName, StringComparison.Ordinal)
+                        || includeInternal)
             .OrderBy(t => t.Name, StringComparer.Ordinal)
             .Select(t => new { name = t.Name, description = t.Description })
             .Cast<object>()
@@ -76,22 +82,19 @@ public class UsageGuideTools
         var serverGuideLines = Keep(new[]
         {
             "用户问'连接了哪些服务器'或'有哪些服务器'时,使用 ssh_list_servers",
-            "用户问'某台服务器的状态'时,使用 ssh_get_server_status",
             "用户要看服务器整体态势(资源占用/端口进程服务三元组/nginx证书到期/systemd健康)时, 先 ssh_snapshot_get 查已存快照; 需要最新数据用 ssh_snapshot_refresh(较慢,同一服务器同时只允许一个快照)",
             "用户问'服务器配置'或'服务器信息'时,使用 ssh_list_servers",
             "用户想测试服务器连接时,使用 ssh_test_connection",
             "用户要求在服务器上执行命令/查日志/看进程/查磁盘网络时,使用 ssh_execute_command",
             "用户要求重启或启停服务、改系统配置、安装软件、改权限、管理用户、看系统日志等需要root权限时,主动使用 ssh_execute_sudo",
             "用户问'这台机器能不能sudo/有没有配置提权'时,使用 ssh_get_sudo_status",
-            "用户问'执行过哪些命令/命令历史/操作记录'时,使用 ssh_get_command_history",
-            "用户要求上传或下载文件时,使用 ssh_upload_file / ssh_download_file; 上传/下载**整个文件夹或多个文件**时用 ssh_upload_files / ssh_download_files(一条 SFTP 连接、整批一次审批)",
+            "用户要求上传或下载文件/目录时,使用 ssh_upload / ssh_download(支持单文件、多个文件或整个目录; 一条 SFTP 连接、整批一次审批)",
             "用户想看服务器上的目录或文件时,使用 ssh_list_files",
-            "用户问容器(有哪些容器/容器状态/端口/日志/资源/镜像)时,使用 docker_ps / docker_logs / docker_inspect / docker_stats / docker_images; 重启容器用 docker_restart, 进入容器执行用 docker_exec(均需确认)",
-            "用户问systemd服务状态或要重启服务/看服务日志时,使用 service_status / service_restart / service_logs; 不确定服务名先用 service_list",
-            "用户要看日志文件尾部或在日志里搜错误/关键字时,使用 log_tail / log_grep(可传 path, 也可传 appId 用应用管理里配置的日志路径); 不知道路径时先用 log_find 发现最近修改的 .log 文件(路径受 security.logs.allowedPaths 约束)",
-            "用户问Java进程/线程/死锁/CPU飙高/内存/GC时,先用 java_processes 拿pid(可传appId过滤), 再用 java_threads / java_heap / java_info(也可直接传appId自动解析pid)",
-            "用户要对某个应用做整体体检(跨服务器+依赖数据库)时,优先用 app_health_snapshot, 再按需下钻",
-            "用户问'审计记录是哪个AI客户端/哪次会话产生的'时,用 mcp_list_sessions 看会话(客户端名称/版本), 再用 ssh_get_command_history / datasource_get_sql_history 的 sessionId 过滤具体记录; 当前会话ID见 mcp_self_check"
+            "用户问容器(有哪些容器/容器状态/端口/日志/资源/镜像)时,使用 docker_query(action=ps/logs/inspect/stats/images); 重启容器用 docker_restart, 进入容器执行用 docker_exec(均需确认)",
+            "用户问systemd服务状态、服务列表或服务日志时,使用 service_query(action=list/status/logs); 重启服务用 service_restart",
+            "用户要看日志文件尾部、在日志里搜错误/关键字或发现日志路径时,使用 log_query(action=tail/grep/find; 可传 path, 也可传 appId 用应用管理里配置的日志路径; 路径受 security.logs.allowedPaths 约束)",
+            "用户问Java进程/线程/死锁/CPU飙高/内存/GC时,先用 java_processes 拿pid(可传appId过滤), 再用 java_diagnostics(action=threads/heap/info, 也可直接传appId自动解析pid)",
+            "用户要对某个应用做整体体检(跨服务器+依赖数据库)时,优先用 app_health_snapshot, 再按需下钻"
         });
         if (serverGuideLines.Length > 0)
         {
@@ -107,17 +110,16 @@ public class UsageGuideTools
         {
             "用户问'有哪些MySQL/数据库列表/数据库配置信息'时,使用 datasource_list",
             "用户问'数据库能不能连上/测试数据库连接/数据库连不上'时,使用 datasource_test_connection",
-            "用户问'MySQL服务正不正常/数据库为什么慢/连接数暴涨'时,先用 mysql_diagnostics",
-            "用户想查数据/看表结构/查processlist时,使用 mysql_query",
+            "用户问'MySQL服务正不正常/数据库为什么慢/连接数暴涨'时,先用 mysql_query(action=diagnostics)",
+            "用户想查数据/看表结构/查processlist时,使用 mysql_query(action=query)",
             "用户想改数据/建表/加字段时,使用 mysql_execute",
-            "用户问'这条SQL为什么慢'时,使用 mysql_explain",
-            "用户问'PostgreSQL/PG正不正常/PG为什么慢/连接数暴涨'时,先用 postgres_diagnostics",
-            "用户想查PG数据/看表结构时,使用 postgres_query; 改PG数据/建表时,使用 postgres_execute",
-            "用户问'这条PG SQL为什么慢'时,使用 postgres_explain",
+            "用户问'这条SQL为什么慢'时,使用 mysql_query(action=explain)",
+            "用户问'PostgreSQL/PG正不正常/PG为什么慢/连接数暴涨'时,先用 postgres_query(action=diagnostics)",
+            "用户想查PG数据/看表结构时,使用 postgres_query(action=query); 改PG数据/建表时,使用 postgres_execute",
+            "用户问'这条PG SQL为什么慢'时,使用 postgres_query(action=explain)",
             "用户问'Redis正不正常/缓存为什么慢/内存涨/命中率低'时,先用 redis_diagnostics",
             "用户想查缓存值/看key/看集合内容/看Redis慢日志时,使用 redis_read(只读白名单命令)",
             "用户想写缓存/删key/设过期/改Redis配置时,使用 redis_execute(一律弹桌面确认, 危险命令直接拒绝)",
-            "用户问'谁执行了什么SQL/Redis命令/审计记录'时,使用 datasource_get_sql_history",
             "注意区分: SSH服务器列表=ssh_list_servers, SSH连通性=ssh_test_connection; 数据库列表=datasource_list, 数据库连通性=datasource_test_connection; SSH命令=ssh_execute_command, SQL=mysql_query/mysql_execute, Redis只读=redis_read, Redis写=redis_execute"
         });
         if (datasourceGuideLines.Length > 0)
@@ -139,10 +141,10 @@ public class UsageGuideTools
         var topologyWorkflow = Keep(new[]
         {
             "1. topology_get_overview 获取全局拓扑: 哪些Java应用跑在哪台SSH服务器、连了哪些MySQL",
-            "2. 不知道资产ID时先用 topology_search(名称/主机/端口/标签) 找到精确ID; 再用 topology_get_dependencies(app:应用ID) 拿到其所在服务器和依赖的数据源",
-            "3. 查链路用 topology_path(from,to)(有向); 查影响面用 topology_impact(机器/库/证书变更影响谁); 核实依据用 topology_explain(来源/证据/末次发现/是否过期)",
+            "2. 不知道资产ID时先用 topology_query(action=search, query=名称/主机/端口/标签) 找到精确ID; 再用 topology_get_dependencies(app:应用ID) 拿到其所在服务器和依赖的数据源",
+            "3. 查链路用 topology_query(action=path, from=..., to=...)(有向); 查影响面用 topology_query(action=impact, assetId=...)(机器/库/证书变更影响谁); 核实依据用 topology_query(action=explain, assetId=...)(来源/证据/末次发现/是否过期)",
             "4. SSH侧取证: ssh_execute_command 查看 java 进程/端口/应用日志(netstat/ss/journalctl/tail)",
-            "5. 数据库侧取证: mysql_diagnostics 看连接数/慢查询/锁/复制, mysql_query 查 processlist 和慢日志, mysql_explain 分析问题SQL; 涉及缓存时用 redis_diagnostics 看内存/命中率/慢日志, redis_read 查具体key",
+            "5. 数据库侧取证: mysql_query(action=diagnostics) 看连接数/慢查询/锁/复制, mysql_query(action=query) 查 processlist 和慢日志, mysql_query(action=explain) 分析问题SQL; 涉及缓存时用 redis_diagnostics 看内存/命中率/慢日志, redis_read 查具体key",
             "6. 跨机关联: 应用日志或配置文件中的数据库IP, 与 datasource_list 返回的 host/port 对应即可定位是哪个数据源",
             "7. 拓扑缺失或过期时, 调用 topology_discover 扫描(java进程/网络连接/JDBC配置/MySQL processlist)自动补全关系",
             "8. 拓扑中的边: runsOn=应用/数据库运行在服务器(应用与MySQL都可有), connectsTo=应用连接数据库, canAccess=服务器可访问数据库; source=manual(人工)/discovered(自动发现), stale=true 表示超过7天未再次确认"
@@ -153,14 +155,14 @@ public class UsageGuideTools
             {
                 description = "【重要】跨服务器/应用/数据库的故障排查要先看拓扑, 再分侧取证",
                 workflow = topologyWorkflow,
-                asset_id_format = "节点ID格式: ssh:服务器ID, ds:数据源ID, app:应用ID; 图查询工具也接受纯ID或名称, 不确定时先 topology_search",
+                asset_id_format = "节点ID格式: ssh:服务器ID, ds:数据源ID, app:应用ID; 图查询工具也接受纯ID或名称, 不确定时先 topology_query(action=search)",
                 relation_sources = "拓扑边来自两部分: 配置文件人工声明(relations) + topology_discover 自动发现(缓存于本机SQLite)"
             };
         }
 
         var fileTransferPoints = Keep(new[]
         {
-            "上传=ssh_upload_file, 下载=ssh_download_file, 列远程目录=ssh_list_files(是远程服务器目录, 不是本机文件); 文件夹/多文件批量用 ssh_upload_files / ssh_download_files(单连接、整批一次审批、保留子目录层级)",
+            "上传=ssh_upload, 下载=ssh_download, 列远程目录=ssh_list_files(是远程服务器目录, 不是本机文件); 单文件/多文件/目录统一走 ssh_upload / ssh_download(单连接、整批一次审批、保留子目录层级)",
             "三者都受 fileTransfer 开关与本地/远程路径白名单约束, 越界返回 path_not_allowed(错误里会列出允许的路径)",
             "上传/下载需审批(默认桌面+CLI双通道), 拒绝/超时分别返回 rejected / approval_timeout",
             "列目录失败(路径不存在/无权限)会明确返回失败状态, 不会用空列表冒充'目录为空'; 条目过多会置 truncated=true"
@@ -176,11 +178,11 @@ public class UsageGuideTools
 
         var datasourcePoints = Keep(new[]
         {
-            "'看有哪些数据库'→datasource_list, '测数据库能否连上'→datasource_test_connection, '查数据'→mysql_query, '改数据'→mysql_execute",
-            "'PG查数据'→postgres_query, 'PG改数据'→postgres_execute, 'PG体检'→postgres_diagnostics",
+            "'看有哪些数据库'→datasource_list, '测数据库能否连上'→datasource_test_connection, '查数据'→mysql_query(action=query), '改数据'→mysql_execute",
+            "'PG查数据'→postgres_query(action=query), 'PG改数据'→postgres_execute, 'PG体检'→postgres_query(action=diagnostics)",
             "'查缓存/读key'→redis_read, '写缓存/删key/设过期'→redis_execute, 'Redis体检'→redis_diagnostics",
             "datasource_list 返回 host/port/username 可以直接用于与应用日志中的连接串比对; type=redis 的数据源只能用 Redis 工具",
-            "mysql_query 只允许只读语句(SELECT/SHOW/EXPLAIN/DESC/WITH), 单条语句, 结果最多1000行; 数据修改型CTE(WITH ... DELETE/UPDATE)与 EXPLAIN ANALYZE <DML> 会被识别为写操作并拒绝(请改用 mysql_execute)",
+            "mysql_query 统一只读入口: action=query 执行 SELECT/SHOW/EXPLAIN/DESC/WITH(单条, 结果最多1000行), action=explain 看执行计划, action=diagnostics 做整体诊断; 数据修改型CTE与 EXPLAIN ANALYZE <DML> 会被识别为写操作并拒绝(请改用 mysql_execute)",
             "mysql_execute 用于 INSERT/UPDATE/DELETE/DDL, 会触发安全策略与用户审批",
             "redis_read 只允许只读白名单命令, 结果已JSON化并截断超长字符串/超大数组; 非白名单命令会提示改用 redis_execute",
             "redis_execute 的写命令一律弹桌面确认, 危险命令(清库/关服/换主从/加载模块/阻塞连接类)直接拒绝",

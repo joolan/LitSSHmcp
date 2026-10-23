@@ -35,6 +35,55 @@ public class ConfigServiceTests
     }
 
     [Fact]
+    public async Task Corrupt_config_throws_in_strict_mode_and_falls_back_by_default()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "config.json");
+        await File.WriteAllTextAsync(path, "{ not valid json");
+
+        try
+        {
+            var service = new ConfigService(path, new DpapiSecretProtector());
+
+            // 普通调用保持原有容错：返回默认配置，供非安全入口继续降级运行。
+            var fallback = await service.LoadConfigAsync();
+            Assert.Empty(fallback.Servers);
+            Assert.Empty(fallback.DataSources);
+
+            // 应用锁等安全入口必须 fail-closed，不能把损坏配置当成“未设置密码”。
+            var ex = await Assert.ThrowsAsync<ConfigLoadException>(
+                () => service.LoadStrictAsync());
+            Assert.Equal(path, ex.ConfigPath);
+            Assert.Contains("配置文件损坏", ex.Message);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public async Task Missing_config_still_creates_default_in_strict_mode()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(dir, "config.json");
+
+        try
+        {
+            var service = new ConfigService(path, new DpapiSecretProtector());
+            var config = await service.LoadStrictAsync();
+
+            Assert.Equal(AppConfig.CurrentSchemaVersion, config.SchemaVersion);
+            Assert.True(File.Exists(path));
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public async Task Remote_desktop_password_is_encrypted_at_rest_and_round_trips()
     {
         var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
@@ -119,6 +168,78 @@ public class ConfigServiceTests
             // 非密文字段保持原样
             Assert.Equal(new[] { "-y", "pkg" }, reloaded.Agent.McpServers[1].Args);
             Assert.Equal("https://mcp.example.com/mcp", reloaded.Agent.McpServers[2].Url);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public async Task Concurrent_disjoint_saves_merge_without_lost_update()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "config.json");
+        try
+        {
+            var a = new ConfigService(path, new DpapiSecretProtector());
+            var cfgA = await a.LoadConfigAsync();
+            var b = new ConfigService(path, new DpapiSecretProtector());
+            var cfgB = await b.LoadConfigAsync();
+
+            cfgA.Ui ??= new UiConfig();
+            cfgA.Ui.Theme = "dark";
+            cfgB.Agent ??= new AgentConfig();
+            cfgB.Agent.ContextLimit = 12345;
+
+            await Task.WhenAll(a.SaveConfigAsync(cfgA), b.SaveConfigAsync(cfgB));
+
+            var final = await new ConfigService(path, new DpapiSecretProtector()).LoadConfigAsync();
+            Assert.Equal("dark", final.Ui!.Theme);
+            Assert.Equal(12345, final.Agent!.ContextLimit);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public async Task Same_field_concurrent_change_throws_conflict_instead_of_overwriting()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "config.json");
+        try
+        {
+            var a = new ConfigService(path, new DpapiSecretProtector());
+            var cfgA = await a.LoadConfigAsync();
+            var b = new ConfigService(path, new DpapiSecretProtector());
+            var cfgB = await b.LoadConfigAsync();
+
+            cfgA.Ui ??= new UiConfig();
+            cfgA.Ui.Theme = "dark";
+            cfgB.Ui ??= new UiConfig();
+            cfgB.Ui.Theme = "light";
+
+            await a.SaveConfigAsync(cfgA);
+            ConfigConflictException? notified = null;
+            void OnConflict(ConfigConflictException conflict) => notified = conflict;
+            ConfigConflictNotifier.ConflictDetected += OnConflict;
+            try
+            {
+                var ex = await Assert.ThrowsAsync<ConfigConflictException>(() => b.SaveConfigAsync(cfgB));
+                Assert.Contains("ui.Theme", ex.ConflictPaths, StringComparer.OrdinalIgnoreCase);
+                Assert.Same(ex, notified);   // UI 统一提示依赖该通知
+            }
+            finally
+            {
+                ConfigConflictNotifier.ConflictDetected -= OnConflict;
+            }
+
+            var final = await new ConfigService(path, new DpapiSecretProtector()).LoadConfigAsync();
+            Assert.Equal("dark", final.Ui!.Theme);
         }
         finally
         {

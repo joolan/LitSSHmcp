@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using Renci.SshNet;
@@ -82,7 +83,7 @@ public sealed class SyncService
     {
         var serverId = upload ? task.TargetServerId : task.SourceServerId;
         var server = ResolveServer(config, serverId, upload ? "目标" : "源");
-        var localRoot = Require(task.LocalPath, "本地路径");
+        var localRoot = Path.GetFullPath(Require(task.LocalPath, "本地路径"));
         var remoteRoot = Require(upload ? task.TargetRemotePath : task.SourceRemotePath, "远程路径");
 
         using var sftp = OpenSftp(server);
@@ -100,7 +101,7 @@ public sealed class SyncService
         {
             ct.ThrowIfCancellationRequested();
             var remotePath = CombineRemote(remoteRoot, rel);
-            var localPath = Path.Combine(Path.GetFullPath(localRoot), rel.Replace('/', Path.DirectorySeparatorChar));
+            var localPath = LocalPathFor(localRoot, rel);
             if (upload)
                 UploadFile(sftp, localPath, remotePath);
             else
@@ -121,7 +122,7 @@ public sealed class SyncService
                 if (upload)
                     TryDeleteRemoteFile(sftp, CombineRemote(remoteRoot, rel));
                 else
-                    TryDeleteLocalFile(Path.Combine(Path.GetFullPath(localRoot), rel.Replace('/', Path.DirectorySeparatorChar)));
+                    TryDeleteLocalFile(LocalPathFor(localRoot, rel));
                 deleted++;
             }
         }
@@ -150,7 +151,8 @@ public sealed class SyncService
         var dstRoot = Require(task.TargetRemotePath, "目标远程路径");
 
         var (tHost, tPort) = RemoteCopyCommandBuilder.ResolveEndpoint(targetServer, task.UseInternalAddress);
-        var (ok, error) = CheckRemoteRemote(sourceServer, targetServer, tHost, tPort, out var usePassword);
+        var (ok, error) = CheckRemoteRemote(sourceServer, targetServer, tHost, tPort,
+            out var usePassword, out var acceptNewHostKey);
         if (!ok)
             return Fail(error!, sw, retryable: false);
 
@@ -158,7 +160,7 @@ public sealed class SyncService
         var cmd = RemoteCopyCommandBuilder.BuildRsyncSyncCommand(
             srcRoot.TrimEnd('/') + "/", tHost, tPort, targetServer.Username, dstRoot,
             task.DeleteExtra, usePassword, task.IncludePatterns, task.ExcludePatterns,
-            ServerConfigCache.JumpEndpoint(targetServer.ProxyJumpServerId));
+            ServerConfigCache.JumpEndpoint(targetServer.ProxyJumpServerId), acceptNewHostKey);
 
         var exec = _ssh.ExecuteStreamingAsync(sourceServer, cmd, null, null,
             usePassword ? targetServer.Password : null, ct, 3600).GetAwaiter().GetResult();
@@ -173,7 +175,7 @@ public sealed class SyncService
 
     /// <summary>探测服务器端同步前提：源/目标两端均需 rsync；认证优先源机免密，否则 sshpass+目标密码。</summary>
     private (bool Ok, string? Error) CheckRemoteRemote(SshServerConfig source, SshServerConfig target,
-        string targetHost, int targetPort, out bool usePassword)
+        string targetHost, int targetPort, out bool usePassword, out bool acceptNewHostKey)
     {
         usePassword = false;
 
@@ -182,6 +184,7 @@ public sealed class SyncService
         var hasRsyncSrc = srcProbe.Contains("LITSSH_HAS_RSYNC", StringComparison.Ordinal);
         var hasSshpass = srcProbe.Contains("LITSSH_HAS_SSHPASS", StringComparison.Ordinal);
         var keyOk = srcProbe.Contains("LITSSH_KEY_OK", StringComparison.Ordinal);
+        acceptNewHostKey = srcProbe.Contains(RemoteCopyCommandBuilder.HostKeyAcceptNewMarker, StringComparison.Ordinal);
 
         var tgtProbe = ExecRemote(target, RemoteCopyCommandBuilder.BuildTargetProbeCommand());
         var hasRsyncTgt = tgtProbe.Contains("LITSSH_T_RSYNC", StringComparison.Ordinal);
@@ -311,7 +314,8 @@ public sealed class SyncService
 
                     // 前置条件：源/目标两端都需 rsync（缺失时提示对应端的安装命令），并确认认证方式
                     var (tHost, tPort) = RemoteCopyCommandBuilder.ResolveEndpoint(targetServer, task.UseInternalAddress);
-                    var (preOk, preError) = CheckRemoteRemote(sourceServer, targetServer, tHost, tPort, out var usePassword);
+                    var (preOk, preError) = CheckRemoteRemote(sourceServer, targetServer, tHost, tPort,
+                        out var usePassword, out var acceptNewHostKey);
                     if (!preOk)
                         return Err(preError!);
 
@@ -322,7 +326,7 @@ public sealed class SyncService
                     var cmd = RemoteCopyCommandBuilder.BuildRsyncSyncCommand(
                         srcProbe, tHost, tPort, targetServer.Username, dstRoot,
                         deleteExtra: false, usePassword, task.IncludePatterns, task.ExcludePatterns,
-                        ServerConfigCache.JumpEndpoint(targetServer.ProxyJumpServerId));
+                        ServerConfigCache.JumpEndpoint(targetServer.ProxyJumpServerId), acceptNewHostKey);
                     var exec = _ssh.ExecuteStreamingAsync(sourceServer, cmd, null, null,
                         usePassword ? targetServer.Password : null, ct, 120).GetAwaiter().GetResult();
                     if (!exec.Success)
@@ -353,6 +357,10 @@ public sealed class SyncService
     }
 
     // ---------- 基础工具 ----------
+
+    private static string LocalPathFor(string root, string relative)
+        => RemotePathGuard.ResolveLocalUnder(root, relative)
+           ?? throw new InvalidOperationException($"同步路径不安全或越界，已拒绝: {relative}");
 
     private static bool IsChanged((long Size, DateTime Mtime) src, (long Size, DateTime Mtime) dst)
     {
@@ -427,7 +435,9 @@ public sealed class SyncService
                     var rel = e.FullName.StartsWith(rootNorm, StringComparison.Ordinal)
                         ? e.FullName[rootNorm.Length..].TrimStart('/')
                         : e.Name;
-                    dict[rel] = (e.Length, e.LastWriteTimeUtc);
+                    if (!RemotePathGuard.TryRelativePath(rel, out var safeRel))
+                        throw new InvalidOperationException($"远端返回了不安全的路径，已拒绝同步: {rel}");
+                    dict[safeRel] = (e.Length, e.LastWriteTimeUtc);
                 }
             }
         }

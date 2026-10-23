@@ -13,6 +13,12 @@ public static class WebSessionEndpoints
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
+    /// <summary>单连接待发送帧上限；满时阻塞回合线程形成背压，避免慢客户端把内存撑爆。</summary>
+    private const int FrameQueueCapacity = 256;
+
+    /// <summary>单帧发送超时：半开/慢连接不得无限阻塞回合泵。</summary>
+    private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(10);
+
     public static void MapWebSessionEndpoints(this WebApplication app)
     {
         var api = app.MapGroup("/api/sessions");
@@ -100,12 +106,14 @@ public static class WebSessionEndpoints
             try
             {
                 await using var stream = file.OpenReadStream();
-                var path = await manager.SaveAttachmentAsync(principal, id, file.FileName, file.ContentType, stream, ctx.RequestAborted);
+                var saved = await manager.SaveAttachmentAsync(principal, id, file.FileName, file.ContentType, stream, ctx.RequestAborted);
                 return Results.Ok(new
                 {
-                    path,
-                    name = file.FileName,
-                    contentType = file.ContentType,
+                    path = saved.RelativePath,
+                    name = saved.DisplayName,
+                    contentType = saved.ContentType,
+                    width = saved.Width,
+                    height = saved.Height,
                     size = file.Length
                 });
             }
@@ -181,7 +189,8 @@ public static class WebSessionEndpoints
     /// C→S <c>{"type":"user","text":…}</c> / <c>{"type":"stop"}</c>；
     /// S→C <c>assistant_text/tool/done/error/busy</c> 帧。
     /// </summary>
-    private static async Task HandleWebSocketAsync(HttpContext ctx, long id, WebSessionManager manager, WebAccessLog accessLog)
+    private static async Task HandleWebSocketAsync(HttpContext ctx, long id, WebSessionManager manager, WebAccessLog accessLog,
+        WebRateLimitPolicy ratePolicy, WebRateLimitStore rateStore, WebSocketConnectionLimiter connections)
     {
         var principal = ctx.GetWebPrincipal();
         if (principal is null)
@@ -194,26 +203,42 @@ public static class WebSessionEndpoints
             ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
             return;
         }
-        // WS Origin 校验（§10.B.1）：带 Origin 的浏览器握手必须与 Host 一致，防跨站 WebSocket 劫持
-        var origin = ctx.Request.Headers.Origin.ToString();
-        if (!string.IsNullOrEmpty(origin) &&
-            (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri) ||
-             !string.Equals(originUri.Host, ctx.Request.Host.Host, StringComparison.OrdinalIgnoreCase)))
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        // WS 握手限速：WS 升级后不再经过 HTTP 限速中间件，必须在端点内单独计数。
+        if (!rateStore.TryAcquire(ip, "ws", ratePolicy.WsHandshakesPerMinute, DateTimeOffset.UtcNow))
         {
-            accessLog.Write("ws_origin_rejected", principal.Username, ctx.Connection.RemoteIpAddress?.ToString(), origin);
+            accessLog.Write("ws_rate_limited", principal.Username, ip, "ws_handshake");
+            ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            return;
+        }
+        // Origin 必须存在且 scheme/host/port 与当前请求完全一致，防跨站 WebSocket 劫持。
+        var origin = ctx.Request.Headers.Origin.ToString();
+        if (!WebSocketOriginPolicy.IsAllowed(ctx, origin))
+        {
+            accessLog.Write("ws_origin_rejected", principal.Username, ip, origin);
             ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
         // owner 预检（§10.B.5 会话隔离；每消息仍经 manager 复检）：非本用户统一 404 不泄露存在性
         if (!await manager.IsOwnerAsync(principal, id, ctx.RequestAborted))
         {
-            accessLog.Write("ws_denied", principal.Username, ctx.Connection.RemoteIpAddress?.ToString(), $"session={id}");
+            accessLog.Write("ws_denied", principal.Username, ip, $"session={id}");
             ctx.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
         }
 
+        // 每用户 + 每 IP 并发连接上限；租约在连接方法返回时自动释放。
+        using var userLease = connections.TryAcquire($"user:{principal.UserId}", ratePolicy.WsMaxConnectionsPerUser);
+        using var ipLease = connections.TryAcquire($"ip:{ip}", ratePolicy.WsMaxConnectionsPerIp);
+        if (userLease is null || ipLease is null)
+        {
+            accessLog.Write("ws_connection_limited", principal.Username, ip, "ws_sessions");
+            ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            return;
+        }
+
         using var socket = await ctx.WebSockets.AcceptWebSocketAsync();
-        accessLog.Write("ws_connect", principal.Username, ctx.Connection.RemoteIpAddress?.ToString(), $"session={id}");
+        accessLog.Write("ws_connect", principal.Username, ip, $"session={id}");
 
         var sendGate = new SemaphoreSlim(1, 1);
         Task? turnTask = null;
@@ -298,49 +323,79 @@ public static class WebSessionEndpoints
             {
                 try { await turnTask; } catch { /* 回合收尾异常不影响连接清理 */ }
             }
-            accessLog.Write("ws_disconnect", principal.Username, ctx.Connection.RemoteIpAddress?.ToString(), $"session={id}");
+            accessLog.Write("ws_disconnect", principal.Username, ip, $"session={id}");
         }
     }
 
     /// <summary>
-    /// 后台执行一轮并流式推帧（与接收循环并行，stop 可即时取消）：事件经无界 Channel 保持顺序，
-    /// 由泵串行发送；回合结束（done/error）后泵随之结束。
+    /// 后台执行一轮并流式推帧（与接收循环并行，stop 可即时取消）：事件经有界 Channel 保持顺序，
+    /// 由泵串行发送；队列满时生产者阻塞形成背压，回合结束（done/error）后泵随之结束。
     /// </summary>
     private static async Task RunTurnAndStreamAsync(WebSessionManager manager, WebPrincipal principal, long id,
         string text, IReadOnlyList<WebAttachmentInput>? attachments, WebSocket socket, SemaphoreSlim sendGate, CancellationToken ct)
     {
-        var frames = Channel.CreateUnbounded<object>();
+        var frames = Channel.CreateBounded<object>(new BoundedChannelOptions(FrameQueueCapacity)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
+        });
         var pump = Task.Run(async () =>
         {
-            await foreach (var frame in frames.Reader.ReadAllAsync())
-                await SendJsonAsync(socket, sendGate, frame, CancellationToken.None);
+            try
+            {
+                await foreach (var frame in frames.Reader.ReadAllAsync())
+                    if (!await SendJsonAsync(socket, sendGate, frame, ct))
+                        break;
+            }
+            catch (OperationCanceledException)
+            {
+                // 连接已断开：泵退出并关闭队列，阻塞中的生产者会收到 ChannelClosedException。
+            }
+            finally
+            {
+                frames.Writer.TryComplete();
+            }
         }, CancellationToken.None);
         var progress = new FrameProgress(frames.Writer);
         try
         {
             await manager.RunTurnAsync(principal, id, text, attachments, progress, ct);
-            await frames.Writer.WriteAsync(new { type = "done" }, CancellationToken.None);
+            await WriteTerminalFrameAsync(frames.Writer, new { type = "done" });
         }
         catch (WebSessionBusyException)
         {
-            await frames.Writer.WriteAsync(new { type = "busy", message = "上一轮仍在进行中" }, CancellationToken.None);
+            await WriteTerminalFrameAsync(frames.Writer, new { type = "busy", message = "上一轮仍在进行中" });
         }
         catch (WebSessionNotFoundException)
         {
-            await frames.Writer.WriteAsync(new { type = "error", message = "会话不存在" }, CancellationToken.None);
+            await WriteTerminalFrameAsync(frames.Writer, new { type = "error", message = "会话不存在" });
         }
         catch (OperationCanceledException)
         {
-            await frames.Writer.WriteAsync(new { type = "done", stopped = true }, CancellationToken.None);
+            await WriteTerminalFrameAsync(frames.Writer, new { type = "done", stopped = true });
         }
         catch (Exception ex)
         {
-            await frames.Writer.WriteAsync(new { type = "error", message = ex.Message }, CancellationToken.None);
+            await WriteTerminalFrameAsync(frames.Writer, new { type = "error", message = ex.Message });
         }
         finally
         {
             frames.Writer.TryComplete();
             await pump;
+        }
+    }
+
+    /// <summary>写终止帧；连接已断开导致队列关闭时静默忽略。</summary>
+    private static async Task WriteTerminalFrameAsync(ChannelWriter<object> writer, object frame)
+    {
+        try
+        {
+            await writer.WriteAsync(frame, CancellationToken.None);
+        }
+        catch (ChannelClosedException)
+        {
+            // 泵已随连接退出，无需再推终止帧
         }
     }
 
@@ -363,7 +418,10 @@ public static class WebSessionEndpoints
         }
     }
 
-    /// <summary>事件 → 协议帧的同步转换器（Report 即入队，保持顺序；帧序列化在泵内完成）。</summary>
+    /// <summary>
+    /// 事件 → 协议帧的同步转换器：队列未满时直接入队；满时同步等待泵腾出空间（背压），
+    /// 连接断开队列关闭后静默丢弃，避免生产线程永久阻塞。
+    /// </summary>
     private sealed class FrameProgress(ChannelWriter<object> writer) : IProgress<AgentEvent>
     {
         public void Report(AgentEvent e)
@@ -375,28 +433,49 @@ public static class WebSessionEndpoints
                 AgentEventKind.ToolCall => new { type = "tool", tool = e.ToolName, args = e.ArgumentsJson },
                 AgentEventKind.ToolResult => new { type = "tool_result", tool = e.ToolName, ok = e.ToolSuccess, ms = e.DurationMs },
                 AgentEventKind.MemoryRecall => new { type = "memory_recall", text = e.Text },
-            AgentEventKind.AssetGraphContext => new { type = "asset_graph_context", text = e.Text },
+                AgentEventKind.AssetGraphContext => new { type = "asset_graph_context", text = e.Text },
                 AgentEventKind.Error => new { type = "error", message = e.Text },
                 _ => new { type = "event", kind = e.Kind.ToString() }
             };
-            writer.TryWrite(frame);
+
+            try
+            {
+                if (!writer.TryWrite(frame))
+                    writer.WriteAsync(frame).AsTask().GetAwaiter().GetResult();
+            }
+            catch (ChannelClosedException)
+            {
+                // 连接已断开：后续事件直接丢弃
+            }
         }
     }
 
-    internal static async Task SendJsonAsync(WebSocket socket, SemaphoreSlim gate, object frame, CancellationToken ct)
+    internal static async Task<bool> SendJsonAsync(WebSocket socket, SemaphoreSlim gate, object frame, CancellationToken ct)
     {
         if (socket.State != WebSocketState.Open)
-            return;
+            return false;
         var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(frame, JsonOpts));
-        await gate.WaitAsync(ct);
         try
         {
-            if (socket.State == WebSocketState.Open)
-                await socket.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
+            await gate.WaitAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        try
+        {
+            if (socket.State != WebSocketState.Open)
+                return false;
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(SendTimeout);
+            await socket.SendAsync(bytes, WebSocketMessageType.Text, true, timeout.Token);
+            return true;
         }
         catch
         {
-            // 发送失败（对端已断开）忽略，读循环会自然退出
+            // 发送失败（对端已断开）返回 false，调用方决定是否结束推送
+            return false;
         }
         finally
         {

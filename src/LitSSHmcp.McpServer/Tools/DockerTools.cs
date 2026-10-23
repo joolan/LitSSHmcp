@@ -24,8 +24,36 @@ public class DockerTools
         _runner = runner;
     }
 
-    [McpServerTool(Name = "docker_ps", UseStructuredContent = true, OutputSchemaType = typeof(DockerPsDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("列出服务器上的Docker容器(名称/镜像/状态/端口)。all=true 含已停止容器; 看容器日志用docker_logs, 重启用docker_restart")]
+    [McpServerTool(Name = "docker_query", UseStructuredContent = true, OutputSchemaType = typeof(DockerQueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
+    [Description("Docker 只读入口：action=ps 列容器、action=logs 看日志、action=inspect 看详情、action=stats 看资源占用、action=images 看镜像。重启用 docker_restart，容器内执行用 docker_exec。")]
+    public async Task<DockerQueryResultDto> DockerQuery(
+        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("查询类型：ps / logs / inspect / stats / images")] string action,
+        [Description("容器名或容器ID（logs/inspect 必填）")] string? container = null,
+        [Description("ps: true=包含已停止容器")] bool all = false,
+        [Description("logs: 返回最近行数（默认200，上限5000）")] int tail = 200,
+        [Description("logs: 起始时间（可选），如 10m / 2h / 2024-01-01T00:00:00")] string? since = null,
+        CancellationToken cancellationToken = default)
+    {
+        var kind = action.Trim().ToLowerInvariant();
+        switch (kind)
+        {
+            case "ps":
+                return FromPs(await DockerPs(serverId, all, cancellationToken), kind);
+            case "logs":
+                return FromRemote(await DockerLogs(serverId, container ?? string.Empty, tail, since, cancellationToken), kind);
+            case "inspect":
+                return FromRemote(await DockerInspect(serverId, container ?? string.Empty, cancellationToken), kind);
+            case "stats":
+                return FromRemote(await DockerStats(serverId, cancellationToken), kind);
+            case "images":
+                return FromRemote(await DockerImages(serverId, cancellationToken), kind);
+            default:
+                return DockerQueryResultDto.Fail("invalid_argument", "action 须为 ps / logs / inspect / stats / images");
+        }
+    }
+
+    [Description("列出服务器上的Docker容器(名称/镜像/状态/端口)。all=true 含已停止容器; 看容器日志用 docker_query action=logs, 重启用 docker_restart")]
     public async Task<DockerPsDto> DockerPs(
         [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
         [Description("true=包含已停止的容器(-a); 默认只看运行中")] bool all = false,
@@ -75,7 +103,6 @@ public class DockerTools
         };
     }
 
-    [McpServerTool(Name = "docker_logs", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, OpenWorld = true)]
     [Description("查看Docker容器日志。用tail限制行数, since按时间过滤(如 '10m'/'2024-01-01T00:00:00'); 容器操作异常时优先看它")]
     public async Task<RemoteCommandResultDto> DockerLogs(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
@@ -96,7 +123,6 @@ public class DockerTools
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [McpServerTool(Name = "docker_inspect", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
     [Description("查看Docker容器详情(inspect, JSON): 环境变量/挂载/网络/重启次数/健康检查。排查容器配置问题用")]
     public async Task<RemoteCommandResultDto> DockerInspect(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
@@ -110,7 +136,6 @@ public class DockerTools
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [McpServerTool(Name = "docker_stats", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, OpenWorld = true)]
     [Description("查看Docker容器资源占用(CPU/内存/网络/磁盘IO的一次性快照)。容器占满CPU/内存/OOM时用")]
     public async Task<RemoteCommandResultDto> DockerStats(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
@@ -120,7 +145,6 @@ public class DockerTools
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [McpServerTool(Name = "docker_images", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
     [Description("列出服务器上的Docker镜像(仓库/标签/大小/创建时间)。排查镜像版本/磁盘占用用")]
     public async Task<RemoteCommandResultDto> DockerImages(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
@@ -131,7 +155,7 @@ public class DockerTools
     }
 
     [McpServerTool(Name = "docker_restart", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("重启Docker容器(会短暂中断服务, 需人工确认)。确认容器名用docker_ps, 重启后看docker_logs")]
+    [Description("重启Docker容器(会短暂中断服务, 需人工确认)。确认容器名用 docker_query action=ps, 重启后看 docker_query action=logs")]
     public async Task<RemoteCommandResultDto> DockerRestart(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
         [Description("容器名或容器ID")] string container,
@@ -145,7 +169,7 @@ public class DockerTools
     }
 
     [McpServerTool(Name = "docker_exec", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("在运行中的Docker容器内执行命令(需人工确认)。用于容器内排查: 查进程/看配置/测端口。只读排查优先用docker_logs/docker_inspect")]
+    [Description("在运行中的Docker容器内执行命令(需人工确认)。用于容器内排查: 查进程/看配置/测端口。命令按 POSIX argv 拆分并逐参数转义, 不展开变量/通配符/管道; 需要 shell 语法请显式写 sh -c '...'。只读排查优先用 docker_query action=logs/inspect")]
     public async Task<RemoteCommandResultDto> DockerExec(
         [Description("服务器标识: ID/名称/主机名")] string serverId,
         [Description("容器名或容器ID")] string container,
@@ -154,12 +178,43 @@ public class DockerTools
     {
         if (!ContainerName.IsMatch(container))
             return new RemoteCommandResultDto { Success = false, Status = "invalid_container", Error = $"非法的容器名: {container}" };
-        if (string.IsNullOrWhiteSpace(command))
-            return new RemoteCommandResultDto { Success = false, Status = "invalid_argument", Error = "容器内命令不能为空。" };
+        if (!Core.Services.Security.PosixCommandLine.TrySplit(command, out var argv, out var error))
+            return new RemoteCommandResultDto { Success = false, Status = "invalid_argument", Error = error };
 
-        var full = $"docker exec {Core.Services.Security.ShellQuote.Single(container)} {command}";
+        var full = $"docker exec {Core.Services.Security.ShellQuote.Single(container)} " +
+                   Core.Services.Security.ShellQuote.Join(argv);
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, full, cancellationToken));
     }
+
+    private static DockerQueryResultDto FromPs(DockerPsDto result, string action) => new()
+    {
+        Success = result.Success,
+        Status = result.Status,
+        Error = result.Error,
+        ServerId = result.ServerId,
+        ServerName = result.ServerName,
+        Host = result.Host,
+        Action = action,
+        Count = result.Count,
+        Truncated = result.Truncated,
+        Containers = result.Containers
+    };
+
+    private static DockerQueryResultDto FromRemote(RemoteCommandResultDto result, string action) => new()
+    {
+        Success = result.Success,
+        Status = result.Status,
+        Error = result.Error,
+        ServerId = result.ServerId,
+        ServerName = result.ServerName,
+        Host = result.Host,
+        Action = action,
+        Truncated = result.Truncated,
+        Output = result.Output,
+        OutputChars = result.OutputChars,
+        ExitCode = result.ExitCode,
+        DurationMs = result.DurationMs
+    };
 
     private static string? Get(Dictionary<string, JsonElement> raw, string key) =>
         raw.TryGetValue(key, out var value) ? value.ToString() : null;

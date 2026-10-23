@@ -255,11 +255,18 @@ public class AuditLogService : IAuditLogService
                 ClientName TEXT,
                 ClientVersion TEXT,
                 StartedAt TEXT NOT NULL,
-                LastSeenAt TEXT NOT NULL
+                LastSeenAt TEXT NOT NULL,
+                OwnerUserId TEXT
             )";
         await cmd.ExecuteNonQueryAsync();
 
+        // P0-2：旧库补会话归属列；历史会话保持 NULL（管理员可见，普通用户不可见）
+        EnsureColumn(connection, "Sessions", "OwnerUserId", "TEXT");
+
         cmd.CommandText = "CREATE INDEX IF NOT EXISTS IX_Sessions_LastSeenAt ON Sessions(LastSeenAt DESC);";
+        await cmd.ExecuteNonQueryAsync();
+
+        cmd.CommandText = "CREATE INDEX IF NOT EXISTS IX_Sessions_Owner_LastSeen ON Sessions(OwnerUserId, LastSeenAt DESC);";
         await cmd.ExecuteNonQueryAsync();
 
         // 签名密钥必须先加载：v5→v6 迁移要用它与后续校验一致的 HMAC 重算链哈希。
@@ -285,6 +292,12 @@ public class AuditLogService : IAuditLogService
             await SetBusyTimeoutAsync(connection);
             using var tx = connection.BeginTransaction();
 
+            var (command, commandRedacted) = SecretRedactor.RedactWithChange(log.Command);
+            var (result, resultRedacted) = SecretRedactor.RedactWithChange(log.Result);
+            var (filePath, pathRedacted) = SecretRedactor.RedactWithChange(log.FilePath);
+            if (commandRedacted || resultRedacted || pathRedacted)
+                result = AppendRedactionMarker(result);
+
             long id;
             await using (var insert = connection.CreateCommand())
             {
@@ -295,13 +308,13 @@ public class AuditLogService : IAuditLogService
                     SELECT last_insert_rowid();";
                 insert.Parameters.AddWithValue("@ServerId", log.ServerId);
                 insert.Parameters.AddWithValue("@ServerName", log.ServerName);
-                insert.Parameters.AddWithValue("@Command", log.Command);
-                insert.Parameters.AddWithValue("@Result", log.Result ?? (object)DBNull.Value);
+                insert.Parameters.AddWithValue("@Command", command);
+                insert.Parameters.AddWithValue("@Result", string.IsNullOrEmpty(result) ? DBNull.Value : result);
                 insert.Parameters.AddWithValue("@Status", log.Status.ToString());
                 insert.Parameters.AddWithValue("@Timestamp", log.Timestamp.ToString("O"));
                 insert.Parameters.AddWithValue("@ExitCode", log.ExitCode ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@IsFileTransfer", log.IsFileTransfer ? 1 : 0);
-                insert.Parameters.AddWithValue("@FilePath", log.FilePath ?? (object)DBNull.Value);
+                insert.Parameters.AddWithValue("@FilePath", string.IsNullOrEmpty(filePath) ? DBNull.Value : filePath);
                 insert.Parameters.AddWithValue("@FileSize", log.FileSize ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@SessionId", (log.SessionId ?? SessionId) ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@Tool", (log.Tool ?? AuditContext.CurrentTool) ?? (object)DBNull.Value);
@@ -331,6 +344,11 @@ public class AuditLogService : IAuditLogService
             await SetBusyTimeoutAsync(connection);
             using var tx = connection.BeginTransaction();
 
+            var (sql, sqlRedacted) = SecretRedactor.RedactWithChange(log.Sql);
+            var (result, resultRedacted) = SecretRedactor.RedactWithChange(log.Result);
+            if (sqlRedacted || resultRedacted)
+                result = AppendRedactionMarker(result);
+
             long id;
             await using (var insert = connection.CreateCommand())
             {
@@ -342,9 +360,9 @@ public class AuditLogService : IAuditLogService
                 insert.Parameters.AddWithValue("@DataSourceId", log.DataSourceId);
                 insert.Parameters.AddWithValue("@DataSourceName", log.DataSourceName);
                 insert.Parameters.AddWithValue("@Operation", log.Operation.ToString());
-                insert.Parameters.AddWithValue("@Sql", log.Sql);
+                insert.Parameters.AddWithValue("@Sql", sql);
                 insert.Parameters.AddWithValue("@Status", log.Status.ToString());
-                insert.Parameters.AddWithValue("@Result", log.Result ?? (object)DBNull.Value);
+                insert.Parameters.AddWithValue("@Result", string.IsNullOrEmpty(result) ? DBNull.Value : result);
                 insert.Parameters.AddWithValue("@RowsAffected", log.RowsAffected ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@DurationMs", log.DurationMs ?? (object)DBNull.Value);
                 insert.Parameters.AddWithValue("@Timestamp", log.Timestamp.ToString("O"));
@@ -518,28 +536,33 @@ public class AuditLogService : IAuditLogService
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Sessions (SessionId, ClientName, ClientVersion, StartedAt, LastSeenAt)
-            VALUES (@Id, @Name, @Ver, @Start, @Last)
+            INSERT INTO Sessions (SessionId, ClientName, ClientVersion, StartedAt, LastSeenAt, OwnerUserId)
+            VALUES (@Id, @Name, @Ver, @Start, @Last, @Owner)
             ON CONFLICT(SessionId) DO UPDATE SET
                 ClientName = COALESCE(excluded.ClientName, Sessions.ClientName),
                 ClientVersion = COALESCE(excluded.ClientVersion, Sessions.ClientVersion),
-                LastSeenAt = excluded.LastSeenAt;";
+                LastSeenAt = excluded.LastSeenAt,
+                OwnerUserId = COALESCE(Sessions.OwnerUserId, excluded.OwnerUserId);";
         cmd.Parameters.AddWithValue("@Id", session.SessionId);
         cmd.Parameters.AddWithValue("@Name", (object?)session.ClientName ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@Ver", (object?)session.ClientVersion ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@Start", session.StartedAt.ToString("O"));
         cmd.Parameters.AddWithValue("@Last", session.LastSeenAt.ToString("O"));
+        cmd.Parameters.AddWithValue("@Owner", ResolveUserId(session.OwnerUserId));
         await cmd.ExecuteNonQueryAsync();
     }
 
-    public async Task<AuditSession[]> GetSessionsAsync(int limit = 50)
+    public async Task<AuditSession[]> GetSessionsAsync(int limit = 50, string? ownerUserId = null)
     {
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync();
 
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT SessionId, ClientName, ClientVersion, StartedAt, LastSeenAt FROM Sessions ORDER BY LastSeenAt DESC LIMIT @Limit";
+        var where = string.IsNullOrWhiteSpace(ownerUserId) ? string.Empty : "WHERE OwnerUserId = @OwnerUserId";
+        cmd.CommandText = $"SELECT SessionId, ClientName, ClientVersion, StartedAt, LastSeenAt, OwnerUserId FROM Sessions {where} ORDER BY LastSeenAt DESC LIMIT @Limit";
         cmd.Parameters.AddWithValue("@Limit", Math.Max(1, limit));
+        if (!string.IsNullOrWhiteSpace(ownerUserId))
+            cmd.Parameters.AddWithValue("@OwnerUserId", ownerUserId);
 
         var list = new List<AuditSession>();
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -551,7 +574,8 @@ public class AuditLogService : IAuditLogService
                 ClientName = reader.IsDBNull(1) ? null : reader.GetString(1),
                 ClientVersion = reader.IsDBNull(2) ? null : reader.GetString(2),
                 StartedAt = DateTime.Parse(reader.GetString(3)),
-                LastSeenAt = DateTime.Parse(reader.GetString(4))
+                LastSeenAt = DateTime.Parse(reader.GetString(4)),
+                OwnerUserId = reader.IsDBNull(5) ? null : reader.GetString(5)
             });
         }
 
@@ -615,6 +639,42 @@ public class AuditLogService : IAuditLogService
     }
 
     // —— 内部实现 ——
+
+    /// <summary>
+    /// 删除归档表中早于 <paramref name="cutoffUtc"/> 的记录，并按剩余活动/归档记录重建哈希链。
+    /// 仅由管理员在存储维护中显式触发；返回删除的记录数。
+    /// </summary>
+    public async Task<int> PruneHistoryAsync(DateTime cutoffUtc, CancellationToken ct = default)
+    {
+        var gate = await EnterWriteAsync(ct);
+        try
+        {
+            await InitializeCoreAsync();
+            await using var connection = new SqliteConnection(WriteConnectionString);
+            await connection.OpenAsync(ct);
+            await SetBusyTimeoutAsync(connection);
+
+            var cutoff = cutoffUtc.ToUniversalTime().ToString("O");
+            int removed;
+            await using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText =
+                    "DELETE FROM AuditLogsHistory WHERE Timestamp < @c; " +
+                    "DELETE FROM SqlAuditLogsHistory WHERE Timestamp < @c;";
+                cmd.Parameters.AddWithValue("@c", cutoff);
+                removed = await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // 归档行删掉后原链会缺记录；按剩余记录重建，保证校验只覆盖保留区间且仍连续。
+            if (removed > 0)
+                RebuildChainV6(connection);
+            return removed;
+        }
+        finally
+        {
+            ExitWrite(gate);
+        }
+    }
 
     private static AuditVerifyResult Bad(long seq, long checkedCount, string message) =>
         new() { Ok = false, Checked = checkedCount, FirstBadSeq = seq, Message = message };
@@ -912,6 +972,14 @@ public class AuditLogService : IAuditLogService
             // 无法建立签名密钥时退化为纯 SHA-256（仍可检测常规篡改）
             return null;
         }
+    }
+
+    private static string AppendRedactionMarker(string? result)
+    {
+        const string marker = "[敏感内容已自动脱敏]";
+        if (string.IsNullOrEmpty(result))
+            return marker;
+        return result.Contains(marker, StringComparison.Ordinal) ? result : result + "\n" + marker;
     }
 
     private static CommandAuditLog ReadCommandRow(SqliteDataReader reader) => new()

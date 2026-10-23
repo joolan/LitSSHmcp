@@ -248,7 +248,7 @@ public partial class OpenWithDialog : FluentWindow
             else
                 args = string.IsNullOrEmpty(args) ? $"\"{file}\"" : $"{args} \"{file}\"";
 
-            Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false });
             return true;
         }
         catch (Exception ex)

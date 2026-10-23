@@ -71,15 +71,19 @@ public sealed class SyncEventHookOption : INotifyPropertyChanged
 }
 
 /// <summary>文件/文件夹同步设置（单向）：任务增删改、方向联动、调度三选一、文件过滤；保存仅校验必填项（测试为可选自检）。</summary>
-public sealed class SyncViewModel : INotifyPropertyChanged
-{    private readonly IConfigService _config = new ConfigService();
-    private readonly SyncService _sync = AppServiceFactory.CreateSyncService();
+public sealed class SyncViewModel : INotifyPropertyChanged, IConfigReloadable
+{    private readonly IConfigService _config;
+    private readonly SyncService _sync;
+    private readonly IUserDialogService _dialogs;
 
     private string? _testedSignature;
     private bool _suppressOptions;
 
-    public SyncViewModel()
+    public SyncViewModel(IUserDialogService? dialogs = null, IAppServices? services = null)
     {
+        _config = services?.Config ?? AppServiceFactory.CreateConfigService();
+        _sync = services?.CreateSyncService() ?? AppServiceFactory.CreateSyncService();
+        _dialogs = dialogs ?? new UserDialogService();
         BuildOptions();
         NewTaskCommand = new RelayCommand(_ => NewTask());
         DeleteTaskCommand = new RelayCommand(_ => _ = DeleteTaskAsync());
@@ -300,6 +304,8 @@ public sealed class SyncViewModel : INotifyPropertyChanged
 
     // ---- 数据 ----
 
+    public void ReloadConfig() => _ = LoadAsync();
+
     private async Task LoadAsync()
     {
         try
@@ -360,8 +366,7 @@ public sealed class SyncViewModel : INotifyPropertyChanged
     private async Task DeleteTaskAsync()
     {
         if (SelectedTask is null) { StatusMessage = "当前没有选中的同步任务。"; return; }
-        if (MessageBox.Show($"确定删除同步任务「{SelectedTask.Name}」？", "删除",
-                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        if (!_dialogs.Confirm($"确定删除同步任务「{SelectedTask.Name}」？", "删除"))
             return;
         Tasks.Remove(SelectedTask);
         SelectedTask = Tasks.FirstOrDefault();

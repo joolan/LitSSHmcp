@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using LitSSHmcp.Agent;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Services.Storage;
 using Wpf.Ui.Controls;
@@ -10,11 +11,14 @@ namespace LitSSHmcp.App.Views;
 
 public partial class AgentSettingsWindow : FluentWindow
 {
-    private readonly AgentSettingsViewModel _viewModel = new();
+    private readonly AgentSettingsViewModel _viewModel;
+    private readonly LitSSHmcp.App.Services.UserDialogService _dialogs = new();
 
-    public AgentSettingsWindow(IConfigService configService, string? initialTab = null)
+    public AgentSettingsWindow(IConfigService configService, string? initialTab = null,
+        IAppServices? services = null)
     {
         InitializeComponent();
+        _viewModel = new AgentSettingsViewModel(services?.Config ?? configService);
         DataContext = _viewModel;
         LitSSHmcp.App.Services.WindowLayout.Attach(this, "agent-settings");
 
@@ -149,10 +153,93 @@ public partial class AgentSettingsWindow : FluentWindow
         var keyText = string.IsNullOrEmpty(entry.Key) ? "会话片段" : entry.Key;
         var preview = entry.Content.Length <= 80 ? entry.Content : entry.Content[..80] + "…";
         var result = System.Windows.MessageBox.Show(
-            $"确定删除这条记忆？\n\n[{entry.Kind}:{keyText}]\n{preview}\n\n删除后 AI 不再召回该经验，不可恢复。",
+            $"确定删除这条记忆？\n\n[{entry.Kind}:{keyText}]\n{preview}\n\n删除后 AI 不再召回该经验；历史快照仍保留，可由管理员接口恢复。",
             "删除记忆", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
         if (result == System.Windows.MessageBoxResult.Yes)
             _ = _viewModel.DeleteMemoryEntryAsync(entry);
+    }
+
+    private void OnMemoryListContextOpening(object sender, ContextMenuEventArgs e)
+    {
+        var source = Mouse.DirectlyOver as DependencyObject ?? e.OriginalSource as DependencyObject;
+        if (sender is not ListBox list ||
+            ItemsControl.ContainerFromElement(list, source) is not ListBoxItem item ||
+            item.DataContext is not MemoryEntry entry)
+        {
+            e.Handled = true;   // 空白处右键不弹菜单，避免误操作上一条记忆
+            return;
+        }
+        item.IsSelected = true;
+        list.SelectedItem = entry;
+        _viewModel.SelectedMemoryEntry = entry;
+        item.Focus();
+    }
+
+    private void OnMemoryVersionListContextOpening(object sender, ContextMenuEventArgs e)
+    {
+        var source = Mouse.DirectlyOver as DependencyObject ?? e.OriginalSource as DependencyObject;
+        if (sender is not ListBox list ||
+            ItemsControl.ContainerFromElement(list, source) is not ListBoxItem item ||
+            item.DataContext is not MemoryVersionEntry version)
+        {
+            e.Handled = true;
+            return;
+        }
+        item.IsSelected = true;
+        list.SelectedItem = version;
+        _viewModel.SelectedMemoryVersion = version;
+        item.Focus();
+    }
+
+    private void OnMemoryHistory(object sender, RoutedEventArgs e)
+    {
+        var entry = _viewModel.SelectedMemoryEntry;
+        if (entry is null)
+        {
+            _dialogs.Info("请先在记忆列表中选择一条记忆。", "历史版本");
+            return;
+        }
+        _ = _viewModel.LoadMemoryHistoryAsync(entry);
+    }
+
+    private void OnPruneMemoryHistory(object sender, RoutedEventArgs e)
+    {
+        var entry = _viewModel.SelectedMemoryEntry;
+        var target = entry is null ? "全部记忆" : $"[{entry.Kind}:{entry.Key}]";
+        if (!_dialogs.Confirm(
+                $"清理 {target} 的历史快照？\n\n每记忆保留最近 {LitSSHmcp.Agent.AgentMemoryStore.DefaultHistoryKeep} 版；清理全部时还会移除超过 {LitSSHmcp.Agent.AgentMemoryStore.OrphanHistoryRetentionDays} 天的孤儿历史。",
+                "清理历史", warning: false))
+            return;
+        _ = _viewModel.PruneMemoryHistoryAsync(entry);
+    }
+
+    private void OnRollbackMemory(object sender, RoutedEventArgs e)
+    {
+        var entry = _viewModel.SelectedMemoryEntry;
+        var version = _viewModel.SelectedMemoryVersion;
+        if (entry is null || version is null)
+        {
+            _dialogs.Info("请先选择一条记忆，并在右侧选择要回滚的历史版本。", "回滚记忆");
+            return;
+        }
+        if (_dialogs.Confirm(
+                $"确定把 [{entry.Kind}:{entry.Key}] 回滚到 v{version.Version}？\n\n当前状态会先归档，回滚本身也可以再次撤销。",
+                "回滚记忆"))
+            _ = _viewModel.RollbackMemoryAsync(entry, version);
+    }
+
+    private void OnArchiveMemory(object sender, RoutedEventArgs e)
+    {
+        var entry = _viewModel.SelectedMemoryEntry;
+        if (entry is null)
+        {
+            _dialogs.Info("请先在记忆列表中选择一条记忆。", "归档记忆");
+            return;
+        }
+        if (_dialogs.Confirm(
+                $"确定归档 [{entry.Kind}:{entry.Key}]？\n\n归档后状态为 superseded，不再被召回；历史版本保留，可随时回滚恢复。",
+                "归档记忆"))
+            _ = _viewModel.ArchiveMemoryEntryAsync(entry);
     }
 
     private void OnClearMemory(object sender, RoutedEventArgs e)

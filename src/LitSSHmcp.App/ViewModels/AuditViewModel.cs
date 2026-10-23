@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text;
+using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.Core.Services.Web;
@@ -40,7 +41,7 @@ public class AuditViewModel : INotifyPropertyChanged
         set { _statusMessage = value; OnPropertyChanged(); }
     }
 
-    public async void Load()
+    public void Load() => AsyncOperation.Run("加载审计日志", async () =>
     {
         try
         {
@@ -118,9 +119,9 @@ public class AuditViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"加载失败: {ex.Message}";
         }
-    }
+    });
 
-    public async void VerifyIntegrity()
+    public void VerifyIntegrity() => AsyncOperation.Run("校验审计链", async () =>
     {
         try
         {
@@ -137,9 +138,9 @@ public class AuditViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            StatusMessage = $"审计完整性校验出错: {ex.Message}";
+            StatusMessage = $"完整性校验异常: {ex.Message}";
         }
-    }
+    });
 
     public string BuildCommandsCsv()
     {

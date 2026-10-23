@@ -11,30 +11,29 @@ public static class MemoryTools
 {
     public static IReadOnlyList<IAgentTool> Create(AgentMemoryService memory)
     {
-        var save = new LocalFunction(
-            "ops_memory_save",
-            "写入/合并一条核心运维经验记忆(任务复盘/脚本/资产经验); 同 kind+key 已存在则覆盖为最新有效路径并频次+1; 内容含密码/密钥/令牌会被拒绝, 过短或与既有条目高度相似时自动合并",
-            """{"type":"object","properties":{"kind":{"type":"string","enum":["task","script","asset"],"description":"类别: task=任务复盘, script=脚本工具, asset=资产经验"},"key":{"type":"string","description":"语义唯一键, 如 磁盘满:ssh:web01"},"content":{"type":"string","description":"经验内容: 现象→根因→验证成功的解决路径(简明)"},"assetIds":{"type":"string","description":"关联资产ID, 逗号分隔, 如 ssh:web01,ds:mysql01"},"tags":{"type":"string","description":"标签, 逗号分隔"}},"required":["kind","key","content"]}""",
-            async (args, ct) => await memory.SaveAsync(
-                ArgumentReader.ReadString(args, "kind") ?? string.Empty,
-                ArgumentReader.ReadString(args, "key") ?? string.Empty,
-                ArgumentReader.ReadString(args, "content") ?? string.Empty,
-                ArgumentReader.ReadString(args, "assetIds"),
-                ArgumentReader.ReadString(args, "tags"),
-                ct));
-
-        var update = new LocalFunction(
-            "ops_memory_update",
-            "修改已有记忆的字段(不增频次): 修正内容/资产/标签, 或把过时经验标记为 superseded(不再召回)",
-            """{"type":"object","properties":{"kind":{"type":"string","enum":["task","script","asset"],"description":"类别"},"key":{"type":"string","description":"语义唯一键"},"content":{"type":"string","description":"新内容(省略则不变)"},"assetIds":{"type":"string","description":"新资产列表(省略则不变)"},"tags":{"type":"string","description":"新标签(省略则不变)"},"status":{"type":"string","enum":["active","superseded"],"description":"active=有效, superseded=已过时(召回不再出现)"}},"required":["kind","key"]}""",
-            async (args, ct) => await memory.UpdateAsync(
-                ArgumentReader.ReadString(args, "kind") ?? string.Empty,
-                ArgumentReader.ReadString(args, "key") ?? string.Empty,
-                ArgumentReader.ReadString(args, "content"),
-                ArgumentReader.ReadString(args, "assetIds"),
-                ArgumentReader.ReadString(args, "tags"),
-                ArgumentReader.ReadString(args, "status"),
-                ct));
+        var write = new LocalFunction(
+            "ops_memory_write",
+            "写入或修正核心运维经验记忆(任务复盘/脚本/资产经验): mode=save 新增/合并(同 kind+key 覆盖最新有效路径并频次+1); mode=update 修正字段或把过时经验标记 superseded(不再召回); 内容含密码/密钥/令牌会被拒绝, 过短或与既有条目高度相似时自动合并; Web 普通成员写入私有记忆, 管理员写入团队记忆",
+            """{"type":"object","properties":{"mode":{"type":"string","enum":["save","update"],"description":"save=新增/合并(默认), update=修正字段或标记过时"},"kind":{"type":"string","enum":["task","script","asset"],"description":"类别: task=任务复盘, script=脚本工具, asset=资产经验"},"key":{"type":"string","description":"语义唯一键, 如 磁盘满:ssh:web01"},"content":{"type":"string","description":"save: 经验内容(现象→根因→验证成功的解决路径); update: 新内容(省略则不变)"},"assetIds":{"type":"string","description":"关联资产ID, 逗号分隔, 如 ssh:web01,ds:mysql01"},"tags":{"type":"string","description":"标签, 逗号分隔"},"status":{"type":"string","enum":["active","superseded"],"description":"update: active=有效, superseded=已过时(召回不再出现)"}},"required":["mode","kind","key"]}""",
+            async (args, ct) =>
+            {
+                var mode = (ArgumentReader.ReadString(args, "mode") ?? "save").Trim().ToLowerInvariant();
+                var kind = ArgumentReader.ReadString(args, "kind") ?? string.Empty;
+                var key = ArgumentReader.ReadString(args, "key") ?? string.Empty;
+                return mode switch
+                {
+                    "save" => await memory.SaveAsync(kind, key,
+                        ArgumentReader.ReadString(args, "content") ?? string.Empty,
+                        ArgumentReader.ReadString(args, "assetIds"),
+                        ArgumentReader.ReadString(args, "tags"), ct),
+                    "update" => await memory.UpdateAsync(kind, key,
+                        ArgumentReader.ReadString(args, "content"),
+                        ArgumentReader.ReadString(args, "assetIds"),
+                        ArgumentReader.ReadString(args, "tags"),
+                        ArgumentReader.ReadString(args, "status"), ct),
+                    _ => "错误: mode 仅支持 save/update"
+                };
+            });
 
         var list = new LocalFunction(
             "ops_memory_list",
@@ -52,7 +51,7 @@ public static class MemoryTools
 
         var delete = new LocalFunction(
             "ops_memory_delete",
-            "删除一条核心记忆(按 kind+key); 仅在用户要求清理或条目明显错误时使用",
+            "删除一条核心记忆(按 kind+key); 仅在用户要求清理或条目明显错误时使用; 团队记忆仅管理员可删",
             """{"type":"object","properties":{"kind":{"type":"string","enum":["task","script","asset"],"description":"类别"},"key":{"type":"string","description":"语义唯一键"}},"required":["kind","key"]}""",
             async (args, ct) => await memory.DeleteAsync(
                 ArgumentReader.ReadString(args, "kind") ?? string.Empty,
@@ -62,8 +61,7 @@ public static class MemoryTools
         return new IAgentTool[]
         {
             new LocalAgentTool(list, readOnly: true),
-            new LocalAgentTool(save),
-            new LocalAgentTool(update),
+            new LocalAgentTool(write),
             new LocalAgentTool(delete),
         };
     }

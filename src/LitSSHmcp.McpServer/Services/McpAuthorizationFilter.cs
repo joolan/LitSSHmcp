@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
@@ -8,15 +9,16 @@ namespace LitSSHmcp.McpServer.Services;
 
 /// <summary>
 /// 授权矩阵强制过滤器（评估报告 D1 / §3.2 / §10.B.4）：在 MCP 工具调用过滤器层按
-/// "用户 → 目标白名单 + 操作级别（read/exec）"强制校验——<b>UI 隐藏不算数</b>，
+/// "用户 → 目标白名单 + 访问级别（read/write/exec）"强制校验——<b>UI 隐藏不算数</b>，
 /// 目标级校验先于建 SSH 连接完成（在写互斥/工具体之前拒绝）。
 /// <list type="bullet">
 /// <item>仅当宿主 spawn 注入 <c>LITSSH_AUTHZ_MODE=enforce</c>（Web 宿主）才生效——
 /// 桌面会话不注入 = 仅归因不限权（D1）；身份取自 <c>LITSSH_AUTHZ_USER</c>/归因 Id，绝不来自工具参数（§10.A.5）；</item>
-/// <item>写/读分类复用 <see cref="McpWriteGateFilter"/> 的判定（目标级写语义的单一事实源，M2-1）；</item>
-/// <item>无目标的工具（本会话/元数据类）不受矩阵约束；无法归一化的目标由工具自身拒绝；</item>
+/// <item>目标与所需访问级别来自 <see cref="ToolSecurityCatalog"/>（单一事实源），不再按工具名猜目标；</item>
+/// <item>无目标的本会话/元数据工具不受矩阵约束；全局清单工具（服务器/数据源/会话）由工具按用户裁剪，
+/// 其余无目标全局查询（拓扑搜索/邻域/路径等）非管理员一律拒绝，避免返回无法裁剪的全局资产；</item>
 /// <item>拒绝时写 Gate/Blocked 审计（Decision=authorization_denied，带 SessionId+UserId 入哈希链）；</item>
-/// <item>矩阵缺省 fail-closed：未命中用户规则 / 目标不在白名单 / 只读级别遇写调用一律拒绝。</item>
+/// <item>矩阵缺省 fail-closed：未命中用户规则 / 目标不在白名单 / 级别不足 / 工具未登记一律拒绝。</item>
 /// </list>
 /// </summary>
 public static class McpAuthorizationFilter
@@ -44,27 +46,66 @@ public static class McpAuthorizationFilter
                 catch { config = new AppConfig(); }
             }
 
-            var targetKey = McpWriteGateFilter.ResolveTargetKey(config, tool!, args);
-            if (targetKey is null)
-                return await next(context, ct).ConfigureAwait(false); // 无目标/无法归一 → 工具自身校验
+            var descriptor = ToolSecurityCatalog.Find(tool);
+            if (descriptor is null)
+            {
+                const string unclassified = "(unclassified)";
+                await RecordDeniedAsync(services, config, tool, unclassified, "工具未登记安全描述符（默认拒绝）")
+                    .ConfigureAwait(false);
+                return Denied(tool, unclassified, "工具未登记安全描述符（默认拒绝）");
+            }
+
+            var resolution = ToolTargetResolver.Resolve(config, descriptor, args);
+            if (resolution.Error is not null)
+            {
+                var display = resolution.DisplayKey ?? "(none)";
+                await RecordDeniedAsync(services, config, tool, display, resolution.Error).ConfigureAwait(false);
+                return Denied(tool, display, resolution.Error);
+            }
+
+            // 无目标：元数据工具直接放行；可选目标未提供时暂不做目标级校验（P0-B 再按用户裁剪）；
+            // 无目标工具：本会话/元数据直接放行；全局清单需标记 SelfScopedGlobal，其余全局查询仅管理员。
+            if (resolution.TargetKeys.Count == 0)
+            {
+                // 无目标全局查询（拓扑搜索/邻域/路径等）无法按目标白名单裁剪返回内容：
+                // 非管理员 fail-closed，仅管理员可用。元数据清单（服务器/数据源/会话）由工具自身按用户裁剪，
+                // 通过 SelfScopedGlobal 显式放行。
+                if (descriptor.TargetKind == ToolTargetKind.Global
+                    && !descriptor.SelfScopedGlobal
+                    && !CallerScope.Current.IsAdmin)
+                {
+                    const string globalReason = "无目标全局工具仅管理员可用（非管理员请改用带目标的工具）";
+                    await RecordDeniedAsync(services, config, tool, "(global)", globalReason).ConfigureAwait(false);
+                    return Denied(tool, "(global)", globalReason);
+                }
+
+                if (descriptor.TargetKind is ToolTargetKind.None or ToolTargetKind.Global
+                    or ToolTargetKind.OptionalServer or ToolTargetKind.OptionalDatasource)
+                    return await next(context, ct).ConfigureAwait(false);
+
+                const string noTarget = "(none)";
+                const string noTargetReason = "目标为空（默认拒绝）";
+                await RecordDeniedAsync(services, config, tool, noTarget, noTargetReason).ConfigureAwait(false);
+                return Denied(tool, noTarget, noTargetReason);
+            }
 
             var sqlFilter = services?.GetService(typeof(ISqlFilterService)) as ISqlFilterService;
-            var isWrite = McpWriteGateFilter.RequiresWriteGate(tool!) &&
-                          !McpWriteGateFilter.IsReadCall(tool!, args, sqlFilter);
+            var requiredAccess = ResolveRequiredAccess(descriptor, tool, args, sqlFilter);
 
             var policy = config.Security?.Authorization ?? new AuthorizationConfig();
-            var (allowed, reason) = Evaluate(
+            var (allowed, reason) = EvaluateAccess(
                 policy,
                 Environment.GetEnvironmentVariable(HostEnv.AuthzUser),
                 AuditContext.CurrentUserId,
-                targetKey,
-                isWrite);
+                resolution.TargetKeys,
+                requiredAccess);
 
             if (allowed)
                 return await next(context, ct).ConfigureAwait(false);
 
-            await RecordDeniedAsync(services, config, tool!, targetKey, reason).ConfigureAwait(false);
-            return Denied(tool!, targetKey, reason);
+            var auditTarget = resolution.DisplayKey ?? resolution.TargetKeys[0];
+            await RecordDeniedAsync(services, config, tool, auditTarget, reason).ConfigureAwait(false);
+            return Denied(tool, auditTarget, reason);
         };
 
         return filter;
@@ -74,9 +115,50 @@ public static class McpAuthorizationFilter
     public static bool EnforcementEnabled =>
         string.Equals(Environment.GetEnvironmentVariable(HostEnv.AuthzMode), HostEnv.Enforce, StringComparison.Ordinal);
 
-    /// <summary>矩阵判定（纯逻辑，供单测直调）。返回是否放行；拒绝时带原因。</summary>
-    public static (bool Allowed, string? Reason) Evaluate(
-        AuthorizationConfig policy, string? username, string? userId, string targetKey, bool isWrite)
+    /// <summary>
+    /// 返回单个目标是否对当前调用者可见（列表类工具按此裁剪）：桌面/关闭矩阵/管理员 = 全部可见；
+    /// Web 普通用户必须命中 read 级目标白名单。身份只来自宿主注入，不信任工具参数。
+    /// </summary>
+    public static bool IsTargetVisibleForCaller(AuthorizationConfig policy, string targetKey)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        if (!EnforcementEnabled || CallerScope.Current.IsAdmin)
+            return true;
+
+        var (allowed, _) = EvaluateAccess(
+            policy,
+            Environment.GetEnvironmentVariable(HostEnv.AuthzUser),
+            AuditContext.CurrentUserId,
+            new[] { targetKey },
+            ToolAccessLevel.Read);
+        return allowed;
+    }
+
+    /// <summary>
+    /// 解析调用所需的最低访问级别：SQL/Redis 执行按实际语句动态判定，其余按目录静态声明。
+    /// shell 命令不再用“首词只读”降级授权，统一要求 exec。
+    /// </summary>
+    public static ToolAccessLevel ResolveRequiredAccess(
+        ToolSecurityDescriptor descriptor, string tool, IDictionary<string, JsonElement>? args, ISqlFilterService? sqlFilter)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+
+        if (descriptor.IsConditionalWrite)
+            return McpWriteGateFilter.IsReadCall(tool, args, sqlFilter) ? ToolAccessLevel.Read : ToolAccessLevel.Write;
+
+        return descriptor.RequiredAccess;
+    }
+
+    /// <summary>
+    /// 多目标授权：每个目标都必须命中用户规则，且该目标上的最高级别不低于 required。
+    /// 同一用户可配置多行 <see cref="AuthorizationUserRule"/> 来表达不同目标的不同级别。
+    /// </summary>
+    public static (bool Allowed, string? Reason) EvaluateAccess(
+        AuthorizationConfig policy,
+        string? username,
+        string? userId,
+        IReadOnlyCollection<string> targetKeys,
+        ToolAccessLevel required)
     {
         ArgumentNullException.ThrowIfNull(policy);
         if (!policy.Enabled)
@@ -88,16 +170,29 @@ public static class McpAuthorizationFilter
         if (rules.Count == 0)
             return (false, $"用户 {DisplayName(username, userId)} 不在授权矩阵中（默认拒绝）");
 
-        var matched = rules.Where(r => MatchesTarget(r.Targets, targetKey)).ToList();
-        if (matched.Count == 0)
-            return (false, $"目标 {targetKey} 不在该用户的白名单中");
+        foreach (var targetKey in targetKeys)
+        {
+            var matched = rules.Where(r => MatchesTarget(r.Targets, targetKey)).ToList();
+            if (matched.Count == 0)
+                return (false, $"目标 {targetKey} 不在该用户的白名单中");
 
-        var level = matched.Max(r => LevelRank(r.Level));
-        if (isWrite && level < ExecRank)
-            return (false, $"用户对目标 {targetKey} 仅为只读授权，写操作被拒绝");
+            var level = matched.Max(r => LevelRank(r.Level));
+            if (level < (int)required)
+                return (false, $"用户对目标 {targetKey} 的权限为 {LevelLabel(level)}，低于要求的 {AccessLabel(required)}");
+        }
 
         return (true, null);
     }
+
+    /// <summary>矩阵判定（兼容旧单目标/布尔写调用；isWrite=true 按 write 级别校验）。</summary>
+    public static (bool Allowed, string? Reason) Evaluate(
+        AuthorizationConfig policy, string? username, string? userId, string targetKey, bool isWrite) =>
+        EvaluateAccess(
+            policy,
+            username,
+            userId,
+            new[] { targetKey },
+            isWrite ? ToolAccessLevel.Write : ToolAccessLevel.Read);
 
     /// <summary>规则用户匹配：精确匹配用户名（忽略大小写）或用户 Id；<c>*</c> 为兜底规则。</summary>
     public static bool MatchesUser(AuthorizationUserRule rule, string? username, string? userId)
@@ -131,15 +226,35 @@ public static class McpAuthorizationFilter
         return false;
     }
 
-    /// <summary>操作级别：exec=2，其余（read/未知/空）=1 —— 未知值按只读处理，宁严勿松。</summary>
+    /// <summary>操作级别：exec=3、write=2，其余（read/未知/空）=1 —— 未知值按只读处理，宁严勿松。</summary>
     public static int LevelRank(string? level) =>
-        string.Equals(level?.Trim(), "exec", StringComparison.OrdinalIgnoreCase) ? ExecRank : ReadRank;
+        level?.Trim().ToLowerInvariant() switch
+        {
+            "exec" => ExecRank,
+            "write" => WriteRank,
+            _ => ReadRank
+        };
 
     public const int ReadRank = 1;
-    public const int ExecRank = 2;
+    public const int WriteRank = 2;
+    public const int ExecRank = 3;
 
     private static string DisplayName(string? username, string? userId) =>
         !string.IsNullOrWhiteSpace(username) ? username! : (userId is null or "" ? "(未知)" : userId);
+
+    private static string AccessLabel(ToolAccessLevel access) => access switch
+    {
+        ToolAccessLevel.Exec => "exec（执行）",
+        ToolAccessLevel.Write => "write（写）",
+        _ => "read（只读）"
+    };
+
+    private static string LevelLabel(int level) => level switch
+    {
+        >= ExecRank => "exec",
+        >= WriteRank => "write",
+        _ => "read"
+    };
 
     /// <summary>拒绝写入审计：Gate/Blocked + Decision=authorization_denied（SessionId/Tool/UserId 自动带上链）。</summary>
     private static async Task RecordDeniedAsync(
@@ -196,7 +311,7 @@ public static class McpAuthorizationFilter
             new TextContentBlock
             {
                 Text = $"authorization_denied: {reason}。工具 {tool} 对目标 {targetKey} 的调用被授权矩阵拒绝；" +
-                       "授权由管理员在桌面 config.json 的 security.authorization 中配置（用户白名单 + read/exec 级别）。"
+                       "授权由管理员在桌面 config.json 的 security.authorization 中配置（用户白名单 + read/write/exec 级别）。"
             }
         }
     };

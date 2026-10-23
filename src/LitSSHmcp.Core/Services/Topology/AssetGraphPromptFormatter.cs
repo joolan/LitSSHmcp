@@ -32,7 +32,7 @@ public static class AssetGraphPromptFormatter
         if (text.Length <= MaxChars)
             return text;
 
-        // 关系通常最占空间，且可由 topology_neighbors/path 按需查询：先丢弃关系保留全部资产 ID。
+        // 关系通常最占空间，且可由 topology_query action=neighbors/path 按需查询：先丢弃关系保留全部资产 ID。
         text = Render(s, d, a, [], includeRelations: false);
         return text.Length <= MaxChars ? text : Truncate(text, MaxChars);
     }
@@ -97,6 +97,6 @@ public static class AssetGraphPromptFormatter
         var cut = text.LastIndexOf('\n', maxChars - 1);
         if (cut < maxChars / 2) cut = maxChars - 1;
         return text[..cut].TrimEnd()
-            + "\n…(资产摘要已截断；完整清单用 ssh_list_servers/datasource_list，关系用 topology_search/neighbors 查询)";
+            + "\n…(资产摘要已截断；完整清单用 ssh_list_servers/datasource_list，关系用 topology_query action=search/neighbors 查询)";
     }
 }

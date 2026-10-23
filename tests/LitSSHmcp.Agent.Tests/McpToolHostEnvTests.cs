@@ -16,8 +16,10 @@ public class McpToolHostEnvTests
         var env = McpToolHost.BuildBuiltinEnvironment(null, null, null);
 
         Assert.Equal("local", env[HostEnv.OwnerUserId]);
+        Assert.Equal("1", env[HostEnv.InternalTools]);
         Assert.False(env.ContainsKey(HostEnv.SessionWorkspaceDir));
         Assert.False(env.ContainsKey(HostEnv.AuthzUser));
+        Assert.False(env.ContainsKey(HostEnv.AuthzRole));
         // 执行模式属进程级（Web 宿主启动时设置），绝不进会话级字典
         Assert.False(env.ContainsKey(HostEnv.AuthzMode));
     }
@@ -30,16 +32,18 @@ public class McpToolHostEnvTests
         Assert.Equal("local", env[HostEnv.OwnerUserId]);
         Assert.False(env.ContainsKey(HostEnv.SessionWorkspaceDir));
         Assert.False(env.ContainsKey(HostEnv.AuthzUser));
+        Assert.False(env.ContainsKey(HostEnv.AuthzRole));
     }
 
     [Fact]
     public void Session_scoped_values_are_trimmed_and_mapped()
     {
         var env = McpToolHost.BuildBuiltinEnvironment(
-            " 101 ", @" C:\jobs\101\s5 ", " alice ");
+            " 101 ", @" C:\jobs\101\s5 ", " alice ", " admin ");
 
         Assert.Equal("101", env[HostEnv.OwnerUserId]);
         Assert.Equal(@"C:\jobs\101\s5", env[HostEnv.SessionWorkspaceDir]);
         Assert.Equal("alice", env[HostEnv.AuthzUser]);
+        Assert.Equal("admin", env[HostEnv.AuthzRole]);
     }
 }

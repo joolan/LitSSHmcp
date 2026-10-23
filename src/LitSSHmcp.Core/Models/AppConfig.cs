@@ -62,6 +62,12 @@ public class WebHostConfig
     /// 留空 = <c>%APPDATA%\LitSSH\jobs</c>。仅接受绝对路径（相对/非法值回退默认）。改动在 Web 重启后生效。
     /// </summary>
     public string JobsRoot { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 可信反向代理 IP 列表（可选）：非空时才信任 X-Forwarded-For/X-Forwarded-Proto，
+    /// 并只接受列表内代理的转发；为空时完全忽略转发头，避免客户端伪造来源 IP/协议。
+    /// </summary>
+    public string[] TrustedProxies { get; set; } = Array.Empty<string>();
 }
 
 /// <summary>Web HTTPS 证书设置（PFX/PKCS#12）。</summary>
@@ -154,7 +160,7 @@ public class AgentConfig
     /// <summary>发送给模型时精简 MCP 工具描述（截短为要点 + 指向 mcp_usage_guide，降低每次请求固定 token；默认开）。</summary>
     public bool CompactToolDescriptions { get; set; } = true;
 
-    /// <summary>超大工具结果落盘为句柄（上下文只放预览 + spill:// 句柄，模型用 spill_read/spill_grep 按需读取；默认开）。</summary>
+    /// <summary>超大工具结果落盘为句柄（上下文只放预览 + spill:// 句柄，模型用 spill_read(mode=read|grep) 按需读取/搜索；默认开）。</summary>
     public bool SpillLargeToolResults { get; set; } = true;
 
     /// <summary>大结果落盘目录；空=默认 %APPDATA%\LitSSH\spills。</summary>
@@ -224,7 +230,10 @@ public class LocalTerminalConfig
     /// <summary>硬白名单：允许执行的 CLI（按可执行文件名匹配，忽略大小写与路径）。其余命令一律拒绝。</summary>
     public string[] AllowedCommands { get; set; } = DefaultAllowedCommands();
 
-    /// <summary>已记住「总是允许」的完整命令（与原命令完全一致时跳过审批）。</summary>
+    /// <summary>
+    /// 已记住「总是允许」的命令规则：新格式为 <c>sha256:&lt;hash&gt; | &lt;脱敏展示&gt;</c>，
+    /// 不落明文；旧纯文本规则在配置加载时自动迁移。完整命令哈希一致时跳过审批。
+    /// </summary>
     public string[] AutoApprovedCommands { get; set; } = Array.Empty<string>();
 
     /// <summary>本地安全硬上限（字符，超出保留尾部）。常规截断/落盘由中央 ToolResultMaxChars + spill 处理，这里只兜底极端输出。</summary>
@@ -236,14 +245,16 @@ public class LocalTerminalConfig
     /// <summary>单个 AI 会话最多同时保留的长驻终端数。</summary>
     public int MaxSessions { get; set; } = 4;
 
-    /// <summary>开发/构建/云凭据类 CLI 的常用默认白名单。</summary>
+    /// <summary>
+    /// 开发/构建/云凭据类 CLI 的常用默认白名单。
+    /// 解释器/脚本运行时（python/node/java 等）默认不列入，避免一次批准即获得任意代码执行能力；确需时由用户显式添加。
+    /// </summary>
     public static string[] DefaultAllowedCommands() => new[]
     {
-        "git", "dotnet", "msbuild", "npm", "pnpm", "yarn", "node", "npx",
+        "git", "dotnet", "msbuild", "npm", "pnpm", "yarn",
         "gh", "aws", "az", "terraform", "kubectl", "helm",
         "docker", "docker-compose", "compose",
-        "python", "python3", "pip", "pip3", "poetry", "uv", "pdm", "conda",
-        "go", "cargo", "rustc", "java", "mvn", "gradle", "make", "cmake",
+        "go", "cargo", "rustc", "mvn", "gradle", "make", "cmake",
         "where", "tree", "curl", "invoke-webrequest", "ping"
     };
 }
@@ -493,7 +504,7 @@ public class SecurityConfig
     public SshHostKeyConfig SshHostKey { get; set; } = new();
     public DiscoveryConfig Discovery { get; set; } = new();
 
-    /// <summary>日志读取工具(log_tail / log_grep)的允许路径与行数上限。</summary>
+    /// <summary>日志读取工具(log_query)的允许路径与行数上限。</summary>
     public LogConfig Logs { get; set; } = new();
 
     public LimitsConfig Limits { get; set; } = new();
@@ -511,7 +522,7 @@ public class SecurityConfig
 }
 
 /// <summary>
-/// 授权矩阵：Web 用户 → 可操作目标（SSH 服务器 / 数据源）白名单 + 操作级别（只读/可执行）。
+/// 授权矩阵：Web 用户 → 可操作目标（SSH 服务器 / 数据源）白名单 + 操作级别（read/write/exec）。
 /// 在 MCP 工具调用过滤器层强制校验（<c>McpAuthorizationFilter</c>，§10.B.4"UI 隐藏不算数"），
 /// 目标级校验先于建 SSH 连接完成。仅桌面可编辑（config.json 对 Web 只读，D2）。
 /// </summary>
@@ -550,8 +561,8 @@ public class AuthorizationUserRule
 
     /// <summary>
     /// 操作级别：<c>read</c> = 仅允许只读调用（ls/查询/日志/下载等）；
-    /// <c>exec</c> = 另允许写类调用（执行命令/上传/重启/SQL 写等）。
-    /// 未知值按 read 处理（宁严勿松）。
+    /// <c>write</c> = 另允许上传/重启/SQL 写等；<c>exec</c> = 另允许命令执行/docker exec/快照刷新，
+    /// 并包含 write（级别有序：read &lt; write &lt; exec）；未知值按 read 处理（宁严勿松）。
     /// </summary>
     public string Level { get; set; } = "read";
 }
@@ -643,7 +654,7 @@ public class DiscoveryConfig
 }
 
 /// <summary>
-/// 日志读取工具(log_tail / log_grep)的约束：只允许读取白名单根目录下的日志文件，
+/// 日志读取工具(log_query)的约束：只允许读取白名单根目录下的日志文件，
 /// 避免模型读取 /etc/shadow 等敏感文件；单次返回行数也有上限。
 /// </summary>
 public class LogConfig

@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Services.Storage;
 using Wpf.Ui.Controls;
@@ -20,24 +21,27 @@ public partial class SnapshotTrendWindow : FluentWindow
         DataContext = _viewModel;
         _initialServerId = initialServerId;
         Loaded += OnLoadedAsync;
+        Closed += (_, _) => Loaded -= OnLoadedAsync;
     }
 
-    private async void OnLoadedAsync(object sender, RoutedEventArgs e)
-    {
-        _suppress = true;
-        await _viewModel.InitializeAsync(_initialServerId);
-        _suppress = false;
-        await ReloadAsync();
-    }
+    private void OnLoadedAsync(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("加载快照趋势", async () =>
+        {
+            _suppress = true;
+            await _viewModel.InitializeAsync(_initialServerId);
+            _suppress = false;
+            await ReloadAsync();
+        });
 
-    private async void OnServerChanged(object sender, SelectionChangedEventArgs e)
+    private void OnServerChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppress)
             return;
-        await ReloadAsync();
+        AsyncOperation.Run("切换快照趋势服务器", ReloadAsync);
     }
 
-    private async void OnRefresh(object sender, RoutedEventArgs e) => await ReloadAsync();
+    private void OnRefresh(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("刷新快照趋势", ReloadAsync);
 
     private async Task ReloadAsync()
     {

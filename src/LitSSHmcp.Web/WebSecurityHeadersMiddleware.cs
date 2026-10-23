@@ -29,6 +29,9 @@ public sealed class WebSecurityHeadersMiddleware
             headers["X-Frame-Options"] = "DENY";
             headers["Referrer-Policy"] = "no-referrer";
             headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+            // P2-7：认证相关响应禁止缓存，避免令牌/用户信息进入浏览器或中间代理缓存。
+            if (ctx.Request.Path.Value is "/api/login" or "/api/logout" or "/api/me")
+                headers["Cache-Control"] = "no-store";
             var contentType = ctx.Response.ContentType;
             if (contentType is not null &&
                 contentType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))

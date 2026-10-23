@@ -123,15 +123,30 @@
             return defaultValue;
         }
 
+        // Sensitive values (bridge token / VNC password) are passed in the URL
+        // fragment so they never reach the HTTP server, logs or Referer headers.
+        function readFragmentVariable(name) {
+            const hash = window.location.hash.startsWith('#')
+                ? window.location.hash.slice(1)
+                : '';
+            return new URLSearchParams(hash).get(name) ?? undefined;
+        }
+
         document.getElementById('sendCtrlAltDelButton')
             .onclick = sendCtrlAltDel;
 
-        // Read parameters specified in the URL query string
-        // By default, use the host and port of server that served this file
+        // Read parameters specified in the URL query string / fragment.
+        // By default, use the host and port of server that served this file.
         const host = readQueryVariable('host', window.location.hostname);
         let port = readQueryVariable('port', window.location.port);
-        const password = readQueryVariable('password');
+        const password = readFragmentVariable('password');
+        const token = readFragmentVariable('token');
         const path = readQueryVariable('path', 'websockify');
+
+        // Remove token/password from the address bar and history entry.
+        if (window.location.hash) {
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
 
         // | | |         | | |
         // | | | Connect | | |
@@ -151,6 +166,9 @@
             url += ':' + port;
         }
         url += '/' + path;
+        if (token) {
+            url += '?token=' + encodeURIComponent(token);
+        }
 
         // Creating a new RFB object will start a new connection
         rfb = new RFB(document.getElementById('screen'), url,

@@ -58,26 +58,32 @@ public static class WorkspaceTools
 
         var write = new LocalFunction(
             "ops_doc_write",
-            "写入/覆盖工作区文档; 用于维护资产档案(共享区)与任务产出文档(本会话目录)" +
+            "写入/增量更新工作区文档; mode=overwrite 覆盖全文(默认), append 末尾追加(不存在则创建), patch 把第一处 find 替换为 replace; " +
+            "用于维护资产档案(共享区)与任务产出文档(本会话目录)" +
             (shared is null ? string.Empty : "; 脚本类文件(.sh/.py/.ps1等)直接写入共享区会自动在文件头标记『未审阅』(建议改经 ops_promote 提升以桌面确认)"),
-            "{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"description\":\"要写入的完整文本内容\"}," +
-            PathProp(pathDoc + "; 省略则写 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"content\"]}",
-            async (args, ct) => await Write(root, shared, sharedWritable, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty, ct));
-
-        var append = new LocalFunction(
-            "ops_doc_append",
-            "向工作区文档末尾追加内容(文件不存在则创建); 增量更新资产档案时优先用它, 避免整份重写",
-            "{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"description\":\"要追加的文本(会自动补换行)\"}," +
-            PathProp(pathDoc + "; 省略则用 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"content\"]}",
-            async (args, ct) => await Append(root, shared, sharedWritable, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "content") ?? string.Empty, ct));
-
-        var patch = new LocalFunction(
-            "ops_doc_patch",
-            "在工作区文档中做定点替换: 把第一处 find 文本替换为 replace; 用于增量修正文档中的条目",
-            "{\"type\":\"object\",\"properties\":{\"find\":{\"type\":\"string\",\"description\":\"要查找的原文(须精确匹配, 含空白)\"}," +
-            "\"replace\":{\"type\":\"string\",\"description\":\"替换为的新文本\"}," +
-            PathProp(pathDoc + "; 省略则用 OPS_ASSETS.md(共享资产档案)") + "},\"required\":[\"find\",\"replace\"]}",
-            async (args, ct) => await Patch(root, shared, sharedWritable, ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadString(args, "find") ?? string.Empty, ArgumentReader.ReadString(args, "replace") ?? string.Empty, ct));
+            "{\"type\":\"object\",\"properties\":{" +
+            "\"mode\":{\"type\":\"string\",\"enum\":[\"overwrite\",\"append\",\"patch\"],\"description\":\"overwrite=覆盖全文(默认), append=末尾追加, patch=定点替换\"}," +
+            "\"content\":{\"type\":\"string\",\"description\":\"overwrite/append 的文本内容\"}," +
+            "\"find\":{\"type\":\"string\",\"description\":\"patch 要查找的原文(须精确匹配, 含空白)\"}," +
+            "\"replace\":{\"type\":\"string\",\"description\":\"patch 替换为的新文本\"}," +
+            PathProp(pathDoc + "; 省略则写 OPS_ASSETS.md(共享资产档案)") + "}}",
+            async (args, ct) =>
+            {
+                var mode = (ArgumentReader.ReadString(args, "mode") ?? "overwrite").Trim().ToLowerInvariant();
+                var path = ArgumentReader.ReadString(args, "path");
+                var content = ArgumentReader.ReadString(args, "content");
+                if (mode is "overwrite" or "append" && content is null)
+                    return $"错误: mode={mode} 需要 content";
+                return mode switch
+                {
+                    "overwrite" => await Write(root, shared, sharedWritable, path, content!, ct),
+                    "append" => await Append(root, shared, sharedWritable, path, content!, ct),
+                    "patch" => await Patch(root, shared, sharedWritable, path,
+                        ArgumentReader.ReadString(args, "find") ?? string.Empty,
+                        ArgumentReader.ReadString(args, "replace") ?? string.Empty, ct),
+                    _ => "错误: mode 仅支持 overwrite/append/patch"
+                };
+            });
 
         var list = new LocalFunction(
             "ops_doc_list",
@@ -89,8 +95,6 @@ public static class WorkspaceTools
         {
             new LocalAgentTool(read, readOnly: true),
             new LocalAgentTool(write),
-            new LocalAgentTool(append),
-            new LocalAgentTool(patch),
             new LocalAgentTool(list, readOnly: true)
         };
     }

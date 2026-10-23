@@ -17,12 +17,17 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
 {
     private readonly IConfigService _configService;
     private readonly RemoteDesktopService _service = AppServiceFactory.RemoteDesktopService;
+    private readonly IUserDialogService _dialogs;
+    private readonly IWindowService _windows;
     private RemoteDesktopConfig? _selected;
     private string _statusMessage = string.Empty;
 
-    public RemoteDesktopManageViewModel(IConfigService configService)
+    public RemoteDesktopManageViewModel(IConfigService configService, IUserDialogService? dialogs = null,
+        IWindowService? windows = null)
     {
         _configService = configService;
+        _dialogs = dialogs ?? new UserDialogService();
+        _windows = windows ?? new WpfWindowService();
 
         RefreshCommand = new RelayCommand(_ => Load());
         AddCommand = new RelayCommand(_ => Add());
@@ -101,7 +106,7 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
         try
         {
             var config = await _configService.LoadConfigAsync();
-            var window = new RemoteDesktopEditWindow { Owner = Application.Current.MainWindow };
+            var window = _windows.CreateRemoteDesktopEditWindow(Application.Current.MainWindow);
             var vm = new RemoteDesktopEditViewModel(_configService, window, config.Servers);
             window.DataContext = vm;
             vm.DialogClosed += (_, result) =>
@@ -125,7 +130,7 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
             var config = await _configService.LoadConfigAsync();
             var rd = config.RemoteDesktops.FirstOrDefault(r => r.Id == Selected.Id) ?? Selected;
 
-            var window = new RemoteDesktopEditWindow { Owner = Application.Current.MainWindow };
+            var window = _windows.CreateRemoteDesktopEditWindow(Application.Current.MainWindow);
             var vm = new RemoteDesktopEditViewModel(_configService, window, config.Servers, rd);
             window.DataContext = vm;
             vm.DialogClosed += (_, result) =>
@@ -144,8 +149,7 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
     private void Delete() => AsyncOperation.Run("删除远程桌面", async () =>
     {
         if (Selected == null) return;
-        if (MessageBox.Show($"确定删除远程桌面连接 \"{Selected.DisplayName}\" 吗？", "确认删除",
-                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        if (!_dialogs.Confirm($"确定删除远程桌面连接 \"{Selected.DisplayName}\" 吗？", "确认删除"))
             return;
 
         try
@@ -175,7 +179,7 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged
         }
         else
         {
-            _sessionWindow = new RemoteDesktopSessionWindow(_configService) { Topmost = false };
+            _sessionWindow = _windows.CreateRemoteDesktopSessionWindow(_configService);
             _sessionWindow.Closed += (_, _) => _sessionWindow = null;
             _sessionWindow.Show();
         }

@@ -3,6 +3,7 @@ import { api } from "./api.js";
 import { ChatController } from "./chat.js";
 import { ApprovalsPanel } from "./approvals.js";
 import { FilesPanel } from "./files.js";
+import { MemoryAdminPanel } from "./memory.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,6 +35,15 @@ const els = {
   approvalBadge: $("approval-badge"),
   approvalCount: $("approval-count"),
   approvalCollapse: $("approval-collapse"),
+  memoryAdminBtn: $("memory-admin-btn"),
+  memorySheet: $("memory-admin"),
+  memoryList: $("memory-list"),
+  memoryVersions: $("memory-versions"),
+  memoryKind: $("memory-kind"),
+  memoryArchive: $("memory-archive"),
+  memoryRefresh: $("memory-refresh"),
+  memoryClose: $("memory-close"),
+  memoryCurrent: $("memory-current"),
   messages: $("messages"),
   toBottom: $("to-bottom"),
   loadOlder: $("load-older"),
@@ -103,6 +113,20 @@ const files = new FilesPanel({
   onClosed: () => els.filesBtn.classList.remove("active"),
 });
 
+const memoryAdmin = new MemoryAdminPanel({
+  sheetEl: els.memorySheet,
+  listEl: els.memoryList,
+  versionsEl: els.memoryVersions,
+  kindEl: els.memoryKind,
+  archiveBtn: els.memoryArchive,
+  refreshBtn: els.memoryRefresh,
+  closeBtn: els.memoryClose,
+  currentEl: els.memoryCurrent,
+  onToast,
+});
+
+els.memoryAdminBtn.addEventListener("click", () => memoryAdmin.open());
+
 function onToast(message) {
   els.toast.textContent = message;
   els.toast.hidden = false;
@@ -148,6 +172,8 @@ function showApp(user) {
   els.loginView.hidden = true;
   els.appView.hidden = false;
   els.whoami.textContent = `${user.username}（${user.role}）`;
+  els.memoryAdminBtn.hidden = user.role !== "admin";
+  if (user.role !== "admin") memoryAdmin.close();
   updatePlaceholder();
   approvals.start();
   loadProviders().catch(() => {});
@@ -183,6 +209,7 @@ els.logoutBtn.addEventListener("click", async () => {
   approvals.stop();
   chat.close();
   files.close();
+  memoryAdmin.close();
   me = null;
   sessions = [];
   activeId = null;
@@ -288,9 +315,12 @@ window.addEventListener("resize", () => {
   if (!els.modelSheet.hidden) positionModelSheet();
 });
 document.addEventListener("click", (ev) => {
-  if (els.modelSheet.hidden) return;
-  if (els.modelSheet.contains(ev.target) || els.modelBtn.contains(ev.target)) return;
-  closeModelSheet();
+  if (!els.modelSheet.hidden) {
+    if (!els.modelSheet.contains(ev.target) && !els.modelBtn.contains(ev.target))
+      closeModelSheet();
+  }
+  if (memoryAdmin.isOpen() && !els.memorySheet.contains(ev.target) && !els.memoryAdminBtn.contains(ev.target))
+    memoryAdmin.close();
 });
 
 // ---- 会话列表 ----
@@ -520,6 +550,8 @@ document.addEventListener("keydown", (ev) => {
     closeImageViewer();
   } else if (!els.modelSheet.hidden) {
     closeModelSheet();
+  } else if (memoryAdmin.isOpen()) {
+    memoryAdmin.close();
   } else if (document.body.classList.contains("drawer-open")) {
     closeDrawer();
   }

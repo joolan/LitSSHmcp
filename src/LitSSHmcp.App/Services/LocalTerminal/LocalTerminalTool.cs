@@ -131,7 +131,7 @@ public sealed class LocalTerminalTool : IAgentTool
             target = _broker.List(sessionKey)
                 .FirstOrDefault(x => string.Equals(x.Id, terminalId, StringComparison.Ordinal));
             if (target is null)
-                return $"错误：未找到终端 {terminalId}。请先用 local_shell_list 查看本会话终端。";
+                return $"错误：未找到终端 {terminalId}。请先用 local_shell_manage(action=\"list\") 查看本会话终端。";
             if (target.Running)
                 return $"错误：终端 {terminalId}（{target.Name}）仍在执行上一条命令，不能注入新命令。请等它结束，或新开一个终端。";
         }

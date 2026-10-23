@@ -23,7 +23,9 @@ namespace LitSSHmcp.App.ViewModels;
 public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 {
     private readonly IConfigService _configService;
+    private readonly IUserDialogService _dialogs;
     private readonly IDatasourceDriverRegistry _registry;
+    private readonly RedisKeyBrowser _redis;
     private readonly ISqlFilterService _sqlFilter = new SqlFilterService(new SecurityOptionsProvider());
     private readonly ISecurityOptionsProvider _security = new SecurityOptionsProvider();
     private readonly IAuditLogService _audit = new AuditLogService();
@@ -51,8 +53,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private bool _busy;
     private bool _isWriteMode;
     private bool _isSnippetPanelOpen;
-    private string _keyPattern = "*";
-    private string _redisKeyInfo = string.Empty;
+    private int _selectedRedisDb;
     private string? _pendingSelectId;
     private string _objectFilter = string.Empty;
     private int _matchedObjectCount;
@@ -64,38 +65,26 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private QueryTab? _selectedTab;
     private int _tabSeq;
 
-    // ---------- Redis 键浏览状态 ----------
-    private CancellationTokenSource? _scanCts;
-    private string _scanCursor = "0";
-    private bool _scanHasMore;
-    private bool _isScanning;
-    private string _scanProgress = string.Empty;
-    private long? _redisTotalKeys;
-    private int _selectedRedisDb;
-    private string _redisKeyFilter = string.Empty;
-    private string _redisKeyTypeFilter = RedisKeyTypeAll;
-    private RedisKeyRow? _selectedRedisKey;
-    private ListCollectionView? _redisKeysView;
-
-    /// <summary>每次扫描（点一次按钮）的时间预算；超预算自动停，交给「继续扫描」。</summary>
-    private static readonly TimeSpan ScanBudget = TimeSpan.FromSeconds(2);
-
-    /// <summary>「补全类型/TTL/大小」的时间预算（逐键 3 条命令，不能无上限）。</summary>
-    private static readonly TimeSpan MetaBudget = TimeSpan.FromSeconds(10);
-
-    /// <summary>单批 SCAN 的 COUNT（每批最多返回的键数）。</summary>
-    private const int ScanBatchCount = 500;
-
-    /// <summary>单次扫描最多执行的批次数（与预算共同兜底）。</summary>
-    private const int ScanMaxBatches = 20;
-
-    /// <summary>「全部」类型过滤项。</summary>
-    private const string RedisKeyTypeAll = "全部";
-
-    public DbWorkbenchViewModel(IConfigService? configService = null)
+    public DbWorkbenchViewModel(IConfigService? configService = null, IUserDialogService? dialogs = null)
     {
         _configService = configService ?? new ConfigService();
+        _dialogs = dialogs ?? new UserDialogService();
         _registry = AppServiceFactory.CreateWorkbenchDriverRegistry(_configService);
+        _redis = new RedisKeyBrowser(
+            () => SelectedDatasource,
+            () => IsRedisDb,
+            () => Busy,
+            value => Busy = value,
+            value => StatusMessage = value,
+            value => SqlText = value,
+            value => Results = value,
+            () => IsWriteMode,
+            (ds, command) => ExecuteRedisWriteAsync(ds, command),
+            view => RebuildKeyResultTabs(view),
+            ds => EffectiveFor(ds),
+            _registry,
+            RaiseCanExecute);
+        _redis.PropertyChanged += (_, e) => OnPropertyChanged(MapRedisProperty(e.PropertyName));
 
         RefreshCommand = new RelayCommand(_ => _ = LoadAsync());
         LoadTablesCommand = new RelayCommand(_ => _ = LoadSchemaAsync(), _ => SelectedDatasource is not null && !string.IsNullOrWhiteSpace(SelectedDatabase));
@@ -112,14 +101,14 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         ToggleHistoryPanelCommand = new RelayCommand(_ => IsHistoryPanelOpen = !IsHistoryPanelOpen);
         UseHistoryCommand = new RelayCommand(p => { if (p is string s) { SqlText = s; IsHistoryPanelOpen = false; } });
         ClearHistoryCommand = new RelayCommand(_ => { History.Clear(); PersistHistory(); OnPropertyChanged(nameof(HistoryCount)); OnPropertyChanged(nameof(HistoryButtonLabel)); });        DeleteSnippetCommand = new RelayCommand(p => DeleteSnippet(p as DbSqlSnippet));
-        ScanKeysCommand = new RelayCommand(_ => _ = ScanKeysAsync(), _ => IsRedisDb && !Busy);
-        ScanMoreCommand = new RelayCommand(_ => _ = ScanMoreAsync(), _ => IsRedisDb && !Busy && _scanHasMore);
-        StopScanCommand = new RelayCommand(_ => StopScan(), _ => IsRedisDb && Busy);
-        LoadKeyMetaCommand = new RelayCommand(_ => _ = LoadKeyMetaAsync(), _ => IsRedisDb && !Busy && RedisKeys.Count > 0);
-        UseKeyCommand = new RelayCommand(p => _ = UseKeyAsync(p as RedisKeyRow), _ => IsRedisDb && !Busy);
-        CopyKeyCommand = new RelayCommand(p => CopyKey(p as RedisKeyRow));
-        KeyToEditorCommand = new RelayCommand(p => KeyToEditor(p as RedisKeyRow));
-        DeleteKeyCommand = new RelayCommand(p => _ = DeleteKeyAsync(p as RedisKeyRow),
+        ScanKeysCommand = new RelayCommand(_ => _ = _redis.ScanKeysAsync(), _ => IsRedisDb && !Busy);
+        ScanMoreCommand = new RelayCommand(_ => _ = _redis.ScanMoreAsync(), _ => _redis.CanScanMore);
+        StopScanCommand = new RelayCommand(_ => _redis.StopScan(), _ => IsRedisDb && Busy);
+        LoadKeyMetaCommand = new RelayCommand(_ => _ = _redis.LoadKeyMetaAsync(), _ => IsRedisDb && !Busy && RedisKeys.Count > 0);
+        UseKeyCommand = new RelayCommand(p => _ = _redis.UseKeyAsync(p as RedisKeyRow), _ => IsRedisDb && !Busy);
+        CopyKeyCommand = new RelayCommand(p => _redis.CopyKey(p as RedisKeyRow));
+        KeyToEditorCommand = new RelayCommand(p => _redis.KeyToEditor(p as RedisKeyRow));
+        DeleteKeyCommand = new RelayCommand(p => _ = _redis.DeleteKeyAsync(p as RedisKeyRow),
             p => IsRedisDb && IsWriteMode && !Busy && p is RedisKeyRow);
         AddTabCommand = new RelayCommand(_ => AddTab());
         CloseTabCommand = new RelayCommand(p => CloseTab(p as QueryTab));
@@ -165,19 +154,19 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     /// <summary>结果集标签（多结果集时显示子标签）。</summary>
     public ObservableCollection<ResultSetRef> ResultSetTabs { get; } = new();
 
-    /// <summary>Redis 模式下 SCAN 出的键（类型/TTL/大小按需补全）。</summary>
-    public ObservableCollection<RedisKeyRow> RedisKeys { get; } = new();
+    /// <summary>Redis 键浏览子状态（扫描/补全/本地过滤）。</summary>
+    public RedisKeyBrowser RedisBrowser => _redis;
+
+    public ObservableCollection<RedisKeyRow> RedisKeys => _redis.Keys;
 
     /// <summary>键列表的视图（本地过滤 + 列头排序都作用在它上面）。</summary>
-    public ListCollectionView RedisKeysView =>
-        _redisKeysView ??= (ListCollectionView)CollectionViewSource.GetDefaultView(RedisKeys);
+    public ListCollectionView RedisKeysView => _redis.View;
 
     /// <summary>Redis DB 下拉（0..15，切换后重扫）。</summary>
     public ObservableCollection<int> RedisDatabases { get; } = new(Enumerable.Range(0, 16));
 
     /// <summary>类型过滤下拉选项（补全类型后按类型本地过滤）。</summary>
-    public IReadOnlyList<string> RedisKeyTypeOptions { get; } =
-        new[] { RedisKeyTypeAll, "string", "hash", "list", "set", "zset", "stream" };
+    public IReadOnlyList<string> RedisKeyTypeOptions => _redis.TypeOptions;
 
     /// <summary>消息/错误面板（失败、警告等；供结果区“消息”标签）。</summary>
     public ObservableCollection<string> Messages { get; } = new();
@@ -275,7 +264,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private bool _isHistoryPanelOpen;
     public bool IsHistoryPanelOpen { get => _isHistoryPanelOpen; set => Set(ref _isHistoryPanelOpen, value); }
 
-    /// <summary>写入前的预览确认回调（由窗口提供，返回 true=执行）。为 null 时用 MessageBox 兜底。</summary>
+    /// <summary>写入前的预览确认回调（由窗口提供，返回 true=执行）。为 null 时用 <see cref="IUserDialogService"/> 兜底。</summary>
     public Func<WritePreviewInfo, bool>? ConfirmWrite { get; set; }
 
     public DataSourceConfig? SelectedDatasource
@@ -299,13 +288,10 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(SelectedRedisDb));
             }
 
-            StopScan();                     // 切换数据源时中断上一个未完成的扫描/补全
+            _redis.Reset();                 // 切换数据源时中断上一个未完成的扫描/补全
             Databases.Clear();
             Tables.Clear();
             Columns.Clear();
-            RedisKeys.Clear();
-            ResetScanState();
-            RedisKeyInfo = string.Empty;
             Results = null;
             if (_isWriteMode && value?.ReadOnly == true)
             {
@@ -327,7 +313,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(WriteBannerText));
             LoadSnippets();
             if (IsRedisDb)
-                _ = ScanKeysAsync();        // 打开即首扫：带 2s 预算 + 可取消（不会因键多而卡死）
+                _ = _redis.ScanKeysAsync(); // 打开即首扫：带 2s 预算 + 可取消（不会因键多而卡死）
             else
                 _ = LoadDatabasesAsync();
             RaiseCanExecute();
@@ -342,54 +328,49 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         {
             if (!Set(ref _selectedRedisDb, value)) return;
             if (IsRedisDb && !Busy)
-                _ = ScanKeysAsync();
+                _ = _redis.ScanKeysAsync();
         }
     }
 
     /// <summary>键列表本地过滤关键字（在已加载的键中即时过滤，不回服务端）。</summary>
     public string RedisKeyFilter
     {
-        get => _redisKeyFilter;
-        set { if (Set(ref _redisKeyFilter, value)) RefreshRedisKeyView(); }
+        get => _redis.Filter;
+        set => _redis.Filter = value;
     }
 
     /// <summary>键类型过滤（"全部" 或补全后的 string/hash/… ；本地过滤）。</summary>
     public string RedisKeyTypeFilter
     {
-        get => _redisKeyTypeFilter;
-        set { if (Set(ref _redisKeyTypeFilter, value)) RefreshRedisKeyView(); }
+        get => _redis.TypeFilter;
+        set => _redis.TypeFilter = value;
     }
 
     /// <summary>当前选中的键行（右键菜单用）。</summary>
     public RedisKeyRow? SelectedRedisKey
     {
-        get => _selectedRedisKey;
-        set => Set(ref _selectedRedisKey, value);
+        get => _redis.SelectedKey;
+        set => _redis.SelectedKey = value;
     }
 
     /// <summary>是否正在扫描 / 补全键信息（驱动进度条与「停止」按钮）。</summary>
     public bool IsScanning
     {
-        get => _isScanning;
-        set
-        {
-            if (!Set(ref _isScanning, value)) return;
-            OnPropertyChanged(nameof(HasScanProgress));
-            (StopScanCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        }
+        get => _redis.IsScanning;
+        set => _redis.IsScanning = value;
     }
 
     /// <summary>扫描/补全进度文本（已加载键数、耗时、DBSIZE 总数）。</summary>
     public string ScanProgress
     {
-        get => _scanProgress;
-        set { if (Set(ref _scanProgress, value)) OnPropertyChanged(nameof(HasScanProgress)); }
+        get => _redis.ScanProgress;
+        set => _redis.ScanProgress = value;
     }
 
-    public bool HasScanProgress => !string.IsNullOrEmpty(_scanProgress);
+    public bool HasScanProgress => _redis.HasScanProgress;
 
     /// <summary>是否还能继续扫描（游标未走完）。</summary>
-    public bool CanScanMore => IsRedisDb && _scanHasMore && !Busy;
+    public bool CanScanMore => _redis.CanScanMore;
 
     /// <summary>当前数据源是否允许写入（数据源配置为只读时不允许）。</summary>
     public bool CanWrite => SelectedDatasource is { ReadOnly: false };
@@ -401,16 +382,20 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public bool IsSqlDb => SelectedDatasource is not null && !IsRedisDb;
 
     /// <summary>Redis 键扫描的 MATCH 模式。</summary>
-    public string KeyPattern { get => _keyPattern; set => Set(ref _keyPattern, value); }
+    public string KeyPattern
+    {
+        get => _redis.KeyPattern;
+        set => _redis.KeyPattern = value;
+    }
 
     /// <summary>当前查看的 Redis 键信息（类型 / 生存时间）。</summary>
     public string RedisKeyInfo
     {
-        get => _redisKeyInfo;
-        set { if (Set(ref _redisKeyInfo, value)) OnPropertyChanged(nameof(HasRedisKeyInfo)); }
+        get => _redis.KeyInfo;
+        set => _redis.KeyInfo = value;
     }
 
-    public bool HasRedisKeyInfo => !string.IsNullOrEmpty(_redisKeyInfo);
+    public bool HasRedisKeyInfo => _redis.HasKeyInfo;
 
     /// <summary>写入模式开关：默认只读；只读数据源不允许打开。</summary>
     public bool IsWriteMode
@@ -615,7 +600,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             if (sameInstance && initial is not null)
             {
                 // 配置缓存返回同一实例时 setter 不会触发（Set 判等失败），手动补一次刷新
-                if (IsRedisDb) _ = ScanKeysAsync();
+                if (IsRedisDb) _ = _redis.ScanKeysAsync();
                 else _ = LoadDatabasesAsync();
             }
 
@@ -1173,9 +1158,9 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
                 {
                     Sql = trimmed,
                     Note = "该命令可能返回大量数据（KEYS / HGETALL / SMEMBERS / 无界 RANGE 等），继续执行可能很慢甚至拖垮 Redis。确认继续？"
-                }) ?? MessageBox.Show(
+                }) ?? _dialogs.Confirm(
                     $"该命令可能返回大量数据，继续执行可能很慢甚至拖垮 Redis。\n\n{Truncate(trimmed, 400)}\n\n确认执行？",
-                    "大结果集警告", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
+                    "大结果集警告", defaultNo: true);
                 if (!proceed)
                 {
                     StatusMessage = "已取消执行（大结果集警告）。";
@@ -1280,7 +1265,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     {
         _cancelRequested = true;
         try { _queryCts?.Cancel(); } catch { /* ignore */ }
-        StopScan();    // 取消键扫描/补全（Esc）
+        _redis.StopScan();     // 取消键扫描/补全（Esc）
+        _redis.CancelRead();
     }
 
     // ---------- 查询标签 ----------
@@ -1373,7 +1359,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"数据源 {ds.Name} 已配置为只读，拒绝写入。";
             await AuditAsync(ds, sql, CommandStatus.Blocked, "数据源为只读，拒绝写操作");
-            MessageBox.Show(StatusMessage, "写入被拒绝", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _dialogs.Warn(StatusMessage, "写入被拒绝");
             return;
         }
 
@@ -1388,7 +1374,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         {
             StatusMessage = "该 SQL 被安全策略禁止执行（无 WHERE 的 UPDATE/DELETE、DROP/TRUNCATE/GRANT 等，或只读语句/多语句）。";
             await AuditAsync(ds, sql, CommandStatus.Blocked, "命中SQL禁止规则");
-            MessageBox.Show(StatusMessage, "写入被拒绝", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _dialogs.Warn(StatusMessage, "写入被拒绝");
             return;
         }
 
@@ -1402,9 +1388,9 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             preview.IsSensitive = filterResult == SqlFilterResult.Sensitive;
 
             var proceed = ConfirmWrite?.Invoke(preview)
-                ?? MessageBox.Show(
+                ?? _dialogs.Confirm(
                     $"确认在数据源「{ds.Name}」上执行以下写操作？\n\n{sql}\n\n{preview.Describe()}",
-                    "执行前预览", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
+                    "执行前预览", defaultNo: true);
 
             if (!proceed)
             {
@@ -1436,18 +1422,15 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
                 result.RowsAffected, result.DurationMs);
 
             // 执行结果一律弹窗提示（成功/失败）
-            MessageBox.Show(
-                result.Success
-                    ? $"写入成功。\n\n影响行数：{result.RowsAffected}\n耗时：{result.DurationMs:F0} ms"
-                    : $"写入失败：\n\n{result.Error}",
-                result.Success ? "执行写入成功" : "执行写入失败",
-                MessageBoxButton.OK,
-                result.Success ? MessageBoxImage.Information : MessageBoxImage.Error);
+            if (result.Success)
+                _dialogs.Info($"写入成功。\n\n影响行数：{result.RowsAffected}\n耗时：{result.DurationMs:F0} ms", "执行写入成功");
+            else
+                _dialogs.Error($"写入失败：\n\n{result.Error}", "执行写入失败");
         }
         catch (Exception ex)
         {
             StatusMessage = "写入失败: " + ex.Message;
-            MessageBox.Show("写入失败：\n\n" + ex.Message, "执行写入失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogs.Error("写入失败：\n\n" + ex.Message, "执行写入失败");
         }
         finally { Busy = false; }
     }
@@ -1466,8 +1449,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
                 Note = "Redis 命令无法预估影响范围，请确认命令正确无误后再执行。"
             };
             var proceed = ConfirmWrite?.Invoke(preview)
-                ?? MessageBox.Show($"确认在 Redis「{ds.Name}」上执行以下命令？\n\n{command}",
-                    "执行前预览", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
+                ?? _dialogs.Confirm($"确认在 Redis「{ds.Name}」上执行以下命令？\n\n{command}",
+                    "执行前预览", defaultNo: true);
             if (!proceed)
             {
                 StatusMessage = "已取消写操作。";
@@ -1495,17 +1478,16 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
                 result.Success ? "ok" : Truncate(result.Error, 500),
                 result.RowsAffected, result.DurationMs);
 
-            MessageBox.Show(
-                result.Success ? $"命令执行成功。\n\n耗时：{result.DurationMs:F0} ms" : $"命令执行失败：\n\n{result.Error}",
-                result.Success ? "执行成功" : "执行失败",
-                MessageBoxButton.OK,
-                result.Success ? MessageBoxImage.Information : MessageBoxImage.Error);
+            if (result.Success)
+                _dialogs.Info($"命令执行成功。\n\n耗时：{result.DurationMs:F0} ms", "执行成功");
+            else
+                _dialogs.Error($"命令执行失败：\n\n{result.Error}", "执行失败");
             return result.Success;
         }
         catch (Exception ex)
         {
             StatusMessage = "命令执行失败: " + ex.Message;
-            MessageBox.Show("命令执行失败：\n\n" + ex.Message, "执行失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogs.Error("命令执行失败：\n\n" + ex.Message, "执行失败");
             return false;
         }
         finally { Busy = false; }
@@ -1531,7 +1513,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
             var sample = await driver.QueryAsync(effective, sampleSql!, 100);
             if (sample.Success)
-                info.Sample = BuildView(sample);
+                info.Sample = WorkbenchResultView.Build(sample);
         }
         catch
         {
@@ -1718,7 +1700,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
                 {
                     Index = i,
                     Label = sets.Count > 1 ? $"结果 {i + 1}" : "结果",
-                    View = BuildView(sets[i]),
+                    View = WorkbenchResultView.Build(sets[i]),
                     Kind = ResultTabKind.Result
                 });
             RebuildResultTabs();
@@ -1751,31 +1733,6 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
                 _queryCts = null;
             cts.Dispose();
         }
-    }
-
-    private static DataView BuildView(DatasourceQueryResult result)
-    {
-        var table = new DataTable();
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var columns = new List<string>();
-        foreach (var col in result.Columns)
-        {
-            var name = col;
-            var i = 1;
-            while (!names.Add(name))
-                name = $"{col}_{i++}";
-            columns.Add(name);
-            table.Columns.Add(name, typeof(object));
-        }
-
-        foreach (var row in result.Rows)
-        {
-            var dr = table.NewRow();
-            for (var i = 0; i < result.Columns.Length && i < columns.Count; i++)
-                dr[columns[i]] = row.TryGetValue(result.Columns[i], out var v) ? v ?? DBNull.Value : DBNull.Value;
-            table.Rows.Add(dr);
-        }
-        return table.DefaultView;
     }
 
     // ---------- 导出 ----------
@@ -1972,7 +1929,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             {
                 // 多列计划（MySQL）：作为“计划”结果集展示。
                 PlanText = string.Empty;
-                ResultSetTabs.Add(new ResultSetRef { Index = 0, Label = "计划", View = BuildView(result), Kind = ResultTabKind.Result });
+                ResultSetTabs.Add(new ResultSetRef { Index = 0, Label = "计划", View = WorkbenchResultView.Build(result), Kind = ResultTabKind.Result });
                 RebuildResultTabs();
             }
 
@@ -1996,377 +1953,6 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
             cts.Dispose();
         }
     }
-
-    // ---------- Redis 键浏览 ----------
-
-    /// <summary>当前在跑的扫描/补全（保证同一时刻只有一个，切换数据源时先等它结束）。</summary>
-    private Task? _activeScan;
-
-    /// <summary>重新扫描：游标归零、清空列表，带 2s 时间预算（不会因键空间大而卡死）。</summary>
-    private Task ScanKeysAsync() => StartScanAsync(reset: true);
-
-    /// <summary>继续上次未完成的扫描（游标续扫，再给 2s 预算）。</summary>
-    private Task ScanMoreAsync() => StartScanAsync(reset: false);
-
-    private async Task StartScanAsync(bool reset)
-    {
-        var previous = _activeScan;
-        if (previous is not null)
-        {
-            try { await previous; } catch { /* 上一次扫描的异常已在其内部处理 */ }
-        }
-
-        var run = RunScanAsync(reset);
-        _activeScan = run;
-        try
-        {
-            await run;
-        }
-        finally
-        {
-            if (ReferenceEquals(_activeScan, run))
-                _activeScan = null;
-        }
-    }
-
-    /// <summary>停止当前扫描/补全（Esc 也走这里）。</summary>
-    private void StopScan()
-    {
-        try { _scanCts?.Cancel(); } catch { /* ignore */ }
-    }
-
-    private void ResetScanState()
-    {
-        _scanCursor = "0";
-        _scanHasMore = false;
-        _redisTotalKeys = null;
-        ScanProgress = string.Empty;
-        OnPropertyChanged(nameof(CanScanMore));
-    }
-
-    private async Task RunScanAsync(bool reset)
-    {
-        var ds = SelectedDatasource;
-        if (ds is null || !IsRedisDb || Busy) return;
-        var explorer = _registry.Get(ds.Type) as IRedisKeyExplorer;
-        if (explorer is null) { StatusMessage = "该数据源不支持键浏览"; return; }
-
-        if (reset)
-        {
-            ResetScanState();
-            RedisKeys.Clear();
-            RedisKeyInfo = string.Empty;
-            _scanHasMore = true;
-        }
-        else if (!_scanHasMore)
-        {
-            return;
-        }
-
-        var effective = EffectiveFor(ds);
-        var pattern = string.IsNullOrWhiteSpace(KeyPattern) ? "*" : KeyPattern.Trim();
-
-        Busy = true;
-        IsScanning = true;
-        var cts = new CancellationTokenSource();
-        _scanCts = cts;
-        var token = cts.Token;
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var batches = 0;
-        StatusMessage = reset ? "扫描键…" : "继续扫描…";
-
-        try
-        {
-            if (reset)
-                _redisTotalKeys = await TryGetTotalKeysAsync(effective, token);
-
-            while (_scanHasMore && batches < ScanMaxBatches && stopwatch.Elapsed < ScanBudget && !token.IsCancellationRequested)
-            {
-                var page = await explorer.ScanKeysPageAsync(effective, pattern, _scanCursor, ScanBatchCount, token);
-                _scanCursor = page.Cursor;
-                _scanHasMore = page.Cursor != "0";
-                batches++;
-
-                foreach (var key in page.Keys)
-                    RedisKeys.Add(new RedisKeyRow(key));
-
-                ScanProgress = ScanProgressText(stopwatch.Elapsed);
-                OnPropertyChanged(nameof(CanScanMore));
-            }
-
-            StatusMessage = token.IsCancellationRequested
-                ? $"已停止扫描：已加载 {RedisKeys.Count} 个键。"
-                : _scanHasMore
-                    ? $"已加载 {RedisKeys.Count} 个键（{stopwatch.Elapsed.TotalSeconds:F1}s，模式 {pattern}），按「继续扫描」加载更多"
-                    : $"扫描完成：共 {RedisKeys.Count} 个键（模式 {pattern}，{stopwatch.Elapsed.TotalMilliseconds:F0} ms）";
-        }
-        catch (OperationCanceledException)
-        {
-            StatusMessage = $"已停止扫描：已加载 {RedisKeys.Count} 个键。";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "扫描键失败: " + ex.Message;
-        }
-        finally
-        {
-            ScanProgress = ScanProgressText(stopwatch.Elapsed);
-            IsScanning = false;
-            Busy = false;
-            if (ReferenceEquals(_scanCts, cts))
-                _scanCts = null;
-            cts.Dispose();
-            RaiseCanExecute();
-            OnPropertyChanged(nameof(CanScanMore));
-        }
-    }
-
-    private string ScanProgressText(System.Diagnostics.Stopwatch stopwatch) =>
-        ScanProgressText(stopwatch.Elapsed);
-
-    private string ScanProgressText(TimeSpan elapsed) =>
-        _redisTotalKeys is long total
-            ? $"已加载 {RedisKeys.Count} / {total} 键 · {elapsed.TotalSeconds:F1}s"
-            : $"已加载 {RedisKeys.Count} 键 · {elapsed.TotalSeconds:F1}s";
-
-    /// <summary>DBSIZE（仅用于进度展示，失败不影响扫描）。</summary>
-    private async Task<long?> TryGetTotalKeysAsync(DataSourceConfig ds, CancellationToken ct)
-    {
-        try
-        {
-            var driver = _registry.Get(ds.Type);
-            if (driver is null) return null;
-            var result = await driver.QueryAsync(ds, "DBSIZE", 1, ct);
-            if (result.Success && result.Rows.Count > 0 &&
-                result.Rows[0].TryGetValue("value", out var value) && value is not null)
-                return Convert.ToInt64(value);
-        }
-        catch { /* 总数只是进度参考 */ }
-        return null;
-    }
-
-    /// <summary>批量补全键的类型/TTL/大小（逐键 3 条命令，带 10s 预算与取消）。</summary>
-    private async Task LoadKeyMetaAsync()
-    {
-        var ds = SelectedDatasource;
-        if (ds is null || !IsRedisDb || Busy) return;
-        var explorer = _registry.Get(ds.Type) as IRedisKeyExplorer;
-        if (explorer is null) return;
-
-        var pending = RedisKeys.Where(r => !r.MetaLoaded).ToList();
-        if (pending.Count == 0)
-        {
-            StatusMessage = "所有键的类型/TTL/大小已补全。";
-            return;
-        }
-
-        var lookup = pending.ToDictionary(r => r.Key, StringComparer.Ordinal);
-        var effective = EffectiveFor(ds);
-
-        Busy = true;
-        IsScanning = true;
-        var cts = new CancellationTokenSource();
-        _scanCts = cts;
-        var token = cts.Token;
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        const int chunk = 50;
-        var done = 0;
-
-        try
-        {
-            while (done < pending.Count && stopwatch.Elapsed < MetaBudget)
-            {
-                token.ThrowIfCancellationRequested();
-
-                var batch = pending.Skip(done).Take(chunk).Select(r => r.Key).ToList();
-                var metas = await explorer.GetKeysMetaAsync(effective, batch, token);
-                foreach (var meta in metas)
-                {
-                    if (!lookup.TryGetValue(meta.Key, out var row)) continue;
-                    row.Type = meta.Type;
-                    row.TtlSeconds = meta.TtlSeconds;
-                    row.SizeBytes = meta.SizeBytes;
-                }
-
-                done += batch.Count;
-                ScanProgress = $"已补全 {done}/{pending.Count} 键的类型/TTL/大小…";
-            }
-
-            RefreshRedisKeyView();
-            StatusMessage = done >= pending.Count
-                ? $"已补全 {done} 个键的类型/TTL/大小（{stopwatch.Elapsed.TotalSeconds:F1}s）。"
-                : $"已补全 {done}/{pending.Count}（{stopwatch.Elapsed.TotalSeconds:F1}s 预算），可再次点击继续。";
-        }
-        catch (OperationCanceledException)
-        {
-            RefreshRedisKeyView();
-            StatusMessage = $"已停止补全：{done}/{pending.Count}。";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "补全键信息失败: " + ex.Message;
-        }
-        finally
-        {
-            IsScanning = false;
-            Busy = false;
-            if (ReferenceEquals(_scanCts, cts))
-                _scanCts = null;
-            cts.Dispose();
-            RaiseCanExecute();
-        }
-    }
-
-    private async Task UseKeyAsync(RedisKeyRow? row)
-    {
-        var ds = SelectedDatasource;
-        if (ds is null || row is null || string.IsNullOrWhiteSpace(row.Key) || !IsRedisDb || Busy) return;
-        var explorer = _registry.Get(ds.Type) as IRedisKeyExplorer;
-        if (explorer is null) return;
-
-        var key = row.Key;
-        Busy = true;
-        StatusMessage = $"读取键 {key}…";
-        var cts = new CancellationTokenSource();
-        _queryCts = cts;
-        try
-        {
-            // 有界读取：hash/set 走 HSCAN/SSCAN、string 超 64KB 截断（见 RedisDriver）
-            var result = await explorer.GetKeyValueAsync(EffectiveFor(ds), key, 200, cts.Token);
-            if (!result.Success)
-            {
-                StatusMessage = "读取键失败: " + result.Error;
-                Results = null;
-                RedisKeyInfo = string.Empty;
-                RebuildKeyResultTabs(null);
-                return;
-            }
-
-            var view = result.Data is not null ? BuildView(result.Data) : null;
-            Results = view;
-            // 查询报错后选中的「消息」标签会盖住键值结果（ShowResultGrid=false），必须切回「结果」标签
-            RebuildKeyResultTabs(view);
-            RedisKeyInfo = BuildKeyInfo(key, result);
-            OnPropertyChanged(nameof(PageLabel));
-            StatusMessage = result.Data is not null
-                ? $"{result.Data.RowCount} 项，{result.Data.DurationMs:F0} ms" + (result.Data.Truncated ? "（已截断）" : "")
-                : (result.Error ?? "该键无值可显示");
-        }
-        catch (OperationCanceledException)
-        {
-            StatusMessage = "已取消";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "读取键失败: " + ex.Message;
-        }
-        finally
-        {
-            if (ReferenceEquals(_queryCts, cts))
-                _queryCts = null;
-            cts.Dispose();
-            Busy = false;
-            RaiseCanExecute();
-        }
-    }
-
-    /// <summary>键信息栏：类型 / 生存时间 / 总数 / 是否截断。</summary>
-    private static string BuildKeyInfo(string key, RedisKeyValue result)
-    {
-        var info = $"键：{key}    类型：{result.Type}    生存时间：{FormatTtl(result.TtlSeconds)}";
-        if (result.TotalCount is long total)
-            info += result.Type == "string" ? $"    长度：{total} 字节" : $"    元素数：{total}";
-        if (result.Data is { Truncated: true })
-            info += $"    （已截断，仅显示前 {result.Data.RowCount} 项）";
-        return info;
-    }
-
-    private void CopyKey(RedisKeyRow? row)
-    {
-        if (row is null) return;
-        try
-        {
-            Clipboard.SetText(row.Key);
-            StatusMessage = "已复制键名。";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "复制失败: " + ex.Message;
-        }
-    }
-
-    private void KeyToEditor(RedisKeyRow? row)
-    {
-        if (row is null) return;
-        SqlText = "GET " + QuoteRedisArg(row.Key);
-        StatusMessage = "已把 GET 命令填入输入框（Ctrl+Enter 执行）。";
-    }
-
-    /// <summary>删除选中键（仅写入模式；走既有写确认 + 审计链）。</summary>
-    private async Task DeleteKeyAsync(RedisKeyRow? row)
-    {
-        var ds = SelectedDatasource;
-        if (ds is null || row is null || !IsRedisDb) return;
-        if (!IsWriteMode)
-        {
-            StatusMessage = "删除键需要先切换到「写入模式」。";
-            return;
-        }
-
-        var command = $"DEL {QuoteRedisArg(row.Key)}";
-        var ok = await ExecuteRedisWriteAsync(ds, command);
-        if (ok)
-        {
-            RedisKeys.Remove(row);
-            if (ReferenceEquals(SelectedRedisKey, row))
-                SelectedRedisKey = null;
-        }
-    }
-
-    /// <summary>给 Redis 参数加引号（含空白/引号/反斜杠时），与 RedisCommandParser 的转义规则匹配。</summary>
-    public static string QuoteRedisArg(string value)
-    {
-        var needsQuote = value.Length == 0 ||
-                         value.Any(char.IsWhiteSpace) ||
-                         value.Contains('\\') ||
-                         value.Contains('"') ||
-                         value.Contains('\'');
-        return needsQuote
-            ? "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\""
-            : value;
-    }
-
-    // ---------- 键列表本地过滤 ----------
-
-    private void RefreshRedisKeyView()
-    {
-        var view = RedisKeysView;
-        view.Filter = o => MatchesRedisKeyFilter(o as RedisKeyRow);
-        view.Refresh();
-    }
-
-    private bool MatchesRedisKeyFilter(RedisKeyRow? row)
-    {
-        if (row is null)
-            return false;
-
-        if (!string.IsNullOrWhiteSpace(_redisKeyTypeFilter) &&
-            _redisKeyTypeFilter != RedisKeyTypeAll &&
-            !string.Equals(row.Type ?? string.Empty, _redisKeyTypeFilter, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (string.IsNullOrWhiteSpace(_redisKeyFilter))
-            return true;
-
-        return row.Key.Contains(_redisKeyFilter.Trim(), StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string FormatTtl(long ttlSeconds) => ttlSeconds switch
-    {
-        -1 => "永不过期",
-        -2 => "键不存在",
-        _ => $"{ttlSeconds} 秒"
-    };
 
     // ---------- SQL 片段 ----------
 
@@ -2431,8 +2017,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         var ds = SelectedDatasource;
         if (ds is null || snippet is null) return;
 
-        if (MessageBox.Show($"确定删除该 SQL 片段？\n\n{snippet.Display}", "删除片段",
-                MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+        if (!_dialogs.Confirm($"确定删除该 SQL 片段？\n\n{snippet.Display}", "删除片段", defaultNo: true))
             return;
 
         Snippets.Remove(snippet);
@@ -2484,6 +2069,17 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     private static int ParseRedisDb(string? value)
         => int.TryParse(value?.Trim(), out var db) && db >= 0 && db < 16 ? db : 0;
+
+    /// <summary>子状态属性名与 VM 对 XAML 暴露的属性名不同时做映射，其余原样转发。</summary>
+    private static string? MapRedisProperty(string? name) => name switch
+    {
+        nameof(RedisKeyBrowser.SelectedKey) => nameof(SelectedRedisKey),
+        nameof(RedisKeyBrowser.Filter) => nameof(RedisKeyFilter),
+        nameof(RedisKeyBrowser.TypeFilter) => nameof(RedisKeyTypeFilter),
+        nameof(RedisKeyBrowser.KeyInfo) => nameof(RedisKeyInfo),
+        nameof(RedisKeyBrowser.HasKeyInfo) => nameof(HasRedisKeyInfo),
+        _ => name
+    };
 
     private void RaiseCanExecute()
     {

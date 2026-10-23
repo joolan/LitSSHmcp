@@ -230,6 +230,59 @@ public class AgentMemoryServiceTests : IDisposable
         Assert.Equal("用户: 磁盘满怎么办\n助手: 先 df 定位再处理 /var", content);
     }
 
+    [Fact]
+    public async Task History_and_rollback_restore_previous_content()
+    {
+        var (svc, store) = await CreateAsync();
+        await svc.SaveAsync("task", "disk", "磁盘满: 先 df 定位分区, journalctl 清理日志后恢复", "ssh:s1", "nginx");
+        await svc.SaveAsync("task", "disk", "磁盘满: 先 df 定位, 删旧日志并重启服务后恢复", "ssh:s2", "nginx");
+
+        var history = await svc.HistoryAsync("task", "disk");
+        Assert.Contains("v1", history);
+        Assert.Contains("ssh:s1", history);
+        Assert.Contains("journalctl", history);
+
+        var result = await svc.RollbackAsync("task", "disk", 1);
+        Assert.Contains("已回滚", result);
+        var record = await store.FindByKeyAsync("task", "disk");
+        Assert.NotNull(record);
+        Assert.Contains("journalctl", record!.Content);
+        Assert.Contains("ssh:s1", record.AssetIds);
+
+        // 回滚前的状态也被归档，可再次回滚
+        var after = await svc.HistoryAsync("task", "disk");
+        Assert.Contains("共 2 个快照", after);
+        Assert.Contains("删旧日志", after);
+    }
+
+    [Fact]
+    public async Task Archive_marks_superseded_and_keeps_rollback_entry()
+    {
+        var (svc, store) = await CreateAsync();
+        await svc.SaveAsync("task", "archive-me", "归档测试: 临时经验不再需要, 但保留历史", "ssh:s1", null);
+
+        var result = await svc.ArchiveAsync("task", "archive-me");
+        Assert.Contains("已归档", result);
+
+        var record = await store.FindByKeyAsync("task", "archive-me");
+        Assert.NotNull(record);
+        Assert.Equal("superseded", record!.Status);
+        Assert.Contains("v1", await svc.HistoryAsync("task", "archive-me"));
+
+        Assert.Contains("已回滚", await svc.RollbackAsync("task", "archive-me", 1));
+        Assert.Equal("active", (await store.FindByKeyAsync("task", "archive-me"))!.Status);
+    }
+
+    [Fact]
+    public async Task Rollback_rejects_unknown_version()
+    {
+        var (svc, _) = await CreateAsync();
+        await svc.SaveAsync("task", "only", "单版本记忆: 没有历史快照可用于回滚", null, null);
+
+        Assert.Contains("没有 v1", await svc.RollbackAsync("task", "only", 1));
+        Assert.Contains("未找到", await svc.RollbackAsync("task", "missing", 1));
+    }
+
     /// <summary>确定性假 embedder：相同文本 → 相同向量；基于字符 n-gram 的重叠度近似语义相似。</summary>
     private sealed class FakeEmbedder : IEmbeddingGenerator<string, Embedding<float>>, IDisposable
     {

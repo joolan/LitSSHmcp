@@ -417,6 +417,43 @@ a.file-row { cursor: pointer; }
 .model-item small { color: var(--fg-dim); font-size: 11px; }
 .model-item.active { border-color: var(--accent); color: var(--accent); }
 
+/* ---- 管理员团队记忆库 ---- */
+.memory-sheet { width: min(760px, calc(100vw - 32px)); }
+.memory-body { gap: 8px; }
+.memory-toolbar { display: flex; align-items: center; gap: 8px; }
+.memory-toolbar select { padding: 4px 8px; }
+.memory-list { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow-y: auto; }
+.memory-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+}
+.memory-row:hover, .memory-row.active { border-color: var(--accent); }
+.memory-row .m-title { font-weight: 600; }
+.memory-row .m-meta, .memory-row .m-preview { color: var(--fg-dim); font-size: 11px; }
+.memory-row .m-preview { white-space: normal; }
+.memory-versions-head { font-weight: 600; margin-top: 4px; }
+.memory-versions-head span { color: var(--fg-dim); font-weight: 400; }
+.memory-versions { display: flex; flex-direction: column; gap: 4px; max-height: 24vh; overflow-y: auto; }
+.memory-version {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.memory-version .mv-body { flex: 1; min-width: 0; }
+.memory-version .mv-title { font-weight: 600; font-size: 12px; }
+.memory-version .mv-meta, .memory-version .mv-preview { color: var(--fg-dim); font-size: 11px; }
+.memory-version .mv-preview { white-space: normal; }
+.memory-version button { flex: none; }
+
 /* ---- 图片全屏预览 ---- */
 .image-viewer {
   position: fixed;

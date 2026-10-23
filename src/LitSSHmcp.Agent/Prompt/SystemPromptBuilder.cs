@@ -52,9 +52,9 @@ public static class SystemPromptBuilder
         {
             sb.AppendLine();
             sb.AppendLine("## 本地文档工具(工作区)");
-            sb.AppendLine("你可使用工作区文档工具: ops_doc_list(列出)、ops_doc_read(读取)、ops_doc_write(写入/覆盖)、ops_doc_append(追加)、ops_doc_patch(定点替换)。");
+            sb.AppendLine("你可使用工作区文档工具: ops_doc_list(列出)、ops_doc_read(读取)、ops_doc_write(mode=overwrite|append|patch)：覆盖/追加/定点替换。");
             sb.AppendLine("路径相对工作区根目录(默认 OPS_ASSETS.md, 被限制在工作区内)。");
-            sb.AppendLine("维护运维资产档案: **默认不要每轮读写**——仅当需要既有的服务器/应用/日志路径等档案信息时才 ops_doc_read; 更新时优先用 ops_doc_append / ops_doc_patch 做**增量修改**(省 token), 只有创建新档案或需整体重写时才用 ops_doc_write。");
+            sb.AppendLine("维护运维资产档案: **默认不要每轮读写**——仅当需要既有的服务器/应用/日志路径等档案信息时才 ops_doc_read; 更新时优先用 ops_doc_write(mode=append|patch) 做**增量修改**(省 token), 只有创建新档案或需整体重写时才用 mode=overwrite。");
 
             if (!string.IsNullOrWhiteSpace(sessionWorkspaceDir))
             {
@@ -75,10 +75,10 @@ public static class SystemPromptBuilder
         {
             sb.AppendLine();
             sb.AppendLine("## 经验记忆(ops_memory_*)");
-            sb.AppendLine("- 工具: ops_memory_list(查询) / ops_memory_save(写入或合并) / ops_memory_update(修正或标过时) / ops_memory_delete(删除)。");
+            sb.AppendLine("- 工具: ops_memory_list(查询) / ops_memory_write(mode=save 新增或合并 / mode=update 修正或标过时) / ops_memory_delete(删除)。");
             sb.AppendLine("- **先查后做**: 开始排查/处置前先 ops_memory_list(kind=task, 或 assetId=当前资产) 查同类经验; 命中则优先沿用已验证路径, 但结论仍以本次工具实际结果为准, 记忆仅供参考。");
-            sb.AppendLine("- **成功后记**: 任务成功解决且值得复用时用 ops_memory_save: kind=task, key=任务语义键(如 `磁盘满:ssh:web01`), content=现象→根因→**验证成功的解决路径**, assetIds=涉及资产(id 用 ssh:/ds:/app: 前缀)。");
-            sb.AppendLine("- **保持更新**: 同 key 再次成功会自动频次+1 并覆盖为最新路径; 旧路径已失效时用 ops_memory_update 标 status=superseded(不再召回)。资产经验 kind=asset, 脚本经验 kind=script。");
+            sb.AppendLine("- **成功后记**: 任务成功解决且值得复用时用 ops_memory_write(mode=save): kind=task, key=任务语义键(如 `磁盘满:ssh:web01`), content=现象→根因→**验证成功的解决路径**, assetIds=涉及资产(id 用 ssh:/ds:/app: 前缀)。");
+            sb.AppendLine("- **保持更新**: 同 key 再次成功会自动频次+1 并覆盖为最新路径; 旧路径已失效时用 ops_memory_write(mode=update, status=\"superseded\") 标为过时(不再召回)。资产经验 kind=asset, 脚本经验 kind=script。");
             sb.AppendLine("- **内容质量**: 只记**重要且可复用**的内容(根因/最佳路径/坑); 不记一次性问答、不贴原始长日志(日志只记 应用/路径 + 关键行摘要 ≤3 行); 结构 = 现象→根因→处置→验证。");
             sb.AppendLine("- **资产关联必填**: 涉及具体服务器/数据源/应用时 assetIds 必须填写; 纯知识性经验(如配置语法)可留空。");
             sb.AppendLine("- **凭据绝不入库**: 密码/密钥/令牌等敏感信息一律不写入记忆(会被质量门拒绝); 记录\"用了哪个凭据别名/哪台机器\"即可。");
@@ -103,7 +103,7 @@ public static class SystemPromptBuilder
             sb.AppendLine();
             sb.AppendLine("## 大输出与委派");
             if (spillTools)
-                sb.AppendLine("- 工具结果若提示已落盘为 `spill://…`, 用 `spill_read`/`spill_grep` 分段读取, **不要重复调用原工具**。");
+                sb.AppendLine("- 工具结果若提示已落盘为 `spill://…`, 用 `spill_read(mode=read|grep)` 分段读取或搜索, **不要重复调用原工具**。");
             if (subAgent)
                 sb.AppendLine("- 复杂的**只读**取证(大日志/多步排查)可委派 `run_subagent` 在隔离上下文完成, 只返回摘要, 避免大输出占用主上下文。");
         }

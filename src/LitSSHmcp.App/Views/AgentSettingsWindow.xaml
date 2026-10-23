@@ -391,6 +391,12 @@
                                           ToolTip="全部=不限；task=任务复盘 / script=脚本经验 / asset=资产经验 / raw=会话与文档片段"/>
                                 <ui:Button Content="刷新" Padding="12,4" Margin="0,0,8,0" Click="OnReloadMemories"/>
                                 <ui:Button Content="删除选中" Padding="12,4" Margin="0,0,8,0" Click="OnDeleteMemory"/>
+                                <ui:Button Content="历史版本" Padding="12,4" Margin="0,0,8,0" Click="OnMemoryHistory"
+                                           ToolTip="加载选中记忆的历史快照（每次更新/删除/归档前自动留存）"/>
+                                <ui:Button Content="回滚选中版本" Padding="12,4" Margin="0,0,8,0" Click="OnRollbackMemory"
+                                           ToolTip="把选中记忆恢复到右侧选中的历史版本；当前状态会先归档，回滚本身可撤销"/>
+                                <ui:Button Content="归档选中" Padding="12,4" Margin="0,0,8,0" Click="OnArchiveMemory"
+                                           ToolTip="标记为 superseded：不再被召回，但保留历史，可随时回滚恢复"/>
                                 <ui:Button Content="清空全部记忆" Padding="12,4" Click="OnClearMemory"
                                            ToolTip="删除记忆库全部条目（含会话片段/任务复盘/脚本/资产经验）。更换 Embeddings 模型或向量维度时必须清空，否则历史向量不可检索。需二次确认"/>
                             </StackPanel>
@@ -398,30 +404,64 @@
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"
                                        Text="记忆是 AI 的长期经验库（本机 agent.db）。删除单条用于纠错；更换 Embeddings 模型前请「清空全部」，否则旧维度向量无法检索。"/>
                         </DockPanel>
-                        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}">
-                            <ListBox ItemsSource="{Binding MemoryEntries}" SelectedItem="{Binding SelectedMemoryEntry, Mode=TwoWay}"
-                                     Background="Transparent" BorderThickness="0"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                        <Setter Property="Padding" Value="10,7"/>
-                                        <Setter Property="Margin" Value="0,0,0,2"/>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel ToolTip="{Binding Content}">
-                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontFamily="Microsoft YaHei"/>
-                                            <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                            <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </Border>
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="360"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{DynamicResource CardBorderStyle}">
+                                <ListBox ItemsSource="{Binding MemoryEntries}" SelectedItem="{Binding SelectedMemoryEntry, Mode=TwoWay}"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Padding" Value="10,7"/>
+                                            <Setter Property="Margin" Value="0,0,0,2"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel ToolTip="{Binding Content}">
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontFamily="Microsoft YaHei"/>
+                                                <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+                            <Border Grid.Column="1" Margin="8,0,0,0" Style="{DynamicResource CardBorderStyle}">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Top" Text="历史版本（回滚前状态）" FontWeight="SemiBold"
+                                               FontFamily="Microsoft YaHei" Margin="2,0,0,6"/>
+                                    <ListBox ItemsSource="{Binding MemoryVersions}" SelectedItem="{Binding SelectedMemoryVersion, Mode=TwoWay}"
+                                             Background="Transparent" BorderThickness="0"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                                <Setter Property="Padding" Value="8,6"/>
+                                                <Setter Property="Margin" Value="0,0,0,2"/>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel ToolTip="{Binding Content}">
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontFamily="Microsoft YaHei"/>
+                                                    <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                    <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
+                                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </TabItem>
                 <!-- ===== Tab：智能体（可切换的角色设定：系统提示附加段 + 回答风格覆盖）===== -->

@@ -15,13 +15,18 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
 {
     private readonly IConfigService _configService;
     private readonly ITopologyStore _topologyStore;
+    private readonly IUserDialogService _dialogs;
+    private readonly IWindowService _windows;
     private DataSourceConfig? _selectedDataSource;
     private string _statusMessage = string.Empty;
 
-    public DatasourceManageViewModel(IConfigService configService, ITopologyStore? topologyStore = null)
+    public DatasourceManageViewModel(IConfigService configService, ITopologyStore? topologyStore = null,
+        IUserDialogService? dialogs = null, IWindowService? windows = null)
     {
         _configService = configService;
         _topologyStore = topologyStore ?? new TopologyStore();
+        _dialogs = dialogs ?? new UserDialogService();
+        _windows = windows ?? new WpfWindowService();
 
         RefreshCommand = new RelayCommand(_ => Load());
         AddCommand = new RelayCommand(_ => Add());
@@ -69,7 +74,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
             }
         }
 
-        var window = new DbWorkbenchWindow(target) { Owner = Application.Current.MainWindow, Topmost = false };
+        var window = _windows.CreateDbWorkbenchWindow(target, Application.Current.MainWindow);
         _workbenches.Add(window);
         window.Closed += (_, _) => _workbenches.Remove(window);
         window.Show();
@@ -106,7 +111,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
         {
             var config = await _configService.LoadConfigAsync();
 
-            var window = new DatasourceEditWindow { Owner = Application.Current.MainWindow };
+            var window = _windows.CreateDatasourceEditWindow(Application.Current.MainWindow);
             var vm = new DatasourceEditViewModel(_configService, window, config.Servers);
             window.DataContext = vm;
 
@@ -133,7 +138,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
             var config = await _configService.LoadConfigAsync();
             var ds = config.DataSources.FirstOrDefault(d => d.Id == SelectedDataSource.Id) ?? SelectedDataSource;
 
-            var window = new DatasourceEditWindow { Owner = Application.Current.MainWindow };
+            var window = _windows.CreateDatasourceEditWindow(Application.Current.MainWindow);
             var vm = new DatasourceEditViewModel(_configService, window, config.Servers, ds);
             window.DataContext = vm;
 
@@ -166,7 +171,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged
                 ? $"\n\n存在 {references.Length} 条关系记录引用它，将一并删除：\n{RelationHelper.Describe(references)}"
                 : "\n\n（未发现引用它的关系记录）";
 
-            if (MessageBox.Show(message, "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            if (!_dialogs.Confirm(message, "确认删除"))
                 return;
 
             config.DataSources = config.DataSources.Where(d => d.Id != SelectedDataSource.Id).ToArray();

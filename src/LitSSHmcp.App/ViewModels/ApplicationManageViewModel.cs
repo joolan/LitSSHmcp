@@ -16,13 +16,18 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
     private readonly IConfigService _configService;
     private readonly Window? _owner;
     private readonly ITopologyStore _topologyStore;
+    private readonly IUserDialogService _dialogs;
+    private readonly IWindowService _windows;
     private ApplicationConfig? _selectedApplication;
     private string _statusMessage = string.Empty;
 
-    public ApplicationManageViewModel(IConfigService configService, Window? owner, ITopologyStore? topologyStore = null)
+    public ApplicationManageViewModel(IConfigService configService, Window? owner, ITopologyStore? topologyStore = null,
+        IUserDialogService? dialogs = null, IWindowService? windows = null)
     {
         _configService = configService;
         _owner = owner;
+        _dialogs = dialogs ?? new UserDialogService();
+        _windows = windows ?? new WpfWindowService();
         _topologyStore = topologyStore ?? new TopologyStore();
 
         RefreshCommand = new RelayCommand(_ => Load());
@@ -76,7 +81,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
 
     private void Add()
     {
-        var window = new ApplicationEditWindow { Owner = _owner };
+        var window = _windows.CreateApplicationEditWindow(_owner);
         var vm = new ApplicationEditViewModel(_configService);
         window.DataContext = vm;
         vm.DialogClosed += (_, ok) => { window.Close(); if (ok) Load(); };
@@ -87,7 +92,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
     {
         if (SelectedApplication == null) return;
 
-        var window = new ApplicationEditWindow { Owner = _owner };
+        var window = _windows.CreateApplicationEditWindow(_owner);
         var vm = new ApplicationEditViewModel(_configService, SelectedApplication);
         window.DataContext = vm;
         vm.DialogClosed += (_, ok) => { window.Close(); if (ok) Load(); };
@@ -109,7 +114,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged
                 ? $"\n\n存在 {references.Length} 条关系记录引用它，将一并删除：\n{RelationHelper.Describe(references)}"
                 : "\n\n（未发现引用它的关系记录）";
 
-            if (MessageBox.Show(message, "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            if (!_dialogs.Confirm(message, "确认删除"))
                 return;
 
             config.Applications = config.Applications.Where(a => a.Id != SelectedApplication.Id).ToArray();

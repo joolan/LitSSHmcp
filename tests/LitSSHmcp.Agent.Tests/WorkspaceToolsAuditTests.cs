@@ -43,8 +43,8 @@ public class WorkspaceToolsAuditTests : IDisposable
         var full = Path.Combine(_root, rel);
 
         await Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "v1"), ("path", rel)), default);
-        await Tool(tools, "ops_doc_append").InvokeAsync(Args(("content", "v2"), ("path", rel)), default);
-        await Tool(tools, "ops_doc_patch").InvokeAsync(Args(("find", "v1"), ("replace", "v1x"), ("path", rel)), default);
+        await Tool(tools, "ops_doc_write").InvokeAsync(Args(("mode", "append"), ("content", "v2"), ("path", rel)), default);
+        await Tool(tools, "ops_doc_write").InvokeAsync(Args(("mode", "patch"), ("find", "v1"), ("replace", "v1x"), ("path", rel)), default);
         var readsBefore = Snapshot().Count(r => r.FilePath == full);
         await Tool(tools, "ops_doc_read").InvokeAsync(Args(("path", rel)), default);
         await Tool(tools, "ops_doc_list").InvokeAsync(Args(), default);

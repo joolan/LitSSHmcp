@@ -62,6 +62,7 @@ builder.Services.AddSingleton<IContextStore, ContextStore>();
 builder.Services.AddSingleton<IWebRuntimeFactory, AgentWebRuntimeFactory>();
 builder.Services.AddSingleton<WebSessionManager>();
 builder.Services.AddSingleton<WebApprovalHub>();
+builder.Services.AddSingleton<IWebMemoryStoreFactory, WebMemoryStoreFactory>();
 // M3-8 登录/API 层限速（§10.B.1/B.6）：进程内按 IP 固定窗口计数
 builder.Services.AddSingleton<WebRateLimitPolicy>();
 builder.Services.AddSingleton<WebRateLimitStore>();
@@ -200,6 +201,7 @@ app.MapGet("/api/agent/providers", async (HttpContext ctx, IConfigService config
 app.MapWebSessionEndpoints();
 app.MapWebApprovalEndpoints();
 app.MapWebFileEndpoints();
+app.MapWebMemoryEndpoints();
 
 // 审批桥就绪即启轮询（§3.3.1：cli 文件通道 → 浏览器推送）；单例首次解析触发后台循环
 _ = app.Services.GetRequiredService<WebApprovalHub>();

@@ -11,6 +11,7 @@ namespace LitSSHmcp.App.Views;
 public partial class AgentSettingsWindow : FluentWindow
 {
     private readonly AgentSettingsViewModel _viewModel = new();
+    private readonly LitSSHmcp.App.Services.UserDialogService _dialogs = new();
 
     public AgentSettingsWindow(IConfigService configService, string? initialTab = null)
     {
@@ -149,10 +150,50 @@ public partial class AgentSettingsWindow : FluentWindow
         var keyText = string.IsNullOrEmpty(entry.Key) ? "会话片段" : entry.Key;
         var preview = entry.Content.Length <= 80 ? entry.Content : entry.Content[..80] + "…";
         var result = System.Windows.MessageBox.Show(
-            $"确定删除这条记忆？\n\n[{entry.Kind}:{keyText}]\n{preview}\n\n删除后 AI 不再召回该经验，不可恢复。",
+            $"确定删除这条记忆？\n\n[{entry.Kind}:{keyText}]\n{preview}\n\n删除后 AI 不再召回该经验；历史快照仍保留，可由管理员接口恢复。",
             "删除记忆", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
         if (result == System.Windows.MessageBoxResult.Yes)
             _ = _viewModel.DeleteMemoryEntryAsync(entry);
+    }
+
+    private void OnMemoryHistory(object sender, RoutedEventArgs e)
+    {
+        var entry = _viewModel.SelectedMemoryEntry;
+        if (entry is null)
+        {
+            _dialogs.Info("请先在记忆列表中选择一条记忆。", "历史版本");
+            return;
+        }
+        _ = _viewModel.LoadMemoryHistoryAsync(entry);
+    }
+
+    private void OnRollbackMemory(object sender, RoutedEventArgs e)
+    {
+        var entry = _viewModel.SelectedMemoryEntry;
+        var version = _viewModel.SelectedMemoryVersion;
+        if (entry is null || version is null)
+        {
+            _dialogs.Info("请先选择一条记忆，并在右侧选择要回滚的历史版本。", "回滚记忆");
+            return;
+        }
+        if (_dialogs.Confirm(
+                $"确定把 [{entry.Kind}:{entry.Key}] 回滚到 v{version.Version}？\n\n当前状态会先归档，回滚本身也可以再次撤销。",
+                "回滚记忆"))
+            _ = _viewModel.RollbackMemoryAsync(entry, version);
+    }
+
+    private void OnArchiveMemory(object sender, RoutedEventArgs e)
+    {
+        var entry = _viewModel.SelectedMemoryEntry;
+        if (entry is null)
+        {
+            _dialogs.Info("请先在记忆列表中选择一条记忆。", "归档记忆");
+            return;
+        }
+        if (_dialogs.Confirm(
+                $"确定归档 [{entry.Kind}:{entry.Key}]？\n\n归档后状态为 superseded，不再被召回；历史版本保留，可随时回滚恢复。",
+                "归档记忆"))
+            _ = _viewModel.ArchiveMemoryEntryAsync(entry);
     }
 
     private void OnClearMemory(object sender, RoutedEventArgs e)

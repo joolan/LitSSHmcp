@@ -160,7 +160,7 @@ public class AgentConfig
     /// <summary>发送给模型时精简 MCP 工具描述（截短为要点 + 指向 mcp_usage_guide，降低每次请求固定 token；默认开）。</summary>
     public bool CompactToolDescriptions { get; set; } = true;
 
-    /// <summary>超大工具结果落盘为句柄（上下文只放预览 + spill:// 句柄，模型用 spill_read/spill_grep 按需读取；默认开）。</summary>
+    /// <summary>超大工具结果落盘为句柄（上下文只放预览 + spill:// 句柄，模型用 spill_read(mode=read|grep) 按需读取/搜索；默认开）。</summary>
     public bool SpillLargeToolResults { get; set; } = true;
 
     /// <summary>大结果落盘目录；空=默认 %APPDATA%\LitSSH\spills。</summary>

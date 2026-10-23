@@ -87,11 +87,13 @@ public sealed class TriggerViewModel : INotifyPropertyChanged
 {
     private readonly IConfigService _config = new ConfigService();
     private readonly TriggerRunner _runner = new(AppServiceFactory.CreateSshService(), new AuditLogService(), TriggerStateStore.Default);
+    private readonly IUserDialogService _dialogs;
     private bool _suppressOptions;
     private bool _suppressActionSync;
 
-    public TriggerViewModel()
+    public TriggerViewModel(IUserDialogService? dialogs = null)
     {
+        _dialogs = dialogs ?? new UserDialogService();
         BuildOptions();
         NewTriggerCommand = new RelayCommand(_ => NewTrigger());
         DeleteTriggerCommand = new RelayCommand(_ => _ = DeleteTriggerAsync());
@@ -370,8 +372,7 @@ public sealed class TriggerViewModel : INotifyPropertyChanged
     private async Task DeleteTriggerAsync()
     {
         if (SelectedTrigger is null) { StatusMessage = "当前没有选中的触发事件。"; return; }
-        if (MessageBox.Show($"确定删除触发事件「{SelectedTrigger.Name}」？", "删除",
-                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        if (!_dialogs.Confirm($"确定删除触发事件「{SelectedTrigger.Name}」？", "删除"))
             return;
         Triggers.Remove(SelectedTrigger);
         SelectedTrigger = Triggers.FirstOrDefault();

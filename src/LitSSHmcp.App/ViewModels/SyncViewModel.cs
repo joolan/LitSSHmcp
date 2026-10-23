@@ -74,12 +74,14 @@ public sealed class SyncEventHookOption : INotifyPropertyChanged
 public sealed class SyncViewModel : INotifyPropertyChanged
 {    private readonly IConfigService _config = new ConfigService();
     private readonly SyncService _sync = AppServiceFactory.CreateSyncService();
+    private readonly IUserDialogService _dialogs;
 
     private string? _testedSignature;
     private bool _suppressOptions;
 
-    public SyncViewModel()
+    public SyncViewModel(IUserDialogService? dialogs = null)
     {
+        _dialogs = dialogs ?? new UserDialogService();
         BuildOptions();
         NewTaskCommand = new RelayCommand(_ => NewTask());
         DeleteTaskCommand = new RelayCommand(_ => _ = DeleteTaskAsync());
@@ -360,8 +362,7 @@ public sealed class SyncViewModel : INotifyPropertyChanged
     private async Task DeleteTaskAsync()
     {
         if (SelectedTask is null) { StatusMessage = "当前没有选中的同步任务。"; return; }
-        if (MessageBox.Show($"确定删除同步任务「{SelectedTask.Name}」？", "删除",
-                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        if (!_dialogs.Confirm($"确定删除同步任务「{SelectedTask.Name}」？", "删除"))
             return;
         Tasks.Remove(SelectedTask);
         SelectedTask = Tasks.FirstOrDefault();

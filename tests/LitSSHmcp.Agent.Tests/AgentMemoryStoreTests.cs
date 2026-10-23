@@ -90,6 +90,104 @@ VALUES ('会话', '旧版记忆', @vector, '2026-01-01T00:00:00Z');";
         Assert.Equal("旧版记忆", records[0].Content);
     }
 
+    [Fact]
+    public async Task Update_keeps_history_and_restore_brings_back_content()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.AddStructuredAsync("task", "disk", "会话", "v1 内容",
+            new[] { 1f, 0f }, "ssh:s1", "", 1);
+
+        await store.UpdateStructuredAsync(id, "v2 内容", new[] { 0f, 1f }, "ssh:s2", "tag", "active", 0);
+
+        var versions = await store.ListVersionsAsync(id);
+        Assert.Single(versions);
+        Assert.Equal(1, versions[0].Version);
+        Assert.Equal("v1 内容", versions[0].Content);
+        Assert.Equal("ssh:s1", versions[0].AssetIds);
+
+        Assert.True(await store.RestoreVersionAsync(id, 1));
+        var current = await store.FindByKeyAsync("task", "disk");
+        Assert.NotNull(current);
+        Assert.Equal("v1 内容", current!.Content);
+        Assert.Equal("ssh:s1", current.AssetIds);
+        Assert.Equal(1, current.Freq);
+
+        // 回滚前状态也被归档，回滚本身可撤销
+        var after = await store.ListVersionsAsync(id);
+        Assert.Equal(2, after.Count);
+        Assert.Contains(after, v => v.Content == "v2 内容");
+    }
+
+    [Fact]
+    public async Task Deleted_memory_can_be_restored_from_history()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.AddStructuredAsync("task", "deleted", "会话", "待恢复内容",
+            new[] { 1f, 0f }, "", "", 1);
+
+        Assert.True(await store.DeleteByIdAsync(id));
+        Assert.Null(await store.FindByKeyAsync("task", "deleted"));
+        Assert.Single(await store.ListVersionsAsync(id));
+
+        Assert.True(await store.RestoreVersionAsync(id, 1));
+        var restored = await store.FindByKeyAsync("task", "deleted");
+        Assert.NotNull(restored);
+        Assert.Equal("待恢复内容", restored!.Content);
+    }
+
+    [Fact]
+    public async Task Archive_marks_superseded_and_keeps_history()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.AddStructuredAsync("task", "archive", "会话", "归档内容",
+            new[] { 1f, 0f }, "", "", 1);
+
+        Assert.True(await store.ArchiveByIdAsync(id));
+        var archived = await store.FindByKeyAsync("task", "archive");
+        Assert.NotNull(archived);
+        Assert.Equal("superseded", archived!.Status);
+        Assert.Single(await store.ListVersionsAsync(id));
+
+        Assert.True(await store.RestoreVersionAsync(id, 1));
+        Assert.Equal("active", (await store.FindByKeyAsync("task", "archive"))!.Status);
+    }
+
+    [Fact]
+    public async Task Member_cannot_restore_team_memory_but_admin_can()
+    {
+        var adminStore = new AgentMemoryStore(_dbPath, new MemoryAccessScope("9", IsAdmin: true));
+        await adminStore.InitializeAsync();
+        var id = await adminStore.AddStructuredAsync("task", "team", "会话", "团队 v1",
+            new[] { 1f, 0f }, "", "", 1);
+        await adminStore.UpdateStructuredAsync(id, "团队 v2", new[] { 0f, 1f }, "", "", "active", 0);
+
+        var member = new AgentMemoryStore(_dbPath, new MemoryAccessScope("1", IsAdmin: false));
+        Assert.Single(await member.ListVersionsAsync(id));       // 团队历史可见
+        Assert.False(await member.RestoreVersionAsync(id, 1));   // 但不可回滚
+        Assert.Equal("团队 v2", (await adminStore.FindByKeyAsync("task", "team"))!.Content);
+
+        Assert.True(await adminStore.RestoreVersionAsync(id, 1));
+        Assert.Equal("团队 v1", (await adminStore.FindByKeyAsync("task", "team"))!.Content);
+    }
+
+    [Fact]
+    public async Task Clear_also_purges_history()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.AddStructuredAsync("task", "clear", "会话", "v1",
+            new[] { 1f, 0f }, "", "", 1);
+        await store.UpdateStructuredAsync(id, "v2", new[] { 0f, 1f }, "", "", "active", 0);
+        Assert.Single(await store.ListVersionsAsync(id));
+
+        await store.ClearAsync();
+
+        Assert.Empty(await store.ListVersionsAsync(id));
+    }
+
     public void Dispose()
     {
         try { File.Delete(_dbPath); } catch { /* ignore */ }

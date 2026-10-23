@@ -844,7 +844,7 @@ public sealed class AgentSession
                 var label = tail ? "以下为最新内容" : "预览";
                 return preview +
                     $"\n…[结果过大({resultText.Length} 字符/{lines} 行), 已落盘为 {SpillStore.Scheme}{handle}; " +
-                    $"用 spill_read(handle=\"{handle}\", offset, limit) 分段读取, spill_grep 搜索, spill_list 列出; {label}]";
+                    $"用 spill_read(handle=\"{handle}\", mode=\"read\", offset, limit) 分段读取, spill_read(mode=\"grep\", pattern) 搜索, spill_list 列出; {label}]";
             }
             catch
             {

@@ -24,11 +24,13 @@ public sealed class PortForwardViewModel : INotifyPropertyChanged, IDisposable
 
     private readonly IConfigService _configService;
     private readonly PortForwardService _service;
+    private readonly IUserDialogService _dialogs;
 
-    public PortForwardViewModel(IConfigService configService, PortForwardService service, IEnumerable<SshServerConfig> servers)
+    public PortForwardViewModel(IConfigService configService, PortForwardService service, IEnumerable<SshServerConfig> servers, IUserDialogService? dialogs = null)
     {
         _configService = configService;
         _service = service;
+        _dialogs = dialogs ?? new UserDialogService();
         ServerList = servers.ToList();
 
         AddCommand = new RelayCommand(_ => Add());
@@ -80,8 +82,8 @@ public sealed class PortForwardViewModel : INotifyPropertyChanged, IDisposable
         var browser = ProxiedBrowserLauncher.FindChromiumBrowser();
         if (browser is null)
         {
-            MessageBox.Show("未找到 Chromium 系浏览器（Edge / Chrome / Brave / Chromium）。",
-                "代理浏览器", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _dialogs.Warn("未找到 Chromium 系浏览器（Edge / Chrome / Brave / Chromium）。",
+                "代理浏览器");
             return;
         }
         if (!int.TryParse(row.BindPortText, out var port) || port <= 0)

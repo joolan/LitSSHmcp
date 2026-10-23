@@ -76,6 +76,13 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         _bundledSkillsDir = bundledSkillsDir;
         _uiInvoke = uiInvoke ?? (action => action());
         _uiBeginInvoke = uiBeginInvoke ?? _uiInvoke;
+        _sidebar = new AgentSessionSidebar(
+            () => FilteredSessions,
+            () => !string.IsNullOrWhiteSpace(_sessionFilter),
+            StateTextForSession,
+            ApplySidebarSelection);
+        _attachmentManager = new AgentAttachmentManager(message => StatusMessage = message);
+        _attachmentManager.Changed += () => OnPropertyChanged(nameof(HasAttachments));
         SendCommand = new RelayCommand(_ => _ = SendAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(Input));
         StopCommand = new RelayCommand(_ => CurrentContext.Cts?.Cancel(), _ => IsBusy);
         SendOrStopCommand = new RelayCommand(_ => { if (IsBusy) CurrentContext.Cts?.Cancel(); else _ = SendAsync(); },
@@ -248,45 +255,17 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ObservableCollection<AgentSessionRow> Sessions { get; } = new();
     public ObservableCollection<AgentSessionRow> FilteredSessions { get; } = new();
 
+    private readonly AgentSessionSidebar _sidebar;
+    private readonly AgentAttachmentManager _attachmentManager;
+
     /// <summary>已定义的分组名（持久化；空分组也会在侧栏显示）。</summary>
-    public ObservableCollection<string> Groups { get; } = new();
+    public ObservableCollection<string> Groups => _sidebar.Groups;
 
     /// <summary>侧栏扁平项：分组标题 + 会话（供带分组的列表渲染）。</summary>
-    public ObservableCollection<SidebarItemVM> SidebarItems { get; } = new();
-
-    private readonly HashSet<string> _collapsedGroups = new(StringComparer.Ordinal);
-
-    /// <summary>从本机偏好读取已折叠的分组。</summary>
-    private void LoadCollapsedGroups()
-    {
-        _collapsedGroups.Clear();
-        try
-        {
-            var raw = UiPrefs.GetString("agent.collapsedGroups", string.Empty);
-            foreach (var g in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-                _collapsedGroups.Add(g.Trim());
-        }
-        catch
-        {
-            // 读取失败忽略
-        }
-    }
-
-    private void SaveCollapsedGroups()
-    {
-        try { UiPrefs.SetString("agent.collapsedGroups", string.Join('\n', _collapsedGroups)); }
-        catch { /* ignore */ }
-    }
+    public ObservableCollection<SidebarItemVM> SidebarItems => _sidebar.SidebarItems;
 
     /// <summary>折叠/展开某分组。</summary>
-    public void ToggleGroup(string key)
-    {
-        key ??= string.Empty;
-        if (!_collapsedGroups.Remove(key))
-            _collapsedGroups.Add(key);
-        SaveCollapsedGroups();
-        RebuildSidebar();
-    }
+    public void ToggleGroup(string key) => _sidebar.Toggle(key, _selectedSession);
 
     private SidebarItemVM? _selectedSidebarItem;
     /// <summary>侧栏选中项；选中会话项时联动 <see cref="SelectedSession"/>，标题项不可选。</summary>
@@ -314,58 +293,18 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     /// <summary>根据当前会话把侧栏选中项同步到（重建后的）对应项。</summary>
-    private void SyncSidebarSelection()
+    private void ApplySidebarSelection(SidebarItemVM? match)
     {
-        var match = _selectedSession is null
-            ? null
-            : SidebarItems.FirstOrDefault(i => i.Session is { } s && s.Id == _selectedSession.Id);
-        if (!ReferenceEquals(match, _selectedSidebarItem))
-        {
-            _selectedSidebarItem = match;
-            OnPropertyChanged(nameof(SelectedSidebarItem));
-        }
+        if (ReferenceEquals(match, _selectedSidebarItem))
+            return;
+        _selectedSidebarItem = match;
+        OnPropertyChanged(nameof(SelectedSidebarItem));
     }
 
     /// <summary>重建侧栏扁平项：未分组（有内容时）置顶 + 各命名分组（空也显示）下挂会话。</summary>
-    private void RebuildSidebar()
-    {
-        SidebarItems.Clear();
-        var scope = FilteredSessions.ToList();
-        var filtering = !string.IsNullOrWhiteSpace(_sessionFilter);
+    private void RebuildSidebar() => _sidebar.Rebuild(_selectedSession);
 
-        void AddBucket(string key, string display, bool alwaysShow)
-        {
-            // scope 已按持久化排序（SortOrder）排列，保持原顺序
-            var items = scope
-                .Where(s => string.Equals(s.Group ?? string.Empty, key, StringComparison.Ordinal))
-                .ToList();
-            if (items.Count == 0 && (!alwaysShow || filtering))
-                return;
-            var collapsed = _collapsedGroups.Contains(key);
-            SidebarItems.Add(new SidebarItemVM
-            {
-                IsHeader = true,
-                GroupName = key,
-                HeaderText = display,
-                Count = items.Count,
-                IsCollapsed = collapsed
-            });
-            if (collapsed)
-                return;
-            foreach (var s in items)
-                SidebarItems.Add(new SidebarItemVM
-                {
-                    Session = s,
-                    StateTextProvider = () => StateTextForSession(s.Id)
-                });
-        }
-
-        AddBucket(string.Empty, "未分组", alwaysShow: false);
-        foreach (var g in Groups.Where(x => !string.IsNullOrWhiteSpace(x)))
-            AddBucket(g, g, alwaysShow: true);
-
-        SyncSidebarSelection();
-    }
+    private void SyncSidebarSelection() => _sidebar.SyncSelection(_selectedSession);
 
     /// <summary>加载分组定义。</summary>
     public async Task ReloadGroupsAsync()
@@ -429,29 +368,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         group ??= string.Empty;
 
-        var siblings = Sessions
-            .Where(s => s.Id != dragged.Id && string.Equals(s.Group ?? string.Empty, group, StringComparison.Ordinal))
-            .OrderBy(s => s.SortOrder).ThenByDescending(s => s.UpdatedAt, StringComparer.Ordinal)
-            .ToList();
-
-        double order;
-        if (after is null)
-        {
-            order = siblings.Count > 0 ? siblings[0].SortOrder - 1 : 0;
-        }
-        else
-        {
-            var idx = siblings.FindIndex(s => s.Id == after.Id);
-            if (idx < 0)
-                order = siblings.Count > 0 ? siblings[^1].SortOrder + 1 : 0;
-            else
-            {
-                var lo = siblings[idx].SortOrder;
-                var hi = idx + 1 < siblings.Count ? siblings[idx + 1].SortOrder : lo + 2;
-                order = (lo + hi) / 2;
-            }
-        }
-
+        var order = AgentSessionOrder.ComputeMoveOrder(Sessions, dragged, group, after);
         await _store.MoveSessionAsync(dragged.Id, group, order);
         await ReloadSessionsAsync();
     }
@@ -459,16 +376,8 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>拖拽排序：把分组 <paramref name="dragged"/> 移到 <paramref name="target"/> 之前。</summary>
     public async Task ReorderGroupAsync(string dragged, string target)
     {
-        if (string.IsNullOrEmpty(dragged) || string.Equals(dragged, target, StringComparison.Ordinal))
+        if (AgentSessionOrder.ReorderGroups(Groups, dragged, target) is not { } list)
             return;
-        var list = Groups.Where(g => !string.IsNullOrWhiteSpace(g)).ToList();
-        if (!list.Remove(dragged))
-            return;
-        var idx = list.IndexOf(target);
-        if (idx < 0)
-            list.Add(dragged);
-        else
-            list.Insert(idx, dragged);
         await _store.ReorderGroupsAsync(list);
         await ReloadGroupsAsync();
         RebuildSidebar();
@@ -1075,8 +984,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             RaiseBusyChanged();
             OnPropertyChanged(nameof(SessionSubsetLocked));   // 运行起止会切换启用层锁定（D8）
             // 侧栏所有会话行徽章刷新（后台会话状态/停止入口的启用态都靠它）
-            foreach (var item in SidebarItems)
-                item.RefreshState();
+            _sidebar.RefreshStates();
         });
         if (ReferenceEquals(ctx, CurrentContext))
             OnPropertyChanged(nameof(SessionStateText));
@@ -1185,7 +1093,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             LocalTerminalSettings.WorkingDirectory = string.IsNullOrWhiteSpace(_agentConfig.LocalTerminal.WorkingDirectory)
                 ? null : _agentConfig.LocalTerminal.WorkingDirectory;
             ReloadPromptTemplates();
-            LoadCollapsedGroups();
+            _sidebar.LoadCollapsed();
             // 裁剪放到后台，不阻塞首屏（避免历史库较大时卡在启动）。
             _ = PruneInBackgroundAsync();
 
@@ -1986,8 +1894,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 (cmd, dir, ct) => RequestLocalApprovalAsync(ctx, cmd, dir, ct),
                 PersistLocalTerminalConfig,
                 _localExemptions));
-            tools.Add(new LocalShellListTool(() => ctx.SessionKey, LocalTerminalBroker));
-            tools.Add(new LocalShellReadTool(() => ctx.SessionKey, LocalTerminalBroker));
+            tools.Add(new LocalShellManageTool(() => ctx.SessionKey, LocalTerminalBroker));
             tools.Add(new LocalShellStopTool(() => ctx.SessionKey, LocalTerminalBroker));
         }
 
@@ -2246,96 +2153,20 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     public Task SendAsync() => SendTextAsync(null);
 
     /// <summary>待发送附件（图片 / 文档）。</summary>
-    public ObservableCollection<AgentAttachment> Attachments { get; } = new();
+    public ObservableCollection<AgentAttachment> Attachments => _attachmentManager.Items;
 
-    public bool HasAttachments => Attachments.Count > 0;
+    public bool HasAttachments => _attachmentManager.HasAttachments;
 
-    public void AddAttachmentFiles(IEnumerable<string> paths)
-    {
-        foreach (var path in paths)
-        {
-            if (Directory.Exists(path))
-            {
-                List<string> files;
-                try
-                {
-                    files = Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly).ToList();
-                }
-                catch (Exception ex)
-                {
-                    StatusMessage = "读取文件夹失败: " + ex.Message;
-                    continue;
-                }
+    public void AddAttachmentFiles(IEnumerable<string> paths) => _attachmentManager.AddFiles(paths);
 
-                if (files.Count == 0)
-                {
-                    StatusMessage = $"文件夹为空，已忽略: {Path.GetFileName(path)}";
-                    continue;
-                }
-
-                foreach (var file in files.Take(MaxFolderFiles))
-                    AddOneFile(file);
-
-                if (files.Count > MaxFolderFiles)
-                    StatusMessage = $"文件夹内文件较多，仅添加前 {MaxFolderFiles} 个: {Path.GetFileName(path)}";
-                continue;
-            }
-
-            AddOneFile(path);
-        }
-
-        OnPropertyChanged(nameof(HasAttachments));
-    }
-
-    private const int MaxFolderFiles = 50;
-
-    private void AddOneFile(string path)
-    {
-        try
-        {
-            if (!File.Exists(path))
-            {
-                StatusMessage = "已跳过(文件不存在): " + Path.GetFileName(path);
-                return;
-            }
-            if (Attachments.Any(a => string.Equals(a.Path, path, StringComparison.OrdinalIgnoreCase)))
-                return;
-
-            var parsed = AttachmentService.Parse(path);
-            if (parsed.Kind == AttachmentKind.Document && parsed.Text.StartsWith("(暂不支持解析", StringComparison.Ordinal))
-            {
-                StatusMessage = "已跳过(不支持的类型): " + parsed.Name;
-                return;
-            }
-            Attachments.Add(new AgentAttachment
-            {
-                Name = parsed.Name,
-                Path = path,
-                Kind = parsed.Kind,
-                MediaType = parsed.MediaType,
-                ImageBytes = parsed.ImageBytes,
-                Text = parsed.Text
-            });
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "附件读取失败: " + ex.Message;
-        }
-    }
-
-    public void RemoveAttachment(AgentAttachment attachment)
-    {
-        Attachments.Remove(attachment);
-        OnPropertyChanged(nameof(HasAttachments));
-    }
+    public void RemoveAttachment(AgentAttachment attachment) => _attachmentManager.Remove(attachment);
 
     /// <summary>清除全部待发送附件。</summary>
     public void ClearAttachments()
     {
-        if (Attachments.Count == 0)
+        if (!_attachmentManager.HasAttachments)
             return;
-        Attachments.Clear();
-        OnPropertyChanged(nameof(HasAttachments));
+        _attachmentManager.Clear();
         StatusMessage = "已清除全部附件";
     }
 
@@ -2384,7 +2215,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             catch { /* 忽略无法读取的附件 */ }
         }
 
-        OnPropertyChanged(nameof(HasAttachments));
+        _attachmentManager.NotifyChanged();
     }
 
     private const int InlineAttachmentChars = 8000;
@@ -2541,8 +2372,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                         var list = new List<AIContent> { new TextContent(build.ModelText) };
                         list.AddRange(build.Images);
                         editContents = list;
-                        Attachments.Clear();
-                        OnPropertyChanged(nameof(HasAttachments));
+                        _attachmentManager.Clear();
                     }
 
                     editTurn.ResetForRerun(editDisplay);
@@ -2585,8 +2415,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             var list = new List<AIContent> { new TextContent(build.ModelText) };
             list.AddRange(build.Images);
             contents = list;
-            Attachments.Clear();
-            OnPropertyChanged(nameof(HasAttachments));
+            _attachmentManager.Clear();
         }
 
         var turn = new AgentTurn(displayText, DateTime.UtcNow) { StorageText = persistedText, UiOrdinal = Turns.Count };
@@ -3611,54 +3440,4 @@ public sealed class PlanItemVM
     public bool Done { get; }
     public string Text { get; }
     public string Glyph => Done ? "☑" : "☐";
-}
-
-/// <summary>AI 助手侧栏项：分组标题（<see cref="IsHeader"/>）或一个会话行。</summary>
-public sealed class SidebarItemVM : INotifyPropertyChanged
-{
-    public bool IsHeader { get; init; }
-    public string HeaderText { get; init; } = string.Empty;
-    public int Count { get; init; }
-
-    /// <summary>分组键（空串=未分组）；标题项用于右键重命名/删除分组。</summary>
-    public string GroupName { get; init; } = string.Empty;
-
-    /// <summary>分组标题是否处于折叠状态。</summary>
-    public bool IsCollapsed { get; init; }
-
-    /// <summary>分组标题的展开/折叠指示符（会话项为空）。</summary>
-    public string Glyph => IsHeader ? (IsCollapsed ? "▸" : "▾") : string.Empty;
-
-    public AgentSessionRow? Session { get; init; }
-
-    /// <summary>会话状态徽章取值（由 AgentViewModel 按会话 ID 提供；未设置=无徽章）。</summary>
-    public Func<string>? StateTextProvider { get; init; }
-
-    /// <summary>会话行的状态徽章文案（空=隐藏；由 RefreshState 触发重新取值）。</summary>
-    public string StateText => StateTextProvider?.Invoke() ?? string.Empty;
-
-    /// <summary>状态机切换后重新取值（只对会话行有效）。</summary>
-    public void RefreshState()
-    {
-        if (StateTextProvider is null)
-            return;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StateText)));
-    }
-
-    private bool _isContextTarget;
-
-    /// <summary>右键菜单打开期间，保持该行的悬浮高亮（避免菜单弹出后悬浮态消失）。</summary>
-    public bool IsContextTarget
-    {
-        get => _isContextTarget;
-        set
-        {
-            if (_isContextTarget == value)
-                return;
-            _isContextTarget = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsContextTarget)));
-        }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
 }

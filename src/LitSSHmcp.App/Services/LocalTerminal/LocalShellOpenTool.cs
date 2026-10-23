@@ -52,7 +52,7 @@ public sealed class LocalShellOpenTool : IAgentTool
     private const string Description =
         "打开一个**独立的**本机 PowerShell 会话并启动长驻命令（后台服务、dev server、日志跟随、下载、构建等），立即返回 terminalId。" +
         "与 local_shell 不同，它不会等待命令结束，也不会阻塞其他终端；一个 AI 会话可同时拥有多个终端。" +
-        "【用法】启动后用 local_shell_list 查询、local_shell_read 按 cursor 读取增量输出、local_shell_stop 停止并关闭标签。" +
+        "【用法】启动后用 local_shell_manage(action=\"list\") 查询、local_shell_manage(action=\"read\", terminalId, cursor) 读取增量输出、local_shell_stop 停止并关闭标签。" +
         "命令结束后（终端空闲时）可用 local_shell 的 terminalId 参数向该终端注入下一条一次性命令；终端仍在跑长驻命令时会拒绝注入。" +
         "不要用它启动需要键盘交互的程序（shell、REPL、vim、docker exec -it）；这些会被拒绝。" +
         "每次只接受一条简单命令：禁止 `;`、`&&`、`||`、`|`、`&`、重定向、`$()`/`@()`、脚本块、括号/方括号表达式和嵌套 shell。" +
@@ -142,7 +142,7 @@ public sealed class LocalShellOpenTool : IAgentTool
             await AuditAsync(command, CommandStatus.Executed,
                 manualApproval ? "manual-approved" : "auto-approved", "长驻终端已启动");
             return $"已打开终端 {info.Id}（{info.Name}），pid {info.ProcessId}，状态 {info.Status}。" +
-                   $"之后用 local_shell_read(terminalId=\"{info.Id}\", cursor=0) 读取输出，用 local_shell_stop(terminalId=\"{info.Id}\") 停止。";
+                   $"之后用 local_shell_manage(action=\"read\", terminalId=\"{info.Id}\", cursor=0) 读取输出，用 local_shell_stop(terminalId=\"{info.Id}\") 停止。";
         }
         catch (Exception ex)
         {

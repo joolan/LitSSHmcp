@@ -53,6 +53,20 @@ public class SystemPromptBuilderTests
     }
 
     [Fact]
+    public void Build_uses_merged_local_tool_names()
+    {
+        var prompt = SystemPromptBuilder.Build(null, null, null, spillTools: true, memoryTools: true);
+        Assert.Contains("ops_doc_write(mode=overwrite|append|patch)", prompt);
+        Assert.Contains("ops_memory_write(mode=save", prompt);
+        Assert.Contains("spill_read(mode=read|grep)", prompt);
+        Assert.DoesNotContain("ops_doc_append", prompt);
+        Assert.DoesNotContain("ops_doc_patch", prompt);
+        Assert.DoesNotContain("ops_memory_save", prompt);
+        Assert.DoesNotContain("ops_memory_update", prompt);
+        Assert.DoesNotContain("spill_grep", prompt);
+    }
+
+    [Fact]
     public void Build_injects_session_workspace_notice_only_when_session_dir_assigned()
     {
         // 需求 D：会话分配独立目录 → 提示词注入"本会话工作目录 + 共享区 + shared/ 前缀"规则（软约束，代码层另强制）

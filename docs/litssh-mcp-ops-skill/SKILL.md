@@ -145,8 +145,8 @@ description: Use when operating or troubleshooting servers and applications thro
 
 - **查后做**：相关记忆**每轮自动召回**注入上下文（`[kind:key ×freq] 内容`，`×freq` 越高 = 越多环境验证过）；主动翻阅/按类别筛选用 `ops_memory_list(kind, assetId?, limit)`。
 - **成后记**（只记可复用的，失败教训也可）：
-  - `ops_memory_save(kind, key, content, assetIds?, tags?)` — `kind`：`task`（已验证操作路径/排障步骤）、`script`（脚本用途与要点）、`asset`（服务器/应用事实，文档之外的机器可读补充）。
-  - 同 `kind+key` 再次保存 = 合并更新（频次+1、资产合并）；**路径改进时**用 `ops_memory_update(key, content, status="superseded")` 让旧记录退役，不要原地抹掉历史。
+  - `ops_memory_write(mode="save", kind, key, content, assetIds?, tags?)` — `kind`：`task`（已验证操作路径/排障步骤）、`script`（脚本用途与要点）、`asset`（服务器/应用事实，文档之外的机器可读补充）。
+  - 同 `kind+key` 再次保存 = 合并更新（频次+1、资产合并）；**路径改进时**用 `ops_memory_write(mode="update", key, content, status="superseded")` 让旧记录退役，不要原地抹掉历史。
   - `ops_memory_list(kind, limit)` / `ops_memory_delete(key)`（按 kind 管理，删除同 key 最新一条）。
   - 记一条 = 一段话可直接照做的事实（含关键参数/输出特征），不记流水账；**绝密钥/口令/私钥路径**。
 - **脚本复用闭环**（详见 `docs/skills/script-deploy-verify/SKILL.md`）：

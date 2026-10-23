@@ -32,7 +32,7 @@ public class SpillAndSubAgentTests : IDisposable
         Assert.Contains("100: line101", (string)read!);
         Assert.Contains("共 500 行", (string)read!);
 
-        var grep = await Tool(tools, "spill_grep").InvokeAsync(Args(("handle", handle), ("pattern", @"line12\d")), default);
+        var grep = await Tool(tools, "spill_read").InvokeAsync(Args(("mode", "grep"), ("handle", handle), ("pattern", @"line12\d")), default);
         Assert.Contains("line120", (string)grep!);
 
         var list = await Tool(tools, "spill_list").InvokeAsync(Args(), default);

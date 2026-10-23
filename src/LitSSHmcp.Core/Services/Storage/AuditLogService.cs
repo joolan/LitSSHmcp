@@ -640,6 +640,42 @@ public class AuditLogService : IAuditLogService
 
     // —— 内部实现 ——
 
+    /// <summary>
+    /// 删除归档表中早于 <paramref name="cutoffUtc"/> 的记录，并按剩余活动/归档记录重建哈希链。
+    /// 仅由管理员在存储维护中显式触发；返回删除的记录数。
+    /// </summary>
+    public async Task<int> PruneHistoryAsync(DateTime cutoffUtc, CancellationToken ct = default)
+    {
+        var gate = await EnterWriteAsync(ct);
+        try
+        {
+            await InitializeCoreAsync();
+            await using var connection = new SqliteConnection(WriteConnectionString);
+            await connection.OpenAsync(ct);
+            await SetBusyTimeoutAsync(connection);
+
+            var cutoff = cutoffUtc.ToUniversalTime().ToString("O");
+            int removed;
+            await using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText =
+                    "DELETE FROM AuditLogsHistory WHERE Timestamp < @c; " +
+                    "DELETE FROM SqlAuditLogsHistory WHERE Timestamp < @c;";
+                cmd.Parameters.AddWithValue("@c", cutoff);
+                removed = await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // 归档行删掉后原链会缺记录；按剩余记录重建，保证校验只覆盖保留区间且仍连续。
+            if (removed > 0)
+                RebuildChainV6(connection);
+            return removed;
+        }
+        finally
+        {
+            ExitWrite(gate);
+        }
+    }
+
     private static AuditVerifyResult Bad(long seq, long checkedCount, string message) =>
         new() { Ok = false, Checked = checkedCount, FirstBadSeq = seq, Message = message };
 

@@ -174,6 +174,28 @@ VALUES ('会话', '旧版记忆', @vector, '2026-01-01T00:00:00Z');";
     }
 
     [Fact]
+    public async Task History_is_capped_per_memory_and_can_be_pruned()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.AddStructuredAsync("task", "capped", "会话", "v0",
+            new[] { 1f, 0f }, "", "", 1);
+
+        for (var i = 1; i <= 45; i++)
+            await store.UpdateStructuredAsync(id, $"v{i}", new[] { 1f, 0f }, "", "", "active", 0);
+
+        var versions = await store.ListVersionsAsync(id);
+        Assert.Equal(AgentMemoryStore.DefaultHistoryKeep, versions.Count);
+        Assert.DoesNotContain(versions, v => v.Content == "v0");
+        Assert.DoesNotContain(versions, v => v.Content == "v4");
+        Assert.Contains(versions, v => v.Content == "v5");
+        Assert.Contains(versions, v => v.Content == "v44");
+
+        Assert.True(await store.PruneHistoryAsync(3, id) > 0);
+        Assert.Equal(3, (await store.ListVersionsAsync(id)).Count);
+    }
+
+    [Fact]
     public async Task Clear_also_purges_history()
     {
         var store = NewStore();

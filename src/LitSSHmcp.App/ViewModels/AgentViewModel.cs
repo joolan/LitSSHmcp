@@ -83,6 +83,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             ApplySidebarSelection);
         _attachmentManager = new AgentAttachmentManager(message => StatusMessage = message);
         _attachmentManager.Changed += () => OnPropertyChanged(nameof(HasAttachments));
+        _skills = new AgentSkillState(name => OnPropertyChanged(name));
         SendCommand = new RelayCommand(_ => _ = SendAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(Input));
         StopCommand = new RelayCommand(_ => CurrentContext.Cts?.Cancel(), _ => IsBusy);
         SendOrStopCommand = new RelayCommand(_ => { if (IsBusy) CurrentContext.Cts?.Cancel(); else _ = SendAsync(); },
@@ -419,20 +420,20 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     // ---- 技能目录与激活（选择器 / 索引模式） ----
 
+    private readonly AgentSkillState _skills;
+
     /// <summary>可用技能目录（由技能根目录扫描，按当前可用域标注）。</summary>
-    public ObservableCollection<SkillInfo> AvailableSkills { get; } = new();
+    public ObservableCollection<SkillInfo> AvailableSkills => _skills.AvailableSkills;
 
     /// <summary>当前会话激活的技能（空 = 索引模式：只向模型注入技能索引）。</summary>
-    public ObservableCollection<SkillInfo> ActiveSkills { get; } = new();
+    public ObservableCollection<SkillInfo> ActiveSkills => _skills.ActiveSkills;
 
-    public bool HasActiveSkills => ActiveSkills.Count > 0;
+    public bool HasActiveSkills => _skills.HasActiveSkills;
 
-    public bool HasAvailableSkills => AvailableSkills.Count > 0;
+    public bool HasAvailableSkills => _skills.HasAvailableSkills;
 
     /// <summary>请求打开技能选择窗口（由 AgentWindow 打开）。</summary>
     public event Action? SkillsPickerRequested;
-
-    private List<string> _activeSkillIds = new();
 
     /// <summary>技能根目录（用户配置优先，否则内置）；无则 null。</summary>
     public string? SkillsRoot => SkillRegistry.ResolveDir(_agentConfig.SkillsDir, _bundledSkillsDir);
@@ -763,7 +764,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (skills.Count > 0)
         {
             suggestions.Add(new SlashSuggestion { IsHeader = true, Name = "技能", Description = "选中即切换激活（✓=已激活；详情用 /技能）" });
-            var active = new HashSet<string>(_activeSkillIds, StringComparer.OrdinalIgnoreCase);
+            var active = new HashSet<string>(_skills.ActiveIds, StringComparer.OrdinalIgnoreCase);
             foreach (var skill in skills)
                 suggestions.Add(new SlashSuggestion { Name = skill.Name, Description = skill.Description, SkillId = skill.Id, IsSelected = active.Contains(skill.Id) });
         }
@@ -819,7 +820,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>在斜杠面板内联切换技能激活（保持面板打开并刷新 ✓）。</summary>
     private void ToggleSkillInline(string skillId)
     {
-        var ids = new List<string>(_activeSkillIds);
+        var ids = new List<string>(_skills.ActiveIds);
         if (ids.RemoveAll(id => string.Equals(id, skillId, StringComparison.OrdinalIgnoreCase)) == 0)
             ids.Add(skillId);
 
@@ -1496,7 +1497,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         CurrentContext.LiveTurns = Turns.ToList();
         CurrentContext.PlanItems = Plan.ToList();
         _editingTurn = null;
-        _activeSkillIds = new();
+        _skills.SetActiveIds(Array.Empty<string>());
         IsPlanMode = false;
         _toolPolicy = new Dictionary<string, AgentToolPolicy>(StringComparer.OrdinalIgnoreCase);
         ReloadSkillCatalog();
@@ -1650,56 +1651,9 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    // ---- 技能目录 / 激活 ----
+    public void ReloadSkillCatalog() => _skills.Reload(SkillsRoot, _runtime?.AvailableGroups);
 
-    /// <summary>重新扫描技能目录（按当前可用域标注），并刷新已激活技能的 chip。</summary>
-    public void ReloadSkillCatalog()
-    {
-        var root = SkillsRoot;
-        AvailableSkills.Clear();
-        if (root is not null)
-        {
-            try
-            {
-                foreach (var info in SkillRegistry.List(root, _runtime?.AvailableGroups))
-                    AvailableSkills.Add(info);
-            }
-            catch
-            {
-                // 目录不可读忽略
-            }
-        }
-        OnPropertyChanged(nameof(HasAvailableSkills));
-        RebuildActiveSkillChips();
-    }
-
-    private async Task RestoreActiveSkillsAsync(long sessionId)
-    {
-        _activeSkillIds = new();
-        try
-        {
-            var json = await _store.GetSessionActiveSkillsAsync(sessionId);
-            if (!string.IsNullOrWhiteSpace(json))
-                _activeSkillIds = JsonSerializer.Deserialize<List<string>>(json) ?? new();
-        }
-        catch
-        {
-            _activeSkillIds = new();
-        }
-        RebuildActiveSkillChips();
-    }
-
-    private void RebuildActiveSkillChips()
-    {
-        ActiveSkills.Clear();
-        foreach (var id in _activeSkillIds)
-        {
-            var info = AvailableSkills.FirstOrDefault(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase));
-            if (info is not null)
-                ActiveSkills.Add(info);
-        }
-        OnPropertyChanged(nameof(HasActiveSkills));
-    }
+    private Task RestoreActiveSkillsAsync(long sessionId) => _skills.RestoreAsync(sessionId, _store);
 
     /// <summary>应用技能选择（技能选择窗口回调）：更新 chip、持久化到会话、并热更新运行时系统提示。</summary>
     public void ApplySkillSelection(IReadOnlyList<string> skillIds)
@@ -1710,40 +1664,27 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             StatusMessage = "首条消息后锁定：技能子集改动将在下个会话生效。";
             return;
         }
-        _activeSkillIds = skillIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        RebuildActiveSkillChips();
-        _ = PersistActiveSkillsAsync();
+        _skills.SetActiveIds(skillIds);
+        _ = _skills.PersistAsync(_sessionId, _store);
         if (_runtime is not null && !IsBusy)
-            _runtime.SetActiveSkills(_activeSkillIds.Count == 0 ? null : _activeSkillIds);
-        StatusMessage = _activeSkillIds.Count == 0
+            _runtime.SetActiveSkills(_skills.ActiveIdsOrNull);
+        StatusMessage = _skills.ActiveIds.Count == 0
             ? "技能：索引模式（未激活具体技能）"
-            : $"已激活 {_activeSkillIds.Count} 个技能";
+            : $"已激活 {_skills.ActiveIds.Count} 个技能";
     }
 
     /// <summary>移除某个已激活技能（chip 上的 ×）。</summary>
     public void RemoveActiveSkill(SkillInfo skill)
     {
-        var ids = _activeSkillIds
+        var ids = _skills.ActiveIds
             .Where(id => !string.Equals(id, skill.Id, StringComparison.OrdinalIgnoreCase))
             .ToList();
         ApplySkillSelection(ids);
     }
 
-    private async Task PersistActiveSkillsAsync()
-    {
-        if (_sessionId <= 0)
-            return;
-        try
-        {
-            var json = _activeSkillIds.Count == 0 ? string.Empty : JsonSerializer.Serialize(_activeSkillIds);
-            await _store.SetSessionActiveSkillsAsync(_sessionId, json);
-        }
-        catch
-        {
-            // 保存失败不影响主流程
-        }
-    }
+    private Task PersistActiveSkillsAsync() => _skills.PersistAsync(_sessionId, _store);
 
+    // ---- 技能目录 / 激活（状态由 AgentSkillState 维护） ----
     // ---- 计划模式 ----
 
     /// <summary>切换计划模式（会话级）。计划模式下只暴露只读工具，模型先出计划待确认。</summary>
@@ -1843,7 +1784,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             var ownerUserId = ctx.SessionId > 0 ? await _store.GetSessionOwnerUserIdAsync(ctx.SessionId) : "local";
             ctx.Runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history,
                 items => UpdatePlanFor(ctx, items),
-                _activeSkillIds.Count == 0 ? null : _activeSkillIds, _planMode, SelectedAgent?.ToPromptContext(),
+                _skills.ActiveIdsOrNull, _planMode, SelectedAgent?.ToPromptContext(),
                 extraTools: localTools, assetGraph: assetGraph,
                 sessionWorkspaceDir: string.IsNullOrWhiteSpace(ctx.WorkspaceDir) ? null : ctx.WorkspaceDir,
                 ownerUserId: ownerUserId,
@@ -1974,7 +1915,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             var rt = ctx.Runtime!;
             rt.ResetSession(SelectedProvider, history);
-            rt.SetActiveSkills(_activeSkillIds.Count == 0 ? null : _activeSkillIds);
+            rt.SetActiveSkills(_skills.ActiveIdsOrNull);
             rt.SetActiveAgent(SelectedAgent?.ToPromptContext());
             rt.SetPlanMode(_planMode);
             rt.SetToolPolicy(_toolPolicy);

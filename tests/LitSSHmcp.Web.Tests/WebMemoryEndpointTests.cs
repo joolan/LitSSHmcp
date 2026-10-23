@@ -114,6 +114,26 @@ public class WebMemoryEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Admin_can_prune_history_to_keep_recent_versions()
+    {
+        var store = new AgentMemoryStore(_dbPath);
+        for (var i = 0; i < 5; i++)
+            await store.UpdateStructuredAsync(_memoryId, $"v{i + 3} 磁盘经验", new[] { 1f, 0f },
+                "ssh:s1", "nginx", "active", 0);
+
+        var resp = await _client.SendAsync(Request(HttpMethod.Post, "/api/admin/memory/history/prune",
+            "admin", new { keep = 2 }));
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        using (var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()))
+            Assert.True(doc.RootElement.GetProperty("removed").GetInt32() > 0);
+
+        var versions = await _client.SendAsync(Request(HttpMethod.Get,
+            $"/api/admin/memory/{_memoryId}/versions", "admin"));
+        using var versionsDoc = JsonDocument.Parse(await versions.Content.ReadAsStringAsync());
+        Assert.Equal(2, versionsDoc.RootElement.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
     public async Task Archive_marks_superseded_and_unknown_version_returns_404()
     {
         var missing = await _client.SendAsync(Request(HttpMethod.Post, $"/api/admin/memory/{_memoryId}/rollback",

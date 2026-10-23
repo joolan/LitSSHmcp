@@ -689,7 +689,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         }
 
         var visible = _geometry.Keys.ToHashSet(StringComparer.Ordinal);
-        var (impacted, impactedEdges) = ComputeImpact(rootId, _graph.Edges, visible);
+        var (impacted, impactedEdges) = TopologyGeometry.ComputeImpact(rootId, _graph.Edges, visible);
 
         foreach (var item in _allItems)
             item.IsDimmed = !impacted.Contains(item.Id);
@@ -703,37 +703,6 @@ public class TopologyViewModel : INotifyPropertyChanged
     }
 
     /// <summary>反向影响面：沿 incoming 边最多 maxHops 跳，返回节点与路径边键。</summary>
-    public static (HashSet<string> Nodes, HashSet<string> EdgeKeys) ComputeImpact(
-        string rootId, IEnumerable<TopologyEdge> edges, ISet<string> visible, int maxHops = 2)
-    {
-        var incoming = edges
-            .Where(e => visible.Contains(e.From) && visible.Contains(e.To))
-            .GroupBy(e => e.To, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
-
-        var impacted = new HashSet<string>(StringComparer.Ordinal) { rootId };
-        var impactedEdges = new HashSet<string>(StringComparer.Ordinal);
-        var queue = new Queue<(string Id, int Hops)>();
-        queue.Enqueue((rootId, 0));
-
-        while (queue.Count > 0)
-        {
-            var (current, hops) = queue.Dequeue();
-            if (hops >= maxHops || !incoming.TryGetValue(current, out var parents))
-                continue;
-
-            foreach (var edge in parents)
-            {
-                impactedEdges.Add($"{edge.From}|{edge.Type}|{edge.To}");
-                if (!impacted.Add(edge.From))
-                    continue;
-                queue.Enqueue((edge.From, hops + 1));
-            }
-        }
-
-        return (impacted, impactedEdges);
-    }
-
     public void ClearSelection() => SelectNode(null);
 
     /// <summary>按当前几何刷新选中框/手柄/端口（落点回退后调用）。</summary>
@@ -760,7 +729,6 @@ public class TopologyViewModel : INotifyPropertyChanged
 
     private static readonly string[] HandleTags = { "nw", "ne", "se", "sw" };
     private static readonly string[] PortTags = { "left", "right", "top", "bottom" };
-    private const double PortRadius = 5;
 
     private static void EnsureCount(ObservableCollection<GraphHandleVm> items, string[] tags)
     {
@@ -771,31 +739,18 @@ public class TopologyViewModel : INotifyPropertyChanged
             items.Add(new GraphHandleVm { Tag = tag });
     }
 
-    private const double PortGap = 3;
 
-    /// <summary>端口圆心：在节点对应边的外侧（圆半径 PortRadius + PortGap 间隙），与边缩放带互不重叠。</summary>
-    public static Point PortCenterFor(Rect r, string side)
-    {
-        var off = PortRadius + PortGap;
-        return side switch
-        {
-            "left" => new Point(r.X - off, r.Y + r.Height / 2),
-            "right" => new Point(r.X + r.Width + off, r.Y + r.Height / 2),
-            "top" => new Point(r.X + r.Width / 2, r.Y - off),
-            _ => new Point(r.X + r.Width / 2, r.Y + r.Height + off)
-        };
-    }
-
+    /// <summary>端口圆心：在节点对应边的外侧（圆半径 TopologyGeometry.PortRadius + PortGap 间隙），与边缩放带互不重叠。</summary>
     private void UpdatePorts()
     {
         EnsureCount(Ports, PortTags);
         var sel = new Rect(SelX, SelY, SelW, SelH);
         for (var i = 0; i < PortTags.Length; i++)
         {
-            var c = PortCenterFor(sel, PortTags[i]);
-            var bounds = new Rect(c.X - PortRadius, c.Y - PortRadius, PortRadius * 2, PortRadius * 2);
+            var c = TopologyGeometry.PortCenterFor(sel, PortTags[i]);
+            var bounds = new Rect(c.X - TopologyGeometry.PortRadius, c.Y - TopologyGeometry.PortRadius, TopologyGeometry.PortRadius * 2, TopologyGeometry.PortRadius * 2);
             Ports[i].Bounds = bounds;
-            Ports[i].Shape = Freeze(new EllipseGeometry(c, PortRadius, PortRadius));
+            Ports[i].Shape = Freeze(new EllipseGeometry(c, TopologyGeometry.PortRadius, TopologyGeometry.PortRadius));
         }
     }
 
@@ -836,34 +791,13 @@ public class TopologyViewModel : INotifyPropertyChanged
     }
 
     /// <summary>四边内侧缩放带厚度（节点边内侧），与角手柄(±6px)以 cornerGap 分隔。</summary>
-    private const double EdgeBand = 6;
-    private const double EdgeCornerGap = 8;
 
     /// <summary>
     /// 选中节点四边内侧的缩放带命中：返回 "n"/"s"/"w"/"e"，否则 null。
     /// 纯函数：带在节点边内侧 6px、两端各避开角手柄 8px（角手柄优先，用于对角缩放）。
     /// </summary>
-    public static string? EdgeHandleAt(Rect sel, Point p)
-    {
-        var innerL = sel.X + EdgeCornerGap;
-        var innerT = sel.Y + EdgeCornerGap;
-        var innerR = sel.Right - EdgeCornerGap;
-        var innerB = sel.Bottom - EdgeCornerGap;
-        if (innerL >= innerR || innerT >= innerB)
-            return null;
-
-        var inX = p.X >= innerL && p.X <= innerR;
-        var inY = p.Y >= innerT && p.Y <= innerB;
-        if (inX && p.Y >= sel.Y && p.Y <= sel.Y + EdgeBand) return "n";
-        if (inX && p.Y >= sel.Bottom - EdgeBand && p.Y <= sel.Bottom) return "s";
-        if (inY && p.X >= sel.X && p.X <= sel.X + EdgeBand) return "w";
-        if (inY && p.X >= sel.Right - EdgeBand && p.X <= sel.Right) return "e";
-        return null;
-    }
-
-    /// <summary>选中节点四边缩放带命中（无选中时 null；命中 n/e/s/w 可直接进入 ResizeSelected）。</summary>
     public string? HitEdgeHandle(Point point) =>
-        _selectedId == null ? null : EdgeHandleAt(new Rect(SelX, SelY, SelW, SelH), point);
+        _selectedId == null ? null : TopologyGeometry.EdgeHandleAt(new Rect(SelX, SelY, SelW, SelH), point);
 
     /// <summary>
     /// 鼠标拖动：位置 = 快照起点 + 相对锚点的总位移（再做 10px 吸附）。
@@ -1034,43 +968,18 @@ public class TopologyViewModel : INotifyPropertyChanged
         ApplyGeometry(id, x, y, g.W, g.H);
     }
 
-    private const double ResizeMinW = 80;
-    private const double ResizeMinH = 36;
 
     /// <summary>
     /// 按相对锚点的总位移计算缩放候选（对边固定、最小尺寸钳制、10px 吸附）。
     /// 纯函数：结果只取决于 (start, total) —— 与事件路径无关，来回拖动不漂移。
     /// </summary>
-    public static (double X, double Y, double W, double H) ComputeResize(
-        string handle, Rect start, double tx, double ty, double minW = ResizeMinW, double minH = ResizeMinH)
-    {
-        var right = start.X + start.Width;
-        var bottom = start.Y + start.Height;
-        var x = start.X;
-        var y = start.Y;
-        var w = start.Width;
-        var h = start.Height;
-
-        if (handle.Contains('e')) w = Math.Max(minW, start.Width + tx);
-        if (handle.Contains('s')) h = Math.Max(minH, start.Height + ty);
-        if (handle.Contains('w')) { w = Math.Max(minW, start.Width - tx); x = right - w; }
-        if (handle.Contains('n')) { h = Math.Max(minH, start.Height - ty); y = bottom - h; }
-
-        // 自动对齐网格(10px)
-        x = Math.Round(x / 10.0) * 10.0;
-        y = Math.Round(y / 10.0) * 10.0;
-        w = Math.Max(minW, Math.Round(w / 10.0) * 10.0);
-        h = Math.Max(minH, Math.Round(h / 10.0) * 10.0);
-        return (x, y, w, h);
-    }
-
     public void ResizeSelected(string handle, Point point)
     {
         if (_selectedId == null || _dragAnchor is not { } anchor ||
             _dragStartRect is not { } start || !_geometry.TryGetValue(_selectedId, out var g))
             return;
 
-        var (x, y, w, h) = ComputeResize(handle, start, point.X - anchor.X, point.Y - anchor.Y);
+        var (x, y, w, h) = TopologyGeometry.ComputeResize(handle, start, point.X - anchor.X, point.Y - anchor.Y);
 
         // 网格吸附后未变化时先早退（高频 mousemove 下跳过后续校验）
         if (Math.Abs(x - g.X) < 0.01 && Math.Abs(y - g.Y) < 0.01 &&
@@ -1098,7 +1007,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             {
                 if (!_geometry.TryGetValue(child, out var cg))
                     continue;
-                var clamped = ClampChildTo(candidate, new Rect(cg.X, cg.Y, cg.W, cg.H), ServerHeader);
+                var clamped = TopologyGeometry.ClampChildTo(candidate, new Rect(cg.X, cg.Y, cg.W, cg.H), ServerHeader);
                 ApplyGeometry(child, clamped.X, clamped.Y, clamped.Width, clamped.Height);
             }
         }
@@ -1123,13 +1032,6 @@ public class TopologyViewModel : INotifyPropertyChanged
     /// 把子节点矩形夹进父容器矩形（左右/底留 6px，顶部留出标题栏 header）。
     /// 容器过小时 <see cref="Clamp"/> 按 (min+max)/2 居中放置（不会产生反向钳制）。纯函数，便于单测。
     /// </summary>
-    public static Rect ClampChildTo(Rect parent, Rect child, double header)
-    {
-        var x = Clamp(child.X, parent.X + 6, parent.X + parent.Width - child.Width - 6);
-        var y = Clamp(child.Y, parent.Y + header - 6, parent.Y + parent.Height - child.Height - 6);
-        return new Rect(x, y, child.Width, child.Height);
-    }
-
     private void ClampChild(string childId)
     {
         if (!_parentOf.TryGetValue(childId, out var parentId) ||
@@ -1137,7 +1039,7 @@ public class TopologyViewModel : INotifyPropertyChanged
             !_geometry.TryGetValue(childId, out var child))
             return;
 
-        var clamped = ClampChildTo(
+        var clamped = TopologyGeometry.ClampChildTo(
             new Rect(parent.X, parent.Y, parent.W, parent.H),
             new Rect(child.X, child.Y, child.W, child.H),
             ServerHeader);
@@ -1689,7 +1591,7 @@ public class TopologyViewModel : INotifyPropertyChanged
         if (FindItem(id) is not { } item)
             return default;
 
-        return PortCenterFor(new Rect(item.X, item.Y, item.Width, item.Height), side);
+        return TopologyGeometry.PortCenterFor(new Rect(item.X, item.Y, item.Width, item.Height), side);
     }
 
     public void StartLink(string id, string side)
@@ -2424,9 +2326,6 @@ public class TopologyViewModel : INotifyPropertyChanged
         geometry.Freeze();
         return geometry;
     }
-
-    private static double Clamp(double value, double min, double max) =>
-        max < min ? (min + max) / 2 : Math.Min(Math.Max(value, min), max);
 
     private static string LabelWithPort(TopologyNode node)
     {

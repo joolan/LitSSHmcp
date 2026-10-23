@@ -24,13 +24,16 @@ public sealed class RemoteCopyViewModel : INotifyPropertyChanged
 {
     private readonly ISshService _ssh;
     private readonly SshServerConfig _source;
+    private readonly IUserDialogService _dialogs;
     private List<SshServerConfig> _allServers = new();
     private CancellationTokenSource? _cts;
 
     /// <summary>构造：items 为 null 时进入「浏览模式」——左右两侧均为可切换的服务器文件浏览器，源侧现场多选。</summary>
-    public RemoteCopyViewModel(SshServerConfig source, IEnumerable<RemoteFileItem>? items)
+    public RemoteCopyViewModel(SshServerConfig source, IEnumerable<RemoteFileItem>? items,
+        IUserDialogService? dialogs = null)
     {
         _source = source;
+        _dialogs = dialogs ?? new UserDialogService();
         _ssh = AppServiceFactory.CreateSshService();
         IsBrowserMode = items is null;
         Sources = new ObservableCollection<RemoteFileItem>(items ?? Enumerable.Empty<RemoteFileItem>());
@@ -414,11 +417,11 @@ public sealed class RemoteCopyViewModel : INotifyPropertyChanged
             if (!relayHandled && !result.Success && result.NeedsRelayConfirmation)
             {
                 var directError = string.IsNullOrEmpty(result.Error) ? "直连不可用" : result.Error;
-                var choice = MessageBox.Show(Owner,
-                    $"直连传输不可用：\n{directError}\n\n是否改用「经本机内存中转」继续？\n（不落盘，但速度受本机链路限制，且不是服务器间直连）",
-                    "复制到远程服务器", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                var useRelay = _dialogs.Confirm(
+                    $"直接传输不可用：\n{directError}\n\n是否改用「服务器间内网传输」？\n（内网通道可避免外网绕路限制，但不是服务器间直连）",
+                    "复制到远程服务器", warning: false);
 
-                if (choice == MessageBoxResult.Yes)
+                if (useRelay)
                 {
                     StatusMessage = "正在经本机内存中转…";
                     IsIndeterminate = true;

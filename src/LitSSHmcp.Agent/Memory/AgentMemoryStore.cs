@@ -53,6 +53,8 @@ public interface IAgentMemoryStore
 
     /// <summary>列出指定记忆的历史快照（每次更新/删除前归档一版，Version 倒序）。</summary>
     Task<List<MemoryVersion>> ListVersionsAsync(long memoryId, CancellationToken ct = default);
+    /// <summary>按记忆裁剪历史快照（默认每个 MemoryId 仅保留最近 <paramref name="keep"/> 个）；返回删除条数。</summary>
+    Task<int> PruneHistoryAsync(int keep, long? memoryId = null, CancellationToken ct = default);
     /// <summary>把历史快照恢复为当前版本（先归档当前状态，版本号继续递增）；返回是否成功。</summary>
     Task<bool> RestoreVersionAsync(long memoryId, int version, CancellationToken ct = default);
     /// <summary>归档一条记忆：状态置为 superseded 并保留历史（可回滚）；返回是否存在。</summary>
@@ -77,6 +79,12 @@ public sealed record MemoryHit(string Source, string Content, double Score,
 public class AgentMemoryStore : IAgentMemoryStore
 {
     private const string RawKind = "raw";
+
+    /// <summary>每个 MemoryId 默认保留的历史版本数（自动清理；防止长期运行无限膨胀）。</summary>
+    public const int DefaultHistoryKeep = 40;
+
+    /// <summary>已删除记忆的历史快照保留天数（过期由全局清理删除，避免孤儿历史累积）。</summary>
+    public const int OrphanHistoryRetentionDays = 30;
 
     private readonly string _dbPath;
     private readonly MemoryAccessScope? _access;
@@ -396,6 +404,7 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_history_Memory ON agent_memory_histor
         cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
         cmd.Parameters.AddWithValue("@id", id);
         await cmd.ExecuteNonQueryAsync(ct);
+        await PruneHistoryAsync(connection, id, ct);
     }
 
     public async Task<bool> DeleteAsync(string kind, string key, CancellationToken ct = default)
@@ -559,6 +568,42 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_history_Memory ON agent_memory_histor
         return result;
     }
 
+    public async Task<int> PruneHistoryAsync(int keep, long? memoryId = null, CancellationToken ct = default)
+    {
+        keep = Math.Clamp(keep, 1, 1000);
+        await EnsureInitializedAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        var visible = AddVisibleFilter(cmd);
+        var scopeFilter = visible is null ? string.Empty : " AND " + visible;
+        var idFilter = memoryId is null ? string.Empty : " AND MemoryId=@id";
+        cmd.CommandText =
+            "DELETE FROM agent_memory_history WHERE Id IN (" +
+            "SELECT Id FROM (SELECT Id, ROW_NUMBER() OVER (PARTITION BY MemoryId ORDER BY Version DESC, Id DESC) AS rn " +
+            "FROM agent_memory_history WHERE 1=1" + idFilter + scopeFilter + ") WHERE rn > @keep);";
+        cmd.Parameters.AddWithValue("@keep", keep);
+        if (memoryId is not null)
+            cmd.Parameters.AddWithValue("@id", memoryId.Value);
+        var deleted = await cmd.ExecuteNonQueryAsync(ct);
+
+        if (memoryId is null)
+        {
+            // 全局清理时顺带删除「记忆已不存在且超过保留期」的孤儿历史。
+            await using var orphan = connection.CreateCommand();
+            var orphanVisible = AddVisibleFilter(orphan);
+            orphan.CommandText =
+                "DELETE FROM agent_memory_history WHERE MemoryId NOT IN (SELECT Id FROM agent_memory) " +
+                "AND ArchivedAt < @cutoff" +
+                (orphanVisible is null ? string.Empty : " AND " + orphanVisible) + ";";
+            orphan.Parameters.AddWithValue("@cutoff",
+                DateTime.UtcNow.AddDays(-OrphanHistoryRetentionDays).ToString("O"));
+            deleted += await orphan.ExecuteNonQueryAsync(ct);
+        }
+
+        return deleted;
+    }
+
     public async Task<bool> RestoreVersionAsync(long memoryId, int version, CancellationToken ct = default)
     {
         await EnsureInitializedAsync(ct);
@@ -621,7 +666,10 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_history_Memory ON agent_memory_histor
               "Freq=@f, Status=@st, UpdatedAt=@now, Version=@next WHERE Id=@id;"
             : "INSERT INTO agent_memory(Id, Source, Content, Vector, CreatedAt, Kind, Key, AssetIds, Tags, Freq, UpdatedAt, Status, OwnerUserId, Scope, Version) " +
               "VALUES (@id, @s, @c, @v, @created, @k, @key, @a, @t, @f, @now, @st, @owner, @scope, @next);";
-        return await write.ExecuteNonQueryAsync(ct) > 0;
+        var restored = await write.ExecuteNonQueryAsync(ct) > 0;
+        if (restored)
+            await PruneHistoryAsync(connection, memoryId, ct);
+        return restored;
     }
 
     public async Task<bool> ArchiveByIdAsync(long id, CancellationToken ct = default)
@@ -640,7 +688,22 @@ CREATE INDEX IF NOT EXISTS IX_agent_memory_history_Memory ON agent_memory_histor
             "UPDATE agent_memory SET Status='superseded', Version=Version+1, UpdatedAt=@now WHERE Id=@id" + scopeFilter + ";";
         cmd.Parameters.AddWithValue("@now", now);
         cmd.Parameters.AddWithValue("@id", id);
-        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+        var archived = await cmd.ExecuteNonQueryAsync(ct) > 0;
+        if (archived)
+            await PruneHistoryAsync(connection, id, ct);
+        return archived;
+    }
+
+    /// <summary>同一连接内按 MemoryId 保留最近 N 版（DefaultHistoryKeep）。</summary>
+    private static async Task PruneHistoryAsync(SqliteConnection connection, long memoryId, CancellationToken ct)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText =
+            "DELETE FROM agent_memory_history WHERE MemoryId=@id AND Id NOT IN (" +
+            "SELECT Id FROM agent_memory_history WHERE MemoryId=@id ORDER BY Version DESC, Id DESC LIMIT @keep);";
+        cmd.Parameters.AddWithValue("@id", memoryId);
+        cmd.Parameters.AddWithValue("@keep", DefaultHistoryKeep);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private async Task<MemoryVersion?> ReadVersionAsync(SqliteConnection connection, long memoryId, int version,

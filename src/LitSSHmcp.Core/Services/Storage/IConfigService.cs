@@ -47,6 +47,20 @@ public sealed class ConfigConflictException : Exception
     public IReadOnlyList<string> ConflictPaths { get; }
 }
 
+/// <summary>
+/// 配置冲突通知（Core 不依赖 UI）：保存遇到同字段冲突时触发，App 订阅后统一弹窗提示重新加载。
+/// 通知失败不影响原始异常继续抛给调用方。
+/// </summary>
+public static class ConfigConflictNotifier
+{
+    public static event Action<ConfigConflictException>? ConflictDetected;
+
+    internal static void Notify(ConfigConflictException ex)
+    {
+        try { ConflictDetected?.Invoke(ex); } catch { /* 通知失败不掩盖保存冲突 */ }
+    }
+}
+
 public class ConfigService : IConfigService, IStrictConfigService
 {
     private static readonly SemaphoreSlim SaveGate = new(1, 1);
@@ -129,7 +143,15 @@ public class ConfigService : IConfigService, IStrictConfigService
             {
                 // 其他窗口/进程已写入新配置：把本地修改三路合并到最新内容；
                 // 同一字段双方都改则抛 ConfigConflictException，禁止静默覆盖。
-                merged = ConfigMerge.Merge(snapshot.Config, config, current);
+                try
+                {
+                    merged = ConfigMerge.Merge(snapshot.Config, config, current);
+                }
+                catch (ConfigConflictException ex)
+                {
+                    ConfigConflictNotifier.Notify(ex);
+                    throw;
+                }
             }
 
             // 深拷贝后加密，避免密文污染调用方内存中的配置对象

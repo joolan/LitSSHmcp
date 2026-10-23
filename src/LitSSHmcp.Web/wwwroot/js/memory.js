@@ -15,12 +15,13 @@ function el(tag, className, text) {
 }
 
 export class MemoryAdminPanel {
-  constructor({ sheetEl, listEl, versionsEl, kindEl, archiveBtn, refreshBtn, closeBtn, currentEl, onToast }) {
+  constructor({ sheetEl, listEl, versionsEl, kindEl, archiveBtn, pruneBtn, refreshBtn, closeBtn, currentEl, onToast }) {
     this.sheetEl = sheetEl;
     this.listEl = listEl;
     this.versionsEl = versionsEl;
     this.kindEl = kindEl;
     this.archiveBtn = archiveBtn;
+    this.pruneBtn = pruneBtn;
     this.refreshBtn = refreshBtn;
     this.closeBtn = closeBtn;
     this.currentEl = currentEl;
@@ -33,6 +34,7 @@ export class MemoryAdminPanel {
     this.refreshBtn.addEventListener("click", () => this.reload());
     this.closeBtn.addEventListener("click", () => this.close());
     this.archiveBtn.addEventListener("click", () => this.archive());
+    this.pruneBtn?.addEventListener("click", () => this.pruneHistory());
   }
 
   isOpen() {
@@ -135,6 +137,20 @@ export class MemoryAdminPanel {
       await this.load();
     } catch (err) {
       this.onToast(`回滚失败: ${err.message}`);
+    }
+  }
+
+  async pruneHistory() {
+    if (!window.confirm("清理历史快照？\n\n每个记忆保留最近 40 个版本；同时清理超过 30 天的孤儿历史。")) return;
+    try {
+      const data = await api("/api/admin/memory/history/prune", {
+        method: "POST",
+        body: { keep: 20 },
+      });
+      this.onToast(`已清理 ${data.removed ?? 0} 个旧快照`);
+      await this.load();
+    } catch (err) {
+      this.onToast(`清理历史失败: ${err.message}`);
     }
   }
 

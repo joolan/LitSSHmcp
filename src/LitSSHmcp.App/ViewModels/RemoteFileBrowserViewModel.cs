@@ -18,6 +18,7 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
 {
     private readonly ISshService _ssh;
     private readonly SshServerConfig _server;
+    private readonly IUserDialogService _dialogs;
     private bool _initialized;
 
     private FileSystemWatcher? _editWatch;
@@ -25,10 +26,12 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
     private string? _editRemotePath;
     private CancellationTokenSource? _editDebounce;
 
-    public RemoteFileBrowserViewModel(SshServerConfig server, ISshService ssh)
+    public RemoteFileBrowserViewModel(SshServerConfig server, ISshService ssh,
+        IUserDialogService? dialogs = null)
     {
         _server = server;
         _ssh = ssh;
+        _dialogs = dialogs ?? new UserDialogService();
         CurrentPath = ".";
     }
 
@@ -360,10 +363,8 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         var overwrite = false;
         if (conflicts > 0)
         {
-            var answer = MessageBox.Show(
-                $"目标目录已存在 {conflicts} 个同名文件/文件夹，是否覆盖？",
-                "粘贴", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            overwrite = answer == MessageBoxResult.Yes;
+            overwrite = _dialogs.Confirm(
+                $"目标目录已存在 {conflicts} 个同名文件/文件夹，是否覆盖？", "粘贴");
         }
 
         var commands = new List<string>();
@@ -686,10 +687,9 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         var yes = false;
         if (dispatcher is not null)
         {
-            yes = dispatcher.Invoke(() => System.Windows.MessageBox.Show(
-                $"文件已被修改：\n{Path.GetFileName(remote)}\n\n是否回传并覆盖服务器上的文件？",
-                "回传修改", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question)
-                == System.Windows.MessageBoxResult.Yes);
+            yes = dispatcher.Invoke(() => _dialogs.Confirm(
+                $"文件已被修改：\n{Path.GetFileName(remote)}\n\n是否回传覆盖服务器上的文件？",
+                "回写修改", warning: false));
         }
 
         // 无论选择如何，本次编辑会话不再重复提示

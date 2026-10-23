@@ -117,6 +117,7 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
         Assert.Contains("id=\"memory-admin\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"memory-list\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"memory-versions\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"memory-prune\"", html, StringComparison.Ordinal);
 
         var js = await _fx.Client.GetStringAsync("/js/memory.js");
         Assert.Contains("MemoryAdminPanel", js, StringComparison.Ordinal);

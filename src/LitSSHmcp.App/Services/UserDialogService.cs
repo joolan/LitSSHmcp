@@ -3,9 +3,14 @@ using System.Windows;
 namespace LitSSHmcp.App.Services;
 
 /// <summary>ViewModel 的对话框边界：避免业务代码直接依赖 <see cref="MessageBox"/>，便于测试与统一交互。</summary>
+public enum UserDialogAnswer { Yes, No, Cancel }
+
 public interface IUserDialogService
 {
     bool Confirm(string message, string title, bool warning = true, bool defaultNo = false);
+
+    /// <summary>三态确认（是 / 否 / 取消）；用于“是=加密导出、否=明文导出、取消=中止”。</summary>
+    UserDialogAnswer AskYesNoCancel(string message, string title, bool warning = true);
 
     void Info(string message, string title);
 
@@ -23,6 +28,18 @@ public sealed class UserDialogService : IUserDialogService
             warning ? MessageBoxImage.Warning : MessageBoxImage.Question,
             defaultNo ? MessageBoxResult.No : MessageBoxResult.Yes);
         return result == MessageBoxResult.Yes;
+    }
+
+    public UserDialogAnswer AskYesNoCancel(string message, string title, bool warning = true)
+    {
+        var result = MessageBox.Show(message, title, MessageBoxButton.YesNoCancel,
+            warning ? MessageBoxImage.Warning : MessageBoxImage.Question);
+        return result switch
+        {
+            MessageBoxResult.Yes => UserDialogAnswer.Yes,
+            MessageBoxResult.No => UserDialogAnswer.No,
+            _ => UserDialogAnswer.Cancel
+        };
     }
 
     public void Info(string message, string title) =>

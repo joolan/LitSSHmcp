@@ -156,6 +156,38 @@ public partial class AgentSettingsWindow : FluentWindow
             _ = _viewModel.DeleteMemoryEntryAsync(entry);
     }
 
+    private void OnMemoryListContextOpening(object sender, ContextMenuEventArgs e)
+    {
+        var source = Mouse.DirectlyOver as DependencyObject ?? e.OriginalSource as DependencyObject;
+        if (sender is not ListBox list ||
+            ItemsControl.ContainerFromElement(list, source) is not ListBoxItem item ||
+            item.DataContext is not MemoryEntry entry)
+        {
+            e.Handled = true;   // 空白处右键不弹菜单，避免误操作上一条记忆
+            return;
+        }
+        item.IsSelected = true;
+        list.SelectedItem = entry;
+        _viewModel.SelectedMemoryEntry = entry;
+        item.Focus();
+    }
+
+    private void OnMemoryVersionListContextOpening(object sender, ContextMenuEventArgs e)
+    {
+        var source = Mouse.DirectlyOver as DependencyObject ?? e.OriginalSource as DependencyObject;
+        if (sender is not ListBox list ||
+            ItemsControl.ContainerFromElement(list, source) is not ListBoxItem item ||
+            item.DataContext is not MemoryVersionEntry version)
+        {
+            e.Handled = true;
+            return;
+        }
+        item.IsSelected = true;
+        list.SelectedItem = version;
+        _viewModel.SelectedMemoryVersion = version;
+        item.Focus();
+    }
+
     private void OnMemoryHistory(object sender, RoutedEventArgs e)
     {
         var entry = _viewModel.SelectedMemoryEntry;
@@ -165,6 +197,17 @@ public partial class AgentSettingsWindow : FluentWindow
             return;
         }
         _ = _viewModel.LoadMemoryHistoryAsync(entry);
+    }
+
+    private void OnPruneMemoryHistory(object sender, RoutedEventArgs e)
+    {
+        var entry = _viewModel.SelectedMemoryEntry;
+        var target = entry is null ? "全部记忆" : $"[{entry.Kind}:{entry.Key}]";
+        if (!_dialogs.Confirm(
+                $"清理 {target} 的历史快照？\n\n每记忆保留最近 {LitSSHmcp.Agent.AgentMemoryStore.DefaultHistoryKeep} 版；清理全部时还会移除超过 {LitSSHmcp.Agent.AgentMemoryStore.OrphanHistoryRetentionDays} 天的孤儿历史。",
+                "清理历史", warning: false))
+            return;
+        _ = _viewModel.PruneMemoryHistoryAsync(entry);
     }
 
     private void OnRollbackMemory(object sender, RoutedEventArgs e)

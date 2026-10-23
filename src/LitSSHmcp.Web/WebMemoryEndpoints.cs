@@ -58,6 +58,20 @@ public static class WebMemoryEndpoints
             });
         });
 
+        api.MapPost("/history/prune", async (PruneMemoryHistoryRequest? req, HttpContext ctx,
+            WebAccessLog log, IWebMemoryStoreFactory factory) =>
+        {
+            var principal = RequireAdmin(ctx, log);
+            if (principal is null) return Results.Empty;
+
+            var keep = Math.Clamp(req?.Keep ?? AgentMemoryStore.DefaultHistoryKeep, 1, 1000);
+            var store = factory.Create(principal.UserId.ToString(), isAdmin: true);
+            var removed = await store.PruneHistoryAsync(keep, memoryId: null, ctx.RequestAborted);
+            log.Write("memory_history_prune", principal.Username,
+                ctx.Connection.RemoteIpAddress?.ToString(), $"keep={keep} removed={removed}");
+            return Results.Ok(new { removed, keep });
+        });
+
         api.MapPost("/{id:long}/rollback", async (long id, RollbackMemoryRequest? req, HttpContext ctx,
             WebAccessLog log, IWebMemoryStoreFactory factory) =>
         {
@@ -110,6 +124,8 @@ public static class WebMemoryEndpoints
 }
 
 public sealed record RollbackMemoryRequest(int? Version);
+
+public sealed record PruneMemoryHistoryRequest(int? Keep);
 
 /// <summary>为管理员接口创建带隔离范围的记忆存储（测试可替换为临时库）。</summary>
 public interface IWebMemoryStoreFactory

@@ -390,19 +390,12 @@
                                           Width="110" Margin="0,0,12,0"
                                           ToolTip="全部=不限；task=任务复盘 / script=脚本经验 / asset=资产经验 / raw=会话与文档片段"/>
                                 <ui:Button Content="刷新" Padding="12,4" Margin="0,0,8,0" Click="OnReloadMemories"/>
-                                <ui:Button Content="删除选中" Padding="12,4" Margin="0,0,8,0" Click="OnDeleteMemory"/>
-                                <ui:Button Content="历史版本" Padding="12,4" Margin="0,0,8,0" Click="OnMemoryHistory"
-                                           ToolTip="加载选中记忆的历史快照（每次更新/删除/归档前自动留存）"/>
-                                <ui:Button Content="回滚选中版本" Padding="12,4" Margin="0,0,8,0" Click="OnRollbackMemory"
-                                           ToolTip="把选中记忆恢复到右侧选中的历史版本；当前状态会先归档，回滚本身可撤销"/>
-                                <ui:Button Content="归档选中" Padding="12,4" Margin="0,0,8,0" Click="OnArchiveMemory"
-                                           ToolTip="标记为 superseded：不再被召回，但保留历史，可随时回滚恢复"/>
                                 <ui:Button Content="清空全部记忆" Padding="12,4" Click="OnClearMemory"
                                            ToolTip="删除记忆库全部条目（含会话片段/任务复盘/脚本/资产经验）。更换 Embeddings 模型或向量维度时必须清空，否则历史向量不可检索。需二次确认"/>
                             </StackPanel>
                             <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                       Text="记忆是 AI 的长期经验库（本机 agent.db）。删除单条用于纠错；更换 Embeddings 模型前请「清空全部」，否则旧维度向量无法检索。"/>
+                                       Text="记忆是 AI 的长期经验库（本机 agent.db）。右键记忆可查看历史/归档/删除，右键右侧历史版本可回滚；更换 Embeddings 模型前请「清空全部」。"/>
                         </DockPanel>
                         <Grid Grid.Row="1">
                             <Grid.ColumnDefinitions>
@@ -412,7 +405,18 @@
                             <Border Style="{DynamicResource CardBorderStyle}">
                                 <ListBox ItemsSource="{Binding MemoryEntries}" SelectedItem="{Binding SelectedMemoryEntry, Mode=TwoWay}"
                                          Background="Transparent" BorderThickness="0"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ContextMenuOpening="OnMemoryListContextOpening">
+                                    <ListBox.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="查看历史版本" Click="OnMemoryHistory"
+                                                      ToolTip="加载该记忆的历史快照（每次更新/删除/归档前自动留存）"/>
+                                            <Separator/>
+                                            <MenuItem Header="归档（标记为过时）" Click="OnArchiveMemory"
+                                                      ToolTip="标记为 superseded：不再被召回，但保留历史，可随时回滚恢复"/>
+                                            <MenuItem Header="删除记忆…" Click="OnDeleteMemory"/>
+                                        </ContextMenu>
+                                    </ListBox.ContextMenu>
                                     <ListBox.ItemContainerStyle>
                                         <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -435,11 +439,23 @@
                             </Border>
                             <Border Grid.Column="1" Margin="8,0,0,0" Style="{DynamicResource CardBorderStyle}">
                                 <DockPanel>
-                                    <TextBlock DockPanel.Dock="Top" Text="历史版本（回滚前状态）" FontWeight="SemiBold"
-                                               FontFamily="Microsoft YaHei" Margin="2,0,0,6"/>
+                                    <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="2,0,0,6">
+                                        <TextBlock Text="历史版本（回滚前状态）" FontWeight="SemiBold"
+                                                   FontFamily="Microsoft YaHei" VerticalAlignment="Center"/>
+                                        <ui:Button DockPanel.Dock="Right" Content="清理历史" Padding="8,2"
+                                                   Click="OnPruneMemoryHistory"
+                                                   ToolTip="每记忆仅保留最近 40 个历史版本；清理全部时同时移除超过 30 天的孤儿历史"/>
+                                    </DockPanel>
                                     <ListBox ItemsSource="{Binding MemoryVersions}" SelectedItem="{Binding SelectedMemoryVersion, Mode=TwoWay}"
                                              Background="Transparent" BorderThickness="0"
-                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                             ContextMenuOpening="OnMemoryVersionListContextOpening">
+                                        <ListBox.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="回滚到该版本…" Click="OnRollbackMemory"
+                                                          ToolTip="把记忆恢复到该历史版本；当前状态会先归档，回滚本身可撤销"/>
+                                            </ContextMenu>
+                                        </ListBox.ContextMenu>
                                         <ListBox.ItemContainerStyle>
                                             <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                                                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>

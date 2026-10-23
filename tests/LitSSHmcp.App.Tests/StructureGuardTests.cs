@@ -11,18 +11,23 @@ public class StructureGuardTests
 {
     private static readonly (string File, int MaxLines)[] LineBudgets =
     {
-        ("ViewModels/AgentViewModel.cs", 3480),
+        ("ViewModels/AgentViewModel.cs", 3420),
+        ("ViewModels/AgentSkillState.cs", 130),
         ("ViewModels/AgentSessionSidebar.cs", 175),
         ("ViewModels/AgentAttachmentManager.cs", 120),
         ("ViewModels/AgentSessionOrder.cs", 60),
-        ("ViewModels/TopologyViewModel.cs", 2550),
+        ("ViewModels/TopologyViewModel.cs", 2440),
         ("ViewModels/TopologyGraphItems.cs", 190),
-        ("ViewModels/DbWorkbenchViewModel.cs", 2200),
+        ("ViewModels/TopologyGeometry.cs", 130),
+        ("ViewModels/DbWorkbenchViewModel.cs", 1920),
+        ("ViewModels/WorkbenchObjectBrowser.cs", 300),
         ("ViewModels/RedisKeyBrowser.cs", 580),
         ("ViewModels/WorkbenchResultView.cs", 50),
+        ("ViewModels/WorkbenchExporter.cs", 110),
         ("ViewModels/AgentSettingsViewModel.cs", 1350),
         ("ViewModels/AgentSettingsViewModel.Memory.cs", 300),
         ("ViewModels/MainViewModel.cs", 1400),
+        ("ViewModels/StorageSettingsViewModel.cs", 260),
         ("Services/IWindowService.cs", 70),
         ("Services/WpfWindowService.cs", 130)
     };
@@ -39,7 +44,10 @@ public class StructureGuardTests
         "SyncViewModel.cs",
         "TopologyManageViewModel.cs",
         "SessionBatchExecViewModel.cs",
-        "DbWorkbenchViewModel.cs"
+        "DbWorkbenchViewModel.cs",
+        "ConfigTransferViewModel.cs",
+        "RemoteCopyViewModel.cs",
+        "RemoteFileBrowserViewModel.cs"
     };
 
     [Fact]
@@ -72,7 +80,7 @@ public class StructureGuardTests
             .Select(File.ReadAllText)
             .ToArray();
 
-        Assert.True(Count(sources, "MessageBox.Show") <= 79, "MessageBox.Show 数量超出基线(79)，请改用 IUserDialogService。");
+        Assert.True(Count(sources, "MessageBox.Show") <= 75, "MessageBox.Show 数量超出基线(75)，请改用 IUserDialogService。");
         Assert.True(Count(sources, "new ConfigService(") <= 18, "new ConfigService() 数量超出基线(18)，请注入 IConfigService。");
         Assert.True(Count(sources, "Process.Start") <= 8, "Process.Start 数量超出基线(8)，请集中到宿主服务。");
     }

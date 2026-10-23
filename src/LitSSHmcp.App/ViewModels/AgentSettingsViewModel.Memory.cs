@@ -16,7 +16,14 @@ public partial class AgentSettingsViewModel
     public MemoryEntry? SelectedMemoryEntry
     {
         get => _selectedMemoryEntry;
-        set => Set(ref _selectedMemoryEntry, value);
+        set
+        {
+            if (EqualityComparer<MemoryEntry?>.Default.Equals(_selectedMemoryEntry, value)) return;
+            _selectedMemoryEntry = value;
+            OnPropertyChanged();
+            MemoryVersions.Clear();
+            SelectedMemoryVersion = null;
+        }
     }
 
     /// <summary>类别过滤选项（"全部"= 不限；raw=会话/文档片段，其余为结构化类别）。</summary>
@@ -110,6 +117,31 @@ public partial class AgentSettingsViewModel
         catch (Exception ex)
         {
             StatusMessage = "读取历史版本失败: " + ex.Message;
+        }
+    }
+
+    /// <summary>清理历史快照：指定记忆保留最近 40 版；全部清理时同时清理超过 30 天的孤儿历史。</summary>
+    public async Task PruneMemoryHistoryAsync(MemoryEntry? entry)
+    {
+        try
+        {
+            var store = new AgentMemoryStore();
+            var removed = await store.PruneHistoryAsync(
+                AgentMemoryStore.DefaultHistoryKeep, entry?.Id);
+            await LitSSHmcp.Core.Services.Storage.LocalAudit.LogAsync(
+                "agent_memory",
+                $"MEMORY_HISTORY_PRUNE {(entry is null ? "all" : $"[{entry.Kind}:{entry.Key}]")}",
+                CommandStatus.Executed,
+                result: $"删除 {removed} 个历史快照");
+            StatusMessage = entry is null
+                ? $"已清理历史：删除 {removed} 个旧快照（每记忆保留最近 {AgentMemoryStore.DefaultHistoryKeep} 版）"
+                : $"已清理 [{entry.Kind}:{entry.Key}] 历史：删除 {removed} 个旧快照";
+            if (entry is not null)
+                await LoadMemoryHistoryAsync(entry);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "清理历史失败: " + ex.Message;
         }
     }
 

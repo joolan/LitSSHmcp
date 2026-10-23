@@ -224,8 +224,19 @@ public class ConfigServiceTests
             cfgB.Ui.Theme = "light";
 
             await a.SaveConfigAsync(cfgA);
-            var ex = await Assert.ThrowsAsync<ConfigConflictException>(() => b.SaveConfigAsync(cfgB));
-            Assert.Contains("ui.Theme", ex.ConflictPaths, StringComparer.OrdinalIgnoreCase);
+            ConfigConflictException? notified = null;
+            void OnConflict(ConfigConflictException conflict) => notified = conflict;
+            ConfigConflictNotifier.ConflictDetected += OnConflict;
+            try
+            {
+                var ex = await Assert.ThrowsAsync<ConfigConflictException>(() => b.SaveConfigAsync(cfgB));
+                Assert.Contains("ui.Theme", ex.ConflictPaths, StringComparer.OrdinalIgnoreCase);
+                Assert.Same(ex, notified);   // UI 统一提示依赖该通知
+            }
+            finally
+            {
+                ConfigConflictNotifier.ConflictDetected -= OnConflict;
+            }
 
             var final = await new ConfigService(path, new DpapiSecretProtector()).LoadConfigAsync();
             Assert.Equal("dark", final.Ui!.Theme);

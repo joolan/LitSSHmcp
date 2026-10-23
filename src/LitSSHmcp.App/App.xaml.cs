@@ -1,4 +1,6 @@
 using System.IO;
+using System.Linq;
+using System.Threading;
 using System.Windows;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Services.Storage;
@@ -19,6 +21,7 @@ public partial class App : Application
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += (_, args) => SafeLog(args.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, args) => { SafeLog(args.Exception); args.SetObserved(); };
+        ConfigConflictNotifier.ConflictDetected += OnConfigConflict;
 
         // 异步读取配置并应用主题：**不能**在 UI 线程同步等待（GetAwaiter().GetResult() 会死锁，
         // 导致 OnStartup 不返回、主窗口永不创建——表现为"双击没反应"）。
@@ -189,6 +192,51 @@ public partial class App : Application
         var dispatcher = Current?.Dispatcher;
         if (dispatcher is null || dispatcher.HasShutdownStarted)
             return;
+        if (dispatcher.CheckAccess())
+            Show();
+        else
+            dispatcher.BeginInvoke(new Action(Show));
+    }
+
+    private static int _configConflictPrompting;
+
+    /// <summary>同一时刻只弹一个配置冲突提示；提示后由用户关闭/重开窗口加载最新配置。</summary>
+    private static void OnConfigConflict(ConfigConflictException ex)
+    {
+        if (Interlocked.Exchange(ref _configConflictPrompting, 1) == 1)
+            return;
+
+        var dispatcher = Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted)
+        {
+            Volatile.Write(ref _configConflictPrompting, 0);
+            return;
+        }
+
+        void Show()
+        {
+            try
+            {
+                var paths = ex.ConflictPaths.Where(p => !string.IsNullOrWhiteSpace(p)).Distinct().ToArray();
+                var detail = paths.Length == 0
+                    ? "（未提供具体字段）"
+                    : string.Join("\n", paths.Take(10)) +
+                      (paths.Length > 10 ? $"\n… 另 {paths.Length - 10} 项" : string.Empty);
+                new UserDialogService().Warn(
+                    $"配置已被其他窗口或进程修改，以下字段存在冲突：\n\n{detail}\n\n" +
+                    "请关闭并重新打开当前窗口（或重新加载配置）后再保存，避免覆盖他人的修改。",
+                    "配置冲突");
+            }
+            catch
+            {
+                // 弹窗失败不掩盖原始保存结果是调用方自身提示的职责
+            }
+            finally
+            {
+                Volatile.Write(ref _configConflictPrompting, 0);
+            }
+        }
+
         if (dispatcher.CheckAccess())
             Show();
         else

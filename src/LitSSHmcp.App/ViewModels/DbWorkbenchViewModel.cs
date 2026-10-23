@@ -20,7 +20,7 @@ namespace LitSSHmcp.App.ViewModels;
 /// 只读数据库工作台：对象浏览（库 → 表 → 列）+ SQL 查询（仅只读）+ 结果分页/导出 CSV。
 /// 复用数据源驱动与安全过滤；不提供任何写操作入口。
 /// </summary>
-public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
+public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObjectBrowserHost
 {
     private readonly IConfigService _configService;
     private readonly IUserDialogService _dialogs;
@@ -55,9 +55,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     private bool _isSnippetPanelOpen;
     private int _selectedRedisDb;
     private string? _pendingSelectId;
-    private string _objectFilter = string.Empty;
-    private int _matchedObjectCount;
-    private int _totalObjectCount;
+    private readonly WorkbenchObjectBrowser _objects;
     private string _planText = string.Empty;
     private ResultSetRef? _selectedResultTab;
     private CancellationTokenSource? _queryCts;
@@ -70,6 +68,12 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         _configService = configService ?? new ConfigService();
         _dialogs = dialogs ?? new UserDialogService();
         _registry = AppServiceFactory.CreateWorkbenchDriverRegistry(_configService);
+        _objects = new WorkbenchObjectBrowser(this);
+        _objects.Changed += () =>
+        {
+            OnPropertyChanged(nameof(ObjectFilterHint));
+            RaiseCanExecute();
+        };
         _redis = new RedisKeyBrowser(
             () => SelectedDatasource,
             () => IsRedisDb,
@@ -87,7 +91,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         _redis.PropertyChanged += (_, e) => OnPropertyChanged(MapRedisProperty(e.PropertyName));
 
         RefreshCommand = new RelayCommand(_ => _ = LoadAsync());
-        LoadTablesCommand = new RelayCommand(_ => _ = LoadSchemaAsync(), _ => SelectedDatasource is not null && !string.IsNullOrWhiteSpace(SelectedDatabase));
+        LoadTablesCommand = new RelayCommand(_ => _ = _objects.LoadSchemaAsync(), _ => SelectedDatasource is not null && !string.IsNullOrWhiteSpace(SelectedDatabase));
         LoadColumnsCommand = new RelayCommand(_ => _ = LoadColumnsAsync(), _ => SelectedTable is not null);
         ExecuteCommand = new RelayCommand(_ => _ = ExecuteAsync(), _ => SelectedDatasource is not null && !Busy);
         CancelCommand = new RelayCommand(_ => CancelQuery(), _ => Busy);
@@ -121,7 +125,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         GenerateCountCommand = new RelayCommand(_ => GenerateObjectSql("count"), _ => IsSqlDb && SelectedTable is not null && !Busy);
         GenerateCallCommand = new RelayCommand(_ => GenerateObjectSql("call"), _ => IsSqlDb && SelectedTable is not null && !Busy);
         SelectResultTabCommand = new RelayCommand(p => { if (p is ResultSetRef t) SelectResultTab(t); });
-        RefreshObjectsCommand = new RelayCommand(_ => _ = LoadSchemaAsync(), _ => IsSqlDb && !Busy);
+        RefreshObjectsCommand = new RelayCommand(_ => _ = _objects.LoadSchemaAsync(), _ => IsSqlDb && !Busy);
         ClearMessagesCommand = new RelayCommand(_ => { Messages.Clear(); RebuildResultTabs(); OnPropertyChanged(nameof(HasMessages)); });
         OpenSqlFileCommand = new RelayCommand(_ => OpenSqlFile());
         SaveSqlFileCommand = new RelayCommand(_ => SaveSqlFile());
@@ -138,15 +142,15 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     public ObservableCollection<DataSourceConfig> Datasources { get; } = new();
     public ObservableCollection<string> Databases { get; } = new();
-    public ObservableCollection<DbTableInfo> Tables { get; } = new();
+    public ObservableCollection<DbTableInfo> Tables => _objects.Tables;
     public ObservableCollection<DbColumnInfo> Columns { get; } = new();
 
     /// <summary>视图 / 存储过程（用于对象树）。</summary>
-    public ObservableCollection<DbObjectInfo> Views { get; } = new();
-    public ObservableCollection<DbObjectInfo> Procedures { get; } = new();
+    public ObservableCollection<DbObjectInfo> Views => _objects.Views;
+    public ObservableCollection<DbObjectInfo> Procedures => _objects.Procedures;
 
     /// <summary>左栏对象树（表 / 视图 / 存储过程 → 列 / 索引）。</summary>
-    public ObservableCollection<DbTreeNode> ObjectTree { get; } = new();
+    public ObservableCollection<DbTreeNode> ObjectTree => _objects.ObjectTree;
 
     /// <summary>当前选中表的索引（仅“表”类别）。</summary>
     public ObservableCollection<DbIndexInfo> Indexes { get; } = new();
@@ -290,7 +294,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
             _redis.Reset();                 // 切换数据源时中断上一个未完成的扫描/补全
             Databases.Clear();
-            Tables.Clear();
+            _objects.Clear();
             Columns.Clear();
             Results = null;
             if (_isWriteMode && value?.ReadOnly == true)
@@ -446,7 +450,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     public string? SelectedDatabase
     {
         get => _selectedDatabase;
-        set { if (Set(ref _selectedDatabase, value)) { LoadSnippets(); _ = LoadSchemaAsync(); RaiseCanExecute(); OnPropertyChanged(nameof(WindowTitle)); } }
+        set { if (Set(ref _selectedDatabase, value)) { LoadSnippets(); _ = _objects.LoadSchemaAsync(); RaiseCanExecute(); OnPropertyChanged(nameof(WindowTitle)); } }
     }
 
     public DbTableInfo? SelectedTable
@@ -465,14 +469,17 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
     /// <summary>对象树过滤关键字（过滤后仅保留匹配对象）。</summary>
     public string ObjectFilter
     {
-        get => _objectFilter;
-        set { if (Set(ref _objectFilter, value)) RebuildObjectTree(); }
+        get => _objects.Filter;
+        set
+        {
+            if (string.Equals(_objects.Filter, value, StringComparison.Ordinal)) return;
+            _objects.Filter = value;
+            OnPropertyChanged();
+        }
     }
 
     /// <summary>对象树过滤命中数提示（如「匹配 12 / 128」；无关键字时为空）。</summary>
-    public string ObjectFilterHint => string.IsNullOrWhiteSpace(_objectFilter)
-        ? string.Empty
-        : $"匹配 {_matchedObjectCount} / {_totalObjectCount}";
+    public string ObjectFilterHint => _objects.FilterHint;
 
     /// <summary>是否选中了表/视图（左栏"选中对象"条的显隐）。</summary>
     public bool HasSelectedObject => SelectedTable is not null;
@@ -659,226 +666,11 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
         finally { Busy = false; }
     }
 
-    /// <summary>加载当前库的 表/视图/存储过程 并重建对象树。</summary>
-    private async Task LoadSchemaAsync()
-    {
-        var ds = SelectedDatasource;
-        if (ds is null || string.IsNullOrWhiteSpace(SelectedDatabase)) return;
-        var explorer = _registry.Get(ds.Type) as IDatabaseExplorer;
-        if (explorer is null) return;
-
-        Busy = true;
-        try
-        {
-            var eff = Effective(ds, SelectedDatabase);
-            Tables.Clear();
-            var warnings = new List<string>();
-
-            try
-            {
-                foreach (var t in await explorer.ListTablesAsync(eff, SelectedDatabase!))
-                    Tables.Add(t);
-            }
-            catch (Exception ex)
-            {
-                warnings.Add("表: " + ex.Message);
-            }
-
-            Views.Clear();
-            Procedures.Clear();
-            if (_registry.Get(ds.Type) is ISchemaObjectExplorer objExplorer)
-            {
-                try
-                {
-                    foreach (var v in await objExplorer.ListViewsAsync(eff, SelectedDatabase!))
-                        Views.Add(v);
-                }
-                catch (Exception ex)
-                {
-                    warnings.Add("视图: " + ex.Message);
-                }
-                try
-                {
-                    foreach (var p in await objExplorer.ListProceduresAsync(eff, SelectedDatabase!))
-                        Procedures.Add(p);
-                }
-                catch (Exception ex)
-                {
-                    warnings.Add("存储过程: " + ex.Message);
-                }
-            }
-
-            RebuildObjectTree();
-            StatusMessage = warnings.Count == 0
-                ? $"表 {Tables.Count} · 视图 {Views.Count} · 存储过程 {Procedures.Count}"
-                : $"部分对象读取失败（{string.Join("；", warnings)}）";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "读取对象失败: " + ex.Message;
-        }
-        finally { Busy = false; }
-    }
-
-    /// <summary>按当前过滤关键字重建对象树（表/视图/存储过程三类）；保留原有展开/折叠状态，默认展开“表”。
-    /// 有关键字时前缀命中优先排序（输入 user 时 user_* 表排最前），并更新「匹配 x / y」计数。</summary>
-    private void RebuildObjectTree()
-    {
-        var expanded = new Dictionary<string, bool>(StringComparer.Ordinal);
-        CaptureExpansion(ObjectTree, expanded);
-
-        ObjectTree.Clear();
-        var filter = _objectFilter?.Trim() ?? string.Empty;
-        bool Match(string name) => filter.Length == 0 || name.Contains(filter, StringComparison.OrdinalIgnoreCase);
-
-        // 前缀命中优先 → 匹配项按名称排序；无关键字时保持原顺序
-        IEnumerable<T> Rank<T>(IEnumerable<T> source, Func<T, string> name)
-            => filter.Length == 0
-                ? source
-                : source.OrderBy(t => name(t).StartsWith(filter, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
-                    .ThenBy(name, StringComparer.OrdinalIgnoreCase);
-
-        var tables = Rank(Tables.Where(t => Match(t.Display)), t => t.Display).ToList();
-        var views = Rank(Views.Where(v => Match(v.Display)), v => v.Display).ToList();
-        var procs = Rank(Procedures.Where(p => Match(p.Display)), p => p.Display).ToList();
-
-        _matchedObjectCount = tables.Count + views.Count + procs.Count;
-        _totalObjectCount = Tables.Count + Views.Count + Procedures.Count;
-        OnPropertyChanged(nameof(ObjectFilterHint));
-
-        var tableFolder = new DbTreeNode { Name = $"表 ({Tables.Count})", Key = "folder:tables", Kind = DbTreeNodeKind.Folder, HasChildren = true };
-        foreach (var t in tables)
-            tableFolder.Children.Add(new DbTreeNode
-            {
-                Name = t.Display,                       // 只显示表名；备注走悬浮提示，避免树里显得乱
-                Tooltip = string.IsNullOrWhiteSpace(t.Comment) ? null : t.Comment.Trim(),
-                Key = "obj:" + t.Display,
-                Kind = DbTreeNodeKind.Table,
-                HasChildren = true,
-                Tag = t
-            });
-
-        var viewFolder = new DbTreeNode { Name = $"视图 ({Views.Count})", Key = "folder:views", Kind = DbTreeNodeKind.Folder, HasChildren = true };
-        foreach (var v in views)
-            viewFolder.Children.Add(new DbTreeNode
-            {
-                Name = v.Display,
-                Key = "obj:" + v.Display,
-                Kind = DbTreeNodeKind.View,
-                HasChildren = true,
-                Tag = new DbTableInfo { Schema = v.Schema, Name = v.Name }
-            });
-
-        var procFolder = new DbTreeNode { Name = $"存储过程 ({Procedures.Count})", Key = "folder:procs", Kind = DbTreeNodeKind.Folder, HasChildren = true };
-        foreach (var p in procs)
-            procFolder.Children.Add(new DbTreeNode
-            {
-                Name = p.Display,
-                Key = "obj:" + p.Display,
-                Kind = DbTreeNodeKind.Procedure,
-                HasChildren = true,
-                Tag = new DbObjectInfo { Schema = p.Schema, Name = p.Name }
-            });
-
-        if (tableFolder.Children.Count > 0 || filter.Length == 0) ObjectTree.Add(tableFolder);
-        if (viewFolder.Children.Count > 0 || filter.Length == 0) ObjectTree.Add(viewFolder);
-        if (procFolder.Children.Count > 0 || filter.Length == 0) ObjectTree.Add(procFolder);
-
-        ApplyExpansion(ObjectTree, expanded);
-    }
-
-    private static void CaptureExpansion(IEnumerable<DbTreeNode> nodes, Dictionary<string, bool> into)
-    {
-        foreach (var n in nodes)
-        {
-            if (!string.IsNullOrEmpty(n.Key))
-                into[n.Key] = n.IsExpanded;
-            CaptureExpansion(n.Children, into);
-        }
-    }
-
-    private static void ApplyExpansion(IEnumerable<DbTreeNode> nodes, IReadOnlyDictionary<string, bool> expanded)
-    {
-        foreach (var n in nodes)
-        {
-            n.IsExpanded = expanded.TryGetValue(n.Key, out var v) ? v : n.Key == "folder:tables";
-            ApplyExpansion(n.Children, expanded);
-        }
-    }
-
     /// <summary>对象节点被选中：同步“表/视图”到 SelectedTable（供预览/生成 SQL）。</summary>
-    public void OnTreeNodeSelected(DbTreeNode? node)
-    {
-        if (node?.Tag is DbTableInfo t)
-            SelectedTable = t;
-    }
+    public void OnTreeNodeSelected(DbTreeNode? node) => _objects.OnTreeNodeSelected(node);
 
-    /// <summary>展开对象节点时懒加载其列/索引子节点。</summary>
-    public async Task LoadNodeChildrenAsync(DbTreeNode node)
-    {
-        if (node.Children.Count > 0)
-            return;
-        if (node.Kind is not (DbTreeNodeKind.Table or DbTreeNodeKind.View))
-            return;
-        var ds = SelectedDatasource;
-        if (node.Tag is not DbTableInfo table || ds is null || string.IsNullOrWhiteSpace(SelectedDatabase))
-            return;
-        if (_registry.Get(ds.Type) is not IDatabaseExplorer explorer)
-            return;
-        var eff = Effective(ds, SelectedDatabase);
-
-        try
-        {
-            var cols = await explorer.ListColumnsAsync(eff, SelectedDatabase!, table.Name, table.Schema);
-            var colFolder = new DbTreeNode { Name = $"列 ({cols.Count})", Kind = DbTreeNodeKind.Folder, HasChildren = cols.Count > 0 };
-            foreach (var c in cols)
-                colFolder.Children.Add(new DbTreeNode
-                {
-                    // 列名为主、类型/约束灰色小字排在后面，备注只进悬浮提示
-                    Name = c.Name,
-                    Detail = "  " + c.Type +
-                             (c.PrimaryKey ? "  PK" : string.Empty) +
-                             (c.Nullable ? string.Empty : "  NOT NULL"),
-                    Tooltip = string.IsNullOrWhiteSpace(c.Comment) ? null : c.Comment.Trim(),
-                    Kind = DbTreeNodeKind.Column
-                });
-            node.Children.Add(colFolder);
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "读取列失败: " + ex.Message;
-        }
-
-        if (node.Kind != DbTreeNodeKind.Table || _registry.Get(ds.Type) is not ISchemaObjectExplorer se)
-            return;
-
-        try
-        {
-            var idx = await se.ListIndexesAsync(eff, SelectedDatabase!, table.Name, table.Schema);
-            var idxFolder = new DbTreeNode { Name = $"索引 ({idx.Count})", Kind = DbTreeNodeKind.Folder, HasChildren = idx.Count > 0 };
-            foreach (var i in idx)
-                idxFolder.Children.Add(new DbTreeNode { Name = i.Display, Kind = DbTreeNodeKind.Index });
-            node.Children.Add(idxFolder);
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "读取索引失败: " + ex.Message;
-        }
-
-        try
-        {
-            var fks = await se.ListForeignKeysAsync(eff, SelectedDatabase!, table.Name, table.Schema);
-            var fkFolder = new DbTreeNode { Name = $"外键 ({fks.Count})", Kind = DbTreeNodeKind.Folder, HasChildren = fks.Count > 0 };
-            foreach (var f in fks)
-                fkFolder.Children.Add(new DbTreeNode { Name = f.Display, Kind = DbTreeNodeKind.ForeignKey });
-            node.Children.Add(fkFolder);
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "读取外键失败: " + ex.Message;
-        }
-    }
-
+    /// <summary>展开对象节点时懒加载其列/索引/外键子节点。</summary>
+    public Task LoadNodeChildrenAsync(DbTreeNode node) => _objects.LoadNodeChildrenAsync(node);
     private async Task LoadIndexesAsync()
     {
         Indexes.Clear();
@@ -1752,26 +1544,13 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
         try
         {
-            using var writer = new StreamWriter(dialog.FileName, false, new UTF8Encoding(true));
-            var columns = table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToArray();
-            writer.WriteLine(string.Join(",", columns.Select(Csv)));
-            foreach (DataRowView row in view)
-            {
-                writer.WriteLine(string.Join(",", columns.Select(c => Csv(row[c]?.ToString() ?? string.Empty))));
-            }
-            StatusMessage = $"已导出 {view.Count} 行到 {dialog.FileName}";
+            var rows = WorkbenchExporter.WriteCsv(view, dialog.FileName);
+            StatusMessage = $"已导出 {rows} 行到 {dialog.FileName}";
         }
         catch (Exception ex)
         {
             StatusMessage = "导出失败: " + ex.Message;
         }
-    }
-
-    private static string Csv(string value)
-    {
-        if (value.IndexOfAny(new[] { ',', '"', '\n', '\r' }) < 0)
-            return value;
-        return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 
     /// <summary>导出结果为 JSON（数组，元素为列名→值；NULL 为 null）。</summary>
@@ -1792,26 +1571,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
         try
         {
-            var columns = table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToArray();
-            var rows = new List<Dictionary<string, object?>>();
-            foreach (DataRowView row in view)
-            {
-                var obj = new Dictionary<string, object?>();
-                foreach (var c in columns)
-                {
-                    var v = row[c];
-                    obj[c] = v is null || v == DBNull.Value ? null : v;
-                }
-                rows.Add(obj);
-            }
-
-            var json = System.Text.Json.JsonSerializer.Serialize(rows, new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = true,
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            });
-            File.WriteAllText(dialog.FileName, json, new UTF8Encoding(false));
-            StatusMessage = $"已导出 {rows.Count} 行到 {dialog.FileName}";
+            var rows = WorkbenchExporter.WriteJson(view, dialog.FileName);
+            StatusMessage = $"已导出 {rows} 行到 {dialog.FileName}";
         }
         catch (Exception ex)
         {
@@ -1837,22 +1598,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
         try
         {
-            var columns = table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
-            var rows = new List<IReadOnlyList<object?>>();
-            foreach (DataRowView row in view)
-            {
-                var values = new object?[columns.Count];
-                for (var i = 0; i < columns.Count; i++)
-                {
-                    var v = row[columns[i]];
-                    values[i] = v is DBNull ? null : v;
-                }
-                rows.Add(values);
-            }
-
-            using var fs = File.Create(dialog.FileName);
-            XlsxWriter.Write(fs, columns, rows, string.IsNullOrWhiteSpace(table.TableName) ? "Sheet1" : table.TableName);
-            StatusMessage = $"已导出 {rows.Count} 行到 {dialog.FileName}";
+            var rows = WorkbenchExporter.WriteExcel(view, dialog.FileName);
+            StatusMessage = $"已导出 {rows} 行到 {dialog.FileName}";
         }
         catch (Exception ex)
         {
@@ -2069,6 +1816,11 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged
 
     private static int ParseRedisDb(string? value)
         => int.TryParse(value?.Trim(), out var db) && db >= 0 && db < 16 ? db : 0;
+
+    IDatasourceDriverRegistry IWorkbenchObjectBrowserHost.Registry => _registry;
+
+    DataSourceConfig IWorkbenchObjectBrowserHost.EffectiveForSchema(DataSourceConfig ds) =>
+        Effective(ds, SelectedDatabase);
 
     /// <summary>子状态属性名与 VM 对 XAML 暴露的属性名不同时做映射，其余原样转发。</summary>
     private static string? MapRedisProperty(string? name) => name switch

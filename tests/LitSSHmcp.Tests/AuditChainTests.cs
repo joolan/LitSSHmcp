@@ -45,6 +45,26 @@ public class AuditChainTests : IDisposable
     }
 
     [Fact]
+    public async Task Archive_prune_removes_old_history_and_keeps_chain_valid()
+    {
+        var security = new FakeSecurityOptions { Audit = new AuditConfig { RetentionDays = 1 } };
+        var service = NewService(security);
+        await service.InitializeAsync();
+        await service.LogCommandAsync(Command("old", DateTime.UtcNow.AddDays(-10)));
+        await service.LogCommandAsync(Command("new", DateTime.UtcNow));
+        await service.InitializeAsync();   // 把超过 1 天的记录移入归档表
+
+        var removed = await service.PruneHistoryAsync(DateTime.UtcNow.AddDays(-5));
+
+        Assert.Equal(1, removed);
+        var verify = await service.VerifyChainAsync();
+        Assert.True(verify.Ok, verify.Message);
+        var logs = await service.GetLogsAsync(includeHistory: true);
+        Assert.Single(logs);
+        Assert.Equal("new", logs[0].Command);
+    }
+
+    [Fact]
     public async Task Tamper_is_detected()
     {
         var service = NewService();

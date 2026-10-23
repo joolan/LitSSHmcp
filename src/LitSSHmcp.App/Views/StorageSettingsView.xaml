@@ -1,0 +1,58 @@
+<UserControl x:Class="LitSSHmcp.App.Views.StorageSettingsView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
+            <StackPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    <TextBlock Text="本机数据目录（配置 / AI 会话与记忆 / 审计 / 快照 / spill / 工作区 / 日志）"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                </DockPanel>
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding DataDir}" FontFamily="Consolas"
+                               TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <ui:Button DockPanel.Dock="Right" Content="刷新统计" Padding="12,4" Click="OnRefresh"/>
+                </DockPanel>
+                <TextBlock Text="{Binding MigrationStatus}" Margin="0,6,0,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}">
+            <ListView ItemsSource="{Binding Stats}" BorderThickness="0" Background="Transparent"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="项目" Width="190" DisplayMemberBinding="{Binding Name}"/>
+                        <GridViewColumn Header="大小" Width="90" DisplayMemberBinding="{Binding SizeText}"/>
+                        <GridViewColumn Header="路径" Width="430" DisplayMemberBinding="{Binding Path}"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+        </Border>
+
+        <DockPanel Grid.Row="2" Margin="0,10,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="清理记忆历史" Padding="12,4" Margin="0,0,6,0" Click="OnPruneMemoryHistory"
+                           ToolTip="每记忆保留最近 40 版，并清理超过 30 天的孤儿快照"/>
+                <ui:Button Content="清理过期 spill" Padding="12,4" Margin="0,0,6,0" Click="OnPruneSpills"
+                           ToolTip="按 agent.spillRetentionDays 清理过期大结果文件"/>
+                <ui:Button Content="清理孤儿会话目录" Padding="12,4" Margin="0,0,6,0" Click="OnPruneOrphanSessions"
+                           ToolTip="按 agent.orphanSessionDirRetentionDays 清理 jobs 下已无会话引用的目录"/>
+                <ui:Button Content="清理审计归档" Padding="12,4" Click="OnPruneAuditArchive"
+                           ToolTip="按 audit.retentionDays 删除过期归档并重建剩余记录的哈希链"/>
+            </StackPanel>
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,10,0"/>
+        </DockPanel>
+    </Grid>
+</UserControl>

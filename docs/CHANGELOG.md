@@ -33,7 +33,7 @@
 
 ### 重构
 
-- **覆盖率门禁收紧**：按当前实测上调阈值（Core 36、App 24.5、McpServer 35、Agent 73、Web 81、整体 36），防止后续回退。
+- **覆盖率门禁收紧**：按当前实测上调阈值（Core 55、App 24.5、McpServer 35、Agent 73、Web 81、整体 40），防止后续回退。
 - **存储维护入口**：设置新增「存储维护」Tab，展示数据目录总占用及 config/agent.db/audit.db/snapshots.db/spill/jobs/logs/skills 明细与配置/库迁移状态；支持清理 Memory 历史（保留 40 版）、按 `agent.spillRetentionDays` 清理过期 spill、按 `agent.orphanSessionDirRetentionDays` 清理孤儿会话目录、按 `security.audit.retentionDays` 清理审计归档（删除后重建剩余记录哈希链）。
 - **配置冲突 UI 统一**：新增 Core `ConfigConflictNotifier`，`ConfigService` 在三路合并发现同字段冲突时通知 App；App 全局弹窗列出冲突字段（最多 10 个），并可直接重新加载所有实现 `IConfigReloadable` 的已打开窗口（未保存修改会丢失），避免各窗口提示不一致。
 - **App 最小组合根**：新增 `IAppServices` / `AppServices`，集中持有配置、对话框、窗口、端口转发等共享服务，并提供 SSH/审计/快照/拓扑/Agent 上下文工厂；`MainViewModel`、Topology/DbWorkbench/Datasource 管理页及设置/同步/触发/远程复制等窗口改为注入组合根或组合根工厂，`new ConfigService()` 基线 18→11。

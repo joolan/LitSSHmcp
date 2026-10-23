@@ -1,13 +1,13 @@
 [CmdletBinding()]
 param(
     [string]$ResultsDirectory = "artifacts/coverage",
-    [double]$OverallMinimumLineRate = 36.0
+    [double]$OverallMinimumLineRate = 40.0
 )
 
 $ErrorActionPreference = "Stop"
 
 $assemblyThresholds = [ordered]@{
-    "LitSSHmcp.Core"      = 36.0
+    "LitSSHmcp.Core"      = 55.0
     "LitSSHmcp.App"       = 24.5
     "LitSSHmcp.McpServer" = 35.0
     "LitSSHmcp.Agent"     = 73.0
@@ -21,6 +21,19 @@ if (-not (Test-Path -LiteralPath $ResultsDirectory)) {
 $coverageFiles = @(Get-ChildItem -LiteralPath $ResultsDirectory -Recurse -Filter "coverage.cobertura.xml")
 if ($coverageFiles.Count -eq 0) {
     throw "No coverage.cobertura.xml found under $ResultsDirectory"
+}
+
+# 同一 Core 程序集会被多个测试项目收集到；不同 runner 的 filename 可能是绝对路径、
+# 带程序集前缀或相对路径，必须归一化后再按行合并，否则分母被重复放大。
+function Normalize-CoverageSource([string]$assembly, [string]$source) {
+    $s = $source -replace '/', '\'
+    $needle = '\' + $assembly + '\'
+    $i = $s.LastIndexOf($needle, [StringComparison]::OrdinalIgnoreCase)
+    if ($i -ge 0) { return $s.Substring($i + $needle.Length) }
+    if ($s.StartsWith($assembly + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        return $s.Substring($assembly.Length + 1)
+    }
+    return $s
 }
 
 $lineHits = @{}
@@ -38,7 +51,7 @@ foreach ($file in $coverageFiles) {
     foreach ($package in $doc.coverage.packages.package) {
         $assembly = [string]$package.name
         foreach ($class in $package.classes.class) {
-            $source = [string]$class.filename
+            $source = Normalize-CoverageSource $assembly ([string]$class.filename)
             foreach ($line in $class.lines.line) {
                 $key = "{0}|{1}|{2}" -f $assembly, $source, $line.number
                 $hits = [int]$line.hits

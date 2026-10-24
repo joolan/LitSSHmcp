@@ -68,10 +68,23 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
             if (_searchText == value) return;
             _searchText = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(EmptyTitle));
+            OnPropertyChanged(nameof(EmptyHint));
+            OnPropertyChanged(nameof(ShowEmptyAction));
             FilteredDataSources.Refresh();
             GroupedDataSources.Refresh();
         }
     }
+
+    private bool IsSearching => !string.IsNullOrWhiteSpace(SearchText);
+
+    public string EmptyTitle => IsSearching ? "没有匹配的数据源" : "还没有数据源";
+
+    public string EmptyHint => IsSearching
+        ? "尝试调整关键字，或清空搜索框后重试。"
+        : "添加 MySQL / PostgreSQL / Redis 数据源后即可打开数据库工作台。";
+
+    public bool ShowEmptyAction => !IsSearching;
 
     private bool FilterDataSource(object item)
     {

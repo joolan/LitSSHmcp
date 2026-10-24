@@ -195,11 +195,12 @@
                                 Visibility="{Binding FilteredDataSources.IsEmpty, Converter={StaticResource BoolToVis}}">
                         <ui:SymbolIcon Symbol="Database24" FontSize="34" HorizontalAlignment="Center"
                                        Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
-                        <TextBlock Text="还没有数据源" Style="{DynamicResource EmptyStateTitleStyle}"/>
-                        <TextBlock Text="添加 MySQL / PostgreSQL / Redis 数据源后即可打开数据库工作台。"
+                        <TextBlock Text="{Binding EmptyTitle}" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                        <TextBlock Text="{Binding EmptyHint}"
                                    Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,12"/>
                         <ui:Button Content="添加数据源" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
-                                   HorizontalAlignment="Center" Command="{Binding AddCommand}"/>
+                                   HorizontalAlignment="Center" Command="{Binding AddCommand}"
+                                   Visibility="{Binding ShowEmptyAction, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
 
                     <Border Background="{DynamicResource AppCardBrush}" Opacity="0.72" Panel.ZIndex="10"

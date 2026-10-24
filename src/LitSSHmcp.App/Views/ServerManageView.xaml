@@ -114,7 +114,7 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="分组" Width="100">
+                            <GridViewColumn Header="分组" Width="0">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding Group, Converter={StaticResource GroupLabel}}"/>
@@ -226,11 +226,12 @@
                             Visibility="{Binding GroupedServers.IsEmpty, Converter={StaticResource BoolToVis}}">
                     <ui:SymbolIcon Symbol="Server24" FontSize="34" HorizontalAlignment="Center"
                                    Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
-                    <TextBlock Text="还没有服务器" Style="{DynamicResource EmptyStateTitleStyle}"/>
-                    <TextBlock Text="添加一台服务器后即可打开终端、SFTP 文件管理与资源监控。"
+                    <TextBlock Text="{Binding ServerEmptyTitle}" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                    <TextBlock Text="{Binding ServerEmptyHint}"
                                Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,12"/>
                     <ui:Button Content="添加服务器" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
-                               HorizontalAlignment="Center" Command="{Binding AddServerCommand}"/>
+                               HorizontalAlignment="Center" Command="{Binding AddServerCommand}"
+                               Visibility="{Binding ShowServerEmptyAction, Converter={StaticResource BoolToVis}}"/>
                 </StackPanel>
 
                 <Border Background="{DynamicResource AppCardBrush}" Opacity="0.72" Panel.ZIndex="10"

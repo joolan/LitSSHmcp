@@ -45,10 +45,23 @@ public partial class MainViewModel
             if (_serverSearchText == value) return;
             _serverSearchText = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(ServerEmptyTitle));
+            OnPropertyChanged(nameof(ServerEmptyHint));
+            OnPropertyChanged(nameof(ShowServerEmptyAction));
             GroupedServers.Refresh();
             FilteredServers.Refresh();
         }
     }
+
+    private bool IsServerSearching => !string.IsNullOrWhiteSpace(ServerSearchText);
+
+    public string ServerEmptyTitle => IsServerSearching ? "没有匹配的服务器" : "还没有服务器";
+
+    public string ServerEmptyHint => IsServerSearching
+        ? "尝试调整关键字，或清空搜索框后重试。"
+        : "添加一台服务器后即可打开终端、SFTP 文件管理与资源监控。";
+
+    public bool ShowServerEmptyAction => !IsServerSearching;
 
     private bool FilterServer(object item)
     {

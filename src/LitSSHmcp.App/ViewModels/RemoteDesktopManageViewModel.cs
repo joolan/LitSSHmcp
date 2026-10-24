@@ -63,9 +63,22 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloa
             if (_searchText == value) return;
             _searchText = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(EmptyTitle));
+            OnPropertyChanged(nameof(EmptyHint));
+            OnPropertyChanged(nameof(ShowEmptyAction));
             GroupedDesktops.Refresh();
         }
     }
+
+    private bool IsSearching => !string.IsNullOrWhiteSpace(SearchText);
+
+    public string EmptyTitle => IsSearching ? "没有匹配的远程桌面" : "还没有远程桌面连接";
+
+    public string EmptyHint => IsSearching
+        ? "尝试调整关键字，或清空搜索框后重试。"
+        : "添加 RDP / VNC 连接后即可内嵌打开，或使用外部客户端。";
+
+    public bool ShowEmptyAction => !IsSearching;
 
     private bool FilterDesktop(object item)
     {

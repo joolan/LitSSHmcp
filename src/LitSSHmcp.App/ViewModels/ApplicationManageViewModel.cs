@@ -64,10 +64,23 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
             if (_searchText == value) return;
             _searchText = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(EmptyTitle));
+            OnPropertyChanged(nameof(EmptyHint));
+            OnPropertyChanged(nameof(ShowEmptyAction));
             FilteredApplications.Refresh();
             GroupedApplications.Refresh();
         }
     }
+
+    private bool IsSearching => !string.IsNullOrWhiteSpace(SearchText);
+
+    public string EmptyTitle => IsSearching ? "没有匹配的应用" : "还没有应用";
+
+    public string EmptyHint => IsSearching
+        ? "尝试调整关键字，或清空搜索框后重试。"
+        : "添加应用节点后，AI 与资产拓扑即可识别并管理它。";
+
+    public bool ShowEmptyAction => !IsSearching;
 
     private bool FilterApplication(object item)
     {

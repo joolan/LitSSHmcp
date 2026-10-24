@@ -97,7 +97,7 @@
                                 </GridViewColumn>
                                 <GridViewColumn Header="账号" Width="110" DisplayMemberBinding="{Binding Username}"/>
                                 <GridViewColumn Header="隧道" Width="46" CellTemplate="{StaticResource TunnelColumn}"/>
-                                <GridViewColumn Header="分组" Width="100">
+                                <GridViewColumn Header="分组" Width="0">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding Group, Converter={StaticResource GroupLabel}}"/>
@@ -213,11 +213,12 @@
                                 Visibility="{Binding GroupedDesktops.IsEmpty, Converter={StaticResource BoolToVis}}">
                         <ui:SymbolIcon Symbol="Desktop24" FontSize="34" HorizontalAlignment="Center"
                                        Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
-                        <TextBlock Text="还没有远程桌面连接" Style="{DynamicResource EmptyStateTitleStyle}"/>
-                        <TextBlock Text="添加 RDP / VNC 连接后即可内嵌打开，或使用外部客户端。"
+                        <TextBlock Text="{Binding EmptyTitle}" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                        <TextBlock Text="{Binding EmptyHint}"
                                    Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,12"/>
                         <ui:Button Content="添加远程桌面" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
-                                   HorizontalAlignment="Center" Command="{Binding AddCommand}"/>
+                                   HorizontalAlignment="Center" Command="{Binding AddCommand}"
+                                   Visibility="{Binding ShowEmptyAction, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
 
                     <Border Background="{DynamicResource AppCardBrush}" Opacity="0.72" Panel.ZIndex="10"

@@ -33,10 +33,13 @@
                 <TextBlock Text="RDP / VNC；密码仅本机加密保存；可经 SSH 隧道访问内网桌面"
                            Style="{DynamicResource PageSubtitleStyle}"/>
             </StackPanel>
-            <ui:TextBox Grid.Column="1" Style="{DynamicResource PageSearchBoxStyle}"
-                        Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                        PlaceholderText="搜索名称 / 主机 / 分组…" VerticalAlignment="Center"
-                        AutomationProperties.Name="搜索远程桌面"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox Content="卡片视图" IsChecked="{Binding IsCardView}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ui:TextBox Style="{DynamicResource PageSearchBoxStyle}"
+                            Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="搜索名称 / 主机 / 分组…" VerticalAlignment="Center"
+                            AutomationProperties.Name="搜索远程桌面"/>
+            </StackPanel>
         </Grid>
 
         <GroupBox Grid.Row="1" Header="远程桌面连接" Padding="8">
@@ -53,6 +56,7 @@
 
                 <Grid Grid.Row="1">
                     <ListView x:Name="RdList" ItemsSource="{Binding GroupedDesktops}" SelectedItem="{Binding Selected}"
+                              Visibility="{Binding IsListView, Converter={StaticResource BoolToVis}}"
                               Padding="3" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                               ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
                         <ListView.ContextMenu>
@@ -92,6 +96,78 @@
                             </GridView>
                         </ListView.View>
                     </ListView>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding IsCardView, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl ItemsSource="{Binding GroupedDesktops}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{DynamicResource CardBorderStyle}" Width="300" Margin="0,0,10,10">
+                                        <StackPanel>
+                                            <DockPanel>
+                                                <Border DockPanel.Dock="Left" Background="{DynamicResource AppAccentSubtleBrush}"
+                                                        CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                                                    <TextBlock Text="{Binding ProtocolText}" FontSize="10"
+                                                               Foreground="{DynamicResource AppAccentBrush}"/>
+                                                </Border>
+                                                <Border DockPanel.Dock="Right" Background="{DynamicResource AppSuccessSubtleBrush}"
+                                                        CornerRadius="4" Padding="6,2">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding TunnelServerId}" Value="">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding TunnelServerId}" Value="{x:Null}">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="隧道" FontSize="10"
+                                                               Foreground="{DynamicResource AppSuccessBrush}"/>
+                                                </Border>
+                                                <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding Host}" FontFamily="Consolas" Margin="0,8,0,2"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}">
+                                                <Run Text="端口 "/><Run Text="{Binding Port, Mode=OneWay}"/>
+                                                <Run Text=" · "/><Run Text="{Binding Username, Mode=OneWay}"/>
+                                            </TextBlock>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
+                                                <Run Text="分组 "/><Run Text="{Binding Group, Mode=OneWay}"/>
+                                                <Run Text=" · 最近 "/><Run Text="{Binding LastConnectedAt, Mode=OneWay}"/>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding Description}" FontSize="11" Margin="0,6,0,0"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <WrapPanel Margin="0,10,0,0">
+                                                <ui:Button Content="连接" Appearance="Primary" Padding="10,3" Margin="0,0,6,6"
+                                                           Command="{Binding DataContext.ConnectItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                                <ui:Button Content="外部打开" Padding="10,3" Margin="0,0,6,6"
+                                                           Command="{Binding DataContext.OpenExternalItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                                <ui:Button Content="编辑" Padding="10,3" Margin="0,0,6,6"
+                                                           Command="{Binding DataContext.EditItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                                <ui:Button Content="删除" Padding="10,3" Margin="0,0,0,6"
+                                                           Foreground="{DynamicResource AppDangerBrush}"
+                                                           Command="{Binding DataContext.DeleteItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                            </WrapPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
 
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
                                 Visibility="{Binding GroupedDesktops.IsEmpty, Converter={StaticResource BoolToVis}}">

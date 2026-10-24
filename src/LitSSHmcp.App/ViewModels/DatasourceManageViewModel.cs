@@ -36,6 +36,10 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
         DeleteCommand = new RelayCommand(_ => Delete(), _ => SelectedDataSource != null);
         TestCommand = new RelayCommand(_ => Test(), _ => SelectedDataSource != null);
         WorkbenchCommand = new RelayCommand(_ => OpenWorkbench(SelectedDataSource));
+        OpenWorkbenchItemCommand = new RelayCommand(p => OpenWorkbench(p as DataSourceConfig));
+        EditItemCommand = new RelayCommand(p => { SelectedDataSource = p as DataSourceConfig; Edit(); });
+        TestItemCommand = new RelayCommand(p => { SelectedDataSource = p as DataSourceConfig; Test(); });
+        DeleteItemCommand = new RelayCommand(p => { SelectedDataSource = p as DataSourceConfig; Delete(); });
 
         FilteredDataSources = System.Windows.Data.CollectionViewSource.GetDefaultView(DataSources);
         FilteredDataSources.Filter = FilterDataSource;
@@ -97,6 +101,25 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
     public ICommand DeleteCommand { get; }
     public ICommand TestCommand { get; }
     public ICommand WorkbenchCommand { get; }
+    public ICommand OpenWorkbenchItemCommand { get; }
+    public ICommand EditItemCommand { get; }
+    public ICommand TestItemCommand { get; }
+    public ICommand DeleteItemCommand { get; }
+
+    private bool _isCardView;
+    public bool IsCardView
+    {
+        get => _isCardView;
+        set
+        {
+            if (_isCardView == value) return;
+            _isCardView = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsListView));
+        }
+    }
+
+    public bool IsListView => !IsCardView;
 
     private readonly List<DbWorkbenchWindow> _workbenches = new();
 

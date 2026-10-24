@@ -27,10 +27,13 @@
                 <TextBlock Text="账号密码仅本机 DPAPI 加密保存，不对 AI 开放"
                            Style="{DynamicResource PageSubtitleStyle}"/>
             </StackPanel>
-            <ui:TextBox Grid.Column="1" Style="{DynamicResource PageSearchBoxStyle}"
-                        Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                        PlaceholderText="搜索名称 / 主机 / 类型…" VerticalAlignment="Center"
-                        AutomationProperties.Name="搜索数据源"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox Content="卡片视图" IsChecked="{Binding IsCardView}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ui:TextBox Style="{DynamicResource PageSearchBoxStyle}"
+                            Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="搜索名称 / 主机 / 类型…" VerticalAlignment="Center"
+                            AutomationProperties.Name="搜索数据源"/>
+            </StackPanel>
         </Grid>
 
         <GroupBox Grid.Row="1" Header="数据源" Padding="8">
@@ -50,6 +53,7 @@
 
                 <Grid Grid.Row="1">
                     <ListView x:Name="DsList" ItemsSource="{Binding FilteredDataSources}" SelectedItem="{Binding SelectedDataSource}"
+                              Visibility="{Binding IsListView, Converter={StaticResource BoolToVis}}"
                               Padding="3" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                               ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
                         <ListView.ContextMenu>
@@ -74,6 +78,65 @@
                             </GridView>
                         </ListView.View>
                     </ListView>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding IsCardView, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl ItemsSource="{Binding FilteredDataSources}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{DynamicResource CardBorderStyle}" Width="300" Margin="0,0,10,10">
+                                        <StackPanel>
+                                            <DockPanel>
+                                                <Border DockPanel.Dock="Left" Background="{DynamicResource AppAccentSubtleBrush}"
+                                                        CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                                                    <TextBlock Text="{Binding Type}" FontSize="10"
+                                                               Foreground="{DynamicResource AppAccentBrush}"/>
+                                                </Border>
+                                                <Border DockPanel.Dock="Right" Background="{DynamicResource AppDangerSubtleBrush}"
+                                                        CornerRadius="4" Padding="6,2"
+                                                        Visibility="{Binding ReadOnly, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="只读" FontSize="10"
+                                                               Foreground="{DynamicResource AppDangerBrush}"/>
+                                                </Border>
+                                                <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding Host}" FontFamily="Consolas" Margin="0,8,0,2"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}">
+                                                <Run Text="端口 "/><Run Text="{Binding Port, Mode=OneWay}"/>
+                                                <Run Text=" · "/><Run Text="{Binding AccessMode, Mode=OneWay}"/>
+                                            </TextBlock>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
+                                                <Run Text="默认库 "/><Run Text="{Binding DefaultDatabase, Mode=OneWay}"/>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding Description}" FontSize="11" Margin="0,6,0,0"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <WrapPanel Margin="0,10,0,0">
+                                                <ui:Button Content="打开工作台" Appearance="Primary" Padding="10,3" Margin="0,0,6,6"
+                                                           Command="{Binding DataContext.OpenWorkbenchItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                                <ui:Button Content="测试" Padding="10,3" Margin="0,0,6,6"
+                                                           Command="{Binding DataContext.TestItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                                <ui:Button Content="编辑" Padding="10,3" Margin="0,0,6,6"
+                                                           Command="{Binding DataContext.EditItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                                <ui:Button Content="删除" Padding="10,3" Margin="0,0,0,6"
+                                                           Foreground="{DynamicResource AppDangerBrush}"
+                                                           Command="{Binding DataContext.DeleteItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                            </WrapPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
 
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
                                 Visibility="{Binding FilteredDataSources.IsEmpty, Converter={StaticResource BoolToVis}}">

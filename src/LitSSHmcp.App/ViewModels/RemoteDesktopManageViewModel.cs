@@ -36,6 +36,10 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloa
         DeleteCommand = new RelayCommand(_ => Delete(), _ => Selected != null);
         ConnectCommand = new RelayCommand(_ => Connect(), _ => Selected != null);
         OpenExternalCommand = new RelayCommand(_ => OpenExternal(), _ => Selected != null);
+        ConnectItemCommand = new RelayCommand(p => { Selected = p as RemoteDesktopConfig; Connect(); });
+        OpenExternalItemCommand = new RelayCommand(p => { Selected = p as RemoteDesktopConfig; OpenExternal(); });
+        EditItemCommand = new RelayCommand(p => { Selected = p as RemoteDesktopConfig; Edit(); });
+        DeleteItemCommand = new RelayCommand(p => { Selected = p as RemoteDesktopConfig; Delete(); });
 
         GroupedDesktops = System.Windows.Data.CollectionViewSource.GetDefaultView(Desktops);
         GroupedDesktops.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription(nameof(RemoteDesktopConfig.Group)));
@@ -98,6 +102,25 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloa
     public ICommand DeleteCommand { get; }
     public ICommand ConnectCommand { get; }
     public ICommand OpenExternalCommand { get; }
+    public ICommand ConnectItemCommand { get; }
+    public ICommand OpenExternalItemCommand { get; }
+    public ICommand EditItemCommand { get; }
+    public ICommand DeleteItemCommand { get; }
+
+    private bool _isCardView;
+    public bool IsCardView
+    {
+        get => _isCardView;
+        set
+        {
+            if (_isCardView == value) return;
+            _isCardView = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsListView));
+        }
+    }
+
+    public bool IsListView => !IsCardView;
 
     // 内嵌远程桌面会话窗口（多标签；非模态，可同时操作主界面）
     private RemoteDesktopSessionWindow? _sessionWindow;

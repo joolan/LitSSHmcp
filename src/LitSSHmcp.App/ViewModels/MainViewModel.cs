@@ -763,69 +763,6 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         editWindow.ShowDialog();
     }
 
-    private void EditServer()
-    {
-        if (SelectedServer == null) return;
-
-        var editWindow = _windows.CreateServerEditWindow(Application.Current.MainWindow);
-        var editViewModel = new ServerEditViewModel(_configService, _sshService, editWindow, SelectedServer);
-        editWindow.DataContext = editViewModel;
-
-        editViewModel.DialogClosed += (_, result) =>
-        {
-            editWindow.Close();
-            if (result) LoadServers();
-        };
-
-        editWindow.ShowDialog();
-    }
-
-    private void DeleteServer() => AsyncOperation.Run("删除服务器", async () =>
-    {
-        if (SelectedServer == null) return;
-
-        try
-        {
-            var config = await _configService.LoadConfigAsync();
-            var nodeId = AssetNode.Ssh(SelectedServer.Id);
-            var references = RelationHelper.Referencing(config, nodeId);
-
-            var message = $"确定要删除服务器 \"{SelectedServer.Name}\" 吗？";
-            message += references.Length > 0
-                ? $"\n\n存在 {references.Length} 条关系记录引用它，将一并删除：\n{RelationHelper.Describe(references)}"
-                : "\n\n（未发现引用它的关系记录）";
-
-            if (!_dialogs.Confirm(message, "确认删除"))
-                return;
-
-            config.Servers = config.Servers.Where(s => s.Id != SelectedServer.Id).ToArray();
-            config.Relations = config.Relations.Where(r => r.From != nodeId && r.To != nodeId).ToArray();
-            await _configService.SaveConfigAsync(config);
-            await CleanupDiscoveredEdgesAsync(nodeId);
-
-            StatusMessage = $"已删除服务器: {SelectedServer.Name}";
-            SelectedServer = null;
-            LoadServers();
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"删除失败: {ex.Message}";
-        }
-    });
-
-    private async Task CleanupDiscoveredEdgesAsync(string nodeId)
-    {
-        try
-        {
-            await _topologyStore.InitializeAsync();
-            await _topologyStore.RemoveEdgesByNodeAsync(nodeId);
-        }
-        catch
-        {
-            // 清理自动发现边失败不阻断删除
-        }
-    }
-
     // 资产拓扑：独立窗口（不设 Owner / 不置顶，避免始终浮在主界面之上；可与主界面同时操作）
     private TopologyWindow? _topologyWindow;
 

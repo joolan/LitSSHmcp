@@ -232,19 +232,6 @@
                                 </TextBlock.Style>
                             </TextBlock>
 
-                            <TextBlock Text="快捷入口" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                            <WrapPanel Margin="0,0,0,20">
-                                <ui:Button Content="SSH 会话管理" Icon="{ui:SymbolIcon Server24}" Padding="14,6" Margin="0,0,8,8"
-                                           Command="{Binding OpenSessionManagerCommand}"/>
-                                <ui:Button Content="资产拓扑" Icon="{ui:SymbolIcon Share24}" Padding="14,6" Margin="0,0,8,8"
-                                           Command="{Binding OpenTopologyCommand}"/>
-                                <ui:Button Content="审计日志" Icon="{ui:SymbolIcon History24}" Padding="14,6" Margin="0,0,8,8"
-                                           Command="{Binding OpenAuditCommand}"/>
-                                <ui:Button Content="AI 运维助手" Icon="{ui:SymbolIcon Chat24}" Padding="14,6" Margin="0,0,8,8"
-                                           Command="{Binding OpenAgentCommand}"/>
-                            </WrapPanel>
-
                             <TextBlock Text="资产概览" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                             <WrapPanel Margin="0,0,0,16">

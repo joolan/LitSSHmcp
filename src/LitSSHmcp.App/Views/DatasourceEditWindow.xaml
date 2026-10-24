@@ -27,6 +27,7 @@
                         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="名称:" VerticalAlignment="Center" Margin="0,0,10,8"/>
@@ -100,7 +101,31 @@
                               SelectedIndex="{Binding WriteApprovalIndex}" Margin="0,0,0,8"
                               ToolTip="写操作审批策略; '自动放行'仅用于受信任目标(仍受硬拦截规则约束)"/>
 
-                    <TextBlock Grid.Row="14" Grid.Column="0" Grid.ColumnSpan="2"
+                    <TextBlock Grid.Row="14" Grid.Column="0" Text="SSL:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <StackPanel Grid.Row="14" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                        <ComboBox Width="180" ItemsSource="{Binding SslModeOptions}" SelectedIndex="{Binding SslModeIndex}"
+                                  IsEnabled="{Binding SupportsSsl}"
+                                  ToolTip="MySQL/PostgreSQL 连接 TLS 策略; 旧版数据库 TLS 握手失败(SSL Authentication Error)时可选'禁用'"/>
+                        <CheckBox Content="允许公钥获取" IsChecked="{Binding AllowPublicKeyRetrieval}" IsEnabled="{Binding IsMySql}"
+                                  Margin="12,0,0,0" VerticalAlignment="Center"
+                                  ToolTip="仅 MySQL: caching_sha2_password 在非 TLS 连接下需要允许获取服务端公钥(MySQL 8 常见)"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="15" Grid.Column="0" Text="CA证书:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <Grid Grid.Row="15" Grid.Column="1" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBox FontWeight="Normal" Grid.Column="0" Text="{Binding SslCaFile, UpdateSourceTrigger=PropertyChanged}"
+                                    IsEnabled="{Binding SupportsSsl}"
+                                    ToolTip="可选: 本地 PEM 格式 CA 证书路径; 仅在 VerifyCA/VerifyFull 时需要"/>
+                        <ui:Button Grid.Column="1" Content="浏览…" Padding="12,3" Margin="5,0,0,0"
+                                   Command="{Binding BrowseCaFileCommand}" IsEnabled="{Binding SupportsSsl}"
+                                   ToolTip="选择本地 CA 证书文件 (PEM/CRT/CER)"/>
+                    </Grid>
+
+                    <TextBlock Grid.Row="16" Grid.Column="0" Grid.ColumnSpan="2"
                                Text="提示: 账号密码仅人工录入, MCP工具只暴露主机/端口/账号, 密码永不返回给AI"
                                Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10" TextWrapping="Wrap" Margin="0,4,0,4"/>
                 </Grid>

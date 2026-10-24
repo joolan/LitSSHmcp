@@ -77,4 +77,53 @@ public class WebBootstrapCliTests : IDisposable
     {
         Assert.Equal(0, await WebBootstrap.RunCliAsync(new[] { "--list-users" }));
     }
+
+    [Fact]
+    public async Task Reset_password_requires_username_without_touching_store()
+    {
+        Assert.Equal(1, await WebBootstrap.RunCliAsync(new[] { "--reset-password" }));
+    }
+
+    [Fact]
+    public async Task Reset_password_requires_password_env_and_existing_user()
+    {
+        var store = new WebAccountsStore(_dbPath);
+        await store.InitializeAsync();
+
+        var noPassword = await WebBootstrap.ResetPasswordAsync(store, "nobody", password: null);
+        Assert.NotNull(noPassword);
+        Assert.Contains(WebBootstrap.PasswordEnvVar, noPassword, StringComparison.Ordinal);
+
+        var tooShort = await WebBootstrap.ResetPasswordAsync(store, "nobody", password: "short");
+        Assert.NotNull(tooShort);
+
+        var unknown = await WebBootstrap.ResetPasswordAsync(store, "nobody", password: "newpass1");
+        Assert.NotNull(unknown);
+        Assert.Contains("nobody", unknown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Reset_password_replaces_credentials_unlocks_and_revokes_tokens()
+    {
+        var store = new WebAccountsStore(_dbPath);
+        await store.InitializeAsync();
+        var id = await store.CreateAsync("alice", "secret123", role: "admin", iterations: 1000);
+        var token = await store.CreateTokenAsync(id, DateTime.UtcNow, TimeSpan.FromHours(1));
+        await store.RecordLoginFailedAsync(id);
+        await store.RecordLoginFailedAsync(id);
+        await store.SetLockoutAsync(id, DateTime.UtcNow.AddMinutes(30));
+
+        Assert.Null(await WebBootstrap.ResetPasswordAsync(store, "alice", "newpass1"));
+
+        var after = await store.FindByUsernameAsync("alice");
+        Assert.Equal(0, after!.FailedCount);
+        Assert.Null(after.LockedUntilUtc);
+        Assert.Null(await store.ValidateTokenAsync(token.Token, DateTime.UtcNow));
+        Assert.True(WebAccountsStore.VerifyPassword(after, "newpass1"));
+        Assert.False(WebAccountsStore.VerifyPassword(after, "secret123"));
+
+        var auth = new WebAuthService(store);
+        Assert.Equal(WebLoginStatus.Success, (await auth.LoginAsync("alice", "newpass1")).Status);
+        Assert.Equal(WebLoginStatus.InvalidCredentials, (await auth.LoginAsync("alice", "secret123")).Status);
+    }
 }

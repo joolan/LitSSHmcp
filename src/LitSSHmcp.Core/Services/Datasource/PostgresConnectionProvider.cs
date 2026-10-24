@@ -42,6 +42,34 @@ public class PostgresConnectionProvider : IPostgresConnectionProvider
         _targetLimiter = targetLimiter;
     }
 
+    /// <summary>按数据源配置构建连接串（含 TLS 策略）；隧道场景传 127.0.0.1 + 本地转发端口。</summary>
+    public static NpgsqlConnectionStringBuilder BuildConnectionString(DataSourceConfig ds, string host, int port)
+    {
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = host,
+            Port = port,
+            Username = ds.Username,
+            Password = ds.Password ?? string.Empty,
+            Database = string.IsNullOrWhiteSpace(ds.DefaultDatabase) ? "postgres" : ds.DefaultDatabase,
+            Timeout = 10,
+            CommandTimeout = ds.TimeoutSeconds is > 0 ? ds.TimeoutSeconds.Value : 60,
+            Pooling = ds.UsePooling && ds.AccessMode != AccessMode.SshTunnel,
+            SslMode = ds.SslMode switch
+            {
+                DataSourceSslMode.None => Npgsql.SslMode.Disable,
+                DataSourceSslMode.Required => Npgsql.SslMode.Require,
+                DataSourceSslMode.VerifyCA => Npgsql.SslMode.VerifyCA,
+                DataSourceSslMode.VerifyFull => Npgsql.SslMode.VerifyFull,
+                _ => Npgsql.SslMode.Prefer
+            }
+        };
+        if (!string.IsNullOrWhiteSpace(ds.SslCaFile)
+            && ds.SslMode is DataSourceSslMode.VerifyCA or DataSourceSslMode.VerifyFull)
+            builder.RootCertificate = ds.SslCaFile;
+        return builder;
+    }
+
     public async Task<IPostgresSession> OpenAsync(DataSourceConfig ds, CancellationToken ct = default)
     {
         if (!_targetLimiter.TryAcquire($"ds:{ds.Id}", out var lease, out var limitReason))
@@ -69,18 +97,7 @@ public class PostgresConnectionProvider : IPostgresConnectionProvider
                 connectPort = (int)tunnel.LocalPort;
             }
 
-            var builder = new NpgsqlConnectionStringBuilder
-            {
-                Host = connectHost,
-                Port = connectPort,
-                Username = ds.Username,
-                Password = ds.Password ?? string.Empty,
-                Database = string.IsNullOrWhiteSpace(ds.DefaultDatabase) ? "postgres" : ds.DefaultDatabase,
-                Timeout = 10,
-                CommandTimeout = ds.TimeoutSeconds is > 0 ? ds.TimeoutSeconds.Value : 60,
-                Pooling = ds.UsePooling && ds.AccessMode != AccessMode.SshTunnel
-            };
-
+            var builder = BuildConnectionString(ds, connectHost, connectPort);
             var connection = new NpgsqlConnection(builder.ConnectionString);
             await connection.OpenAsync(ct);
 

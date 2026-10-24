@@ -206,6 +206,17 @@ public sealed class WebAccountsStore
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    /// <summary>清零失败计数并解除锁定（管理员重置密码后调用；不改动 LastLoginAtUtc）。</summary>
+    public async Task ResetLoginFailuresAsync(long id, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE web_users SET FailedCount = 0, LockedUntilUtc = NULL WHERE Id = $i";
+        cmd.Parameters.AddWithValue("$i", id);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     /// <summary>发放登录令牌（只返回明文一次；落库存 SHA-256）。</summary>
     public async Task<(string Token, DateTime ExpiresAtUtc)> CreateTokenAsync(long userId, DateTime nowUtc, TimeSpan lifetime, CancellationToken ct = default)
     {

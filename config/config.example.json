@@ -45,7 +45,10 @@
       "readOnly": false,
       "maxRows": null,
       "timeoutSeconds": null,
-      "writeApproval": "Always"
+      "writeApproval": "Always",
+      "sslMode": "Preferred",
+      "allowPublicKeyRetrieval": false,
+      "sslCaFile": null
     }
   ],
   "applications": [

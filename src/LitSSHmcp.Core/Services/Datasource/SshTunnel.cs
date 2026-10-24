@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Sockets;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
 using Renci.SshNet;
@@ -42,17 +41,17 @@ public sealed class SshTunnel : IDisposable
             {
                 client.Connect();
 
-                var localPort = GetFreePort();
+                // boundPort=0 让系统在绑定时分配空闲端口，避免"先探测再绑定"的竞态。
                 var forwardedPort = new ForwardedPortLocal(
                     IPAddress.Loopback.ToString(),
-                    localPort,
+                    0,
                     remoteHost,
                     (uint)remotePort);
 
                 client.AddForwardedPort(forwardedPort);
                 forwardedPort.Start();
 
-                return new SshTunnel(client, forwardedPort, localPort, $"{server.Name}({server.Host})");
+                return new SshTunnel(client, forwardedPort, forwardedPort.BoundPort, $"{server.Name}({server.Host})");
             }
             catch
             {
@@ -60,15 +59,6 @@ public sealed class SshTunnel : IDisposable
                 throw;
             }
         }, ct);
-    }
-
-    private static uint GetFreePort()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = (uint)((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 
     public void Dispose()

@@ -3,7 +3,7 @@ using LitSSHmcp.Core.Services.Web;
 namespace LitSSHmcp.Web;
 
 /// <summary>
-/// 首个账号引导与命令行入口（--create-user / --list-users）。
+/// 首个账号引导与命令行入口（--create-user / --list-users / --reset-password）。
 /// 首个创建的账号自动为 admin；密码只从环境变量 LITSSH_NEW_PASSWORD 读取（避免进 argv/进程列表）。
 /// </summary>
 public static class WebBootstrap
@@ -44,6 +44,41 @@ public static class WebBootstrap
         return 0;
     }
 
+    /// <summary>管理员重置密码：改密 + 吊销全部令牌 + 清零失败计数并解锁。返回 null 成功，否则错误文案。</summary>
+    public static async Task<string?> ResetPasswordAsync(WebAccountsStore store, string username, string? password, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(password))
+            return $"密码未提供：请通过环境变量 {PasswordEnvVar} 传入";
+        var user = await store.FindByUsernameAsync(username, ct);
+        if (user is null)
+            return $"账号不存在: {username}";
+        try
+        {
+            await store.ChangePasswordAsync(user.Id, password, ct: ct);
+        }
+        catch (ArgumentException ex)
+        {
+            return ex.Message;
+        }
+        await store.RevokeAllTokensAsync(user.Id, ct);
+        await store.ResetLoginFailuresAsync(user.Id, ct);
+        return null;
+    }
+
+    public static async Task<int> RunResetPasswordAsync(string username, CancellationToken ct = default)
+    {
+        var store = new WebAccountsStore();
+        await store.InitializeAsync(ct);
+        var error = await ResetPasswordAsync(store, username, Environment.GetEnvironmentVariable(PasswordEnvVar), ct);
+        if (error is not null)
+        {
+            Console.Error.WriteLine(error);
+            return 1;
+        }
+        Console.WriteLine($"已重置账号 {username} 的密码（已吊销全部登录令牌并解除锁定）");
+        return 0;
+    }
+
     public static async Task<int> RunListUsersAsync(CancellationToken ct = default)
     {
         var store = new WebAccountsStore();
@@ -58,7 +93,8 @@ public static class WebBootstrap
 
     /// <summary>
     /// 命令行账号管理入口（Program 启动前调用）：
-    /// <c>--create-user &lt;用户名&gt; [--role admin|user]</c>（密码取环境变量 <see cref="PasswordEnvVar"/>）、
+    /// <c>--create-user &lt;用户名&gt; [--role admin|user]</c>、
+    /// <c>--reset-password &lt;用户名&gt;</c>（密码取环境变量 <see cref="PasswordEnvVar"/>）、
     /// <c>--list-users</c>。命中返回退出码；未命中返回 null（继续起 Web 服务，透传其余参数）。
     /// </summary>
     public static async Task<int?> RunCliAsync(string[] args, CancellationToken ct = default)
@@ -82,6 +118,13 @@ public static class WebBootstrap
                         role = args[i + 1];
                 }
                 return await RunCreateUserAsync(args[1], role, ct);
+            case "--reset-password":
+                if (args.Length < 2)
+                {
+                    Console.Error.WriteLine("用法: --reset-password <用户名>（新密码经环境变量 " + PasswordEnvVar + " 传入）");
+                    return 1;
+                }
+                return await RunResetPasswordAsync(args[1], ct);
             default:
                 return null;
         }

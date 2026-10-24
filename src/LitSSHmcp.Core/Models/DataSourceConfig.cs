@@ -15,6 +15,24 @@ public enum WriteApprovalMode
     AutoApprove
 }
 
+/// <summary>
+/// 数据库连接 TLS 策略（MySQL/PostgreSQL 共用；Redis 不适用）。
+/// 默认 <see cref="Preferred"/>，与 MySqlConnector 默认一致，升级后行为不变。
+/// </summary>
+public enum DataSourceSslMode
+{
+    /// <summary>禁用 TLS（旧版 MySQL/MariaDB TLS 握手不兼容时使用；明文传输）。</summary>
+    None,
+    /// <summary>服务端支持则使用 TLS（默认）。</summary>
+    Preferred,
+    /// <summary>强制 TLS，不校验证书（自签证书/隧道场景常用）。</summary>
+    Required,
+    /// <summary>强制 TLS 并校验证书链，但容忍主机名不匹配。</summary>
+    VerifyCA,
+    /// <summary>强制 TLS 并校验主机名（隧道下连 127.0.0.1 时通常不可用）。</summary>
+    VerifyFull
+}
+
 public class DataSourceConfig
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -47,6 +65,17 @@ public class DataSourceConfig
 
     /// <summary>是否启用数据库连接池（默认关闭）。仅对直连生效；经 SSH 隧道时始终禁用（隧道随连接建立）。</summary>
     public bool UsePooling { get; set; }
+
+    // —— TLS（MySQL/PostgreSQL；Redis 忽略）——
+
+    /// <summary>TLS 策略，默认 Preferred（服务端支持则加密）。</summary>
+    public DataSourceSslMode SslMode { get; set; } = DataSourceSslMode.Preferred;
+
+    /// <summary>MySQL 8 caching_sha2_password 在非 TLS 下需允许获取服务端公钥（默认关闭）。</summary>
+    public bool AllowPublicKeyRetrieval { get; set; }
+
+    /// <summary>自定义 CA 证书（本地 PEM 路径），配合 VerifyCA/VerifyFull 使用。</summary>
+    public string? SslCaFile { get; set; }
 }
 
 public class ApplicationConfig

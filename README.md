@@ -243,7 +243,7 @@ WPF 桌面管理端，主界面为**左侧图标导航栏 + 右侧页面**：顶
 
 ### 数据源与应用管理
 
-- **数据源管理**：维护 MySQL / PostgreSQL / Redis 等数据源；顶部 **添加 / 刷新**，条目**右键菜单**为 测试连接 / 编辑 / 删除，双击也可编辑（类型切换时自动带出默认端口 3306/5432/6379）；可设置**治理**项（只读、最大行数、超时、写审批策略）。密码仅本机 DPAPI 加密保存、不对 AI 开放。删除时会提示并级联清理引用它的关系。顶部 **「打开工作台」** 或右键 **「打开工作台（只读查询）」**（MySQL / PostgreSQL / Redis 可见，打开即定位到该数据源）进入**数据库工作台**：SQL 数据源支持对象浏览（库 → 表 → 列，含类型图标、选中对象面包屑与搜索匹配计数）、SQL 查询、表数据分页预览，Redis 支持 **键浏览**（分批 `SCAN` 时间预算续扫、键值有界读取、补全类型/TTL/大小、顶部 DB 切换、大结果集命令执行前警告）与命令输入；两者均有 **片段**（按「数据源 · 库」收藏、点击追加）、**结果复制**（复制单元格 / 整行 / 全部、双击查看完整内容）与 **导出 CSV**；顶部 **只读 / 写入模式**切换（默认只读，写入模式标题、SQL 框、执行按钮与结果区均以红/橙强区分）；写操作复用安全链（危险语句硬拦截 + **执行前预览确认**：展示 SQL 与预计影响行数/样本行 + 执行后成功失败弹窗提示 + 审计），只读数据源不可开启写入。
+- **数据源管理**：维护 MySQL / PostgreSQL / Redis 等数据源；顶部 **添加 / 刷新**，条目**右键菜单**为 测试连接 / 编辑 / 删除，双击也可编辑（类型切换时自动带出默认端口 3306/5432/6379）；可设置**治理**项（只读、最大行数、超时、写审批策略）与 **TLS**（`sslMode`：`None` / `Preferred`（默认）/ `Required` / `VerifyCA` / `VerifyFull`；旧版 MySQL/MariaDB TLS 握手失败报 `SSL Authentication Error` 时选 `None`；MySQL 8 非 TLS 可开 `allowPublicKeyRetrieval`；`sslCaFile` 指定本地 PEM CA）。隧道下客户端连 `127.0.0.1`，`VerifyFull` 通常因主机名不匹配不可用，建议 `Required` 或 `VerifyCA`。密码仅本机 DPAPI 加密保存、不对 AI 开放。删除时会提示并级联清理引用它的关系。顶部 **「打开工作台」** 或右键 **「打开工作台（只读查询）」**（MySQL / PostgreSQL / Redis 可见，打开即定位到该数据源）进入**数据库工作台**：SQL 数据源支持对象浏览（库 → 表 → 列，含类型图标、选中对象面包屑与搜索匹配计数）、SQL 查询、表数据分页预览，Redis 支持 **键浏览**（分批 `SCAN` 时间预算续扫、键值有界读取、补全类型/TTL/大小、顶部 DB 切换、大结果集命令执行前警告）与命令输入；两者均有 **片段**（按「数据源 · 库」收藏、点击追加）、**结果复制**（复制单元格 / 整行 / 全部、双击查看完整内容）与 **导出 CSV**；顶部 **只读 / 写入模式**切换（默认只读，写入模式标题、SQL 框、执行按钮与结果区均以红/橙强区分）；写操作复用安全链（危险语句硬拦截 + **执行前预览确认**：展示 SQL 与预计影响行数/样本行 + 执行后成功失败弹窗提示 + 审计），只读数据源不可开启写入。
 - **应用管理**：维护 `app:` 应用节点（名称 / 类型 / 端口 / 主机 / 描述）；Docker 应用把类型填 `docker` 并填**容器名**（与 `docker ps` 的 NAMES 一致），AI 即可用 SSH 工具管理；顶部 **添加 / 刷新**，条目**右键菜单**为 编辑 / 删除，双击也可编辑。
 
 ![数据源管理](docs/images/app-datasource.png)
@@ -344,9 +344,13 @@ dotnet publish src/LitSSHmcp.Web -c Release -r win-x64 --self-contained -o publi
 Web 使用**独立账号库** `%APPDATA%\LitSSH\web.db`——**没有内置默认账号**，用命令行创建 / 查看（密码只经环境变量传递，不进命令行历史与进程列表）：
 
 ```powershell
-# 创建账号（首个账号自动为 admin，之后默认 user；密码 ≥6 位，建议用 --role 显式指定）
+# 创建账号（首个账号自动为 admin，之后默认 user；密码 ≥8 位，建议用 --role 显式指定）
 $env:LITSSH_NEW_PASSWORD = "<密码>"
 src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --create-user <用户名> --role admin
+
+# 重置账号密码（同时吊销全部登录令牌、清零失败计数并解除锁定）
+$env:LITSSH_NEW_PASSWORD = "<新密码>"
+src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --reset-password <用户名>
 
 # 查看全部账号
 src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
@@ -472,7 +476,8 @@ dotnet run --project src/LitSSHmcp.App
       "password": "your-db-password",
       "defaultDatabase": "orders",
       "accessMode": "sshTunnel",
-      "tunnelServerId": "my-server"
+      "tunnelServerId": "my-server",
+      "sslMode": "Preferred"
     },
     {
       "id": "redis-cache-01",

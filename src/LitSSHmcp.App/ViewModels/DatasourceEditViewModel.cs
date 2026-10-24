@@ -32,6 +32,9 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
     private bool _usePooling;    private string _maxRowsText = string.Empty;
     private string _timeoutText = string.Empty;
     private int _writeApprovalIndex;
+    private int _sslModeIndex = 1;
+    private bool _allowPublicKeyRetrieval;
+    private string _sslCaFile = string.Empty;
 
     public event EventHandler<bool>? DialogClosed;
 
@@ -53,6 +56,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
         SaveCommand = new RelayCommand(_ => Save());
         CancelCommand = new RelayCommand(_ => Cancel());
         TestConnectionCommand = new RelayCommand(_ => TestConnection(), _ => !_isTestRunning);
+        BrowseCaFileCommand = new RelayCommand(_ => BrowseCaFile());
 
         if (datasource != null)
         {
@@ -71,6 +75,9 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             TimeoutText = datasource.TimeoutSeconds?.ToString() ?? string.Empty;
             WriteApprovalIndex = datasource.WriteApproval == WriteApprovalMode.AutoApprove ? 1 : 0;
             UsePooling = datasource.UsePooling;
+            SslModeIndex = (int)datasource.SslMode;
+            AllowPublicKeyRetrieval = datasource.AllowPublicKeyRetrieval;
+            SslCaFile = datasource.SslCaFile ?? string.Empty;
         }
         else if (prefill != null)
         {
@@ -98,6 +105,8 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             var previousDefault = DefaultPort(_typeIndex);
             _typeIndex = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(SupportsSsl));
+            OnPropertyChanged(nameof(IsMySql));
 
             // 切换类型时, 如果端口还是另一类型的默认值, 自动带出本类型默认端口
             if (string.IsNullOrWhiteSpace(PortText) || PortText.Trim() == previousDefault)
@@ -196,6 +205,37 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
 
     public string[] WriteApprovalOptions { get; } = { "一律桌面确认", "自动放行(受信任)" };
 
+    // —— TLS（MySQL/PostgreSQL；Redis 不适用）——
+
+    public bool SupportsSsl => TypeIndex != 1;
+
+    public bool IsMySql => TypeIndex == 0;
+
+    public int SslModeIndex
+    {
+        get => _sslModeIndex;
+        set { _sslModeIndex = value; OnPropertyChanged(); }
+    }
+
+    public string[] SslModeOptions { get; } =
+    {
+        "禁用 (None)", "优先 (Preferred)", "必须 (Required)", "校验证书链 (VerifyCA)", "校验主机名 (VerifyFull)"
+    };
+
+    /// <summary>MySQL 8 caching_sha2_password 在非 TLS 下允许获取服务端公钥。</summary>
+    public bool AllowPublicKeyRetrieval
+    {
+        get => _allowPublicKeyRetrieval;
+        set { _allowPublicKeyRetrieval = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>自定义 CA 证书（本地 PEM 路径），配合 VerifyCA/VerifyFull。</summary>
+    public string SslCaFile
+    {
+        get => _sslCaFile;
+        set { _sslCaFile = value; OnPropertyChanged(); }
+    }
+
     public string StatusMessage
     {
         get => _statusMessage;
@@ -205,6 +245,19 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
     public ICommand SaveCommand { get; }
     public ICommand CancelCommand { get; }
     public ICommand TestConnectionCommand { get; }
+    public ICommand BrowseCaFileCommand { get; }
+
+    private void BrowseCaFile()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "选择 CA 证书文件",
+            Filter = "证书文件|*.pem;*.crt;*.cer;*.der|所有文件|*.*"
+        };
+
+        if (dialog.ShowDialog() == true)
+            SslCaFile = dialog.FileName;
+    }
 
     private int ResolveTunnelIndex(string? serverId)
     {
@@ -324,7 +377,10 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             UsePooling = UsePooling,
             MaxRows = int.TryParse(MaxRowsText?.Trim(), out var maxRows) && maxRows > 0 ? maxRows : null,
             TimeoutSeconds = int.TryParse(TimeoutText?.Trim(), out var timeout) && timeout > 0 ? timeout : null,
-            WriteApproval = WriteApprovalIndex == 1 ? WriteApprovalMode.AutoApprove : WriteApprovalMode.Always
+            WriteApproval = WriteApprovalIndex == 1 ? WriteApprovalMode.AutoApprove : WriteApprovalMode.Always,
+            SslMode = SslModeIndex is >= 0 and <= 4 ? (DataSourceSslMode)SslModeIndex : DataSourceSslMode.Preferred,
+            AllowPublicKeyRetrieval = IsMySql && AllowPublicKeyRetrieval,
+            SslCaFile = string.IsNullOrWhiteSpace(SslCaFile) ? null : SslCaFile.Trim()
         };
     }
 

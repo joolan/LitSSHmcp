@@ -38,6 +38,35 @@ public class MySqlConnectionProvider : IMySqlConnectionProvider
         _targetLimiter = targetLimiter;
     }
 
+    /// <summary>按数据源配置构建连接串（含 TLS 策略）；隧道场景传 127.0.0.1 + 本地转发端口。</summary>
+    public static MySqlConnectionStringBuilder BuildConnectionString(DataSourceConfig ds, string host, int port)
+    {
+        var builder = new MySqlConnectionStringBuilder
+        {
+            Server = host,
+            Port = (uint)port,
+            UserID = ds.Username,
+            Password = ds.Password ?? string.Empty,
+            Database = ds.DefaultDatabase ?? string.Empty,
+            ConnectionTimeout = 10,
+            DefaultCommandTimeout = (uint)(ds.TimeoutSeconds is > 0 ? ds.TimeoutSeconds.Value : 60),
+            Pooling = ds.UsePooling && ds.AccessMode != AccessMode.SshTunnel,
+            SslMode = ds.SslMode switch
+            {
+                DataSourceSslMode.None => MySqlSslMode.None,
+                DataSourceSslMode.Required => MySqlSslMode.Required,
+                DataSourceSslMode.VerifyCA => MySqlSslMode.VerifyCA,
+                DataSourceSslMode.VerifyFull => MySqlSslMode.VerifyFull,
+                _ => MySqlSslMode.Preferred
+            },
+            AllowPublicKeyRetrieval = ds.AllowPublicKeyRetrieval
+        };
+        if (!string.IsNullOrWhiteSpace(ds.SslCaFile)
+            && ds.SslMode is DataSourceSslMode.VerifyCA or DataSourceSslMode.VerifyFull)
+            builder.SslCa = ds.SslCaFile;
+        return builder;
+    }
+
     public async Task<IDatasourceSession> OpenAsync(DataSourceConfig ds, CancellationToken ct = default)
     {
         if (!_targetLimiter.TryAcquire($"ds:{ds.Id}", out var lease, out var limitReason))
@@ -65,18 +94,7 @@ public class MySqlConnectionProvider : IMySqlConnectionProvider
                 connectPort = (int)tunnel.LocalPort;
             }
 
-            var builder = new MySqlConnectionStringBuilder
-            {
-                Server = connectHost,
-                Port = (uint)connectPort,
-                UserID = ds.Username,
-                Password = ds.Password ?? string.Empty,
-                Database = ds.DefaultDatabase ?? string.Empty,
-                ConnectionTimeout = 10,
-                DefaultCommandTimeout = (uint)(ds.TimeoutSeconds is > 0 ? ds.TimeoutSeconds.Value : 60),
-                Pooling = ds.UsePooling && ds.AccessMode != AccessMode.SshTunnel
-            };
-
+            var builder = BuildConnectionString(ds, connectHost, connectPort);
             var connection = new MySqlConnection(builder.ConnectionString);
             await connection.OpenAsync(ct);
 

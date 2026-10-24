@@ -4,6 +4,9 @@ namespace LitSSHmcp.App.ViewModels;
 
 public partial class MainViewModel
 {
+    /// <summary>当前打开的 SSH 会话/终端标签数（首页数据看板）。</summary>
+    public int ActiveSessionCount => Sessions.Count;
+
     private bool _isLoadingServers;
     public bool IsLoadingServers
     {

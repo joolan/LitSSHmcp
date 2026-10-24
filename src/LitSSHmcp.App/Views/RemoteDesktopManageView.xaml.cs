@@ -13,6 +13,12 @@ public partial class RemoteDesktopManageView : UserControl
     public RemoteDesktopManageView()
     {
         InitializeComponent();
+        AddHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler(OnSearchShortcut), true);
+        IsVisibleChanged += (_, e) =>
+        {
+            if (e.NewValue is true)
+                Dispatcher.BeginInvoke(new Action(FocusSearch), System.Windows.Threading.DispatcherPriority.Loaded);
+        };
         LitSSHmcp.App.Controls.ColumnChooser.Attach(RdList, "remoteDesktop.columns.v2");
     }
 

@@ -13,6 +13,12 @@ public partial class ApplicationManageView : UserControl
     public ApplicationManageView()
     {
         InitializeComponent();
+        AddHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler(OnSearchShortcut), true);
+        IsVisibleChanged += (_, e) =>
+        {
+            if (e.NewValue is true)
+                Dispatcher.BeginInvoke(new Action(FocusSearch), System.Windows.Threading.DispatcherPriority.Loaded);
+        };
         LitSSHmcp.App.Controls.ColumnChooser.Attach(AppList, "application.columns");
     }
 

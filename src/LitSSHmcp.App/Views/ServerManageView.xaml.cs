@@ -14,6 +14,12 @@ public partial class ServerManageView : UserControl
     public ServerManageView()
     {
         InitializeComponent();
+        AddHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler(OnSearchShortcut), true);
+        IsVisibleChanged += (_, e) =>
+        {
+            if (e.NewValue is true)
+                Dispatcher.BeginInvoke(new Action(FocusSearch), System.Windows.Threading.DispatcherPriority.Loaded);
+        };
         LitSSHmcp.App.Controls.ColumnChooser.Attach(ServerManageList, "server.columns.v2");
     }
 

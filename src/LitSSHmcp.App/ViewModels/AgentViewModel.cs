@@ -3130,7 +3130,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 }
 
 /// <summary>一轮对话：用户指令 + 该轮的工具调用过程 + 助手回答（含时间与耗时）。</summary>
-public class AgentTurn : INotifyPropertyChanged
+public partial class AgentTurn : INotifyPropertyChanged
 {
     private DateTime _startedLocal;
 
@@ -3139,11 +3139,7 @@ public class AgentTurn : INotifyPropertyChanged
         _userText = userText;
         _startedLocal = timeUtc.ToLocalTime();
         _userTime = _startedLocal.ToString("HH:mm:ss");
-        Steps.CollectionChanged += (_, _) =>
-        {
-            OnPropertyChanged(nameof(ToolHeader));
-            OnPropertyChanged(nameof(ToolsVisibility));
-        };
+        Steps.CollectionChanged += OnStepsChanged;
     }
 
     private string _userText;
@@ -3163,8 +3159,26 @@ public class AgentTurn : INotifyPropertyChanged
     /// <summary>本轮附带的图片文件路径（用于气泡内缩略图预览）。</summary>
     public ObservableCollection<string> Images { get; } = new();
     public bool HasSteps => Steps.Count > 0;
-    public string ToolHeader => $"工具过程 ({Steps.Count})";
+    public int FailedToolCount => Steps.Count(s => !s.IsRunning && !s.Success);
+    public bool HasFailedTools => FailedToolCount > 0;
+    public bool HasDestructiveTools => Steps.Any(s => s.Destructive);
     public Visibility ToolsVisibility => HasSteps ? Visibility.Visible : Visibility.Collapsed;
+
+    public string ToolHeader
+    {
+        get
+        {
+            if (Steps.Count == 0)
+                return string.Empty;
+
+            var text = $"工具过程 · {Steps.Count} 个";
+            if (FailedToolCount > 0)
+                text += $" · {FailedToolCount} 失败";
+            if (HasDestructiveTools)
+                text += " · 含写操作";
+            return text;
+        }
+    }
 
     private bool _showTools = true;
     public bool ShowTools { get => _showTools; set => SetField(ref _showTools, value); }
@@ -3244,7 +3258,7 @@ public class AgentTurn : INotifyPropertyChanged
         var secs = (end - _startedLocal).TotalSeconds;
         _duration = secs >= 60 ? $"{secs / 60:F1} 分" : $"{secs:F1} 秒";
         IsRunning = false;
-        ShowTools = false;
+        ShowTools = HasFailedTools;
         ShowReasoning = false;
         OnPropertyChanged(nameof(Footer));
     }
@@ -3342,6 +3356,15 @@ public sealed class AgentStep : INotifyPropertyChanged
         : (IsInfo ? "已注入本轮上下文" : $"{DurationMs} ms");
     public string Detail => (_displayArgs.Length == 0 ? string.Empty : "入参: " + _displayArgs + "\n\n") + (_displayResult.Length > 0 ? "结果:\n" + _displayResult : string.Empty);
     public Visibility RetryVisibility => !IsRunning && !Success ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility DestructiveVisibility => Destructive ? Visibility.Visible : Visibility.Collapsed;
+
+    private bool _showDetail;
+    /// <summary>步骤详情默认折叠；失败时自动展开，成功时保持折叠（可手动切换）。</summary>
+    public bool ShowDetail
+    {
+        get => _showDetail;
+        set { if (_showDetail == value) return; _showDetail = value; Raise(); }
+    }
 
     public void Complete(bool success, string result, long durationMs)
     {
@@ -3350,6 +3373,7 @@ public sealed class AgentStep : INotifyPropertyChanged
         _displayResult = ToolResultFormatter.Format(result, pretty: true);
         DurationMs = durationMs;
         IsRunning = false;
+        ShowDetail = !success;
         Raise(nameof(Detail));
         Raise(nameof(RetryVisibility));
     }
@@ -3360,6 +3384,7 @@ public sealed class AgentStep : INotifyPropertyChanged
         Result = string.Empty;
         _displayResult = string.Empty;
         DurationMs = 0;
+        ShowDetail = false;
         Raise(nameof(Detail));
         Raise(nameof(RetryVisibility));
     }

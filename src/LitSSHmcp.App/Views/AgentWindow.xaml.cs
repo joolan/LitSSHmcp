@@ -976,6 +976,14 @@ public partial class AgentWindow : FluentWindow
         }
     }
 
+    private void OnCopyStepDetail(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is AgentStep step && !string.IsNullOrEmpty(step.Detail))
+        {
+            try { Clipboard.SetText(step.Detail); } catch { /* ignore */ }
+        }
+    }
+
     // 复制用户消息：纯文字→文字；纯附件→附件；两者都有→弹出选择
     private void OnCopyUserMessage(object sender, RoutedEventArgs e)
     {

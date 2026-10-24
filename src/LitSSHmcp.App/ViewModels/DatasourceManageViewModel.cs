@@ -106,7 +106,9 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
     public ICommand TestItemCommand { get; }
     public ICommand DeleteItemCommand { get; }
 
-    private bool _isCardView;
+    private bool _isCardView = string.Equals(
+        UiPrefs.GetString("datasource.cardView", "false"), "true", StringComparison.OrdinalIgnoreCase);
+
     public bool IsCardView
     {
         get => _isCardView;
@@ -114,6 +116,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
         {
             if (_isCardView == value) return;
             _isCardView = value;
+            UiPrefs.SetString("datasource.cardView", value ? "true" : "false");
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsListView));
         }

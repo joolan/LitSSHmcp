@@ -107,7 +107,9 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloa
     public ICommand EditItemCommand { get; }
     public ICommand DeleteItemCommand { get; }
 
-    private bool _isCardView;
+    private bool _isCardView = string.Equals(
+        UiPrefs.GetString("remoteDesktop.cardView", "false"), "true", StringComparison.OrdinalIgnoreCase);
+
     public bool IsCardView
     {
         get => _isCardView;
@@ -115,6 +117,7 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloa
         {
             if (_isCardView == value) return;
             _isCardView = value;
+            UiPrefs.SetString("remoteDesktop.cardView", value ? "true" : "false");
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsListView));
         }

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Markup;
+using System.Windows.Media;
 using Wpf.Ui.Controls;
 
 namespace LitSSHmcp.App.Controls;
@@ -11,6 +12,35 @@ public partial class PageHeader : UserControl
     public PageHeader()
     {
         InitializeComponent();
+    }
+
+    /// <summary>聚焦页头操作区中的第一个输入框（搜索框），并全选现有内容。</summary>
+    public bool FocusFirstInput()
+    {
+        var box = FindFirst<System.Windows.Controls.TextBox>(this);
+        if (box == null)
+            return false;
+
+        box.Focus();
+        box.SelectAll();
+        return true;
+    }
+
+    private static T? FindFirst<T>(DependencyObject root) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match)
+                return match;
+
+            var nested = FindFirst<T>(child);
+            if (nested != null)
+                return nested;
+        }
+
+        return null;
     }
 
     public static readonly DependencyProperty TitleProperty = DependencyProperty.Register(

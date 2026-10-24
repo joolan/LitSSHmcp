@@ -67,6 +67,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
             OnPropertyChanged(nameof(EmptyTitle));
             OnPropertyChanged(nameof(EmptyHint));
             OnPropertyChanged(nameof(ShowEmptyAction));
+            OnPropertyChanged(nameof(ShowClearSearch));
             FilteredApplications.Refresh();
             GroupedApplications.Refresh();
         }
@@ -81,6 +82,8 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
         : "添加应用节点后，AI 与资产拓扑即可识别并管理它。";
 
     public bool ShowEmptyAction => !IsSearching;
+
+    public bool ShowClearSearch => IsSearching;
 
     private bool FilterApplication(object item)
     {

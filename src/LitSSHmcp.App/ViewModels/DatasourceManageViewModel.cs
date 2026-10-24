@@ -71,6 +71,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
             OnPropertyChanged(nameof(EmptyTitle));
             OnPropertyChanged(nameof(EmptyHint));
             OnPropertyChanged(nameof(ShowEmptyAction));
+            OnPropertyChanged(nameof(ShowClearSearch));
             FilteredDataSources.Refresh();
             GroupedDataSources.Refresh();
         }
@@ -85,6 +86,8 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
         : "添加 MySQL / PostgreSQL / Redis 数据源后即可打开数据库工作台。";
 
     public bool ShowEmptyAction => !IsSearching;
+
+    public bool ShowClearSearch => IsSearching;
 
     private bool FilterDataSource(object item)
     {

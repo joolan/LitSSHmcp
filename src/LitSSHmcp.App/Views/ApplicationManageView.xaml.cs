@@ -23,6 +23,35 @@ public partial class ApplicationManageView : UserControl
     private void OnChooseColumns(object sender, RoutedEventArgs e)
         => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, AppList, "application.columns");
 
+    private void OnSearchShortcut(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.F && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            FocusSearch();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && Header.IsKeyboardFocusWithin)
+        {
+            ClearSearch();
+            e.Handled = true;
+        }
+    }
+
+    private void OnClearSearch(object sender, RoutedEventArgs e) => ClearSearch();
+
+    private void ClearSearch()
+    {
+        if (ViewModel is { } vm)
+            vm.SearchText = string.Empty;
+        FocusSearch();
+    }
+
+    private void FocusSearch()
+    {
+        Header.FocusFirstInput();
+        
+    }
+
     private void OnItemDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not ListView listView)

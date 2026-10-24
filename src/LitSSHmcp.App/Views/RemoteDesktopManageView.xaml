@@ -1,4 +1,4 @@
-<UserControl x:Class="LitSSHmcp.App.Views.RemoteDesktopManageView"
+<UserControl x:Class="LitSSHmcp.App.Views.RemoteDesktopManageView" PreviewKeyDown="OnSearchShortcut"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -21,7 +21,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <controls:PageHeader Grid.Row="0" Icon="Desktop24" Title="远程桌面"
+        <controls:PageHeader x:Name="Header" Grid.Row="0" Icon="Desktop24" Title="远程桌面"
                              Subtitle="RDP / VNC；密码仅本机加密保存；可通过 SSH 隧道访问内网桌面">
             <controls:PageHeader.Actions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -216,9 +216,14 @@
                         <TextBlock Text="{Binding EmptyTitle}" Style="{DynamicResource EmptyStateTitleStyle}"/>
                         <TextBlock Text="{Binding EmptyHint}"
                                    Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,12"/>
-                        <ui:Button Content="添加远程桌面" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
-                                   HorizontalAlignment="Center" Command="{Binding AddCommand}"
-                                   Visibility="{Binding ShowEmptyAction, Converter={StaticResource BoolToVis}}"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <ui:Button Content="添加远程桌面" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
+                                       Command="{Binding AddCommand}"
+                                       Visibility="{Binding ShowEmptyAction, Converter={StaticResource BoolToVis}}"/>
+                            <ui:Button Content="清空搜索" Icon="{ui:SymbolIcon Dismiss24}" Padding="14,5"
+                                       Click="OnClearSearch"
+                                       Visibility="{Binding ShowClearSearch, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
                     </StackPanel>
 
                     <Border Background="{DynamicResource AppCardBrush}" Opacity="0.72" Panel.ZIndex="10"

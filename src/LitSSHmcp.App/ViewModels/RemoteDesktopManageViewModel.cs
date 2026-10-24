@@ -66,6 +66,7 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloa
             OnPropertyChanged(nameof(EmptyTitle));
             OnPropertyChanged(nameof(EmptyHint));
             OnPropertyChanged(nameof(ShowEmptyAction));
+            OnPropertyChanged(nameof(ShowClearSearch));
             GroupedDesktops.Refresh();
         }
     }
@@ -79,6 +80,8 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloa
         : "添加 RDP / VNC 连接后即可内嵌打开，或使用外部客户端。";
 
     public bool ShowEmptyAction => !IsSearching;
+
+    public bool ShowClearSearch => IsSearching;
 
     private bool FilterDesktop(object item)
     {

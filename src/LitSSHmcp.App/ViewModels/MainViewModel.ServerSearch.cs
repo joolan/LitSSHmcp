@@ -48,6 +48,7 @@ public partial class MainViewModel
             OnPropertyChanged(nameof(ServerEmptyTitle));
             OnPropertyChanged(nameof(ServerEmptyHint));
             OnPropertyChanged(nameof(ShowServerEmptyAction));
+            OnPropertyChanged(nameof(ShowServerClearSearch));
             GroupedServers.Refresh();
             FilteredServers.Refresh();
         }
@@ -62,6 +63,8 @@ public partial class MainViewModel
         : "添加一台服务器后即可打开终端、SFTP 文件管理与资源监控。";
 
     public bool ShowServerEmptyAction => !IsServerSearching;
+
+    public bool ShowServerClearSearch => IsServerSearching;
 
     private bool FilterServer(object item)
     {

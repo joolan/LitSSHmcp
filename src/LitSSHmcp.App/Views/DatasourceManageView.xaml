@@ -1,4 +1,4 @@
-<UserControl x:Class="LitSSHmcp.App.Views.DatasourceManageView"
+<UserControl x:Class="LitSSHmcp.App.Views.DatasourceManageView" PreviewKeyDown="OnSearchShortcut"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -17,7 +17,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <controls:PageHeader Grid.Row="0" Icon="Database24" Title="数据源"
+        <controls:PageHeader x:Name="Header" Grid.Row="0" Icon="Database24" Title="数据源"
                              Subtitle="账号密码仅本机 DPAPI 加密保存，不会给 AI 开放">
             <controls:PageHeader.Actions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -198,9 +198,14 @@
                         <TextBlock Text="{Binding EmptyTitle}" Style="{DynamicResource EmptyStateTitleStyle}"/>
                         <TextBlock Text="{Binding EmptyHint}"
                                    Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,12"/>
-                        <ui:Button Content="添加数据源" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
-                                   HorizontalAlignment="Center" Command="{Binding AddCommand}"
-                                   Visibility="{Binding ShowEmptyAction, Converter={StaticResource BoolToVis}}"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <ui:Button Content="添加数据源" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
+                                       Command="{Binding AddCommand}"
+                                       Visibility="{Binding ShowEmptyAction, Converter={StaticResource BoolToVis}}"/>
+                            <ui:Button Content="清空搜索" Icon="{ui:SymbolIcon Dismiss24}" Padding="14,5"
+                                       Click="OnClearSearch"
+                                       Visibility="{Binding ShowClearSearch, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
                     </StackPanel>
 
                     <Border Background="{DynamicResource AppCardBrush}" Opacity="0.72" Panel.ZIndex="10"

@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.ViewModels;
+using LitSSHmcp.Core.Models;
 
 namespace LitSSHmcp.App.Views;
 
@@ -17,6 +18,39 @@ public partial class ServerManageView : UserControl
 
     private void OnChooseColumns(object sender, RoutedEventArgs e)
         => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, ServerManageList);
+
+    private void OnServerCardMore(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || sender is not FrameworkElement { DataContext: SshServerConfig server } anchor)
+            return;
+
+        var menu = new ContextMenu
+        {
+            PlacementTarget = anchor,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom
+        };
+
+        void Add(string header, Action action, bool enabled = true)
+        {
+            var item = new MenuItem { Header = header, IsEnabled = enabled };
+            item.Click += (_, _) =>
+            {
+                vm.SelectedServer = server;
+                action();
+            };
+            menu.Items.Add(item);
+        }
+
+        Add("打开代理浏览器 (SOCKS)…", () => vm.OpenProxiedBrowserCommand.Execute(null), enabled: !server.Disabled);
+        Add("远程互传（服务器↔服务器）…", () => vm.OpenRemoteCopyCommand.Execute(null));
+        menu.Items.Add(new Separator());
+        Add("采集快照", () => vm.SnapshotRefreshCommand.Execute(null));
+        Add("快照历史", () => vm.OpenSnapshotHistoryCommand.Execute(null));
+        menu.Items.Add(new Separator());
+        Add("删除", () => vm.DeleteServerCommand.Execute(null));
+
+        menu.IsOpen = true;
+    }
 
     private void OnClearServerSelection(object sender, RoutedEventArgs e)
     {

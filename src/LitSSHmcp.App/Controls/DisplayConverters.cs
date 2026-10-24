@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Data;
 
 namespace LitSSHmcp.App.Controls;
@@ -47,6 +48,18 @@ public sealed class AccessModeConverter : IValueConverter
         };
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>多个布尔值全部为 true 时显示；用于“选中 + 列表视图”才显示详情面板。</summary>
+public sealed class BooleanAndToVisibilityConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+        => values.Length > 0 && values.All(v => v is bool b && b)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
 

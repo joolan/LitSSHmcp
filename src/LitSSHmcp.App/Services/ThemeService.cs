@@ -95,29 +95,21 @@ public static class ThemeService
             _accentDict = null;
         }
 
-        if (string.IsNullOrWhiteSpace(_accent))
-            return;
+        var color = CurrentAccentColor(app);
 
-        Color color;
-        try
+        if (!string.IsNullOrWhiteSpace(_accent))
         {
-            color = (Color)ColorConverter.ConvertFromString(_accent)!;
+            // 覆盖自研 token（追加在最后，优先级最高）
+            _accentDict = new ResourceDictionary
+            {
+                ["AppAccentBrush"] = new SolidColorBrush(color),
+                ["AppAccentTextBrush"] = new SolidColorBrush(ContrastForeground(color)),
+                ["AppSelectionBrush"] = new SolidColorBrush(Color.FromArgb(0x33, color.R, color.G, color.B))
+            };
+            app.Resources.MergedDictionaries.Add(_accentDict);
         }
-        catch
-        {
-            return;
-        }
 
-        // 覆盖自研 token（追加在最后，优先级最高）
-        _accentDict = new ResourceDictionary
-        {
-            ["AppAccentBrush"] = new SolidColorBrush(color),
-            ["AppAccentTextBrush"] = new SolidColorBrush(ContrastForeground(color)),
-            ["AppSelectionBrush"] = new SolidColorBrush(Color.FromArgb(0x33, color.R, color.G, color.B))
-        };
-        app.Resources.MergedDictionaries.Add(_accentDict);
-
-        // 尝试同步 WPF-UI 控件强调色（不可用则忽略）
+        // 无论是否自定义，都把 WPF-UI 控件强调色对齐到当前主题的 AppAccent
         try
         {
             ApplicationAccentColorManager.Apply(color, Current == "light" ? ApplicationTheme.Light : ApplicationTheme.Dark, false);
@@ -173,9 +165,10 @@ public static class ThemeService
         var luminance = 0.2126 * Linear(background.R)
                       + 0.7152 * Linear(background.G)
                       + 0.0722 * Linear(background.B);
+        // 不要把“黑色略高一点”作为唯一标准：中深蓝等强调色上用白字更符合常规按钮观感。
+        // 白色达到 WCAG AA（4.5:1）时优先白字，否则用黑字。
         var contrastWhite = 1.05 / (luminance + 0.05);
-        var contrastBlack = (luminance + 0.05) / 0.05;
-        return contrastWhite >= contrastBlack ? Colors.White : Colors.Black;
+        return contrastWhite >= 4.5 ? Colors.White : Colors.Black;
     }
 
     private static bool SystemIsLight()

@@ -11,7 +11,7 @@
     <Color x:Key="TextSecondaryColor">#99000000</Color>
     <Color x:Key="TextTertiaryColor">#73000000</Color>
     <Color x:Key="TextDisabledColor">#5C000000</Color>
-    <Color x:Key="AccentColor">#FF0067C0</Color>
+    <Color x:Key="AccentColor">#FF2563EB</Color>
     <Color x:Key="AccentTextColor">#FFFFFFFF</Color>
     <Color x:Key="DangerColor">#FFC42B1C</Color>
     <Color x:Key="DangerSubtleColor">#1FC42B1C</Color>
@@ -30,7 +30,7 @@
     <Color x:Key="AssistantBubbleColor">#FFFFFFFF</Color>
     <Color x:Key="HoverColor">#0F000000</Color>
     <Color x:Key="PressedColor">#14000000</Color>
-    <Color x:Key="SelectionColor">#220067C0</Color>
+    <Color x:Key="SelectionColor">#222563EB</Color>
     <Color x:Key="BorderSubtleColor">#0F000000</Color>
     <Color x:Key="NodeServerBgColor">#FFEEF3FB</Color>
     <Color x:Key="NodeServerBorderColor">#FF9BB7E0</Color>

@@ -55,7 +55,7 @@ public class AppearanceSettingsViewModel : INotifyPropertyChanged, IConfigReload
 
     private static string AccentToHex(string? label) => label switch
     {
-        "蓝色" => "#0078D4",
+        "蓝色" => "#2563EB",
         "紫色" => "#8B5CF6",
         "绿色" => "#10B981",
         "橙色" => "#F59E0B",
@@ -65,7 +65,7 @@ public class AppearanceSettingsViewModel : INotifyPropertyChanged, IConfigReload
 
     private static string HexToAccent(string? hex) => (hex ?? string.Empty).Trim().ToUpperInvariant() switch
     {
-        "#0078D4" => "蓝色",
+        "#2563EB" or "#0078D4" => "蓝色",
         "#8B5CF6" => "紫色",
         "#10B981" => "绿色",
         "#F59E0B" => "橙色",

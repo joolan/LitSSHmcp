@@ -869,7 +869,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             return;
         }
 
-        var vm = new BatchExecViewModel(Servers, _sshService, SelectedServerIdsOrNull);
+        var vm = new BatchExecViewModel(Servers, _sshService);
         _batchExecWindow = _windows.CreateBatchExecWindow(vm);
         _batchExecWindow.Closed += (_, _) => _batchExecWindow = null;
         _batchExecWindow.Show();

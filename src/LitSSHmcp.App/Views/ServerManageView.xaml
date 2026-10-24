@@ -58,16 +58,8 @@
             <ui:Button Content="会话日志" Icon="{ui:SymbolIcon History24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenTerminalLogsCommand}"/>
             <ui:Button Content="端口转发" Icon="{ui:SymbolIcon Share24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenPortForwardCommand}"/>
             <ui:Button Content="文件/文件夹同步" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenSyncCommand}"/>
-                            <ui:Button Content="触发事件" Icon="{ui:SymbolIcon Flash24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenTriggerCommand}"/>
-                            <TextBlock Text="{Binding SelectedServerCount, StringFormat='已选 {0} 台'}" VerticalAlignment="Center" Margin="4,0,8,6"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                       Visibility="{Binding HasSelectedServers, Converter={StaticResource BoolToVis}}"/>
-                            <ui:Button Content="批量禁用" Padding="12,4" Margin="0,0,6,6" Command="{Binding BatchDisableServersCommand}"/>
-                            <ui:Button Content="批量启用" Padding="12,4" Margin="0,0,6,6" Command="{Binding BatchEnableServersCommand}"/>
-                            <ui:Button Content="批量测试" Padding="12,4" Margin="0,0,6,6" Command="{Binding BatchTestServersCommand}"/>
-                            <ui:Button Content="批量删除" Padding="12,4" Margin="0,0,6,6"
-                                       Foreground="{DynamicResource AppDangerBrush}" Command="{Binding BatchDeleteServersCommand}"/>
-                        </WrapPanel>
+            <ui:Button Content="触发事件" Icon="{ui:SymbolIcon Flash24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenTriggerCommand}"/>
+        </WrapPanel>
 
         <GroupBox Grid.Row="2" Header="服务器" Padding="8">
             <Grid>
@@ -78,7 +70,6 @@
 
                 <Grid Grid.Column="0">
                 <ListView x:Name="ServerManageList" ItemsSource="{Binding GroupedServers}" SelectedItem="{Binding SelectedServer}"
-                          SelectionMode="Extended" SelectionChanged="OnServerSelectionChanged"
                           Padding="3" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                           ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>

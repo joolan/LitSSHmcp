@@ -64,7 +64,7 @@
                 </ListBox>
             </Grid>
 
-            <TextBox Grid.Column="1" x:Name="DetailBox" IsReadOnly="True" FontFamily="Consolas"
+            <TextBox Grid.Column="1" x:Name="DetailBox" IsReadOnly="True" FontFamily="{DynamicResource AppFontMonoFamily}"
                      FontSize="12.5" Padding="8" TextWrapping="NoWrap" AcceptsReturn="True"
                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
         </Grid>

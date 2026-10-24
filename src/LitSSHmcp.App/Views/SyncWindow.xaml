@@ -105,7 +105,7 @@
                     </StackPanel>
 
                     <CheckBox Content="镜像删除目标端多余文件" IsChecked="{Binding SelectedTask.DeleteExtra, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,2"/>
-                    <TextBlock TextWrapping="Wrap" Margin="24,0,0,12" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                    <TextBlock TextWrapping="Wrap" Margin="24,0,0,12" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"
                                Text="含义：勾选后，目标端存在、但同步源中不存在的文件/文件夹会被删除，使目标与源完全一致（镜像）。默认不勾选，仅新增/更新，绝不删除任何文件。"/>
 
                     <TextBlock Text="文件过滤（可选，glob；逗号/空格分隔）" FontWeight="SemiBold" Margin="0,0,0,4"/>
@@ -129,7 +129,7 @@
                                     Text="{Binding ExcludeText, UpdateSourceTrigger=PropertyChanged}"
                                     PlaceholderText="如 *.tmp, cache/*（留空=不排除）"/>
                     </Grid>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,12" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,12" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"
                                Text="按相对路径或文件名匹配，支持 * 与 ?（如 *.log 匹配任意目录下的 .log 文件）。「仅同步」为空时同步全部；同时命中排除项的文件会被跳过。"/>
 
                     <TextBlock Text="调度（三选一）" FontWeight="SemiBold" Margin="0,0,0,6"/>
@@ -184,14 +184,14 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <TextBlock Text="（日期 1-28；多选）" FontSize="11" Margin="24,0,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="（日期 1-28；多选）" FontSize="{DynamicResource AppFontSizeMicro}" Margin="24,0,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                     </StackPanel>
 
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="失败重试次数(0-5):" VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <ui:TextBox FontWeight="Normal" Width="60" Text="{Binding SelectedTask.MaxRetries, UpdateSourceTrigger=PropertyChanged}"/>
                         <TextBlock Text="（指数退避；远程↔远程需两端安装 rsync）" VerticalAlignment="Center" Margin="6,0,0,0"
-                                   Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"/>
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"/>
                     </StackPanel>
 
                     <!-- 触发事件配置 -->
@@ -207,7 +207,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,2" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,2" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"
                                Text="列表为空时：请先在「触发事件」窗口创建触发事件并勾选「允许被同步任务事件触发」。触发事件可配置为「无条件触发」或「仅同步成功时触发」。"/>
                 </StackPanel>
             </ScrollViewer>

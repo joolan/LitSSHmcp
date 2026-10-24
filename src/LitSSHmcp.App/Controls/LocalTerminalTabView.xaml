@@ -43,7 +43,7 @@
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         </DockPanel>
 
-        <Border Background="#1E1E1E" CornerRadius="{DynamicResource AppRadiusS}" Margin="6">
+        <Border Background="{DynamicResource AppTerminalBgBrush}" CornerRadius="{DynamicResource AppRadiusS}" Margin="6">
             <controls:TerminalView x:Name="Terminal" Session="{Binding}" Margin="4"/>
         </Border>
     </DockPanel>

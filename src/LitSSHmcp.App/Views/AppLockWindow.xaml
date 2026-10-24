@@ -16,22 +16,22 @@
         <ui:TitleBar Grid.Row="0" Title="LitSSH 应用锁" ShowMaximize="False" ShowMinimize="True"/>
 
         <StackPanel Grid.Row="1" Margin="20,8,20,0">
-            <TextBlock x:Name="HeaderText" Text="设置应用锁密码" FontSize="16" FontWeight="SemiBold"/>
-            <TextBlock x:Name="HintText" TextWrapping="Wrap" Margin="0,6,0,12" FontSize="12"
+            <TextBlock x:Name="HeaderText" Text="设置应用锁密码" FontSize="{DynamicResource AppFontSizeSubtitle}" FontWeight="SemiBold"/>
+            <TextBlock x:Name="HintText" TextWrapping="Wrap" Margin="0,6,0,12" FontSize="{DynamicResource AppFontSizeCaption}"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
 
             <ui:Button x:Name="HelloButton" Content="使用 Windows Hello 解锁" HorizontalAlignment="Stretch"
                        Click="OnHello" Margin="0,0,0,12" Visibility="Collapsed"/>
 
-            <TextBlock x:Name="PasswordLabel" Text="密码（至少 6 位）" FontSize="12" Margin="0,0,0,4"
+            <TextBlock x:Name="PasswordLabel" Text="密码（至少 6 位）" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
             <PasswordBox FontWeight="Normal" x:Name="PasswordBox" Margin="0,0,0,10" KeyDown="OnBoxKeyDown"/>
 
-            <TextBlock x:Name="ConfirmLabel" Text="确认密码" FontSize="12" Margin="0,0,0,4"
+            <TextBlock x:Name="ConfirmLabel" Text="确认密码" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
             <PasswordBox FontWeight="Normal" x:Name="ConfirmBox" Margin="0,0,0,10" KeyDown="OnBoxKeyDown"/>
 
-            <TextBlock x:Name="ErrorText" Text="" Foreground="OrangeRed" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,6"/>
+            <TextBlock x:Name="ErrorText" Text="" Foreground="{DynamicResource AppDangerBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,6"/>
         </StackPanel>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,10,20,14">

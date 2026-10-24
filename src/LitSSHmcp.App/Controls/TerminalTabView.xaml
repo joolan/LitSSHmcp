@@ -77,7 +77,7 @@
                           Visibility="{Binding ShowFileBrowser, Converter={StaticResource BoolToVis}}"/>
 
             <Grid Grid.Column="2">
-                <Border Background="#1E1E1E" CornerRadius="{DynamicResource AppRadiusS}">
+                <Border Background="{DynamicResource AppTerminalBgBrush}" CornerRadius="{DynamicResource AppRadiusS}">
                     <controls:TerminalView x:Name="Terminal" Session="{Binding}" Margin="4"/>
                 </Border>
                 <Border VerticalAlignment="Top" Margin="6" Padding="10,6" CornerRadius="6"

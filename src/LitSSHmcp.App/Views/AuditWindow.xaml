@@ -222,7 +222,7 @@
 
             <TabControl Grid.Column="0" SelectionChanged="OnAuditTabChanged">
             <TabItem Header="命令审计">
-                <ListView x:Name="CommandList" ItemsSource="{Binding CommandLogs}" Padding="3" FontFamily="Consolas" FontSize="11"
+                <ListView x:Name="CommandList" ItemsSource="{Binding CommandLogs}" Padding="3" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
                           SelectionChanged="OnAuditSelectionChanged"
                           PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>
@@ -248,7 +248,7 @@
                 </ListView>
             </TabItem>
             <TabItem Header="SQL/Redis审计">
-                <ListView x:Name="SqlList" ItemsSource="{Binding SqlLogs}" Padding="3" FontFamily="Consolas" FontSize="11"
+                <ListView x:Name="SqlList" ItemsSource="{Binding SqlLogs}" Padding="3" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
                           SelectionChanged="OnAuditSelectionChanged"
                           PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>
@@ -274,7 +274,7 @@
                 </ListView>
             </TabItem>
             <TabItem Header="会话">
-                <ListView x:Name="SessionsList" ItemsSource="{Binding Sessions}" Padding="3" FontFamily="Consolas" FontSize="11"
+                <ListView x:Name="SessionsList" ItemsSource="{Binding Sessions}" Padding="3" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
                           SelectionChanged="OnAuditSelectionChanged"
                           PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>

@@ -15,7 +15,7 @@
                       Background="{DynamicResource AppSurfaceAltBrush}">
             <Image x:Name="Preview" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="8"/>
         </ScrollViewer>
-        <TextBlock Grid.Row="2" x:Name="Caption" Margin="10,6,10,10" FontSize="11"
+        <TextBlock Grid.Row="2" x:Name="Caption" Margin="10,6,10,10" FontSize="{DynamicResource AppFontSizeMicro}"
                    Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
     </Grid>
 </ui:FluentWindow>

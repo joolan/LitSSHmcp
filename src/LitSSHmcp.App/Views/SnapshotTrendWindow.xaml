@@ -35,7 +35,7 @@
                 <controls:TrendChart x:Name="Chart" Margin="4"/>
             </Border>
             <TextBlock Grid.Row="1" Text="{Binding Status}" Margin="2,8,0,0" TextWrapping="Wrap"
-                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"/>
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"/>
         </Grid>
     </Grid>
 </ui:FluentWindow>

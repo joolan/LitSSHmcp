@@ -15,6 +15,9 @@ public partial class ServerManageView : UserControl
         InitializeComponent();
     }
 
+    private void OnChooseColumns(object sender, RoutedEventArgs e)
+        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, ServerManageList);
+
     private void OnClearServerSelection(object sender, RoutedEventArgs e)
     {
         if (ViewModel is { } vm)

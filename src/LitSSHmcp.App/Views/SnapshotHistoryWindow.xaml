@@ -28,7 +28,7 @@
             <Button Content="趋势图" Width="70" Padding="6,4" Margin="6,0,0,0" Click="OnTrend"
                     ToolTip="用历史快照画内存/磁盘/Swap/负载趋势"/>
             <TextBlock Text="左列选择某次快照 → 右侧查看该次的采集维度/事件/原始数据"
-                       VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="14,0,0,0"/>
+                       VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="14,0,0,0"/>
         </StackPanel>
 
         <Grid Grid.Row="1">
@@ -40,7 +40,7 @@
 
             <ListView x:Name="SnapshotList" Grid.Column="0" ItemsSource="{Binding Snapshots}"
                       SelectedItem="{Binding SelectedRow, Mode=TwoWay}" SelectionChanged="OnSnapshotChanged"
-                      FontFamily="Consolas" FontSize="11" controls:GridViewSort.Enabled="True">
+                      FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}" controls:GridViewSort.Enabled="True">
                 <ListView.View>
                     <GridView>
                         <GridViewColumn Header="采集时间" Width="150" DisplayMemberBinding="{Binding CreatedAtText}"/>
@@ -57,10 +57,10 @@
 
             <DockPanel Grid.Column="2" Margin="6,0,0,0">
                 <TextBlock DockPanel.Dock="Top" Text="{Binding Summary}" TextWrapping="Wrap"
-                           FontFamily="Consolas" FontSize="11" Margin="0,0,0,6"/>
+                           FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,0,0,6"/>
                 <TabControl>
                     <TabItem Header="采集概览">
-                        <ListView ItemsSource="{Binding Sections}" FontFamily="Consolas" FontSize="11">
+                        <ListView ItemsSource="{Binding Sections}" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}">
                             <ListView.View>
                                 <GridView>
                                     <GridViewColumn Header="采集维度" Width="120" DisplayMemberBinding="{Binding Dimension}"/>
@@ -72,7 +72,7 @@
                         </ListView>
                     </TabItem>
                     <TabItem Header="采集事件">
-                        <ListView ItemsSource="{Binding Events}" FontFamily="Consolas" FontSize="11">
+                        <ListView ItemsSource="{Binding Events}" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}">
                             <ListView.View>
                                 <GridView>
                                     <GridViewColumn Header="时间" Width="150" DisplayMemberBinding="{Binding Timestamp}"/>
@@ -84,7 +84,7 @@
                         </ListView>
                     </TabItem>
                     <TabItem Header="原始数据(JSON)">
-                        <TextBox Text="{Binding RawJson, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" FontSize="11"
+                        <TextBox Text="{Binding RawJson, Mode=OneWay}" IsReadOnly="True" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
                                  TextWrapping="NoWrap" AcceptsReturn="True"
                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
                     </TabItem>

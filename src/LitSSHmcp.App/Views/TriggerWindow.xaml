@@ -71,7 +71,7 @@
                         <ComboBox ItemsSource="{Binding Servers}" DisplayMemberPath="DisplayName" SelectedValuePath="Id"
                                   SelectedValue="{Binding SelectedTrigger.ServerId, UpdateSourceTrigger=PropertyChanged}"/>
                     </StackPanel>
-                    <TextBlock Visibility="{Binding ServerVisibility}" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="11"
+                    <TextBlock Visibility="{Binding ServerVisibility}" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="{DynamicResource AppFontSizeMicro}"
                                Foreground="{DynamicResource AppTextSecondaryBrush}"
                                Text="远程 git 需服务器已配置免密/密钥；远程备份默认用 tar（缺失时回退 zip，需服务器已安装）。"/>
 
@@ -124,7 +124,7 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <TextBlock Text="（日期 1-28；多选）" FontSize="11" Margin="24,0,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <TextBlock Text="（日期 1-28；多选）" FontSize="{DynamicResource AppFontSizeMicro}" Margin="24,0,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                         </StackPanel>
                     </StackPanel>
 
@@ -219,7 +219,7 @@
                                                         VerticalScrollBarVisibility="Auto" Margin="0,0,0,8"
                                                         Text="{Binding Action.BodyTemplate, UpdateSourceTrigger=PropertyChanged}"
                                                         PlaceholderText='{}{"trigger":"{{trigger}}","result":"{{result}}","detail":"{{steps}}"}'/>
-                                            <TextBlock Text="可用变量：{{trigger}} {{timestamp}} {{date}} {{cause}} {{result}} {{error}} {{steps}} {{notice}}" FontSize="11"
+                                            <TextBlock Text="可用变量：{{trigger}} {{timestamp}} {{date}} {{cause}} {{result}} {{error}} {{steps}} {{notice}}" FontSize="{DynamicResource AppFontSizeMicro}"
                                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                         </StackPanel>
 
@@ -254,7 +254,7 @@
                                                 <TextBlock Text="保留最近份数:" VerticalAlignment="Center" Margin="16,0,6,0"/>
                                                 <ui:TextBox FontWeight="Normal" Width="60" Text="{Binding Action.RetentionCount, UpdateSourceTrigger=PropertyChanged}"/>
                                                 <TextBlock Text="(0=不清理，文件名 触发事件名-时间戳)" VerticalAlignment="Center" Margin="6,0,0,0"
-                                                           FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                           FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                             </StackPanel>
                                         </StackPanel>
 
@@ -291,14 +291,14 @@
                                             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                                 <TextBlock Text="保留最近份数:" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                                 <ui:TextBox FontWeight="Normal" Width="60" Text="{Binding Action.RetentionCount, UpdateSourceTrigger=PropertyChanged}"/>
-                                                <TextBlock Text="(0=不清理)" VerticalAlignment="Center" Margin="6,0,16,0" FontSize="11"
+                                                <TextBlock Text="(0=不清理)" VerticalAlignment="Center" Margin="6,0,16,0" FontSize="{DynamicResource AppFontSizeMicro}"
                                                            Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                                 <TextBlock Text="dump 工具路径(可选):" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                                 <ui:TextBox FontWeight="Normal" Width="210"
                                                             Text="{Binding Action.DumpToolPath, UpdateSourceTrigger=PropertyChanged}"
                                                             PlaceholderText="留空=自动探测 mysqldump / pg_dump"/>
                                             </StackPanel>
-                                            <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                            <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
                                                        Text="说明：执行目标=本机时在本机执行并落盘（需本机 mysqldump/pg_dump，探测不到时退化为托管流式导出，经 SSH 隧道的数据源自动建隧道）；执行目标=远程服务器时在服务器上执行、落盘到服务器目录（需服务器安装 mysqldump/pg_dump，且服务器能访问该数据库）。密码仅经环境变量传入、不写入日志。"/>
                                         </StackPanel>
                                     </StackPanel>

@@ -125,7 +125,7 @@
 
                     <controls:FormRow Label="公钥" HelpText="把以 ssh-ed25519 或 ssh-rsa 开头的一行追加到目标服务器的 ~/.ssh/authorized_keys">
                         <ui:TextBox Text="{Binding PublicKeyText, Mode=OneWay}" IsReadOnly="True"
-                                    AcceptsReturn="True" MinHeight="52" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="11"
+                                    AcceptsReturn="True" MinHeight="52" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
                                     TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
                     </controls:FormRow>
 

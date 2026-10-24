@@ -21,6 +21,11 @@
     <Color x:Key="WarningSubtleColor">#1F9D5D00</Color>
     <Color x:Key="CodeBgColor">#FFF6F6F6</Color>
     <Color x:Key="CodeTextColor">#FF1F1F1F</Color>
+    <Color x:Key="TerminalBgColor">#FF1E1E1E</Color>
+    <Color x:Key="TerminalTextColor">#FFDDDDDD</Color>
+    <Color x:Key="CloseHoverColor">#FFE81123</Color>
+    <Color x:Key="CloseHoverTextColor">#FFFFFFFF</Color>
+    <Color x:Key="TextOnDangerColor">#FFFFFFFF</Color>
     <Color x:Key="UserBubbleColor">#FFD6E9FF</Color>
     <Color x:Key="AssistantBubbleColor">#FFFFFFFF</Color>
     <Color x:Key="HoverColor">#0F000000</Color>
@@ -75,6 +80,11 @@
     <SolidColorBrush x:Key="AppWarningSubtleBrush" Color="{StaticResource WarningSubtleColor}"/>
     <SolidColorBrush x:Key="AppCodeBgBrush" Color="{StaticResource CodeBgColor}"/>
     <SolidColorBrush x:Key="AppCodeTextBrush" Color="{StaticResource CodeTextColor}"/>
+    <SolidColorBrush x:Key="AppTerminalBgBrush" Color="{StaticResource TerminalBgColor}"/>
+    <SolidColorBrush x:Key="AppTerminalTextBrush" Color="{StaticResource TerminalTextColor}"/>
+    <SolidColorBrush x:Key="AppCloseHoverBrush" Color="{StaticResource CloseHoverColor}"/>
+    <SolidColorBrush x:Key="AppCloseHoverTextBrush" Color="{StaticResource CloseHoverTextColor}"/>
+    <SolidColorBrush x:Key="AppTextOnDangerBrush" Color="{StaticResource TextOnDangerColor}"/>
     <SolidColorBrush x:Key="AppUserBubbleBrush" Color="{StaticResource UserBubbleColor}"/>
     <SolidColorBrush x:Key="AppAssistantBubbleBrush" Color="{StaticResource AssistantBubbleColor}"/>
     <SolidColorBrush x:Key="AppHoverBrush" Color="{StaticResource HoverColor}"/>

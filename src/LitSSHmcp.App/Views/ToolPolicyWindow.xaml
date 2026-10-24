@@ -17,9 +17,9 @@
         <Border Grid.Row="1" Margin="14,4,14,8" Padding="10,8" CornerRadius="{DynamicResource AppRadiusS}"
                 Background="{DynamicResource AppSurfaceAltBrush}">
             <StackPanel>
-                <TextBlock TextWrapping="Wrap" FontSize="12"
+                <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeCaption}"
                            Text="本会话的 Agent 层策略：默认=正常调用；拒绝=调用前拦截、不执行；允许=Agent 不再额外限制。"/>
-                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"
                            Text="注意：Agent 层「允许」不绕过 MCP 服务端的桌面审批——敏感操作的安全边界仍在服务端（可在「安全设置 → 审批模式」调整全局策略）。"/>
             </StackPanel>
         </Border>
@@ -48,7 +48,7 @@
         </DataGrid>
 
         <DockPanel Grid.Row="3" Margin="14,10,14,14">
-            <TextBlock x:Name="StatusText" DockPanel.Dock="Left" VerticalAlignment="Center" FontSize="11"
+            <TextBlock x:Name="StatusText" DockPanel.Dock="Left" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSizeMicro}"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <ui:Button Content="全部默认" Margin="0,0,8,0" Click="OnResetAll"/>

@@ -77,7 +77,7 @@
             </Grid>
         </Border>
 
-        <TextBlock x:Name="StatusText" Grid.Row="1" Margin="12,4,12,4" FontSize="11"
+        <TextBlock x:Name="StatusText" Grid.Row="1" Margin="12,4,12,4" FontSize="{DynamicResource AppFontSizeMicro}"
                    Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
 
         <ContentControl x:Name="ContentHost" Grid.Row="2"/>

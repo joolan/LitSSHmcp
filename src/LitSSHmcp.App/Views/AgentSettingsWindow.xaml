@@ -29,13 +29,13 @@
                         <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
                             <StackPanel>
                                 <DockPanel Margin="0,0,0,12">
-                                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"
+                                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,8,0"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                     <TextBlock Text="以下为『全局』设置：所有模型与会话共用，不随对话模型切换。外观（主题/强调色）见主程序「设置 → 外观」。"
                                                Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                 </DockPanel>
 
-                                <TextBlock Text="系统附加提示（可选）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SystemPrompt, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="60" FontFamily="Consolas" Margin="0,0,0,6"/>
+                                <TextBlock Text="系统附加提示（可选）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SystemPrompt, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="60" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,6"/>
                                 <TextBlock Text="技能根目录（空=用 %APPDATA%\LitSSH\skills 稳定目录，首次自动把随包 skills/ 复制过去；其下每个子目录一个技能，含 SKILL.md；该绝对路径会注入系统提示）:"/><ui:TextBox FontWeight="Normal" Text="{Binding SkillsDir, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
                                 <TextBlock Text="工作区目录（Agent 文档工具 ops_doc_* 只能在此读写；空=我的文档\LitSSH）:"/><ui:TextBox FontWeight="Normal" Text="{Binding WorkspaceDir, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
                                 <TextBlock Text="MCP 服务器 exe 路径（空=自动探测 App 目录 mcp/）:"/><ui:TextBox FontWeight="Normal" Text="{Binding McpServerPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
@@ -84,7 +84,7 @@
                                 </StackPanel>
                                 <CheckBox Content="启用子代理（run_subagent：独立上下文的只读取证，只回摘要）" IsChecked="{Binding EnableSubAgent, Mode=TwoWay}" Margin="0,0,0,6"/>
                                 <CheckBox Content="只读模式（仅向模型暴露只读工具）" IsChecked="{Binding ReadOnly, Mode=TwoWay}" Margin="0,0,0,6"/>
-                                <TextBlock TextWrapping="Wrap" Margin="26,0,0,8" FontSize="11"
+                                <TextBlock TextWrapping="Wrap" Margin="26,0,0,8" FontSize="{DynamicResource AppFontSizeMicro}"
                                            Foreground="{DynamicResource AppTextSecondaryBrush}"
                                            Text="只读模式保留的工具（按 MCP 只读注解 readOnlyHint）：查询/读取/诊断/巡检类——ssh_list_servers、ssh_get_sudo_status、ssh_test_connection、ssh_snapshot_get、ssh_list_files；datasource_list、datasource_test_connection、mysql_query、postgres_query、redis_read/redis_diagnostics；docker_query、service_query、log_query、java_processes/java_diagnostics、topology_get_overview/get_dependencies/query/discover、app_health_snapshot、mcp_usage_guide/self_check；以及本地只读工具（skill_list/read、spill_list/read/grep、ops_doc_read/list、update_plan、run_subagent）。不含执行/写入/审批类：ssh_execute_command/sudo、ssh_upload*/download*、mysql/postgres/redis 的 *_execute、docker_restart/exec、service_restart 等。"/>
 
@@ -105,7 +105,7 @@
                                 <TextBlock Text="长期记忆 / RAG（远程 Embeddings 向量化，向量存本机 SQLite 并本地检索，可选）" FontWeight="SemiBold" Margin="0,12,0,6"/>
                                 <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="{DynamicResource AppRadiusS}" Padding="8" Margin="0,0,0,8">
                                     <DockPanel>
-                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="14" Margin="0,0,6,0"
+                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,6,0"
                                                        Foreground="{DynamicResource AppWarningBrush}"/>
                                         <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
                                                    Text="长期记忆为『全局共享』配置——所有模型与会话共用同一 Embeddings 端点/模型/Key，不随对话模型切换；请保持稳定，且向量模型维度要一致，否则历史向量将无法检索或报错。"/>
@@ -127,7 +127,7 @@
                                                ToolTip="读取本机 agent.db 记忆库：总条数、按类别分布、已过时条数与库文件位置"/>
                                 </StackPanel>
                                 <TextBlock Text="{Binding MemoryStatsText}" TextWrapping="Wrap" Margin="0,0,0,6"
-                                           Foreground="{DynamicResource AppTextSecondaryBrush}" FontFamily="Consolas" FontSize="11"/>
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"/>
 
                                 <TextBlock Text="会话保留策略（0 = 不限）" FontWeight="SemiBold" Margin="0,12,0,6"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
@@ -146,7 +146,7 @@
                                 <TextBlock Text="起始工作目录（空=用户主目录）:" Margin="0,0,0,3"/>
                                 <ui:TextBox FontWeight="Normal" Text="{Binding LocalWorkingDirectory, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
                                 <TextBlock Text="CLI 白名单（每行一个；仅白名单内命令可执行，其余直接拒绝）:" Margin="0,0,0,3"/>
-                                <ui:TextBox FontWeight="Normal" Text="{Binding LocalAllowedCommands, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" Margin="0,0,0,6"/>
+                                <ui:TextBox FontWeight="Normal" Text="{Binding LocalAllowedCommands, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" VerticalScrollBarVisibility="Auto" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,6"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="命令超时(秒):" VerticalAlignment="Center"/>
                                     <ui:TextBox FontWeight="Normal" Text="{Binding LocalTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,16,0"/>
@@ -163,7 +163,7 @@
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="{Binding}" FontFamily="Consolas"
+                                                <TextBlock Grid.Column="0" Text="{Binding}" FontFamily="{DynamicResource AppFontMonoFamily}"
                                                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                                 <ui:Button Grid.Column="1" Content="移除" Padding="8,2" Margin="8,0,0,0"
                                                            Command="{Binding DataContext.RemoveAutoApprovedCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -250,7 +250,7 @@
                             <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
                                 <StackPanel>
                                     <DockPanel Margin="0,0,0,10">
-                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"
+                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,8,0"
                                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                         <TextBlock Text="以下为『当前选中服务商』的配置：Endpoint/API Key/采样与重试等厂家级共享，其下可挂多个模型，各模型单独启用与配置视觉。"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
@@ -301,7 +301,7 @@
                                                   ToolTip="从预设候选选择，或手动输入任意模型名"/>
                                         <ui:Button Content="添加模型" Padding="10,3" Margin="6,0,0,0" Click="OnAddModel"/>
                                         <TextBlock Text="(下拉为该服务商预设候选，也可手输)" VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="8,0,0,0"/>
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="8,0,0,0"/>
                                     </StackPanel>
 
                                     <TextBlock Text="API Key（本机加密存储）:"/>
@@ -321,7 +321,7 @@
                                         <ui:TextBox FontWeight="Normal" Text="{Binding SelectedProvider.MaxConcurrency, UpdateSourceTrigger=PropertyChanged}" Width="36" Margin="6,0,0,0"/>
                                     </StackPanel>
                                 <TextBlock Text="提示：切换启用/停用会立即保存；其余字段修改后点右下角「保存」。"
-                                               Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" TextWrapping="Wrap"/>
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                         </ScrollViewer>
@@ -359,7 +359,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0">
-                                                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontFamily="Microsoft YaHei"/>
+                                                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontFamily="{DynamicResource AppFontUiFamily}"/>
                                                 <TextBlock Text="{Binding UpdatedText}" FontSize="10"
                                                            Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                             </StackPanel>
@@ -425,7 +425,7 @@
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <StackPanel ToolTip="{Binding Content}">
-                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontFamily="Microsoft YaHei"/>
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontFamily="{DynamicResource AppFontUiFamily}"/>
                                                 <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
                                                            Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                                 <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
@@ -439,7 +439,7 @@
                                 <DockPanel>
                                     <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="2,0,0,6">
                                         <TextBlock Text="历史版本（回滚前状态）" FontWeight="SemiBold"
-                                                   FontFamily="Microsoft YaHei" VerticalAlignment="Center"/>
+                                                   FontFamily="{DynamicResource AppFontUiFamily}" VerticalAlignment="Center"/>
                                         <ui:Button DockPanel.Dock="Right" Content="清理历史" Padding="8,2"
                                                    Click="OnPruneMemoryHistory"
                                                    ToolTip="每记忆仅保留最近 40 个历史版本；清理全部时同时移除超过 30 天的孤儿历史"/>
@@ -464,7 +464,7 @@
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
                                                 <StackPanel ToolTip="{Binding Content}">
-                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontFamily="Microsoft YaHei"/>
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontFamily="{DynamicResource AppFontUiFamily}"/>
                                                     <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
                                                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                                     <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
@@ -527,7 +527,7 @@
                             <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
                                 <StackPanel>
                                     <DockPanel Margin="0,0,0,10">
-                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"
+                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,8,0"
                                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                         <TextBlock Text="智能体只改变系统提示最末尾的『当前智能体』段（角色设定 + 可选风格覆盖），不改动工具与技能；主窗口与临时聊天可在模型下拉旁切换，且按会话记忆。"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
@@ -537,7 +537,7 @@
                                     <TextBlock Text="系统提示附加段（追加到『## 当前智能体』下；预置通用聊天可留空）:"/>
                                     <ui:TextBox FontWeight="Normal" Text="{Binding SelectedAgent.SystemPrompt, UpdateSourceTrigger=PropertyChanged}"
                                                 AcceptsReturn="True" TextWrapping="Wrap" MinHeight="140" VerticalScrollBarVisibility="Auto"
-                                                FontFamily="Consolas" Margin="0,0,0,6"/>
+                                                FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,6"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                         <TextBlock Text="回答风格覆盖:" VerticalAlignment="Center"/>
                                         <ComboBox ItemsSource="{Binding AgentStyleOptions}" SelectedItem="{Binding SelectedAgent.ResponseStyle, Mode=TwoWay}"
@@ -603,7 +603,7 @@
                             <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
                                 <StackPanel>
                                     <DockPanel Margin="0,0,0,10">
-                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"
+                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,8,0"
                                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                         <TextBlock Text="外部 MCP 由第三方实现：其工具**不经过本程序的审批/过滤/审计**（只读模式仅按其自报的 annotations.readOnlyHint 过滤）。启用前必须「校验连接」通过；校验失败也可保存（保持停用）。保存后关闭本窗口即重建连接。"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
@@ -637,11 +637,11 @@
                                                     PlaceholderText="例：npx 或 C:\tools\mcp\server.exe" Margin="0,0,0,6"/>
                                         <TextBlock Text="args（每行一个参数）:"/>
                                         <ui:TextBox FontWeight="Normal" Text="{Binding SelectedMcpServer.ArgsText, UpdateSourceTrigger=PropertyChanged}"
-                                                    AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" FontFamily="Consolas" Margin="0,0,0,6"
+                                                    AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,6"
                                                     PlaceholderText="例：&#10;-y&#10;@modelcontextprotocol/server-filesystem&#10;C:\data"/>
                                         <TextBlock Text="env（每行 KEY=VALUE，值按当前 Windows 用户 DPAPI 加密保存）:"/>
                                         <ui:TextBox FontWeight="Normal" Text="{Binding SelectedMcpServer.EnvText, UpdateSourceTrigger=PropertyChanged}"
-                                                    AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" FontFamily="Consolas" Margin="0,0,0,6"
+                                                    AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,6"
                                                     PlaceholderText="例：API_KEY=xxxx"/>
                                     </StackPanel>
 
@@ -652,7 +652,7 @@
                                                     PlaceholderText="例：https://mcp.example.com/mcp" Margin="0,0,0,6"/>
                                         <TextBlock Text="headers（每行 Name: Value，值按当前 Windows 用户 DPAPI 加密保存）:"/>
                                         <ui:TextBox FontWeight="Normal" Text="{Binding SelectedMcpServer.HeadersText, UpdateSourceTrigger=PropertyChanged}"
-                                                    AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" FontFamily="Consolas" Margin="0,0,0,6"
+                                                    AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,6"
                                                     PlaceholderText="例：Authorization: Bearer xxxx"/>
                                     </StackPanel>
 

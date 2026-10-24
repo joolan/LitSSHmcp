@@ -31,7 +31,7 @@
 
             <TextBlock Text="{Binding LoadText}" Margin="0,4,0,2"/>
             <TextBlock Text="{Binding UptimeText}" Margin="0,0,0,2"/>
-            <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="0,8,0,0"/>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,8,0,0"/>
         </StackPanel>
     </Grid>
 </ui:FluentWindow>

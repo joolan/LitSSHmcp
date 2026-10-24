@@ -15,6 +15,9 @@ public partial class DatasourceManageView : UserControl
         InitializeComponent();
     }
 
+    private void OnChooseColumns(object sender, RoutedEventArgs e)
+        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, DsList);
+
     private void OnTestClick(object sender, RoutedEventArgs e) => ViewModel?.TestCommand.Execute(null);
 
     private void OnEditClick(object sender, RoutedEventArgs e) => ViewModel?.EditCommand.Execute(null);

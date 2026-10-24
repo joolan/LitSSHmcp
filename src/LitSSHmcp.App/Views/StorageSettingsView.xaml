@@ -12,13 +12,13 @@
         <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
             <StackPanel>
                 <DockPanel Margin="0,0,0,6">
-                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="16" Margin="0,0,8,0"
+                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Info24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,8,0"
                                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                     <TextBlock Text="本机数据目录（配置 / AI 会话与记忆 / 审计 / 快照 / spill / 工作区 / 日志）"
                                Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                 </DockPanel>
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Left" Text="{Binding DataDir}" FontFamily="Consolas"
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding DataDir}" FontFamily="{DynamicResource AppFontMonoFamily}"
                                TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"/>
                     <ui:Button DockPanel.Dock="Right" Content="刷新统计" Padding="12,4" Click="OnRefresh"/>
                 </DockPanel>

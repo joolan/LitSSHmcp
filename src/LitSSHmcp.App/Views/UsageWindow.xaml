@@ -15,7 +15,7 @@
 
         <TextBox x:Name="ReportBox" Grid.Row="1" Margin="14,4,14,0" IsReadOnly="True" TextWrapping="Wrap"
                  AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
-                 FontFamily="Consolas" FontSize="12" BorderThickness="0" Background="Transparent"/>
+                 FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}" BorderThickness="0" Background="Transparent"/>
 
         <DockPanel Grid.Row="2" Margin="14,10,14,14">
             <ui:Button DockPanel.Dock="Right" Content="关闭" Width="72" Click="OnClose"/>

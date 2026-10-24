@@ -15,7 +15,7 @@
                        TextWrapping="Wrap" Visibility="Collapsed"/>
             <TextBlock x:Name="CwdText" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,3,0,8"
                        TextWrapping="Wrap"/>
-            <TextBox x:Name="CommandText" IsReadOnly="True" FontFamily="Consolas" FontSize="13"
+            <TextBox x:Name="CommandText" IsReadOnly="True" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="13"
                      TextWrapping="Wrap" MaxHeight="200" VerticalScrollBarVisibility="Auto"
                      Background="{DynamicResource AppCodeBgBrush}" Padding="8" BorderThickness="0"/>
             <TextBlock Text="仅白名单内的 CLI 会被放行；命令与输出对用户可见。请确认无误后再允许。"
@@ -23,9 +23,9 @@
             <TextBlock Text="放行范围（默认仅允许一次；白名单与危险拦截仍然生效）" FontWeight="SemiBold" Margin="0,12,0,4"/>
             <CheckBox x:Name="RoundBox" Content="本轮次内允许全部命令（不建议：后续命令不再逐条确认，下一条用户消息后恢复审批）"
                       Margin="2,0,0,2" Checked="OnRoundChecked"/>
-            <CheckBox x:Name="SessionBox" Content="本次 AI 会话期间允许全部命令（不建议：本会话后续命令均不再确认）" Foreground="#B23434"
+            <CheckBox x:Name="SessionBox" Content="本次 AI 会话期间允许全部命令（不建议：本会话后续命令均不再确认）" Foreground="{DynamicResource AppDangerBrush}"
                       Margin="2,0,0,2" Checked="OnSessionChecked"/>
-            <TextBlock x:Name="SessionHint" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="12"
+            <TextBlock x:Name="SessionHint" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeCaption}"
                        Margin="2,4,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
                 <ui:Button Content="拒绝" Width="96" Margin="0,0,8,0" Click="OnDeny" IsCancel="True"/>

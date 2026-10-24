@@ -19,6 +19,9 @@ public partial class ApplicationManageView : UserControl
 
     private void OnDeleteClick(object sender, RoutedEventArgs e) => ViewModel?.DeleteCommand.Execute(null);
 
+    private void OnChooseColumns(object sender, RoutedEventArgs e)
+        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, AppList);
+
     private void OnItemDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not ListView listView)

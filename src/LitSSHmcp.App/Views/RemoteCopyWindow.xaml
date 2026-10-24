@@ -35,13 +35,13 @@
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
-                    <TextBlock Text="源服务器:" FontSize="11" Margin="0,0,0,2"
+                    <TextBlock Text="源服务器:" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,0,0,2"
                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                     <ComboBox ItemsSource="{Binding SourceTargets}" SelectedItem="{Binding SelectedSource}"
                               DisplayMemberPath="Name" ToolTip="左侧源服务器（可与右侧互换）"/>
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Top" Text="{Binding SourceSummary}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                <TextBlock DockPanel.Dock="Bottom" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"
+                <TextBlock DockPanel.Dock="Bottom" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"
                            Margin="0,6,0,0" TextWrapping="Wrap" Text="{Binding SourceServerText}"/>
                 <Border Style="{DynamicResource CardBorderStyle}" Padding="4">
                     <Grid>
@@ -63,7 +63,7 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding SizeText}" Margin="8,0,0,0" FontSize="11"
+                                        <TextBlock Grid.Column="1" Text="{Binding SizeText}" Margin="8,0,0,0" FontSize="{DynamicResource AppFontSizeMicro}"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                     </Grid>
                                 </DataTemplate>
@@ -155,7 +155,7 @@
         </StackPanel>
 
         <DockPanel Grid.Row="3" Margin="12,10,12,12">
-            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" FontSize="11" TextWrapping="Wrap"
+            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"
                        Text="直连依赖源机可达目标（内网）且具备 rsync/tar；密码直连需源机安装 sshpass。"/>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">

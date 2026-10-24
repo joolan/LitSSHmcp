@@ -96,10 +96,10 @@
                         <DropShadowEffect BlurRadius="12" ShadowDepth="1" Opacity="0.25"/>
                     </Border.Effect>
                     <StackPanel>
-                        <TextBlock Text="{Binding SnippetHeader}" FontSize="12" Padding="10,6,10,4"
+                        <TextBlock Text="{Binding SnippetHeader}" FontSize="{DynamicResource AppFontSizeCaption}" Padding="10,6,10,4"
                                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                         <Separator Margin="4,0,4,4"/>
-                        <TextBlock Text="（无）" FontSize="12" Padding="10,6" Foreground="{DynamicResource AppTextSecondaryBrush}">
+                        <TextBlock Text="（无）" FontSize="{DynamicResource AppFontSizeCaption}" Padding="10,6" Foreground="{DynamicResource AppTextSecondaryBrush}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -153,7 +153,7 @@
                             <TextBlock Text="查询历史（最近使用在前）" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                         </DockPanel>
                         <Separator Margin="4,0,4,4"/>
-                        <TextBlock Text="（暂无历史）" FontSize="12" Padding="10,6" Foreground="{DynamicResource AppTextSecondaryBrush}">
+                        <TextBlock Text="（暂无历史）" FontSize="{DynamicResource AppFontSizeCaption}" Padding="10,6" Foreground="{DynamicResource AppTextSecondaryBrush}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -184,9 +184,9 @@
                 </Border>
             </Popup>
             <Border DockPanel.Dock="Top" Visibility="{Binding ShowWriteBanner, Converter={StaticResource BoolToVis}}"
-                    Background="#FDECEA" BorderBrush="#D13438" BorderThickness="1" CornerRadius="4"
+                    Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}" BorderThickness="1" CornerRadius="4"
                     Padding="10,6" Margin="0,0,0,8">
-                <TextBlock TextWrapping="Wrap" Foreground="#D13438" FontWeight="SemiBold"
+                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppDangerBrush}" FontWeight="SemiBold"
                            Text="{Binding WriteBannerText}"/>
             </Border>
 
@@ -205,7 +205,7 @@
                             <ui:Button DockPanel.Dock="Right" Content="刷新" Padding="8,2" Margin="4,0,0,0"
                                        ToolTip="重新加载对象树" Command="{Binding RefreshObjectsCommand}"/>
                             <TextBlock DockPanel.Dock="Right" Text="{Binding ObjectFilterHint}"
-                                       Margin="8,0,0,0" VerticalAlignment="Center" FontSize="11"
+                                       Margin="8,0,0,0" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSizeMicro}"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                             <ui:TextBox FontWeight="Normal" Text="{Binding ObjectFilter, UpdateSourceTrigger=PropertyChanged}"
                                         PlaceholderText="搜索对象…（前缀命中优先）"/>
@@ -225,7 +225,7 @@
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="{Binding SelectedObjectBar}" FontWeight="SemiBold"
                                                TextTrimming="CharacterEllipsis" ToolTip="{Binding SelectedObjectBar}"/>
-                                    <TextBlock Text="{Binding SelectedObjectComment}" FontSize="11"
+                                    <TextBlock Text="{Binding SelectedObjectComment}" FontSize="{DynamicResource AppFontSizeMicro}"
                                                Foreground="{DynamicResource AppTextSecondaryBrush}"
                                                TextTrimming="CharacterEllipsis"
                                                Visibility="{Binding HasSelectedComment, Converter={StaticResource BoolToVis}}"/>
@@ -260,7 +260,7 @@
                                                           ItemContainerStyle="{StaticResource DbTreeItemStyle}">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="2,1"
                                                 ToolTip="{Binding Tooltip}">
-                                        <ui:SymbolIcon Width="14" Height="14" FontSize="14" VerticalAlignment="Center"
+                                        <ui:SymbolIcon Width="14" Height="14" FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center"
                                                        Margin="0,0,5,0">
                                             <ui:SymbolIcon.Style>
                                                 <Style TargetType="ui:SymbolIcon">
@@ -290,7 +290,7 @@
                                         </ui:SymbolIcon>
                                         <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
                                                    TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="{Binding Detail}" VerticalAlignment="Center" FontSize="11"
+                                        <TextBlock Text="{Binding Detail}" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSizeMicro}"
                                                    Margin="6,0,0,0"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}"
                                                    TextTrimming="CharacterEllipsis"/>
@@ -326,7 +326,7 @@
                             </DockPanel>
                             <ProgressBar Height="4" Margin="0,4,0,0" IsIndeterminate="{Binding IsScanning}"
                                          Visibility="{Binding HasScanProgress, Converter={StaticResource BoolToVis}}"/>
-                            <TextBlock Text="{Binding ScanProgress}" Margin="2,2,0,0" FontSize="11"
+                            <TextBlock Text="{Binding ScanProgress}" Margin="2,2,0,0" FontSize="{DynamicResource AppFontSizeMicro}"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"
                                        Visibility="{Binding HasScanProgress, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
@@ -455,7 +455,7 @@
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
-                        <avalonedit:TextEditor x:Name="SqlBox" FontFamily="Consolas" FontSize="13"
+                        <avalonedit:TextEditor x:Name="SqlBox" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="13"
                                  ShowLineNumbers="True" SyntaxHighlighting="TSQL" WordWrap="False"
                                  BorderThickness="0" Background="Transparent" Padding="6"
                                  Foreground="{DynamicResource AppCodeTextBrush}"
@@ -497,10 +497,10 @@
                                     </ContextMenu>
                                 </ui:Button.ContextMenu>
                             </ui:Button>
-                            <Border DockPanel.Dock="Left" Margin="12,0,0,0" Padding="6,2" CornerRadius="3" Background="#D13438"
+                            <Border DockPanel.Dock="Left" Margin="12,0,0,0" Padding="6,2" CornerRadius="3" Background="{DynamicResource AppDangerBrush}"
                                     VerticalAlignment="Center"
                                     Visibility="{Binding ShowWriteBanner, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="写入模式" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                                <TextBlock Text="写入模式" Foreground="{DynamicResource AppTextOnDangerBrush}" FontSize="{DynamicResource AppFontSizeMicro}" FontWeight="SemiBold"/>
                             </Border>
                             <ui:Button DockPanel.Dock="Right" Content="下一页 ▶" Padding="10,4" Margin="6,0,0,0"
                                        Command="{Binding NextPageCommand}"
@@ -593,7 +593,7 @@
                                       LoadingRow="OnResultLoadingRow" AutoGeneratedColumns="OnAutoGeneratedColumns"
                                       SelectionMode="Extended" ClipboardCopyMode="IncludeHeader"
                                       EnableRowVirtualization="True" EnableColumnVirtualization="True"
-                                      FontFamily="Consolas" FontSize="12" MouseDoubleClick="OnResultDoubleClick"
+                                      FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}" MouseDoubleClick="OnResultDoubleClick"
                                       AutoGeneratingColumn="OnAutoGeneratingColumn"
                                       PreviewMouseRightButtonDown="OnResultRightDown">
                                     <DataGrid.ContextMenu>
@@ -618,16 +618,16 @@
                                         <TreeView.ItemTemplate>
                                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                                                 <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="{Binding Name}" FontFamily="Consolas" FontSize="12"/>
-                                                    <TextBlock Text="{Binding Detail}" Margin="8,0,0,0" FontFamily="Consolas"
-                                                               FontSize="11" VerticalAlignment="Center"
+                                                    <TextBlock Text="{Binding Name}" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}"/>
+                                                    <TextBlock Text="{Binding Detail}" Margin="8,0,0,0" FontFamily="{DynamicResource AppFontMonoFamily}"
+                                                               FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center"
                                                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                                 </StackPanel>
                                             </HierarchicalDataTemplate>
                                         </TreeView.ItemTemplate>
                                     </TreeView>
-                                    <TextBox IsReadOnly="True" Text="{Binding PlanText}" FontFamily="Consolas" FontSize="12"
-                                             Background="#1E1E1E" Foreground="#DDDDDD" BorderThickness="0" Padding="8"
+                                    <TextBox IsReadOnly="True" Text="{Binding PlanText}" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}"
+                                             Background="{DynamicResource AppTerminalBgBrush}" Foreground="{DynamicResource AppTerminalTextBrush}" BorderThickness="0" Padding="8"
                                              TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                              AcceptsReturn="True">
                                         <TextBox.Style>
@@ -646,7 +646,7 @@
                             <DockPanel Visibility="{Binding ShowMessages, Converter={StaticResource BoolToVis}}">
                                 <ui:Button DockPanel.Dock="Top" Content="清空消息" Padding="10,3" HorizontalAlignment="Left" Margin="0,0,0,4"
                                            Command="{Binding ClearMessagesCommand}"/>
-                                <ListBox ItemsSource="{Binding Messages}" FontFamily="Consolas" FontSize="11"
+                                <ListBox ItemsSource="{Binding Messages}" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
                                          BorderThickness="0" Background="Transparent"/>
                             </DockPanel>
                         </Grid>

@@ -178,7 +178,7 @@
                                                     </Style>
                                                 </Ellipse.Style>
                                             </Ellipse>
-                                            <TextBlock Text="{Binding Title}" FontSize="11" VerticalAlignment="Center"
+                                            <TextBlock Text="{Binding Title}" FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center"
                                                        TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                         </StackPanel>
                                     </Border>

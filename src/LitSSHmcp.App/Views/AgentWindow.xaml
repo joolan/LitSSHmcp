@@ -38,7 +38,7 @@
             <!-- 左：会话侧栏 -->
             <DockPanel Grid.Column="0">
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,2,0,12">
-                    <TextBlock Text="AI 运维助手" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center"/>
+                    <TextBlock Text="AI 运维助手" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeSubtitle}" VerticalAlignment="Center"/>
                     <Button Style="{DynamicResource ActionRowButton}" Padding="4" Margin="6,0,0,0"
                             Click="OnOpenSettings" ToolTip="AI 助手设置">
                         <ui:SymbolIcon Symbol="Settings24" FontSize="15"/>
@@ -48,21 +48,21 @@
                 <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
                         Margin="0,0,0,2" Command="{Binding NewSessionCommand}">
                     <StackPanel Orientation="Horizontal">
-                        <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,10,0"/>
+                        <ui:SymbolIcon Symbol="Add24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,10,0"/>
                         <TextBlock Text="新建任务" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
                 <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
                         Margin="0,0,0,2" Click="OnNewGroup" ToolTip="新建分组（把任务按分组归类显示）">
                     <StackPanel Orientation="Horizontal">
-                        <ui:SymbolIcon Symbol="Folder24" FontSize="16" Margin="0,0,10,0"/>
+                        <ui:SymbolIcon Symbol="Folder24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,10,0"/>
                         <TextBlock Text="新建分组" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
                 <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
                         Margin="0,0,0,14" Click="OnOpenWorkspace">
                     <StackPanel Orientation="Horizontal">
-                        <ui:SymbolIcon Symbol="Folder24" FontSize="16" Margin="0,0,10,0"/>
+                        <ui:SymbolIcon Symbol="Folder24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,10,0"/>
                         <TextBlock Text="打开工作区" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
@@ -72,7 +72,7 @@
                         BorderThickness="1"
                         ToolTip="桌面登录仅用于归因：新会话与审计记为登录用户（未登录=local）；桌面不做权限限制（评估报告 D1）。登录态跨重启保持，账号与 Web 助手共用 web.db。">
                     <StackPanel>
-                        <TextBlock Text="{Binding DesktopLoginLabel}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding DesktopLoginLabel}" FontSize="{DynamicResource AppFontSizeMicro}" TextTrimming="CharacterEllipsis"/>
                         <Button Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
                                 Margin="0,4,0,0" Padding="6,3" Content="{Binding DesktopLoginActionText}"
                                 Click="OnDesktopLogin"/>
@@ -113,13 +113,13 @@
                                         MouseLeftButtonUp="OnGroupHeaderClick"
                                         PreviewMouseLeftButtonDown="OnGroupHeaderMouseDown" MouseMove="OnGroupHeaderMouseMove">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding Glyph}" FontSize="12" Width="13" VerticalAlignment="Center"
+                                        <TextBlock Text="{Binding Glyph}" FontSize="{DynamicResource AppFontSizeCaption}" Width="13" VerticalAlignment="Center"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                         <ui:SymbolIcon Symbol="Folder24" FontSize="15" Margin="0,0,6,0"
                                                        Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
                                         <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock Text="{Binding Count, StringFormat=' ({0})'}" FontSize="11" Margin="4,0,0,0"
+                                        <TextBlock Text="{Binding Count, StringFormat=' ({0})'}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="4,0,0,0"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Border>
@@ -134,7 +134,7 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="{Binding Session.Title}" TextTrimming="CharacterEllipsis"
-                                                   FontFamily="Microsoft YaHei" Margin="0,0,8,0"/>
+                                                   FontFamily="{DynamicResource AppFontUiFamily}" Margin="0,0,8,0"/>
                                         <!-- 会话级状态机徽章（§4.1）：后台会话执行中/待审批/已停止一眼可见 -->
                                         <TextBlock Grid.Column="1" Text="{Binding StateText}" FontSize="10" FontWeight="SemiBold"
                                                    Margin="0,0,6,0" VerticalAlignment="Center">
@@ -242,7 +242,7 @@
                                             <Border Style="{DynamicResource UserBubbleStyle}" Cursor="Hand" MouseLeftButtonUp="OnUserClick"
                                                     ToolTip="点击展开/折叠本轮工具过程">
                                                 <StackPanel>
-                                                    <TextBlock Text="{Binding UserText}" TextWrapping="Wrap" FontFamily="Microsoft YaHei" FontSize="13"/>
+                                                    <TextBlock Text="{Binding UserText}" TextWrapping="Wrap" FontFamily="{DynamicResource AppFontUiFamily}" FontSize="13"/>
                                                     <ItemsControl ItemsSource="{Binding Images}" Margin="0,4,0,0">
                                                         <ItemsControl.ItemsPanel>
                                                             <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
@@ -278,7 +278,7 @@
                                               Margin="0,10,0,0" Padding="6">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding ToolHeader}" FontSize="11">
+                                                <TextBlock Text="{Binding ToolHeader}" FontSize="{DynamicResource AppFontSizeMicro}">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
                                                             <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
@@ -301,7 +301,7 @@
                                                         <Expander Margin="0,3" Padding="4" IsExpanded="{Binding ShowDetail, Mode=TwoWay}">
                                                             <Expander.Header>
                                                                 <DockPanel LastChildFill="False" MinWidth="380">
-                                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Label}" FontWeight="SemiBold" FontSize="11">
+                                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Label}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeMicro}">
                                                                         <TextBlock.Style>
                                                                             <Style TargetType="TextBlock">
                                                                                 <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
@@ -325,7 +325,7 @@
                                                                 </DockPanel>
                                                             </Expander.Header>
                                                             <StackPanel>
-                                                                <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="11"/>
+                                                                <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"/>
                                                                 <WrapPanel Margin="0,4,0,0">
                                                                     <ui:Button Content="复制结果" FontSize="10" Padding="8,1" Margin="0,0,6,0"
                                                                                Click="OnCopyStepDetail"/>
@@ -348,7 +348,7 @@
                                             <DockPanel Margin="0,0,0,6">
                                                 <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Chat24" FontSize="15" Margin="0,0,6,0"
                                                                Foreground="{DynamicResource AppAccentBrush}"/>
-                                                <TextBlock Text="AI 助手" FontWeight="SemiBold" FontSize="11"
+                                                <TextBlock Text="AI 助手" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeMicro}"
                                                            Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
                                             </DockPanel>
                                             <!-- 思考过程（推理模型输出；运行中展开，完成后自动折叠） -->
@@ -356,15 +356,15 @@
                                                       IsExpanded="{Binding ShowReasoning, Mode=TwoWay}"
                                                       Margin="0,0,0,6" Padding="6">
                                                 <Expander.Header>
-                                                    <TextBlock Text="思考过程" FontSize="11"
+                                                    <TextBlock Text="思考过程" FontSize="{DynamicResource AppFontSizeMicro}"
                                                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                                 </Expander.Header>
                                                 <controls:MarkdownBox Markdown="{Binding ReasoningText}"/>
                                             </Expander>
                                             <controls:MarkdownBox Markdown="{Binding AssistantText}"/>
-                                            <TextBlock Text="{Binding Note}" Foreground="{DynamicResource AppDangerBrush}" TextWrapping="Wrap" FontSize="12"
+                                            <TextBlock Text="{Binding Note}" Foreground="{DynamicResource AppDangerBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeCaption}"
                                                        Margin="0,3,0,0" Visibility="{Binding NoteVisibility}"/>
-                                            <TextBlock Text="{Binding RunningText}" Foreground="{DynamicResource AppAccentBrush}" FontSize="11" Margin="0,2,0,0"
+                                            <TextBlock Text="{Binding RunningText}" Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,2,0,0"
                                                        Visibility="{Binding RunningVisibility}"/>
                                             <!-- hover 显示：复制 + 用时（常占位） -->
                                             <StackPanel Style="{StaticResource HoverRevealStyle}" Orientation="Horizontal" Margin="0,6,0,0">
@@ -392,7 +392,7 @@
                             MaxWidth="440">
                     <ui:SymbolIcon Symbol="Chat24" FontSize="44" HorizontalAlignment="Center"
                                    Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,10"/>
-                    <TextBlock Text="开始与 AI 运维助手对话" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="开始与 AI 运维助手对话" FontSize="{DynamicResource AppFontSizeSubtitle}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                     <TextBlock Text="用自然语言让它查整机态势、排障、看日志、执行运维操作。"
                                Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,6,0,0"/>
                     <TextBlock Text="例如：看下该服务器整机态势 / 排查 nginx 502" Foreground="{DynamicResource AppTextSecondaryBrush}"
@@ -405,7 +405,7 @@
                         Panel.ZIndex="5" CornerRadius="{DynamicResource AppRadiusM}"
                         Background="{DynamicResource AppAccentBrush}" Visibility="{Binding NoticeVisibility}">
                     <TextBlock Text="{Binding NoticeText}" Foreground="{DynamicResource AppAccentTextBrush}"
-                               FontSize="12" TextWrapping="Wrap"/>
+                               FontSize="{DynamicResource AppFontSizeCaption}" TextWrapping="Wrap"/>
                 </Border>
 
                 <!-- 集成式输入区（可拖高） -->
@@ -429,7 +429,7 @@
                                 Visibility="{Binding HasPendingApproval, Converter={StaticResource BoolToVis}}">
                             <StackPanel>
                                 <DockPanel LastChildFill="False">
-                                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="ShieldCheckmark24" FontSize="16"
+                                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="ShieldCheckmark24" FontSize="{DynamicResource AppFontSizeSubtitle}"
                                                    Foreground="{DynamicResource AppWarningBrush}" Margin="0,0,8,0"/>
                                     <TextBlock DockPanel.Dock="Left" Text="本机命令审批 · 等待处理" FontWeight="SemiBold"
                                                FontSize="13" VerticalAlignment="Center"/>
@@ -438,19 +438,19 @@
                                                VerticalAlignment="Center"
                                                Visibility="{Binding PendingApproval.SessionTextVisibility}"/>
                                 </DockPanel>
-                                <TextBlock Text="{Binding PendingApproval.WorkingDirectory}" FontSize="11"
+                                <TextBlock Text="{Binding PendingApproval.WorkingDirectory}" FontSize="{DynamicResource AppFontSizeMicro}"
                                            Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,0"
                                            TextWrapping="Wrap"
                                            Visibility="{Binding PendingApproval.WorkingDirectoryVisibility}"/>
                                 <Border Background="{DynamicResource AppCodeBgBrush}" CornerRadius="4" Padding="8" Margin="0,8,0,0">
                                     <ScrollViewer MaxHeight="110" VerticalScrollBarVisibility="Auto"
                                                   HorizontalScrollBarVisibility="Auto">
-                                        <TextBlock Text="{Binding PendingApproval.Command}" FontFamily="Consolas"
-                                                   FontSize="12" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding PendingApproval.Command}" FontFamily="{DynamicResource AppFontMonoFamily}"
+                                                   FontSize="{DynamicResource AppFontSizeCaption}" TextWrapping="Wrap"/>
                                     </ScrollViewer>
                                 </Border>
                                 <TextBlock Text="仅白名单内的 CLI 会被放行；命令与输出对用户可见。请确认无误后再允许。"
-                                           Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"
                                            Margin="0,8,0,0" TextWrapping="Wrap"/>
                                 <WrapPanel Margin="0,8,0,0">
                                     <ui:Button Content="拒绝" Padding="12,4" Margin="0,0,6,6"
@@ -483,7 +483,7 @@
                                    Visibility="{Binding HasActiveSkills, Converter={StaticResource BoolToVis}}">
                             <Button DockPanel.Dock="Right" Style="{DynamicResource ActionRowButton}" Padding="6,2" Margin="8,0,0,6"
                                     VerticalAlignment="Top" Click="OnSelectSkills" ToolTip="编辑本会话激活的技能">
-                                <TextBlock Text="技能…" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                <TextBlock Text="技能…" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                             </Button>
                             <ItemsControl ItemsSource="{Binding ActiveSkills}">
                                 <ItemsControl.ItemsPanel>
@@ -497,10 +497,10 @@
                                             <StackPanel Orientation="Horizontal">
                                                 <ui:SymbolIcon Symbol="Document24" FontSize="13" Margin="0,0,5,0"
                                                                Foreground="{DynamicResource AppAccentBrush}" VerticalAlignment="Center"/>
-                                                <TextBlock Text="{Binding Name}" FontSize="11" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}" FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center"/>
                                                 <Button Style="{DynamicResource ActionRowButton}" Padding="2" Margin="6,0,0,0"
                                                         Click="OnRemoveActiveSkill" ToolTip="移除该技能">
-                                                    <ui:SymbolIcon Symbol="Delete24" FontSize="12"/>
+                                                    <ui:SymbolIcon Symbol="Delete24" FontSize="{DynamicResource AppFontSizeCaption}"/>
                                                 </Button>
                                             </StackPanel>
                                         </Border>
@@ -514,7 +514,7 @@
                                    Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVis}}">
                             <Button DockPanel.Dock="Right" Style="{DynamicResource ActionRowButton}" Padding="6,2" Margin="8,0,0,6"
                                     VerticalAlignment="Top" Click="OnClearAttachments" ToolTip="清除全部附件">
-                                <TextBlock Text="清除全部" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                <TextBlock Text="清除全部" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                             </Button>
                             <ItemsControl ItemsSource="{Binding Attachments}">
                                 <ItemsControl.ItemsPanel>
@@ -538,7 +538,7 @@
                                                     </Style>
                                                 </controls:ImageThumb.Style>
                                             </controls:ImageThumb>
-                                            <ui:SymbolIcon Symbol="Document24" FontSize="14" Margin="0,0,6,0"
+                                            <ui:SymbolIcon Symbol="Document24" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,6,0"
                                                            Foreground="{DynamicResource AppTextSecondaryBrush}">
                                                 <ui:SymbolIcon.Style>
                                                     <Style TargetType="ui:SymbolIcon">
@@ -551,10 +551,10 @@
                                                     </Style>
                                                 </ui:SymbolIcon.Style>
                                             </ui:SymbolIcon>
-                                            <TextBlock Text="{Binding Name}" FontSize="11" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding Name}" FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center"/>
                                             <Button Style="{DynamicResource ActionRowButton}" Padding="2" Margin="6,0,0,0"
                                                     Click="OnRemoveAttachment" ToolTip="移除">
-                                                <ui:SymbolIcon Symbol="Delete24" FontSize="12"/>
+                                                <ui:SymbolIcon Symbol="Delete24" FontSize="{DynamicResource AppFontSizeCaption}"/>
                                             </Button>
                                         </StackPanel>
                                     </Border>
@@ -566,7 +566,7 @@
                         <ui:TextBox FontWeight="Normal" x:Name="InputBox" Grid.Row="4" Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}"
                                     AcceptsReturn="True" MinHeight="64" MaxHeight="400" TextWrapping="Wrap"
                                     BorderThickness="0" Background="Transparent"
-                                    VerticalScrollBarVisibility="Auto" FontFamily="Microsoft YaHei" FontSize="13"
+                                    VerticalScrollBarVisibility="Auto" FontFamily="{DynamicResource AppFontUiFamily}" FontSize="13"
                                     PreviewKeyDown="OnInputKeyDown"
                                     AllowDrop="True" PreviewDragOver="OnComposerDragOver" PreviewDrop="OnComposerDrop"
                                     PlaceholderText="今天帮你做些什么？"
@@ -665,7 +665,7 @@
                                     <GroupStyle>
                                         <GroupStyle.HeaderTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11" Margin="2,6,2,2"
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeMicro}" Margin="2,6,2,2"
                                                            Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                             </DataTemplate>
                                         </GroupStyle.HeaderTemplate>
@@ -676,7 +676,7 @@
                             <ui:Button Grid.Column="9" Appearance="Primary" Width="42" Height="34" Padding="0"
                                        Command="{Binding SendOrStopCommand}" ToolTip="{Binding SendButtonText}">
                                 <Grid>
-                                    <ui:SymbolIcon Symbol="Send24" FontSize="16">
+                                    <ui:SymbolIcon Symbol="Send24" FontSize="{DynamicResource AppFontSizeSubtitle}">
                                         <ui:SymbolIcon.Style>
                                             <Style TargetType="ui:SymbolIcon">
                                                 <Setter Property="Visibility" Value="Visible"/>
@@ -688,7 +688,7 @@
                                             </Style>
                                         </ui:SymbolIcon.Style>
                                     </ui:SymbolIcon>
-                                    <ui:SymbolIcon Symbol="Stop24" FontSize="16">
+                                    <ui:SymbolIcon Symbol="Stop24" FontSize="{DynamicResource AppFontSizeSubtitle}">
                                         <ui:SymbolIcon.Style>
                                             <Style TargetType="ui:SymbolIcon">
                                                 <Setter Property="Visibility" Value="Collapsed"/>
@@ -734,9 +734,9 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <DockPanel>
-                                <TextBlock DockPanel.Dock="Left" Text="{Binding Glyph}" Width="16" FontFamily="Consolas"
+                                <TextBlock DockPanel.Dock="Left" Text="{Binding Glyph}" Width="16" FontFamily="{DynamicResource AppFontMonoFamily}"
                                            Foreground="{DynamicResource AppSuccessBrush}" VerticalAlignment="Center"/>
-                                <TextBlock DockPanel.Dock="Left" Text="{Binding Name}" FontFamily="Consolas" FontWeight="SemiBold"
+                                <TextBlock DockPanel.Dock="Left" Text="{Binding Name}" FontFamily="{DynamicResource AppFontMonoFamily}" FontWeight="SemiBold"
                                            Margin="0,0,10,0" VerticalAlignment="Center">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
@@ -749,7 +749,7 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                                <TextBlock Text="{Binding Description}" FontSize="11" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                <TextBlock Text="{Binding Description}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                                            Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
                             </DockPanel>
                         </DataTemplate>

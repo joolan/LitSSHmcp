@@ -37,7 +37,7 @@
                             <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}">
                                 <StackPanel>
                                     <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                    <TextBlock Text="{Binding Subtitle}" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 </StackPanel>
                             </CheckBox>
                         </DataTemplate>
@@ -74,7 +74,7 @@
                                Padding="16,5" Margin="8,0,0,0" Command="{Binding RunCommand}"/>
                     <ui:Button DockPanel.Dock="Right" Content="片段" Padding="10,5" Margin="8,0,0,0" ToolTip="选择全局命令片段填充到输入框" Click="OnSnippets"/>
                     <ui:TextBox FontWeight="Normal" Text="{Binding Command, UpdateSourceTrigger=PropertyChanged}"
-                                FontFamily="Consolas" PlaceholderText="要批量执行的命令，例如：uptime; df -h" VerticalContentAlignment="Center"/>
+                                FontFamily="{DynamicResource AppFontMonoFamily}" PlaceholderText="要批量执行的命令，例如：uptime; df -h" VerticalContentAlignment="Center"/>
                 </DockPanel>
 
                 <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,6,0,6" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
@@ -90,13 +90,13 @@
                         <DataTemplate>
                             <StackPanel>
                                 <DockPanel>
-                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" FontSize="11"
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" FontSize="{DynamicResource AppFontSizeMicro}"
                                                Foreground="{DynamicResource AppAccentBrush}" Margin="8,0,0,0"/>
                                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                                 </DockPanel>
                                 <TextBox Text="{Binding Output, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
                                          MaxHeight="160" VerticalScrollBarVisibility="Auto" Margin="0,3,0,0"
-                                         FontFamily="Consolas" FontSize="11.5"
+                                         FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="11.5"
                                          Background="{DynamicResource AppCodeBgBrush}" Foreground="{DynamicResource AppCodeTextBrush}"
                                          BorderThickness="0" Padding="4"/>
                             </StackPanel>

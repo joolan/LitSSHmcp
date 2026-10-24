@@ -33,8 +33,8 @@
                     <Button Content="删除" Padding="8,3" Click="OnLocalDelete"/>
                 </WrapPanel>
                 <TextBox DockPanel.Dock="Top" Text="{Binding Local.CurrentPath, UpdateSourceTrigger=PropertyChanged}"
-                         FontFamily="Consolas" Margin="0,0,0,4" Padding="4,3" KeyDown="OnLocalPathKeyDown"/>
-                <TextBlock DockPanel.Dock="Bottom" Text="{Binding Local.StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"/>
+                         FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,4" Padding="4,3" KeyDown="OnLocalPathKeyDown"/>
+                <TextBlock DockPanel.Dock="Bottom" Text="{Binding Local.StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"/>
                 <ListView ItemsSource="{Binding Local.Items}" SelectedItem="{Binding Local.SelectedItem}"
                           MouseDoubleClick="OnLocalDoubleClick" Background="Transparent" BorderThickness="0">
                     <ListView.View>
@@ -72,8 +72,8 @@
                     <Button Content="书签" Padding="8,3" Click="OnBookmarks"/>
                 </WrapPanel>
                 <TextBox DockPanel.Dock="Top" Text="{Binding Remote.CurrentPath, UpdateSourceTrigger=PropertyChanged}"
-                         FontFamily="Consolas" Margin="0,0,0,4" Padding="4,3" KeyDown="OnRemotePathKeyDown"/>
-                <TextBlock DockPanel.Dock="Bottom" Text="{Binding Remote.StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"/>
+                         FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,4" Padding="4,3" KeyDown="OnRemotePathKeyDown"/>
+                <TextBlock DockPanel.Dock="Bottom" Text="{Binding Remote.StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"/>
                 <ListView ItemsSource="{Binding Remote.Items}" SelectedItem="{Binding Remote.SelectedItem}"
                           MouseDoubleClick="OnRemoteDoubleClick" Background="Transparent" BorderThickness="0">
                     <ListView.View>

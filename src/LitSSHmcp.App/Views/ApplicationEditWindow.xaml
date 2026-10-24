@@ -45,7 +45,7 @@
 
                     <controls:FormRow Label="日志路径" HelpText="每行一条；须在安全设置 security.logs.allowedPaths 白名单内">
                         <ui:TextBox FontWeight="Normal" Text="{Binding LogPaths, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True"
-                                    MinHeight="64" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Consolas"/>
+                                    MinHeight="64" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="{DynamicResource AppFontMonoFamily}"/>
                     </controls:FormRow>
 
                     <controls:FormRow Label="描述">

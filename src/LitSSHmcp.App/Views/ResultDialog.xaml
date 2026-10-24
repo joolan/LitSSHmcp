@@ -16,14 +16,14 @@
         <ui:TitleBar Grid.Row="0" x:Name="Bar" Title="结果"/>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="16,6,16,0">
-            <ui:SymbolIcon x:Name="Glyph" Symbol="Info24" FontSize="20" Margin="0,0,8,0"/>
+            <ui:SymbolIcon x:Name="Glyph" Symbol="Info24" FontSize="{DynamicResource AppFontSizeTitle}" Margin="0,0,8,0"/>
             <TextBlock x:Name="Headline" FontWeight="SemiBold" VerticalAlignment="Center" Text=""/>
         </StackPanel>
 
         <Border Grid.Row="2" Margin="16,10,16,0" CornerRadius="6" Padding="4"
                 BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}">
             <TextBox x:Name="Body" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
-                     FontFamily="Consolas" FontSize="12" BorderThickness="0" Background="Transparent"
+                     FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}" BorderThickness="0" Background="Transparent"
                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                      VerticalAlignment="Stretch"/>
         </Border>

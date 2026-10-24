@@ -35,7 +35,7 @@
                                        VerticalAlignment="Center" Foreground="{DynamicResource AppAccentBrush}"/>
                         <StackPanel Grid.Column="1">
                             <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"/>
-                            <TextBlock Text="{Binding Subtitle}" FontSize="11"
+                            <TextBlock Text="{Binding Subtitle}" FontSize="{DynamicResource AppFontSizeMicro}"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                     </Grid>
@@ -44,7 +44,7 @@
         </ListBox>
 
         <TextBlock Grid.Row="3" Text="↑↓ 选择 · Enter 执行 · Esc 关闭"
-                   Margin="16,8,16,12" FontSize="11"
+                   Margin="16,8,16,12" FontSize="{DynamicResource AppFontSizeMicro}"
                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>
     </Grid>
 </ui:FluentWindow>

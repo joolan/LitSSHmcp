@@ -21,7 +21,7 @@
                 <DataTemplate>
                     <StackPanel>
                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding Exe}" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding Exe}" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
                 </DataTemplate>
             </ListBox.ItemTemplate>

@@ -26,15 +26,15 @@
                         <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                             <StackPanel>
                                 <DockPanel>
-                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Name}" FontWeight="SemiBold" FontSize="14"/>
-                                    <TextBlock DockPanel.Dock="Right" Text="{Binding LastResultText}" FontSize="11" Margin="8,0,0,0"
+                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Name}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}"/>
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding LastResultText}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="8,0,0,0"
                                                Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock Text=" " />
                                 </DockPanel>
-                                <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
+                                <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
                                     <Run Text="{Binding EnabledText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding TargetText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding SyncTriggerText, Mode=OneWay}"/>
                                 </TextBlock>
-                                <TextBlock FontSize="12" Margin="0,6,0,0">
+                                <TextBlock FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,6,0,0">
                                     <Run Text="调度: "/><Run Text="{Binding ScheduleText, Mode=OneWay}"/><Run Text="   下次: "/><Run Text="{Binding NextRunText, Mode=OneWay}"/><Run Text="   上次: "/><Run Text="{Binding LastRunText, Mode=OneWay}"/>
                                 </TextBlock>
 
@@ -49,7 +49,7 @@
                                                 <Border Background="{DynamicResource AppSurfaceAltBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                                                         BorderThickness="1" CornerRadius="{DynamicResource AppRadiusS}" Padding="8,4" ToolTip="{Binding Detail}">
                                                     <StackPanel>
-                                                        <TextBlock FontSize="12">
+                                                        <TextBlock FontSize="{DynamicResource AppFontSizeCaption}">
                                                             <Run Text="{Binding Order, Mode=OneWay}"/><Run Text=". "/><Run Text="{Binding Label, Mode=OneWay}"/>
                                                         </TextBlock>
                                                         <TextBlock Text="{Binding ContinueText}" FontSize="9"

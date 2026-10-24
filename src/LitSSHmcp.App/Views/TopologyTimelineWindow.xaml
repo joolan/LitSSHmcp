@@ -32,10 +32,10 @@
                         ToolTip="在服务器快照历史中定位到当前选中的快照"/>
                 <TextBlock Text="按时间正序重放快照；右侧列出相对上一份快照的新增/移除"
                            VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                           FontSize="11" Margin="14,0,0,0"/>
+                           FontSize="{DynamicResource AppFontSizeMicro}" Margin="14,0,0,0"/>
             </StackPanel>
 
-            <TextBlock Grid.Row="1" Text="{Binding Summary}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="11"
+            <TextBlock Grid.Row="1" Text="{Binding Summary}" TextWrapping="Wrap" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
                        Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,8"/>
 
             <Grid Grid.Row="2">
@@ -46,7 +46,7 @@
                 </Grid.ColumnDefinitions>
 
                 <ListView x:Name="PointList" Grid.Column="0" ItemsSource="{Binding Points}"
-                          SelectedItem="{Binding SelectedPoint, Mode=TwoWay}" FontFamily="Consolas" FontSize="11">
+                          SelectedItem="{Binding SelectedPoint, Mode=TwoWay}" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}">
                     <ListView.View>
                         <GridView>
                             <GridViewColumn Header="采集时间" Width="140" DisplayMemberBinding="{Binding CapturedAtText}"/>
@@ -64,7 +64,7 @@
                 <DockPanel Grid.Column="2" Margin="6,0,0,0">
                     <TextBlock DockPanel.Dock="Top" Text="变化明细" FontWeight="Bold" Margin="0,0,0,6"
                                Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                    <ListView ItemsSource="{Binding Changes}" FontFamily="Consolas" FontSize="11">
+                    <ListView ItemsSource="{Binding Changes}" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}">
                         <ListView.View>
                             <GridView>
                                 <GridViewColumn Header="类型" Width="70" DisplayMemberBinding="{Binding Kind}"/>

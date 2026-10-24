@@ -20,11 +20,11 @@
 
         <Border Grid.Row="2" Margin="16,0,16,0" Style="{DynamicResource CardBorderStyle}" Padding="6">
             <TextBox x:Name="CmdBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-                     FontFamily="Consolas" FontSize="12.5" VerticalScrollBarVisibility="Auto"
+                     FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="12.5" VerticalScrollBarVisibility="Auto"
                      HorizontalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent"/>
         </Border>
 
-        <TextBlock Grid.Row="3" Margin="16,8,16,0" TextWrapping="Wrap" FontSize="11"
+        <TextBlock Grid.Row="3" Margin="16,8,16,0" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}"
                    Foreground="{DynamicResource AppTextSecondaryBrush}"
                    Text="提示：命令需在源服务器执行；若当前登录账号是 root，可去掉行首的 sudo。"/>
 

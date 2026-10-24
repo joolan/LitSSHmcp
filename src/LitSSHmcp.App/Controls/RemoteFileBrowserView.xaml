@@ -21,7 +21,7 @@
         </WrapPanel>
 
         <TextBox Grid.Row="1" x:Name="PathBox" Margin="0,0,0,6" Padding="4,3"
-                 VerticalContentAlignment="Center" FontFamily="Consolas" FontSize="12"
+                 VerticalContentAlignment="Center" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}"
                  Text="{Binding CurrentPath, UpdateSourceTrigger=PropertyChanged}" KeyDown="OnPathKeyDown"
                  ToolTip="远程路径，回车跳转"/>
 
@@ -96,6 +96,6 @@
         <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Margin="0,6,0,0"
                    TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                    ToolTip="{Binding StatusMessage}" ToolTipService.ShowDuration="120000"
-                   Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"/>
+                   Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"/>
     </Grid>
 </UserControl>

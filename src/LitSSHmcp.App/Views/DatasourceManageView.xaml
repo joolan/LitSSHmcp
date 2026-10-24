@@ -26,7 +26,7 @@
             </Grid.RowDefinitions>
             <StackPanel>
                 <DockPanel>
-                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Database24" FontSize="20" Margin="0,0,8,0"
+                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Database24" FontSize="{DynamicResource AppFontSizeTitle}" Margin="0,0,8,0"
                                    Foreground="{DynamicResource AppAccentBrush}"/>
                     <TextBlock Text="数据源" Style="{DynamicResource PageTitleStyle}"/>
                 </DockPanel>
@@ -63,6 +63,7 @@
                 <WrapPanel Grid.Row="0" Margin="0,0,0,8">
                     <ui:Button Content="添加" Icon="{ui:SymbolIcon Add24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding AddCommand}"/>
                     <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding RefreshCommand}"/>
+                    <ui:Button Content="列" Padding="12,4" Margin="0,0,6,6" Click="OnChooseColumns" ToolTip="显示/隐藏列"/>
                     <ui:Button Content="打开工作台" Icon="{ui:SymbolIcon Database24}" Padding="12,4" Margin="0,0,6,6"
                                Command="{Binding WorkbenchCommand}"
                                ToolTip="只读数据库工作台：对象浏览 / SQL 查询 / 分页 / 导出 CSV（仅 MySQL / PostgreSQL）"/>
@@ -139,16 +140,16 @@
                                                 <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
                                                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                             </DockPanel>
-                                            <TextBlock Text="{Binding Host}" FontFamily="Consolas" Margin="0,8,0,2"
+                                            <TextBlock Text="{Binding Host}" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,8,0,2"
                                                        TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}">
+                                            <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}">
                                                 <Run Text="端口 "/><Run Text="{Binding Port, Mode=OneWay}"/>
                                                 <Run Text=" · "/><Run Text="{Binding AccessMode, Mode=OneWay, Converter={StaticResource AccessMode}}"/>
                                             </TextBlock>
-                                            <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
+                                            <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
                                                 <Run Text="默认库 "/><Run Text="{Binding DefaultDatabase, Mode=OneWay}"/>
                                             </TextBlock>
-                                            <TextBlock Text="{Binding Description}" FontSize="11" Margin="0,6,0,0"
+                                            <TextBlock Text="{Binding Description}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,6,0,0"
                                                        Foreground="{DynamicResource AppTextSecondaryBrush}"
                                                        TextTrimming="CharacterEllipsis"/>
                                             <WrapPanel Margin="0,10,0,0">

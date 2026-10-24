@@ -29,7 +29,7 @@
                         <DataTemplate>
                             <StackPanel>
                                 <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                <TextBlock Text="{Binding ModifiedText}" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                <TextBlock Text="{Binding ModifiedText}" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                             </StackPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
@@ -54,7 +54,7 @@
                     <TextBlock x:Name="ProgressText" VerticalAlignment="Center" Margin="10,0,0,0"
                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                 </StackPanel>
-                <TextBox x:Name="ContentBox" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
+                <TextBox x:Name="ContentBox" IsReadOnly="True" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}"
                          TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                          Background="{DynamicResource AppCodeBgBrush}" Foreground="{DynamicResource AppCodeTextBrush}" Padding="6"/>
             </DockPanel>

@@ -11,7 +11,7 @@
         <ui:TitleBar x:Name="TitleBar" Grid.Row="0" Title="筛选日志并保存"/>
         <StackPanel Grid.Row="1" Margin="16,0,16,14">
             <TextBlock Text="源日志" Margin="0,0,0,4" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-            <TextBlock x:Name="SourceText" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"
+            <TextBlock x:Name="SourceText" TextWrapping="Wrap" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}"
                        Foreground="{DynamicResource AppTextPrimaryBrush}"/>
 
             <TextBlock Text="关键字 / 正则（留空 = 不过滤）" Margin="0,10,0,6"
@@ -54,7 +54,7 @@
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
             <ui:TextBox x:Name="OutputBox" MinHeight="30" VerticalContentAlignment="Center"/>
 
-            <TextBlock x:Name="NoteText" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="11"
+            <TextBlock x:Name="NoteText" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"
                        Text="命令会在右侧终端执行；完成后点文件面板的刷新按钮，找到输出文件再下载。时间过滤支持行首 ISO（yyyy-MM-dd HH:mm:ss / T）、yyyy/MM/dd 和 nginx/Apache 的 [dd/Mon/yyyy:HH:mm:ss；syslog 请改用关键字。"/>
 

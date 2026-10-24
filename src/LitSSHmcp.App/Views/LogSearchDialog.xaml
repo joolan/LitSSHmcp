@@ -44,7 +44,7 @@
                 </StackPanel>
             </Grid>
 
-            <TextBlock x:Name="TimeNote" Grid.Row="3" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="11"
+            <TextBlock x:Name="TimeNote" Grid.Row="3" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
 
             <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,10,0,0" VerticalAlignment="Center">

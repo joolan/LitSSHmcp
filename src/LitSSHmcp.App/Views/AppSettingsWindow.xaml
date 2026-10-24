@@ -5,6 +5,35 @@
         xmlns:views="clr-namespace:LitSSHmcp.App.Views"
         Title="设置" Height="720" Width="820" MinWidth="700" MinHeight="560"
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <ui:FluentWindow.Resources>
+        <Style x:Key="SettingsTabItemStyle" TargetType="TabItem">
+            <Setter Property="Width" Value="156"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Margin" Value="0,0,0,2"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppHoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppSelectionBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </ui:FluentWindow.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -13,7 +42,8 @@
 
         <ui:TitleBar Grid.Row="0" Title="设置"/>
 
-        <TabControl Grid.Row="1" Margin="10,0,10,10">
+        <TabControl Grid.Row="1" Margin="10,0,10,10" TabStripPlacement="Left"
+                    ItemContainerStyle="{StaticResource SettingsTabItemStyle}">
             <TabItem Header="外观">
                 <views:AppearanceSettingsView x:Name="AppearanceView"/>
             </TabItem>

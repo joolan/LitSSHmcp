@@ -37,7 +37,7 @@
                             <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}">
                                 <StackPanel>
                                     <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                    <TextBlock Text="{Binding Subtitle}" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 </StackPanel>
                             </CheckBox>
                         </DataTemplate>
@@ -59,7 +59,7 @@
                                Padding="16,5" Margin="8,0,0,0" Command="{Binding RunCommand}"/>
                     <ui:Button DockPanel.Dock="Right" Content="片段" Padding="10,5" Margin="8,0,0,0" ToolTip="选择全局命令片段填充到输入框" Click="OnSnippets"/>
                     <ui:TextBox FontWeight="Normal" Text="{Binding Command, UpdateSourceTrigger=PropertyChanged}"
-                                FontFamily="Consolas" PlaceholderText="要下发的命令，例如：uptime" VerticalContentAlignment="Center"/>
+                                FontFamily="{DynamicResource AppFontMonoFamily}" PlaceholderText="要下发的命令，例如：uptime" VerticalContentAlignment="Center"/>
                 </DockPanel>
 
                 <TextBlock Grid.Row="1" Text="{Binding StatusMessage}" Margin="0,6,0,6" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
@@ -74,7 +74,7 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <DockPanel>
-                                <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" FontSize="11"
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" FontSize="{DynamicResource AppFontSizeMicro}"
                                            Foreground="{DynamicResource AppAccentBrush}" Margin="8,0,0,0" TextTrimming="CharacterEllipsis"/>
                                 <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
                             </DockPanel>

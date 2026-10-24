@@ -44,7 +44,7 @@
         <Border Grid.Row="2" Style="{DynamicResource CardBorderStyle}" Margin="12,0,12,8">
             <StackPanel>
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Left" Text="执行摘要" FontWeight="SemiBold" FontSize="14"/>
+                    <TextBlock DockPanel.Dock="Left" Text="执行摘要" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}"/>
                     <Border x:Name="SensitiveBadge" DockPanel.Dock="Right" Background="{DynamicResource AppDangerSubtleBrush}"
                             CornerRadius="4" Padding="6,2" Visibility="Collapsed">
                         <TextBlock Text="敏感写操作" FontSize="10" Foreground="{DynamicResource AppDangerBrush}"/>
@@ -64,7 +64,7 @@
                         <TextBlock x:Name="ImpactText" Style="{StaticResource PreviewValue}" FontWeight="SemiBold"/>
                     </StackPanel>
                 </WrapPanel>
-                <TextBlock x:Name="NoteText" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                <TextBlock x:Name="NoteText" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"
                            TextWrapping="Wrap" Margin="0,8,0,0" Visibility="Collapsed"/>
             </StackPanel>
         </Border>
@@ -74,7 +74,7 @@
             <DockPanel>
                 <ui:Button DockPanel.Dock="Right" Content="复制 SQL" Padding="8,2" Margin="8,0,0,0"
                            VerticalAlignment="Top" Click="OnCopySql"/>
-                <TextBox x:Name="SqlBox" Height="150" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="12"
+                <TextBox x:Name="SqlBox" Height="150" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}"
                          IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                          Background="{DynamicResource AppCodeBgBrush}" Foreground="{DynamicResource AppCodeTextBrush}"
@@ -88,7 +88,7 @@
                 <DataGrid x:Name="SampleGrid" IsReadOnly="True" AutoGenerateColumns="True"
                           CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="All"
                           GridLinesVisibility="All" SelectionUnit="Cell" EnableRowVirtualization="True"
-                          MaxHeight="220" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="12"/>
+                          MaxHeight="220" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}"/>
             </Border>
         </Expander>
 

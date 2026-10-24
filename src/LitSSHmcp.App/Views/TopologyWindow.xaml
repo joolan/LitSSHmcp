@@ -60,28 +60,28 @@
                 <WrapPanel Grid.Row="0" Margin="10,8,0,0">
                     <TextBlock Text="图例:" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
                     <Border Background="{DynamicResource NodeServerBgBrush}" BorderBrush="{DynamicResource NodeServerBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
-                        <TextBlock Text="SSH服务器(内含托管资产 = runsOn)" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                        <TextBlock Text="SSH服务器(内含托管资产 = runsOn)" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
                     <Border Background="{DynamicResource NodeAppBgBrush}" BorderBrush="{DynamicResource NodeAppBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
-                        <TextBlock Text="应用" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                        <TextBlock Text="应用" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
                     <Border Background="{DynamicResource NodeDbBgBrush}" BorderBrush="{DynamicResource NodeDbBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
-                        <TextBlock Text="数据库" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                        <TextBlock Text="数据库" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
                     <Border Background="{DynamicResource NodeServiceBgBrush}" BorderBrush="{DynamicResource NodeServiceBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
-                        <TextBlock Text="服务" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                        <TextBlock Text="服务" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
                     <Border Background="{DynamicResource NodeContainerBgBrush}" BorderBrush="{DynamicResource NodeContainerBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
-                        <TextBlock Text="容器" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                        <TextBlock Text="容器" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
                     <Border Background="{DynamicResource NodeDeployBgBrush}" BorderBrush="{DynamicResource NodeDeployBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
-                        <TextBlock Text="部署" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                        <TextBlock Text="部署" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
                     <Border Background="{DynamicResource NodeDomainBgBrush}" BorderBrush="{DynamicResource NodeDomainBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
-                        <TextBlock Text="域名" FontSize="11" Foreground="{DynamicResource NodeTextBrush}"/>
+                        <TextBlock Text="域名" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
-                    <TextBlock Text="- - 自动发现 / ⚠ 冲突边 / 红框=证书过期" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,12,6"/>
-                    <TextBlock Text="显示:" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,6,6"/>
+                    <TextBlock Text="- - 自动发现 / ⚠ 冲突边 / 红框=证书过期" FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,12,6"/>
+                    <TextBlock Text="显示:" FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,6,6"/>
                     <CheckBox Content="服务" IsChecked="{Binding ShowServices}" VerticalAlignment="Center"
                               MinWidth="0" MinHeight="0" Padding="0" Margin="0,0,16,6"
                               ToolTip="显示/隐藏 systemd 服务节点"/>
@@ -461,7 +461,7 @@
                     </ItemsControl>
 
                     <!-- 选择框 -->
-                    <Rectangle Width="{Binding SelW}" Height="{Binding SelH}" Stroke="#2F6FEB" StrokeThickness="1.5"
+                    <Rectangle Width="{Binding SelW}" Height="{Binding SelH}" Stroke="{DynamicResource AppAccentBrush}" StrokeThickness="1.5"
                                StrokeDashArray="3 2" Fill="Transparent" IsHitTestVisible="False"
                                Canvas.Left="{Binding SelX}" Canvas.Top="{Binding SelY}">
                         <Rectangle.Style>
@@ -483,7 +483,7 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Path Data="{Binding Shape}" Fill="White" Stroke="#2F6FEB" StrokeThickness="1"/>
+                                <Path Data="{Binding Shape}" Fill="White" Stroke="{DynamicResource AppAccentBrush}" StrokeThickness="1"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -495,13 +495,13 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Path Data="{Binding Shape}" Fill="White" Stroke="#2F6FEB" StrokeThickness="1.5"/>
+                                <Path Data="{Binding Shape}" Fill="White" Stroke="{DynamicResource AppAccentBrush}" StrokeThickness="1.5"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
                     <!-- 拖动建边时的临时线 -->
-                    <Path Data="{Binding LinkGeometry}" Stroke="#2F6FEB" StrokeThickness="2" StrokeDashArray="3 2">
+                    <Path Data="{Binding LinkGeometry}" Stroke="{DynamicResource AppAccentBrush}" StrokeThickness="2" StrokeDashArray="3 2">
                         <Path.Style>
                             <Style TargetType="Path">
                                 <Setter Property="Visibility" Value="Collapsed"/>
@@ -515,7 +515,7 @@
                     </Path>
 
                     <!-- 选中连线高亮 -->
-                    <Path Data="{Binding SelectedEdgeLine}" Stroke="#F5A623" StrokeThickness="6" Opacity="0.35" IsHitTestVisible="False">
+                    <Path Data="{Binding SelectedEdgeLine}" Stroke="{DynamicResource AppWarningBrush}" StrokeThickness="6" Opacity="0.35" IsHitTestVisible="False">
                         <Path.Style>
                             <Style TargetType="Path">
                                 <Setter Property="Visibility" Value="Collapsed"/>
@@ -534,7 +534,7 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Path Data="{Binding Shape}" Fill="#F5A623" Stroke="White" StrokeThickness="1"/>
+                                <Path Data="{Binding Shape}" Fill="{DynamicResource AppWarningBrush}" Stroke="White" StrokeThickness="1"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -561,15 +561,15 @@
                                         Cursor="SizeAll">
                                     <TextBlock Text="关系属性（可拖动）" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                                 </Border>
-                                <TextBlock Text="{Binding SelectedEdgeSummary}" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="0,0,0,8"/>
-                                <TextBlock Text="关系类型" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                <TextBlock Text="{Binding SelectedEdgeSummary}" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,0,0,8"/>
+                                <TextBlock Text="关系类型" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 <ComboBox ItemsSource="{Binding RelationTypes}" SelectedItem="{Binding SelectedEdgeType}"
                                           IsEnabled="{Binding SelectedEdgeEditable}" Margin="0,2,0,8"/>
-                                <TextBlock Text="备注" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                <TextBlock Text="备注" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 <TextBox Text="{Binding SelectedEdgeNote, UpdateSourceTrigger=PropertyChanged}"
                                          AcceptsReturn="True" TextWrapping="Wrap" Height="64" VerticalScrollBarVisibility="Auto"
                                          IsEnabled="{Binding SelectedEdgeEditable}" Margin="0,2,0,8"/>
-                                <TextBlock Text="{Binding SelectedEdgeHint}" Foreground="{DynamicResource AppDangerBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <TextBlock Text="{Binding SelectedEdgeHint}" Foreground="{DynamicResource AppDangerBrush}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                     <Button Content="确认无冲突" Width="88" Padding="6,4" Margin="0,0,6,0" Click="OnConfirmEdge"
                                             IsEnabled="{Binding SelectedEdgeCanConfirm}"
@@ -606,7 +606,7 @@
                         <StackPanel Orientation="Horizontal">
                             <ui:Button Content="−" Padding="8,2" Click="OnZoomOut" ToolTip="缩小"/>
                             <TextBlock x:Name="ZoomText" Text="100%" Width="48" TextAlignment="Center"
-                                       VerticalAlignment="Center" FontSize="11"
+                                       VerticalAlignment="Center" FontSize="{DynamicResource AppFontSizeMicro}"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                             <ui:Button Content="+" Padding="8,2" Click="OnZoomIn" ToolTip="放大"/>
                             <ui:Button Content="适应" Padding="8,2" Margin="4,0,0,0" Click="OnZoomFit" ToolTip="适应窗口"/>
@@ -633,7 +633,7 @@
                                     <TextBlock Text="节点详情（可拖动）" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                 </Border>
                             </DockPanel>
-                            <TextBlock Text="{Binding SelectedNodeName}" FontSize="16" FontWeight="SemiBold"
+                            <TextBlock Text="{Binding SelectedNodeName}" FontSize="{DynamicResource AppFontSizeSubtitle}" FontWeight="SemiBold"
                                        TextWrapping="Wrap" Margin="0,8,0,0"/>
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                 <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="4" Padding="6,2">
@@ -641,9 +641,9 @@
                                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 </Border>
                             </StackPanel>
-                            <TextBlock Text="{Binding SelectedNodeDetail}" TextWrapping="Wrap" FontSize="11"
+                            <TextBlock Text="{Binding SelectedNodeDetail}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,8,0,0"/>
-                            <TextBlock Text="{Binding SelectedNodeId}" FontFamily="Consolas" FontSize="10"
+                            <TextBlock Text="{Binding SelectedNodeId}" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="10"
                                        Foreground="{DynamicResource AppTextTertiaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                             <WrapPanel Margin="0,12,0,0">
                                 <ui:Button Content="查看关系" Padding="10,3" Margin="0,0,6,6" Click="OnInspectorRelations"/>

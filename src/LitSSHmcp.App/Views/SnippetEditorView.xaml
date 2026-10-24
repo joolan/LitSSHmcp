@@ -40,7 +40,7 @@
                 <TextBlock Text="名称:"/>
                 <ui:TextBox FontWeight="Normal" x:Name="NameBox" Margin="0,2,0,10"/>
                 <TextBlock Text="命令:"/>
-                <ui:TextBox FontWeight="Normal" x:Name="CommandBox" AcceptsReturn="True" Height="120" FontFamily="Consolas"
+                <ui:TextBox FontWeight="Normal" x:Name="CommandBox" AcceptsReturn="True" Height="120" FontFamily="{DynamicResource AppFontMonoFamily}"
                             Margin="0,2,0,4" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
             </StackPanel>
         </Grid>

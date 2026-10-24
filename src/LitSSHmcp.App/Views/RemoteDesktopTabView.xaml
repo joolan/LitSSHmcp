@@ -8,7 +8,7 @@
                 <TextBlock x:Name="Overlay" Text="正在建立连接…" HorizontalAlignment="Center" TextAlignment="Center"
                            TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                 <TextBlock x:Name="OverlayDetail" Text="" HorizontalAlignment="Center" TextAlignment="Center"
-                           TextWrapping="Wrap" FontSize="11" Margin="0,8,0,0"
+                           TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,8,0,0"
                            Foreground="{DynamicResource AppTextSecondaryBrush}"/>
             </StackPanel>
         </Border>

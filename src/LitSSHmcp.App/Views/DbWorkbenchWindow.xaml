@@ -448,9 +448,9 @@
                                 <Setter Property="Background" Value="{DynamicResource AppCodeBgBrush}"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsWriteMode}" Value="True">
-                                        <Setter Property="BorderBrush" Value="#D13438"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AppDangerBrush}"/>
                                         <Setter Property="BorderThickness" Value="2"/>
-                                        <Setter Property="Background" Value="#FDECEA"/>
+                                        <Setter Property="Background" Value="{DynamicResource AppDangerSubtleBrush}"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>

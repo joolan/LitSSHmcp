@@ -14,10 +14,11 @@ public partial class ServerManageView : UserControl
     public ServerManageView()
     {
         InitializeComponent();
+        LitSSHmcp.App.Controls.ColumnChooser.Attach(ServerManageList, "server.columns");
     }
 
     private void OnChooseColumns(object sender, RoutedEventArgs e)
-        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, ServerManageList);
+        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, ServerManageList, "server.columns");
 
     private void OnServerCardMore(object sender, RoutedEventArgs e)
     {

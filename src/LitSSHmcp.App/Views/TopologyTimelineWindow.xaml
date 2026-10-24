@@ -59,7 +59,7 @@
                 </ListView>
 
                 <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                              Background="#22000000" ResizeBehavior="PreviousAndNext"/>
+                              Background="{DynamicResource AppBorderSubtleBrush}" ResizeBehavior="PreviousAndNext"/>
 
                 <DockPanel Grid.Column="2" Margin="6,0,0,0">
                     <TextBlock DockPanel.Dock="Top" Text="变化明细" FontWeight="Bold" Margin="0,0,0,6"

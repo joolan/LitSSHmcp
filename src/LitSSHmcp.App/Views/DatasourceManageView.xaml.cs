@@ -13,10 +13,11 @@ public partial class DatasourceManageView : UserControl
     public DatasourceManageView()
     {
         InitializeComponent();
+        LitSSHmcp.App.Controls.ColumnChooser.Attach(DsList, "datasource.columns");
     }
 
     private void OnChooseColumns(object sender, RoutedEventArgs e)
-        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, DsList);
+        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, DsList, "datasource.columns");
 
     private void OnTestClick(object sender, RoutedEventArgs e) => ViewModel?.TestCommand.Execute(null);
 

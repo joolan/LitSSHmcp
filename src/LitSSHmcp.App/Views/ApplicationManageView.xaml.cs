@@ -13,6 +13,7 @@ public partial class ApplicationManageView : UserControl
     public ApplicationManageView()
     {
         InitializeComponent();
+        LitSSHmcp.App.Controls.ColumnChooser.Attach(AppList, "application.columns");
     }
 
     private void OnEditClick(object sender, RoutedEventArgs e) => ViewModel?.EditCommand.Execute(null);
@@ -20,7 +21,7 @@ public partial class ApplicationManageView : UserControl
     private void OnDeleteClick(object sender, RoutedEventArgs e) => ViewModel?.DeleteCommand.Execute(null);
 
     private void OnChooseColumns(object sender, RoutedEventArgs e)
-        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, AppList);
+        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, AppList, "application.columns");
 
     private void OnItemDoubleClick(object sender, MouseButtonEventArgs e)
     {

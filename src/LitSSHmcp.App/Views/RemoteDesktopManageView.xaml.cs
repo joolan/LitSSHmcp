@@ -13,6 +13,7 @@ public partial class RemoteDesktopManageView : UserControl
     public RemoteDesktopManageView()
     {
         InitializeComponent();
+        LitSSHmcp.App.Controls.ColumnChooser.Attach(RdList, "remoteDesktop.columns");
     }
 
     private void OnConnectClick(object sender, RoutedEventArgs e) => ViewModel?.ConnectCommand.Execute(null);
@@ -24,7 +25,7 @@ public partial class RemoteDesktopManageView : UserControl
     private void OnDeleteClick(object sender, RoutedEventArgs e) => ViewModel?.DeleteCommand.Execute(null);
 
     private void OnChooseColumns(object sender, RoutedEventArgs e)
-        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, RdList);
+        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, RdList, "remoteDesktop.columns");
 
     private void OnItemDoubleClick(object sender, MouseButtonEventArgs e)
     {

@@ -240,6 +240,18 @@ public class MainWindowXamlTests
     }
 
     [Fact]
+    public void Temporary_ssh_window_parses_xaml()
+    {
+        var ex = RunSta(() =>
+        {
+            _ = new TemporarySshWindow(
+                Array.Empty<LitSSHmcp.Core.Models.SshServerConfig>(),
+                _ => Task.FromResult(new LitSSHmcp.Core.Services.SSH.ConnectionProbeResult()));
+        });
+        Assert.Null(ex);
+    }
+
+    [Fact]
     public void Tunnel_mark_shows_check_only_when_tunnel_configured()
     {
         var conv = LitSSHmcp.App.Controls.TunnelMarkConverter.Instance;

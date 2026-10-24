@@ -452,6 +452,13 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         StatusMessage = $"已打开终端: {vm.Title} ({terminals.Count + 1}/{MaxTerminalsPerServer})";
     }
 
+    /// <summary>测试临时 SSH 连接（不读取/写入配置）。</summary>
+    public Task<ConnectionProbeResult> ProbeTemporaryServerAsync(SshServerConfig server)
+        => _sshService.ProbeConnectionAsync(server);
+
+    /// <summary>打开临时 SSH 会话：服务器对象只存在于内存，不写入配置。</summary>
+    public void ConnectTemporaryServer(SshServerConfig server) => ConnectTerminal(server);
+
     private readonly Dictionary<string, LocalTerminalSessionViewModel> _aiTerminals = new(StringComparer.Ordinal);
     private int _manualLocalSeq;
 

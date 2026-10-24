@@ -1,0 +1,82 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.TemporarySshWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
+        Title="临时 SSH 连接" Height="720" Width="560" MinHeight="560" MinWidth="480"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="临时 SSH 连接"/>
+
+        <controls:PageHeader Grid.Row="1" Margin="14,10,14,0" Icon="PlugConnected24" Title="临时 SSH 连接"
+                             Subtitle="仅内存保存 · 关闭会话即消失 · 不写入配置"/>
+
+        <ScrollViewer Grid.Row="2" Margin="14,0,14,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <controls:FormRow x:Name="NameRow" Label="名称" HelpText="可选；留空时自动使用主机名">
+                    <ui:TextBox FontWeight="Normal"/>
+                </controls:FormRow>
+
+                <controls:FormRow x:Name="HostRow" Label="主机" IsRequired="True">
+                    <ui:TextBox FontWeight="Normal"
+                                PlaceholderText="192.168.1.10 或 host.example.com"/>
+                </controls:FormRow>
+
+                <controls:FormRow x:Name="PortRow" Label="端口" HelpText="默认 22">
+                    <ui:TextBox FontWeight="Normal" Width="100" HorizontalAlignment="Left" Text="22"/>
+                </controls:FormRow>
+
+                <controls:FormRow x:Name="UserRow" Label="用户名" IsRequired="True">
+                    <ui:TextBox FontWeight="Normal"/>
+                </controls:FormRow>
+
+                <controls:FormRow x:Name="AuthRow" Label="认证方式">
+                    <ComboBox Width="160" HorizontalAlignment="Left" SelectedIndex="0">
+                        <ComboBoxItem Content="密码"/>
+                        <ComboBoxItem Content="密钥文件"/>
+                    </ComboBox>
+                </controls:FormRow>
+
+                <controls:FormRow x:Name="PasswordRow" Label="密码">
+                    <PasswordBox FontWeight="Normal"/>
+                </controls:FormRow>
+
+                <controls:FormRow x:Name="KeyFileRow" Label="密钥文件" HelpText="支持 OpenSSH / PEM，不支持 PuTTY .ppk"
+                                  Visibility="Collapsed">
+                    <controls:PathPicker Title="选择 SSH 私钥" Filter="私钥文件|*.pem;*.key|所有文件|*.*"
+                                         Placeholder="C:\Users\you\.ssh\id_ed25519"/>
+                </controls:FormRow>
+
+                <controls:FormRow x:Name="KeyPassRow" Label="密钥口令" HelpText="仅密钥有口令时填写" Visibility="Collapsed">
+                    <PasswordBox FontWeight="Normal"/>
+                </controls:FormRow>
+
+                <controls:FormRow x:Name="JumpRow" Label="经跳板机" HelpText="仅支持已保存且启用的服务器；不支持多级跳板">
+                    <ComboBox HorizontalAlignment="Stretch"/>
+                </controls:FormRow>
+
+                <Border Background="{DynamicResource AppWarningSubtleBrush}" CornerRadius="6" Padding="10,8" Margin="0,8,0,0">
+                    <TextBlock Text="临时连接只用于交互式终端，不保存配置，也不产生 MCP 审计记录。SFTP、端口转发、资源监控和快照不适用于临时连接。"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="3" Style="{DynamicResource DialogFooterPanelStyle}" LastChildFill="False">
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,12,0"/>
+            <ui:Button DockPanel.Dock="Right" x:Name="ConnectButton" Content="连接" Appearance="Primary"
+                       MinWidth="88" Click="OnConnect"/>
+            <ui:Button DockPanel.Dock="Right" Content="取消" MinWidth="88" IsCancel="True" Margin="0,0,8,0"/>
+            <ui:Button DockPanel.Dock="Right" x:Name="TestButton" Content="测试连接" MinWidth="88" Margin="0,0,8,0"
+                       Click="OnTest"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

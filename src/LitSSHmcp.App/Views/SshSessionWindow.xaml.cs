@@ -255,9 +255,24 @@ public partial class SshSessionWindow : FluentWindow
             }
         }
 
+        menu.Items.Add(new System.Windows.Controls.Separator());
+        var temporary = new System.Windows.Controls.MenuItem { Header = "临时 SSH 连接…" };
+        temporary.Click += (_, _) => OpenTemporarySsh(vm);
+        menu.Items.Add(temporary);
+
         menu.PlacementTarget = sender as UIElement;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         menu.IsOpen = true;
+    }
+
+    private void OpenTemporarySsh(MainViewModel vm)
+    {
+        var dialog = new TemporarySshWindow(vm.Servers, vm.ProbeTemporaryServerAsync)
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() == true && dialog.Result is { } server)
+            vm.ConnectTemporaryServer(server);
     }
 
     // ---- 标签拖拽排序 / 拖出分离 / 双击重命名 ----

@@ -63,6 +63,16 @@ public sealed class BooleanAndToVisibilityConverter : IMultiValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>布尔取反后转可见性：用于“没有数据时显示空状态”。</summary>
+public sealed class BooleanNotToVisibilityConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is bool flag && flag ? Visibility.Collapsed : Visibility.Visible;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 public sealed class RelativeTimeConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)

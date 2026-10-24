@@ -7,6 +7,7 @@
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <ui:FluentWindow.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <controls:BooleanNotToVisibilityConverter x:Key="BoolNotToVis"/>
 
         <Style x:Key="AuditDetailLabel" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
@@ -167,10 +168,27 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         <ui:TitleBar Grid.Row="0" Title="审计日志"/>
-        <Grid Grid.Row="1">
+
+        <controls:PageHeader Grid.Row="1" Margin="10,8,10,0" Icon="History24" Title="审计日志"
+                             Subtitle="命令 / SQL / 会话审计 · 哈希链可校验">
+            <controls:PageHeader.Actions>
+                <StackPanel Orientation="Horizontal">
+                    <ui:Button Content="导出 CSV" Icon="{ui:SymbolIcon Save24}" Padding="12,4" Margin="0,0,8,0"
+                               Click="OnExport"/>
+                    <ui:Button Content="校验完整性" Icon="{ui:SymbolIcon ShieldCheckmark24}" Padding="12,4" Margin="0,0,8,0"
+                               Click="OnVerify" ToolTip="校验审计哈希链：检测审计记录是否被篡改/删除"/>
+                    <ui:Button Content="重置" Padding="12,4" Margin="0,0,8,0" Click="OnReset"/>
+                    <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Appearance="Primary" Padding="12,4"
+                               Click="OnRefresh"/>
+                </StackPanel>
+            </controls:PageHeader.Actions>
+        </controls:PageHeader>
+
+        <Grid Grid.Row="2">
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -203,11 +221,6 @@
                           ToolTip="按事件类型过滤: 全部 / 执行 / 审批拦截 / 只读探测 / 列表元数据 / 文件传输 / 本地工具"/>
                 <CheckBox Content="含归档" IsChecked="{Binding IncludeHistory}" VerticalAlignment="Center" Margin="0,0,12,6"
                           ToolTip="包含超过保留天数、已移动到历史归档表的记录（永久保留）"/>
-                <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Appearance="Primary" Padding="12,4" Margin="0,0,6,6" Click="OnRefresh"/>
-                <ui:Button Content="导出 CSV" Icon="{ui:SymbolIcon Save24}" Padding="12,4" Margin="0,0,6,6" Click="OnExport"/>
-                <ui:Button Content="校验完整性" Icon="{ui:SymbolIcon ShieldCheckmark24}" Padding="12,4" Margin="0,0,6,6" Click="OnVerify"
-                           ToolTip="校验审计哈希链：检测审计记录是否被篡改/删除"/>
-                <ui:Button Content="重置" Padding="12,4" Margin="0,0,0,6" Click="OnReset"/>
             </WrapPanel>
 
             <TextBlock Text="{Binding SummaryText}" Margin="0,8,0,0" FontWeight="SemiBold"
@@ -222,6 +235,7 @@
 
             <TabControl Grid.Column="0" SelectionChanged="OnAuditTabChanged">
             <TabItem Header="命令审计">
+                <Grid>
                 <ListView x:Name="CommandList" ItemsSource="{Binding CommandLogs}" Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
                           SelectionChanged="OnAuditSelectionChanged"
                           PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
@@ -246,8 +260,18 @@
                         </GridView>
                     </ListView.View>
                 </ListView>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
+                            Visibility="{Binding HasItems, ElementName=CommandList, Converter={StaticResource BoolNotToVis}}">
+                    <ui:SymbolIcon Symbol="History24" FontSize="34" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                    <TextBlock Text="暂无命令审计记录" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                    <TextBlock Text="调整筛选条件，或点击刷新重新加载。" Style="{DynamicResource EmptyStateHintStyle}"
+                               Margin="0,6,0,0"/>
+                </StackPanel>
+                </Grid>
             </TabItem>
             <TabItem Header="SQL/Redis审计">
+                <Grid>
                 <ListView x:Name="SqlList" ItemsSource="{Binding SqlLogs}" Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
                           SelectionChanged="OnAuditSelectionChanged"
                           PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
@@ -272,8 +296,18 @@
                         </GridView>
                     </ListView.View>
                 </ListView>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
+                            Visibility="{Binding HasItems, ElementName=SqlList, Converter={StaticResource BoolNotToVis}}">
+                    <ui:SymbolIcon Symbol="Database24" FontSize="34" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                    <TextBlock Text="暂无 SQL / Redis 审计记录" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                    <TextBlock Text="调整筛选条件，或点击刷新重新加载。" Style="{DynamicResource EmptyStateHintStyle}"
+                               Margin="0,6,0,0"/>
+                </StackPanel>
+                </Grid>
             </TabItem>
             <TabItem Header="会话">
+                <Grid>
                 <ListView x:Name="SessionsList" ItemsSource="{Binding Sessions}" Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
                           SelectionChanged="OnAuditSelectionChanged"
                           PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
@@ -293,6 +327,15 @@
                         </GridView>
                     </ListView.View>
                 </ListView>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
+                            Visibility="{Binding HasItems, ElementName=SessionsList, Converter={StaticResource BoolNotToVis}}">
+                    <ui:SymbolIcon Symbol="Server24" FontSize="34" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                    <TextBlock Text="暂无会话记录" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                    <TextBlock Text="MCP 客户端建立会话后，这里会显示会话信息。" Style="{DynamicResource EmptyStateHintStyle}"
+                               Margin="0,6,0,0"/>
+                </StackPanel>
+                </Grid>
             </TabItem>
             </TabControl>
 

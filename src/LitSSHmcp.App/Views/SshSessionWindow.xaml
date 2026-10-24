@@ -71,6 +71,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
@@ -79,16 +80,6 @@
             <Grid>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="14,0,0,0">
                     <TextBlock Text="SSH 会话管理" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
-                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
-                    <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
-                               ToolTip="新建连接" AutomationProperties.Name="新建 SSH 连接" Click="OnNewConnection"/>
-                    <ui:Button Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
-                               ToolTip="批量执行（发送到会话窗口）" AutomationProperties.Name="批量执行命令" Click="OnBatchExec"/>
-                    <ui:Button Icon="{ui:SymbolIcon Eye24}" Appearance="Transparent" Padding="6,3"
-                               ToolTip="布局 / 显示方式" AutomationProperties.Name="切换会话布局" Click="OnLayoutMenu"/>
-                    </StackPanel>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Stretch"
@@ -103,7 +94,21 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Margin="6">
+        <controls:PageHeader Grid.Row="1" Margin="10,6,10,0" Icon="Server24" Title="会话标签"
+                             Subtitle="拖动标签可分离窗口；双击标签重命名">
+            <controls:PageHeader.Actions>
+                <StackPanel Orientation="Horizontal">
+                    <ui:Button Content="批量执行" Icon="{ui:SymbolIcon Play24}" Padding="12,4" Margin="0,0,8,0"
+                               IsEnabled="{Binding HasSessions}" Click="OnBatchExec"/>
+                    <ui:Button Content="布局" Icon="{ui:SymbolIcon Eye24}" Padding="12,4" Margin="0,0,8,0"
+                               IsEnabled="{Binding HasSessions}" Click="OnLayoutMenu"/>
+                    <ui:Button Content="新建连接" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="12,4"
+                               Click="OnNewConnection"/>
+                </StackPanel>
+            </controls:PageHeader.Actions>
+        </controls:PageHeader>
+
+        <Grid Grid.Row="2" Margin="6">
             <Grid>
                 <TabControl x:Name="Tabs" ItemsSource="{Binding DockedSessions}" SelectedItem="{Binding SelectedSession}"
                         Template="{StaticResource SessionTabTemplate}"
@@ -211,8 +216,11 @@
                         </Style.Triggers>
                     </Style>
                 </StackPanel.Style>
-                <TextBlock Text="当前没有已打开的 SSH 会话标签。" HorizontalAlignment="Center"
-                           Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="13" Margin="0,0,0,12"/>
+                <ui:SymbolIcon Symbol="Server24" FontSize="34" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                <TextBlock Text="暂无 SSH 会话" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                <TextBlock Text="打开服务器终端后，会话标签会显示在这里。" Style="{DynamicResource EmptyStateHintStyle}"
+                           Margin="0,6,0,12"/>
                 <ui:Button Content="选择服务器新建连接" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="16,6"
                            HorizontalAlignment="Center" Click="OnNewConnection"/>
             </StackPanel>

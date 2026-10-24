@@ -82,12 +82,12 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
                                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
                                 Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
-                        <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
-                                   ToolTip="新建连接…" Click="OnNewConnection"/>
-                        <ui:Button Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
-                                   ToolTip="批量执行（发送到会话窗口）" Click="OnBatchExec"/>
-                        <ui:Button Icon="{ui:SymbolIcon Eye24}" Appearance="Transparent" Padding="6,3"
-                                   ToolTip="布局 / 显示方式" Click="OnLayoutMenu"/>
+                    <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
+                               ToolTip="新建连接" AutomationProperties.Name="新建 SSH 连接" Click="OnNewConnection"/>
+                    <ui:Button Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3" Margin="0,0,10,0"
+                               ToolTip="批量执行（发送到会话窗口）" AutomationProperties.Name="批量执行命令" Click="OnBatchExec"/>
+                    <ui:Button Icon="{ui:SymbolIcon Eye24}" Appearance="Transparent" Padding="6,3"
+                               ToolTip="布局 / 显示方式" AutomationProperties.Name="切换会话布局" Click="OnLayoutMenu"/>
                     </StackPanel>
                 </StackPanel>
 

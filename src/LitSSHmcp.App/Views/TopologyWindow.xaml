@@ -623,8 +623,9 @@
                         </Border.RenderTransform>
                         <StackPanel>
                             <DockPanel>
-                                <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Dismiss24}" Padding="4"
-                                           Appearance="Transparent" ToolTip="关闭详情" Click="OnCloseInspector"/>
+                    <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Dismiss24}" Padding="4"
+                               Appearance="Transparent" ToolTip="关闭详情" AutomationProperties.Name="关闭节点详情"
+                               Click="OnCloseInspector"/>
                                 <Border Background="Transparent" Cursor="SizeAll" ToolTip="拖动移动节点详情；双击复位"
                                         MouseLeftButtonDown="OnInspectorHeaderDown"
                                         MouseMove="OnInspectorHeaderMove"

@@ -71,10 +71,11 @@
                     <TextBlock Text="远程桌面" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,14,0"/>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
                                 shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                        <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,8,0"
-                                   ToolTip="新建连接…" Click="OnNewConnection"/>
-                        <ui:Button Icon="{ui:SymbolIcon Open24}" Appearance="Transparent" Padding="6,3"
-                                   ToolTip="用外部客户端打开当前标签" Click="OnExternalOpen"/>
+                    <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3" Margin="0,0,8,0"
+                               ToolTip="新建连接" AutomationProperties.Name="新建远程桌面连接" Click="OnNewConnection"/>
+                    <ui:Button Icon="{ui:SymbolIcon Open24}" Appearance="Transparent" Padding="6,3"
+                               ToolTip="用外部客户端打开当前标签" AutomationProperties.Name="用外部客户端打开当前远程桌面"
+                               Click="OnExternalOpen"/>
                     </StackPanel>
                 </StackPanel>
 

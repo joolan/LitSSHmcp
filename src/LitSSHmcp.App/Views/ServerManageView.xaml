@@ -259,7 +259,8 @@
 
                         <DockPanel>
                             <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Dismiss24}" Padding="4"
-                                       Appearance="Transparent" ToolTip="关闭详情" Click="OnClearServerSelection"/>
+                                       Appearance="Transparent" ToolTip="关闭详情" AutomationProperties.Name="关闭服务器详情"
+                                       Click="OnClearServerSelection"/>
                             <TextBlock Text="{Binding SelectedServer.Name}" FontSize="17" FontWeight="SemiBold"
                                        TextWrapping="Wrap" VerticalAlignment="Center"/>
                         </DockPanel>

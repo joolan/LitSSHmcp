@@ -9,17 +9,18 @@
     <Color x:Key="TableHeaderColor">#FFF9FAFB</Color>
     <Color x:Key="BorderColor">#22000000</Color>
     <Color x:Key="TextPrimaryColor">#FF1A1A1A</Color>
-    <Color x:Key="TextSecondaryColor">#99000000</Color>
-    <Color x:Key="TextTertiaryColor">#73000000</Color>
+    <Color x:Key="TextSecondaryColor">#A6000000</Color>
+    <Color x:Key="TextTertiaryColor">#8F000000</Color>
     <Color x:Key="TextDisabledColor">#5C000000</Color>
     <Color x:Key="AccentColor">#FF2563EB</Color>
     <Color x:Key="AccentTextColor">#FFFFFFFF</Color>
     <Color x:Key="DangerColor">#FFC42B1C</Color>
+    <Color x:Key="AccentSubtleColor">#142563EB</Color>
     <Color x:Key="DangerSubtleColor">#1FC42B1C</Color>
     <Color x:Key="SuccessColor">#FF0F7B0F</Color>
     <Color x:Key="SuccessSubtleColor">#1F0F7B0F</Color>
     <Color x:Key="WarningColor">#FF9D5D00</Color>
-    <Color x:Key="WarningSubtleColor">#1F9D5D00</Color>
+    <Color x:Key="WarningSubtleColor">#1A9D5D00</Color>
     <Color x:Key="CodeBgColor">#FFF6F6F6</Color>
     <Color x:Key="CodeTextColor">#FF1F1F1F</Color>
     <Color x:Key="TerminalBgColor">#FF1E1E1E</Color>
@@ -76,6 +77,7 @@
     <SolidColorBrush x:Key="AppAccentBrush" Color="{StaticResource AccentColor}"/>
     <SolidColorBrush x:Key="AppAccentTextBrush" Color="{StaticResource AccentTextColor}"/>
     <SolidColorBrush x:Key="AppDangerBrush" Color="{StaticResource DangerColor}"/>
+    <SolidColorBrush x:Key="AppAccentSubtleBrush" Color="{StaticResource AccentSubtleColor}"/>
     <SolidColorBrush x:Key="AppDangerSubtleBrush" Color="{StaticResource DangerSubtleColor}"/>
     <SolidColorBrush x:Key="AppSuccessBrush" Color="{StaticResource SuccessColor}"/>
     <SolidColorBrush x:Key="AppSuccessSubtleBrush" Color="{StaticResource SuccessSubtleColor}"/>

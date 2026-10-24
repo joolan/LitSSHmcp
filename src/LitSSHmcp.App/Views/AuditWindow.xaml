@@ -307,7 +307,8 @@
                     </Grid.RowDefinitions>
                     <DockPanel Margin="0,0,0,8">
                         <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Dismiss24}" Padding="4"
-                                   Appearance="Transparent" ToolTip="关闭详情" Click="OnCloseAuditDetail"/>
+                                   Appearance="Transparent" ToolTip="关闭详情" AutomationProperties.Name="关闭审计详情"
+                                   Click="OnCloseAuditDetail"/>
                         <ui:Button DockPanel.Dock="Right" Content="复制" Padding="8,2" Margin="0,0,6,0"
                                    ToolTip="复制当前详情" Click="OnCopyAuditDetail"/>
                         <TextBlock Text="审计详情" FontWeight="SemiBold" VerticalAlignment="Center"/>

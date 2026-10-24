@@ -15,6 +15,7 @@
     <Color x:Key="AccentColor">#FF4CC2FF</Color>
     <Color x:Key="AccentTextColor">#FF00212E</Color>
     <Color x:Key="DangerColor">#FFFF99A4</Color>
+    <Color x:Key="AccentSubtleColor">#224CC2FF</Color>
     <Color x:Key="DangerSubtleColor">#1FFF99A4</Color>
     <Color x:Key="SuccessColor">#FF6CCB5F</Color>
     <Color x:Key="SuccessSubtleColor">#1F6CCB5F</Color>
@@ -76,6 +77,7 @@
     <SolidColorBrush x:Key="AppAccentBrush" Color="{StaticResource AccentColor}"/>
     <SolidColorBrush x:Key="AppAccentTextBrush" Color="{StaticResource AccentTextColor}"/>
     <SolidColorBrush x:Key="AppDangerBrush" Color="{StaticResource DangerColor}"/>
+    <SolidColorBrush x:Key="AppAccentSubtleBrush" Color="{StaticResource AccentSubtleColor}"/>
     <SolidColorBrush x:Key="AppDangerSubtleBrush" Color="{StaticResource DangerSubtleColor}"/>
     <SolidColorBrush x:Key="AppSuccessBrush" Color="{StaticResource SuccessColor}"/>
     <SolidColorBrush x:Key="AppSuccessSubtleBrush" Color="{StaticResource SuccessSubtleColor}"/>

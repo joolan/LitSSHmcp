@@ -34,10 +34,13 @@
                 <TextBlock Text="双击打开终端；右键更多操作；同一服务器最多 4 个终端"
                            Style="{DynamicResource PageSubtitleStyle}"/>
             </StackPanel>
-            <ui:TextBox Grid.Column="1" Style="{DynamicResource PageSearchBoxStyle}"
-                        Text="{Binding ServerSearchText, UpdateSourceTrigger=PropertyChanged}"
-                        PlaceholderText="搜索名称 / 主机 / 标签…" VerticalAlignment="Center"
-                        AutomationProperties.Name="搜索服务器"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox Content="卡片视图" IsChecked="{Binding IsServerCardView}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ui:TextBox Style="{DynamicResource PageSearchBoxStyle}"
+                            Text="{Binding ServerSearchText, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="搜索名称 / 主机 / 标签…" VerticalAlignment="Center"
+                            AutomationProperties.Name="搜索服务器"/>
+            </StackPanel>
 
             <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="10,6" CornerRadius="6"
                     Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}"
@@ -71,6 +74,7 @@
 
                 <Grid Grid.Column="0">
                 <ListView x:Name="ServerManageList" ItemsSource="{Binding GroupedServers}" SelectedItem="{Binding SelectedServer}"
+                          Visibility="{Binding IsServerListView, Converter={StaticResource BoolToVis}}"
                           Padding="3" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                           ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>
@@ -143,6 +147,69 @@
                         </GridView>
                     </ListView.View>
                 </ListView>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding IsServerCardView, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl ItemsSource="{Binding FilteredServers}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="310" Margin="0,0,10,10">
+                                    <StackPanel>
+                                        <DockPanel>
+                                            <Border DockPanel.Dock="Left" Background="{DynamicResource AppAccentSubtleBrush}"
+                                                    CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                                                <TextBlock Text="SSH" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                           Foreground="{DynamicResource AppAccentBrush}"/>
+                                            </Border>
+                                            <Border DockPanel.Dock="Right" Background="{DynamicResource AppDangerSubtleBrush}"
+                                                    CornerRadius="4" Padding="6,2"
+                                                    Visibility="{Binding Disabled, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="已禁用" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                           Foreground="{DynamicResource AppDangerBrush}"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding Name}" FontSize="{DynamicResource AppFontSizeSubtitle}"
+                                                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                        <TextBlock Text="{Binding Host}" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,8,0,2"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}">
+                                            <Run Text="端口 "/><Run Text="{Binding Port, Mode=OneWay}"/>
+                                            <Run Text=" · "/><Run Text="{Binding Username, Mode=OneWay}"/>
+                                        </TextBlock>
+                                        <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
+                                            <Run Text="认证 "/><Run Text="{Binding AuthType, Mode=OneWay, Converter={StaticResource ServerAuth}}"/>
+                                            <Run Text=" · 分组 "/><Run Text="{Binding Group, Mode=OneWay}"/>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Description}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,6,0,0"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <WrapPanel Margin="0,10,0,0">
+                                            <ui:Button Content="终端" Appearance="Primary" Padding="10,3" Margin="0,0,6,6"
+                                                       Command="{Binding DataContext.OpenTerminalItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                       CommandParameter="{Binding}"/>
+                                            <ui:Button Content="SFTP" Padding="10,3" Margin="0,0,6,6"
+                                                       Command="{Binding DataContext.OpenSftpItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                       CommandParameter="{Binding}"/>
+                                            <ui:Button Content="监控" Padding="10,3" Margin="0,0,6,6"
+                                                       Command="{Binding DataContext.OpenMonitorItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                       CommandParameter="{Binding}"/>
+                                            <ui:Button Content="编辑" Padding="10,3" Margin="0,0,6,6"
+                                                       Command="{Binding DataContext.EditServerItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                       CommandParameter="{Binding}"/>
+                                            <ui:Button Content="删除" Padding="10,3" Margin="0,0,0,6"
+                                                       Foreground="{DynamicResource AppDangerBrush}"
+                                                       Command="{Binding DataContext.DeleteServerItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                       CommandParameter="{Binding}"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
 
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
                             Visibility="{Binding GroupedServers.IsEmpty, Converter={StaticResource BoolToVis}}">

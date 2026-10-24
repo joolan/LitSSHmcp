@@ -46,6 +46,7 @@ public partial class MainViewModel
             _serverSearchText = value;
             OnPropertyChanged();
             GroupedServers.Refresh();
+            FilteredServers.Refresh();
         }
     }
 

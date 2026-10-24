@@ -166,7 +166,7 @@
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Home}">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel>
-                            <TextBlock Text="主页" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold" Margin="0,0,0,16"/>
+                            <controls:PageHeader Icon="Home24" Title="主页" Subtitle="AI 快捷提问与资产概览"/>
 
                             <TextBlock Text="AI 快捷提问" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>

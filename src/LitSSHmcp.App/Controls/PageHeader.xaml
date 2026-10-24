@@ -1,0 +1,42 @@
+<UserControl x:Class="LitSSHmcp.App.Controls.PageHeader"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <Grid Margin="0,0,0,12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Grid.Column="0">
+            <DockPanel>
+                <ui:SymbolIcon DockPanel.Dock="Left" Symbol="{Binding Icon, ElementName=Root}"
+                               FontSize="{DynamicResource AppFontSizeTitle}" Margin="0,0,8,0"
+                               Foreground="{DynamicResource AppAccentBrush}"/>
+                <TextBlock Text="{Binding Title, ElementName=Root}" Style="{DynamicResource PageTitleStyle}"/>
+            </DockPanel>
+            <TextBlock Text="{Binding Subtitle, ElementName=Root}" Style="{DynamicResource PageSubtitleStyle}"/>
+        </StackPanel>
+
+        <ContentPresenter Grid.Row="0" Grid.Column="1" Content="{Binding Actions, ElementName=Root}"
+                          VerticalAlignment="Center"/>
+
+        <ContentPresenter Grid.Row="1" Grid.ColumnSpan="2" Content="{Binding StatusContent, ElementName=Root}"
+                          Margin="0,8,0,0">
+            <ContentPresenter.Style>
+                <Style TargetType="ContentPresenter">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding StatusContent, ElementName=Root}" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ContentPresenter.Style>
+        </ContentPresenter>
+    </Grid>
+</UserControl>

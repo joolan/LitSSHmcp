@@ -17,47 +17,35 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <StackPanel>
-                <DockPanel>
-                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Server24" FontSize="{DynamicResource AppFontSizeTitle}" Margin="0,0,8,0"
-                                   Foreground="{DynamicResource AppAccentBrush}"/>
-                    <TextBlock Text="SSH 服务器" Style="{DynamicResource PageTitleStyle}"/>
-                </DockPanel>
-                <TextBlock Text="双击打开终端；右键更多操作；同一服务器最多 4 个终端"
-                           Style="{DynamicResource PageSubtitleStyle}"/>
-            </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                <CheckBox Content="卡片视图" IsChecked="{Binding IsServerCardView}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <ui:TextBox Style="{DynamicResource PageSearchBoxStyle}"
-                            Text="{Binding ServerSearchText, UpdateSourceTrigger=PropertyChanged}"
-                            PlaceholderText="搜索名称 / 主机 / 标签…" VerticalAlignment="Center"
-                            AutomationProperties.Name="搜索服务器"/>
-            </StackPanel>
-
-            <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="10,6" CornerRadius="6"
-                    Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}"
-                    BorderThickness="1" Visibility="{Binding HasServersError, Converter={StaticResource BoolToVis}}">
-                <DockPanel>
-                    <ui:Button DockPanel.Dock="Right" Content="重试" Padding="10,2" Margin="8,0,0,0"
-                               Command="{Binding LoadServersCommand}"/>
-                    <TextBlock Text="{Binding ServersErrorMessage}" TextWrapping="Wrap"
-                               Foreground="{DynamicResource AppDangerBrush}"/>
-                </DockPanel>
-            </Border>
-        </Grid>
+        <controls:PageHeader Grid.Row="0" Icon="Server24" Title="SSH 服务器"
+                             Subtitle="双击打开终端；右键更多操作；同一服务器最多 4 个终端">
+            <controls:PageHeader.Actions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:TextBox Style="{DynamicResource PageSearchBoxStyle}"
+                                Text="{Binding ServerSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                PlaceholderText="搜索名称 / 主机 / 标签" VerticalAlignment="Center"
+                                AutomationProperties.Name="搜索服务器"/>
+                    <CheckBox Content="卡片视图" IsChecked="{Binding IsServerCardView}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                    <ui:Button Content="添加" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="12,4"
+                               Margin="8,0,0,0" Command="{Binding AddServerCommand}"/>
+                </StackPanel>
+            </controls:PageHeader.Actions>
+            <controls:PageHeader.StatusContent>
+                <Border Padding="10,6" CornerRadius="6"
+                        Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}"
+                        BorderThickness="1" Visibility="{Binding HasServersError, Converter={StaticResource BoolToVis}}">
+                    <DockPanel>
+                        <ui:Button DockPanel.Dock="Right" Content="重试" Padding="10,2" Margin="8,0,0,0"
+                                   Command="{Binding LoadServersCommand}"/>
+                        <TextBlock Text="{Binding ServersErrorMessage}" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource AppDangerBrush}"/>
+                    </DockPanel>
+                </Border>
+            </controls:PageHeader.StatusContent>
+        </controls:PageHeader>
 
         <WrapPanel Grid.Row="1" Margin="0,0,0,10">
-            <ui:Button Content="添加" Icon="{ui:SymbolIcon Add24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding AddServerCommand}"/>
-                            <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding LoadServersCommand}"/>
+            <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding LoadServersCommand}"/>
                             <ui:Button Content="列" Padding="12,4" Margin="0,0,6,6" Click="OnChooseColumns" ToolTip="显示/隐藏列"/>
             <ui:Button Content="批量执行" Icon="{ui:SymbolIcon Play24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenBatchExecCommand}"/>
             <ui:Button Content="会话日志" Icon="{ui:SymbolIcon History24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenTerminalLogsCommand}"/>

@@ -20,43 +20,32 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <StackPanel>
-                <DockPanel>
-                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Desktop24" FontSize="{DynamicResource AppFontSizeTitle}" Margin="0,0,8,0"
-                                   Foreground="{DynamicResource AppAccentBrush}"/>
-                    <TextBlock Text="远程桌面" Style="{DynamicResource PageTitleStyle}"/>
-                </DockPanel>
-                <TextBlock Text="RDP / VNC；密码仅本机加密保存；可经 SSH 隧道访问内网桌面"
-                           Style="{DynamicResource PageSubtitleStyle}"/>
-            </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                <CheckBox Content="卡片视图" IsChecked="{Binding IsCardView}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <ui:TextBox Style="{DynamicResource PageSearchBoxStyle}"
-                            Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                            PlaceholderText="搜索名称 / 主机 / 分组…" VerticalAlignment="Center"
-                            AutomationProperties.Name="搜索远程桌面"/>
-            </StackPanel>
-
-            <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="10,6" CornerRadius="6"
-                    Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}"
-                    BorderThickness="1" Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
-                <DockPanel>
-                    <ui:Button DockPanel.Dock="Right" Content="重试" Padding="10,2" Margin="8,0,0,0"
-                               Command="{Binding RefreshCommand}"/>
-                    <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap"
-                               Foreground="{DynamicResource AppDangerBrush}"/>
-                </DockPanel>
-            </Border>
-        </Grid>
+        <controls:PageHeader Grid.Row="0" Icon="Desktop24" Title="远程桌面"
+                             Subtitle="RDP / VNC；密码仅本机加密保存；可通过 SSH 隧道访问内网桌面">
+            <controls:PageHeader.Actions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:TextBox Style="{DynamicResource PageSearchBoxStyle}"
+                                Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                PlaceholderText="搜索名称 / 主机 / 分组" VerticalAlignment="Center"
+                                AutomationProperties.Name="搜索远程桌面"/>
+                    <CheckBox Content="卡片视图" IsChecked="{Binding IsCardView}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                    <ui:Button Content="添加" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="12,4"
+                               Margin="8,0,0,0" Command="{Binding AddCommand}"/>
+                </StackPanel>
+            </controls:PageHeader.Actions>
+            <controls:PageHeader.StatusContent>
+                <Border Padding="10,6" CornerRadius="6"
+                        Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}"
+                        BorderThickness="1" Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                    <DockPanel>
+                        <ui:Button DockPanel.Dock="Right" Content="重试" Padding="10,2" Margin="8,0,0,0"
+                                   Command="{Binding RefreshCommand}"/>
+                        <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource AppDangerBrush}"/>
+                    </DockPanel>
+                </Border>
+            </controls:PageHeader.StatusContent>
+        </controls:PageHeader>
 
         <GroupBox Grid.Row="1" Header="远程桌面连接" Padding="8">
             <Grid>
@@ -66,7 +55,6 @@
                 </Grid.RowDefinitions>
 
                 <WrapPanel Grid.Row="0" Margin="0,0,0,8">
-                    <ui:Button Content="添加" Icon="{ui:SymbolIcon Add24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding AddCommand}"/>
                     <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding RefreshCommand}"/>
                     <ui:Button Content="列" Padding="12,4" Margin="0,0,6,6" Click="OnChooseColumns" ToolTip="显示/隐藏列"/>
                 </WrapPanel>

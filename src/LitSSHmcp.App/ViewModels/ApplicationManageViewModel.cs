@@ -34,6 +34,8 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
         AddCommand = new RelayCommand(_ => Add());
         EditCommand = new RelayCommand(_ => Edit(), _ => SelectedApplication != null);
         DeleteCommand = new RelayCommand(_ => Delete(), _ => SelectedApplication != null);
+        EditItemCommand = new RelayCommand(p => { SelectedApplication = p as ApplicationConfig; Edit(); });
+        DeleteItemCommand = new RelayCommand(p => { SelectedApplication = p as ApplicationConfig; Delete(); });
 
         FilteredApplications = System.Windows.Data.CollectionViewSource.GetDefaultView(Applications);
         FilteredApplications.Filter = FilterApplication;
@@ -119,6 +121,26 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
     public ICommand AddCommand { get; }
     public ICommand EditCommand { get; }
     public ICommand DeleteCommand { get; }
+    public ICommand EditItemCommand { get; }
+    public ICommand DeleteItemCommand { get; }
+
+    private bool _isCardView = string.Equals(
+        UiPrefs.GetString("application.cardView", "false"), "true", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsCardView
+    {
+        get => _isCardView;
+        set
+        {
+            if (_isCardView == value) return;
+            _isCardView = value;
+            UiPrefs.SetString("application.cardView", value ? "true" : "false");
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsListView));
+        }
+    }
+
+    public bool IsListView => !IsCardView;
 
     public void ReloadConfig() => Load();
 

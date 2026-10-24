@@ -57,7 +57,7 @@
                        ToolTip="只读数据库工作台：对象浏览 / SQL 查询 / 分页 / 导出 CSV（仅 MySQL / PostgreSQL）"/>
         </WrapPanel>
 
-        <Border Grid.Row="2" Padding="8">
+        <Border Grid.Row="2">
             <Grid>
                 <Grid>
                     <ListView x:Name="DsList" ItemsSource="{Binding GroupedDataSources}" SelectedItem="{Binding SelectedDataSource}"

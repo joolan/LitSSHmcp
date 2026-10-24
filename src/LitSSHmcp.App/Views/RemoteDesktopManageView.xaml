@@ -58,7 +58,7 @@
             <ui:Button Content="列" Padding="12,4" Margin="0,0,6,6" Click="OnChooseColumns" ToolTip="显示/隐藏列"/>
         </WrapPanel>
 
-        <Border Grid.Row="2" Padding="8">
+        <Border Grid.Row="2">
             <Grid>
                 <Grid>
                     <ListView x:Name="RdList" ItemsSource="{Binding GroupedDesktops}" SelectedItem="{Binding Selected}"

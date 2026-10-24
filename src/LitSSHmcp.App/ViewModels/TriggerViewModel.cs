@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
 using LitSSHmcp.App.Services;
@@ -140,6 +141,8 @@ public sealed class TriggerViewModel : INotifyPropertyChanged, IConfigReloadable
         set
         {
             if (!Set(ref _selectedTrigger, value)) return;
+            _savedSignature = SnapshotOf(value);
+            OnPropertyChanged(nameof(HasUnsavedChanges));
             LoadOptionsFromTrigger();
             RebuildActionItems();
             OnPropertyChanged(nameof(TargetIndex));
@@ -151,6 +154,17 @@ public sealed class TriggerViewModel : INotifyPropertyChanged, IConfigReloadable
             OnPropertyChanged(nameof(IsMonthlySchedule));
         }
     }
+
+    private string _savedSignature = string.Empty;
+    public bool HasUnsavedChanges =>
+        SelectedTrigger is not null && !string.Equals(_savedSignature, SnapshotOf(SelectedTrigger), StringComparison.Ordinal);
+
+    public bool ConfirmDiscardOnClose() =>
+        !HasUnsavedChanges
+        || _dialogs.Confirm("当前触发事件有未保存的修改，关闭后将丢失。确定关闭？", "未保存的修改", defaultNo: true);
+
+    private static string SnapshotOf(TriggerConfig? trigger) =>
+        trigger is null ? string.Empty : JsonSerializer.Serialize(trigger);
 
     // ---- 目标 ----
 
@@ -402,6 +416,8 @@ public sealed class TriggerViewModel : INotifyPropertyChanged, IConfigReloadable
             var config = await _config.LoadConfigAsync();
             config.Triggers = Triggers.ToArray();
             await _config.SaveConfigAsync(config);
+            _savedSignature = SnapshotOf(SelectedTrigger);
+            OnPropertyChanged(nameof(HasUnsavedChanges));
             StatusMessage = "已保存（定时/同步联动仅在 App 运行期间生效）";
             Result("保存触发事件", true, StatusMessage);
         }

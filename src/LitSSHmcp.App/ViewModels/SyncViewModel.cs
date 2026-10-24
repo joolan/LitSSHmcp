@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
 using LitSSHmcp.App.Services;
@@ -115,6 +116,8 @@ public sealed class SyncViewModel : INotifyPropertyChanged, IConfigReloadable
         {
             if (!Set(ref _selectedTask, value)) return;
             _testedSignature = null;
+            _savedSignature = SnapshotOf(value);
+            OnPropertyChanged(nameof(HasUnsavedChanges));
             LoadOptionsFromTask();
             OnPropertyChanged(nameof(DirectionIndex));
             OnPropertyChanged(nameof(LocalPathVisibility));
@@ -173,6 +176,17 @@ public sealed class SyncViewModel : INotifyPropertyChanged, IConfigReloadable
 
     public bool TestPassed => SelectedTask != null && _testedSignature == SignatureOf(SelectedTask);
 
+    private string _savedSignature = string.Empty;
+    public bool HasUnsavedChanges =>
+        SelectedTask is not null && !string.Equals(_savedSignature, SnapshotOf(SelectedTask), StringComparison.Ordinal);
+
+    public bool ConfirmDiscardOnClose() =>
+        !HasUnsavedChanges
+        || _dialogs.Confirm("当前同步任务有未保存的修改，关闭后将丢失。确定关闭？", "未保存的修改", defaultNo: true);
+
+    private static string SnapshotOf(SyncTaskConfig? task) =>
+        task is null ? string.Empty : JsonSerializer.Serialize(task);
+
     /// <summary>仅远程↔远程显示「使用内网地址」。</summary>
     public Visibility InternalAddressVisibility =>
         SelectedTask?.Direction == SyncDirection.RemoteToRemote ? Visibility.Visible : Visibility.Collapsed;
@@ -214,6 +228,7 @@ public sealed class SyncViewModel : INotifyPropertyChanged, IConfigReloadable
     {
         InvalidateTest();
         OnPropertyChanged(nameof(SelectedTask));
+        OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
     /// <summary>请求以模态弹窗显示结果（标题、结论、正文、是否错误）。</summary>
@@ -456,6 +471,8 @@ public sealed class SyncViewModel : INotifyPropertyChanged, IConfigReloadable
             var config = await _config.LoadConfigAsync();
             config.SyncTasks = Tasks.ToArray();
             await _config.SaveConfigAsync(config);
+            _savedSignature = SnapshotOf(SelectedTask);
+            OnPropertyChanged(nameof(HasUnsavedChanges));
             StatusMessage = "已保存（调度器将按计划执行；仅 App 运行期间生效）";
             Result("保存同步任务", true, StatusMessage);
         }

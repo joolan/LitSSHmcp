@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
@@ -18,6 +19,13 @@ public partial class TriggerWindow : FluentWindow
             ResultDialog.Show(this, title, headline, message, isError);
         DataContext = _vm;
         WindowLayout.Attach(this, "triggers");
+        Closing += OnClosing;
+    }
+
+    private void OnClosing(object? sender, CancelEventArgs e)
+    {
+        if (!_vm.ConfirmDiscardOnClose())
+            e.Cancel = true;
     }
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();

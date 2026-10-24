@@ -171,6 +171,8 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             if (_selectedServer == value) return;
             _selectedServer = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(HasSelectedServer));
+            OnPropertyChanged(nameof(SelectedServerTagsText));
             (EditServerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DeleteServerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenTerminalCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -182,6 +184,12 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             (OpenSnapshotHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
     }
+
+    public bool HasSelectedServer => SelectedServer != null;
+
+    public string SelectedServerTagsText => SelectedServer is { Tags.Length: > 0 } server
+        ? string.Join(" · ", server.Tags)
+        : "—";
 
     public object? SelectedSession
     {

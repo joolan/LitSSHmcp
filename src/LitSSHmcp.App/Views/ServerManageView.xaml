@@ -47,6 +47,12 @@
 
         <GroupBox Grid.Row="2" Header="服务器" Padding="8">
             <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Grid Grid.Column="0">
                 <ListView x:Name="ServerManageList" ItemsSource="{Binding GroupedServers}" SelectedItem="{Binding SelectedServer}"
                           Padding="3" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                           ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
@@ -119,6 +125,73 @@
                     <ui:Button Content="添加服务器" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
                                HorizontalAlignment="Center" Command="{Binding AddServerCommand}"/>
                 </StackPanel>
+                </Grid>
+
+                <Border Grid.Column="1" Width="320" Margin="8,0,0,0" Padding="14"
+                        Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                        BorderThickness="1" CornerRadius="8"
+                        Visibility="{Binding HasSelectedServer, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <DockPanel>
+                            <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Dismiss24}" Padding="4"
+                                       Appearance="Transparent" ToolTip="关闭详情" Click="OnClearServerSelection"/>
+                            <TextBlock Text="{Binding SelectedServer.Name}" FontSize="17" FontWeight="SemiBold"
+                                       TextWrapping="Wrap" VerticalAlignment="Center"/>
+                        </DockPanel>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,10,0,10">
+                            <StackPanel>
+                                <TextBlock Text="连接信息" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock DockPanel.Dock="Left" Text="地址" Width="64" Style="{DynamicResource MutedTextStyle}"/>
+                                    <TextBlock Text="{Binding SelectedServer.Host}" TextWrapping="Wrap"/>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock DockPanel.Dock="Left" Text="端口" Width="64" Style="{DynamicResource MutedTextStyle}"/>
+                                    <TextBlock Text="{Binding SelectedServer.Port}"/>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock DockPanel.Dock="Left" Text="账号" Width="64" Style="{DynamicResource MutedTextStyle}"/>
+                                    <TextBlock Text="{Binding SelectedServer.Username}" TextWrapping="Wrap"/>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock DockPanel.Dock="Left" Text="认证" Width="64" Style="{DynamicResource MutedTextStyle}"/>
+                                    <TextBlock Text="{Binding SelectedServer.AuthType}"/>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock DockPanel.Dock="Left" Text="分组" Width="64" Style="{DynamicResource MutedTextStyle}"/>
+                                    <TextBlock Text="{Binding SelectedServer.Group}" TextWrapping="Wrap"/>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock DockPanel.Dock="Left" Text="标签" Width="64" Style="{DynamicResource MutedTextStyle}"/>
+                                    <TextBlock Text="{Binding SelectedServerTagsText}" TextWrapping="Wrap"/>
+                                </DockPanel>
+                                <TextBlock Text="描述" Style="{DynamicResource MutedTextStyle}" Margin="0,8,0,4"/>
+                                <TextBlock Text="{Binding SelectedServer.Description}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <WrapPanel Grid.Row="2">
+                            <ui:Button Content="打开终端" Icon="{ui:SymbolIcon Play24}" Appearance="Primary"
+                                       Padding="10,4" Margin="0,0,6,6" Command="{Binding OpenTerminalCommand}"/>
+                            <ui:Button Content="SFTP" Icon="{ui:SymbolIcon Folder24}"
+                                       Padding="10,4" Margin="0,0,6,6" Command="{Binding OpenSftpManagerCommand}"/>
+                            <ui:Button Content="资源监控" Icon="{ui:SymbolIcon Pulse24}"
+                                       Padding="10,4" Margin="0,0,6,6" Command="{Binding OpenMonitorCommand}"/>
+                            <ui:Button Content="编辑" Icon="{ui:SymbolIcon Edit24}"
+                                       Padding="10,4" Margin="0,0,6,6" Command="{Binding EditServerCommand}"/>
+                            <ui:Button Content="删除" Padding="10,4" Margin="0,0,0,6"
+                                       Foreground="{DynamicResource AppDangerBrush}"
+                                       Command="{Binding DeleteServerCommand}"/>
+                        </WrapPanel>
+                    </Grid>
+                </Border>
             </Grid>
         </GroupBox>
 

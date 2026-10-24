@@ -15,6 +15,12 @@ public partial class ServerManageView : UserControl
         InitializeComponent();
     }
 
+    private void OnClearServerSelection(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm)
+            vm.SelectedServer = null;
+    }
+
     private void OnOpenTerminalClick(object sender, RoutedEventArgs e) => ViewModel?.OpenTerminalCommand.Execute(null);
 
     private void OnSftpManagerClick(object sender, RoutedEventArgs e) => ViewModel?.OpenSftpManagerCommand.Execute(null);

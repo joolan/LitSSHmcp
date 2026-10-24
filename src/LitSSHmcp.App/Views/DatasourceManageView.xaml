@@ -3,56 +3,93 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
-    <Grid Margin="10">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+    <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <DockPanel Grid.Row="0" Margin="0,0,0,8">
-            <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Database24" FontSize="16" Margin="0,0,6,0"
-                           Foreground="{DynamicResource AppAccentBrush}"/>
-            <TextBlock Text="数据源管理" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
-        </DockPanel>
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <DockPanel>
+                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Database24" FontSize="20" Margin="0,0,8,0"
+                                   Foreground="{DynamicResource AppAccentBrush}"/>
+                    <TextBlock Text="数据源" Style="{DynamicResource PageTitleStyle}"/>
+                </DockPanel>
+                <TextBlock Text="账号密码仅本机 DPAPI 加密保存，不对 AI 开放"
+                           Style="{DynamicResource PageSubtitleStyle}"/>
+            </StackPanel>
+            <ui:TextBox Grid.Column="1" Style="{DynamicResource PageSearchBoxStyle}"
+                        Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="搜索名称 / 主机 / 类型…" VerticalAlignment="Center"
+                        AutomationProperties.Name="搜索数据源"/>
+        </Grid>
 
-        <GroupBox Grid.Row="1" Header="数据源 (账号密码仅本机DPAPI加密保存, 不对AI开放)" Padding="6">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
-                    <Button Content="添加" Command="{Binding AddCommand}" Width="64" Padding="6,4" Margin="0,0,6,0"/>
-                    <Button Content="刷新" Command="{Binding RefreshCommand}" Width="64" Padding="6,4" Margin="0,0,6,0"/>
-                    <Button Content="打开工作台" Command="{Binding WorkbenchCommand}" Padding="10,4" Margin="0,0,6,0"
-                            ToolTip="只读数据库工作台：对象浏览 / SQL 查询 / 分页 / 导出 CSV（仅 MySQL / PostgreSQL）"/>
-                </StackPanel>
+        <GroupBox Grid.Row="1" Header="数据源" Padding="8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                <ListView x:Name="DsList" ItemsSource="{Binding DataSources}" SelectedItem="{Binding SelectedDataSource}"
-                          Padding="3" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
-                          ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
-                    <ListView.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem x:Name="WorkbenchMenuItem" Header="打开工作台" Click="OnWorkbenchClick"/>
-                            <MenuItem Header="测试连接" Click="OnTestClick"/>
-                        <MenuItem Header="编辑" Click="OnEditClick"/>
-                        <Separator/>
-                        <MenuItem Header="删除" Foreground="{DynamicResource AppDangerBrush}" Click="OnDeleteClick"/>
-                        </ContextMenu>
-                    </ListView.ContextMenu>
-                    <ListView.View>
-                        <GridView>
-                            <GridViewColumn Header="名称" Width="150" DisplayMemberBinding="{Binding Name}"/>
-                            <GridViewColumn Header="类型" Width="60" DisplayMemberBinding="{Binding Type}"/>
-                            <GridViewColumn Header="主机" Width="150" DisplayMemberBinding="{Binding Host}"/>
-                            <GridViewColumn Header="端口" Width="55" DisplayMemberBinding="{Binding Port}"/>
-                            <GridViewColumn Header="账号" Width="110" DisplayMemberBinding="{Binding Username}"/>
-                            <GridViewColumn Header="访问模式" Width="90" DisplayMemberBinding="{Binding AccessMode}"/>
-                            <GridViewColumn Header="默认库" Width="110" DisplayMemberBinding="{Binding DefaultDatabase}"/>
-                            <GridViewColumn Header="描述" Width="170" DisplayMemberBinding="{Binding Description}"/>
-                        </GridView>
-                    </ListView.View>
-                </ListView>
-            </DockPanel>
+                <WrapPanel Grid.Row="0" Margin="0,0,0,8">
+                    <ui:Button Content="添加" Icon="{ui:SymbolIcon Add24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding AddCommand}"/>
+                    <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding RefreshCommand}"/>
+                    <ui:Button Content="打开工作台" Icon="{ui:SymbolIcon Database24}" Padding="12,4" Margin="0,0,6,6"
+                               Command="{Binding WorkbenchCommand}"
+                               ToolTip="只读数据库工作台：对象浏览 / SQL 查询 / 分页 / 导出 CSV（仅 MySQL / PostgreSQL）"/>
+                </WrapPanel>
+
+                <Grid Grid.Row="1">
+                    <ListView x:Name="DsList" ItemsSource="{Binding FilteredDataSources}" SelectedItem="{Binding SelectedDataSource}"
+                              Padding="3" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
+                              ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
+                        <ListView.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem x:Name="WorkbenchMenuItem" Header="打开工作台" Click="OnWorkbenchClick"/>
+                                <MenuItem Header="测试连接" Click="OnTestClick"/>
+                                <MenuItem Header="编辑" Click="OnEditClick"/>
+                                <Separator/>
+                                <MenuItem Header="删除" Foreground="{DynamicResource AppDangerBrush}" Click="OnDeleteClick"/>
+                            </ContextMenu>
+                        </ListView.ContextMenu>
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="名称" Width="150" DisplayMemberBinding="{Binding Name}"/>
+                                <GridViewColumn Header="类型" Width="60" DisplayMemberBinding="{Binding Type}"/>
+                                <GridViewColumn Header="主机" Width="150" DisplayMemberBinding="{Binding Host}"/>
+                                <GridViewColumn Header="端口" Width="55" DisplayMemberBinding="{Binding Port}"/>
+                                <GridViewColumn Header="账号" Width="110" DisplayMemberBinding="{Binding Username}"/>
+                                <GridViewColumn Header="访问模式" Width="90" DisplayMemberBinding="{Binding AccessMode}"/>
+                                <GridViewColumn Header="默认库" Width="110" DisplayMemberBinding="{Binding DefaultDatabase}"/>
+                                <GridViewColumn Header="描述" Width="170" DisplayMemberBinding="{Binding Description}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
+                                Visibility="{Binding FilteredDataSources.IsEmpty, Converter={StaticResource BoolToVis}}">
+                        <ui:SymbolIcon Symbol="Database24" FontSize="34" HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="还没有数据源" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                        <TextBlock Text="添加 MySQL / PostgreSQL / Redis 数据源后即可打开数据库工作台。"
+                                   Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,12"/>
+                        <ui:Button Content="添加数据源" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
+                                   HorizontalAlignment="Center" Command="{Binding AddCommand}"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
         </GroupBox>
 
-        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="4,6,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,8,0,0"
+                   Style="{DynamicResource MutedTextStyle}" TextWrapping="Wrap"/>
     </Grid>
 </UserControl>

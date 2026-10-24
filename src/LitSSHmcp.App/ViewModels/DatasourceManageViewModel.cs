@@ -37,10 +37,47 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
         TestCommand = new RelayCommand(_ => Test(), _ => SelectedDataSource != null);
         WorkbenchCommand = new RelayCommand(_ => OpenWorkbench(SelectedDataSource));
 
+        FilteredDataSources = System.Windows.Data.CollectionViewSource.GetDefaultView(DataSources);
+        FilteredDataSources.Filter = FilterDataSource;
+
         Load();
     }
 
     public ObservableCollection<DataSourceConfig> DataSources { get; } = new();
+
+    /// <summary>按搜索关键字过滤后的数据源视图。</summary>
+    public System.ComponentModel.ICollectionView FilteredDataSources { get; }
+
+    private string _searchText = string.Empty;
+    public string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            if (_searchText == value) return;
+            _searchText = value;
+            OnPropertyChanged();
+            FilteredDataSources.Refresh();
+        }
+    }
+
+    private bool FilterDataSource(object item)
+    {
+        if (item is not DataSourceConfig ds || string.IsNullOrWhiteSpace(SearchText))
+            return true;
+
+        var keyword = SearchText.Trim();
+        return Contains(ds.Name, keyword)
+            || Contains(ds.Host, keyword)
+            || Contains(ds.Username, keyword)
+            || Contains(ds.DefaultDatabase, keyword)
+            || Contains(ds.Type, keyword)
+            || Contains(ds.Description, keyword)
+            || ds.Tags.Any(tag => Contains(tag, keyword));
+
+        static bool Contains(string? value, string keyword)
+            => value?.Contains(keyword, StringComparison.OrdinalIgnoreCase) == true;
+    }
 
     public DataSourceConfig? SelectedDataSource
     {

@@ -6,77 +6,108 @@
     <UserControl.Resources>
         <controls:GroupLabelConverter x:Key="GroupLabel"/>
         <controls:TunnelMarkConverter x:Key="TunnelMark"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <DataTemplate x:Key="TunnelColumn">
             <TextBlock Text="{Binding TunnelServerId, Converter={StaticResource TunnelMark}}"
                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </DataTemplate>
     </UserControl.Resources>
-    <Grid Margin="10">
+    <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <DockPanel Grid.Row="0" Margin="0,0,0,8">
-            <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Desktop24" FontSize="16" Margin="0,0,6,0"
-                           Foreground="{DynamicResource AppAccentBrush}"/>
-            <TextBlock Text="远程桌面" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
-        </DockPanel>
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <DockPanel>
+                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Desktop24" FontSize="20" Margin="0,0,8,0"
+                                   Foreground="{DynamicResource AppAccentBrush}"/>
+                    <TextBlock Text="远程桌面" Style="{DynamicResource PageTitleStyle}"/>
+                </DockPanel>
+                <TextBlock Text="RDP / VNC；密码仅本机加密保存；可经 SSH 隧道访问内网桌面"
+                           Style="{DynamicResource PageSubtitleStyle}"/>
+            </StackPanel>
+            <ui:TextBox Grid.Column="1" Style="{DynamicResource PageSearchBoxStyle}"
+                        Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="搜索名称 / 主机 / 分组…" VerticalAlignment="Center"
+                        AutomationProperties.Name="搜索远程桌面"/>
+        </Grid>
 
-        <GroupBox Grid.Row="1" Header="远程桌面连接 (RDP / VNC，密码仅本机DPAPI加密保存；可经 SSH 隧道访问内网桌面)" Padding="6">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
-                    <ui:Button Content="添加" Icon="{ui:SymbolIcon Add24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding AddCommand}"/>
-                    <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding RefreshCommand}"/>
-                    <TextBlock Text="（双击或右键 连接（内嵌窗口）/ 用外部客户端打开 / 编辑 / 删除）"
-                               VerticalAlignment="Center" Margin="10,0,0,0" FontSize="11"
-                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                </StackPanel>
+        <GroupBox Grid.Row="1" Header="远程桌面连接" Padding="8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                <ListView x:Name="RdList" ItemsSource="{Binding GroupedDesktops}" SelectedItem="{Binding Selected}"
-                          Padding="3" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
-                          ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
-                    <ListView.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="连接（内嵌窗口）" Click="OnConnectClick"/>
-                            <MenuItem Header="用外部客户端打开" Click="OnOpenExternalClick"/>
-                            <MenuItem Header="编辑" Click="OnEditClick"/>
-                            <Separator/>
-                            <MenuItem Header="删除" Click="OnDeleteClick"/>
-                        </ContextMenu>
-                    </ListView.ContextMenu>
-                    <ListView.GroupStyle>
-                        <GroupStyle>
-                            <GroupStyle.HeaderTemplate>
-                                <DataTemplate>
-                                    <DockPanel Margin="2,8,0,4">
-                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Folder24" FontSize="14" Margin="0,0,6,0"
-                                                       Foreground="{DynamicResource AppAccentBrush}"/>
-                                        <TextBlock Text="{Binding Name, Converter={StaticResource GroupLabel}}"
-                                                   FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    </DockPanel>
-                                </DataTemplate>
-                            </GroupStyle.HeaderTemplate>
-                        </GroupStyle>
-                    </ListView.GroupStyle>
-                    <ListView.View>
-                        <GridView>
-                            <GridViewColumn Header="名称" Width="160" DisplayMemberBinding="{Binding Name}"/>
-                            <GridViewColumn Header="协议" Width="55" DisplayMemberBinding="{Binding ProtocolText}"/>
-                            <GridViewColumn Header="主机" Width="160" DisplayMemberBinding="{Binding Host}"/>
-                            <GridViewColumn Header="端口" Width="55" DisplayMemberBinding="{Binding Port}"/>
-                            <GridViewColumn Header="账号" Width="110" DisplayMemberBinding="{Binding Username}"/>
-                            <GridViewColumn Header="隧道" Width="46" CellTemplate="{StaticResource TunnelColumn}"/>
-                            <GridViewColumn Header="分组" Width="100" DisplayMemberBinding="{Binding Group}"/>
-                            <GridViewColumn Header="最近连接" Width="140" DisplayMemberBinding="{Binding LastConnectedAt}"/>
-                            <GridViewColumn Header="描述" Width="180" DisplayMemberBinding="{Binding Description}"/>
-                        </GridView>
-                    </ListView.View>
-                </ListView>
-            </DockPanel>
+                <WrapPanel Grid.Row="0" Margin="0,0,0,8">
+                    <ui:Button Content="添加" Icon="{ui:SymbolIcon Add24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding AddCommand}"/>
+                    <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding RefreshCommand}"/>
+                </WrapPanel>
+
+                <Grid Grid.Row="1">
+                    <ListView x:Name="RdList" ItemsSource="{Binding GroupedDesktops}" SelectedItem="{Binding Selected}"
+                              Padding="3" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
+                              ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
+                        <ListView.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="连接（内嵌窗口）" Click="OnConnectClick"/>
+                                <MenuItem Header="用外部客户端打开" Click="OnOpenExternalClick"/>
+                                <MenuItem Header="编辑" Click="OnEditClick"/>
+                                <Separator/>
+                                <MenuItem Header="删除" Foreground="{DynamicResource AppDangerBrush}" Click="OnDeleteClick"/>
+                            </ContextMenu>
+                        </ListView.ContextMenu>
+                        <ListView.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.HeaderTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="2,8,0,4">
+                                            <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Folder24" FontSize="14" Margin="0,0,6,0"
+                                                           Foreground="{DynamicResource AppAccentBrush}"/>
+                                            <TextBlock Text="{Binding Name, Converter={StaticResource GroupLabel}}"
+                                                       FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </GroupStyle.HeaderTemplate>
+                            </GroupStyle>
+                        </ListView.GroupStyle>
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="名称" Width="160" DisplayMemberBinding="{Binding Name}"/>
+                                <GridViewColumn Header="协议" Width="55" DisplayMemberBinding="{Binding ProtocolText}"/>
+                                <GridViewColumn Header="主机" Width="160" DisplayMemberBinding="{Binding Host}"/>
+                                <GridViewColumn Header="端口" Width="55" DisplayMemberBinding="{Binding Port}"/>
+                                <GridViewColumn Header="账号" Width="110" DisplayMemberBinding="{Binding Username}"/>
+                                <GridViewColumn Header="隧道" Width="46" CellTemplate="{StaticResource TunnelColumn}"/>
+                                <GridViewColumn Header="分组" Width="100" DisplayMemberBinding="{Binding Group}"/>
+                                <GridViewColumn Header="最近连接" Width="140" DisplayMemberBinding="{Binding LastConnectedAt}"/>
+                                <GridViewColumn Header="描述" Width="180" DisplayMemberBinding="{Binding Description}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
+                                Visibility="{Binding GroupedDesktops.IsEmpty, Converter={StaticResource BoolToVis}}">
+                        <ui:SymbolIcon Symbol="Desktop24" FontSize="34" HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="还没有远程桌面连接" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                        <TextBlock Text="添加 RDP / VNC 连接后即可内嵌打开，或使用外部客户端。"
+                                   Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,12"/>
+                        <ui:Button Content="添加远程桌面" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
+                                   HorizontalAlignment="Center" Command="{Binding AddCommand}"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
         </GroupBox>
 
-        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="4,6,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,8,0,0"
+                   Style="{DynamicResource MutedTextStyle}" TextWrapping="Wrap"/>
     </Grid>
 </UserControl>

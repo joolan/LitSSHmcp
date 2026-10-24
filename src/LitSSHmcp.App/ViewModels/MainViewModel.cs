@@ -18,7 +18,7 @@ using Microsoft.Win32;
 
 namespace LitSSHmcp.App.ViewModels;
 
-public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
+public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IAppServices _services;
     private readonly IConfigService _configService;
@@ -141,6 +141,7 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         // 服务器列表按「分组」字段分组（连接管理器树形分组）
         GroupedServers = System.Windows.Data.CollectionViewSource.GetDefaultView(Servers);
         GroupedServers.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription(nameof(SshServerConfig.Group)));
+        GroupedServers.Filter = FilterServer;
 
         _sshTileHeight = Services.UiPrefs.GetDouble("ssh.tileHeight", 360);
 

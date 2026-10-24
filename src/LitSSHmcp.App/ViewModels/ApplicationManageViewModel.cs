@@ -35,10 +35,46 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
         EditCommand = new RelayCommand(_ => Edit(), _ => SelectedApplication != null);
         DeleteCommand = new RelayCommand(_ => Delete(), _ => SelectedApplication != null);
 
+        FilteredApplications = System.Windows.Data.CollectionViewSource.GetDefaultView(Applications);
+        FilteredApplications.Filter = FilterApplication;
+
         Load();
     }
 
     public ObservableCollection<ApplicationConfig> Applications { get; } = new();
+
+    /// <summary>按搜索关键字过滤后的应用视图。</summary>
+    public System.ComponentModel.ICollectionView FilteredApplications { get; }
+
+    private string _searchText = string.Empty;
+    public string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            if (_searchText == value) return;
+            _searchText = value;
+            OnPropertyChanged();
+            FilteredApplications.Refresh();
+        }
+    }
+
+    private bool FilterApplication(object item)
+    {
+        if (item is not ApplicationConfig app || string.IsNullOrWhiteSpace(SearchText))
+            return true;
+
+        var keyword = SearchText.Trim();
+        return Contains(app.Name, keyword)
+            || Contains(app.Host, keyword)
+            || Contains(app.Type, keyword)
+            || Contains(app.ContainerName, keyword)
+            || Contains(app.Description, keyword)
+            || app.Tags.Any(tag => Contains(tag, keyword));
+
+        static bool Contains(string? value, string keyword)
+            => value?.Contains(keyword, StringComparison.OrdinalIgnoreCase) == true;
+    }
 
     public ApplicationConfig? SelectedApplication
     {

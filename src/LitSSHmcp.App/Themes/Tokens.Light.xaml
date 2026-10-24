@@ -3,23 +3,30 @@
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
     <!-- 浅色主题 token -->
     <Color x:Key="AppBgColor">#FFF3F3F3</Color>
-    <Color x:Key="SurfaceColor">#FFFFFFFF</Color>
-    <Color x:Key="SurfaceAltColor">#FFF7F7F7</Color>
+    <Color x:Key="SurfaceColor">#FFFAFAFA</Color>
+    <Color x:Key="SurfaceAltColor">#FFF2F2F2</Color>
     <Color x:Key="CardColor">#FFFFFFFF</Color>
-    <Color x:Key="BorderColor">#1A000000</Color>
+    <Color x:Key="BorderColor">#22000000</Color>
     <Color x:Key="TextPrimaryColor">#FF1A1A1A</Color>
     <Color x:Key="TextSecondaryColor">#99000000</Color>
+    <Color x:Key="TextTertiaryColor">#73000000</Color>
+    <Color x:Key="TextDisabledColor">#5C000000</Color>
     <Color x:Key="AccentColor">#FF0067C0</Color>
     <Color x:Key="AccentTextColor">#FFFFFFFF</Color>
     <Color x:Key="DangerColor">#FFC42B1C</Color>
+    <Color x:Key="DangerSubtleColor">#1FC42B1C</Color>
     <Color x:Key="SuccessColor">#FF0F7B0F</Color>
+    <Color x:Key="SuccessSubtleColor">#1F0F7B0F</Color>
     <Color x:Key="WarningColor">#FF9D5D00</Color>
+    <Color x:Key="WarningSubtleColor">#1F9D5D00</Color>
     <Color x:Key="CodeBgColor">#FFF6F6F6</Color>
     <Color x:Key="CodeTextColor">#FF1F1F1F</Color>
     <Color x:Key="UserBubbleColor">#FFD6E9FF</Color>
     <Color x:Key="AssistantBubbleColor">#FFFFFFFF</Color>
     <Color x:Key="HoverColor">#0F000000</Color>
+    <Color x:Key="PressedColor">#14000000</Color>
     <Color x:Key="SelectionColor">#220067C0</Color>
+    <Color x:Key="BorderSubtleColor">#0F000000</Color>
     <Color x:Key="NodeServerBgColor">#FFEEF3FB</Color>
     <Color x:Key="NodeServerBorderColor">#FF9BB7E0</Color>
     <Color x:Key="NodeAppBgColor">#FFFFF4E5</Color>
@@ -56,17 +63,24 @@
     <SolidColorBrush x:Key="AppBorderBrush" Color="{StaticResource BorderColor}"/>
     <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="{StaticResource TextPrimaryColor}"/>
     <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="{StaticResource TextSecondaryColor}"/>
+    <SolidColorBrush x:Key="AppTextTertiaryBrush" Color="{StaticResource TextTertiaryColor}"/>
+    <SolidColorBrush x:Key="AppTextDisabledBrush" Color="{StaticResource TextDisabledColor}"/>
     <SolidColorBrush x:Key="AppAccentBrush" Color="{StaticResource AccentColor}"/>
     <SolidColorBrush x:Key="AppAccentTextBrush" Color="{StaticResource AccentTextColor}"/>
     <SolidColorBrush x:Key="AppDangerBrush" Color="{StaticResource DangerColor}"/>
+    <SolidColorBrush x:Key="AppDangerSubtleBrush" Color="{StaticResource DangerSubtleColor}"/>
     <SolidColorBrush x:Key="AppSuccessBrush" Color="{StaticResource SuccessColor}"/>
+    <SolidColorBrush x:Key="AppSuccessSubtleBrush" Color="{StaticResource SuccessSubtleColor}"/>
     <SolidColorBrush x:Key="AppWarningBrush" Color="{StaticResource WarningColor}"/>
+    <SolidColorBrush x:Key="AppWarningSubtleBrush" Color="{StaticResource WarningSubtleColor}"/>
     <SolidColorBrush x:Key="AppCodeBgBrush" Color="{StaticResource CodeBgColor}"/>
     <SolidColorBrush x:Key="AppCodeTextBrush" Color="{StaticResource CodeTextColor}"/>
     <SolidColorBrush x:Key="AppUserBubbleBrush" Color="{StaticResource UserBubbleColor}"/>
     <SolidColorBrush x:Key="AppAssistantBubbleBrush" Color="{StaticResource AssistantBubbleColor}"/>
     <SolidColorBrush x:Key="AppHoverBrush" Color="{StaticResource HoverColor}"/>
+    <SolidColorBrush x:Key="AppPressedBrush" Color="{StaticResource PressedColor}"/>
     <SolidColorBrush x:Key="AppSelectionBrush" Color="{StaticResource SelectionColor}"/>
+    <SolidColorBrush x:Key="AppBorderSubtleBrush" Color="{StaticResource BorderSubtleColor}"/>
     <SolidColorBrush x:Key="NodeServerBgBrush" Color="{StaticResource NodeServerBgColor}"/>
     <SolidColorBrush x:Key="NodeServerBorderBrush" Color="{StaticResource NodeServerBorderColor}"/>
     <SolidColorBrush x:Key="NodeAppBgBrush" Color="{StaticResource NodeAppBgColor}"/>

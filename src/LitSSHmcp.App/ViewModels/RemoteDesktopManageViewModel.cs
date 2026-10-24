@@ -39,6 +39,7 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloa
 
         GroupedDesktops = System.Windows.Data.CollectionViewSource.GetDefaultView(Desktops);
         GroupedDesktops.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription(nameof(RemoteDesktopConfig.Group)));
+        GroupedDesktops.Filter = FilterDesktop;
 
         _service.StateChanged += OnStateChanged;
         Load();
@@ -48,6 +49,36 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloa
 
     /// <summary>按「分组」字段分组的连接视图。</summary>
     public System.ComponentModel.ICollectionView GroupedDesktops { get; }
+
+    private string _searchText = string.Empty;
+    public string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            if (_searchText == value) return;
+            _searchText = value;
+            OnPropertyChanged();
+            GroupedDesktops.Refresh();
+        }
+    }
+
+    private bool FilterDesktop(object item)
+    {
+        if (item is not RemoteDesktopConfig rd || string.IsNullOrWhiteSpace(SearchText))
+            return true;
+
+        var keyword = SearchText.Trim();
+        return Contains(rd.Name, keyword)
+            || Contains(rd.Host, keyword)
+            || Contains(rd.Username, keyword)
+            || Contains(rd.Group, keyword)
+            || Contains(rd.Description, keyword)
+            || rd.Tags.Any(tag => Contains(tag, keyword));
+
+        static bool Contains(string? value, string keyword)
+            => value?.Contains(keyword, StringComparison.OrdinalIgnoreCase) == true;
+    }
 
     public RemoteDesktopConfig? Selected
     {

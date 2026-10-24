@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
         Title="触发事件" Height="820" Width="1100" MinHeight="600" MinWidth="820"
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Grid>
@@ -49,90 +50,92 @@
             <!-- 编辑区 -->
             <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <TextBlock Text="触发事件名称" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                    <Grid Margin="0,0,0,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <ui:TextBox Grid.Column="0" FontWeight="Normal"
-                                    Text="{Binding SelectedTrigger.Name, UpdateSourceTrigger=PropertyChanged}"/>
-                        <CheckBox Grid.Column="1" Content="启用" Margin="12,0,0,0" VerticalAlignment="Center"
-                                  IsChecked="{Binding SelectedTrigger.Enabled, UpdateSourceTrigger=PropertyChanged}"/>
-                    </Grid>
+                    <controls:FormRow Label="触发事件名称" IsRequired="True">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Grid.Column="0" FontWeight="Normal"
+                                        Text="{Binding SelectedTrigger.Name, UpdateSourceTrigger=PropertyChanged}"/>
+                            <CheckBox Grid.Column="1" Content="启用" Margin="12,0,0,0" VerticalAlignment="Center"
+                                      IsChecked="{Binding SelectedTrigger.Enabled, UpdateSourceTrigger=PropertyChanged}"/>
+                        </Grid>
+                    </controls:FormRow>
 
-                    <!-- 目标 -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                        <TextBlock Text="执行目标:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ComboBox ItemsSource="{Binding TargetNames}" SelectedIndex="{Binding TargetIndex}" Width="140"/>
-                    </StackPanel>
-                    <StackPanel Visibility="{Binding ServerVisibility}" Margin="0,0,0,10">
-                        <TextBlock Text="目标服务器（动作在该服务器上执行）" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <controls:FormRow Label="执行目标">
+                        <ComboBox ItemsSource="{Binding TargetNames}" SelectedIndex="{Binding TargetIndex}" Width="160"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="目标服务器" Visibility="{Binding ServerVisibility}"
+                                      HelpText="远程 git 需服务器已配置免密/密钥；远程备份默认用 tar（缺失时回退 zip，需服务器已安装）。">
                         <ComboBox ItemsSource="{Binding Servers}" DisplayMemberPath="DisplayName" SelectedValuePath="Id"
                                   SelectedValue="{Binding SelectedTrigger.ServerId, UpdateSourceTrigger=PropertyChanged}"/>
-                    </StackPanel>
-                    <TextBlock Visibility="{Binding ServerVisibility}" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="{DynamicResource AppFontSizeMicro}"
-                               Foreground="{DynamicResource AppTextSecondaryBrush}"
-                               Text="远程 git 需服务器已配置免密/密钥；远程备份默认用 tar（缺失时回退 zip，需服务器已安装）。"/>
+                    </controls:FormRow>
 
-                    <!-- 触发源 -->
-                    <TextBlock Text="触发源（手动始终可用；可叠加定时 / 被同步任务事件触发）" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBlock Text="触发源（手动始终可用；可叠加定时 / 被同步任务事件触发）"
+                               Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
 
-                    <CheckBox Content="定时触发" Margin="0,0,0,6"
-                              IsChecked="{Binding IsScheduleEnabled, Mode=TwoWay}"/>
+                    <controls:FormRow Label="定时触发">
+                        <CheckBox Content="启用定时调度" IsChecked="{Binding IsScheduleEnabled, Mode=TwoWay}"/>
+                    </controls:FormRow>
 
-                    <StackPanel IsEnabled="{Binding IsScheduleEnabled}">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <RadioButton Content="固定间隔" GroupName="TriggerSchedule" VerticalAlignment="Center" Width="100"
-                                         IsChecked="{Binding IsIntervalSchedule, Mode=TwoWay}"/>
-                            <TextBlock Text="每隔" VerticalAlignment="Center" Margin="6,0,4,0"/>
-                            <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTrigger.IntervalMinutes, UpdateSourceTrigger=PropertyChanged}"/>
-                            <TextBlock Text="分钟" VerticalAlignment="Center" Margin="6,0,0,0"/>
-                        </StackPanel>
-                        <StackPanel Margin="0,0,0,6">
-                            <StackPanel Orientation="Horizontal">
-                                <RadioButton Content="每周固定时刻" GroupName="TriggerSchedule" VerticalAlignment="Center" Width="100"
-                                             IsChecked="{Binding IsWeeklySchedule, Mode=TwoWay}"/>
-                                <TextBlock Text="时刻" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTrigger.TimeOfDay, UpdateSourceTrigger=PropertyChanged}" ToolTip="HH:mm"/>
+                    <controls:FormRow Label="调度">
+                        <StackPanel IsEnabled="{Binding IsScheduleEnabled}">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <RadioButton Content="固定间隔" GroupName="TriggerSchedule" VerticalAlignment="Center" Width="100"
+                                             IsChecked="{Binding IsIntervalSchedule, Mode=TwoWay}"/>
+                                <TextBlock Text="每隔" VerticalAlignment="Center" Margin="6,0,4,0"/>
+                                <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTrigger.IntervalMinutes, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBlock Text="分钟" VerticalAlignment="Center" Margin="6,0,0,0"/>
                             </StackPanel>
-                            <ItemsControl ItemsSource="{Binding WeekdayOptions}" Margin="24,6,0,0">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <CheckBox Content="{Binding Label}" IsChecked="{Binding Selected, Mode=TwoWay}" Margin="0,0,10,0"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                        <StackPanel Margin="0,0,0,8">
-                            <StackPanel Orientation="Horizontal">
-                                <RadioButton Content="每月固定" GroupName="TriggerSchedule" VerticalAlignment="Center" Width="100"
-                                             IsChecked="{Binding IsMonthlySchedule, Mode=TwoWay}"/>
-                                <TextBlock Text="时刻" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTrigger.TimeOfDay, UpdateSourceTrigger=PropertyChanged}" ToolTip="HH:mm"/>
+                            <StackPanel Margin="0,0,0,6">
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton Content="每周固定时刻" GroupName="TriggerSchedule" VerticalAlignment="Center" Width="100"
+                                                 IsChecked="{Binding IsWeeklySchedule, Mode=TwoWay}"/>
+                                    <TextBlock Text="时刻" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTrigger.TimeOfDay, UpdateSourceTrigger=PropertyChanged}" ToolTip="HH:mm"/>
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding WeekdayOptions}" Margin="24,6,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Content="{Binding Label}" IsChecked="{Binding Selected, Mode=TwoWay}" Margin="0,0,10,0"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
-                            <ItemsControl ItemsSource="{Binding MonthDayOptions}" Margin="24,6,0,0">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <CheckBox Content="{Binding Label}" IsChecked="{Binding Selected, Mode=TwoWay}" Margin="0,0,10,4" MinWidth="26"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                            <TextBlock Text="（日期 1-28；多选）" FontSize="{DynamicResource AppFontSizeMicro}" Margin="24,0,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <StackPanel Margin="0,0,0,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton Content="每月固定" GroupName="TriggerSchedule" VerticalAlignment="Center" Width="100"
+                                                 IsChecked="{Binding IsMonthlySchedule, Mode=TwoWay}"/>
+                                    <TextBlock Text="时刻" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <ui:TextBox FontWeight="Normal" Width="70" Text="{Binding SelectedTrigger.TimeOfDay, UpdateSourceTrigger=PropertyChanged}" ToolTip="HH:mm"/>
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding MonthDayOptions}" Margin="24,6,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Content="{Binding Label}" IsChecked="{Binding Selected, Mode=TwoWay}" Margin="0,0,10,4" MinWidth="26"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="（日期 1-28；多选）" FontSize="{DynamicResource AppFontSizeMicro}" Margin="24,0,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            </StackPanel>
                         </StackPanel>
-                    </StackPanel>
+                    </controls:FormRow>
 
-                    <CheckBox Content="允许被同步任务「事件触发」（在「文件/文件夹同步」任务的末尾选择本事件及触发条件）"
-                              Margin="0,4,0,12" IsChecked="{Binding SelectedTrigger.AllowEventTrigger, UpdateSourceTrigger=PropertyChanged}"/>
+                    <controls:FormRow Label="同步联动">
+                        <CheckBox Content="允许被同步任务「事件触发」（在「文件 / 文件夹同步」任务末尾选择本事件及触发条件）"
+                                  IsChecked="{Binding SelectedTrigger.AllowEventTrigger, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
                     <!-- 动作流水线 -->
-                    <TextBlock Text="动作流水线（按顺序执行；每个动作一张卡片，可上移/下移/删除）" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBlock Text="动作流水线（按顺序执行；每个动作一张卡片，可上移/下移/删除）" FontWeight="SemiBold" Margin="0,8,0,6"/>
 
                     <ItemsControl ItemsSource="{Binding ActionItems}">
                         <ItemsControl.ItemTemplate>

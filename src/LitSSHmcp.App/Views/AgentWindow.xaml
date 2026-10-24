@@ -262,12 +262,15 @@
                                                         HorizontalAlignment="Right" Margin="0,2,0,0">
                                                 <TextBlock Text="{Binding UserTime}" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                                 <ui:Button Appearance="Transparent" Padding="4" ToolTip="重发"
+                                                           AutomationProperties.Name="重发"
                                                            Icon="{ui:SymbolIcon ArrowSync24}"
                                                            Command="{Binding DataContext.RegenerateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                            CommandParameter="{Binding}"/>
                                                 <ui:Button Appearance="Transparent" Padding="4" ToolTip="编辑（载入输入框）"
+                                                           AutomationProperties.Name="编辑消息"
                                                            Icon="{ui:SymbolIcon Edit24}" Click="OnEditTurn"/>
                                                 <ui:Button Appearance="Transparent" Padding="4" ToolTip="复制"
+                                                           AutomationProperties.Name="复制消息"
                                                            Icon="{ui:SymbolIcon Copy24}" Click="OnCopyUserMessage"/>
                                             </StackPanel>
                                         </StackPanel>

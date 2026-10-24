@@ -48,29 +48,30 @@
             <!-- 编辑区 -->
             <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <TextBlock Text="任务名称" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                    <ui:TextBox FontWeight="Normal" Text="{Binding SelectedTask.Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                    <controls:FormRow Label="任务名称" IsRequired="True">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding SelectedTask.Name, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                        <TextBlock Text="同步方向:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ComboBox ItemsSource="{Binding DirectionNames}" SelectedIndex="{Binding DirectionIndex}" Width="150"/>
-                        <CheckBox Content="启用" IsChecked="{Binding SelectedTask.Enabled, UpdateSourceTrigger=PropertyChanged}" Margin="20,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
+                    <controls:FormRow Label="同步方向">
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox ItemsSource="{Binding DirectionNames}" SelectedIndex="{Binding DirectionIndex}" Width="150"/>
+                            <CheckBox Content="启用" IsChecked="{Binding SelectedTask.Enabled, UpdateSourceTrigger=PropertyChanged}"
+                                      Margin="20,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </controls:FormRow>
 
-                    <!-- 本地路径（本地↔远程） -->
-                    <StackPanel Visibility="{Binding LocalPathVisibility}" Margin="0,0,0,10">
-                        <TextBlock Text="本地路径" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <controls:FormRow Label="本地路径" Visibility="{Binding LocalPathVisibility}">
                         <controls:PathPicker Value="{Binding SelectedTask.LocalPath, Mode=TwoWay}"
                                              PickFolder="True" Title="选择本地文件夹"
                                              Placeholder="如 D:\data\www"/>
-                    </StackPanel>
+                    </controls:FormRow>
 
-                    <!-- 源（远程→本地 / 远程→远程） -->
-                    <StackPanel Visibility="{Binding SourceVisibility}" Margin="0,0,0,10">
-                        <TextBlock Text="源服务器" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <controls:FormRow Label="源服务器" Visibility="{Binding SourceVisibility}">
                         <ComboBox ItemsSource="{Binding Servers}" DisplayMemberPath="DisplayName" SelectedValuePath="Id"
-                                  SelectedValue="{Binding SelectedTask.SourceServerId, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
-                        <TextBlock Text="源远程路径" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                  SelectedValue="{Binding SelectedTask.SourceServerId, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="源远程路径" Visibility="{Binding SourceVisibility}">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -81,14 +82,14 @@
                                         PlaceholderText="如 /var/www/html"/>
                             <ui:Button Grid.Column="1" Content="浏览远程…" Padding="10,3" Click="OnPickSourcePath"/>
                         </Grid>
-                    </StackPanel>
+                    </controls:FormRow>
 
-                    <!-- 目标（本地→远程 / 远程→远程） -->
-                    <StackPanel Visibility="{Binding TargetVisibility}" Margin="0,0,0,10">
-                        <TextBlock Text="目标服务器" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <controls:FormRow Label="目标服务器" Visibility="{Binding TargetVisibility}">
                         <ComboBox ItemsSource="{Binding Servers}" DisplayMemberPath="DisplayName" SelectedValuePath="Id"
-                                  SelectedValue="{Binding SelectedTask.TargetServerId, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
-                        <TextBlock Text="目标远程路径" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                  SelectedValue="{Binding SelectedTask.TargetServerId, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="目标远程路径" Visibility="{Binding TargetVisibility}">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -99,40 +100,28 @@
                                         PlaceholderText="如 /backup/www"/>
                             <ui:Button Grid.Column="1" Content="浏览远程…" Padding="10,3" Click="OnPickTargetPath"/>
                         </Grid>
-                        <CheckBox Content="使用内网地址连接目标（需目标已配置内网地址）" Margin="0,8,0,0"
-                                  Visibility="{Binding InternalAddressVisibility}"
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="内网地址" Visibility="{Binding InternalAddressVisibility}">
+                        <CheckBox Content="使用内网地址连接目标（需目标已配置内网地址）"
                                   IsChecked="{Binding SelectedTask.UseInternalAddress, UpdateSourceTrigger=PropertyChanged}"/>
-                    </StackPanel>
+                    </controls:FormRow>
 
-                    <CheckBox Content="镜像删除目标端多余文件" IsChecked="{Binding SelectedTask.DeleteExtra, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,2"/>
-                    <TextBlock TextWrapping="Wrap" Margin="24,0,0,12" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                               Text="含义：勾选后，目标端存在、但同步源中不存在的文件/文件夹会被删除，使目标与源完全一致（镜像）。默认不勾选，仅新增/更新，绝不删除任何文件。"/>
+                    <controls:FormRow Label="镜像删除" HelpText="勾选后，目标端存在、但同步源中不存在的文件/文件夹会被删除，使目标与源完全一致（镜像）。默认不勾选，仅新增/更新，绝不删除任何文件。">
+                        <CheckBox Content="删除目标端多余文件" IsChecked="{Binding SelectedTask.DeleteExtra, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Text="文件过滤（可选，glob；逗号/空格分隔）" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                    <Grid Margin="0,0,0,6">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="仅同步:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ui:TextBox Grid.Column="1" FontWeight="Normal"
-                                    Text="{Binding IncludeText, UpdateSourceTrigger=PropertyChanged}"
-                                    PlaceholderText="如 *.conf, nginx/*.log（留空=全部文件）"/>
-                    </Grid>
-                    <Grid Margin="0,0,0,2">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="排除:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ui:TextBox Grid.Column="1" FontWeight="Normal"
-                                    Text="{Binding ExcludeText, UpdateSourceTrigger=PropertyChanged}"
-                                    PlaceholderText="如 *.tmp, cache/*（留空=不排除）"/>
-                    </Grid>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,12" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                               Text="按相对路径或文件名匹配，支持 * 与 ?（如 *.log 匹配任意目录下的 .log 文件）。「仅同步」为空时同步全部；同时命中排除项的文件会被跳过。"/>
+                    <TextBlock Text="文件过滤" Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
 
-                    <TextBlock Text="调度（三选一）" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <controls:FormRow Label="仅同步" HelpText="逗号/空格分隔的 glob，例如 *.conf, nginx/*.log；留空=全部文件">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding IncludeText, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="排除" HelpText="逗号/空格分隔的 glob，例如 *.tmp, cache/*；留空=不排除">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding ExcludeText, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <TextBlock Text="调度（三选一）" Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
 
                     <!-- 固定间隔 -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
@@ -187,12 +176,10 @@
                         <TextBlock Text="（日期 1-28；多选）" FontSize="{DynamicResource AppFontSizeMicro}" Margin="24,0,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                     </StackPanel>
 
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="失败重试次数(0-5):" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ui:TextBox FontWeight="Normal" Width="60" Text="{Binding SelectedTask.MaxRetries, UpdateSourceTrigger=PropertyChanged}"/>
-                        <TextBlock Text="（指数退避；远程↔远程需两端安装 rsync）" VerticalAlignment="Center" Margin="6,0,0,0"
-                                   Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"/>
-                    </StackPanel>
+                    <controls:FormRow Label="失败重试" HelpText="0-5 次；指数退避。远程↔远程需两端安装 rsync">
+                        <ui:TextBox FontWeight="Normal" Width="80" HorizontalAlignment="Left"
+                                    Text="{Binding SelectedTask.MaxRetries, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
                     <!-- 触发事件配置 -->
                     <TextBlock Text="触发事件配置（本同步任务结束后触发）" FontWeight="SemiBold" Margin="0,14,0,6"/>

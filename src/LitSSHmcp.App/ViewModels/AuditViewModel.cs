@@ -51,6 +51,23 @@ public class AuditViewModel : INotifyPropertyChanged
         set { _statusMessage = value; OnPropertyChanged(); }
     }
 
+    private object? _selectedAuditItem;
+
+    /// <summary>当前选中的审计记录（命令 / SQL / 会话），用于右侧详情抽屉。</summary>
+    public object? SelectedAuditItem
+    {
+        get => _selectedAuditItem;
+        set
+        {
+            if (ReferenceEquals(_selectedAuditItem, value)) return;
+            _selectedAuditItem = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasSelectedAuditItem));
+        }
+    }
+
+    public bool HasSelectedAuditItem => SelectedAuditItem is not null;
+
     public int FailureCount =>
         CommandLogs.Count(l => l.Status == CommandStatus.Failed)
         + SqlLogs.Count(l => l.Status == CommandStatus.Failed);
@@ -63,8 +80,11 @@ public class AuditViewModel : INotifyPropertyChanged
         $"命令 {CommandLogs.Count} · SQL {SqlLogs.Count} · 拦截 {GateCount} · 失败 {FailureCount} · 会话 {Sessions.Count}"
         + (IncludeHistory ? " · 含归档" : string.Empty);
 
-    public void Load() => AsyncOperation.Run("加载审计日志", async () =>
+    public void Load()
     {
+        SelectedAuditItem = null;
+        AsyncOperation.Run("加载审计日志", async () =>
+        {
         try
         {
             if (!_initialized)
@@ -144,7 +164,8 @@ public class AuditViewModel : INotifyPropertyChanged
         {
             StatusMessage = $"加载失败: {ex.Message}";
         }
-    });
+        });
+    }
 
     public void VerifyIntegrity() => AsyncOperation.Run("校验审计链", async () =>
     {

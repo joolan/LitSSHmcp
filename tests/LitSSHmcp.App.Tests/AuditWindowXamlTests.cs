@@ -13,7 +13,7 @@ public class AuditWindowXamlTests
         var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LitSSHmcp.App", "Views", "AuditWindow.xaml"));
 
         Assert.Contains("Header=\"用户\"", source);
-        Assert.Equal(2, CountOccurrences(source, "Binding UserDisplay"));
+        Assert.Equal(2, CountOccurrences(source, "DisplayMemberBinding=\"{Binding UserDisplay}\""));
     }
 
     private static int CountOccurrences(string text, string value)

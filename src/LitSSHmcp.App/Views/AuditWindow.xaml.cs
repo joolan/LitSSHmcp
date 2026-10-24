@@ -56,6 +56,80 @@ public partial class AuditWindow : Wpf.Ui.Controls.FluentWindow
         _viewModel.Load();
     }
 
+    private void OnAuditSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListView listView)
+            _viewModel.SelectedAuditItem = listView.SelectedItem;
+    }
+
+    private void OnAuditTabChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded)
+            return;
+
+        CommandList.SelectedItem = null;
+        SqlList.SelectedItem = null;
+        SessionsList.SelectedItem = null;
+        _viewModel.SelectedAuditItem = null;
+    }
+
+    private void OnCloseAuditDetail(object sender, RoutedEventArgs e) => _viewModel.SelectedAuditItem = null;
+
+    private void OnCopyAuditDetail(object sender, RoutedEventArgs e)
+    {
+        var text = _viewModel.SelectedAuditItem switch
+        {
+            CommandAuditLog c => string.Join('\n',
+                $"时间: {c.Timestamp:yyyy-MM-dd HH:mm:ss}",
+                $"会话: {c.SessionId}",
+                $"用户: {c.UserDisplay}",
+                $"工具: {c.Tool}",
+                $"类型: {c.Category}",
+                $"服务器: {c.ServerName}",
+                $"状态: {c.Status}",
+                $"决策: {c.Decision}",
+                $"退出码: {c.ExitCode}",
+                $"文件: {c.FilePath}",
+                $"命令:\n{c.Command}",
+                $"结果:\n{c.Result}"),
+            SqlAuditLog s => string.Join('\n',
+                $"时间: {s.Timestamp:yyyy-MM-dd HH:mm:ss}",
+                $"会话: {s.SessionId}",
+                $"用户: {s.UserDisplay}",
+                $"工具: {s.Tool}",
+                $"数据源: {s.DataSourceName}",
+                $"类型: {s.Category}",
+                $"操作: {s.Operation}",
+                $"状态: {s.Status}",
+                $"决策: {s.Decision}",
+                $"影响行数: {s.RowsAffected}",
+                $"耗时: {s.DurationMs:F1} ms",
+                $"SQL/Redis 命令:\n{s.Sql}",
+                $"结果:\n{s.Result}"),
+            AuditSession a => string.Join('\n',
+                $"会话 ID: {a.SessionId}",
+                $"客户端: {a.ClientName}",
+                $"版本: {a.ClientVersion}",
+                $"归属用户: {a.OwnerUserId}",
+                $"首次活动: {a.StartedAt:yyyy-MM-dd HH:mm:ss}",
+                $"最近活动: {a.LastSeenAt:yyyy-MM-dd HH:mm:ss}"),
+            _ => null
+        };
+
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        try
+        {
+            Clipboard.SetText(text);
+            _viewModel.StatusMessage = "已复制审计详情";
+        }
+        catch
+        {
+            _viewModel.StatusMessage = "复制失败";
+        }
+    }
+
     private void OnVerify(object sender, RoutedEventArgs e) => _viewModel.VerifyIntegrity();
 
     private void OnExport(object sender, RoutedEventArgs e)

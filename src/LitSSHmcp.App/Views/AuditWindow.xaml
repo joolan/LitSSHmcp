@@ -2,8 +2,168 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
+        xmlns:models="clr-namespace:LitSSHmcp.Core.Models;assembly=LitSSHmcp.Core"
         Title="审计日志" Height="640" Width="1500" MinWidth="1200"
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <Style x:Key="AuditDetailLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,0,0,3"/>
+        </Style>
+        <Style x:Key="AuditDetailValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+        <Style x:Key="AuditCodeValue" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+
+        <DataTemplate DataType="{x:Type models:CommandAuditLog}">
+            <StackPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="时间" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="会话" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding SessionId}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="用户" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding UserDisplay}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="工具" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding Tool}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="类型" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding Category}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="服务器" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding ServerName}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="状态" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding Status}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="决策" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding Decision}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="退出码" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding ExitCode}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="文件" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding FilePath}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <TextBlock Text="命令" Style="{StaticResource AuditDetailLabel}"/>
+                <Border Background="{DynamicResource AppCodeBgBrush}" CornerRadius="4" Padding="8" Margin="0,0,0,10">
+                    <TextBlock Text="{Binding Command}" Style="{StaticResource AuditCodeValue}" Margin="0"/>
+                </Border>
+                <TextBlock Text="结果" Style="{StaticResource AuditDetailLabel}"/>
+                <Border Background="{DynamicResource AppCodeBgBrush}" CornerRadius="4" Padding="8">
+                    <TextBlock Text="{Binding Result}" Style="{StaticResource AuditCodeValue}" Margin="0"/>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type models:SqlAuditLog}">
+            <StackPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="时间" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="会话" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding SessionId}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="用户" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding UserDisplay}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="工具" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding Tool}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="数据源" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding DataSourceName}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="类型" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding Category}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="操作" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding Operation}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="状态" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding Status}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="决策" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding Decision}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="影响行数" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding RowsAffected}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="耗时" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding DurationMs, StringFormat='{}{0:F1} ms'}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <TextBlock Text="SQL / Redis 命令" Style="{StaticResource AuditDetailLabel}"/>
+                <Border Background="{DynamicResource AppCodeBgBrush}" CornerRadius="4" Padding="8" Margin="0,0,0,10">
+                    <TextBlock Text="{Binding Sql}" Style="{StaticResource AuditCodeValue}" Margin="0"/>
+                </Border>
+                <TextBlock Text="结果" Style="{StaticResource AuditDetailLabel}"/>
+                <Border Background="{DynamicResource AppCodeBgBrush}" CornerRadius="4" Padding="8">
+                    <TextBlock Text="{Binding Result}" Style="{StaticResource AuditCodeValue}" Margin="0"/>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type models:AuditSession}">
+            <StackPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="会话 ID" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding SessionId}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="客户端" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding ClientName}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="版本" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding ClientVersion}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="归属用户" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding OwnerUserId}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="首次活动" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding StartedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock DockPanel.Dock="Left" Text="最近活动" Width="72" Style="{StaticResource AuditDetailLabel}"/>
+                    <TextBlock Text="{Binding LastSeenAt, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}" Style="{StaticResource AuditDetailValue}" Margin="0"/>
+                </DockPanel>
+            </StackPanel>
+        </DataTemplate>
+    </ui:FluentWindow.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -54,9 +214,16 @@
                        Foreground="{DynamicResource AppTextPrimaryBrush}"/>
         </StackPanel>
 
-        <TabControl Grid.Row="1">
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TabControl Grid.Column="0" SelectionChanged="OnAuditTabChanged">
             <TabItem Header="命令审计">
                 <ListView x:Name="CommandList" ItemsSource="{Binding CommandLogs}" Padding="3" FontFamily="Consolas" FontSize="11"
+                          SelectionChanged="OnAuditSelectionChanged"
                           PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>
                         <ContextMenu>
@@ -82,6 +249,7 @@
             </TabItem>
             <TabItem Header="SQL/Redis审计">
                 <ListView x:Name="SqlList" ItemsSource="{Binding SqlLogs}" Padding="3" FontFamily="Consolas" FontSize="11"
+                          SelectionChanged="OnAuditSelectionChanged"
                           PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>
                         <ContextMenu>
@@ -107,6 +275,7 @@
             </TabItem>
             <TabItem Header="会话">
                 <ListView x:Name="SessionsList" ItemsSource="{Binding Sessions}" Padding="3" FontFamily="Consolas" FontSize="11"
+                          SelectionChanged="OnAuditSelectionChanged"
                           PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>
                         <ContextMenu>
@@ -125,7 +294,30 @@
                     </ListView.View>
                 </ListView>
             </TabItem>
-        </TabControl>
+            </TabControl>
+
+            <Border Grid.Column="1" Width="380" Margin="8,0,0,0" Padding="12"
+                    Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="8"
+                    Visibility="{Binding HasSelectedAuditItem, Converter={StaticResource BoolToVis}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <DockPanel Margin="0,0,0,8">
+                        <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Dismiss24}" Padding="4"
+                                   Appearance="Transparent" ToolTip="关闭详情" Click="OnCloseAuditDetail"/>
+                        <ui:Button DockPanel.Dock="Right" Content="复制" Padding="8,2" Margin="0,0,6,0"
+                                   ToolTip="复制当前详情" Click="OnCopyAuditDetail"/>
+                        <TextBlock Text="审计详情" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ContentControl Content="{Binding SelectedAuditItem}"/>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
 
         <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,6,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
     </Grid>

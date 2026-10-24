@@ -29,6 +29,10 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
     private Point _last;
     private bool _errorShown;
     private bool _initialFitDone;
+    private bool _inspectorDragging;
+    private Point _inspectorDragStart;
+    private double _inspectorOffsetStartX;
+    private double _inspectorOffsetStartY;
 
     // 无限画布: 缩放 + 平移
     private readonly ScaleTransform _zoom = new(1, 1);
@@ -565,7 +569,54 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
         _viewModel.Load();
     }
 
-    private void OnCloseInspector(object sender, RoutedEventArgs e) => _viewModel.ClearSelection();
+    private void OnCloseInspector(object sender, RoutedEventArgs e)
+    {
+        InspectorOffset.X = 0;
+        InspectorOffset.Y = 0;
+        _viewModel.ClearSelection();
+    }
+
+    private void OnInspectorHeaderDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2)
+        {
+            InspectorOffset.X = 0;
+            InspectorOffset.Y = 0;
+            e.Handled = true;
+            return;
+        }
+
+        _inspectorDragging = true;
+        _inspectorDragStart = e.GetPosition(CanvasHost);
+        _inspectorOffsetStartX = InspectorOffset.X;
+        _inspectorOffsetStartY = InspectorOffset.Y;
+        (sender as UIElement)?.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnInspectorLostCapture(object sender, MouseEventArgs e) => _inspectorDragging = false;
+
+    private void OnInspectorHeaderMove(object sender, MouseEventArgs e)
+    {
+        if (!_inspectorDragging)
+            return;
+
+        var point = e.GetPosition(CanvasHost);
+        InspectorOffset.X = _inspectorOffsetStartX + (point.X - _inspectorDragStart.X);
+        InspectorOffset.Y = _inspectorOffsetStartY + (point.Y - _inspectorDragStart.Y);
+        e.Handled = true;
+    }
+
+    private void OnInspectorHeaderUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_inspectorDragging)
+            return;
+
+        _inspectorDragging = false;
+        if (sender is UIElement element && element.IsMouseCaptured)
+            element.ReleaseMouseCapture();
+        e.Handled = true;
+    }
 
     private void OnInspectorRelations(object sender, RoutedEventArgs e)
     {

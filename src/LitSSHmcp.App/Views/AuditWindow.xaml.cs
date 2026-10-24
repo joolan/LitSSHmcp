@@ -32,6 +32,30 @@ public partial class AuditWindow : Wpf.Ui.Controls.FluentWindow
         KeywordBox.Text = _viewModel.Keyword;
     }
 
+    private void OnFilterKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter)
+            return;
+
+        OnRefresh(sender, e);
+        e.Handled = true;
+    }
+
+    private void OnReset(object sender, RoutedEventArgs e)
+    {
+        FilterBox.Text = string.Empty;
+        KeywordBox.Text = string.Empty;
+        SessionBox.Text = string.Empty;
+        LimitBox.Text = "200";
+        _viewModel.FilterText = string.Empty;
+        _viewModel.Keyword = string.Empty;
+        _viewModel.SessionFilter = string.Empty;
+        _viewModel.LimitText = "200";
+        _viewModel.CategoryIndex = 0;
+        _viewModel.IncludeHistory = false;
+        _viewModel.Load();
+    }
+
     private void OnVerify(object sender, RoutedEventArgs e) => _viewModel.VerifyIntegrity();
 
     private void OnExport(object sender, RoutedEventArgs e)

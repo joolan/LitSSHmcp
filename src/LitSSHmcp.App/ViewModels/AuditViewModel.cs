@@ -27,11 +27,21 @@ public class AuditViewModel : INotifyPropertyChanged
     /// <summary>按 MCP 会话 ID 过滤（可选）。</summary>
     public string SessionFilter { get; set; } = string.Empty;
 
+    private bool _includeHistory;
     /// <summary>是否包含超期已归档的历史记录（永久保留）。</summary>
-    public bool IncludeHistory { get; set; }
+    public bool IncludeHistory
+    {
+        get => _includeHistory;
+        set { _includeHistory = value; OnPropertyChanged(); OnPropertyChanged(nameof(SummaryText)); }
+    }
 
+    private int _categoryIndex;
     /// <summary>事件类型过滤：0=全部, 1=Exec, 2=Gate, 3=Probe, 4=Meta, 5=Transfer, 6=Local。</summary>
-    public int CategoryIndex { get; set; }
+    public int CategoryIndex
+    {
+        get => _categoryIndex;
+        set { _categoryIndex = value; OnPropertyChanged(); }
+    }
 
     public string[] CategoryOptions { get; } = { "全部", "执行 (Exec)", "审批拦截 (Gate)", "只读探测 (Probe)", "列表元数据 (Meta)", "文件传输 (Transfer)", "本地工具 (Local)" };
 
@@ -40,6 +50,18 @@ public class AuditViewModel : INotifyPropertyChanged
         get => _statusMessage;
         set { _statusMessage = value; OnPropertyChanged(); }
     }
+
+    public int FailureCount =>
+        CommandLogs.Count(l => l.Status == CommandStatus.Failed)
+        + SqlLogs.Count(l => l.Status == CommandStatus.Failed);
+
+    public int GateCount =>
+        CommandLogs.Count(l => l.Category == AuditCategory.Gate)
+        + SqlLogs.Count(l => l.Category == AuditCategory.Gate);
+
+    public string SummaryText =>
+        $"命令 {CommandLogs.Count} · SQL {SqlLogs.Count} · 拦截 {GateCount} · 失败 {FailureCount} · 会话 {Sessions.Count}"
+        + (IncludeHistory ? " · 含归档" : string.Empty);
 
     public void Load() => AsyncOperation.Run("加载审计日志", async () =>
     {
@@ -113,6 +135,9 @@ public class AuditViewModel : INotifyPropertyChanged
             foreach (var item in sessions)
                 Sessions.Add(item);
 
+            OnPropertyChanged(nameof(SummaryText));
+            OnPropertyChanged(nameof(FailureCount));
+            OnPropertyChanged(nameof(GateCount));
             StatusMessage = $"命令审计 {commands.Length} 条, SQL审计 {sqls.Length} 条, 会话 {sessions.Length} 个" + (IncludeHistory ? "（含归档）" : "");
         }
         catch (Exception ex)

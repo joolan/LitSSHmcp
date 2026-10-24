@@ -618,11 +618,20 @@
                             Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                             BorderThickness="1" CornerRadius="8" Padding="12" Panel.ZIndex="22"
                             Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                        <Border.RenderTransform>
+                            <TranslateTransform x:Name="InspectorOffset"/>
+                        </Border.RenderTransform>
                         <StackPanel>
                             <DockPanel>
                                 <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Dismiss24}" Padding="4"
                                            Appearance="Transparent" ToolTip="关闭详情" Click="OnCloseInspector"/>
-                                <TextBlock Text="节点详情" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <Border Background="Transparent" Cursor="SizeAll" ToolTip="拖动移动节点详情；双击复位"
+                                        MouseLeftButtonDown="OnInspectorHeaderDown"
+                                        MouseMove="OnInspectorHeaderMove"
+                                        MouseLeftButtonUp="OnInspectorHeaderUp"
+                                        LostMouseCapture="OnInspectorLostCapture">
+                                    <TextBlock Text="节点详情（可拖动）" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                </Border>
                             </DockPanel>
                             <TextBlock Text="{Binding SelectedNodeName}" FontSize="16" FontWeight="SemiBold"
                                        TextWrapping="Wrap" Margin="0,8,0,0"/>

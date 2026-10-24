@@ -10,5 +10,5 @@ public partial class DatasourceEditWindow : FluentWindow
         InitializeComponent();
     }
 
-    public string GetPassword() => PasswordBox.Password;
+    public string GetPassword() => (PasswordRow.FieldContent as System.Windows.Controls.PasswordBox)?.Password ?? string.Empty;
 }

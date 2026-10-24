@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
-        Title="编辑数据源" Height="720" Width="660" MinWidth="560"
+        Title="编辑数据源" Height="760" Width="660" MinWidth="560"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
         ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Grid>
@@ -17,114 +17,115 @@
 
         <ScrollViewer Grid.Row="1" Margin="16,0,16,0" VerticalScrollBarVisibility="Auto">
             <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="92"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+                <StackPanel>
+                    <TextBlock Text="连接" Style="{DynamicResource SectionTitleStyle}"/>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="名称:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                    <controls:FormRow Label="名称" IsRequired="True">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="类型:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ComboBox Grid.Row="1" Grid.Column="1" SelectedIndex="{Binding TypeIndex}" Margin="0,0,0,8"
-                              ToolTip="MySQL: 只读SQL/写SQL/执行计划/诊断; Redis: 只读命令/写命令(审批)/运行诊断; PostgreSQL: 只读/写SQL">
-                        <ComboBoxItem Content="MySQL"/>
-                        <ComboBoxItem Content="Redis"/>
-                        <ComboBoxItem Content="PostgreSQL"/>
-                    </ComboBox>
+                    <controls:FormRow Label="类型" HelpText="MySQL: 只读/写 SQL、执行计划、诊断；Redis: 只读/写命令、诊断；PostgreSQL: 只读/写 SQL">
+                        <ComboBox SelectedIndex="{Binding TypeIndex}">
+                            <ComboBoxItem Content="MySQL"/>
+                            <ComboBoxItem Content="Redis"/>
+                            <ComboBoxItem Content="PostgreSQL"/>
+                        </ComboBox>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="主机地址:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="2" Grid.Column="1" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
-                                ToolTip="数据库IP或主机名, 可与应用日志中的地址对应"/>
+                    <controls:FormRow Label="主机地址" IsRequired="True" HelpText="数据库 IP 或主机名，可与应用日志中的地址对应">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="端口:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="3" Grid.Column="1" Text="{Binding PortText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
-                                ToolTip="MySQL默认3306, Redis默认6379, PostgreSQL默认5432(切换类型时自动带出)"/>
+                    <controls:FormRow Label="端口" HelpText="MySQL 3306 / Redis 6379 / PostgreSQL 5432；切换类型时自动带出">
+                        <ui:TextBox FontWeight="Normal" Width="100" HorizontalAlignment="Left"
+                                    Text="{Binding PortText, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="4" Grid.Column="0" Text="用户名:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="4" Grid.Column="1" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
-                                ToolTip="MySQL/PostgreSQL账号; Redis 6+ ACL用户名(无ACL留空, 只用密码AUTH)"/>
+                    <controls:FormRow Label="用户名" HelpText="MySQL/PostgreSQL 账号；Redis 6+ ACL 用户名，无 ACL 可留空">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="5" Grid.Column="0" Text="密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <PasswordBox FontWeight="Normal" Grid.Row="5" Grid.Column="1" x:Name="PasswordBox" Margin="0,0,0,8"
-                                 ToolTip="仅保存在本机(DPAPI加密), 不会通过MCP暴露给AI"/>
+                    <controls:FormRow x:Name="PasswordRow" Label="密码" HelpText="仅保存在本机（DPAPI 加密），不会通过 MCP 暴露给 AI">
+                        <PasswordBox FontWeight="Normal"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="6" Grid.Column="0" Text="默认库:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="6" Grid.Column="1" Text="{Binding DefaultDatabase, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
-                                ToolTip="MySQL/PostgreSQL: 默认数据库名; Redis: DB索引(0..15), 留空=DB0"/>
+                    <controls:FormRow Label="默认库" HelpText="MySQL/PostgreSQL 默认数据库名；Redis 填 DB 索引 0..15，留空=DB0">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding DefaultDatabase, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="7" Grid.Column="0" Text="访问模式:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ComboBox Grid.Row="7" Grid.Column="1" SelectedIndex="{Binding AccessModeIndex}" Margin="0,0,0,8">
-                        <ComboBoxItem Content="直连"/>
-                        <ComboBoxItem Content="经SSH隧道"/>
-                    </ComboBox>
+                    <controls:FormRow Label="访问模式">
+                        <ComboBox SelectedIndex="{Binding AccessModeIndex}">
+                            <ComboBoxItem Content="直连"/>
+                            <ComboBoxItem Content="经 SSH 隧道"/>
+                        </ComboBox>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="8" Grid.Column="0" Text="跳板服务器:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ComboBox Grid.Row="8" Grid.Column="1" SelectedIndex="{Binding TunnelServerIndex}" Margin="0,0,0,8"
-                              ItemsSource="{Binding TunnelServerOptions}"
-                              IsEnabled="{Binding IsTunnelMode}"
-                              ToolTip="仅隧道模式需要; 选'自动'时按 ssh->数据源 关系推导"/>
+                    <controls:FormRow Label="跳板服务器" HelpText="仅隧道模式需要；选“自动”时按 ssh → 数据源关系推导">
+                        <ComboBox SelectedIndex="{Binding TunnelServerIndex}"
+                                  ItemsSource="{Binding TunnelServerOptions}"
+                                  IsEnabled="{Binding IsTunnelMode}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="9" Grid.Column="0" Text="描述:" VerticalAlignment="Top" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="9" Grid.Column="1" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                    <controls:FormRow Label="描述">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="10" Grid.Column="0" Text="标签:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="10" Grid.Column="1" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"
-                                ToolTip="多个标签用逗号分隔" Margin="0,0,0,8"/>
+                    <controls:FormRow Label="标签" HelpText="多个标签用逗号分隔">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="11" Grid.Column="0" Text="只读:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <CheckBox Grid.Row="11" Grid.Column="1" Content="只读数据源(拒绝写操作)" IsChecked="{Binding ReadOnlyMode}" Margin="0,0,0,8"
-                              ToolTip="勾选后该数据源上的 mysql_execute / redis_execute 一律拒绝"/>
+                    <TextBlock Text="治理" Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
 
-                    <TextBlock Grid.Row="12" Grid.Column="0" Text="限额:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <StackPanel Grid.Row="12" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
-                        <TextBlock Text="最大行数:" VerticalAlignment="Center"/>
-                        <ui:TextBox FontWeight="Normal" Text="{Binding MaxRowsText, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,12,0"
-                                    ToolTip="留空 = 默认(工具默认/上限1000)"/>
-                        <TextBlock Text="超时(秒):" VerticalAlignment="Center"/>
-                        <ui:TextBox FontWeight="Normal" Text="{Binding TimeoutText, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="4,0,0,0"
-                                    ToolTip="留空 = 默认30秒"/>
-                        <CheckBox Content="启用连接池" IsChecked="{Binding UsePooling}" Margin="16,0,0,0" VerticalAlignment="Center"
-                                  ToolTip="仅直连生效；经 SSH 隧道时自动禁用"/>
-                    </StackPanel>
+                    <controls:FormRow Label="只读">
+                        <CheckBox Content="只读数据源（拒绝写操作）" IsChecked="{Binding ReadOnlyMode}"
+                                  ToolTip="勾选后该数据源上的 mysql_execute / redis_execute 一律拒绝"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="13" Grid.Column="0" Text="写审批:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ComboBox Grid.Row="13" Grid.Column="1" ItemsSource="{Binding WriteApprovalOptions}"
-                              SelectedIndex="{Binding WriteApprovalIndex}" Margin="0,0,0,8"
-                              ToolTip="写操作审批策略; '自动放行'仅用于受信任目标(仍受硬拦截规则约束)"/>
+                    <controls:FormRow Label="限额">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="最大行数" VerticalAlignment="Center"/>
+                            <ui:TextBox FontWeight="Normal" Width="60" Margin="4,0,12,0"
+                                        Text="{Binding MaxRowsText, UpdateSourceTrigger=PropertyChanged}"
+                                        ToolTip="留空 = 默认（工具默认/上限 1000）"/>
+                            <TextBlock Text="超时(秒)" VerticalAlignment="Center"/>
+                            <ui:TextBox FontWeight="Normal" Width="60" Margin="4,0,12,0"
+                                        Text="{Binding TimeoutText, UpdateSourceTrigger=PropertyChanged}"
+                                        ToolTip="留空 = 默认 30 秒"/>
+                            <CheckBox Content="启用连接池" IsChecked="{Binding UsePooling}" VerticalAlignment="Center"
+                                      ToolTip="仅直连生效；经 SSH 隧道时自动禁用"/>
+                        </StackPanel>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="14" Grid.Column="0" Text="SSL:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <StackPanel Grid.Row="14" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
-                        <ComboBox Width="180" ItemsSource="{Binding SslModeOptions}" SelectedIndex="{Binding SslModeIndex}"
-                                  IsEnabled="{Binding SupportsSsl}"
-                                  ToolTip="MySQL/PostgreSQL 连接 TLS 策略; 旧版数据库 TLS 握手失败(SSL Authentication Error)时可选'禁用'"/>
-                        <CheckBox Content="允许公钥获取" IsChecked="{Binding AllowPublicKeyRetrieval}" IsEnabled="{Binding IsMySql}"
-                                  Margin="12,0,0,0" VerticalAlignment="Center"
-                                  ToolTip="仅 MySQL: caching_sha2_password 在非 TLS 连接下需要允许获取服务端公钥(MySQL 8 常见)"/>
-                    </StackPanel>
+                    <controls:FormRow Label="写审批">
+                        <ComboBox ItemsSource="{Binding WriteApprovalOptions}"
+                                  SelectedIndex="{Binding WriteApprovalIndex}"
+                                  ToolTip="写操作审批策略；“自动放行”仅用于受信任目标，仍受硬拦截规则约束"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="15" Grid.Column="0" Text="CA证书:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <controls:PathPicker Grid.Row="15" Grid.Column="1" Margin="0,0,0,8"
-                                         Value="{Binding SslCaFile, Mode=TwoWay}"
-                                         IsEnabled="{Binding SupportsSsl}"
-                                         Title="选择 CA 证书文件"
-                                         Filter="证书文件|*.pem;*.crt;*.cer;*.der|所有文件|*.*"
-                                         Placeholder="可选: 本地 PEM 格式 CA 证书路径"
-                                         ToolTip="仅在 VerifyCA/VerifyFull 时需要"/>
+                    <TextBlock Text="TLS" Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
 
-                    <TextBlock Grid.Row="16" Grid.Column="0" Grid.ColumnSpan="2"
-                               Text="提示: 账号密码仅人工录入, MCP工具只暴露主机/端口/账号, 密码永不返回给AI"
-                               Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10" TextWrapping="Wrap" Margin="0,4,0,4"/>
-                </Grid>
+                    <controls:FormRow Label="SSL">
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox Width="180" ItemsSource="{Binding SslModeOptions}" SelectedIndex="{Binding SslModeIndex}"
+                                      IsEnabled="{Binding SupportsSsl}"
+                                      ToolTip="MySQL/PostgreSQL 连接 TLS 策略；旧版数据库握手失败时可选“禁用”"/>
+                            <CheckBox Content="允许公钥获取" IsChecked="{Binding AllowPublicKeyRetrieval}"
+                                      IsEnabled="{Binding IsMySql}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                      ToolTip="仅 MySQL：caching_sha2_password 在非 TLS 连接下需要允许获取服务端公钥"/>
+                        </StackPanel>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="CA证书" HelpText="仅在 VerifyCA / VerifyFull 时需要；可选本地 PEM/CRT/CER">
+                        <controls:PathPicker Value="{Binding SslCaFile, Mode=TwoWay}"
+                                             IsEnabled="{Binding SupportsSsl}"
+                                             Title="选择 CA 证书文件"
+                                             Filter="证书文件|*.pem;*.crt;*.cer;*.der|所有文件|*.*"
+                                             Placeholder="可选：本地 PEM 格式 CA 证书路径"/>
+                    </controls:FormRow>
+
+                    <TextBlock Text="提示：账号密码仅人工录入，MCP 工具只暴露主机/端口/账号，密码永不返回给 AI。"
+                               Style="{DynamicResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                </StackPanel>
             </Border>
         </ScrollViewer>
 

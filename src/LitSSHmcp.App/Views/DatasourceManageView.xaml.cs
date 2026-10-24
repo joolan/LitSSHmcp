@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.ViewModels;
+using LitSSHmcp.Core.Models;
 
 namespace LitSSHmcp.App.Views;
 
@@ -22,6 +23,12 @@ public partial class DatasourceManageView : UserControl
     private void OnDeleteClick(object sender, RoutedEventArgs e) => ViewModel?.DeleteCommand.Execute(null);
 
     private void OnWorkbenchClick(object sender, RoutedEventArgs e) => ViewModel?.WorkbenchCommand.Execute(null);
+
+    private void OnDatasourceSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ViewModel is { } vm && sender is ListView listView)
+            vm.SetSelectedDataSources(listView.SelectedItems.OfType<DataSourceConfig>());
+    }
 
     private void OnItemDoubleClick(object sender, MouseButtonEventArgs e)
     {

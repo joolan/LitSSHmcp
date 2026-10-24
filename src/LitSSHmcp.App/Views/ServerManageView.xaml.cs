@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.ViewModels;
+using LitSSHmcp.Core.Models;
 
 namespace LitSSHmcp.App.Views;
 
@@ -13,6 +14,12 @@ public partial class ServerManageView : UserControl
     public ServerManageView()
     {
         InitializeComponent();
+    }
+
+    private void OnServerSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ViewModel is { } vm && sender is ListView listView)
+            vm.SetSelectedServers(listView.SelectedItems.OfType<SshServerConfig>());
     }
 
     private void OnClearServerSelection(object sender, RoutedEventArgs e)

@@ -12,11 +12,12 @@ public sealed class BatchExecViewModel : INotifyPropertyChanged
 {
     private readonly ISshService _ssh;
 
-    public BatchExecViewModel(IEnumerable<SshServerConfig> servers, ISshService ssh)
+    public BatchExecViewModel(IEnumerable<SshServerConfig> servers, ISshService ssh, IEnumerable<string>? selectedIds = null)
     {
         _ssh = ssh;
+        var selected = selectedIds?.ToHashSet(StringComparer.Ordinal);
         foreach (var server in servers)
-            Servers.Add(new BatchServerItem(server));
+            Servers.Add(new BatchServerItem(server) { IsSelected = selected is null || selected.Contains(server.Id) });
         RunCommand = new RelayCommand(_ => _ = RunAsync(), _ => !IsRunning);
         SelectAllCommand = new RelayCommand(p => SetAll(p as string == "clear"));
         QuickActionCommand = new RelayCommand(p => { if (p is QuickAction a) _ = RunQuickAsync(a); }, _ => !IsRunning);

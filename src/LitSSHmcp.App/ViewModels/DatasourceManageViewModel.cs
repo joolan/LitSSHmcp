@@ -127,6 +127,106 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
     public ICommand TestItemCommand { get; }
     public ICommand DeleteItemCommand { get; }
 
+    private readonly List<DataSourceConfig> _selectedDataSources = new();
+    public int SelectedDataSourceCount => _selectedDataSources.Count;
+    public bool HasSelectedDataSources => SelectedDataSourceCount > 0;
+
+    public void SetSelectedDataSources(IEnumerable<DataSourceConfig> items)
+    {
+        _selectedDataSources.Clear();
+        foreach (var item in items.DistinctBy(d => d.Id))
+            _selectedDataSources.Add(item);
+        OnPropertyChanged(nameof(SelectedDataSourceCount));
+        OnPropertyChanged(nameof(HasSelectedDataSources));
+        _batchTestCommand?.RaiseCanExecuteChanged();
+        _batchDeleteCommand?.RaiseCanExecuteChanged();
+    }
+
+    private RelayCommand? _batchTestCommand;
+    public ICommand BatchTestDataSourcesCommand =>
+        _batchTestCommand ??= new RelayCommand(_ => BatchTest(), _ => HasSelectedDataSources);
+
+    private RelayCommand? _batchDeleteCommand;
+    public ICommand BatchDeleteDataSourcesCommand =>
+        _batchDeleteCommand ??= new RelayCommand(_ => BatchDelete(), _ => HasSelectedDataSources);
+
+    private void BatchTest() => AsyncOperation.Run("批量测试数据源", async () =>
+    {
+        if (_selectedDataSources.Count == 0) return;
+        var success = 0;
+        var failed = 0;
+        var index = 0;
+        foreach (var selected in _selectedDataSources.ToArray())
+        {
+            index++;
+            StatusMessage = $"正在测试 {selected.Name} ({index}/{_selectedDataSources.Count})…";
+            try
+            {
+                var config = await _configService.LoadConfigAsync();
+                var ds = config.DataSources.FirstOrDefault(d => d.Id == selected.Id);
+                if (ds is null) { failed++; continue; }
+                var registry = _services?.CreateDriverRegistry() ?? AppServiceFactory.CreateDriverRegistry(_configService);
+                var driver = registry.Get(ds.Type);
+                if (driver is null) { failed++; continue; }
+                var result = await driver.TestAsync(ds);
+                if (result.Success) success++; else failed++;
+            }
+            catch
+            {
+                failed++;
+            }
+        }
+
+        StatusMessage = $"批量测试完成：成功 {success} 个，失败 {failed} 个";
+        _dialogs.Info(StatusMessage, "批量测试数据源");
+    });
+
+    private void BatchDelete() => AsyncOperation.Run("批量删除数据源", async () =>
+    {
+        if (_selectedDataSources.Count == 0) return;
+        try
+        {
+            var config = await _configService.LoadConfigAsync();
+            var ids = _selectedDataSources.Select(d => d.Id).ToHashSet(StringComparer.Ordinal);
+            var targets = config.DataSources.Where(d => ids.Contains(d.Id)).ToArray();
+            if (targets.Length == 0) return;
+
+            var nodeIds = targets.Select(d => AssetNode.Ds(d.Id)).ToHashSet(StringComparer.Ordinal);
+            var references = config.Relations
+                .Where(r => nodeIds.Contains(r.From) || nodeIds.Contains(r.To))
+                .ToArray();
+            var message = $"确定删除选中的 {targets.Length} 个数据源吗？\n\n"
+                + string.Join("\n", targets.Take(10).Select(d => "• " + d.Name))
+                + (targets.Length > 10 ? $"\n… 等 {targets.Length} 个" : string.Empty);
+            if (references.Length > 0)
+                message += $"\n\n有 {references.Length} 条关系记录引用它们，将一并删除。";
+            if (!_dialogs.Confirm(message, "批量删除数据源", defaultNo: true))
+                return;
+
+            config.DataSources = config.DataSources.Where(d => !ids.Contains(d.Id)).ToArray();
+            config.Relations = config.Relations
+                .Where(r => !nodeIds.Contains(r.From) && !nodeIds.Contains(r.To))
+                .ToArray();
+            await _configService.SaveConfigAsync(config);
+
+            try
+            {
+                await _topologyStore.InitializeAsync();
+                foreach (var nodeId in nodeIds)
+                    await _topologyStore.RemoveEdgesByNodeAsync(nodeId);
+            }
+            catch { /* 清理发现边失败不阻断 */ }
+
+            StatusMessage = $"已删除 {targets.Length} 个数据源";
+            SetSelectedDataSources(Array.Empty<DataSourceConfig>());
+            Load();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"批量删除失败: {ex.Message}";
+        }
+    });
+
     private bool _isCardView = string.Equals(
         UiPrefs.GetString("datasource.cardView", "false"), "true", StringComparison.OrdinalIgnoreCase);
 

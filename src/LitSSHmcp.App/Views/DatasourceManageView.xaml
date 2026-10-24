@@ -66,11 +66,18 @@
                     <ui:Button Content="打开工作台" Icon="{ui:SymbolIcon Database24}" Padding="12,4" Margin="0,0,6,6"
                                Command="{Binding WorkbenchCommand}"
                                ToolTip="只读数据库工作台：对象浏览 / SQL 查询 / 分页 / 导出 CSV（仅 MySQL / PostgreSQL）"/>
+                    <TextBlock Text="{Binding SelectedDataSourceCount, StringFormat='已选 {0} 个'}" VerticalAlignment="Center" Margin="4,0,8,6"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               Visibility="{Binding HasSelectedDataSources, Converter={StaticResource BoolToVis}}"/>
+                    <ui:Button Content="批量测试" Padding="12,4" Margin="0,0,6,6" Command="{Binding BatchTestDataSourcesCommand}"/>
+                    <ui:Button Content="批量删除" Padding="12,4" Margin="0,0,6,6"
+                               Foreground="{DynamicResource AppDangerBrush}" Command="{Binding BatchDeleteDataSourcesCommand}"/>
                 </WrapPanel>
 
                 <Grid Grid.Row="1">
                     <ListView x:Name="DsList" ItemsSource="{Binding FilteredDataSources}" SelectedItem="{Binding SelectedDataSource}"
                               Visibility="{Binding IsListView, Converter={StaticResource BoolToVis}}"
+                              SelectionMode="Extended" SelectionChanged="OnDatasourceSelectionChanged"
                               Padding="3" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                               ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
                         <ListView.ContextMenu>

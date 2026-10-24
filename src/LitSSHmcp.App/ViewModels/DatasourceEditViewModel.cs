@@ -23,6 +23,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
     private string _username = string.Empty;
     private string _defaultDatabase = string.Empty;
     private string _description = string.Empty;
+    private string _group = string.Empty;
     private string _tagsText = string.Empty;
     private int _accessModeIndex;
     private int _tunnelServerIndex;
@@ -66,6 +67,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             Username = datasource.Username;
             DefaultDatabase = datasource.DefaultDatabase ?? string.Empty;
             Description = datasource.Description ?? string.Empty;
+            Group = datasource.Group ?? string.Empty;
             TagsText = string.Join(", ", datasource.Tags);
             AccessModeIndex = datasource.AccessMode == AccessMode.SshTunnel ? 1 : 0;
             TunnelServerIndex = ResolveTunnelIndex(datasource.TunnelServerId);
@@ -148,6 +150,12 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
     {
         get => _description;
         set { _description = value; OnPropertyChanged(); }
+    }
+
+    public string Group
+    {
+        get => _group;
+        set { _group = value; OnPropertyChanged(); }
     }
 
     public string TagsText
@@ -357,6 +365,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             DefaultDatabase = string.IsNullOrWhiteSpace(DefaultDatabase) ? null : DefaultDatabase,
             AccessMode = AccessModeIndex == 1 ? AccessMode.SshTunnel : AccessMode.Direct,
             TunnelServerId = tunnelServerId,
+            Group = string.IsNullOrWhiteSpace(Group) ? null : Group.Trim(),
             Description = Description,
             Tags = tags,
             ReadOnly = ReadOnlyMode,

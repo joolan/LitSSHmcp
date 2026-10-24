@@ -4,6 +4,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
     <UserControl.Resources>
+        <controls:GroupLabelConverter x:Key="GroupLabel"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </UserControl.Resources>
     <Grid Margin="{DynamicResource AppPageMargin}">
@@ -65,7 +66,7 @@
                 </WrapPanel>
 
                 <Grid Grid.Row="1">
-                    <ListView x:Name="AppList" ItemsSource="{Binding FilteredApplications}" SelectedItem="{Binding SelectedApplication}"
+                    <ListView x:Name="AppList" ItemsSource="{Binding GroupedApplications}" SelectedItem="{Binding SelectedApplication}"
                               Visibility="{Binding IsListView, Converter={StaticResource BoolToVis}}"
                               Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                               ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
@@ -76,6 +77,20 @@
                                 <MenuItem Header="删除" Foreground="{DynamicResource AppDangerBrush}" Click="OnDeleteClick"/>
                             </ContextMenu>
                         </ListView.ContextMenu>
+                        <ListView.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.HeaderTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="2,8,0,4">
+                                            <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Folder24" FontSize="14" Margin="0,0,6,0"
+                                                           Foreground="{DynamicResource AppAccentBrush}"/>
+                                            <TextBlock Text="{Binding Name, Converter={StaticResource GroupLabel}}"
+                                                       FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </GroupStyle.HeaderTemplate>
+                            </GroupStyle>
+                        </ListView.GroupStyle>
                         <ListView.View>
                             <GridView>
                                 <GridViewColumn Header="名称" Width="180" DisplayMemberBinding="{Binding Name}"/>
@@ -118,6 +133,7 @@
                                             <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}">
                                                 <Run Text="端口 "/><Run Text="{Binding Port, Mode=OneWay}"/>
                                                 <Run Text=" · "/><Run Text="{Binding ContainerName, Mode=OneWay}"/>
+                                                <Run Text=" · 分组 "/><Run Text="{Binding Group, Mode=OneWay, Converter={StaticResource GroupLabel}}"/>
                                             </TextBlock>
                                             <TextBlock Text="{Binding Description}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,6,0,0"
                                                        Foreground="{DynamicResource AppTextSecondaryBrush}"

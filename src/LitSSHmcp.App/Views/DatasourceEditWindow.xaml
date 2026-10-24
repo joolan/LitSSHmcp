@@ -74,6 +74,10 @@
                         <ui:TextBox FontWeight="Normal" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"/>
                     </controls:FormRow>
 
+                    <controls:FormRow Label="分组" HelpText="相同分组的数据源会在列表中归为一组；可留空">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
                     <TextBlock Text="治理" Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
 
                     <controls:FormRow Label="只读">

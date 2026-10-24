@@ -43,6 +43,10 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
 
         FilteredDataSources = System.Windows.Data.CollectionViewSource.GetDefaultView(DataSources);
         FilteredDataSources.Filter = FilterDataSource;
+        GroupedDataSources = new System.Windows.Data.CollectionViewSource { Source = DataSources }.View;
+        GroupedDataSources.Filter = FilterDataSource;
+        GroupedDataSources.GroupDescriptions.Add(
+            new System.Windows.Data.PropertyGroupDescription(nameof(DataSourceConfig.Group)));
 
         Load();
     }
@@ -51,6 +55,9 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
 
     /// <summary>按搜索关键字过滤后的数据源视图。</summary>
     public System.ComponentModel.ICollectionView FilteredDataSources { get; }
+
+    /// <summary>按「分组」字段分组的数据源视图（列表视图用）。</summary>
+    public System.ComponentModel.ICollectionView GroupedDataSources { get; }
 
     private string _searchText = string.Empty;
     public string SearchText
@@ -62,6 +69,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
             _searchText = value;
             OnPropertyChanged();
             FilteredDataSources.Refresh();
+            GroupedDataSources.Refresh();
         }
     }
 
@@ -76,6 +84,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
             || Contains(ds.Username, keyword)
             || Contains(ds.DefaultDatabase, keyword)
             || Contains(ds.Type, keyword)
+            || Contains(ds.Group, keyword)
             || Contains(ds.Description, keyword)
             || ds.Tags.Any(tag => Contains(tag, keyword));
 

@@ -45,6 +45,7 @@ public class DataSourceConfig
     public string? DefaultDatabase { get; set; }
     public AccessMode AccessMode { get; set; } = AccessMode.Direct;
     public string? TunnelServerId { get; set; }
+    public string? Group { get; set; }
     public string? Description { get; set; }
     public string[] Tags { get; set; } = Array.Empty<string>();
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -85,6 +86,7 @@ public class ApplicationConfig
     public string Type { get; set; } = "java";
     public int? Port { get; set; }
     public string? Host { get; set; }
+    public string? Group { get; set; }
     public string? Description { get; set; }
     public string[] Tags { get; set; } = Array.Empty<string>();
 

@@ -39,6 +39,10 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
 
         FilteredApplications = System.Windows.Data.CollectionViewSource.GetDefaultView(Applications);
         FilteredApplications.Filter = FilterApplication;
+        GroupedApplications = new System.Windows.Data.CollectionViewSource { Source = Applications }.View;
+        GroupedApplications.Filter = FilterApplication;
+        GroupedApplications.GroupDescriptions.Add(
+            new System.Windows.Data.PropertyGroupDescription(nameof(ApplicationConfig.Group)));
 
         Load();
     }
@@ -47,6 +51,9 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
 
     /// <summary>按搜索关键字过滤后的应用视图。</summary>
     public System.ComponentModel.ICollectionView FilteredApplications { get; }
+
+    /// <summary>按「分组」字段分组的应用视图（列表视图用）。</summary>
+    public System.ComponentModel.ICollectionView GroupedApplications { get; }
 
     private string _searchText = string.Empty;
     public string SearchText
@@ -58,6 +65,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
             _searchText = value;
             OnPropertyChanged();
             FilteredApplications.Refresh();
+            GroupedApplications.Refresh();
         }
     }
 
@@ -71,6 +79,7 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
             || Contains(app.Host, keyword)
             || Contains(app.Type, keyword)
             || Contains(app.ContainerName, keyword)
+            || Contains(app.Group, keyword)
             || Contains(app.Description, keyword)
             || app.Tags.Any(tag => Contains(tag, keyword));
 

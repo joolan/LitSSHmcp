@@ -15,6 +15,7 @@ public class ApplicationEditViewModel : INotifyPropertyChanged
     private string _type = "java";
     private string _host = string.Empty;
     private string _portText = string.Empty;
+    private string _group = string.Empty;
     private string _description = string.Empty;
     private string _containerName = string.Empty;
     private string _appPath = string.Empty;
@@ -37,6 +38,7 @@ public class ApplicationEditViewModel : INotifyPropertyChanged
             Type = application.Type;
             Host = application.Host ?? string.Empty;
             PortText = application.Port?.ToString() ?? string.Empty;
+            Group = application.Group ?? string.Empty;
             Description = application.Description ?? string.Empty;
             ContainerName = application.ContainerName ?? string.Empty;
             AppPath = application.Path ?? string.Empty;
@@ -61,6 +63,7 @@ public class ApplicationEditViewModel : INotifyPropertyChanged
     public string Type { get => _type; set => Set(ref _type, value); }
     public string Host { get => _host; set => Set(ref _host, value); }
     public string PortText { get => _portText; set => Set(ref _portText, value); }
+    public string Group { get => _group; set => Set(ref _group, value); }
     public string Description { get => _description; set => Set(ref _description, value); }
     public string ContainerName { get => _containerName; set => Set(ref _containerName, value); }
     public string AppPath { get => _appPath; set => Set(ref _appPath, value); }
@@ -110,6 +113,7 @@ public class ApplicationEditViewModel : INotifyPropertyChanged
                             Type = string.IsNullOrWhiteSpace(Type) ? "java" : Type.Trim(),
                             Host = string.IsNullOrWhiteSpace(Host) ? null : Host.Trim(),
                             Port = port,
+                            Group = string.IsNullOrWhiteSpace(Group) ? null : Group.Trim(),
                             Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim(),
                             ContainerName = string.IsNullOrWhiteSpace(ContainerName) ? null : ContainerName.Trim(),
                             Path = string.IsNullOrWhiteSpace(AppPath) ? null : AppPath.Trim(),
@@ -131,6 +135,7 @@ public class ApplicationEditViewModel : INotifyPropertyChanged
                 target.Type = string.IsNullOrWhiteSpace(Type) ? "java" : Type.Trim();
                 target.Host = string.IsNullOrWhiteSpace(Host) ? null : Host.Trim();
                 target.Port = port;
+                target.Group = string.IsNullOrWhiteSpace(Group) ? null : Group.Trim();
                 target.Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim();
                 target.ContainerName = string.IsNullOrWhiteSpace(ContainerName) ? null : ContainerName.Trim();
                 target.Path = string.IsNullOrWhiteSpace(AppPath) ? null : AppPath.Trim();

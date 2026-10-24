@@ -245,86 +245,140 @@
                                            Command="{Binding OpenAgentCommand}"/>
                             </WrapPanel>
 
-                            <TextBlock Text="数据看板" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
+                            <TextBlock Text="资产概览" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                            <WrapPanel Margin="0,0,0,20">
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                            <WrapPanel Margin="0,0,0,16">
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="250" Margin="0,0,12,12"
                                         Cursor="Hand" ToolTip="打开 SSH 服务器管理" MouseLeftButtonUp="OnHomeServersClick">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding ServerCount}" FontSize="30" FontWeight="SemiBold"/>
-                                        <TextBlock Text="SSH 服务器" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppAccentBrush}" Margin="0,2,0,0">
-                                            <Run Text="活跃会话 "/>
-                                            <Run Text="{Binding ActiveSessionCount, Mode=OneWay}"/>
-                                        </TextBlock>
-                                        <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppDangerBrush}"
-                                                   Visibility="{Binding HasDisabledServers, Converter={StaticResource BoolToVis}}">
-                                            <Run Text="已禁用 "/>
-                                            <Run Text="{Binding DisabledServerCount, Mode=OneWay}"/>
-                                        </TextBlock>
-                                    </StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding ServerCount}" FontSize="28" FontWeight="SemiBold"/>
+                                            <TextBlock Text="SSH 服务器" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0"/>
+                                            <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppAccentBrush}" Margin="0,4,0,0">
+                                                <Run Text="活跃会话 "/>
+                                                <Run Text="{Binding ActiveSessionCount, Mode=OneWay}"/>
+                                            </TextBlock>
+                                            <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppDangerBrush}"
+                                                       Visibility="{Binding HasDisabledServers, Converter={StaticResource BoolToVis}}">
+                                                <Run Text="已禁用 "/>
+                                                <Run Text="{Binding DisabledServerCount, Mode=OneWay}"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <ui:SymbolIcon Grid.Column="1" Symbol="Server24" FontSize="22" VerticalAlignment="Top"
+                                                       Foreground="{DynamicResource AppAccentBrush}" Opacity="0.85"/>
+                                    </Grid>
                                 </Border>
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="250" Margin="0,0,12,12"
                                         Cursor="Hand" ToolTip="打开数据源管理" MouseLeftButtonUp="OnHomeDatasourcesClick">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding DatasourceCount}" FontSize="30" FontWeight="SemiBold"/>
-                                        <TextBlock Text="数据源" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                    </StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding DatasourceCount}" FontSize="28" FontWeight="SemiBold"/>
+                                            <TextBlock Text="数据源" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0"/>
+                                            <TextBlock Text="MySQL / PostgreSQL / Redis" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <ui:SymbolIcon Grid.Column="1" Symbol="Database24" FontSize="22" VerticalAlignment="Top"
+                                                       Foreground="{DynamicResource AppAccentBrush}" Opacity="0.85"/>
+                                    </Grid>
                                 </Border>
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="250" Margin="0,0,12,12"
                                         Cursor="Hand" ToolTip="打开应用管理" MouseLeftButtonUp="OnHomeApplicationsClick">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding ApplicationCount}" FontSize="30" FontWeight="SemiBold"/>
-                                        <TextBlock Text="应用" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                    </StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding ApplicationCount}" FontSize="28" FontWeight="SemiBold"/>
+                                            <TextBlock Text="应用" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0"/>
+                                            <TextBlock Text="拓扑节点与应用路径" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <ui:SymbolIcon Grid.Column="1" Symbol="Apps24" FontSize="22" VerticalAlignment="Top"
+                                                       Foreground="{DynamicResource AppAccentBrush}" Opacity="0.85"/>
+                                    </Grid>
                                 </Border>
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
-                                        Cursor="Hand" ToolTip="打开端口转发" MouseLeftButtonUp="OnHomePortForwardClick">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding PortForwardCount}" FontSize="30" FontWeight="SemiBold"/>
-                                        <TextBlock Text="端口转发规则" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppSuccessBrush}"
-                                                   Visibility="{Binding HasRunningPortForwards, Converter={StaticResource BoolToVis}}">
-                                            <Run Text="运行中 "/>
-                                            <Run Text="{Binding PortForwardRunningCount, Mode=OneWay}"/>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </Border>
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="250" Margin="0,0,12,12"
                                         Cursor="Hand" ToolTip="打开远程桌面（RDP / VNC）" MouseLeftButtonUp="OnHomeRemoteDesktopClick">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding RemoteDesktopCount}" FontSize="30" FontWeight="SemiBold"/>
-                                        <TextBlock Text="远程桌面" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}">
-                                            <Run Text="RDP / VNC"/>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </Border>
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
-                                        Cursor="Hand" ToolTip="打开文件/文件夹同步" MouseLeftButtonUp="OnHomeSyncClick">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding SyncTaskCount}" FontSize="30" FontWeight="SemiBold"/>
-                                        <TextBlock Text="同步任务" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppSuccessBrush}"
-                                                   Visibility="{Binding HasEnabledSyncTasks, Converter={StaticResource BoolToVis}}">
-                                            <Run Text="启用 "/>
-                                            <Run Text="{Binding SyncTaskEnabledCount, Mode=OneWay}"/>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </Border>
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
-                                        Cursor="Hand" ToolTip="打开触发事件（git / webhook / 备份）" MouseLeftButtonUp="OnHomeTriggerClick">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding TriggerCount}" FontSize="30" FontWeight="SemiBold"/>
-                                        <TextBlock Text="触发事件" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppSuccessBrush}"
-                                                   Visibility="{Binding HasEnabledTriggers, Converter={StaticResource BoolToVis}}">
-                                            <Run Text="启用 "/>
-                                            <Run Text="{Binding TriggerEnabledCount, Mode=OneWay}"/>
-                                        </TextBlock>
-                                    </StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding RemoteDesktopCount}" FontSize="28" FontWeight="SemiBold"/>
+                                            <TextBlock Text="远程桌面" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0"/>
+                                            <TextBlock Text="RDP / VNC · 支持 SSH 隧道" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <ui:SymbolIcon Grid.Column="1" Symbol="Desktop24" FontSize="22" VerticalAlignment="Top"
+                                                       Foreground="{DynamicResource AppAccentBrush}" Opacity="0.85"/>
+                                    </Grid>
                                 </Border>
                             </WrapPanel>
+
+                            <TextBlock Text="任务与工具" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,20">
+                                <WrapPanel>
+                                    <Border Width="230" Margin="0,0,12,8" Padding="6" Background="Transparent"
+                                            Cursor="Hand" ToolTip="打开端口转发" MouseLeftButtonUp="OnHomePortForwardClick">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="Share24" FontSize="20" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource AppAccentBrush}"/>
+                                            <StackPanel Margin="10,0,0,0">
+                                                <TextBlock FontWeight="SemiBold">
+                                                    <Run Text="端口转发 "/><Run Text="{Binding PortForwardCount, Mode=OneWay}"/>
+                                                </TextBlock>
+                                                <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppSuccessBrush}"
+                                                           Visibility="{Binding HasRunningPortForwards, Converter={StaticResource BoolToVis}}">
+                                                    <Run Text="运行中 "/><Run Text="{Binding PortForwardRunningCount, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Width="230" Margin="0,0,12,8" Padding="6" Background="Transparent"
+                                            Cursor="Hand" ToolTip="打开文件/文件夹同步" MouseLeftButtonUp="OnHomeSyncClick">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="ArrowSync24" FontSize="20" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource AppAccentBrush}"/>
+                                            <StackPanel Margin="10,0,0,0">
+                                                <TextBlock FontWeight="SemiBold">
+                                                    <Run Text="同步任务 "/><Run Text="{Binding SyncTaskCount, Mode=OneWay}"/>
+                                                </TextBlock>
+                                                <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppSuccessBrush}"
+                                                           Visibility="{Binding HasEnabledSyncTasks, Converter={StaticResource BoolToVis}}">
+                                                    <Run Text="已启用 "/><Run Text="{Binding SyncTaskEnabledCount, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Width="230" Margin="0,0,12,8" Padding="6" Background="Transparent"
+                                            Cursor="Hand" ToolTip="打开触发事件（git / webhook / 备份）" MouseLeftButtonUp="OnHomeTriggerClick">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="Flash24" FontSize="20" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource AppAccentBrush}"/>
+                                            <StackPanel Margin="10,0,0,0">
+                                                <TextBlock FontWeight="SemiBold">
+                                                    <Run Text="触发事件 "/><Run Text="{Binding TriggerCount, Mode=OneWay}"/>
+                                                </TextBlock>
+                                                <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppSuccessBrush}"
+                                                           Visibility="{Binding HasEnabledTriggers, Converter={StaticResource BoolToVis}}">
+                                                    <Run Text="已启用 "/><Run Text="{Binding TriggerEnabledCount, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </WrapPanel>
+                            </Border>
 
                         </StackPanel>
                     </ScrollViewer>

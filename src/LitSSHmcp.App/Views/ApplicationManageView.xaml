@@ -93,6 +93,23 @@
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
                                 <GridViewColumn Header="描述" Width="240" DisplayMemberBinding="{Binding Description}"/>
+                                <GridViewColumn Header="操作" Width="74">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:Button Icon="{ui:SymbolIcon Edit24}" Appearance="Transparent" Padding="5"
+                                                           ToolTip="编辑" AutomationProperties.Name="编辑应用"
+                                                           Command="{Binding DataContext.EditItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                                <ui:Button Icon="{ui:SymbolIcon Delete24}" Appearance="Transparent" Padding="5"
+                                                           Foreground="{DynamicResource AppDangerBrush}" ToolTip="删除"
+                                                           AutomationProperties.Name="删除应用"
+                                                           Command="{Binding DataContext.DeleteItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
                             </GridView>
                         </ListView.View>
                     </ListView>
@@ -113,7 +130,7 @@
                                                     <TextBlock Text="{Binding Type}" FontSize="10"
                                                                Foreground="{DynamicResource AppAccentBrush}"/>
                                                 </Border>
-                                                <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
+                                                <TextBlock Text="{Binding Name}" FontSize="{DynamicResource AppFontSizeSubtitle}" FontWeight="SemiBold"
                                                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                             </DockPanel>
                                             <TextBlock Text="{Binding Host}" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,8,0,2"

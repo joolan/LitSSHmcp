@@ -114,6 +114,13 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
+                            <GridViewColumn Header="分组" Width="100">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Group, Converter={StaticResource GroupLabel}}"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
                             <GridViewColumn Header="状态" Width="70">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
@@ -133,6 +140,23 @@
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
                             <GridViewColumn Header="描述" Width="220" DisplayMemberBinding="{Binding Description}"/>
+                            <GridViewColumn Header="操作" Width="74">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:Button Icon="{ui:SymbolIcon Edit24}" Appearance="Transparent" Padding="5"
+                                                       ToolTip="编辑" AutomationProperties.Name="编辑服务器"
+                                                       Command="{Binding DataContext.EditServerItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                       CommandParameter="{Binding}"/>
+                                            <ui:Button Icon="{ui:SymbolIcon Delete24}" Appearance="Transparent" Padding="5"
+                                                       Foreground="{DynamicResource AppDangerBrush}" ToolTip="删除"
+                                                       AutomationProperties.Name="删除服务器"
+                                                       Command="{Binding DataContext.DeleteServerItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                       CommandParameter="{Binding}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
                         </GridView>
                     </ListView.View>
                 </ListView>
@@ -170,7 +194,7 @@
                                         </TextBlock>
                                         <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
                                             <Run Text="认证 "/><Run Text="{Binding AuthType, Mode=OneWay, Converter={StaticResource ServerAuth}}"/>
-                                            <Run Text=" · 分组 "/><Run Text="{Binding Group, Mode=OneWay}"/>
+                                            <Run Text=" · 分组 "/><Run Text="{Binding Group, Mode=OneWay, Converter={StaticResource GroupLabel}}"/>
                                         </TextBlock>
                                         <TextBlock Text="{Binding Description}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,6,0,0"
                                                    Foreground="{DynamicResource AppTextSecondaryBrush}"
@@ -260,7 +284,7 @@
                                 </DockPanel>
                                 <DockPanel Margin="0,0,0,6">
                                     <TextBlock DockPanel.Dock="Left" Text="分组" Width="64" Style="{DynamicResource MutedTextStyle}"/>
-                                    <TextBlock Text="{Binding SelectedServer.Group}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding SelectedServer.Group, Converter={StaticResource GroupLabel}}" TextWrapping="Wrap"/>
                                 </DockPanel>
                                 <DockPanel Margin="0,0,0,6">
                                     <TextBlock DockPanel.Dock="Left" Text="标签" Width="64" Style="{DynamicResource MutedTextStyle}"/>

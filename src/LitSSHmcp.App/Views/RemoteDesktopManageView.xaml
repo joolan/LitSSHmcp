@@ -101,7 +101,13 @@
                                 </GridViewColumn>
                                 <GridViewColumn Header="账号" Width="110" DisplayMemberBinding="{Binding Username}"/>
                                 <GridViewColumn Header="隧道" Width="46" CellTemplate="{StaticResource TunnelColumn}"/>
-                                <GridViewColumn Header="分组" Width="100" DisplayMemberBinding="{Binding Group}"/>
+                                <GridViewColumn Header="分组" Width="100">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Group, Converter={StaticResource GroupLabel}}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
                                 <GridViewColumn Header="最近连接" Width="140">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
@@ -110,6 +116,27 @@
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
                                 <GridViewColumn Header="描述" Width="180" DisplayMemberBinding="{Binding Description}"/>
+                                <GridViewColumn Header="操作" Width="104">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:Button Icon="{ui:SymbolIcon PlugConnected24}" Appearance="Transparent" Padding="5"
+                                                           ToolTip="连接" AutomationProperties.Name="连接远程桌面"
+                                                           Command="{Binding DataContext.ConnectItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                                <ui:Button Icon="{ui:SymbolIcon Edit24}" Appearance="Transparent" Padding="5"
+                                                           ToolTip="编辑" AutomationProperties.Name="编辑远程桌面"
+                                                           Command="{Binding DataContext.EditItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                                <ui:Button Icon="{ui:SymbolIcon Delete24}" Appearance="Transparent" Padding="5"
+                                                           Foreground="{DynamicResource AppDangerBrush}" ToolTip="删除"
+                                                           AutomationProperties.Name="删除远程桌面"
+                                                           Command="{Binding DataContext.DeleteItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           CommandParameter="{Binding}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
                             </GridView>
                         </ListView.View>
                     </ListView>
@@ -148,7 +175,7 @@
                                                     <TextBlock Text="隧道" FontSize="10"
                                                                Foreground="{DynamicResource AppSuccessBrush}"/>
                                                 </Border>
-                                                <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
+                                                <TextBlock Text="{Binding Name}" FontSize="{DynamicResource AppFontSizeSubtitle}" FontWeight="SemiBold"
                                                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                             </DockPanel>
                                             <TextBlock Text="{Binding Host}" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,8,0,2"
@@ -158,7 +185,7 @@
                                                 <Run Text=" · "/><Run Text="{Binding Username, Mode=OneWay}"/>
                                             </TextBlock>
                                             <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
-                                                <Run Text="分组 "/><Run Text="{Binding Group, Mode=OneWay}"/>
+                                                <Run Text="分组 "/><Run Text="{Binding Group, Mode=OneWay, Converter={StaticResource GroupLabel}}"/>
                                                 <Run Text=" · 最近 "/><Run Text="{Binding LastConnectedAt, Mode=OneWay, Converter={StaticResource RelativeTime}}"/>
                                             </TextBlock>
                                             <TextBlock Text="{Binding Description}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,6,0,0"

@@ -175,7 +175,8 @@ public class GraphTools
         Status = error is null ? null : "query_error",
         Error = error,
         Summary = summary,
-        Result = JsonSerializer.SerializeToElement(result, ResultJson)
+        Result = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+            JsonSerializer.SerializeToElement(result, ResultJson), ResultJson)
     };
 
     private static TopologyQueryResultDto Fail(string action, string status, string error) => new()

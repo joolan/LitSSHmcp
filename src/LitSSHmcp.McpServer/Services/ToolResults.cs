@@ -16,7 +16,7 @@ public sealed class TopologyQueryResultDto
     public string? Status { get; set; }
     public string? Error { get; set; }
     public string? Summary { get; set; }
-    public JsonElement? Result { get; set; }
+    public Dictionary<string, object?>? Result { get; set; }
 }
 
 public sealed class QueryResultDto

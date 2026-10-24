@@ -3340,8 +3340,18 @@ public sealed class AgentStep : INotifyPropertyChanged
     public bool ShowDetail
     {
         get => _showDetail;
-        set { if (_showDetail == value) return; _showDetail = value; Raise(); }
+        set
+        {
+            if (_showDetail == value) return;
+            _showDetail = value;
+            Raise();
+            Raise(nameof(DetailVisibility));
+            Raise(nameof(DetailToggleText));
+        }
     }
+
+    public Visibility DetailVisibility => _showDetail ? Visibility.Visible : Visibility.Collapsed;
+    public string DetailToggleText => _showDetail ? "收起" : "详情";
 
     public void Complete(bool success, string result, long durationMs)
     {

@@ -301,10 +301,29 @@
                                         <ItemsControl ItemsSource="{Binding Steps}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Expander Margin="0,3" Padding="4" IsExpanded="{Binding ShowDetail, Mode=TwoWay}">
-                                                            <Expander.Header>
-                                                                <DockPanel LastChildFill="False" MinWidth="380">
-                                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Label}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeMicro}">
+                                                        <Border Margin="0,3" Padding="8" CornerRadius="6"
+                                                                Background="{DynamicResource AppSurfaceAltBrush}"
+                                                                BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+                                                            <StackPanel>
+                                                                <DockPanel LastChildFill="False">
+                                                                    <Ellipse DockPanel.Dock="Left" Width="7" Height="7" Margin="0,0,7,0"
+                                                                             VerticalAlignment="Center">
+                                                                        <Ellipse.Style>
+                                                                            <Style TargetType="Ellipse">
+                                                                                <Setter Property="Fill" Value="{DynamicResource AppTextSecondaryBrush}"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                                                        <Setter Property="Fill" Value="{DynamicResource AppAccentBrush}"/>
+                                                                                    </DataTrigger>
+                                                                                    <DataTrigger Binding="{Binding Success}" Value="False">
+                                                                                        <Setter Property="Fill" Value="{DynamicResource AppDangerBrush}"/>
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </Ellipse.Style>
+                                                                    </Ellipse>
+                                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Label}" FontWeight="SemiBold"
+                                                                               FontSize="{DynamicResource AppFontSizeMicro}">
                                                                         <TextBlock.Style>
                                                                             <Style TargetType="TextBlock">
                                                                                 <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
@@ -324,21 +343,31 @@
                                                                             Visibility="{Binding DestructiveVisibility}">
                                                                         <TextBlock Text="写操作" FontSize="10" Foreground="{DynamicResource AppDangerBrush}"/>
                                                                     </Border>
-                                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Tail}" FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                                        <TextBlock Text="{Binding Tail}" FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                                        <ui:Button Content="{Binding DetailToggleText}" FontSize="10" Padding="8,1" Margin="0,0,4,0"
+                                                                                   Click="OnToggleStepDetail"/>
+                                                                        <ui:Button Content="查看" FontSize="10" Padding="8,1" Margin="0,0,4,0"
+                                                                                   Click="OnViewStepDetail"/>
+                                                                        <ui:Button Content="复制" FontSize="10" Padding="8,1" Margin="0,0,4,0"
+                                                                                   Click="OnCopyStepDetail"/>
+                                                                        <ui:Button Content="重试" FontSize="10" Padding="8,1"
+                                                                                   Visibility="{Binding RetryVisibility}"
+                                                                                   Command="{Binding DataContext.RetryStepCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                                   CommandParameter="{Binding}"/>
+                                                                    </StackPanel>
                                                                 </DockPanel>
-                                                            </Expander.Header>
-                                                            <StackPanel>
-                                                                <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"/>
-                                                                <WrapPanel Margin="0,4,0,0">
-                                                                    <ui:Button Content="复制结果" FontSize="10" Padding="8,1" Margin="0,0,6,0"
-                                                                               Click="OnCopyStepDetail"/>
-                                                                    <ui:Button Content="重试" FontSize="10" Padding="8,1"
-                                                                               Visibility="{Binding RetryVisibility}"
-                                                                               Command="{Binding DataContext.RetryStepCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                               CommandParameter="{Binding}"/>
-                                                                </WrapPanel>
+                                                                <Border Margin="0,6,0,0" Visibility="{Binding DetailVisibility}">
+                                                                    <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto"
+                                                                                  HorizontalScrollBarVisibility="Auto">
+                                                                        <TextBlock Text="{Binding Detail}" TextWrapping="Wrap"
+                                                                                   FontFamily="{DynamicResource AppFontMonoFamily}"
+                                                                                   FontSize="{DynamicResource AppFontSizeMicro}"/>
+                                                                    </ScrollViewer>
+                                                                </Border>
                                                             </StackPanel>
-                                                        </Expander>
+                                                        </Border>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>

@@ -984,6 +984,20 @@ public partial class AgentWindow : FluentWindow
         }
     }
 
+    private void OnToggleStepDetail(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is AgentStep step)
+            step.ShowDetail = !step.ShowDetail;
+    }
+
+    private void OnViewStepDetail(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not AgentStep step || string.IsNullOrEmpty(step.Detail))
+            return;
+
+        ResultDialog.Show(this, "工具结果", step.Label, step.Detail, false);
+    }
+
     // 复制用户消息：纯文字→文字；纯附件→附件；两者都有→弹出选择
     private void OnCopyUserMessage(object sender, RoutedEventArgs e)
     {

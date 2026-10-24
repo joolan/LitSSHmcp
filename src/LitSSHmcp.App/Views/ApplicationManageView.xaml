@@ -67,7 +67,7 @@
                 <Grid Grid.Row="1">
                     <ListView x:Name="AppList" ItemsSource="{Binding FilteredApplications}" SelectedItem="{Binding SelectedApplication}"
                               Visibility="{Binding IsListView, Converter={StaticResource BoolToVis}}"
-                              Padding="3" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
+                              Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                               ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
                         <ListView.ContextMenu>
                             <ContextMenu>

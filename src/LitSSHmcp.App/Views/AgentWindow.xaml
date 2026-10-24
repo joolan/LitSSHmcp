@@ -707,7 +707,8 @@
                             </ComboBox>
 
                             <ui:Button Grid.Column="9" Appearance="Primary" Width="42" Height="34" Padding="0"
-                                       Command="{Binding SendOrStopCommand}" ToolTip="{Binding SendButtonText}">
+                                       Command="{Binding SendOrStopCommand}" ToolTip="{Binding SendButtonText}"
+                                       AutomationProperties.Name="发送消息" Click="OnSendOrStopClick">
                                 <Grid>
                                     <ui:SymbolIcon Symbol="Send24" FontSize="{DynamicResource AppFontSizeSubtitle}">
                                         <ui:SymbolIcon.Style>

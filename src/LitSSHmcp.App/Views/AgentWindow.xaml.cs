@@ -43,6 +43,7 @@ public partial class AgentWindow : FluentWindow
         DataContext = _viewModel;
         WindowLayout.Attach(this, "agent");
         _viewModel.Turns.CollectionChanged += OnTurnsChanged;
+        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         ChatScroll.ScrollChanged += OnChatScrollChanged;
         foreach (var turn in _viewModel.Turns)
             HookTurn(turn);
@@ -54,15 +55,33 @@ public partial class AgentWindow : FluentWindow
             _viewModel.NotifyDesktopLoginChanged();
             await _viewModel.InitializeAsync();
             RequestScrollToEnd();
+            _ = Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()),
+                System.Windows.Threading.DispatcherPriority.Input);
         });
         Closed += (_, _) => AsyncOperation.Run("释放 AI 助手", () => _viewModel.DisposeAsync().AsTask());
     }
 
     // ---- 对话流跟随 ----
 
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(AgentViewModel.SelectedSession))
+            return;
+
+        _autoFollow = true;
+        _unseenMessages = 0;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            ChatScroll.ScrollToEnd();
+            InputBox.Focus();
+            UpdateScrollToBottomButton();
+        }), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
     private readonly HashSet<AgentTurn> _hookedTurns = new();
     private bool _autoFollow = true;
     private bool _scrollScheduled;
+    private int _unseenMessages;
 
     private void OnTurnsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -80,9 +99,20 @@ public partial class AgentWindow : FluentWindow
                     UnhookTurn(turn);
             foreach (var turn in _viewModel.Turns)
                 HookTurn(turn);
+
+            _autoFollow = true;
+            _unseenMessages = 0;
+            RequestScrollToEnd();
+            return;
         }
 
-        _autoFollow = true;
+        if (e.Action == NotifyCollectionChangedAction.Add && !_autoFollow && e.NewItems is { Count: > 0 })
+        {
+            _unseenMessages += e.NewItems.Count;
+            UpdateScrollToBottomButton();
+            return;
+        }
+
         RequestScrollToEnd();
     }
 
@@ -141,9 +171,14 @@ public partial class AgentWindow : FluentWindow
 
         var nearBottom = e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - 40;
         if (nearBottom)
+        {
             _autoFollow = true;
+            _unseenMessages = 0;
+        }
         else if (e.VerticalChange < 0)
+        {
             _autoFollow = false;
+        }
 
         UpdateScrollToBottomButton();
     }
@@ -152,11 +187,15 @@ public partial class AgentWindow : FluentWindow
     {
         var show = !_autoFollow && ChatScroll.ExtentHeight > ChatScroll.ViewportHeight + 1;
         ScrollToBottomButton.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        ScrollToBottomButton.Content = _unseenMessages > 0
+            ? $"回到底部 · {_unseenMessages} 条新消息"
+            : "回到底部";
     }
 
     private void OnScrollToBottom(object sender, RoutedEventArgs e)
     {
         _autoFollow = true;
+        _unseenMessages = 0;
         ChatScroll.ScrollToEnd();
         UpdateScrollToBottomButton();
     }
@@ -794,6 +833,8 @@ public partial class AgentWindow : FluentWindow
 
         if (_viewModel.IsBusy)
             return;
+        _autoFollow = true;
+        _unseenMessages = 0;
         if (_viewModel.SendCommand.CanExecute(null))
             _viewModel.SendCommand.Execute(null);
         e.Handled = true;
@@ -843,8 +884,29 @@ public partial class AgentWindow : FluentWindow
     // 整窗 Ctrl+V：剪贴板含图片/文件则作为附件；纯文本交给输入框正常粘贴
     private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && !InputBox.IsKeyboardFocusWithin
+            && Keyboard.FocusedElement is not System.Windows.Controls.TextBox
+            && Keyboard.FocusedElement is not System.Windows.Controls.ComboBox)
+        {
+            Keyboard.Focus(InputBox);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) != 0 && TryAttachFromClipboard())
             e.Handled = true;
+    }
+
+    private void OnSendOrStopClick(object sender, RoutedEventArgs e)
+    {
+        _autoFollow = true;
+        _unseenMessages = 0;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            ChatScroll.ScrollToEnd();
+            InputBox.Focus();
+            UpdateScrollToBottomButton();
+        }), System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private bool TryAttachFromClipboard()

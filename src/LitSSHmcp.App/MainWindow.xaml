@@ -33,7 +33,7 @@
                         <ui:Button Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="设置（安全 / 工具分组 / 导入导出）"
                                    AutomationProperties.Name="设置" Command="{Binding OpenSettingsCommand}">
-                            <StackPanel>
+                            <StackPanel VerticalAlignment="Center">
                                 <ui:SymbolIcon Symbol="Settings24" FontSize="19" HorizontalAlignment="Center"/>
                                 <TextBlock Text="设置" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                             </StackPanel>
@@ -50,7 +50,7 @@
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
                                         HorizontalAlignment="Left" Margin="4,10"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Home}"/>
-                                <StackPanel>
+                                <StackPanel VerticalAlignment="Center">
                                     <ui:SymbolIcon Symbol="Home24" FontSize="19" HorizontalAlignment="Center"/>
                                     <TextBlock Text="首页" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -59,7 +59,7 @@
                         <ui:Button Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="打开 AI 运维助手"
                                    AutomationProperties.Name="AI 运维助手" Command="{Binding OpenAgentCommand}">
-                            <StackPanel>
+                            <StackPanel VerticalAlignment="Center">
                                 <ui:SymbolIcon Symbol="Chat24" FontSize="19" HorizontalAlignment="Center"/>
                                 <TextBlock Text="AI" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                             </StackPanel>
@@ -67,7 +67,7 @@
                         <ui:Button Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="打开 SSH 会话管理"
                                    AutomationProperties.Name="SSH 会话管理" Command="{Binding OpenSessionManagerCommand}">
-                            <StackPanel>
+                            <StackPanel VerticalAlignment="Center">
                                 <ui:SymbolIcon Symbol="Server24" FontSize="19" HorizontalAlignment="Center"/>
                                 <TextBlock Text="会话" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                             </StackPanel>
@@ -83,7 +83,7 @@
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
                                         HorizontalAlignment="Left" Margin="4,10"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Servers}"/>
-                                <StackPanel>
+                                <StackPanel VerticalAlignment="Center">
                                     <ui:SymbolIcon Symbol="Server24" FontSize="19" HorizontalAlignment="Center"/>
                                     <TextBlock Text="服务器" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -99,7 +99,7 @@
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
                                         HorizontalAlignment="Left" Margin="4,10"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=DataSources}"/>
-                                <StackPanel>
+                                <StackPanel VerticalAlignment="Center">
                                     <ui:SymbolIcon Symbol="Database24" FontSize="19" HorizontalAlignment="Center"/>
                                     <TextBlock Text="数据源" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -115,7 +115,7 @@
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
                                         HorizontalAlignment="Left" Margin="4,10"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Applications}"/>
-                                <StackPanel>
+                                <StackPanel VerticalAlignment="Center">
                                     <ui:SymbolIcon Symbol="Apps24" FontSize="19" HorizontalAlignment="Center"/>
                                     <TextBlock Text="应用" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -131,7 +131,7 @@
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
                                         HorizontalAlignment="Left" Margin="4,10"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=RemoteDesktops}"/>
-                                <StackPanel>
+                                <StackPanel VerticalAlignment="Center">
                                     <ui:SymbolIcon Symbol="Desktop24" FontSize="19" HorizontalAlignment="Center"/>
                                     <TextBlock Text="桌面" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -141,7 +141,7 @@
                         <ui:Button Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="资产拓扑（独立窗口）"
                                    AutomationProperties.Name="资产拓扑" Command="{Binding OpenTopologyCommand}">
-                            <StackPanel>
+                            <StackPanel VerticalAlignment="Center">
                                 <ui:SymbolIcon Symbol="Share24" FontSize="19" HorizontalAlignment="Center"/>
                                 <TextBlock Text="拓扑" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                             </StackPanel>
@@ -149,7 +149,7 @@
                         <ui:Button Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="审计日志（独立窗口）"
                                    AutomationProperties.Name="审计日志" Command="{Binding OpenAuditCommand}">
-                            <StackPanel>
+                            <StackPanel VerticalAlignment="Center">
                                 <ui:SymbolIcon Symbol="History24" FontSize="19" HorizontalAlignment="Center"/>
                                 <TextBlock Text="审计" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                             </StackPanel>

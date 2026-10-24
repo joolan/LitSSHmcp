@@ -19,7 +19,7 @@ using Microsoft.Extensions.AI;
 namespace LitSSHmcp.App.ViewModels;
 
 /// <summary>AI 运维助手：按"轮"组织的多会话对话（内嵌 MCP 客户端驱动）。</summary>
-public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
+public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly IConfigService _configService;
     private readonly IContextStore _store;
@@ -986,9 +986,12 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             OnPropertyChanged(nameof(SessionSubsetLocked));   // 运行起止会切换启用层锁定（D8）
             // 侧栏所有会话行徽章刷新（后台会话状态/停止入口的启用态都靠它）
             _sidebar.RefreshStates();
+            if (ReferenceEquals(ctx, CurrentContext))
+            {
+                OnPropertyChanged(nameof(SessionStateText));
+                RaisePendingApprovalChanged();
+            }
         });
-        if (ReferenceEquals(ctx, CurrentContext))
-            OnPropertyChanged(nameof(SessionStateText));
     }
 
     /// <summary>会话状态机 → 徽章文案（Idle/Done=空）。</summary>
@@ -1253,6 +1256,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private async Task LoadSessionAsync(long id)
     {
         _sessionId = id;
+        RaisePendingApprovalChanged();
         SyncLocalAuditSession();
         // 需求 D：先取会话工作目录（附件/历史解析与运行时装配都依赖它；空=旧会话回退共享区）
         _sessionWorkspaceDir = await _store.GetSessionWorkspaceDirAsync(id);
@@ -1487,6 +1491,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private void StartNewTask()
     {
         _sessionId = 0;
+        RaisePendingApprovalChanged();
         _sessionWorkspaceDir = null;   // 未分配：新任务回退共享工作区，首条消息时再分配独立目录（需求 D）
         _sessionMcpSubset = null;      // D8 启用层：新任务回到“继承全局默认启用集合”态
         CurrentContext.WorkspaceDir = null;
@@ -1842,47 +1847,6 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         return tools;
     }
 
-    /// <summary>
-    /// 本机终端审批：用 BeginInvoke 把弹窗投递到 UI 线程，工具线程只 await TaskCompletionSource。
-    /// 旧实现是 Dispatcher.Invoke + ShowDialog 同步阻塞——UI 线程被审批占用期间所有 Dispatcher 操作排队，
-    /// 且工具线程无法被取消（评估报告 §4.2）。弹窗期间该会话状态机进 WaitingApproval（§4.1）。
-    /// </summary>
-    private Task<LocalApprovalDecision> RequestLocalApprovalAsync(SessionRunContext ctx, string command, string workingDirectory, CancellationToken ct)
-    {
-        ctx.SetState(SessionRunState.WaitingApproval);
-        var request = new LocalApprovalRequest(
-            command, workingDirectory, ctx.SessionKey, _localExemptions.SessionAllGranted(ctx.SessionKey));
-
-        void Show()
-        {
-            try
-            {
-                if (ctx.ActiveTurn is { } turn)
-                {
-                    turn.Approvals.Add(request);
-                    return;
-                }
-
-                // 兜底：没有可挂载的轮次（极少数非对话调用）仍使用模态窗口
-                var decision = LitSSHmcp.App.Views.LocalCommandApprovalWindow.Prompt(
-                    command, workingDirectory, _localExemptions.SessionAllGranted(ctx.SessionKey), ctx.SessionKey);
-                request.Resolve(decision);
-            }
-            catch (Exception)
-            {
-                request.Resolve(LocalApprovalDecision.Deny);
-            }
-        }
-
-        // 取消优先：卡片/兜底弹窗后续再点选也不会覆盖已取消结果
-        var registration = ct.Register(request.Cancel);
-        _ = request.DecisionTask.ContinueWith(_ => registration.Dispose(), TaskContinuationOptions.ExecuteSynchronously);
-        // 审批结束回到执行态（取消/异常同样恢复；终态 Done/Failed 由本轮收尾覆盖）
-        _ = request.DecisionTask.ContinueWith(_ => ctx.SetState(SessionRunState.Running),
-            CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-        _uiBeginInvoke(Show);
-        return request.DecisionTask;
-    }
 
     /// <summary>把「总是允许」的命令写回配置（后台，不阻塞工具调用）。</summary>
     private void PersistLocalTerminalConfig()
@@ -2385,6 +2349,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private async Task CreateSessionWithWorkspaceAsync(string title, bool titled)
     {
         _sessionId = await _store.CreateSessionAsync(title);
+        RaisePendingApprovalChanged();
         _sessionTitled = titled;
         SyncLocalAuditSession();
 
@@ -2436,6 +2401,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         var ctx = CurrentContext;
         ctx.ActiveTurn = turn;
+        RaisePendingApprovalChanged();
         if (ctx.Runtime is null)
             return;
         if (ctx.IsBusy)

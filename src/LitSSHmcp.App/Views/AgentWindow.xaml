@@ -341,68 +341,6 @@
                                             </ItemsControl>
                                     </Expander>
 
-                                    <!-- 本机命令内联审批 -->
-                                    <ItemsControl ItemsSource="{Binding Approvals}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                    <Border Margin="0,10,0,0" Padding="12" CornerRadius="8"
-                                            Background="{DynamicResource AppWarningSubtleBrush}"
-                                            BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1">
-                                        <StackPanel>
-                                            <DockPanel LastChildFill="False">
-                                                <ui:SymbolIcon DockPanel.Dock="Left" Symbol="ShieldCheckmark24" FontSize="18"
-                                                               Foreground="{DynamicResource AppWarningBrush}" Margin="0,0,8,0"/>
-                                                <TextBlock DockPanel.Dock="Left" Text="本机命令审批" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
-                                                <TextBlock DockPanel.Dock="Right" Text="{Binding SessionLabel}"
-                                                           FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                                           VerticalAlignment="Center"
-                                                           Visibility="{Binding SessionTextVisibility}"/>
-                                            </DockPanel>
-                                            <TextBlock Text="AI 请求在本机 PowerShell 终端执行以下命令：" Margin="0,8,0,0" TextWrapping="Wrap"/>
-                                            <TextBlock Text="{Binding WorkingDirectory}" FontSize="11"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,3,0,0"
-                                                       TextWrapping="Wrap"
-                                                       Visibility="{Binding WorkingDirectoryVisibility}"/>
-                                            <Border Background="{DynamicResource AppCodeBgBrush}" CornerRadius="4" Padding="8" Margin="0,8,0,0">
-                                                <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto"
-                                                              HorizontalScrollBarVisibility="Auto">
-                                                    <TextBlock Text="{Binding Command}" FontFamily="Consolas" FontSize="12"
-                                                               TextWrapping="Wrap"/>
-                                                </ScrollViewer>
-                                            </Border>
-                                            <TextBlock Text="仅白名单内的 CLI 会被放行；命令与输出对用户可见。请确认无误后再允许。"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"
-                                                       Margin="0,8,0,0" TextWrapping="Wrap"/>
-                                            <TextBlock Text="已设置：本次 AI 会话期间允许全部命令（本卡片不会再出现；重启或新会话即失效）"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"
-                                                       Margin="0,4,0,0" TextWrapping="Wrap"
-                                                       Visibility="{Binding SessionHintVisibility}"/>
-                                            <StackPanel Visibility="{Binding PendingVisibility}">
-                                                <TextBlock Text="放行范围（默认仅允许一次）" FontWeight="SemiBold" FontSize="11"
-                                                           Margin="0,10,0,6"/>
-                                                <WrapPanel>
-                                                    <ui:Button Content="拒绝" Padding="12,4" Margin="0,0,6,6"
-                                                               Command="{Binding DenyCommand}"/>
-                                                    <ui:Button Content="允许一次" Appearance="Primary" Padding="12,4" Margin="0,0,6,6"
-                                                               Command="{Binding AllowOnceCommand}"/>
-                                                    <ui:Button Content="本轮允许" Padding="12,4" Margin="0,0,6,6"
-                                                               Command="{Binding AllowRoundCommand}"/>
-                                                    <ui:Button Content="会话允许" Padding="12,4" Margin="0,0,6,6"
-                                                               Command="{Binding AllowSessionCommand}"/>
-                                                    <ui:Button Content="总是允许" Padding="12,4" Margin="0,0,0,6"
-                                                               Command="{Binding AlwaysAllowCommand}"
-                                                               ToolTip="写入配置永久记住该命令（重启/升级后仍有效）"/>
-                                                </WrapPanel>
-                                            </StackPanel>
-                                            <TextBlock Text="{Binding ResolutionText}" FontSize="11" FontWeight="SemiBold"
-                                                       Margin="0,4,0,0"
-                                                       Visibility="{Binding ResolvedVisibility}"/>
-                                        </StackPanel>
-                                    </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-
                                     <!-- 助手回答卡片 -->
                                     <Border Style="{DynamicResource AssistantCardStyle}" Margin="0,9,0,0"
                                             Visibility="{Binding AssistantVisibility}">
@@ -481,10 +419,57 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
+                        <!-- 本机命令审批：吸附在输入框上方，随输入区一起移动，不被对话滚动顶走 -->
+                        <Border Grid.Row="0" Margin="0,0,0,8" Padding="12" CornerRadius="8"
+                                Background="{DynamicResource AppWarningSubtleBrush}"
+                                BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1"
+                                Visibility="{Binding HasPendingApproval, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <DockPanel LastChildFill="False">
+                                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="ShieldCheckmark24" FontSize="16"
+                                                   Foreground="{DynamicResource AppWarningBrush}" Margin="0,0,8,0"/>
+                                    <TextBlock DockPanel.Dock="Left" Text="本机命令审批 · 等待处理" FontWeight="SemiBold"
+                                               FontSize="13" VerticalAlignment="Center"/>
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding PendingApproval.SessionLabel}"
+                                               FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               VerticalAlignment="Center"
+                                               Visibility="{Binding PendingApproval.SessionTextVisibility}"/>
+                                </DockPanel>
+                                <TextBlock Text="{Binding PendingApproval.WorkingDirectory}" FontSize="11"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,0"
+                                           TextWrapping="Wrap"
+                                           Visibility="{Binding PendingApproval.WorkingDirectoryVisibility}"/>
+                                <Border Background="{DynamicResource AppCodeBgBrush}" CornerRadius="4" Padding="8" Margin="0,8,0,0">
+                                    <ScrollViewer MaxHeight="110" VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Auto">
+                                        <TextBlock Text="{Binding PendingApproval.Command}" FontFamily="Consolas"
+                                                   FontSize="12" TextWrapping="Wrap"/>
+                                    </ScrollViewer>
+                                </Border>
+                                <TextBlock Text="仅白名单内的 CLI 会被放行；命令与输出对用户可见。请确认无误后再允许。"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"
+                                           Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                <WrapPanel Margin="0,8,0,0">
+                                    <ui:Button Content="拒绝" Padding="12,4" Margin="0,0,6,6"
+                                               Command="{Binding PendingApproval.DenyCommand}"/>
+                                    <ui:Button Content="允许一次" Appearance="Primary" Padding="12,4" Margin="0,0,6,6"
+                                               Command="{Binding PendingApproval.AllowOnceCommand}"/>
+                                    <ui:Button Content="本轮允许" Padding="12,4" Margin="0,0,6,6"
+                                               Command="{Binding PendingApproval.AllowRoundCommand}"/>
+                                    <ui:Button Content="会话允许" Padding="12,4" Margin="0,0,6,6"
+                                               Command="{Binding PendingApproval.AllowSessionCommand}"/>
+                                    <ui:Button Content="总是允许" Padding="12,4" Margin="0,0,0,6"
+                                               Command="{Binding PendingApproval.AlwaysAllowCommand}"
+                                               ToolTip="写入配置永久记住该命令（重启/升级后仍有效）"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
                         <!-- 顶部拖拽把手：调整输入区高度 -->
-                        <Thumb Grid.Row="0" Height="6" HorizontalAlignment="Stretch" Cursor="SizeNS" Background="Transparent"
+                        <Thumb Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Cursor="SizeNS" Background="Transparent"
                                ToolTip="拖动调整输入区高度" DragDelta="OnComposerResize">
                             <Thumb.Template>
                                 <ControlTemplate TargetType="Thumb">
@@ -494,7 +479,7 @@
                         </Thumb>
 
                         <!-- 技能 chip（有激活技能时显示；未激活=索引模式） -->
-                        <DockPanel Grid.Row="1" Margin="0,6,0,0" LastChildFill="True"
+                        <DockPanel Grid.Row="2" Margin="0,6,0,0" LastChildFill="True"
                                    Visibility="{Binding HasActiveSkills, Converter={StaticResource BoolToVis}}">
                             <Button DockPanel.Dock="Right" Style="{DynamicResource ActionRowButton}" Padding="6,2" Margin="8,0,0,6"
                                     VerticalAlignment="Top" Click="OnSelectSkills" ToolTip="编辑本会话激活的技能">
@@ -525,7 +510,7 @@
                         </DockPanel>
 
                         <!-- 附件芯片（有附件时显示） -->
-                        <DockPanel Grid.Row="2" Margin="0,6,0,0" LastChildFill="True"
+                        <DockPanel Grid.Row="3" Margin="0,6,0,0" LastChildFill="True"
                                    Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVis}}">
                             <Button DockPanel.Dock="Right" Style="{DynamicResource ActionRowButton}" Padding="6,2" Margin="8,0,0,6"
                                     VerticalAlignment="Top" Click="OnClearAttachments" ToolTip="清除全部附件">
@@ -578,7 +563,7 @@
                             </ItemsControl>
                         </DockPanel>
 
-                        <ui:TextBox FontWeight="Normal" x:Name="InputBox" Grid.Row="3" Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}"
+                        <ui:TextBox FontWeight="Normal" x:Name="InputBox" Grid.Row="4" Text="{Binding Input, UpdateSourceTrigger=PropertyChanged}"
                                     AcceptsReturn="True" MinHeight="64" MaxHeight="400" TextWrapping="Wrap"
                                     BorderThickness="0" Background="Transparent"
                                     VerticalScrollBarVisibility="Auto" FontFamily="Microsoft YaHei" FontSize="13"
@@ -587,7 +572,7 @@
                                     PlaceholderText="今天帮你做些什么？"
                                     ToolTip="Enter 发送；Shift+Enter 换行；可拖入图片/文档或 Ctrl+V 粘贴图片"/>
 
-                        <Grid Grid.Row="4" Margin="0,8,0,0">
+                        <Grid Grid.Row="5" Margin="0,8,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>

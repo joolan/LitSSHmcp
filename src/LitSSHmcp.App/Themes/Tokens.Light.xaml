@@ -113,4 +113,22 @@
     <CornerRadius x:Key="AppRadiusS">4</CornerRadius>
     <CornerRadius x:Key="AppRadiusM">8</CornerRadius>
     <CornerRadius x:Key="AppRadiusL">12</CornerRadius>
+
+    <FontFamily x:Key="AppFontUiFamily">Microsoft YaHei UI</FontFamily>
+    <FontFamily x:Key="AppFontMonoFamily">Cascadia Mono, Consolas, Microsoft YaHei UI</FontFamily>
+    <FontFamily x:Key="AppFontIconFamily">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+    <sys:Double x:Key="AppFontSizeMicro">11</sys:Double>
+    <sys:Double x:Key="AppFontSizeCaption">12</sys:Double>
+    <sys:Double x:Key="AppFontSizeBody">14</sys:Double>
+    <sys:Double x:Key="AppFontSizeSubtitle">16</sys:Double>
+    <sys:Double x:Key="AppFontSizeTitle">20</sys:Double>
+    <sys:Double x:Key="AppFontSizeDisplay">28</sys:Double>
+
+    <Thickness x:Key="AppPageMargin">16</Thickness>
+    <Thickness x:Key="AppSectionGap">16</Thickness>
+    <Thickness x:Key="AppFormRowGap">0,0,0,8</Thickness>
+    <Thickness x:Key="AppCardPadding">12</Thickness>
+    <Thickness x:Key="AppDialogPadding">16</Thickness>
+    <Thickness x:Key="AppButtonPadding">12,4</Thickness>
 </ResourceDictionary>

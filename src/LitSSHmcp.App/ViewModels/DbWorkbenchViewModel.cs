@@ -960,6 +960,9 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
                 var proceed = ConfirmWrite?.Invoke(new WritePreviewInfo
                 {
                     Sql = trimmed,
+                    DataSourceName = ds.Name,
+                    DatabaseName = $"DB {SelectedRedisDb}",
+                    OperationLabel = "Redis 大结果集命令",
                     Note = "该命令可能返回大量数据（KEYS / HGETALL / SMEMBERS / 无界 RANGE 等），继续执行可能很慢甚至拖垮 Redis。确认继续？"
                 }) ?? _dialogs.Confirm(
                     $"该命令可能返回大量数据，继续执行可能很慢甚至拖垮 Redis。\n\n{Truncate(trimmed, 400)}\n\n确认执行？",
@@ -1252,6 +1255,9 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
             var preview = new WritePreviewInfo
             {
                 Sql = command,
+                DataSourceName = ds.Name,
+                DatabaseName = $"DB {SelectedRedisDb}",
+                OperationLabel = "Redis 写命令",
                 Note = "Redis 命令无法预估影响范围，请确认命令正确无误后再执行。"
             };
             var proceed = ConfirmWrite?.Invoke(preview)
@@ -1302,7 +1308,13 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
     /// <summary>执行前预览：尽力解析 UPDATE/DELETE 的 WHERE 并统计影响行数 + 样本行。</summary>
     private async Task<WritePreviewInfo> BuildPreviewAsync(DataSourceConfig ds, string sql, IDatasourceDriver driver)
     {
-        var info = new WritePreviewInfo { Sql = sql };
+        var info = new WritePreviewInfo
+        {
+            Sql = sql,
+            DataSourceName = ds.Name,
+            DatabaseName = SelectedDatabase,
+            OperationLabel = "SQL 写操作"
+        };
         if (!TryBuildPreview(sql, out var countSql, out var sampleSql))
         {
             info.Note = "该语句不支持影响行数预览，请仔细核对后再执行。";
@@ -1889,29 +1901,4 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
 
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-}
-
-/// <summary>写入执行前的预览数据（影响行数 + 样本行），供确认对话框展示。</summary>
-public sealed class WritePreviewInfo
-{
-    public string Sql { get; set; } = string.Empty;
-
-    /// <summary>预计影响行数（无法预估时为 null）。</summary>
-    public long? AffectedRows { get; set; }
-
-    /// <summary>受影响样本行（最多 100 行，仅 UPDATE/DELETE 可预览）。</summary>
-    public DataView? Sample { get; set; }
-
-    /// <summary>预览说明（不支持/失败时的提示）。</summary>
-    public string? Note { get; set; }
-
-    public bool IsSensitive { get; set; }
-
-    public string Describe()
-    {
-        if (Note is not null)
-            return Note;
-        var rows = AffectedRows is long n ? $"预计影响 {n} 行。" : "无法预估影响行数。";
-        return rows + (Sample is not null ? $"以下为受影响样本（最多 100 行）。" : string.Empty);
-    }
 }

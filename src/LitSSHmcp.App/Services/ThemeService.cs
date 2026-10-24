@@ -13,6 +13,7 @@ public static class ThemeService
     public static event Action? ThemeChanged;
 
     private static ResourceDictionary? _tokens;
+    private static ResourceDictionary? _bridge;
     private static ResourceDictionary? _accentDict;
     private static bool _followSystem = true;
     private static string _accent = string.Empty;
@@ -79,6 +80,7 @@ public static class ThemeService
         app.Resources.MergedDictionaries.Insert(0, dict);
         _tokens = dict;
 
+        ApplyWpfUiBridge(app);
         ApplyAccent(app);
         ApplyAccentForeground(app);
 
@@ -124,6 +126,17 @@ public static class ThemeService
         {
             try { ApplicationAccentColorManager.Apply(color); } catch { /* 忽略 */ }
         }
+    }
+
+    /// <summary>把 WPF-UI 常用表面/文本/边框键桥接到 App token（追加到末尾以覆盖 WPF-UI 默认值）。</summary>
+    private static void ApplyWpfUiBridge(Application app)
+    {
+        var uri = new Uri($"Themes/WpfUiBridge.{(Current == "light" ? "Light" : "Dark")}.xaml", UriKind.Relative);
+        var bridge = new ResourceDictionary { Source = uri };
+        if (_bridge is not null)
+            app.Resources.MergedDictionaries.Remove(_bridge);
+        app.Resources.MergedDictionaries.Add(bridge);
+        _bridge = bridge;
     }
 
     /// <summary>根据强调色亮度选择黑/白前景，保证主按钮文字对比度。</summary>

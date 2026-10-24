@@ -363,6 +363,17 @@ public class ServerEditViewModel : INotifyPropertyChanged
             var config = await _configService.LoadConfigAsync();
             var server = BuildServerConfig();
 
+            if (string.IsNullOrWhiteSpace(Name) || string.IsNullOrWhiteSpace(Host) || string.IsNullOrWhiteSpace(Username))
+            {
+                StatusMessage = "服务器名称、主机地址、用户名不能为空";
+                return;
+            }
+            if (Port is < 1 or > 65535)
+            {
+                StatusMessage = "端口必须是 1-65535 的数字";
+                return;
+            }
+
             if (!ValidateJump(config, server, out var jumpError))
             {
                 StatusMessage = jumpError!;

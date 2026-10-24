@@ -7,7 +7,7 @@
         <controls:GroupLabelConverter x:Key="GroupLabel"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </UserControl.Resources>
-    <Grid Margin="16">
+    <Grid Margin="{DynamicResource AppPageMargin}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>

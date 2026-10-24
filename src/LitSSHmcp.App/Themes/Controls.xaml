@@ -7,7 +7,7 @@
     <Style TargetType="Window">
         <Setter Property="Background" Value="{DynamicResource AppBgBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
-        <Setter Property="FontFamily" Value="Microsoft YaHei"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontUiFamily}"/>
     </Style>
 
     <Style x:Key="CardBorderStyle" TargetType="Border">
@@ -15,7 +15,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="{DynamicResource AppRadiusM}"/>
-        <Setter Property="Padding" Value="10"/>
+        <Setter Property="Padding" Value="{DynamicResource AppCardPadding}"/>
     </Style>
 
     <Style x:Key="UserBubbleStyle" TargetType="Border">
@@ -47,26 +47,26 @@
     <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeSubtitle}"/>
         <Setter Property="Margin" Value="0,0,0,6"/>
     </Style>
 
     <Style x:Key="MutedTextStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
-        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeMicro}"/>
     </Style>
 
     <!-- 页面标题与搜索框：四个管理页共用 -->
     <Style x:Key="PageTitleStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
-        <Setter Property="FontSize" Value="22"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeTitle}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
     <Style x:Key="PageSubtitleStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeCaption}"/>
         <Setter Property="Margin" Value="0,4,0,0"/>
     </Style>
 
@@ -78,14 +78,14 @@
 
     <Style x:Key="EmptyStateTitleStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
-        <Setter Property="FontSize" Value="15"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeSubtitle}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="HorizontalAlignment" Value="Center"/>
     </Style>
 
     <Style x:Key="EmptyStateHintStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeCaption}"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
         <Setter Property="TextAlignment" Value="Center"/>
         <Setter Property="MaxWidth" Value="360"/>
@@ -94,27 +94,27 @@
     <!-- 表单：上方标签 / 左侧行标签 / 帮助 / 错误 -->
     <Style x:Key="FormLabelStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeCaption}"/>
         <Setter Property="Margin" Value="0,0,0,4"/>
     </Style>
 
     <Style x:Key="FormRowLabelStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeCaption}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="Margin" Value="0,0,10,8"/>
     </Style>
 
     <Style x:Key="FormHintStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
-        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeMicro}"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
         <Setter Property="Margin" Value="0,4,0,0"/>
     </Style>
 
     <Style x:Key="FormErrorStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
-        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeMicro}"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
         <Setter Property="Margin" Value="0,4,0,0"/>
     </Style>

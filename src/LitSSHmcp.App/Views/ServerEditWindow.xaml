@@ -17,138 +17,137 @@
 
         <ScrollViewer Grid.Row="1" Margin="16,0,16,0" VerticalScrollBarVisibility="Auto">
             <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="92"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+                <StackPanel>
+                    <controls:FormRow Label="服务器名称" IsRequired="True">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="服务器名称:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                    <controls:FormRow Label="主机地址" IsRequired="True">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="主机地址:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="1" Grid.Column="1" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                    <controls:FormRow Label="端口" IsRequired="True" HelpText="默认 22；经跳板机时仍填目标服务器端口">
+                        <ui:TextBox FontWeight="Normal" Width="100" HorizontalAlignment="Left"
+                                    Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="端口:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="2" Grid.Column="1" Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                    <controls:FormRow Label="用户名" IsRequired="True">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="用户名:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="3" Grid.Column="1" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
-
-                    <TextBlock Grid.Row="4" Grid.Column="0" Text="认证方式:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ComboBox Grid.Row="4" Grid.Column="1" SelectedIndex="{Binding AuthTypeIndex}" Margin="0,0,0,8">
-                        <ComboBoxItem Content="密码"/>
-                        <ComboBoxItem Content="密钥文件"/>
-                    </ComboBox>
-
-                    <TextBlock Grid.Row="5" Grid.Column="0" Text="密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <PasswordBox FontWeight="Normal" Grid.Row="5" Grid.Column="1" x:Name="PasswordBox" Margin="0,0,0,8"/>
-
-                    <TextBlock Grid.Row="6" Grid.Column="0" Text="密钥路径:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <controls:PathPicker Grid.Row="6" Grid.Column="1" Margin="0,0,0,8"
-                                         Value="{Binding KeyFilePath, Mode=TwoWay}"
-                                         IsEnabled="{Binding IsKeyFileAuth}"
-                                         Title="选择 SSH 密钥文件"
-                                         Filter="OpenSSH/PEM 密钥|*.pem;*.key|所有文件|*.*"
-                                         Placeholder="密钥文件路径"/>
-
-                    <TextBlock Grid.Row="7" Grid.Column="0" Text="密钥密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <PasswordBox FontWeight="Normal" Grid.Row="7" Grid.Column="1" x:Name="KeyPasswordBox" Margin="0,0,0,8"/>
-
-                    <TextBlock Grid.Row="8" Grid.Column="0" Text="描述:" VerticalAlignment="Top" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="8" Grid.Column="1" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
-
-                    <TextBlock Grid.Row="9" Grid.Column="0" Text="标签:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="9" Grid.Column="1" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"
-                                ToolTip="多个标签用逗号分隔" Margin="0,0,0,8"/>
-
-                    <TextBlock Grid.Row="10" Grid.Column="0" Text="分组:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="10" Grid.Column="1" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}"
-                                Margin="0,0,0,8" ToolTip="连接管理器分组名（可留空）；相同分组会归为一组"/>
-
-                    <TextBlock Grid.Row="11" Grid.Column="0" Text="状态:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <CheckBox Grid.Row="11" Grid.Column="1" Content="禁用此服务器"
-                              IsChecked="{Binding Disabled, UpdateSourceTrigger=PropertyChanged}"
-                              VerticalAlignment="Center" Margin="0,0,0,8"
-                              ToolTip="禁用后: 不出现在 MCP 的 ssh_list_servers; 资产拓扑中不可建链/连接; 拓扑发现跳过; 任何按服务器标识的工具调用都返回 server_disabled 而不执行"/>
-
-                    <TextBlock Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="2" Text="提权配置" FontWeight="SemiBold" Margin="0,10,0,8"/>
-
-                    <TextBlock Grid.Row="13" Grid.Column="0" Text="提权方式:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ComboBox Grid.Row="13" Grid.Column="1" SelectedIndex="{Binding SudoTypeIndex}" Margin="0,0,0,8">
-                        <ComboBoxItem Content="不启用"/>
-                        <ComboBoxItem Content="当前用户sudo"/>
-                        <ComboBoxItem Content="root用户"/>
-                        <ComboBoxItem Content="指定用户"/>
-                        <ComboBoxItem Content="自动(sudo优先,失败再su)"/>
-                    </ComboBox>
-
-                    <TextBlock Grid.Row="14" Grid.Column="0" Text="提权用户:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="14" Grid.Column="1" Text="{Binding SudoUsername, UpdateSourceTrigger=PropertyChanged}"
-                                IsEnabled="{Binding IsCustomSudoUser}" Margin="0,0,0,8"
-                                ToolTip="仅'指定用户'模式需要填写"/>
-
-                    <TextBlock Grid.Row="15" Grid.Column="0" Text="提权密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <PasswordBox FontWeight="Normal" Grid.Row="15" Grid.Column="1" x:Name="SudoPasswordBox" Margin="0,0,0,8"
-                                 ToolTip="当前用户sudo: 填写SSH用户密码; root/指定用户: 填写对应密码"/>
-
-                    <TextBlock Grid.Row="16" Grid.Column="0" Grid.ColumnSpan="2" Text="内网地址（跨机复制用，可留空）" FontWeight="SemiBold" Margin="0,10,0,8"/>
-                    <TextBlock Grid.Row="17" Grid.Column="0" Text="内网地址:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="17" Grid.Column="1" Text="{Binding InternalHost, UpdateSourceTrigger=PropertyChanged}"
-                                Margin="0,0,0,8"
-                                ToolTip="跨机复制（从其它服务器复制文件到本机时）源服务器可用的内网地址，走服务器间内网通道；留空则用主机地址"/>
-                    <TextBlock Grid.Row="18" Grid.Column="0" Text="内网端口:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="18" Grid.Column="1" Text="{Binding InternalPort, UpdateSourceTrigger=PropertyChanged}"
-                                Margin="0,0,0,8" ToolTip="内网 SSH 端口；留空沿用上面的端口"/>
-
-                    <TextBlock Grid.Row="19" Grid.Column="0" Grid.ColumnSpan="2" Text="生成密钥（ed25519 / rsa；生成后把下方公钥加入服务器的 ~/.ssh/authorized_keys）"
-                               FontWeight="SemiBold" Margin="0,10,0,8" TextWrapping="Wrap"/>
-                    <TextBlock Grid.Row="20" Grid.Column="0" Text="密钥生成:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <StackPanel Grid.Row="20" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
-                        <ComboBox SelectedIndex="{Binding KeyGenTypeIndex}" Width="120" VerticalContentAlignment="Center">
-                            <ComboBoxItem Content="ed25519"/>
-                            <ComboBoxItem Content="rsa(4096)"/>
+                    <controls:FormRow Label="认证方式">
+                        <ComboBox SelectedIndex="{Binding AuthTypeIndex}">
+                            <ComboBoxItem Content="密码"/>
+                            <ComboBoxItem Content="密钥文件"/>
                         </ComboBox>
-                        <ui:Button Content="生成密钥…" Padding="10,3" Margin="6,0,0,0" Command="{Binding GenerateKeyCommand}"/>
-                        <ui:Button Content="复制公钥" Padding="10,3" Margin="6,0,0,0" Click="OnCopyPublicKey"
-                                   IsEnabled="{Binding HasPublicKey}"/>
-                    </StackPanel>
-                    <TextBlock Grid.Row="21" Grid.Column="0" Text="公钥:" VerticalAlignment="Top" Margin="0,2,10,8"/>
-                    <ui:TextBox Grid.Row="21" Grid.Column="1" Text="{Binding PublicKeyText, Mode=OneWay}" IsReadOnly="True"
-                                AcceptsReturn="True" Height="52" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"
-                                VerticalScrollBarVisibility="Auto" Margin="0,0,0,8"
-                                ToolTip="把这一行（以 ssh-ed25519 或 ssh-rsa 开头）追加到目标服务器的 ~/.ssh/authorized_keys"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="22" Grid.Column="0" Text="轮换提醒(天):" VerticalAlignment="Center" Margin="0,0,10,8"
-                               ToolTip="凭据（密码/密钥）超过该天数未变更则提示轮换；0=关闭提醒"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="22" Grid.Column="1" Width="80" HorizontalAlignment="Left"
-                                Text="{Binding CredentialRotateDays, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
-                    <TextBlock Grid.Row="23" Grid.Column="0" Text="凭据时间:" VerticalAlignment="Top" Margin="0,0,10,6"/>
-                    <StackPanel Grid.Row="23" Grid.Column="1" Margin="0,0,0,6">
-                        <TextBlock Text="{Binding CredentialAgeText}" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                   FontSize="11" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding CredentialWarning}" Foreground="{DynamicResource AppDangerBrush}"
-                                   FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
-                                   Visibility="{Binding CredentialWarningVisibility}"/>
-                    </StackPanel>
+                    <controls:FormRow x:Name="PasswordRow" Label="密码">
+                        <PasswordBox FontWeight="Normal"/>
+                    </controls:FormRow>
 
-                    <TextBlock Grid.Row="24" Grid.Column="0" Text="经跳板机:" VerticalAlignment="Center" Margin="0,0,10,8"
-                               ToolTip="经该 SSH 服务器建立隧道后再连本机（目标只在跳板后可达时使用）；仅支持单级跳板"/>
-                    <ComboBox Grid.Row="24" Grid.Column="1" ItemsSource="{Binding JumpOptions}" SelectedItem="{Binding SelectedJumpOption}"
-                              DisplayMemberPath="Name" VerticalContentAlignment="Center" Margin="0,0,0,8"
-                              ToolTip="先连跳板机→建本地转发→再连本机；跳板机自身的登录方式在它的服务器配置里维护"/>
-                </Grid>
+                    <controls:FormRow Label="密钥路径" HelpText="支持 OpenSSH / PEM；不支持 PuTTY .ppk">
+                        <controls:PathPicker Value="{Binding KeyFilePath, Mode=TwoWay}"
+                                             IsEnabled="{Binding IsKeyFileAuth}"
+                                             Title="选择 SSH 密钥文件"
+                                             Filter="OpenSSH/PEM 密钥|*.pem;*.key|所有文件|*.*"
+                                             Placeholder="密钥文件路径"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow x:Name="KeyPasswordRow" Label="密钥密码">
+                        <PasswordBox FontWeight="Normal"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="描述">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="标签" HelpText="多个标签用逗号分隔">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="分组">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}"
+                                    ToolTip="连接管理器分组名（可留空）；相同分组会归为一组"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="状态">
+                        <CheckBox Content="禁用此服务器"
+                                  IsChecked="{Binding Disabled, UpdateSourceTrigger=PropertyChanged}"
+                                  ToolTip="禁用后: 不出现在 MCP 的 ssh_list_servers; 资产拓扑中不可建链/连接; 拓扑发现跳过; 任何按服务器标识的工具调用都返回 server_disabled 而不执行"/>
+                    </controls:FormRow>
+
+                    <TextBlock Text="提权配置" Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
+
+                    <controls:FormRow Label="提权方式">
+                        <ComboBox SelectedIndex="{Binding SudoTypeIndex}">
+                            <ComboBoxItem Content="不启用"/>
+                            <ComboBoxItem Content="当前用户sudo"/>
+                            <ComboBoxItem Content="root用户"/>
+                            <ComboBoxItem Content="指定用户"/>
+                            <ComboBoxItem Content="自动(sudo优先,失败再su)"/>
+                        </ComboBox>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="提权用户" HelpText="仅“指定用户”模式需要填写">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding SudoUsername, UpdateSourceTrigger=PropertyChanged}"
+                                    IsEnabled="{Binding IsCustomSudoUser}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow x:Name="SudoPasswordRow" Label="提权密码" HelpText="当前用户 sudo 填 SSH 密码；root / 指定用户填对应密码">
+                        <PasswordBox FontWeight="Normal"/>
+                    </controls:FormRow>
+
+                    <TextBlock Text="内网地址（跨机复制用，可留空）" Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
+
+                    <controls:FormRow Label="内网地址" HelpText="跨机复制时源服务器可用的内网地址；留空则用主机地址">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding InternalHost, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="内网端口" HelpText="内网 SSH 端口；留空沿用上面的端口">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding InternalPort, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <TextBlock Text="生成密钥（ed25519 / rsa；生成后把下方公钥加入服务器的 ~/.ssh/authorized_keys）"
+                               Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6" TextWrapping="Wrap"/>
+
+                    <controls:FormRow Label="密钥生成">
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox SelectedIndex="{Binding KeyGenTypeIndex}" Width="120" VerticalContentAlignment="Center">
+                                <ComboBoxItem Content="ed25519"/>
+                                <ComboBoxItem Content="rsa(4096)"/>
+                            </ComboBox>
+                            <ui:Button Content="生成密钥…" Padding="10,3" Margin="6,0,0,0" Command="{Binding GenerateKeyCommand}"/>
+                            <ui:Button Content="复制公钥" Padding="10,3" Margin="6,0,0,0" Click="OnCopyPublicKey"
+                                       IsEnabled="{Binding HasPublicKey}"/>
+                        </StackPanel>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="公钥" HelpText="把以 ssh-ed25519 或 ssh-rsa 开头的一行追加到目标服务器的 ~/.ssh/authorized_keys">
+                        <ui:TextBox Text="{Binding PublicKeyText, Mode=OneWay}" IsReadOnly="True"
+                                    AcceptsReturn="True" MinHeight="52" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="11"
+                                    TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="轮换提醒(天)" HelpText="凭据超过该天数未变更则提示轮换；0=关闭提醒">
+                        <ui:TextBox FontWeight="Normal" Width="80" HorizontalAlignment="Left"
+                                    Text="{Binding CredentialRotateDays, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="凭据时间">
+                        <StackPanel>
+                            <TextBlock Text="{Binding CredentialAgeText}" Style="{DynamicResource MutedTextStyle}" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding CredentialWarning}" Foreground="{DynamicResource AppDangerBrush}"
+                                       FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                       Visibility="{Binding CredentialWarningVisibility}"/>
+                        </StackPanel>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="经跳板机" HelpText="仅支持单级跳板；先连跳板机→建本地转发→再连本机">
+                        <ComboBox ItemsSource="{Binding JumpOptions}" SelectedItem="{Binding SelectedJumpOption}"
+                                  DisplayMemberPath="Name" VerticalContentAlignment="Center"/>
+                    </controls:FormRow>
+                </StackPanel>
             </Border>
         </ScrollViewer>
 

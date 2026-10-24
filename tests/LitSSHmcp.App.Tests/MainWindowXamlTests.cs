@@ -91,6 +91,16 @@ public class MainWindowXamlTests
             _ = new SshSessionWindow();
             _ = new TopologyWindow();
             _ = new AuditWindow();
+            _ = new ServerEditWindow();
+            _ = new DatasourceEditWindow();
+            _ = new RemoteDesktopEditWindow();
+            _ = new DbWritePreviewWindow(new LitSSHmcp.App.ViewModels.WritePreviewInfo
+            {
+                Sql = "UPDATE demo SET value = 1 WHERE id = 2",
+                DataSourceName = "demo",
+                DatabaseName = "test",
+                AffectedRows = 1
+            });
             _ = new LitSSHmcp.App.Controls.RemoteFileBrowserView();
             _ = new LitSSHmcp.App.Controls.TerminalTabView();
             var server = new LitSSHmcp.Core.Models.SshServerConfig { Name = "t", Host = "127.0.0.1" };

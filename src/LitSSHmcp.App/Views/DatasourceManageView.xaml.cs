@@ -19,11 +19,11 @@ public partial class DatasourceManageView : UserControl
             if (e.NewValue is true)
                 Dispatcher.BeginInvoke(new Action(FocusSearch), System.Windows.Threading.DispatcherPriority.Loaded);
         };
-        LitSSHmcp.App.Controls.ColumnChooser.Attach(DsList, "datasource.columns");
+        LitSSHmcp.App.Controls.ColumnChooser.Attach(DsList, "datasource.columns.v2");
     }
 
     private void OnChooseColumns(object sender, RoutedEventArgs e)
-        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, DsList, "datasource.columns");
+        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, DsList, "datasource.columns.v2");
 
     private void OnSearchShortcut(object sender, KeyEventArgs e)
     {

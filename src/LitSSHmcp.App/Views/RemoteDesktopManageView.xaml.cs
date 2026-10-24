@@ -19,7 +19,7 @@ public partial class RemoteDesktopManageView : UserControl
             if (e.NewValue is true)
                 Dispatcher.BeginInvoke(new Action(FocusSearch), System.Windows.Threading.DispatcherPriority.Loaded);
         };
-        LitSSHmcp.App.Controls.ColumnChooser.Attach(RdList, "remoteDesktop.columns.v2");
+        LitSSHmcp.App.Controls.ColumnChooser.Attach(RdList, "remoteDesktop.columns.v3");
     }
 
     private void OnConnectClick(object sender, RoutedEventArgs e) => ViewModel?.ConnectCommand.Execute(null);
@@ -31,7 +31,7 @@ public partial class RemoteDesktopManageView : UserControl
     private void OnDeleteClick(object sender, RoutedEventArgs e) => ViewModel?.DeleteCommand.Execute(null);
 
     private void OnChooseColumns(object sender, RoutedEventArgs e)
-        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, RdList, "remoteDesktop.columns.v2");
+        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, RdList, "remoteDesktop.columns.v3");
 
     private void OnSearchShortcut(object sender, KeyEventArgs e)
     {

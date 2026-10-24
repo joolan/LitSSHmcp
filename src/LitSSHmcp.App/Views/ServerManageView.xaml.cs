@@ -20,11 +20,11 @@ public partial class ServerManageView : UserControl
             if (e.NewValue is true)
                 Dispatcher.BeginInvoke(new Action(FocusSearch), System.Windows.Threading.DispatcherPriority.Loaded);
         };
-        LitSSHmcp.App.Controls.ColumnChooser.Attach(ServerManageList, "server.columns.v2");
+        LitSSHmcp.App.Controls.ColumnChooser.Attach(ServerManageList, "server.columns.v3");
     }
 
     private void OnChooseColumns(object sender, RoutedEventArgs e)
-        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, ServerManageList, "server.columns.v2");
+        => LitSSHmcp.App.Controls.ColumnChooser.Show((FrameworkElement)sender, ServerManageList, "server.columns.v3");
 
     private void OnSearchShortcut(object sender, KeyEventArgs e)
     {

@@ -4,10 +4,15 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
     <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/LitSSHmcp.App;component/Themes/GroupStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
         <controls:GroupLabelConverter x:Key="GroupLabel"/>
         <controls:ServerAuthTypeConverter x:Key="ServerAuth"/>
         <controls:BooleanAndToVisibilityConverter x:Key="AllTrueToVis"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
     </UserControl.Resources>
     <Grid Margin="{DynamicResource AppPageMargin}">
         <Grid.RowDefinitions>
@@ -65,7 +70,8 @@
                 <ListView x:Name="ServerManageList" ItemsSource="{Binding GroupedServers}" SelectedItem="{Binding SelectedServer}"
                           Visibility="{Binding IsServerListView, Converter={StaticResource BoolToVis}}"
                           Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
-                          ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
+                          ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True"
+                          controls:GroupExpanderBehavior.StorageKey="server.groups">
                     <ListView.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="打开终端（交互式）" Click="OnOpenTerminalClick"/>
@@ -82,18 +88,7 @@
                         </ContextMenu>
                     </ListView.ContextMenu>
                     <ListView.GroupStyle>
-                        <GroupStyle>
-                            <GroupStyle.HeaderTemplate>
-                                <DataTemplate>
-                                    <DockPanel Margin="2,8,0,4">
-                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Folder24" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,6,0"
-                                                       Foreground="{DynamicResource AppAccentBrush}"/>
-                                        <TextBlock Text="{Binding Name, Converter={StaticResource GroupLabel}}"
-                                                   FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    </DockPanel>
-                                </DataTemplate>
-                            </GroupStyle.HeaderTemplate>
-                        </GroupStyle>
+                        <GroupStyle ContainerStyle="{StaticResource CollapsibleAssetGroupContainerStyle}"/>
                     </ListView.GroupStyle>
                     <ListView.View>
                         <GridView>

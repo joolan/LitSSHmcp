@@ -8,13 +8,22 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="文件 / 文件夹同步（单向 · 仅 App 运行期间执行）"/>
+        <ui:TitleBar Grid.Row="0" Title="文件 / 文件夹同步（单向 · 仅在 App 运行期间执行）"/>
 
-        <Grid Grid.Row="1" Margin="12,0,12,0">
+        <controls:PageHeader Grid.Row="1" Margin="12,8,12,0" Icon="ArrowSync24" Title="同步任务"
+                             Subtitle="单向同步 · 仅在 App 运行期间执行">
+            <controls:PageHeader.Actions>
+                <ui:Button Content="新建任务" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="12,4"
+                           Command="{Binding NewTaskCommand}"/>
+            </controls:PageHeader.Actions>
+        </controls:PageHeader>
+
+        <Grid Grid.Row="2" Margin="12,0,12,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="240"/>
                 <ColumnDefinition Width="8"/>
@@ -24,7 +33,6 @@
             <!-- 任务列表 -->
             <DockPanel Grid.Column="0">
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                    <ui:Button Content="新建" Padding="12,3" Margin="0,0,6,0" Command="{Binding NewTaskCommand}"/>
                     <ui:Button Content="删除" Padding="12,3" Command="{Binding DeleteTaskCommand}"/>
                 </StackPanel>
                 <ListBox ItemsSource="{Binding Tasks}" SelectedItem="{Binding SelectedTask}"
@@ -200,7 +208,7 @@
             </ScrollViewer>
         </Grid>
 
-        <DockPanel Grid.Row="2" Margin="12,10,12,12">
+        <DockPanel Grid.Row="3" Margin="12,10,12,12">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <ui:Button Content="测试（传探针）" Padding="12,5" Margin="0,0,8,0" Command="{Binding TestCommand}"/>
                 <ui:Button Content="保存" Appearance="Primary" Padding="14,5" Margin="0,0,8,0" Command="{Binding SaveCommand}"/>

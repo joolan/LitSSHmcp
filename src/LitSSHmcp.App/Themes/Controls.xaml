@@ -62,11 +62,8 @@
         <Setter Property="FontWeight" Value="Normal"/>
     </Style>
 
-    <!-- 主按钮（ui:Button Appearance=Primary）文字前景：覆盖 WPF-UI 默认值。
-         统一为白色，避免浅色主题下被全局前景渲染成黑色（深色主题维持原有观感）。 -->
-    <SolidColorBrush x:Key="AccentButtonForeground" Color="#FFFFFFFF"/>
-    <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#FFFFFFFF"/>
-    <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#FFFFFFFF"/>
+    <!-- 主按钮（ui:Button Appearance=Primary）文字前景由 ThemeService 按强调色亮度动态设置黑/白，
+         保证默认强调色和自定义强调色下都有足够对比度。 -->
 
     <!-- 侧栏/标题栏动作按钮：透明、圆角、明确的悬停/按下反馈 -->
     <Style x:Key="ActionRowButton" TargetType="Button">

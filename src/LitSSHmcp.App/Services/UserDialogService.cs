@@ -7,7 +7,7 @@ public enum UserDialogAnswer { Yes, No, Cancel }
 
 public interface IUserDialogService
 {
-    bool Confirm(string message, string title, bool warning = true, bool defaultNo = false);
+    bool Confirm(string message, string title, bool warning = true, bool defaultNo = true);
 
     /// <summary>三态确认（是 / 否 / 取消）；用于“是=加密导出、否=明文导出、取消=中止”。</summary>
     UserDialogAnswer AskYesNoCancel(string message, string title, bool warning = true);
@@ -22,7 +22,7 @@ public interface IUserDialogService
 /// <summary>基于 WPF <see cref="MessageBox"/> 的默认实现（仅在宿主/无注入场景使用）。</summary>
 public sealed class UserDialogService : IUserDialogService
 {
-    public bool Confirm(string message, string title, bool warning = true, bool defaultNo = false)
+    public bool Confirm(string message, string title, bool warning = true, bool defaultNo = true)
     {
         var result = MessageBox.Show(message, title, MessageBoxButton.YesNo,
             warning ? MessageBoxImage.Warning : MessageBoxImage.Question,

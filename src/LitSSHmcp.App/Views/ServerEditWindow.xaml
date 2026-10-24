@@ -74,6 +74,10 @@
                     <ui:TextBox FontWeight="Normal" Grid.Row="9" Grid.Column="1" Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"
                                 ToolTip="多个标签用逗号分隔" Margin="0,0,0,8"/>
 
+                    <TextBlock Grid.Row="10" Grid.Column="0" Text="分组:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                    <ui:TextBox FontWeight="Normal" Grid.Row="10" Grid.Column="1" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}"
+                                Margin="0,0,0,8" ToolTip="连接管理器分组名（可留空）；相同分组会归为一组"/>
+
                     <TextBlock Grid.Row="11" Grid.Column="0" Text="状态:" VerticalAlignment="Center" Margin="0,0,10,8"/>
                     <CheckBox Grid.Row="11" Grid.Column="1" Content="禁用此服务器"
                               IsChecked="{Binding Disabled, UpdateSourceTrigger=PropertyChanged}"
@@ -99,10 +103,6 @@
                     <TextBlock Grid.Row="15" Grid.Column="0" Text="提权密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
                     <PasswordBox FontWeight="Normal" Grid.Row="15" Grid.Column="1" x:Name="SudoPasswordBox" Margin="0,0,0,8"
                                  ToolTip="当前用户sudo: 填写SSH用户密码; root/指定用户: 填写对应密码"/>
-
-                    <TextBlock Grid.Row="10" Grid.Column="0" Text="分组:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <ui:TextBox FontWeight="Normal" Grid.Row="10" Grid.Column="1" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}"
-                                Margin="0,0,0,8" ToolTip="连接管理器分组名（可留空）；相同分组会归为一组"/>
 
                     <TextBlock Grid.Row="16" Grid.Column="0" Grid.ColumnSpan="2" Text="内网地址（跨机复制用，可留空）" FontWeight="SemiBold" Margin="0,10,0,8"/>
                     <TextBlock Grid.Row="17" Grid.Column="0" Text="内网地址:" VerticalAlignment="Center" Margin="0,0,10,8"/>

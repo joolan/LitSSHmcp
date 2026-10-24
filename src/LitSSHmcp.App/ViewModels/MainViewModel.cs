@@ -106,7 +106,7 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         OpenAuditCommand = new RelayCommand(_ => OpenAudit());
         OpenTopologyCommand = new RelayCommand(_ => OpenTopology());
         OpenAgentCommand = new RelayCommand(_ => OpenAgent());
-        NavigateHomeCommand = new RelayCommand(_ => CurrentPage = MainPage.Home);
+        NavigateHomeCommand = new RelayCommand(_ => NavigateHome());
         NavigateServersCommand = new RelayCommand(_ => CurrentPage = MainPage.Servers);
         NavigateDataSourcesCommand = new RelayCommand(_ => NavigateDataSources());
         NavigateApplicationsCommand = new RelayCommand(_ => NavigateApplications());
@@ -201,6 +201,8 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     /// <summary>已禁用服务器数。</summary>
     public int DisabledServerCount => Servers.Count(s => s.Disabled);
 
+    public bool HasDisabledServers => DisabledServerCount > 0;
+
     private int _datasourceCount;
     public int DatasourceCount
     {
@@ -236,8 +238,15 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     public int PortForwardRunningCount
     {
         get => _portForwardRunningCount;
-        private set { _portForwardRunningCount = value; OnPropertyChanged(); }
+        private set
+        {
+            _portForwardRunningCount = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasRunningPortForwards));
+        }
     }
+
+    public bool HasRunningPortForwards => PortForwardRunningCount > 0;
 
     private int _syncTaskCount;
     /// <summary>文件夹同步任务总数。</summary>
@@ -252,8 +261,15 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     public int SyncTaskEnabledCount
     {
         get => _syncTaskEnabledCount;
-        private set { _syncTaskEnabledCount = value; OnPropertyChanged(); }
+        private set
+        {
+            _syncTaskEnabledCount = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasEnabledSyncTasks));
+        }
     }
+
+    public bool HasEnabledSyncTasks => SyncTaskEnabledCount > 0;
 
     private int _triggerCount;
     /// <summary>触发事件总数。</summary>
@@ -268,8 +284,15 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     public int TriggerEnabledCount
     {
         get => _triggerEnabledCount;
-        private set { _triggerEnabledCount = value; OnPropertyChanged(); }
+        private set
+        {
+            _triggerEnabledCount = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasEnabledTriggers));
+        }
     }
+
+    public bool HasEnabledTriggers => TriggerEnabledCount > 0;
 
     private string _homeQuestion = string.Empty;
 
@@ -277,7 +300,36 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     public string HomeQuestion
     {
         get => _homeQuestion;
-        set { _homeQuestion = value; OnPropertyChanged(); }
+        set
+        {
+            _homeQuestion = value;
+            OnPropertyChanged();
+            if (!string.IsNullOrWhiteSpace(value) && HomeStatusMessage.Length > 0)
+                HomeStatusMessage = string.Empty;
+        }
+    }
+
+    private string _homeStatusMessage = string.Empty;
+
+    /// <summary>主页 AI 快捷提问的状态提示（空提交、已填入助手等）。</summary>
+    public string HomeStatusMessage
+    {
+        get => _homeStatusMessage;
+        private set
+        {
+            _homeStatusMessage = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasHomeStatus));
+        }
+    }
+
+    public bool HasHomeStatus => HomeStatusMessage.Length > 0;
+
+    private bool _homeStatusIsError;
+    public bool HomeStatusIsError
+    {
+        get => _homeStatusIsError;
+        private set { _homeStatusIsError = value; OnPropertyChanged(); }
     }
 
     private MainPage _currentPage = MainPage.Home;
@@ -661,9 +713,12 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             RemoteDesktopCount = config.RemoteDesktops.Length;
             SyncTaskCount = config.SyncTasks.Length;
             SyncTaskEnabledCount = config.SyncTasks.Count(t => t.Enabled);
+            TriggerCount = config.Triggers.Length;
+            TriggerEnabledCount = config.Triggers.Count(t => t.Enabled);
             PortForwardRunningCount = _portForwardService.ActiveIds.Count;
             OnPropertyChanged(nameof(ServerCount));
             OnPropertyChanged(nameof(DisabledServerCount));
+            OnPropertyChanged(nameof(HasDisabledServers));
 
             StatusMessage = $"已加载 {Servers.Count} 台服务器";
         }
@@ -968,8 +1023,10 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         try
         {
             var config = await _configService.LoadConfigAsync();
-            PortForwardCount = config.PortForwards.Length;
+            DatasourceCount = config.DataSources.Length;
+            ApplicationCount = config.Applications.Length;
             RemoteDesktopCount = config.RemoteDesktops.Length;
+            PortForwardCount = config.PortForwards.Length;
             SyncTaskCount = config.SyncTasks.Length;
             SyncTaskEnabledCount = config.SyncTasks.Count(t => t.Enabled);
             TriggerCount = config.Triggers.Length;
@@ -1046,6 +1103,12 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     {
         get => _datasourcePage;
         private set { _datasourcePage = value; OnPropertyChanged(); }
+    }
+
+    private void NavigateHome()
+    {
+        CurrentPage = MainPage.Home;
+        _ = RefreshHomeCountsAsync();
     }
 
     private void NavigateDataSources()
@@ -1152,7 +1215,8 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         var paths = HomeAttachments.Select(a => a.Path).ToList();
         if (text.Length == 0 && paths.Count == 0)
         {
-            StatusMessage = "请先输入问题或添加附件";
+            HomeStatusIsError = true;
+            HomeStatusMessage = "请先输入问题或添加附件";
             return;
         }
 
@@ -1172,6 +1236,8 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         window.SubmitPrompt(text, paths);
         HomeQuestion = string.Empty;
         ClearHomeAttachments();
+        HomeStatusIsError = false;
+        HomeStatusMessage = "已填入 AI 助手输入区，请在助手窗口确认发送";
     }
 
     // ---- 主页快捷提问的附件 ----

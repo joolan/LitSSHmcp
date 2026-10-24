@@ -411,7 +411,16 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
         {
             if (value && !CanWrite)
             {
-                StatusMessage = "当前数据源已配置为只读，不能切换到写入模式。";
+                StatusMessage = "当前数据源已设置为只读，不能切换到写入模式。";
+                OnPropertyChanged(nameof(IsWriteMode));
+                return;
+            }
+            if (value && !_isWriteMode
+                && !_dialogs.Confirm(
+                    "切换到写入模式后可执行 UPDATE / INSERT / DELETE / DDL，可能直接修改数据库。\n\n确定继续？",
+                    "切换到写入模式"))
+            {
+                OnPropertyChanged(nameof(IsWriteMode));
                 return;
             }
             if (!Set(ref _isWriteMode, value)) return;
@@ -1096,6 +1105,9 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
     private void CloseTab(QueryTab? tab)
     {
         if (tab is null || Tabs.Count <= 1)
+            return;
+        if (!string.IsNullOrWhiteSpace(tab.SqlText)
+            && !_dialogs.Confirm($"关闭「{tab.Title}」？\n\n该标签的 SQL 与查询结果将丢失。", "关闭查询标签", warning: false))
             return;
         var wasSelected = ReferenceEquals(tab, _selectedTab);
         var idx = Tabs.IndexOf(tab);

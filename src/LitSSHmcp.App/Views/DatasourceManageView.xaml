@@ -32,8 +32,9 @@
                         <ContextMenu>
                             <MenuItem x:Name="WorkbenchMenuItem" Header="打开工作台" Click="OnWorkbenchClick"/>
                             <MenuItem Header="测试连接" Click="OnTestClick"/>
-                            <MenuItem Header="编辑" Click="OnEditClick"/>
-                            <MenuItem Header="删除" Click="OnDeleteClick"/>
+                        <MenuItem Header="编辑" Click="OnEditClick"/>
+                        <Separator/>
+                        <MenuItem Header="删除" Foreground="{DynamicResource AppDangerBrush}" Click="OnDeleteClick"/>
                         </ContextMenu>
                     </ListView.ContextMenu>
                     <ListView.View>

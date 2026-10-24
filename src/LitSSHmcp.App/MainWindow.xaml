@@ -93,7 +93,8 @@
                                     <StackPanel>
                                         <TextBlock Text="{Binding ServerCount}" FontSize="30" FontWeight="SemiBold"/>
                                         <TextBlock Text="SSH 服务器" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock FontSize="11" Foreground="{DynamicResource AppDangerBrush}">
+                                        <TextBlock FontSize="11" Foreground="{DynamicResource AppDangerBrush}"
+                                                   Visibility="{Binding HasDisabledServers, Converter={StaticResource BoolToVis}}">
                                             <Run Text="已禁用 "/>
                                             <Run Text="{Binding DisabledServerCount, Mode=OneWay}"/>
                                         </TextBlock>
@@ -118,7 +119,8 @@
                                     <StackPanel>
                                         <TextBlock Text="{Binding PortForwardCount}" FontSize="30" FontWeight="SemiBold"/>
                                         <TextBlock Text="端口转发规则" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock FontSize="11" Foreground="{DynamicResource AppSuccessBrush}">
+                                        <TextBlock FontSize="11" Foreground="{DynamicResource AppSuccessBrush}"
+                                                   Visibility="{Binding HasRunningPortForwards, Converter={StaticResource BoolToVis}}">
                                             <Run Text="运行中 "/>
                                             <Run Text="{Binding PortForwardRunningCount, Mode=OneWay}"/>
                                         </TextBlock>
@@ -139,7 +141,8 @@
                                     <StackPanel>
                                         <TextBlock Text="{Binding SyncTaskCount}" FontSize="30" FontWeight="SemiBold"/>
                                         <TextBlock Text="同步任务" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock FontSize="11" Foreground="{DynamicResource AppSuccessBrush}">
+                                        <TextBlock FontSize="11" Foreground="{DynamicResource AppSuccessBrush}"
+                                                   Visibility="{Binding HasEnabledSyncTasks, Converter={StaticResource BoolToVis}}">
                                             <Run Text="启用 "/>
                                             <Run Text="{Binding SyncTaskEnabledCount, Mode=OneWay}"/>
                                         </TextBlock>
@@ -150,7 +153,8 @@
                                     <StackPanel>
                                         <TextBlock Text="{Binding TriggerCount}" FontSize="30" FontWeight="SemiBold"/>
                                         <TextBlock Text="触发事件" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <TextBlock FontSize="11" Foreground="{DynamicResource AppSuccessBrush}">
+                                        <TextBlock FontSize="11" Foreground="{DynamicResource AppSuccessBrush}"
+                                                   Visibility="{Binding HasEnabledTriggers, Converter={StaticResource BoolToVis}}">
                                             <Run Text="启用 "/>
                                             <Run Text="{Binding TriggerEnabledCount, Mode=OneWay}"/>
                                         </TextBlock>
@@ -181,14 +185,15 @@
                                         </ItemsControl>
                                     </DockPanel>
 
-                                    <TextBox x:Name="HomeAskBox" Text="{Binding HomeQuestion, UpdateSourceTrigger=PropertyChanged}"
+                                    <ui:TextBox x:Name="HomeAskBox" Text="{Binding HomeQuestion, UpdateSourceTrigger=PropertyChanged}"
                                              AcceptsReturn="True" MinHeight="90" MaxHeight="220" TextWrapping="Wrap"
                                              VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent"
                                              VerticalContentAlignment="Top" Padding="2" PreviewKeyDown="OnHomeAskKeyDown"
-                                             ToolTip="Enter 发送 / Shift+Enter 换行"/>
+                                             PlaceholderText="描述你要排查的问题，例如：web-01 上 nginx 502 怎么排查？"
+                                             ToolTip="Enter 交给 AI 助手 / Shift+Enter 换行"/>
 
                                     <DockPanel Margin="0,6,0,0">
-                                        <ui:Button DockPanel.Dock="Right" Content="发送" Icon="{ui:SymbolIcon Send24}" Appearance="Primary"
+                                        <ui:Button DockPanel.Dock="Right" Content="交给 AI 助手" Icon="{ui:SymbolIcon Send24}" Appearance="Primary"
                                                    Padding="16,5" Click="OnHomeSend"/>
                                         <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="8,4" Click="OnHomeMore"
                                                    ToolTip="添加图片 / 文件">
@@ -203,8 +208,21 @@
                                     </DockPanel>
                                 </StackPanel>
                             </Border>
-                            <TextBlock Text="Enter 发送 / Shift+Enter 换行；发送时会把文字与附件填入 AI 运维助手的输入区（若助手输入区已有内容会先确认）。"
+                            <TextBlock Text="Enter 交给 AI 助手 / Shift+Enter 换行；只会填入助手输入区，不会自动发送（若助手输入区已有内容会先确认）。"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="0,6,0,0"/>
+                            <TextBlock Text="{Binding HomeStatusMessage}" FontSize="11" Margin="0,4,0,0"
+                                       Visibility="{Binding HasHomeStatus, Converter={StaticResource BoolToVis}}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HomeStatusIsError}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -41,7 +42,10 @@ public partial class AgentWindow : FluentWindow
         _viewModel.SkillsPickerRequested += () => Dispatcher.Invoke(OpenSkillPicker);
         DataContext = _viewModel;
         WindowLayout.Attach(this, "agent");
-        _viewModel.Turns.CollectionChanged += (_, _) => ChatScroll.ScrollToEnd();
+        _viewModel.Turns.CollectionChanged += OnTurnsChanged;
+        ChatScroll.ScrollChanged += OnChatScrollChanged;
+        foreach (var turn in _viewModel.Turns)
+            HookTurn(turn);
         Loaded += (_, _) => AsyncOperation.Run("初始化 AI 助手", async () =>
         {
             // D1 收尾：先恢复桌面登录态（跨重启保持），再加载会话（新会话按登录用户归因）
@@ -49,8 +53,112 @@ public partial class AgentWindow : FluentWindow
             _desktopLogin.ApplyAttribution();
             _viewModel.NotifyDesktopLoginChanged();
             await _viewModel.InitializeAsync();
+            RequestScrollToEnd();
         });
         Closed += (_, _) => AsyncOperation.Run("释放 AI 助手", () => _viewModel.DisposeAsync().AsTask());
+    }
+
+    // ---- 对话流跟随 ----
+
+    private readonly HashSet<AgentTurn> _hookedTurns = new();
+    private bool _autoFollow = true;
+    private bool _scrollScheduled;
+
+    private void OnTurnsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+            foreach (AgentTurn turn in e.OldItems)
+                UnhookTurn(turn);
+        if (e.NewItems is not null)
+            foreach (AgentTurn turn in e.NewItems)
+                HookTurn(turn);
+
+        if (e.Action == NotifyCollectionChangedAction.Reset)
+        {
+            foreach (var turn in _hookedTurns.ToList())
+                if (!_viewModel.Turns.Contains(turn))
+                    UnhookTurn(turn);
+            foreach (var turn in _viewModel.Turns)
+                HookTurn(turn);
+        }
+
+        _autoFollow = true;
+        RequestScrollToEnd();
+    }
+
+    private void HookTurn(AgentTurn turn)
+    {
+        if (_hookedTurns.Add(turn))
+            turn.PropertyChanged += OnTurnPropertyChanged;
+    }
+
+    private void UnhookTurn(AgentTurn turn)
+    {
+        if (_hookedTurns.Remove(turn))
+            turn.PropertyChanged -= OnTurnPropertyChanged;
+    }
+
+    private void OnTurnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (!_autoFollow)
+            return;
+
+        if (e.PropertyName is nameof(AgentTurn.AssistantText)
+            or nameof(AgentTurn.ReasoningText)
+            or nameof(AgentTurn.RunningText)
+            or nameof(AgentTurn.Footer)
+            or nameof(AgentTurn.Note)
+            or nameof(AgentTurn.ToolHeader)
+            or nameof(AgentTurn.ToolsVisibility))
+        {
+            RequestScrollToEnd();
+        }
+    }
+
+    private void RequestScrollToEnd()
+    {
+        if (_scrollScheduled)
+            return;
+
+        _scrollScheduled = true;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
+        {
+            _scrollScheduled = false;
+            if (_autoFollow)
+                ChatScroll.ScrollToEnd();
+            UpdateScrollToBottomButton();
+        }));
+    }
+
+    private void OnChatScrollChanged(object sender, System.Windows.Controls.ScrollChangedEventArgs e)
+    {
+        if (_autoFollow && e.ExtentHeightChange != 0)
+        {
+            ChatScroll.ScrollToEnd();
+            UpdateScrollToBottomButton();
+            return;
+        }
+
+        var nearBottom = e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - 40;
+        if (nearBottom)
+            _autoFollow = true;
+        else if (e.VerticalChange < 0)
+            _autoFollow = false;
+
+        UpdateScrollToBottomButton();
+    }
+
+    private void UpdateScrollToBottomButton()
+    {
+        var show = !_autoFollow && ChatScroll.ExtentHeight > ChatScroll.ViewportHeight + 1;
+        ScrollToBottomButton.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OnScrollToBottom(object sender, RoutedEventArgs e)
+    {
+        _autoFollow = true;
+        ChatScroll.ScrollToEnd();
+        UpdateScrollToBottomButton();
     }
 
     // 点击用户指令：展开/折叠本轮工具过程

@@ -72,6 +72,7 @@
                                Command="{Binding RefreshCommand}"/>
                     <CheckBox x:Name="WriteModeToggle" Content="⚠ 写入模式" Margin="20,0,0,0" VerticalAlignment="Center"
                               IsChecked="{Binding IsWriteMode, Mode=TwoWay}"
+                              IsEnabled="{Binding CanWrite}"
                               ToolTip="默认只读。勾选后可执行写操作（UPDATE/INSERT/DELETE/DDL）；危险语句会被拦截，敏感语句执行前需确认。只读数据源无法开启。"/>
                     <ui:Button x:Name="SnippetButton" Padding="10,3" Margin="12,0,0,0"
                                Content="{Binding SnippetButtonLabel}"
@@ -455,9 +456,10 @@
                             </Style>
                         </Border.Style>
                         <avalonedit:TextEditor x:Name="SqlBox" FontFamily="Consolas" FontSize="13"
-                                 ShowLineNumbers="True" SyntaxHighlighting="SQL" WordWrap="False"
-                                 BorderThickness="0" Background="Transparent" Padding="6" HorizontalScrollBarVisibility="Auto"
-                                 VerticalScrollBarVisibility="Auto"
+                                 ShowLineNumbers="True" SyntaxHighlighting="TSQL" WordWrap="False"
+                                 BorderThickness="0" Background="Transparent" Padding="6"
+                                 Foreground="{DynamicResource AppCodeTextBrush}"
+                                 HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                                  PreviewKeyDown="OnSqlKeyDown"/>
                     </Border>
 

@@ -22,7 +22,8 @@
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,10,16,14">
             <ui:Button Content="最小化到托盘" Appearance="Primary" Padding="14,5" Click="OnMinimize"/>
-            <ui:Button Content="退出程序" Padding="14,5" Margin="8,0,0,0" Click="OnExit"/>
+            <ui:Button Content="退出程序" Appearance="Danger" Padding="14,5" Margin="8,0,0,0" Click="OnExit"/>
+            <ui:Button Content="取消" Padding="14,5" Margin="8,0,0,0" IsCancel="True" Click="OnCancel"/>
         </StackPanel>
     </Grid>
 </ui:FluentWindow>

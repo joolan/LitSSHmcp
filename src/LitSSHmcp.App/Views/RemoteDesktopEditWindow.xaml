@@ -99,15 +99,6 @@
                                     Visibility="{Binding IsCustomResolution, Converter={StaticResource BoolToVis}}" ToolTip="高 480-4320"/>
                     </StackPanel>
 
-                    <TextBlock Grid.Row="9" Grid.Column="0" Text="VNC 查看器:" VerticalAlignment="Center" Margin="0,0,10,8"
-                               Visibility="{Binding IsVnc, Converter={StaticResource BoolToVis}}"/>
-                    <DockPanel Grid.Row="9" Grid.Column="1" Margin="0,0,0,8"
-                               Visibility="{Binding IsVnc, Converter={StaticResource BoolToVis}}">
-                        <ui:Button DockPanel.Dock="Right" Content="浏览…" Padding="10,4" Margin="6,0,0,0" Command="{Binding BrowseViewerCommand}"/>
-                        <ui:TextBox FontWeight="Normal" Text="{Binding ViewerPath, UpdateSourceTrigger=PropertyChanged}"
-                                    ToolTip="留空则自动探测 TigerVNC / TightVNC / RealVNC / UltraVNC"/>
-                    </DockPanel>
-
                     <TextBlock Grid.Row="10" Grid.Column="0" Text="分组:" VerticalAlignment="Center" Margin="0,0,10,8"/>
                     <ui:TextBox FontWeight="Normal" Grid.Row="10" Grid.Column="1" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
 

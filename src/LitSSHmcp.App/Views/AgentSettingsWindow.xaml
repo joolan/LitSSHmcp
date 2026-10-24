@@ -63,9 +63,7 @@
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="单个工具结果注入上限(字符):" VerticalAlignment="Center"/>
-                                    <ui:TextBox FontWeight="Normal" Text="{Binding ToolResultMaxChars, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,16,0"/>
-                                    <TextBlock Text="最大工具轮数:" VerticalAlignment="Center"/>
-                                    <ui:TextBox FontWeight="Normal" Text="{Binding MaxToolIterations, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding ToolResultMaxChars, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,0,0"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="单轮墙钟预算(秒, 0=不限):" VerticalAlignment="Center"/>

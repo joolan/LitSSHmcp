@@ -28,8 +28,9 @@
                           ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
                     <ListView.ContextMenu>
                         <ContextMenu>
-                            <MenuItem Header="编辑" Click="OnEditClick"/>
-                            <MenuItem Header="删除" Click="OnDeleteClick"/>
+                        <MenuItem Header="编辑" Click="OnEditClick"/>
+                        <Separator/>
+                        <MenuItem Header="删除" Foreground="{DynamicResource AppDangerBrush}" Click="OnDeleteClick"/>
                         </ContextMenu>
                     </ListView.ContextMenu>
                     <ListView.View>

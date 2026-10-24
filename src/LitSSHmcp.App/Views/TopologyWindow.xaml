@@ -585,7 +585,7 @@
         <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,6,0,0">
             <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
             <TextBlock Text="{Binding ImpactSummary}" Margin="16,0,0,0" FontWeight="SemiBold"
-                       Foreground="{DynamicResource AppAccentTextBrush}"/>
+                       Foreground="{DynamicResource AppTextPrimaryBrush}"/>
         </StackPanel>
         </Grid>
     </Grid>

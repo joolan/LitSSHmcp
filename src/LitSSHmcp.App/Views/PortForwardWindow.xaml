@@ -8,6 +8,7 @@
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <ui:FluentWindow.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <controls:BooleanNotToVisibilityConverter x:Key="BoolNotToVis"/>
     </ui:FluentWindow.Resources>
     <Grid>
         <Grid.RowDefinitions>
@@ -34,8 +35,9 @@
             </controls:PageHeader.StatusContent>
         </controls:PageHeader>
 
-        <ScrollViewer Grid.Row="2" Margin="10,0,10,0" VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding Rows}">
+        <Grid Grid.Row="2" Margin="10,0,10,0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="RulesList" ItemsSource="{Binding Rows}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,8" Padding="10">
@@ -160,7 +162,17 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-        </ScrollViewer>
+            </ScrollViewer>
+
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
+                        Visibility="{Binding HasItems, ElementName=RulesList, Converter={StaticResource BoolNotToVis}}">
+                <ui:SymbolIcon Symbol="Share24" FontSize="34" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                <TextBlock Text="还没有端口转发规则" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                <TextBlock Text="点击右上角「添加」创建本机、远程或动态 SOCKS 转发规则。"
+                           Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,0"/>
+            </StackPanel>
+        </Grid>
 
         <DockPanel Grid.Row="3" Style="{DynamicResource DialogFooterPanelStyle}">
             <ui:Button DockPanel.Dock="Right" Content="关闭" MinWidth="88" IsCancel="True" Click="OnClose"/>

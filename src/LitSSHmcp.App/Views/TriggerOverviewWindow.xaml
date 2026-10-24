@@ -5,6 +5,9 @@
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
         Title="触发事件总览" Height="700" Width="900" MinWidth="680" MinHeight="480"
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <ui:FluentWindow.Resources>
+        <controls:BooleanNotToVisibilityConverter x:Key="BoolNotToVis"/>
+    </ui:FluentWindow.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -29,8 +32,9 @@
             </controls:PageHeader.StatusContent>
         </controls:PageHeader>
 
-        <ScrollViewer Grid.Row="2" Margin="14,0,14,14" VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding Triggers}">
+        <Grid Grid.Row="2" Margin="14,0,14,14">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="TriggerList" ItemsSource="{Binding Triggers}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
@@ -77,6 +81,16 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-        </ScrollViewer>
+            </ScrollViewer>
+
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
+                        Visibility="{Binding HasItems, ElementName=TriggerList, Converter={StaticResource BoolNotToVis}}">
+                <ui:SymbolIcon Symbol="Flash24" FontSize="34" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                <TextBlock Text="还没有触发事件" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                <TextBlock Text="点击右上角「编辑触发事件」创建 git、webhook 或备份触发任务。"
+                           Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,0"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </ui:FluentWindow>

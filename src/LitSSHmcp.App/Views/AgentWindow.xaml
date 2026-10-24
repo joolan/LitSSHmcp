@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
-        Title="AI 运维助手" Height="840" Width="1280" MinWidth="980" MinHeight="640"
+        Title="AI 运维助手" Height="900" Width="1400" MinWidth="1100" MinHeight="700"
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>

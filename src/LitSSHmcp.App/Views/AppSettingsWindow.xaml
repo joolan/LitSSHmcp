@@ -3,37 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:views="clr-namespace:LitSSHmcp.App.Views"
-        Title="设置" Height="720" Width="820" MinWidth="700" MinHeight="560"
+        Title="设置" Height="820" Width="1100" MinWidth="900" MinHeight="640"
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
-    <ui:FluentWindow.Resources>
-        <Style x:Key="SettingsTabItemStyle" TargetType="TabItem">
-            <Setter Property="Width" Value="156"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="Padding" Value="14,10"/>
-            <Setter Property="Margin" Value="0,0,0,2"/>
-            <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppHoverBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppSelectionBrush}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
-                                <Setter Property="FontWeight" Value="SemiBold"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-    </ui:FluentWindow.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -42,35 +13,65 @@
 
         <ui:TitleBar Grid.Row="0" Title="设置"/>
 
-        <TabControl Grid.Row="1" Margin="10,0,10,10" TabStripPlacement="Left"
-                    ItemContainerStyle="{StaticResource SettingsTabItemStyle}">
-            <TabItem Header="外观">
-                <views:AppearanceSettingsView x:Name="AppearanceView"/>
-            </TabItem>
-            <TabItem Header="终端">
-                <views:TerminalSettingsView/>
-            </TabItem>
-            <TabItem Header="命令片段">
-                <views:SnippetEditorView/>
-            </TabItem>
-            <TabItem Header="安全设置">
-                <views:SecuritySettingsView x:Name="SecurityView"/>
-            </TabItem>
-            <TabItem Header="工具分组">
-                <views:ToolGroupsView x:Name="ToolGroupsView"/>
-            </TabItem>
-            <TabItem Header="导入 / 导出">
-                <views:ConfigTransferView x:Name="TransferView"/>
-            </TabItem>
-            <TabItem Header="存储维护">
-                <views:StorageSettingsView x:Name="StorageView"/>
-            </TabItem>
-            <TabItem Header="MCP 工具说明">
-                <views:McpToolsView/>
-            </TabItem>
-            <TabItem Header="关于">
-                <views:AboutView/>
-            </TabItem>
-        </TabControl>
+        <Grid Grid.Row="1" Margin="12,0,12,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="190"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="{DynamicResource AppSurfaceBrush}"
+                    BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                    CornerRadius="{DynamicResource AppRadiusM}" Padding="8">
+                <ListBox x:Name="SettingsNav" Background="Transparent" BorderThickness="0"
+                         SelectedIndex="{Binding SelectedIndex, ElementName=SettingsTabs, Mode=TwoWay}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBoxItem Content="外观" Padding="12,10"/>
+                    <ListBoxItem Content="终端" Padding="12,10"/>
+                    <ListBoxItem Content="命令片段" Padding="12,10"/>
+                    <ListBoxItem Content="安全设置" Padding="12,10"/>
+                    <ListBoxItem Content="工具分组" Padding="12,10"/>
+                    <ListBoxItem Content="导入 / 导出" Padding="12,10"/>
+                    <ListBoxItem Content="存储维护" Padding="12,10"/>
+                    <ListBoxItem Content="MCP 工具说明" Padding="12,10"/>
+                    <ListBoxItem Content="关于" Padding="12,10"/>
+                </ListBox>
+            </Border>
+
+            <TabControl x:Name="SettingsTabs" Grid.Column="1" Margin="12,0,0,0"
+                        SelectedIndex="0" Background="Transparent" BorderThickness="0">
+                <TabControl.Template>
+                    <ControlTemplate TargetType="TabControl">
+                        <ContentPresenter ContentSource="SelectedContent"/>
+                    </ControlTemplate>
+                </TabControl.Template>
+                <TabItem Header="外观">
+                    <views:AppearanceSettingsView x:Name="AppearanceView"/>
+                </TabItem>
+                <TabItem Header="终端">
+                    <views:TerminalSettingsView/>
+                </TabItem>
+                <TabItem Header="命令片段">
+                    <views:SnippetEditorView/>
+                </TabItem>
+                <TabItem Header="安全设置">
+                    <views:SecuritySettingsView x:Name="SecurityView"/>
+                </TabItem>
+                <TabItem Header="工具分组">
+                    <views:ToolGroupsView x:Name="ToolGroupsView"/>
+                </TabItem>
+                <TabItem Header="导入 / 导出">
+                    <views:ConfigTransferView x:Name="TransferView"/>
+                </TabItem>
+                <TabItem Header="存储维护">
+                    <views:StorageSettingsView x:Name="StorageView"/>
+                </TabItem>
+                <TabItem Header="MCP 工具说明">
+                    <views:McpToolsView/>
+                </TabItem>
+                <TabItem Header="关于">
+                    <views:AboutView/>
+                </TabItem>
+            </TabControl>
+        </Grid>
     </Grid>
 </ui:FluentWindow>

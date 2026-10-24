@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
-        Title="文件 / 文件夹同步" Height="700" Width="920" MinHeight="580" MinWidth="780"
+        Title="文件 / 文件夹同步" Height="760" Width="1040" MinHeight="580" MinWidth="780"
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Grid>
         <Grid.RowDefinitions>

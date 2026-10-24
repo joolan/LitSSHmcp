@@ -4,7 +4,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
-        Title="{Binding WindowTitle}" Height="760" Width="1200" MinHeight="520" MinWidth="880"
+        Title="{Binding WindowTitle}" Height="820" Width="1360" MinHeight="600" MinWidth="1000"
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica"
         PreviewMouseDown="OnWindowPreviewMouseDown">
     <Window.Resources>

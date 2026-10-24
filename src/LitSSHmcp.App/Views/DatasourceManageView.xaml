@@ -62,7 +62,7 @@
                 <Grid>
                     <ListView x:Name="DsList" ItemsSource="{Binding GroupedDataSources}" SelectedItem="{Binding SelectedDataSource}"
                               Visibility="{Binding IsListView, Converter={StaticResource BoolToVis}}"
-                              Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
+                              Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Standard" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                               ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True"
                               controls:GroupExpanderBehavior.StorageKey="datasource.groups">
                         <ListView.ContextMenu>

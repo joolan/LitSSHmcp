@@ -69,7 +69,7 @@
                 <Grid Grid.Column="0">
                 <ListView x:Name="ServerManageList" ItemsSource="{Binding GroupedServers}" SelectedItem="{Binding SelectedServer}"
                           Visibility="{Binding IsServerListView, Converter={StaticResource BoolToVis}}"
-                          Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Standard" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
+                          Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Standard" VirtualizingPanel.IsVirtualizingWhenGrouping="False" ScrollViewer.CanContentScroll="True" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                           ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True"
                           controls:GroupExpanderBehavior.StorageKey="server.groups">
                     <ListView.ContextMenu>

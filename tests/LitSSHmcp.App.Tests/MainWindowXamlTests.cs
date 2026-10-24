@@ -132,6 +132,39 @@ public class MainWindowXamlTests
     }
 
     [Fact]
+    public void Audit_detail_drawer_opens_on_row_selection()
+    {
+        var ex = RunSta(() =>
+        {
+            var window = new AuditWindow();
+            var vm = (LitSSHmcp.App.ViewModels.AuditViewModel)window.DataContext;
+            var list = (System.Windows.Controls.ListView)window.FindName("CommandList")!;
+            var drawer = (System.Windows.UIElement)window.FindName("AuditDetailDrawer")!;
+            var log = new LitSSHmcp.Core.Models.CommandAuditLog
+            {
+                Timestamp = DateTime.UtcNow,
+                Tool = "ssh_execute",
+                ServerName = "web01",
+                Command = "uptime",
+                Status = LitSSHmcp.Core.Models.CommandStatus.Executed
+            };
+
+            window.Show();
+            Pump(window);
+            vm.CommandLogs.Add(log);
+            Pump(window);
+            Assert.Equal(System.Windows.Visibility.Collapsed, drawer.Visibility);
+
+            list.SelectedItem = log;
+            Pump(window);
+            Assert.Equal(System.Windows.Visibility.Visible, drawer.Visibility);
+            Assert.Same(log, vm.SelectedAuditItem);
+            window.Close();
+        });
+        Assert.Null(ex);
+    }
+
+    [Fact]
     public void Form_controls_parse_xaml()
     {
         var ex = RunSta(() =>

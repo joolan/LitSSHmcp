@@ -296,7 +296,7 @@
             </TabItem>
             </TabControl>
 
-            <Border Grid.Column="1" Width="380" Margin="8,0,0,0" Padding="12"
+            <Border x:Name="AuditDetailDrawer" Grid.Column="1" Width="380" Margin="8,0,0,0" Padding="12"
                     Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                     BorderThickness="1" CornerRadius="8"
                     Visibility="{Binding HasSelectedAuditItem, Converter={StaticResource BoolToVis}}">

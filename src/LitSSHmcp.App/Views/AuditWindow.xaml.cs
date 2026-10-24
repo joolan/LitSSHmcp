@@ -64,7 +64,9 @@ public partial class AuditWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnAuditTabChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!IsLoaded)
+        // SelectionChanged 是路由事件：ListView 的行选中也会冒泡到 TabControl。
+        // 只处理 TabControl 自身的选中变化，否则点击行会立刻把详情清空。
+        if (!IsLoaded || e.OriginalSource is not TabControl)
             return;
 
         CommandList.SelectedItem = null;

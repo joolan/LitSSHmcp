@@ -10,6 +10,7 @@
     <Grid Margin="{DynamicResource AppPageMargin}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -41,19 +42,14 @@
             </controls:PageHeader.StatusContent>
         </controls:PageHeader>
 
-        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}" Padding="8">
+        <WrapPanel Grid.Row="1" Margin="0,0,0,8">
+            <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding RefreshCommand}"/>
+            <ui:Button Content="列" Padding="12,4" Margin="0,0,6,6" Click="OnChooseColumns" ToolTip="显示/隐藏列"/>
+        </WrapPanel>
+
+        <Border Grid.Row="2" Style="{DynamicResource CardBorderStyle}" Padding="8">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <WrapPanel Grid.Row="0" Margin="0,0,0,8">
-                    <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding RefreshCommand}"/>
-                    <ui:Button Content="列" Padding="12,4" Margin="0,0,6,6" Click="OnChooseColumns" ToolTip="显示/隐藏列"/>
-                </WrapPanel>
-
-                <Grid Grid.Row="1">
+                <Grid>
                     <ListView x:Name="AppList" ItemsSource="{Binding GroupedApplications}" SelectedItem="{Binding SelectedApplication}"
                               Visibility="{Binding IsListView, Converter={StaticResource BoolToVis}}"
                               Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
@@ -179,7 +175,7 @@
             </Grid>
         </Border>
 
-        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,8,0,0"
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Margin="0,8,0,0"
                    Style="{DynamicResource MutedTextStyle}" TextWrapping="Wrap"/>
     </Grid>
 </UserControl>

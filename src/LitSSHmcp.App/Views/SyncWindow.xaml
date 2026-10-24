@@ -5,6 +5,9 @@
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
         Title="文件 / 文件夹同步" Height="760" Width="1040" MinHeight="580" MinWidth="780"
         WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <ui:FluentWindow.Resources>
+        <controls:BooleanNotToVisibilityConverter x:Key="BoolNotToVis"/>
+    </ui:FluentWindow.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -35,20 +38,31 @@
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
                     <ui:Button Content="删除" Padding="12,3" Command="{Binding DeleteTaskCommand}"/>
                 </StackPanel>
-                <ListBox ItemsSource="{Binding Tasks}" SelectedItem="{Binding SelectedTask}"
-                         Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel>
-                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                <TextBlock FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"
-                                           Text="{Binding LastResult}"/>
-                                <TextBlock FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                           Text="{Binding LastRunAt, StringFormat='上次: {0:MM-dd HH:mm}'}"/>
-                            </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                <Grid>
+                    <ListBox x:Name="TaskList" ItemsSource="{Binding Tasks}" SelectedItem="{Binding SelectedTask}"
+                             Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                               Text="{Binding LastResult}"/>
+                                    <TextBlock FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               Text="{Binding LastRunAt, StringFormat='上次: {0:MM-dd HH:mm}'}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="220"
+                                Visibility="{Binding HasItems, ElementName=TaskList, Converter={StaticResource BoolNotToVis}}">
+                        <ui:SymbolIcon Symbol="ArrowSync24" FontSize="28" HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,8"/>
+                        <TextBlock Text="暂无同步任务" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                        <TextBlock Text="点击页头「新建任务」创建第一条同步任务。"
+                                   Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Grid>
             </DockPanel>
 
             <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent"/>

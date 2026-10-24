@@ -137,13 +137,23 @@
                                                    FontFamily="Microsoft YaHei" Margin="0,0,8,0"/>
                                         <!-- 会话级状态机徽章（§4.1）：后台会话执行中/待审批/已停止一眼可见 -->
                                         <TextBlock Grid.Column="1" Text="{Binding StateText}" FontSize="10" FontWeight="SemiBold"
-                                                   Margin="0,0,6,0" VerticalAlignment="Center" Foreground="{DynamicResource AppAccentBrush}">
+                                                   Margin="0,0,6,0" VerticalAlignment="Center">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding StateText}" Value="">
                                                             <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StateText}" Value="待审批">
+                                                            <Setter Property="Foreground" Value="{DynamicResource AppWarningBrush}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StateText}" Value="上轮失败">
+                                                            <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StateText}" Value="已停止">
+                                                            <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
@@ -330,6 +340,68 @@
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
                                     </Expander>
+
+                                    <!-- 本机命令内联审批 -->
+                                    <ItemsControl ItemsSource="{Binding Approvals}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                    <Border Margin="0,10,0,0" Padding="12" CornerRadius="8"
+                                            Background="{DynamicResource AppWarningSubtleBrush}"
+                                            BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1">
+                                        <StackPanel>
+                                            <DockPanel LastChildFill="False">
+                                                <ui:SymbolIcon DockPanel.Dock="Left" Symbol="ShieldCheckmark24" FontSize="18"
+                                                               Foreground="{DynamicResource AppWarningBrush}" Margin="0,0,8,0"/>
+                                                <TextBlock DockPanel.Dock="Left" Text="本机命令审批" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding SessionLabel}"
+                                                           FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Visibility="{Binding SessionTextVisibility}"/>
+                                            </DockPanel>
+                                            <TextBlock Text="AI 请求在本机 PowerShell 终端执行以下命令：" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding WorkingDirectory}" FontSize="11"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,3,0,0"
+                                                       TextWrapping="Wrap"
+                                                       Visibility="{Binding WorkingDirectoryVisibility}"/>
+                                            <Border Background="{DynamicResource AppCodeBgBrush}" CornerRadius="4" Padding="8" Margin="0,8,0,0">
+                                                <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto"
+                                                              HorizontalScrollBarVisibility="Auto">
+                                                    <TextBlock Text="{Binding Command}" FontFamily="Consolas" FontSize="12"
+                                                               TextWrapping="Wrap"/>
+                                                </ScrollViewer>
+                                            </Border>
+                                            <TextBlock Text="仅白名单内的 CLI 会被放行；命令与输出对用户可见。请确认无误后再允许。"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"
+                                                       Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                            <TextBlock Text="已设置：本次 AI 会话期间允许全部命令（本卡片不会再出现；重启或新会话即失效）"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11"
+                                                       Margin="0,4,0,0" TextWrapping="Wrap"
+                                                       Visibility="{Binding SessionHintVisibility}"/>
+                                            <StackPanel Visibility="{Binding PendingVisibility}">
+                                                <TextBlock Text="放行范围（默认仅允许一次）" FontWeight="SemiBold" FontSize="11"
+                                                           Margin="0,10,0,6"/>
+                                                <WrapPanel>
+                                                    <ui:Button Content="拒绝" Padding="12,4" Margin="0,0,6,6"
+                                                               Command="{Binding DenyCommand}"/>
+                                                    <ui:Button Content="允许一次" Appearance="Primary" Padding="12,4" Margin="0,0,6,6"
+                                                               Command="{Binding AllowOnceCommand}"/>
+                                                    <ui:Button Content="本轮允许" Padding="12,4" Margin="0,0,6,6"
+                                                               Command="{Binding AllowRoundCommand}"/>
+                                                    <ui:Button Content="会话允许" Padding="12,4" Margin="0,0,6,6"
+                                                               Command="{Binding AllowSessionCommand}"/>
+                                                    <ui:Button Content="总是允许" Padding="12,4" Margin="0,0,0,6"
+                                                               Command="{Binding AlwaysAllowCommand}"
+                                                               ToolTip="写入配置永久记住该命令（重启/升级后仍有效）"/>
+                                                </WrapPanel>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding ResolutionText}" FontSize="11" FontWeight="SemiBold"
+                                                       Margin="0,4,0,0"
+                                                       Visibility="{Binding ResolvedVisibility}"/>
+                                        </StackPanel>
+                                    </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
 
                                     <!-- 助手回答卡片 -->
                                     <Border Style="{DynamicResource AssistantCardStyle}" Margin="0,9,0,0"

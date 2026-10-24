@@ -1849,31 +1849,39 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// </summary>
     private Task<LocalApprovalDecision> RequestLocalApprovalAsync(SessionRunContext ctx, string command, string workingDirectory, CancellationToken ct)
     {
-        var tcs = new TaskCompletionSource<LocalApprovalDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
         ctx.SetState(SessionRunState.WaitingApproval);
+        var request = new LocalApprovalRequest(
+            command, workingDirectory, ctx.SessionKey, _localExemptions.SessionAllGranted(ctx.SessionKey));
 
         void Show()
         {
             try
             {
+                if (ctx.ActiveTurn is { } turn)
+                {
+                    turn.Approvals.Add(request);
+                    return;
+                }
+
+                // 兜底：没有可挂载的轮次（极少数非对话调用）仍使用模态窗口
                 var decision = LitSSHmcp.App.Views.LocalCommandApprovalWindow.Prompt(
                     command, workingDirectory, _localExemptions.SessionAllGranted(ctx.SessionKey), ctx.SessionKey);
-                tcs.TrySetResult(decision);
+                request.Resolve(decision);
             }
             catch (Exception)
             {
-                tcs.TrySetResult(LocalApprovalDecision.Deny);
+                request.Resolve(LocalApprovalDecision.Deny);
             }
         }
 
-        // 弹窗带 Topmost，取消后用户仍可能点选——TrySetResult 保证只有第一个结果生效（取消优先）。
-        var registration = ct.Register(() => tcs.TrySetResult(LocalApprovalDecision.Deny));
-        _ = tcs.Task.ContinueWith(_ => registration.Dispose(), TaskContinuationOptions.ExecuteSynchronously);
+        // 取消优先：卡片/兜底弹窗后续再点选也不会覆盖已取消结果
+        var registration = ct.Register(request.Cancel);
+        _ = request.DecisionTask.ContinueWith(_ => registration.Dispose(), TaskContinuationOptions.ExecuteSynchronously);
         // 审批结束回到执行态（取消/异常同样恢复；终态 Done/Failed 由本轮收尾覆盖）
-        _ = tcs.Task.ContinueWith(_ => ctx.SetState(SessionRunState.Running),
+        _ = request.DecisionTask.ContinueWith(_ => ctx.SetState(SessionRunState.Running),
             CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         _uiBeginInvoke(Show);
-        return tcs.Task;
+        return request.DecisionTask;
     }
 
     /// <summary>把「总是允许」的命令写回配置（后台，不阻塞工具调用）。</summary>
@@ -2364,6 +2372,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             turn.Images.Add(imagePath);
         Turns.Add(turn);
         CurrentContext.LiveTurns.Add(turn);   // 权威镜像与可见集合同步（运行后以其为准）
+        CurrentContext.ActiveTurn = turn;
         await RunTurnAsync(turn, contents);
     }
 
@@ -2426,6 +2435,7 @@ public class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private async Task RunTurnAsync(AgentTurn turn, IReadOnlyList<AIContent>? contents = null)
     {
         var ctx = CurrentContext;
+        ctx.ActiveTurn = turn;
         if (ctx.Runtime is null)
             return;
         if (ctx.IsBusy)
@@ -3158,6 +3168,7 @@ public partial class AgentTurn : INotifyPropertyChanged
 
     /// <summary>本轮附带的图片文件路径（用于气泡内缩略图预览）。</summary>
     public ObservableCollection<string> Images { get; } = new();
+
     public bool HasSteps => Steps.Count > 0;
     public int FailedToolCount => Steps.Count(s => !s.IsRunning && !s.Success);
     public bool HasFailedTools => FailedToolCount > 0;

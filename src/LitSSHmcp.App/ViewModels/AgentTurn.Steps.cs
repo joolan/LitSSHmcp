@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 
@@ -5,6 +6,8 @@ namespace LitSSHmcp.App.ViewModels;
 
 public partial class AgentTurn
 {
+    public ObservableCollection<LocalApprovalRequest> Approvals { get; } = new();
+
     private readonly HashSet<AgentStep> _hookedSteps = new();
 
     private void OnStepsChanged(object? sender, NotifyCollectionChangedEventArgs e)

@@ -94,4 +94,7 @@ public sealed class SessionRunContext
 
     /// <summary>该会话的权威计划镜像（运行期间 update_plan 由闭包写入这里，防止串到当前可见计划）。</summary>
     public List<PlanItemVM> PlanItems { get; set; } = new();
+
+    /// <summary>该会话当前正在执行的一轮（用于把内联审批卡片挂到正确的轮次上）。</summary>
+    public AgentTurn? ActiveTurn { get; set; }
 }

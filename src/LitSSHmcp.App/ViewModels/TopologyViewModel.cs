@@ -16,7 +16,7 @@ using LitSSHmcp.Core.Services.Topology;
 
 namespace LitSSHmcp.App.ViewModels;
 
-public class TopologyViewModel : INotifyPropertyChanged, IConfigReloadable
+public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private const double ServerX = 20;
     private const double ServerWidth = 320;
@@ -339,6 +339,7 @@ public class TopologyViewModel : INotifyPropertyChanged, IConfigReloadable
             foreach (var c in Chips) _itemsById[c.Id] = c;
             foreach (var n in Nodes) _itemsById[n.Id] = n;
             _allItems = Boxes.Concat<GraphItemVm>(Chips).Concat(Nodes).ToArray();
+            OnPropertyChanged(nameof(IsEmptyGraph));
 
             _childrenOf.Clear();
             foreach (var kv in _parentOf)
@@ -661,14 +662,6 @@ public class TopologyViewModel : INotifyPropertyChanged, IConfigReloadable
     private static bool Contains(GraphItemVm item, Point p, double tolerance = 0) =>
         p.X >= item.X - tolerance && p.X <= item.X + item.Width + tolerance &&
         p.Y >= item.Y - tolerance && p.Y <= item.Y + item.Height + tolerance;
-
-    public void SelectNode(string? id)
-    {
-        _selectedId = id;
-        OnPropertyChanged(nameof(HasSelection));
-        UpdateSelectionRect();
-        ApplyImpactHighlight(id);
-    }
 
     /// <summary>
     /// 反向 BFS（谁依赖当前节点）最多 2 跳；根节点与路径上的节点/边保持高亮，其余降透明。

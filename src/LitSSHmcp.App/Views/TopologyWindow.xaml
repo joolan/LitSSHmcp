@@ -4,6 +4,9 @@
         Title="资产拓扑" Height="800" Width="1280"
         WindowStartupLocation="CenterOwner" KeyDown="OnWindowKeyDown"
         ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </ui:FluentWindow.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -578,6 +581,74 @@
                             </StackPanel>
                         </Border>
                     </Canvas>
+
+                    <!-- 空态：没有可用资产时给出明确下一步 -->
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="460"
+                                Panel.ZIndex="20"
+                                Visibility="{Binding IsEmptyGraph, Converter={StaticResource BoolToVis}}">
+                        <ui:SymbolIcon Symbol="Share24" FontSize="44" HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="还没有资产拓扑" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                        <TextBlock Text="运行自动发现，或先添加 SSH 服务器 / 应用 / 数据源。"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"
+                                   TextAlignment="Center" Margin="0,6,0,14"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <ui:Button Content="运行自动发现" Icon="{ui:SymbolIcon Search24}" Appearance="Primary"
+                                       Padding="14,5" Margin="0,0,8,0" Click="OnDiscover"/>
+                            <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="14,5" Click="OnRefresh"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- 右下角缩放 HUD -->
+                    <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,14"
+                            Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1" CornerRadius="8" Padding="4" Panel.ZIndex="21">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:Button Content="−" Padding="8,2" Click="OnZoomOut" ToolTip="缩小"/>
+                            <TextBlock x:Name="ZoomText" Text="100%" Width="48" TextAlignment="Center"
+                                       VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <ui:Button Content="+" Padding="8,2" Click="OnZoomIn" ToolTip="放大"/>
+                            <ui:Button Content="适应" Padding="8,2" Margin="4,0,0,0" Click="OnZoomFit" ToolTip="适应窗口"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 节点详情 Inspector -->
+                    <Border HorizontalAlignment="Right" VerticalAlignment="Top" Width="300" Margin="0,8,8,0"
+                            Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1" CornerRadius="8" Padding="12" Panel.ZIndex="22"
+                            Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <DockPanel>
+                                <ui:Button DockPanel.Dock="Right" Icon="{ui:SymbolIcon Dismiss24}" Padding="4"
+                                           Appearance="Transparent" ToolTip="关闭详情" Click="OnCloseInspector"/>
+                                <TextBlock Text="节点详情" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <TextBlock Text="{Binding SelectedNodeName}" FontSize="16" FontWeight="SemiBold"
+                                       TextWrapping="Wrap" Margin="0,8,0,0"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="4" Padding="6,2">
+                                    <TextBlock Text="{Binding SelectedNodeTypeText}" FontSize="10"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                </Border>
+                            </StackPanel>
+                            <TextBlock Text="{Binding SelectedNodeDetail}" TextWrapping="Wrap" FontSize="11"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,8,0,0"/>
+                            <TextBlock Text="{Binding SelectedNodeId}" FontFamily="Consolas" FontSize="10"
+                                       Foreground="{DynamicResource AppTextTertiaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                            <WrapPanel Margin="0,12,0,0">
+                                <ui:Button Content="查看关系" Padding="10,3" Margin="0,0,6,6" Click="OnInspectorRelations"/>
+                                <ui:Button Content="复制 ID" Padding="10,3" Margin="0,0,6,6" Click="OnInspectorCopyId"/>
+                                <ui:Button Content="确认节点" Padding="10,3" Margin="0,0,6,6"
+                                           Visibility="{Binding HasDiscoveredSelection, Converter={StaticResource BoolToVis}}"
+                                           Click="OnInspectorConfirmNode"/>
+                                <ui:Button Content="删除节点" Padding="10,3" Margin="0,0,0,6"
+                                           Foreground="{DynamicResource AppDangerBrush}"
+                                           Visibility="{Binding HasDiscoveredSelection, Converter={StaticResource BoolToVis}}"
+                                           Click="OnInspectorDeleteNode"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </Grid>
         </Border>

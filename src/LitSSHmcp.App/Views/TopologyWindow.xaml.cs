@@ -337,7 +337,10 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
         _pan.X = 0;
         _pan.Y = 0;
         UpdateGrid();
+        UpdateZoomText();
     }
+
+    private void UpdateZoomText() => ZoomText.Text = $"{_zoom.ScaleX * 100:F0}%";
 
     private void OnCanvasWheel(object sender, MouseWheelEventArgs e)
     {
@@ -363,6 +366,7 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
         _pan.X = hostPoint.X - z * local.X;
         _pan.Y = hostPoint.Y - z * local.Y;
         UpdateGrid();
+        UpdateZoomText();
     }
 
     private void FitView()
@@ -382,6 +386,7 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
         _pan.X = (CanvasHost.ActualWidth - z * b.Width) / 2 - z * b.X;
         _pan.Y = (CanvasHost.ActualHeight - z * b.Height) / 2 - z * b.Y;
         UpdateGrid();
+        UpdateZoomText();
     }
 
     // ---- 鼠标 ----
@@ -536,6 +541,35 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
         var window = new NodeRelationsWindow(nodeId) { Owner = this };
         window.ShowDialog();
         _viewModel.Load();
+    }
+
+    private void OnCloseInspector(object sender, RoutedEventArgs e) => _viewModel.ClearSelection();
+
+    private void OnInspectorRelations(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedIdOrNull is { } id)
+            OpenNodeRelations(id);
+    }
+
+    private void OnInspectorCopyId(object sender, RoutedEventArgs e)
+    {
+        var id = _viewModel.SelectedIdOrNull;
+        if (string.IsNullOrWhiteSpace(id))
+            return;
+        try { Clipboard.SetText(id); } catch { /* ignore */ }
+    }
+
+    private void OnInspectorConfirmNode(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedIdOrNull is { } id)
+            _viewModel.ConfirmNode(id);
+    }
+
+    private void OnInspectorDeleteNode(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedIdOrNull is { } id)
+            _viewModel.DeleteDiscoveredNode(id);
+        _viewModel.ClearSelection();
     }
 
     private void OnCanvasMouseMove(object sender, MouseEventArgs e)

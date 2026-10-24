@@ -89,6 +89,7 @@ public class MainWindowXamlTests
             _ = new DatasourceManageView();
             _ = new ApplicationManageView();
             _ = new SshSessionWindow();
+            _ = new TopologyWindow();
             _ = new LitSSHmcp.App.Controls.RemoteFileBrowserView();
             _ = new LitSSHmcp.App.Controls.TerminalTabView();
             var server = new LitSSHmcp.Core.Models.SshServerConfig { Name = "t", Host = "127.0.0.1" };

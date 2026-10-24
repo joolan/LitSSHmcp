@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
         Title="远程桌面连接" Height="720" Width="660" MinWidth="560"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
         ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
@@ -80,12 +81,13 @@
                     <TextBlock Grid.Row="9" Grid.Column="0" Text="分辨率:" VerticalAlignment="Center" Margin="0,0,10,8"
                                Visibility="{Binding IsRdp, Converter={StaticResource BoolToVis}}"/>
 
-                    <DockPanel Grid.Row="9" Grid.Column="1" Margin="0,0,0,8"
-                               Visibility="{Binding IsVnc, Converter={StaticResource BoolToVis}}">
-                        <ui:Button DockPanel.Dock="Right" Content="浏览…" Padding="10,4" Margin="6,0,0,0" Command="{Binding BrowseViewerCommand}"/>
-                        <ui:TextBox FontWeight="Normal" Text="{Binding ViewerPath, UpdateSourceTrigger=PropertyChanged}"
-                                    ToolTip="留空则自动探测 TigerVNC / TightVNC / RealVNC / UltraVNC"/>
-                    </DockPanel>
+                    <controls:PathPicker Grid.Row="9" Grid.Column="1" Margin="0,0,0,8"
+                                         Value="{Binding ViewerPath, Mode=TwoWay}"
+                                         Visibility="{Binding IsVnc, Converter={StaticResource BoolToVis}}"
+                                         Title="选择 VNC 查看器"
+                                         Filter="程序 (*.exe)|*.exe|所有文件|*.*"
+                                         Placeholder="留空则自动探测 TigerVNC / TightVNC / RealVNC / UltraVNC"
+                                         ToolTip="留空则自动探测 TigerVNC / TightVNC / RealVNC / UltraVNC"/>
 
                     <StackPanel Grid.Row="9" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8"
                                 Visibility="{Binding IsRdp, Converter={StaticResource BoolToVis}}">

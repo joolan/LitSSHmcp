@@ -56,7 +56,6 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
         SaveCommand = new RelayCommand(_ => Save());
         CancelCommand = new RelayCommand(_ => Cancel());
         TestConnectionCommand = new RelayCommand(_ => TestConnection(), _ => !_isTestRunning);
-        BrowseCaFileCommand = new RelayCommand(_ => BrowseCaFile());
 
         if (datasource != null)
         {
@@ -245,19 +244,6 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
     public ICommand SaveCommand { get; }
     public ICommand CancelCommand { get; }
     public ICommand TestConnectionCommand { get; }
-    public ICommand BrowseCaFileCommand { get; }
-
-    private void BrowseCaFile()
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "选择 CA 证书文件",
-            Filter = "证书文件|*.pem;*.crt;*.cer;*.der|所有文件|*.*"
-        };
-
-        if (dialog.ShowDialog() == true)
-            SslCaFile = dialog.FileName;
-    }
 
     private int ResolveTunnelIndex(string? serverId)
     {

@@ -48,7 +48,6 @@ public class RemoteDesktopEditViewModel : INotifyPropertyChanged
 
         SaveCommand = new RelayCommand(_ => Save());
         CancelCommand = new RelayCommand(_ => DialogClosed?.Invoke(this, false));
-        BrowseViewerCommand = new RelayCommand(_ => BrowseViewer());
 
         if (desktop != null)
         {
@@ -145,24 +144,12 @@ public class RemoteDesktopEditViewModel : INotifyPropertyChanged
 
     public ICommand SaveCommand { get; }
     public ICommand CancelCommand { get; }
-    public ICommand BrowseViewerCommand { get; }
 
     private int ResolveTunnelIndex(string? serverId)
     {
         if (string.IsNullOrEmpty(serverId)) return 0;
         var index = Array.FindIndex(_servers, s => s.Id == serverId);
         return index < 0 ? 0 : index + 1;
-    }
-
-    private void BrowseViewer()
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "选择 VNC 查看器可执行文件",
-            Filter = "可执行文件|*.exe|所有文件|*.*"
-        };
-        if (dialog.ShowDialog() == true)
-            ViewerPath = dialog.FileName;
     }
 
     private void Save() => AsyncOperation.Run("保存远程桌面", async () =>

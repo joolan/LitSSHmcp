@@ -107,6 +107,17 @@ public class MainWindowXamlTests
     }
 
     [Fact]
+    public void Form_controls_parse_xaml()
+    {
+        var ex = RunSta(() =>
+        {
+            _ = new LitSSHmcp.App.Controls.FormRow();
+            _ = new LitSSHmcp.App.Controls.PathPicker();
+        });
+        Assert.Null(ex);
+    }
+
+    [Fact]
     public void Settings_views_parse_xaml()
     {
         var ex = RunSta(() =>

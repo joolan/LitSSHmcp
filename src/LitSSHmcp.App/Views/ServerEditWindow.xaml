@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
         Title="编辑 SSH 服务器" Height="620" Width="480"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
@@ -55,14 +56,12 @@
                     <PasswordBox FontWeight="Normal" Grid.Row="5" Grid.Column="1" x:Name="PasswordBox" Margin="0,0,0,8"/>
 
                     <TextBlock Grid.Row="6" Grid.Column="0" Text="密钥路径:" VerticalAlignment="Center" Margin="0,0,10,8"/>
-                    <Grid Grid.Row="6" Grid.Column="1" Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <ui:TextBox FontWeight="Normal" Grid.Column="0" Text="{Binding KeyFilePath, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsKeyFileAuth}" Margin="0,0,5,0"/>
-                        <ui:Button Grid.Column="1" Content="..." Width="34" Command="{Binding BrowseKeyFileCommand}" IsEnabled="{Binding IsKeyFileAuth}"/>
-                    </Grid>
+                    <controls:PathPicker Grid.Row="6" Grid.Column="1" Margin="0,0,0,8"
+                                         Value="{Binding KeyFilePath, Mode=TwoWay}"
+                                         IsEnabled="{Binding IsKeyFileAuth}"
+                                         Title="选择 SSH 密钥文件"
+                                         Filter="OpenSSH/PEM 密钥|*.pem;*.key|所有文件|*.*"
+                                         Placeholder="密钥文件路径"/>
 
                     <TextBlock Grid.Row="7" Grid.Column="0" Text="密钥密码:" VerticalAlignment="Center" Margin="0,0,10,8"/>
                     <PasswordBox FontWeight="Normal" Grid.Row="7" Grid.Column="1" x:Name="KeyPasswordBox" Margin="0,0,0,8"/>

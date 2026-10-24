@@ -1,0 +1,19 @@
+<UserControl x:Class="LitSSHmcp.App.Controls.PathPicker"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <ui:TextBox Grid.Column="0"
+                    Text="{Binding Value, ElementName=Root, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    PlaceholderText="{Binding Placeholder, ElementName=Root}"
+                    VerticalContentAlignment="Center"/>
+        <ui:Button Grid.Column="1" Content="{Binding ButtonText, ElementName=Root}"
+                   Margin="6,0,0,0" Padding="12,4" Click="OnBrowse"/>
+    </Grid>
+</UserControl>

@@ -47,7 +47,6 @@ public class ServerEditViewModel : INotifyPropertyChanged
         SaveCommand = new RelayCommand(_ => Save());
         CancelCommand = new RelayCommand(_ => Cancel());
         TestConnectionCommand = new RelayCommand(_ => TestConnection(), _ => !_isTestRunning);
-        BrowseKeyFileCommand = new RelayCommand(_ => BrowseKeyFile());
         GenerateKeyCommand = new RelayCommand(_ => GenerateKey());
 
         if (server != null)
@@ -289,7 +288,6 @@ public class ServerEditViewModel : INotifyPropertyChanged
     public ICommand SaveCommand { get; }
     public ICommand CancelCommand { get; }
     public ICommand TestConnectionCommand { get; }
-    public ICommand BrowseKeyFileCommand { get; }
     public ICommand GenerateKeyCommand { get; }
 
     /// <summary>生成 SSH 密钥对（ed25519/rsa）：写入所选私钥路径，填入密钥路径，并展示公钥供复制。</summary>
@@ -357,20 +355,6 @@ public class ServerEditViewModel : INotifyPropertyChanged
             _isTestRunning = false;
         }
     });
-
-    private void BrowseKeyFile()
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Filter = "OpenSSH/PEM 密钥|*.pem;*.key;*.*|所有文件|*.*",
-            Title = "选择SSH密钥文件（OpenSSH 或 PEM 格式；不支持 PuTTY .ppk）"
-        };
-
-        if (dialog.ShowDialog() == true)
-        {
-            KeyFilePath = dialog.FileName;
-        }
-    }
 
     private void Save() => AsyncOperation.Run("保存服务器", async () =>
     {

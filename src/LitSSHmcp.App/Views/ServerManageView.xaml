@@ -28,7 +28,7 @@
             <ui:Button Content="端口转发" Icon="{ui:SymbolIcon Share24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding OpenPortForwardCommand}"/>
             <ui:Button Content="文件/文件夹同步" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding OpenSyncCommand}"/>
             <ui:Button Content="触发事件" Icon="{ui:SymbolIcon Flash24}" Padding="12,3" Margin="0,0,6,0" Command="{Binding OpenTriggerCommand}"/>
-            <TextBlock Text="（选中服务器后右键可 连接 / 打开终端 / SFTP 文件管理 / 远程互传 / 编辑 / 采集快照 / 快照历史 / 删除；双击打开交互式终端）"
+            <TextBlock Text="（选中服务器后右键可 打开终端 / SFTP 文件管理 / 远程互传 / 编辑 / 采集快照 / 快照历史 / 删除；双击打开交互式终端，同一服务器最多 4 个）"
                        VerticalAlignment="Center" Margin="10,0,0,0" FontSize="11"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
         </StackPanel>
@@ -39,7 +39,6 @@
                       ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True">
                 <ListView.ContextMenu>
                     <ContextMenu>
-                        <MenuItem Header="连接（命令会话）" Click="OnConnectClick"/>
                         <MenuItem Header="打开终端（交互式）" Click="OnOpenTerminalClick"/>
                         <MenuItem Header="SFTP 文件管理" Click="OnSftpManagerClick"/>
                         <MenuItem Header="打开代理浏览器 (SOCKS)…" Click="OnOpenProxiedBrowserClick"/>

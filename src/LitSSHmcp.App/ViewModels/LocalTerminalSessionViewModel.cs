@@ -87,6 +87,9 @@ public sealed class LocalTerminalSessionViewModel : INotifyPropertyChanged, IAsy
 
     public string Subtitle => "本机 · PowerShell";
 
+    /// <summary>独立窗口布局记忆键：本机终端可多开，需按序号区分。</summary>
+    public string LayoutKey => _manualSeq <= 1 ? "local-powershell-cmd" : $"local-powershell-cmd-{_manualSeq}";
+
     private bool _isConnected;
     public bool IsConnected
     {

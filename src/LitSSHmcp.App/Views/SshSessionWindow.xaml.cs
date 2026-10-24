@@ -249,14 +249,9 @@ public partial class SshSessionWindow : FluentWindow
         {
             foreach (var server in servers)
             {
-                var sub = new System.Windows.Controls.MenuItem { Header = server.Name };
-                var command = new System.Windows.Controls.MenuItem { Header = "命令会话" };
-                command.Click += (_, _) => vm.Connect(server);
-                var terminal = new System.Windows.Controls.MenuItem { Header = "交互式终端" };
+                var terminal = new System.Windows.Controls.MenuItem { Header = $"{server.Name} ({server.Host})" };
                 terminal.Click += (_, _) => vm.ConnectTerminal(server);
-                sub.Items.Add(command);
-                sub.Items.Add(terminal);
-                menu.Items.Add(sub);
+                menu.Items.Add(terminal);
             }
         }
 

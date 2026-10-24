@@ -25,6 +25,7 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
     private string? _editLocalPath;
     private string? _editRemotePath;
     private CancellationTokenSource? _editDebounce;
+    private readonly string _editTempScope = Guid.NewGuid().ToString("N")[..8];
 
     public RemoteFileBrowserViewModel(SshServerConfig server, ISshService ssh,
         IUserDialogService? dialogs = null)
@@ -614,7 +615,8 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
             return null;
         }
 
-        var dir = Path.Combine(Path.GetTempPath(), "litssh-remote");
+        // 每个终端实例独立目录：同服务器多终端编辑同名文件时互不覆盖。
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-remote", _editTempScope);
         Directory.CreateDirectory(dir);
         var local = RemotePathGuard.ResolveLocalUnder(dir, safeName);
         if (local is null)

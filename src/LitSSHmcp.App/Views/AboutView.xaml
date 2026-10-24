@@ -70,7 +70,7 @@
                 <StackPanel>
                     <TextBlock Text="桌面 App 核心功能" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 主页看板：快捷入口 + 服务器/数据源/应用统计，支持 AI 快捷提问（含附件）。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器管理：表格增删改查与排序、右键菜单（连接/编辑/采集快照/快照历史/删除），独立「SSH 会话管理」窗口含命令会话与交互式终端（内置 SFTP 文件可视化上传/下载）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器管理：表格增删改查与排序、右键菜单（连接/编辑/采集快照/快照历史/删除），独立「SSH 会话管理」窗口含交互式终端（同一服务器最多 4 个，内置 SFTP 文件可视化上传/下载）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器连接增强：跳板机（ProxyJump，经另一台已配置服务器中转）、SSH 密钥生成（ed25519 / rsa，公钥一键复制）、凭据轮换提醒。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程桌面：RDP / VNC 连接管理（密码仅本机 DPAPI 加密、可经 SSH 隧道访问内网桌面），内嵌多标签查看器（标签可分离 / 收回）与外部客户端打开。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机终端：ConPTY 真实本机 PowerShell 终端；AI 本地 CLI 在白名单内执行本机命令（人工审批、超时与进程树清理），单个 AI 会话最多并行管理 4 个独立终端。"/>

@@ -18,10 +18,11 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     private bool _disposed;
     private Services.SessionLogger? _logger;
 
-    public TerminalSessionViewModel(SshServerConfig server, ISshService ssh, int cols = 80, int rows = 24)
+    public TerminalSessionViewModel(SshServerConfig server, ISshService ssh, int cols = 80, int rows = 24, int ordinal = 1)
     {
         Server = server;
         _ssh = ssh;
+        Ordinal = ordinal;
         Model = new TerminalModel(cols, rows);
         FileBrowser = new RemoteFileBrowserViewModel(server, ssh);
         FileBrowser.CdRequested = ChangeDirectory;
@@ -92,6 +93,9 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
 
     public SshServerConfig Server { get; }
 
+    /// <summary>同一服务器下的终端序号（1 起）；用于区分标题与独立窗口布局。</summary>
+    public int Ordinal { get; }
+
     public TerminalModel Model { get; }
 
     /// <summary>左侧远程文件浏览器（SFTP）。</summary>
@@ -106,7 +110,12 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         set { _showFileBrowser = value; OnPropertyChanged(); }
     }
 
-    public string Title => string.IsNullOrWhiteSpace(_customTitle) ? Server.Name : _customTitle!;
+    public string Title => !string.IsNullOrWhiteSpace(_customTitle)
+        ? _customTitle!
+        : Ordinal <= 1 ? Server.Name : $"{Server.Name} ({Ordinal})";
+
+    /// <summary>独立窗口布局记忆键：同服务器多终端需区分。</summary>
+    public string LayoutKey => Ordinal <= 1 ? $"{Server.Id}-term" : $"{Server.Id}-term-{Ordinal}";
 
     private string? _customTitle;
 

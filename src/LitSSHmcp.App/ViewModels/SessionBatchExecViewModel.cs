@@ -89,7 +89,11 @@ public sealed class SessionBatchExecViewModel : INotifyPropertyChanged
         foreach (var target in targets)
         {
             target.Status = "处理中…";
-            var term = _main.Sessions.OfType<TerminalSessionViewModel>().FirstOrDefault(x => x.Server.Id == target.Server.Id);
+            // 同服务器可能开多个终端：优先选已连接且空闲的，避免误选忙碌/断开的那个。
+            var terms = _main.Sessions.OfType<TerminalSessionViewModel>()
+                .Where(x => x.Server.Id == target.Server.Id)
+                .ToList();
+            var term = terms.FirstOrDefault(x => !x.IsBusyOrUnsafe) ?? terms.FirstOrDefault();
 
             if (term is null)
             {
@@ -143,12 +147,16 @@ public sealed class SessionBatchExecViewModel : INotifyPropertyChanged
         var sw = Stopwatch.StartNew();
         while (sw.ElapsedMilliseconds < timeoutMs)
         {
-            var term = _main.Sessions.OfType<TerminalSessionViewModel>().FirstOrDefault(x => x.Server.Id == serverId);
-            if (term is { IsConnected: true })
-                return term;
+            var terms = _main.Sessions.OfType<TerminalSessionViewModel>()
+                .Where(x => x.Server.Id == serverId)
+                .ToList();
+            var idle = terms.FirstOrDefault(x => !x.IsBusyOrUnsafe);
+            if (idle is not null)
+                return idle;
             await Task.Delay(300);
         }
-        return _main.Sessions.OfType<TerminalSessionViewModel>().FirstOrDefault(x => x.Server.Id == serverId);
+        return _main.Sessions.OfType<TerminalSessionViewModel>()
+            .FirstOrDefault(x => x.Server.Id == serverId && x.IsConnected);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

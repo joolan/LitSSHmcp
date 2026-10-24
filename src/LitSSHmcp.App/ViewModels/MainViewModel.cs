@@ -23,7 +23,6 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     private readonly IAppServices _services;
     private readonly IConfigService _configService;
     private readonly ISshService _sshService;
-    private readonly IAuditLogService _auditLogService;
     private readonly ITopologyStore _topologyStore;
     private readonly PortForwardService _portForwardService;
     private readonly IUserDialogService _dialogs;
@@ -51,7 +50,6 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     public ICommand AddServerCommand { get; }
     public ICommand EditServerCommand { get; }
     public ICommand DeleteServerCommand { get; }
-    public ICommand ConnectCommand { get; }
     public ICommand CloseSessionCommand { get; }
     public ICommand OpenAuditCommand { get; }
     public ICommand OpenTopologyCommand { get; }
@@ -91,7 +89,6 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         // 与数据源 / 端口转发 / 拓扑发现一致：携带 known-hosts 与安全设置（Tofu/Strict/Off），
         // 避免主界面终端绕过主机密钥校验、而弹窗"测试连接"走另一套策略。
         _sshService = _services.CreateSshService();
-        _auditLogService = _services.CreateAuditLog();
         AiTerminals = new Services.LocalTerminal.AiTerminalBroker(
             name => CreateLocalTerminal(isAi: true, aiName: name),
             RemoveLocalTerminal,
@@ -105,7 +102,6 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         AddServerCommand = new RelayCommand(_ => AddServer());
         EditServerCommand = new RelayCommand(_ => EditServer(), _ => SelectedServer != null);
         DeleteServerCommand = new RelayCommand(_ => DeleteServer(), _ => SelectedServer != null);
-        ConnectCommand = new RelayCommand(_ => Connect(SelectedServer), _ => SelectedServer != null);
         CloseSessionCommand = new RelayCommand(p => CloseSession(p));
         OpenAuditCommand = new RelayCommand(_ => OpenAudit());
         OpenTopologyCommand = new RelayCommand(_ => OpenTopology());
@@ -181,7 +177,6 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             (OpenSftpManagerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenRemoteCopyCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenProxiedBrowserCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (ConnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenSnapshotHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
@@ -360,29 +355,10 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         }
     }
 
-    public void Connect(SshServerConfig? server)
-    {
-        if (server == null) return;
+    /// <summary>同一服务器最多同时打开的交互式终端数。</summary>
+    public const int MaxTerminalsPerServer = 4;
 
-        if (server.Disabled)
-        {
-            StatusMessage = $"服务器 {server.Name} 已禁用, 不允许连接。请先「编辑」并取消勾选\"禁用\"。";
-            return;
-        }
-
-        var existing = Sessions.OfType<SessionViewModel>().FirstOrDefault(s => s.Server.Id == server.Id);
-        if (existing == null)
-        {
-            existing = new SessionViewModel(server, _sshService, _auditLogService);
-            Sessions.Add(existing);
-            StatusMessage = $"已打开会话: {server.Name}";
-        }
-
-        SelectedSession = existing;
-        ShowSessionWindow();
-    }
-
-    /// <summary>打开一个交互式终端标签（PTY shell）。</summary>
+    /// <summary>打开一个交互式终端标签（PTY shell）；同一服务器最多 <see cref="MaxTerminalsPerServer"/> 个。</summary>
     public void ConnectTerminal(SshServerConfig? server)
     {
         if (server == null) return;
@@ -393,16 +369,25 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             return;
         }
 
-        var existing = Sessions.OfType<TerminalSessionViewModel>().FirstOrDefault(t => t.Server.Id == server.Id);
-        if (existing == null)
+        var terminals = Sessions.OfType<TerminalSessionViewModel>()
+            .Where(t => t.Server.Id == server.Id)
+            .ToList();
+
+        if (terminals.Count >= MaxTerminalsPerServer)
         {
-            existing = new TerminalSessionViewModel(server, _sshService);
-            Sessions.Add(existing);
-            StatusMessage = $"已打开终端: {server.Name}";
+            SelectedSession = terminals[0];
+            ShowSessionWindow();
+            StatusMessage = $"服务器 {server.Name} 最多同时打开 {MaxTerminalsPerServer} 个终端。";
+            return;
         }
 
-        SelectedSession = existing;
+        var used = terminals.Select(t => t.Ordinal).ToHashSet();
+        var ordinal = Enumerable.Range(1, MaxTerminalsPerServer).First(i => !used.Contains(i));
+        var vm = new TerminalSessionViewModel(server, _sshService, ordinal: ordinal);
+        Sessions.Add(vm);
+        SelectedSession = vm;
         ShowSessionWindow();
+        StatusMessage = $"已打开终端: {vm.Title} ({terminals.Count + 1}/{MaxTerminalsPerServer})";
     }
 
     private readonly Dictionary<string, LocalTerminalSessionViewModel> _aiTerminals = new(StringComparer.Ordinal);
@@ -496,7 +481,7 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         }
     }
 
-    // SSH 会话管理窗口（独立非模态窗口：多标签，每个服务器一个标签；不设 Owner/不置顶）
+    // SSH 会话管理窗口（独立非模态窗口：多标签，同一服务器最多 4 个终端；不设 Owner/不置顶）
     private SshSessionWindow? _sessionWindow;
 
     private void ShowSessionWindow()
@@ -623,25 +608,13 @@ public class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         }), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
-    private static string TitleOf(object session) => session switch
-    {
-        SessionViewModel s => s.Server.Name,
-        TerminalSessionViewModel t => t.Server.Name,
-        LocalTerminalSessionViewModel l => l.Title,
-        _ => string.Empty
-    };
+    private static string TitleOf(object session) => (session as ISshTab)?.Title ?? string.Empty;
 
     private void CloseSession(object? session)
     {
         if (session == null) return;
 
-        var name = session switch
-        {
-            SessionViewModel s => s.Server.Name,
-            TerminalSessionViewModel t => t.Server.Name,
-            LocalTerminalSessionViewModel l => l.Title,
-            _ => string.Empty
-        };
+        var name = TitleOf(session);
         var extra = session is TerminalSessionViewModel or LocalTerminalSessionViewModel ? "终端连接将断开。" : string.Empty;
         if (!_dialogs.Confirm($"确定关闭会话「{name}」？{extra}", "关闭会话", warning: false))
             return;

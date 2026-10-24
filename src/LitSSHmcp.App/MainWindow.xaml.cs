@@ -54,22 +54,6 @@ public partial class MainWindow : FluentWindow
         }), System.Windows.Threading.DispatcherPriority.Input);
     }
 
-    private void OnServerDoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        // 仅在双击到有效的服务器条目时触发；空白区域双击不打开会话
-        if (sender is not ListBox listBox)
-            return;
-
-        var item = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
-        if (item == null)
-            return;
-
-        listBox.SelectedItem = item.DataContext;
-        ViewModel.ConnectCommand.Execute(null);
-    }
-
-    private void OnConnectClick(object sender, RoutedEventArgs e) => ViewModel.ConnectCommand.Execute(null);
-
     private void OnEditServerClick(object sender, RoutedEventArgs e) => ViewModel.EditServerCommand.Execute(null);
 
     private void OnDeleteServerClick(object sender, RoutedEventArgs e) => ViewModel.DeleteServerCommand.Execute(null);
@@ -77,19 +61,6 @@ public partial class MainWindow : FluentWindow
     private void OnSnapshotRefreshClick(object sender, RoutedEventArgs e) => ViewModel.SnapshotRefreshCommand.Execute(null);
 
     private void OnSnapshotHistoryClick(object sender, RoutedEventArgs e) => ViewModel.OpenSnapshotHistoryCommand.Execute(null);
-
-    private void OnCommandKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter)
-            return;
-
-        if (sender is TextBox { DataContext: SessionViewModel session } &&
-            session.ExecuteCommand.CanExecute(null))
-        {
-            session.ExecuteCommand.Execute(null);
-            e.Handled = true;
-        }
-    }
 
     // 右键时选中鼠标所在项，使右键菜单操作作用于该项
     private void OnListPreviewRightClick(object sender, MouseButtonEventArgs e)

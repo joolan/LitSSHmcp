@@ -31,7 +31,8 @@ public sealed class SessionLogger : IDisposable
             var safe = new string(serverName.Where(c => !Path.GetInvalidFileNameChars().Contains(c)).ToArray());
             if (string.IsNullOrWhiteSpace(safe))
                 safe = "session";
-            var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            // 同一服务器可同时开多个终端：毫秒 + 短随机后缀避免同秒/同毫秒文件名冲突。
+            var stamp = $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid().ToString("N")[..6]}";
             FilePath = Path.Combine(dir, $"{safe}-{stamp}.log");
             CastPath = Path.Combine(dir, $"{safe}-{stamp}.cast");
 

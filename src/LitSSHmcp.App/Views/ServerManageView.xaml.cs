@@ -15,8 +15,6 @@ public partial class ServerManageView : UserControl
         InitializeComponent();
     }
 
-    private void OnConnectClick(object sender, RoutedEventArgs e) => ViewModel?.ConnectCommand.Execute(null);
-
     private void OnOpenTerminalClick(object sender, RoutedEventArgs e) => ViewModel?.OpenTerminalCommand.Execute(null);
 
     private void OnSftpManagerClick(object sender, RoutedEventArgs e) => ViewModel?.OpenSftpManagerCommand.Execute(null);

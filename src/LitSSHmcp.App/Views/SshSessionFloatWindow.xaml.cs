@@ -30,9 +30,8 @@ public partial class SshSessionFloatWindow : FluentWindow
         DataContext = host;
         ContentHost.Content = session;
 
-        var serverId = (session as ISshTab)?.Server.Id ?? "x";
-        var suffix = session is TerminalSessionViewModel ? "-term" : "-cmd";
-        WindowLayout.Attach(this, "ssh-float-" + serverId + suffix);
+        var layoutKey = (session as ISshTab)?.LayoutKey ?? "x";
+        WindowLayout.Attach(this, "ssh-float-" + layoutKey);
 
         if (session is INotifyPropertyChanged inpc)
             inpc.PropertyChanged += OnSessionPropertyChanged;

@@ -165,6 +165,13 @@ public class MainWindowXamlTests
     }
 
     [Fact]
+    public void Command_palette_parses_xaml()
+    {
+        var ex = RunSta(() => _ = new CommandPaletteWindow(new LitSSHmcp.App.ViewModels.MainViewModel()));
+        Assert.Null(ex);
+    }
+
+    [Fact]
     public void Form_controls_parse_xaml()
     {
         var ex = RunSta(() =>

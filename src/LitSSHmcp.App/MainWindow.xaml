@@ -5,7 +5,8 @@
         xmlns:views="clr-namespace:LitSSHmcp.App.Views"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
         Title="LitSSH MCP Manager" Height="740" Width="1160"
-        WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+        WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica"
+        PreviewKeyDown="OnWindowPreviewKeyDown">
     <Window.Resources>
         <controls:MainPageVisibilityConverter x:Key="PageVis"/>
         <controls:MainPageAppearanceConverter x:Key="PageAppearance"/>
@@ -210,6 +211,8 @@
                             </Border>
                             <TextBlock Text="Enter 交给 AI 助手 / Shift+Enter 换行；只会填入助手输入区，不会自动发送（若助手输入区已有内容会先确认）。"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="0,6,0,0"/>
+                            <TextBlock Text="提示：Ctrl+K 打开命令面板，可搜索页面、工具与动作。"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="11" Margin="0,4,0,0"/>
                             <TextBlock Text="{Binding HomeStatusMessage}" FontSize="11" Margin="0,4,0,0"
                                        Visibility="{Binding HasHomeStatus, Converter={StaticResource BoolToVis}}">
                                 <TextBlock.Style>

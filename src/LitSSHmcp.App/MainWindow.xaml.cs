@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.ViewModels;
+using LitSSHmcp.App.Views;
 using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Services.Security;
@@ -41,6 +42,16 @@ public partial class MainWindow : FluentWindow
     }
 
     private void OnHomeNavClick(object sender, RoutedEventArgs e) => FocusHomeAsk();
+
+    private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.K || (Keyboard.Modifiers & ModifierKeys.Control) == 0)
+            return;
+
+        e.Handled = true;
+        var palette = new CommandPaletteWindow(ViewModel) { Owner = this };
+        palette.ShowDialog();
+    }
 
     private void FocusHomeAsk()
     {

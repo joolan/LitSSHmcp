@@ -47,7 +47,7 @@
             </controls:PageHeader.StatusContent>
         </controls:PageHeader>
 
-        <GroupBox Grid.Row="1" Header="远程桌面连接" Padding="8">
+        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}" Padding="8">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -231,7 +231,7 @@
                     </Border>
                 </Grid>
             </Grid>
-        </GroupBox>
+        </Border>
 
         <TextBlock Grid.Row="2" Text="{Binding StatusMessage}" Margin="0,8,0,0"
                    Style="{DynamicResource MutedTextStyle}" TextWrapping="Wrap"/>

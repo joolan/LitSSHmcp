@@ -44,8 +44,8 @@
                                    ToolTip="主页（快捷入口 / 数据看板）" AutomationProperties.Name="主页"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateHomeCommand}" Click="OnHomeNavClick">
-                            <Grid>
-                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6" Margin="2"
+                            <Grid Width="56" Height="54">
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Home}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
                                         HorizontalAlignment="Left" Margin="4,10"
@@ -77,8 +77,8 @@
                                    ToolTip="SSH 服务器管理" AutomationProperties.Name="SSH 服务器管理"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateServersCommand}">
-                            <Grid>
-                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6" Margin="2"
+                            <Grid Width="56" Height="54">
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Servers}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
                                         HorizontalAlignment="Left" Margin="4,10"
@@ -93,8 +93,8 @@
                                    ToolTip="数据源管理" AutomationProperties.Name="数据源管理"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateDataSourcesCommand}">
-                            <Grid>
-                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6" Margin="2"
+                            <Grid Width="56" Height="54">
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=DataSources}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
                                         HorizontalAlignment="Left" Margin="4,10"
@@ -109,8 +109,8 @@
                                    ToolTip="应用管理" AutomationProperties.Name="应用管理"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateApplicationsCommand}">
-                            <Grid>
-                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6" Margin="2"
+                            <Grid Width="56" Height="54">
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Applications}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
                                         HorizontalAlignment="Left" Margin="4,10"
@@ -125,8 +125,8 @@
                                    ToolTip="远程桌面（RDP / VNC）" AutomationProperties.Name="远程桌面"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateRemoteDesktopsCommand}">
-                            <Grid>
-                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6" Margin="2"
+                            <Grid Width="56" Height="54">
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=RemoteDesktops}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
                                         HorizontalAlignment="Left" Margin="4,10"

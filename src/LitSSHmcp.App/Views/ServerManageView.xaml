@@ -151,7 +151,7 @@
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                               Visibility="{Binding IsServerCardView, Converter={StaticResource BoolToVis}}">
-                    <ItemsControl ItemsSource="{Binding FilteredServers}">
+                    <ItemsControl ItemsSource="{Binding FilteredServers}" MaxWidth="1000" HorizontalAlignment="Center">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>

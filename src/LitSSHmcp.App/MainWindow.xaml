@@ -42,12 +42,19 @@
                     <StackPanel>
                         <ui:Button Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="主页（快捷入口 / 数据看板）" AutomationProperties.Name="主页"
-                                   Appearance="{Binding CurrentPage, Converter={StaticResource PageAppearance}, ConverterParameter=Home}"
+                                   Appearance="Transparent"
                                    Command="{Binding NavigateHomeCommand}" Click="OnHomeNavClick">
-                            <StackPanel>
-                                <ui:SymbolIcon Symbol="Home24" FontSize="19" HorizontalAlignment="Center"/>
-                                <TextBlock Text="首页" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
-                            </StackPanel>
+                            <Grid>
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Home}"/>
+                                <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
+                                        HorizontalAlignment="Left" Margin="2,10"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Home}"/>
+                                <StackPanel>
+                                    <ui:SymbolIcon Symbol="Home24" FontSize="19" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="首页" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
                         </ui:Button>
                         <ui:Button Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="打开 AI 运维助手"
@@ -68,39 +75,67 @@
                         <Separator Margin="10,4,10,6"/>
                         <ui:Button Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="SSH 服务器管理" AutomationProperties.Name="SSH 服务器管理"
-                                   Appearance="{Binding CurrentPage, Converter={StaticResource PageAppearance}, ConverterParameter=Servers}"
+                                   Appearance="Transparent"
                                    Command="{Binding NavigateServersCommand}">
-                            <StackPanel>
-                                <ui:SymbolIcon Symbol="Server24" FontSize="19" HorizontalAlignment="Center"/>
-                                <TextBlock Text="服务器" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
-                            </StackPanel>
+                            <Grid>
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Servers}"/>
+                                <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
+                                        HorizontalAlignment="Left" Margin="2,10"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Servers}"/>
+                                <StackPanel>
+                                    <ui:SymbolIcon Symbol="Server24" FontSize="19" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="服务器" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
                         </ui:Button>
                         <ui:Button Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="数据源管理" AutomationProperties.Name="数据源管理"
-                                   Appearance="{Binding CurrentPage, Converter={StaticResource PageAppearance}, ConverterParameter=DataSources}"
+                                   Appearance="Transparent"
                                    Command="{Binding NavigateDataSourcesCommand}">
-                            <StackPanel>
-                                <ui:SymbolIcon Symbol="Database24" FontSize="19" HorizontalAlignment="Center"/>
-                                <TextBlock Text="数据源" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
-                            </StackPanel>
+                            <Grid>
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=DataSources}"/>
+                                <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
+                                        HorizontalAlignment="Left" Margin="2,10"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=DataSources}"/>
+                                <StackPanel>
+                                    <ui:SymbolIcon Symbol="Database24" FontSize="19" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="数据源" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
                         </ui:Button>
                         <ui:Button Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="应用管理" AutomationProperties.Name="应用管理"
-                                   Appearance="{Binding CurrentPage, Converter={StaticResource PageAppearance}, ConverterParameter=Applications}"
+                                   Appearance="Transparent"
                                    Command="{Binding NavigateApplicationsCommand}">
-                            <StackPanel>
-                                <ui:SymbolIcon Symbol="Apps24" FontSize="19" HorizontalAlignment="Center"/>
-                                <TextBlock Text="应用" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
-                            </StackPanel>
+                            <Grid>
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Applications}"/>
+                                <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
+                                        HorizontalAlignment="Left" Margin="2,10"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Applications}"/>
+                                <StackPanel>
+                                    <ui:SymbolIcon Symbol="Apps24" FontSize="19" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="应用" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
                         </ui:Button>
                         <ui:Button Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="远程桌面（RDP / VNC）" AutomationProperties.Name="远程桌面"
-                                   Appearance="{Binding CurrentPage, Converter={StaticResource PageAppearance}, ConverterParameter=RemoteDesktops}"
+                                   Appearance="Transparent"
                                    Command="{Binding NavigateRemoteDesktopsCommand}">
-                            <StackPanel>
-                                <ui:SymbolIcon Symbol="Desktop24" FontSize="19" HorizontalAlignment="Center"/>
-                                <TextBlock Text="桌面" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
-                            </StackPanel>
+                            <Grid>
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=RemoteDesktops}"/>
+                                <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
+                                        HorizontalAlignment="Left" Margin="2,10"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=RemoteDesktops}"/>
+                                <StackPanel>
+                                    <ui:SymbolIcon Symbol="Desktop24" FontSize="19" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="桌面" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
                         </ui:Button>
                         <Separator Margin="10,4,10,6"/>
                         <ui:Button Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
@@ -132,6 +167,70 @@
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel>
                             <TextBlock Text="主页" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold" Margin="0,0,0,16"/>
+
+                            <TextBlock Text="AI 快捷提问" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch" VerticalAlignment="Top">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,6" LastChildFill="True"
+                                               Visibility="{Binding HasHomeAttachments, Converter={StaticResource BoolToVis}}">
+                                        <ui:Button DockPanel.Dock="Right" Style="{DynamicResource ActionRowButton}" Content="清除全部"
+                                                   Padding="8,2" Margin="8,0,0,0" VerticalAlignment="Top" Click="OnHomeClearAttachments"/>
+                                        <ItemsControl ItemsSource="{Binding HomeAttachments}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="{DynamicResource AppRadiusS}"
+                                                            Padding="8,3" Margin="0,0,6,6">
+                                                        <TextBlock Text="{Binding Name}" FontSize="{DynamicResource AppFontSizeMicro}" TextTrimming="CharacterEllipsis" MaxWidth="200"/>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </DockPanel>
+
+                                    <ui:TextBox x:Name="HomeAskBox" Text="{Binding HomeQuestion, UpdateSourceTrigger=PropertyChanged}"
+                                             AcceptsReturn="True" MinHeight="90" MaxHeight="220" TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent"
+                                             VerticalContentAlignment="Top" Padding="2" PreviewKeyDown="OnHomeAskKeyDown"
+                                             PlaceholderText="描述你要排查的问题，例如：web-01 上 nginx 502 怎么排查？"
+                                             ToolTip="Enter 交给 AI 助手 / Shift+Enter 换行"/>
+
+                                    <DockPanel Margin="0,6,0,0">
+                                        <ui:Button DockPanel.Dock="Right" Content="交给 AI 助手" Icon="{ui:SymbolIcon Send24}" Appearance="Primary"
+                                                   Padding="16,5" Click="OnHomeSend"/>
+                                        <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="8,4" Click="OnHomeMore"
+                                                   ToolTip="添加图片 / 文件">
+                                            <ui:Button.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="添加图片…" Click="OnHomeAddImage"/>
+                                                    <MenuItem Header="添加文件…" Click="OnHomeAddFile"/>
+                                                    <MenuItem Header="清除全部附件" Click="OnHomeClearAttachments"/>
+                                                </ContextMenu>
+                                            </ui:Button.ContextMenu>
+                                        </ui:Button>
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="Enter 交给 AI 助手 / Shift+Enter 换行；只会填入助手输入区，不会自动发送（若助手输入区已有内容会先确认）。"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,6,0,0"/>
+                            <TextBlock Text="提示：Ctrl+K 打开命令面板，可搜索页面、工具与动作。"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding HomeStatusMessage}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"
+                                       Visibility="{Binding HasHomeStatus, Converter={StaticResource BoolToVis}}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HomeStatusIsError}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
 
                             <TextBlock Text="快捷入口" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
@@ -227,69 +326,6 @@
                                 </Border>
                             </WrapPanel>
 
-                            <TextBlock Text="AI 快捷提问" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                            <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch" VerticalAlignment="Top">
-                                <StackPanel>
-                                    <DockPanel Margin="0,0,0,6" LastChildFill="True"
-                                               Visibility="{Binding HasHomeAttachments, Converter={StaticResource BoolToVis}}">
-                                        <ui:Button DockPanel.Dock="Right" Style="{DynamicResource ActionRowButton}" Content="清除全部"
-                                                   Padding="8,2" Margin="8,0,0,0" VerticalAlignment="Top" Click="OnHomeClearAttachments"/>
-                                        <ItemsControl ItemsSource="{Binding HomeAttachments}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="{DynamicResource AppRadiusS}"
-                                                            Padding="8,3" Margin="0,0,6,6">
-                                                        <TextBlock Text="{Binding Name}" FontSize="{DynamicResource AppFontSizeMicro}" TextTrimming="CharacterEllipsis" MaxWidth="200"/>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </DockPanel>
-
-                                    <ui:TextBox x:Name="HomeAskBox" Text="{Binding HomeQuestion, UpdateSourceTrigger=PropertyChanged}"
-                                             AcceptsReturn="True" MinHeight="90" MaxHeight="220" TextWrapping="Wrap"
-                                             VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent"
-                                             VerticalContentAlignment="Top" Padding="2" PreviewKeyDown="OnHomeAskKeyDown"
-                                             PlaceholderText="描述你要排查的问题，例如：web-01 上 nginx 502 怎么排查？"
-                                             ToolTip="Enter 交给 AI 助手 / Shift+Enter 换行"/>
-
-                                    <DockPanel Margin="0,6,0,0">
-                                        <ui:Button DockPanel.Dock="Right" Content="交给 AI 助手" Icon="{ui:SymbolIcon Send24}" Appearance="Primary"
-                                                   Padding="16,5" Click="OnHomeSend"/>
-                                        <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="8,4" Click="OnHomeMore"
-                                                   ToolTip="添加图片 / 文件">
-                                            <ui:Button.ContextMenu>
-                                                <ContextMenu>
-                                                    <MenuItem Header="添加图片…" Click="OnHomeAddImage"/>
-                                                    <MenuItem Header="添加文件…" Click="OnHomeAddFile"/>
-                                                    <MenuItem Header="清除全部附件" Click="OnHomeClearAttachments"/>
-                                                </ContextMenu>
-                                            </ui:Button.ContextMenu>
-                                        </ui:Button>
-                                    </DockPanel>
-                                </StackPanel>
-                            </Border>
-                            <TextBlock Text="Enter 交给 AI 助手 / Shift+Enter 换行；只会填入助手输入区，不会自动发送（若助手输入区已有内容会先确认）。"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,6,0,0"/>
-                            <TextBlock Text="提示：Ctrl+K 打开命令面板，可搜索页面、工具与动作。"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"/>
-                            <TextBlock Text="{Binding HomeStatusMessage}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"
-                                       Visibility="{Binding HasHomeStatus, Converter={StaticResource BoolToVis}}">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding HomeStatusIsError}" Value="True">
-                                                <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

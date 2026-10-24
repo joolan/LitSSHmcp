@@ -117,7 +117,7 @@
 
                     <ScrollViewer VerticalScrollBarVisibility="Auto"
                                   Visibility="{Binding IsCardView, Converter={StaticResource BoolToVis}}">
-                        <ItemsControl ItemsSource="{Binding FilteredDataSources}">
+                        <ItemsControl ItemsSource="{Binding FilteredDataSources}" MaxWidth="1000" HorizontalAlignment="Center">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>

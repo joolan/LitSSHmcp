@@ -6,6 +6,7 @@
     <Color x:Key="SurfaceColor">#FF232323</Color>
     <Color x:Key="SurfaceAltColor">#FF161616</Color>
     <Color x:Key="CardColor">#FF2B2B2B</Color>
+    <Color x:Key="TableHeaderColor">#FF232323</Color>
     <Color x:Key="BorderColor">#26FFFFFF</Color>
     <Color x:Key="TextPrimaryColor">#FFFFFFFF</Color>
     <Color x:Key="TextSecondaryColor">#B3FFFFFF</Color>
@@ -65,6 +66,7 @@
     <SolidColorBrush x:Key="AppSurfaceBrush" Color="{StaticResource SurfaceColor}"/>
     <SolidColorBrush x:Key="AppSurfaceAltBrush" Color="{StaticResource SurfaceAltColor}"/>
     <SolidColorBrush x:Key="AppCardBrush" Color="{StaticResource CardColor}"/>
+    <SolidColorBrush x:Key="AppTableHeaderBrush" Color="{StaticResource TableHeaderColor}"/>
     <SolidColorBrush x:Key="AppBorderBrush" Color="{StaticResource BorderColor}"/>
     <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="{StaticResource TextPrimaryColor}"/>
     <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="{StaticResource TextSecondaryColor}"/>

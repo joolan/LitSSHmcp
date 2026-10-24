@@ -94,7 +94,7 @@
                         <GridView>
                             <GridViewColumn Header="名称" Width="160" DisplayMemberBinding="{Binding Name}"/>
                             <GridViewColumn Header="主机" Width="170" DisplayMemberBinding="{Binding Host}"/>
-                            <GridViewColumn Header="端口" Width="55">
+                            <GridViewColumn Header="端口" Width="72">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding Port}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
@@ -139,11 +139,11 @@
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
-                                            <ui:Button Icon="{ui:SymbolIcon Edit24}" Appearance="Transparent" Padding="5"
+                                            <ui:Button Icon="{ui:SymbolIcon Edit24}" Appearance="Transparent" Padding="0" Width="26" Height="26" BorderThickness="0"
                                                        ToolTip="编辑" AutomationProperties.Name="编辑服务器"
                                                        Command="{Binding DataContext.EditServerItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                        CommandParameter="{Binding}"/>
-                                            <ui:Button Icon="{ui:SymbolIcon Delete24}" Appearance="Transparent" Padding="5"
+                                            <ui:Button Icon="{ui:SymbolIcon Delete24}" Appearance="Transparent" Padding="0" Width="26" Height="26" BorderThickness="0"
                                                        Foreground="{DynamicResource AppDangerBrush}" ToolTip="删除"
                                                        AutomationProperties.Name="删除服务器"
                                                        Command="{Binding DataContext.DeleteServerItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"

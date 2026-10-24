@@ -88,11 +88,11 @@
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel Orientation="Horizontal">
-                                                <ui:Button Icon="{ui:SymbolIcon Edit24}" Appearance="Transparent" Padding="5"
+                                                <ui:Button Icon="{ui:SymbolIcon Edit24}" Appearance="Transparent" Padding="0" Width="26" Height="26" BorderThickness="0"
                                                            ToolTip="编辑" AutomationProperties.Name="编辑应用"
                                                            Command="{Binding DataContext.EditItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                            CommandParameter="{Binding}"/>
-                                                <ui:Button Icon="{ui:SymbolIcon Delete24}" Appearance="Transparent" Padding="5"
+                                                <ui:Button Icon="{ui:SymbolIcon Delete24}" Appearance="Transparent" Padding="0" Width="26" Height="26" BorderThickness="0"
                                                            Foreground="{DynamicResource AppDangerBrush}" ToolTip="删除"
                                                            AutomationProperties.Name="删除应用"
                                                            Command="{Binding DataContext.DeleteItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"

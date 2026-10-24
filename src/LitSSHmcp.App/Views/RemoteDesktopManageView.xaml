@@ -111,15 +111,15 @@
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel Orientation="Horizontal">
-                                                <ui:Button Icon="{ui:SymbolIcon PlugConnected24}" Appearance="Transparent" Padding="5"
+                                                <ui:Button Icon="{ui:SymbolIcon PlugConnected24}" Appearance="Transparent" Padding="0" Width="26" Height="26" BorderThickness="0"
                                                            ToolTip="连接" AutomationProperties.Name="连接远程桌面"
                                                            Command="{Binding DataContext.ConnectItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                            CommandParameter="{Binding}"/>
-                                                <ui:Button Icon="{ui:SymbolIcon Edit24}" Appearance="Transparent" Padding="5"
+                                                <ui:Button Icon="{ui:SymbolIcon Edit24}" Appearance="Transparent" Padding="0" Width="26" Height="26" BorderThickness="0"
                                                            ToolTip="编辑" AutomationProperties.Name="编辑远程桌面"
                                                            Command="{Binding DataContext.EditItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                            CommandParameter="{Binding}"/>
-                                                <ui:Button Icon="{ui:SymbolIcon Delete24}" Appearance="Transparent" Padding="5"
+                                                <ui:Button Icon="{ui:SymbolIcon Delete24}" Appearance="Transparent" Padding="0" Width="26" Height="26" BorderThickness="0"
                                                            Foreground="{DynamicResource AppDangerBrush}" ToolTip="删除"
                                                            AutomationProperties.Name="删除远程桌面"
                                                            Command="{Binding DataContext.DeleteItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"

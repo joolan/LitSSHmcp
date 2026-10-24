@@ -31,6 +31,7 @@
     <Color x:Key="UserBubbleColor">#FF123C63</Color>
     <Color x:Key="AssistantBubbleColor">#FF2B2B2B</Color>
     <Color x:Key="HoverColor">#1AFFFFFF</Color>
+    <Color x:Key="NavHoverColor">#26FFFFFF</Color>
     <Color x:Key="PressedColor">#26FFFFFF</Color>
     <Color x:Key="SelectionColor">#332E9BFF</Color>
     <Color x:Key="BorderSubtleColor">#14FFFFFF</Color>
@@ -93,6 +94,7 @@
     <SolidColorBrush x:Key="AppUserBubbleBrush" Color="{StaticResource UserBubbleColor}"/>
     <SolidColorBrush x:Key="AppAssistantBubbleBrush" Color="{StaticResource AssistantBubbleColor}"/>
     <SolidColorBrush x:Key="AppHoverBrush" Color="{StaticResource HoverColor}"/>
+    <SolidColorBrush x:Key="AppNavHoverBrush" Color="{StaticResource NavHoverColor}"/>
     <SolidColorBrush x:Key="AppPressedBrush" Color="{StaticResource PressedColor}"/>
     <SolidColorBrush x:Key="AppSelectionBrush" Color="{StaticResource SelectionColor}"/>
     <SolidColorBrush x:Key="AppBorderSubtleBrush" Color="{StaticResource BorderSubtleColor}"/>

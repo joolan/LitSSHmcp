@@ -11,6 +11,45 @@
         <controls:MainPageVisibilityConverter x:Key="PageVis"/>
         <controls:MainPageAppearanceConverter x:Key="PageAppearance"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <Style x:Key="SideNavButtonStyle" TargetType="{x:Type ui:Button}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ui:Button}">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppNavHoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppPressedBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
@@ -30,7 +69,7 @@
             <Border Grid.Column="0" Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,1,0">
                 <DockPanel Margin="0,8">
                     <StackPanel DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Margin="0,0,0,4">
-                        <ui:Button Appearance="Transparent" BorderThickness="0" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="设置（安全 / 工具分组 / 导入导出）"
                                    AutomationProperties.Name="设置" Command="{Binding OpenSettingsCommand}">
                             <StackPanel VerticalAlignment="Center">
@@ -40,9 +79,9 @@
                         </ui:Button>
                     </StackPanel>
                     <StackPanel>
-                        <ui:Button Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="主页（快捷入口 / 数据看板）" AutomationProperties.Name="主页"
-                                   Appearance="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                   Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateHomeCommand}" Click="OnHomeNavClick">
                             <Grid Width="56" Height="54">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
@@ -56,7 +95,7 @@
                                 </StackPanel>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Appearance="Transparent" BorderThickness="0" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="打开 AI 运维助手"
                                    AutomationProperties.Name="AI 运维助手" Command="{Binding OpenAgentCommand}">
                             <StackPanel VerticalAlignment="Center">
@@ -64,7 +103,7 @@
                                 <TextBlock Text="AI" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                             </StackPanel>
                         </ui:Button>
-                        <ui:Button Appearance="Transparent" BorderThickness="0" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="打开 SSH 会话管理"
                                    AutomationProperties.Name="SSH 会话管理" Command="{Binding OpenSessionManagerCommand}">
                             <StackPanel VerticalAlignment="Center">
@@ -73,9 +112,9 @@
                             </StackPanel>
                         </ui:Button>
                         <Separator Margin="10,4,10,6"/>
-                        <ui:Button Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="SSH 服务器管理" AutomationProperties.Name="SSH 服务器管理"
-                                   Appearance="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                   Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateServersCommand}">
                             <Grid Width="56" Height="54">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
@@ -89,9 +128,9 @@
                                 </StackPanel>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="数据源管理" AutomationProperties.Name="数据源管理"
-                                   Appearance="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                   Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateDataSourcesCommand}">
                             <Grid Width="56" Height="54">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
@@ -105,9 +144,9 @@
                                 </StackPanel>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="应用管理" AutomationProperties.Name="应用管理"
-                                   Appearance="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                   Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateApplicationsCommand}">
                             <Grid Width="56" Height="54">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
@@ -121,9 +160,9 @@
                                 </StackPanel>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="远程桌面（RDP / VNC）" AutomationProperties.Name="远程桌面"
-                                   Appearance="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                   Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateRemoteDesktopsCommand}">
                             <Grid Width="56" Height="54">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
@@ -138,7 +177,7 @@
                             </Grid>
                         </ui:Button>
                         <Separator Margin="10,4,10,6"/>
-                        <ui:Button Appearance="Transparent" BorderThickness="0" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="资产拓扑（独立窗口）"
                                    AutomationProperties.Name="资产拓扑" Command="{Binding OpenTopologyCommand}">
                             <StackPanel VerticalAlignment="Center">
@@ -146,7 +185,7 @@
                                 <TextBlock Text="拓扑" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                             </StackPanel>
                         </ui:Button>
-                        <ui:Button Appearance="Transparent" BorderThickness="0" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="审计日志（独立窗口）"
                                    AutomationProperties.Name="审计日志" Command="{Binding OpenAuditCommand}">
                             <StackPanel VerticalAlignment="Center">

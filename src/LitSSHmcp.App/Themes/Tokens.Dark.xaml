@@ -33,6 +33,7 @@
     <Color x:Key="PressedColor">#26FFFFFF</Color>
     <Color x:Key="SelectionColor">#332E9BFF</Color>
     <Color x:Key="BorderSubtleColor">#14FFFFFF</Color>
+    <Color x:Key="BorderHoverColor">#4DFFFFFF</Color>
     <Color x:Key="NodeServerBgColor">#FF14304A</Color>
     <Color x:Key="NodeServerBorderColor">#FF3B82C4</Color>
     <Color x:Key="NodeAppBgColor">#FF3A2E14</Color>
@@ -93,6 +94,7 @@
     <SolidColorBrush x:Key="AppPressedBrush" Color="{StaticResource PressedColor}"/>
     <SolidColorBrush x:Key="AppSelectionBrush" Color="{StaticResource SelectionColor}"/>
     <SolidColorBrush x:Key="AppBorderSubtleBrush" Color="{StaticResource BorderSubtleColor}"/>
+    <SolidColorBrush x:Key="AppBorderHoverBrush" Color="{StaticResource BorderHoverColor}"/>
     <SolidColorBrush x:Key="NodeServerBgBrush" Color="{StaticResource NodeServerBgColor}"/>
     <SolidColorBrush x:Key="NodeServerBorderBrush" Color="{StaticResource NodeServerBorderColor}"/>
     <SolidColorBrush x:Key="NodeAppBgBrush" Color="{StaticResource NodeAppBgColor}"/>

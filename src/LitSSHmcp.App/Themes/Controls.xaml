@@ -16,6 +16,11 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="{DynamicResource AppRadiusM}"/>
         <Setter Property="Padding" Value="{DynamicResource AppCardPadding}"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBorderHoverBrush}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style x:Key="UserBubbleStyle" TargetType="Border">

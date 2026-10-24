@@ -59,7 +59,7 @@
             <ui:Button Content="触发事件" Icon="{ui:SymbolIcon Flash24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenTriggerCommand}"/>
         </WrapPanel>
 
-        <Border Grid.Row="2" Style="{DynamicResource CardBorderStyle}" Padding="8">
+        <Border Grid.Row="2" Padding="8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>

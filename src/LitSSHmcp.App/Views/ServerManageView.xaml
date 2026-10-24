@@ -5,6 +5,7 @@
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
     <UserControl.Resources>
         <controls:GroupLabelConverter x:Key="GroupLabel"/>
+        <controls:ServerAuthTypeConverter x:Key="ServerAuth"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </UserControl.Resources>
     <Grid Margin="{DynamicResource AppPageMargin}">
@@ -20,6 +21,10 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
             <StackPanel>
                 <DockPanel>
                     <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Server24" FontSize="20" Margin="0,0,8,0"
@@ -33,6 +38,17 @@
                         Text="{Binding ServerSearchText, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="搜索名称 / 主机 / 标签…" VerticalAlignment="Center"
                         AutomationProperties.Name="搜索服务器"/>
+
+            <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="10,6" CornerRadius="6"
+                    Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}"
+                    BorderThickness="1" Visibility="{Binding HasServersError, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <ui:Button DockPanel.Dock="Right" Content="重试" Padding="10,2" Margin="8,0,0,0"
+                               Command="{Binding LoadServersCommand}"/>
+                    <TextBlock Text="{Binding ServersErrorMessage}" TextWrapping="Wrap"
+                               Foreground="{DynamicResource AppDangerBrush}"/>
+                </DockPanel>
+            </Border>
         </Grid>
 
         <WrapPanel Grid.Row="1" Margin="0,0,0,10">
@@ -89,9 +105,21 @@
                         <GridView>
                             <GridViewColumn Header="名称" Width="160" DisplayMemberBinding="{Binding Name}"/>
                             <GridViewColumn Header="主机" Width="170" DisplayMemberBinding="{Binding Host}"/>
-                            <GridViewColumn Header="端口" Width="55" DisplayMemberBinding="{Binding Port}"/>
+                            <GridViewColumn Header="端口" Width="55">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Port}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
                             <GridViewColumn Header="账号" Width="120" DisplayMemberBinding="{Binding Username}"/>
-                            <GridViewColumn Header="认证" Width="80" DisplayMemberBinding="{Binding AuthType}"/>
+                            <GridViewColumn Header="认证" Width="80">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding AuthType, Converter={StaticResource ServerAuth}}"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
                             <GridViewColumn Header="状态" Width="70">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
@@ -125,6 +153,12 @@
                     <ui:Button Content="添加服务器" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
                                HorizontalAlignment="Center" Command="{Binding AddServerCommand}"/>
                 </StackPanel>
+
+                <Border Background="{DynamicResource AppCardBrush}" Opacity="0.72" Panel.ZIndex="10"
+                        Visibility="{Binding IsLoadingServers, Converter={StaticResource BoolToVis}}">
+                    <ui:ProgressRing IsIndeterminate="True" Width="36" Height="36" HorizontalAlignment="Center"
+                                     VerticalAlignment="Center" Foreground="{DynamicResource AppAccentBrush}"/>
+                </Border>
                 </Grid>
 
                 <Border Grid.Column="1" Width="320" Margin="8,0,0,0" Padding="14"

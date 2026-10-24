@@ -112,6 +112,21 @@
                                     <MenuItem Header="分离为独立窗口" Click="OnDetachItem"/>
                                 </ContextMenu>
                             </StackPanel.ContextMenu>
+                            <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center" ToolTip="连接状态">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="{DynamicResource AppTextTertiaryBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                                <Setter Property="Fill" Value="{DynamicResource AppSuccessBrush}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsConnected}" Value="False">
+                                                <Setter Property="Fill" Value="{DynamicResource AppDangerBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
                             <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <Button Content="✕"
                                     Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -147,8 +162,25 @@
                                                 <MenuItem Header="分离为独立窗口" Click="OnDetachItem"/>
                                             </ContextMenu>
                                         </Border.ContextMenu>
-                                        <TextBlock Text="{Binding Title}" FontSize="11" Margin="6,0" VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <StackPanel Orientation="Horizontal" Margin="6,0" VerticalAlignment="Center">
+                                            <Ellipse Width="7" Height="7" Margin="0,0,5,0" VerticalAlignment="Center" ToolTip="连接状态">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill" Value="{DynamicResource AppTextTertiaryBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                                                <Setter Property="Fill" Value="{DynamicResource AppSuccessBrush}"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsConnected}" Value="False">
+                                                                <Setter Property="Fill" Value="{DynamicResource AppDangerBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
+                                            <TextBlock Text="{Binding Title}" FontSize="11" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        </StackPanel>
                                     </Border>
                                     <ContentPresenter Content="{Binding}"/>
                                 </DockPanel>

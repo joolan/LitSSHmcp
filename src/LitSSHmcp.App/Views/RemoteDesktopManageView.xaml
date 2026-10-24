@@ -6,6 +6,7 @@
     <UserControl.Resources>
         <controls:GroupLabelConverter x:Key="GroupLabel"/>
         <controls:TunnelMarkConverter x:Key="TunnelMark"/>
+        <controls:RelativeTimeConverter x:Key="RelativeTime"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <DataTemplate x:Key="TunnelColumn">
             <TextBlock Text="{Binding TunnelServerId, Converter={StaticResource TunnelMark}}"
@@ -24,6 +25,10 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
             <StackPanel>
                 <DockPanel>
                     <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Desktop24" FontSize="20" Margin="0,0,8,0"
@@ -40,6 +45,17 @@
                             PlaceholderText="搜索名称 / 主机 / 分组…" VerticalAlignment="Center"
                             AutomationProperties.Name="搜索远程桌面"/>
             </StackPanel>
+
+            <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="10,6" CornerRadius="6"
+                    Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}"
+                    BorderThickness="1" Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <ui:Button DockPanel.Dock="Right" Content="重试" Padding="10,2" Margin="8,0,0,0"
+                               Command="{Binding RefreshCommand}"/>
+                    <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap"
+                               Foreground="{DynamicResource AppDangerBrush}"/>
+                </DockPanel>
+            </Border>
         </Grid>
 
         <GroupBox Grid.Row="1" Header="远程桌面连接" Padding="8">
@@ -87,11 +103,23 @@
                                 <GridViewColumn Header="名称" Width="160" DisplayMemberBinding="{Binding Name}"/>
                                 <GridViewColumn Header="协议" Width="55" DisplayMemberBinding="{Binding ProtocolText}"/>
                                 <GridViewColumn Header="主机" Width="160" DisplayMemberBinding="{Binding Host}"/>
-                                <GridViewColumn Header="端口" Width="55" DisplayMemberBinding="{Binding Port}"/>
+                                <GridViewColumn Header="端口" Width="55">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Port}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
                                 <GridViewColumn Header="账号" Width="110" DisplayMemberBinding="{Binding Username}"/>
                                 <GridViewColumn Header="隧道" Width="46" CellTemplate="{StaticResource TunnelColumn}"/>
                                 <GridViewColumn Header="分组" Width="100" DisplayMemberBinding="{Binding Group}"/>
-                                <GridViewColumn Header="最近连接" Width="140" DisplayMemberBinding="{Binding LastConnectedAt}"/>
+                                <GridViewColumn Header="最近连接" Width="140">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding LastConnectedAt, Converter={StaticResource RelativeTime}}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
                                 <GridViewColumn Header="描述" Width="180" DisplayMemberBinding="{Binding Description}"/>
                             </GridView>
                         </ListView.View>
@@ -142,7 +170,7 @@
                                             </TextBlock>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
                                                 <Run Text="分组 "/><Run Text="{Binding Group, Mode=OneWay}"/>
-                                                <Run Text=" · 最近 "/><Run Text="{Binding LastConnectedAt, Mode=OneWay}"/>
+                                                <Run Text=" · 最近 "/><Run Text="{Binding LastConnectedAt, Mode=OneWay, Converter={StaticResource RelativeTime}}"/>
                                             </TextBlock>
                                             <TextBlock Text="{Binding Description}" FontSize="11" Margin="0,6,0,0"
                                                        Foreground="{DynamicResource AppTextSecondaryBrush}"
@@ -179,6 +207,12 @@
                         <ui:Button Content="添加远程桌面" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
                                    HorizontalAlignment="Center" Command="{Binding AddCommand}"/>
                     </StackPanel>
+
+                    <Border Background="{DynamicResource AppCardBrush}" Opacity="0.72" Panel.ZIndex="10"
+                            Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                        <ui:ProgressRing IsIndeterminate="True" Width="36" Height="36" HorizontalAlignment="Center"
+                                         VerticalAlignment="Center" Foreground="{DynamicResource AppAccentBrush}"/>
+                    </Border>
                 </Grid>
             </Grid>
         </GroupBox>

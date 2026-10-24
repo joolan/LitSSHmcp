@@ -18,6 +18,10 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
             <StackPanel>
                 <DockPanel>
                     <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Apps24" FontSize="20" Margin="0,0,8,0"
@@ -31,6 +35,17 @@
                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="搜索名称 / 主机 / 容器…" VerticalAlignment="Center"
                         AutomationProperties.Name="搜索应用"/>
+
+            <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="10,6" CornerRadius="6"
+                    Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}"
+                    BorderThickness="1" Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <ui:Button DockPanel.Dock="Right" Content="重试" Padding="10,2" Margin="8,0,0,0"
+                               Command="{Binding RefreshCommand}"/>
+                    <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap"
+                               Foreground="{DynamicResource AppDangerBrush}"/>
+                </DockPanel>
+            </Border>
         </Grid>
 
         <GroupBox Grid.Row="1" Header="应用" Padding="8">
@@ -62,7 +77,13 @@
                                 <GridViewColumn Header="类型" Width="80" DisplayMemberBinding="{Binding Type}"/>
                                 <GridViewColumn Header="容器名" Width="140" DisplayMemberBinding="{Binding ContainerName}"/>
                                 <GridViewColumn Header="主机" Width="160" DisplayMemberBinding="{Binding Host}"/>
-                                <GridViewColumn Header="端口" Width="70" DisplayMemberBinding="{Binding Port}"/>
+                                <GridViewColumn Header="端口" Width="70">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Port}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
                                 <GridViewColumn Header="描述" Width="240" DisplayMemberBinding="{Binding Description}"/>
                             </GridView>
                         </ListView.View>
@@ -78,6 +99,12 @@
                         <ui:Button Content="添加应用" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
                                    HorizontalAlignment="Center" Command="{Binding AddCommand}"/>
                     </StackPanel>
+
+                    <Border Background="{DynamicResource AppCardBrush}" Opacity="0.72" Panel.ZIndex="10"
+                            Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                        <ui:ProgressRing IsIndeterminate="True" Width="36" Height="36" HorizontalAlignment="Center"
+                                         VerticalAlignment="Center" Foreground="{DynamicResource AppAccentBrush}"/>
+                    </Border>
                 </Grid>
             </Grid>
         </GroupBox>

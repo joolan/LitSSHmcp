@@ -96,6 +96,27 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloa
         set { _statusMessage = value; OnPropertyChanged(); }
     }
 
+    private bool _isLoading;
+    public bool IsLoading
+    {
+        get => _isLoading;
+        private set { _isLoading = value; OnPropertyChanged(); }
+    }
+
+    private string _errorMessage = string.Empty;
+    public string ErrorMessage
+    {
+        get => _errorMessage;
+        private set
+        {
+            _errorMessage = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasError));
+        }
+    }
+
+    public bool HasError => ErrorMessage.Length > 0;
+
     public ICommand RefreshCommand { get; }
     public ICommand AddCommand { get; }
     public ICommand EditCommand { get; }
@@ -145,21 +166,31 @@ public class RemoteDesktopManageViewModel : INotifyPropertyChanged, IConfigReloa
 
     public void ReloadConfig() => Load();
 
-    private void Load() => AsyncOperation.Run("加载远程桌面连接", async () =>
+    private void Load()
     {
-        try
+        IsLoading = true;
+        ErrorMessage = string.Empty;
+        AsyncOperation.Run("加载远程桌面连接", async () =>
         {
-            var config = await _configService.LoadConfigAsync();
-            Desktops.Clear();
-            foreach (var rd in config.RemoteDesktops)
-                Desktops.Add(rd);
-            StatusMessage = $"已加载 {Desktops.Count} 个远程桌面连接";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "加载失败: " + ex.Message;
-        }
-    });
+            try
+            {
+                var config = await _configService.LoadConfigAsync();
+                Desktops.Clear();
+                foreach (var rd in config.RemoteDesktops)
+                    Desktops.Add(rd);
+                StatusMessage = $"已加载 {Desktops.Count} 个远程桌面连接";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "加载失败: " + ex.Message;
+                ErrorMessage = ex.Message;
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+        });
+    }
 
     private void Add() => AsyncOperation.Run("打开新增远程桌面", async () =>
     {

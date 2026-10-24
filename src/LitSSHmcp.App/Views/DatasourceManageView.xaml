@@ -4,6 +4,8 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
     <UserControl.Resources>
+        <controls:DatasourceTypeConverter x:Key="DatasourceType"/>
+        <controls:AccessModeConverter x:Key="AccessMode"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </UserControl.Resources>
     <Grid Margin="{DynamicResource AppPageMargin}">
@@ -18,6 +20,10 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
             <StackPanel>
                 <DockPanel>
                     <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Database24" FontSize="20" Margin="0,0,8,0"
@@ -34,6 +40,17 @@
                             PlaceholderText="搜索名称 / 主机 / 类型…" VerticalAlignment="Center"
                             AutomationProperties.Name="搜索数据源"/>
             </StackPanel>
+
+            <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="10,6" CornerRadius="6"
+                    Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}"
+                    BorderThickness="1" Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <ui:Button DockPanel.Dock="Right" Content="重试" Padding="10,2" Margin="8,0,0,0"
+                               Command="{Binding RefreshCommand}"/>
+                    <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap"
+                               Foreground="{DynamicResource AppDangerBrush}"/>
+                </DockPanel>
+            </Border>
         </Grid>
 
         <GroupBox Grid.Row="1" Header="数据源" Padding="8">
@@ -68,11 +85,29 @@
                         <ListView.View>
                             <GridView>
                                 <GridViewColumn Header="名称" Width="150" DisplayMemberBinding="{Binding Name}"/>
-                                <GridViewColumn Header="类型" Width="60" DisplayMemberBinding="{Binding Type}"/>
+                                <GridViewColumn Header="类型" Width="60">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Type, Converter={StaticResource DatasourceType}}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
                                 <GridViewColumn Header="主机" Width="150" DisplayMemberBinding="{Binding Host}"/>
-                                <GridViewColumn Header="端口" Width="55" DisplayMemberBinding="{Binding Port}"/>
+                                <GridViewColumn Header="端口" Width="55">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Port}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
                                 <GridViewColumn Header="账号" Width="110" DisplayMemberBinding="{Binding Username}"/>
-                                <GridViewColumn Header="访问模式" Width="90" DisplayMemberBinding="{Binding AccessMode}"/>
+                                <GridViewColumn Header="访问模式" Width="90">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding AccessMode, Converter={StaticResource AccessMode}}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
                                 <GridViewColumn Header="默认库" Width="110" DisplayMemberBinding="{Binding DefaultDatabase}"/>
                                 <GridViewColumn Header="描述" Width="170" DisplayMemberBinding="{Binding Description}"/>
                             </GridView>
@@ -92,7 +127,7 @@
                                             <DockPanel>
                                                 <Border DockPanel.Dock="Left" Background="{DynamicResource AppAccentSubtleBrush}"
                                                         CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
-                                                    <TextBlock Text="{Binding Type}" FontSize="10"
+                                                    <TextBlock Text="{Binding Type, Converter={StaticResource DatasourceType}}" FontSize="10"
                                                                Foreground="{DynamicResource AppAccentBrush}"/>
                                                 </Border>
                                                 <Border DockPanel.Dock="Right" Background="{DynamicResource AppDangerSubtleBrush}"
@@ -108,7 +143,7 @@
                                                        TextTrimming="CharacterEllipsis"/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}">
                                                 <Run Text="端口 "/><Run Text="{Binding Port, Mode=OneWay}"/>
-                                                <Run Text=" · "/><Run Text="{Binding AccessMode, Mode=OneWay}"/>
+                                                <Run Text=" · "/><Run Text="{Binding AccessMode, Mode=OneWay, Converter={StaticResource AccessMode}}"/>
                                             </TextBlock>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
                                                 <Run Text="默认库 "/><Run Text="{Binding DefaultDatabase, Mode=OneWay}"/>
@@ -148,6 +183,12 @@
                         <ui:Button Content="添加数据源" Icon="{ui:SymbolIcon Add24}" Appearance="Primary" Padding="14,5"
                                    HorizontalAlignment="Center" Command="{Binding AddCommand}"/>
                     </StackPanel>
+
+                    <Border Background="{DynamicResource AppCardBrush}" Opacity="0.72" Panel.ZIndex="10"
+                            Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                        <ui:ProgressRing IsIndeterminate="True" Width="36" Height="36" HorizontalAlignment="Center"
+                                         VerticalAlignment="Center" Foreground="{DynamicResource AppAccentBrush}"/>
+                    </Border>
                 </Grid>
             </Grid>
         </GroupBox>

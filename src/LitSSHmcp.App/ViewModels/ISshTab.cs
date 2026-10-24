@@ -14,6 +14,9 @@ public interface ISshTab
     /// <summary>独立窗口布局记忆键（同一服务器多终端需区分）。</summary>
     string LayoutKey { get; }
 
+    /// <summary>连接状态（终端标签状态点）。</summary>
+    bool IsConnected { get; }
+
     /// <summary>重命名标签（仅本次会话内有效）。</summary>
     void Rename(string title);
 }

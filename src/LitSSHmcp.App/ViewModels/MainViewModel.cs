@@ -707,7 +707,11 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
 
     public void ReloadConfig() => LoadServers();
 
-    private void LoadServers() => AsyncOperation.Run("加载服务器", async () =>
+    private void LoadServers()
+    {
+        IsLoadingServers = true;
+        ServersErrorMessage = string.Empty;
+        AsyncOperation.Run("加载服务器", async () =>
     {
         try
         {
@@ -734,8 +738,14 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         catch (Exception ex)
         {
             StatusMessage = $"错误: {ex.Message}";
+            ServersErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsLoadingServers = false;
         }
     });
+    }
 
     private void AddServer()
     {
@@ -1112,12 +1122,6 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     {
         get => _datasourcePage;
         private set { _datasourcePage = value; OnPropertyChanged(); }
-    }
-
-    private void NavigateHome()
-    {
-        CurrentPage = MainPage.Home;
-        _ = RefreshHomeCountsAsync();
     }
 
     private void NavigateDataSources()

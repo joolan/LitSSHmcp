@@ -21,6 +21,8 @@ public partial class SftpManagerWindow : FluentWindow
         Loaded += (_, _) => _vm.Initialize();
     }
 
+    private void OnClose(object sender, RoutedEventArgs e) => Close();
+
     private void OnLocalUp(object sender, RoutedEventArgs e) => _vm.Local.GoUp();
 
     private void OnLocalRefresh(object sender, RoutedEventArgs e) => _vm.Local.Load();

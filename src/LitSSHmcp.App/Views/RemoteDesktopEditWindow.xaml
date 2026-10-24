@@ -116,12 +116,13 @@
             </Border>
         </ScrollViewer>
 
-        <DockPanel Grid.Row="2" Margin="16,10,16,12">
+        <DockPanel Grid.Row="2" Style="{DynamicResource DialogFooterPanelStyle}">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <ui:Button Content="确定" Appearance="Primary" Width="90" Margin="0,0,8,0" IsDefault="True" Command="{Binding SaveCommand}"/>
-                <ui:Button Content="取消" Width="90" IsCancel="True" Command="{Binding CancelCommand}"/>
+                <ui:Button Content="保存" Appearance="Primary" MinWidth="88" Margin="0,0,8,0" IsDefault="True" Command="{Binding SaveCommand}"/>
+                <ui:Button Content="取消" MinWidth="88" IsCancel="True" Command="{Binding CancelCommand}"/>
             </StackPanel>
-            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       TextWrapping="Wrap" Margin="0,0,10,0"/>
         </DockPanel>
     </Grid>
 </ui:FluentWindow>

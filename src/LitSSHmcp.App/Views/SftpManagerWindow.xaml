@@ -10,6 +10,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="200"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <ui:TitleBar Grid.Row="0" Title="{Binding Title}"/>
 
@@ -128,6 +129,10 @@
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+        </DockPanel>
+
+        <DockPanel Grid.Row="4" Style="{DynamicResource DialogFooterPanelStyle}">
+            <ui:Button DockPanel.Dock="Right" Content="关闭" MinWidth="88" IsCancel="True" Click="OnClose"/>
         </DockPanel>
     </Grid>
 </ui:FluentWindow>

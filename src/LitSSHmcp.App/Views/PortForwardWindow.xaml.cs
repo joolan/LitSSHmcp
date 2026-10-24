@@ -24,6 +24,8 @@ public partial class PortForwardWindow : FluentWindow
         };
     }
 
+    private void OnClose(object sender, RoutedEventArgs e) => Close();
+
     private static PortForwardRow? RowOf(object sender)
         => (sender as FrameworkElement)?.DataContext as PortForwardRow;
 

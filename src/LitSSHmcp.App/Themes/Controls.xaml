@@ -91,6 +91,38 @@
         <Setter Property="MaxWidth" Value="360"/>
     </Style>
 
+    <!-- 表单：上方标签 / 左侧行标签 / 帮助 / 错误 -->
+    <Style x:Key="FormLabelStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Margin" Value="0,0,0,4"/>
+    </Style>
+
+    <Style x:Key="FormRowLabelStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="0,0,10,8"/>
+    </Style>
+
+    <Style x:Key="FormHintStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="Margin" Value="0,4,0,0"/>
+    </Style>
+
+    <Style x:Key="FormErrorStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="Margin" Value="0,4,0,0"/>
+    </Style>
+
+    <Style x:Key="DialogFooterPanelStyle" TargetType="DockPanel">
+        <Setter Property="Margin" Value="16,10,16,12"/>
+    </Style>
+
     <!-- 默认文字：仅统一字重；前景色交由属性继承（FluentWindow 已设 WindowForeground，随主题变化）。
          切勿在此设置 Foreground：隐式 TextBlock 样式会覆盖 Button/ComboBox 等内容控件内部
          生成文本的前景，导致“蓝底按钮黑字”等对比度问题。 -->

@@ -15,6 +15,8 @@ public partial class SessionBatchExecWindow : FluentWindow
         WindowLayout.Attach(this, "session-batch-exec");
     }
 
+    private void OnClose(object sender, RoutedEventArgs e) => Close();
+
     private void OnSnippets(object sender, RoutedEventArgs e)
     {
         if (DataContext is not SessionBatchExecViewModel vm)

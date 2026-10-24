@@ -8,6 +8,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <ui:TitleBar Grid.Row="0" Title="批量执行"/>
 
@@ -104,5 +105,9 @@
                 </ListBox>
             </Grid>
         </Grid>
+
+        <DockPanel Grid.Row="2" Style="{DynamicResource DialogFooterPanelStyle}">
+            <ui:Button DockPanel.Dock="Right" Content="关闭" MinWidth="88" IsCancel="True" Click="OnClose"/>
+        </DockPanel>
     </Grid>
 </ui:FluentWindow>

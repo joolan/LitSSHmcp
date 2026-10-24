@@ -22,6 +22,8 @@ public partial class BatchExecWindow : FluentWindow
         };
     }
 
+    private void OnClose(object sender, RoutedEventArgs e) => Close();
+
     private void OnSnippets(object sender, RoutedEventArgs e)
     {
         if (DataContext is not BatchExecViewModel vm)

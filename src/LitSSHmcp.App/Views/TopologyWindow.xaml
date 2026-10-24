@@ -583,7 +583,7 @@
                     </Canvas>
 
                     <!-- 空态：没有可用资产时给出明确下一步 -->
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="460"
+                    <StackPanel x:Name="TopologyEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="460"
                                 Panel.ZIndex="20"
                                 Visibility="{Binding IsEmptyGraph, Converter={StaticResource BoolToVis}}">
                         <ui:SymbolIcon Symbol="Share24" FontSize="44" HorizontalAlignment="Center"
@@ -600,7 +600,7 @@
                     </StackPanel>
 
                     <!-- 右下角缩放 HUD -->
-                    <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,14"
+                    <Border x:Name="ZoomHud" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,14"
                             Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                             BorderThickness="1" CornerRadius="8" Padding="4" Panel.ZIndex="21">
                         <StackPanel Orientation="Horizontal">
@@ -614,7 +614,7 @@
                     </Border>
 
                     <!-- 节点详情 Inspector -->
-                    <Border HorizontalAlignment="Right" VerticalAlignment="Top" Width="300" Margin="0,8,8,0"
+                    <Border x:Name="NodeInspector" HorizontalAlignment="Right" VerticalAlignment="Top" Width="300" Margin="0,8,8,0"
                             Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                             BorderThickness="1" CornerRadius="8" Padding="12" Panel.ZIndex="22"
                             Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">

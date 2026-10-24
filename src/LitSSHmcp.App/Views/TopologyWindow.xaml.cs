@@ -344,11 +344,33 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnCanvasWheel(object sender, MouseWheelEventArgs e)
     {
-        if (EdgePanel.IsMouseOver)
+        if (IsOverlaySource(e.OriginalSource))
             return;
 
         ZoomAt(e.GetPosition(CanvasHost), e.Delta > 0 ? 1.15 : 1 / 1.15);
         e.Handled = true;
+    }
+
+    /// <summary>鼠标是否落在画布叠加层上（叠加层按钮不能再被画布预览事件截获）。</summary>
+    private bool IsOverlaySource(object? source)
+    {
+        if (source is not DependencyObject node)
+            return false;
+
+        while (node is not null)
+        {
+            if (ReferenceEquals(node, EdgePanel)
+                || ReferenceEquals(node, NodeInspector)
+                || ReferenceEquals(node, ZoomHud)
+                || ReferenceEquals(node, TopologyEmptyState))
+                return true;
+
+            node = node is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(node)
+                : LogicalTreeHelper.GetParent(node);
+        }
+
+        return false;
     }
 
     /// <summary>以 host 上的某点为锚点缩放，保持该点下方内容不动。</summary>
@@ -393,8 +415,8 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnCanvasMouseDown(object sender, MouseButtonEventArgs e)
     {
-        // 面板区域内的操作交给面板处理，不触发画布选择/拖动/平移
-        if (EdgePanel.IsMouseOver)
+        // 叠加层（关系面板 / 节点详情 / 缩放 HUD / 空态）内的操作交给控件自身处理
+        if (IsOverlaySource(e.OriginalSource))
             return;
 
         var point = e.GetPosition(GraphCanvas);
@@ -503,7 +525,7 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnCanvasRightDown(object sender, MouseButtonEventArgs e)
     {
-        if (EdgePanel.IsMouseOver)
+        if (IsOverlaySource(e.OriginalSource))
             return;
 
         var id = _viewModel.HitTest(e.GetPosition(GraphCanvas));

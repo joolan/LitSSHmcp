@@ -108,6 +108,29 @@ public class MainWindowXamlTests
     }
 
     [Fact]
+    public void Topology_inspector_follows_selection()
+    {
+        var ex = RunSta(() =>
+        {
+            var window = new TopologyWindow();
+            var vm = (LitSSHmcp.App.ViewModels.TopologyViewModel)window.DataContext;
+            var inspector = (System.Windows.UIElement)window.FindName("NodeInspector")!;
+
+            Pump(window);
+            Assert.Equal(System.Windows.Visibility.Collapsed, inspector.Visibility);
+
+            vm.SelectNode("demo-node");
+            Pump(window);
+            Assert.Equal(System.Windows.Visibility.Visible, inspector.Visibility);
+
+            vm.ClearSelection();
+            Pump(window);
+            Assert.Equal(System.Windows.Visibility.Collapsed, inspector.Visibility);
+        });
+        Assert.Null(ex);
+    }
+
+    [Fact]
     public void Form_controls_parse_xaml()
     {
         var ex = RunSta(() =>

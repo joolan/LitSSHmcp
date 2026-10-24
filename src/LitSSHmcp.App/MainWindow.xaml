@@ -86,6 +86,51 @@
                                            Command="{Binding OpenAgentCommand}"/>
                             </WrapPanel>
 
+                            <TextBlock Text="运行状态" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <WrapPanel Margin="0,0,0,20">
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                        Cursor="Hand" ToolTip="打开 SSH 会话管理" MouseLeftButtonUp="OnHomeSessionsClick">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding ActiveSessionCount}" FontSize="30" FontWeight="SemiBold"/>
+                                        <TextBlock Text="活跃 SSH 会话" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <TextBlock Text="点击打开会话管理" FontSize="11"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                        Cursor="Hand" ToolTip="打开端口转发" MouseLeftButtonUp="OnHomePortForwardClick">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding PortForwardRunningCount}" FontSize="30" FontWeight="SemiBold"/>
+                                        <TextBlock Text="运行中隧道" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <TextBlock Text="后台隧道仍在运行" FontSize="11"
+                                                   Foreground="{DynamicResource AppSuccessBrush}"
+                                                   Visibility="{Binding HasRunningPortForwards, Converter={StaticResource BoolToVis}}"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="200" Margin="0,0,12,12"
+                                        Cursor="Hand" ToolTip="打开 AI 助手处理待审批请求" MouseLeftButtonUp="OnHomePendingApprovalClick">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding PendingApprovalCount}" FontSize="30" FontWeight="SemiBold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasPendingApprovals}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource AppWarningBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Text="待审批" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <TextBlock Text="本机命令等待确认" FontSize="11"
+                                                   Foreground="{DynamicResource AppWarningBrush}"
+                                                   Visibility="{Binding HasPendingApprovals, Converter={StaticResource BoolToVis}}"/>
+                                    </StackPanel>
+                                </Border>
+                            </WrapPanel>
+
                             <TextBlock Text="数据看板" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                             <WrapPanel Margin="0,0,0,20">

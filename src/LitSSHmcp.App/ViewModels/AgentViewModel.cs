@@ -986,6 +986,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             OnPropertyChanged(nameof(SessionSubsetLocked));   // 运行起止会切换启用层锁定（D8）
             // 侧栏所有会话行徽章刷新（后台会话状态/停止入口的启用态都靠它）
             _sidebar.RefreshStates();
+            OnPropertyChanged(nameof(PendingApprovalCount));
             if (ReferenceEquals(ctx, CurrentContext))
             {
                 OnPropertyChanged(nameof(SessionStateText));

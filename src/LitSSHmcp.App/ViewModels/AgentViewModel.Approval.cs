@@ -10,6 +10,10 @@ public partial class AgentViewModel
 
     public bool HasPendingApproval => PendingApproval is not null;
 
+    /// <summary>所有会话中处于待审批状态的数量（首页运行态看板）。</summary>
+    public int PendingApprovalCount =>
+        _contexts.Values.Count(c => c.State == SessionRunState.WaitingApproval);
+
     private void RaisePendingApprovalChanged()
     {
         OnPropertyChanged(nameof(PendingApproval));

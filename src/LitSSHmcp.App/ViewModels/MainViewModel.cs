@@ -135,7 +135,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         Sessions.CollectionChanged += (_, _) =>
         {
             RebuildDockedSessions();
-            OnPropertyChanged(nameof(HasSessions));
+            RaiseSessionCountsChanged();
         };
 
         // 服务器列表按「分组」字段分组（连接管理器树形分组）
@@ -1164,31 +1164,6 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     // AI 运维助手(内嵌 MCP 客户端 + OpenAI 兼容大模型; 需先在「AI 助手设置」配置模型)
     // 非模态独立窗口: 可与主界面同时操作
     private AgentWindow? _agentWindow;
-
-    private AgentWindow EnsureAgentWindow()
-    {
-        if (_agentWindow is { IsLoaded: true })
-        {
-            _agentWindow.Activate();
-            return _agentWindow;
-        }
-
-        _agentWindow = _windows.CreateAgentWindow(
-            _configService,
-            _services.CreateAgentContextStore(),
-            _services.BundledSkillsDir,
-            ResolveSessionTerminal,
-            AiTerminals);
-        _agentWindow.ViewModel.SessionRemoved += CloseSessionTerminal;
-        _agentWindow.Closed += (_, _) =>
-        {
-            if (_agentWindow is not null)
-                _agentWindow.ViewModel.SessionRemoved -= CloseSessionTerminal;
-            _agentWindow = null;
-        };
-        _agentWindow.Show();
-        return _agentWindow;
-    }
 
     /// <summary>AI 会话被删除/归档时，关闭其对应的本机终端标签（避免孤儿终端）。</summary>
     private void CloseSessionTerminal(long sessionId)

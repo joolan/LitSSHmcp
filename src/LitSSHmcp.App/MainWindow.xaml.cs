@@ -112,6 +112,10 @@ public partial class MainWindow : FluentWindow
 
     // ---- 主页看板 / AI 快捷提问 ----
 
+    private void OnHomeSessionsClick(object sender, MouseButtonEventArgs e) => ViewModel.OpenSessionManagerCommand.Execute(null);
+
+    private void OnHomePendingApprovalClick(object sender, MouseButtonEventArgs e) => ViewModel.OpenAgentCommand.Execute(null);
+
     private void OnHomeServersClick(object sender, MouseButtonEventArgs e) => ViewModel.NavigateServersCommand.Execute(null);
 
     private void OnHomeDatasourcesClick(object sender, MouseButtonEventArgs e) => ViewModel.NavigateDataSourcesCommand.Execute(null);

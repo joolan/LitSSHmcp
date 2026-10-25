@@ -81,21 +81,14 @@
                     <TextBlock Text="SSH 会话管理" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
                                 shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                        <ui:Button Appearance="Transparent" BorderThickness="0" Width="30" Height="28" Padding="0" Margin="1,0"
+                        <ui:Button Icon="{ui:SymbolIcon Play24}" Appearance="Transparent" Padding="6,3" Margin="0,0,8,0"
                                    IsEnabled="{Binding HasSessions}" ToolTip="批量执行"
-                                   AutomationProperties.Name="批量执行" Click="OnBatchExec">
-                            <ui:SymbolIcon Symbol="Play24" FontSize="15"/>
-                        </ui:Button>
-                        <ui:Button Appearance="Transparent" BorderThickness="0" Width="30" Height="28" Padding="0" Margin="1,0"
+                                   AutomationProperties.Name="批量执行" Click="OnBatchExec"/>
+                        <ui:Button Icon="{ui:SymbolIcon Eye24}" Appearance="Transparent" Padding="6,3" Margin="0,0,8,0"
                                    IsEnabled="{Binding HasSessions}" ToolTip="布局 / 显示方式"
-                                   AutomationProperties.Name="切换会话布局" Click="OnLayoutMenu">
-                            <ui:SymbolIcon Symbol="Eye24" FontSize="15"/>
-                        </ui:Button>
-                        <ui:Button Appearance="Transparent" BorderThickness="0" Width="30" Height="28" Padding="0" Margin="1,0"
-                                   Foreground="{DynamicResource AppAccentBrush}" ToolTip="新建连接"
-                                   AutomationProperties.Name="新建 SSH 连接" Click="OnNewConnection">
-                            <ui:SymbolIcon Symbol="Add24" FontSize="15"/>
-                        </ui:Button>
+                                   AutomationProperties.Name="切换会话布局" Click="OnLayoutMenu"/>
+                        <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3"
+                                   ToolTip="新建连接" AutomationProperties.Name="新建 SSH 连接" Click="OnNewConnection"/>
                     </StackPanel>
                 </StackPanel>
 

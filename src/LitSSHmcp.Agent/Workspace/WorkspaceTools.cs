@@ -145,6 +145,8 @@ public static class WorkspaceTools
     {
         var full = ResolveTarget(root, shared, path, out var isShared);
         EnsureSharedWriteAllowed(sharedWritable, isShared);
+        if (IsWorkLogPath(Rel(root, full, shared)))
+            return "(工作日志目录由宿主维护, 禁止通过 ops_doc_* 写入)";
         content = MaybeStampUnreviewed(root, shared, full, content);
         if (content.Length > MaxWriteChars)
             return $"(内容过长 {content.Length} 字符, 超过上限 {MaxWriteChars}, 未写入)";
@@ -160,6 +162,8 @@ public static class WorkspaceTools
     {
         var full = ResolveTarget(root, shared, path, out var isShared);
         EnsureSharedWriteAllowed(sharedWritable, isShared);
+        if (IsWorkLogPath(Rel(root, full, shared)))
+            return "(工作日志目录由宿主维护, 禁止通过 ops_doc_* 写入)";
         if (!File.Exists(full))
             content = MaybeStampUnreviewed(root, shared, full, content);   // 新建文件才打标, 追加既有文件保留原头部
         if (content.Length > MaxWriteChars)
@@ -177,6 +181,8 @@ public static class WorkspaceTools
     {
         var full = ResolveTarget(root, shared, path, out var isShared);
         EnsureSharedWriteAllowed(sharedWritable, isShared);
+        if (IsWorkLogPath(Rel(root, full, shared)))
+            return "(工作日志目录由宿主维护, 禁止通过 ops_doc_* 写入)";
         if (!File.Exists(full))
             return $"(文件不存在) {Rel(root, full, shared)}";
         if (string.IsNullOrEmpty(find))
@@ -207,14 +213,16 @@ public static class WorkspaceTools
         // 不跟随 reparse point（junction/符号链接）：避免枚举沿链接遍历到工作区之外（§10.C.3）
         var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
         var files = new List<string>();
-        files.AddRange(Directory.EnumerateFiles(root, "*", options).Select(f => Rel(root, f, shared)));
+        files.AddRange(Directory.EnumerateFiles(root, "*", options)
+            .Select(f => Rel(root, f, shared))
+            .Where(rel => !IsWorkLogPath(rel)));
 
         if (shared is not null)
         {
             // 共享区只展示资产相关子树的根级与脚本/记忆文档，避免 jobs/ 其他会话目录混入清单
             var sharedFiles = Directory.EnumerateFiles(shared, "*", options)
                 .Select(f => Path.GetRelativePath(shared, f).Replace('\\', '/'))
-                .Where(rel => !IsSessionTreePath(rel))
+                .Where(rel => !IsSessionTreePath(rel) && !IsWorkLogPath(rel))
                 .Select(rel => SharedPrefix + rel);
             files.AddRange(sharedFiles);
         }
@@ -301,6 +309,16 @@ public static class WorkspaceTools
         var slash = relative.IndexOf('/');
         var first = slash < 0 ? relative : relative[..slash];
         return string.Equals(first, WorkspaceLayout.JobsDirName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>工作日志目录不进入 ops_doc_list（避免按天文件挤占文档清单；需要时仍可按路径显式读取）。</summary>
+    private static bool IsWorkLogPath(string relative)
+    {
+        var rel = relative.StartsWith(SharedPrefix, StringComparison.OrdinalIgnoreCase)
+            ? relative[SharedPrefix.Length..]
+            : relative;
+        return string.Equals(rel, WorkLogStore.DirName, StringComparison.OrdinalIgnoreCase)
+               || rel.StartsWith(WorkLogStore.DirName + "/", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>相对展示路径：共享区条目带 shared/ 前缀，主根条目为相对主根路径。</summary>

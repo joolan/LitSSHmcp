@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -19,6 +19,7 @@ public partial class MainWindow : FluentWindow
 
     private System.Windows.Forms.NotifyIcon? _tray;
     private bool _allowClose;
+    private HelpWindow? _helpWindow;
 
     /// <summary>最小化到托盘时被隐藏的独立窗口快照（恢复时按快照再显示；托盘期间新弹出的窗口不受影响）。</summary>
     private readonly List<Window> _trayHiddenWindows = new();
@@ -27,7 +28,7 @@ public partial class MainWindow : FluentWindow
     {
         InitializeComponent();
         DataContext = new MainViewModel();
-        WindowLayout.Attach(this, "main");
+        WindowLayout.Attach(this, "main.v2");
         Closing += OnMainClosing;
         Closed += (_, _) => ViewModel.DisposeAgentPage();
         if (Application.Current is { } app)
@@ -126,6 +127,23 @@ public partial class MainWindow : FluentWindow
     private void OnHomeSyncClick(object sender, MouseButtonEventArgs e) => ViewModel.OpenSyncCommand.Execute(null);
 
     private void OnHomeTriggerClick(object sender, MouseButtonEventArgs e) => ViewModel.OpenTriggerCommand.Execute(null);
+
+    private void OnOpenHelp(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string topic })
+            return;
+
+        if (_helpWindow is { IsLoaded: true })
+        {
+            _helpWindow.SelectTopic(topic);
+            _helpWindow.Activate();
+            return;
+        }
+
+        _helpWindow = new HelpWindow(topic) { Owner = this };
+        _helpWindow.Closed += (_, _) => _helpWindow = null;
+        _helpWindow.Show();
+    }
 
     private void OnHomeAddImage(object sender, RoutedEventArgs e)
     {

@@ -368,6 +368,21 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
     private bool _enableSubAgent = true;
     public bool EnableSubAgent { get => _enableSubAgent; set => Set(ref _enableSubAgent, value); }
 
+    private bool _workLogEnabled = true;
+    public bool WorkLogEnabled { get => _workLogEnabled; set => Set(ref _workLogEnabled, value); }
+
+    private string _workLogDir = string.Empty;
+    public string WorkLogDir { get => _workLogDir; set => Set(ref _workLogDir, value); }
+
+    private bool _workLogIncludeFailures = true;
+    public bool WorkLogIncludeFailures { get => _workLogIncludeFailures; set => Set(ref _workLogIncludeFailures, value); }
+
+    private bool _workLogIncludeReadOnly;
+    public bool WorkLogIncludeReadOnly { get => _workLogIncludeReadOnly; set => Set(ref _workLogIncludeReadOnly, value); }
+
+    private bool _workLogModelSummary = true;
+    public bool WorkLogModelSummary { get => _workLogModelSummary; set => Set(ref _workLogModelSummary, value); }
+
     /// <summary>回答风格选项。</summary>
     public IReadOnlyList<string> ResponseStyles { get; } = new[] { "concise", "standard", "detailed" };
 
@@ -668,6 +683,11 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
             SpillDir = agent.SpillDir;
             SpillRetentionDays = agent.SpillRetentionDays.ToString();
             EnableSubAgent = agent.EnableSubAgent;
+            WorkLogEnabled = agent.WorkLog?.Enabled ?? true;
+            WorkLogDir = agent.WorkLog?.Dir ?? string.Empty;
+            WorkLogIncludeFailures = agent.WorkLog?.IncludeFailures ?? true;
+            WorkLogIncludeReadOnly = agent.WorkLog?.IncludeReadOnly ?? false;
+            WorkLogModelSummary = agent.WorkLog?.ModelSummary ?? true;
             ResponseStyle = string.IsNullOrWhiteSpace(agent.ResponseStyle) ? "concise" : agent.ResponseStyle;
             MaxToolIterations = agent.MaxToolIterations.ToString();
             BudgetMaxTurnSeconds = (agent.Budget?.MaxTurnSeconds ?? 0).ToString();
@@ -742,6 +762,12 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent.SpillDir = SpillDir ?? string.Empty;
             config.Agent.SpillRetentionDays = (int)Math.Max(0, ParseLong(SpillRetentionDays, 7));
             config.Agent.EnableSubAgent = EnableSubAgent;
+            config.Agent.WorkLog ??= new AgentWorkLogConfig();
+            config.Agent.WorkLog.Enabled = WorkLogEnabled;
+            config.Agent.WorkLog.Dir = WorkLogDir ?? string.Empty;
+            config.Agent.WorkLog.IncludeFailures = WorkLogIncludeFailures;
+            config.Agent.WorkLog.IncludeReadOnly = WorkLogIncludeReadOnly;
+            config.Agent.WorkLog.ModelSummary = WorkLogModelSummary;
             config.Agent.ResponseStyle = string.IsNullOrWhiteSpace(ResponseStyle) ? "concise" : ResponseStyle;
             config.Agent.MaxToolIterations = (int)Math.Max(1, ParseLong(MaxToolIterations, 20));
             config.Agent.Budget ??= new AgentBudgetConfig();

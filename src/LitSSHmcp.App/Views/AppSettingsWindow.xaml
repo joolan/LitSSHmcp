@@ -32,7 +32,6 @@
                     <ListBoxItem Content="工具分组" Padding="12,10"/>
                     <ListBoxItem Content="导入 / 导出" Padding="12,10"/>
                     <ListBoxItem Content="存储维护" Padding="12,10"/>
-                    <ListBoxItem Content="MCP 工具说明" Padding="12,10"/>
                     <ListBoxItem Content="关于" Padding="12,10"/>
                 </ListBox>
             </Border>
@@ -64,9 +63,6 @@
                 </TabItem>
                 <TabItem Header="存储维护">
                     <views:StorageSettingsView x:Name="StorageView"/>
-                </TabItem>
-                <TabItem Header="MCP 工具说明">
-                    <views:McpToolsView/>
                 </TabItem>
                 <TabItem Header="关于">
                     <views:AboutView/>

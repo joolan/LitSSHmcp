@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -138,6 +139,23 @@ public partial class AgentSettingsWindow : FluentWindow
     private void OnTestEmbeddings(object sender, RoutedEventArgs e) => _ = _viewModel.TestEmbeddingsAsync();
 
     private void OnMemoryStats(object sender, RoutedEventArgs e) => _ = _viewModel.LoadMemoryStatsAsync();
+
+    private void OnOpenWorkLog(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var workspace = WorkspaceTools.ResolveDir(_viewModel.WorkspaceDir);
+            var configured = _viewModel.WorkLogDir?.Trim() ?? string.Empty;
+            var root = string.IsNullOrEmpty(configured)
+                ? Path.Combine(workspace, WorkLogStore.DirName)
+                : Path.IsPathRooted(configured) ? configured : Path.Combine(workspace, configured);
+            NativeShell.OpenFolder(root);
+        }
+        catch (Exception ex)
+        {
+            _dialogs.Error("打开工作日志目录失败: " + ex.Message, "工作日志");
+        }
+    }
 
     private void OnReloadMemories(object sender, RoutedEventArgs e) => _ = _viewModel.LoadMemoryEntriesAsync();
 

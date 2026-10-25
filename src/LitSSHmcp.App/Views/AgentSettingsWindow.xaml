@@ -88,6 +88,21 @@
                                            Foreground="{DynamicResource AppTextSecondaryBrush}"
                                            Text="只读模式保留的工具（按 MCP 只读注解 readOnlyHint）：查询/读取/诊断/巡检类——ssh_list_servers、ssh_get_sudo_status、ssh_test_connection、ssh_snapshot_get、ssh_list_files；datasource_list、datasource_test_connection、mysql_query、postgres_query、redis_read/redis_diagnostics；docker_query、service_query、log_query、java_processes/java_diagnostics、topology_get_overview/get_dependencies/query/discover、app_health_snapshot、mcp_usage_guide/self_check；以及本地只读工具（skill_list/read、spill_list/read/grep、ops_doc_read/list、update_plan、run_subagent）。不含执行/写入/审批类：ssh_execute_command/sudo、ssh_upload*/download*、mysql/postgres/redis 的 *_execute、docker_restart/exec、service_restart 等。"/>
 
+                                <TextBlock Text="工作日志（桌面端）" FontWeight="SemiBold" Margin="0,10,0,6"/>
+                                <CheckBox Content="启用工作日志（含变更操作的任务结束后自动追加到工作区 worklogs/年/年-月-日.md，永久保留）" IsChecked="{Binding WorkLogEnabled, Mode=TwoWay}" Margin="0,0,0,4"/>
+                                <CheckBox Content="记录失败/被拒绝的操作（便于复盘踩坑）" IsChecked="{Binding WorkLogIncludeFailures, Mode=TwoWay}" Margin="0,0,0,4"/>
+                                <CheckBox Content="记录只读调查（默认关闭；开启后纯查询任务也记一条“调查”）" IsChecked="{Binding WorkLogIncludeReadOnly, Mode=TwoWay}" Margin="0,0,0,4"/>
+                                <CheckBox Content="允许 AI 追加任务复盘（ops_worklog_write：3-5 行目标/关键操作/结果/后续）" IsChecked="{Binding WorkLogModelSummary, Mode=TwoWay}" Margin="0,0,0,4"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="日志目录（空=工作区\worklogs）:" VerticalAlignment="Center"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding WorkLogDir, UpdateSourceTrigger=PropertyChanged}" Width="320" Margin="6,0,8,0"/>
+                                    <ui:Button Content="打开目录" Padding="12,3" Click="OnOpenWorkLog"
+                                               ToolTip="按当前填写的工作区/日志目录打开资源管理器（目录不存在会自动创建）"/>
+                                </StackPanel>
+                                <TextBlock TextWrapping="Wrap" Margin="26,0,0,8" FontSize="{DynamicResource AppFontSizeMicro}"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                           Text="日志按天追加、不自动删除（除非你手动删文件）；写前会脱敏密码/令牌等敏感信息，只记操作摘要与结果，不复制原始长输出。"/>
+
                                 <TextBlock Text="允许的工具分组（全勾 = 不限制）" FontWeight="SemiBold" Margin="0,10,0,6"/>
                                 <ItemsControl ItemsSource="{Binding ToolGroupOptions}">
                                     <ItemsControl.ItemsPanel>

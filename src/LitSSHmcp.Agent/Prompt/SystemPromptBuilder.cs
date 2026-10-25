@@ -24,7 +24,8 @@ public static class SystemPromptBuilder
         string? agentStyle = null, string? skillsRoot = null,
         IReadOnlyList<ExternalMcpServerInfo>? externalMcp = null, bool builtinMcpDisabled = false,
         bool memoryTools = false, bool scriptTools = false, string? assetGraph = null,
-        string? sessionWorkspaceDir = null, string? sharedWorkspaceDir = null)
+        string? sessionWorkspaceDir = null, string? sharedWorkspaceDir = null,
+        bool workLog = false, string? workLogDir = null, bool workLogModelSummary = false)
     {
         var sb = new StringBuilder();
         sb.AppendLine(BasePrompt);
@@ -69,6 +70,15 @@ public static class SystemPromptBuilder
             sb.AppendLine();
             sb.AppendLine("## 任务计划");
             sb.AppendLine("处理多步任务时, 先用 update_plan 提交完整计划(每行 '- [ ] 步骤'); 之后每完成一步就再次调用 update_plan 并把已完成项标为 '- [x]'。简单单步问题不必使用。");
+        }
+
+        if (workLog)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## 工作日志(桌面端)");
+            sb.AppendLine($"- 每次含变更操作的任务结束后，系统会自动把请求、关键操作与结果追加到 `{workLogDir ?? "工作区 worklogs/"}` 下的按天文件（`YYYY/YYYY-MM-DD.md`）；你无需创建或维护该文件，也不要重复粘贴原始输出。");
+            if (workLogModelSummary)
+                sb.AppendLine("- 完成非平凡任务后，用 `ops_worklog_write` 追加 3-5 行复盘：目标 → 关键操作 → 结果/影响 → 后续；纯问答或只读调查不必写。");
         }
 
         if (memoryTools)

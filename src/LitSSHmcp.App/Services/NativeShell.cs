@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -19,6 +21,17 @@ public static class NativeShell
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int SHOpenWithDialog(IntPtr hwndParent, ref OPENASINFO poainfo);
+
+    /// <summary>在资源管理器中打开目录（不存在时自动创建）。</summary>
+    public static void OpenFolder(string path)
+    {
+        Directory.CreateDirectory(path);
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = path,
+            UseShellExecute = true
+        });
+    }
 
     /// <summary>调起系统「打开方式」对话框，让用户选择程序。返回是否成功弹出。</summary>
     public static bool OpenWith(Window? owner, string path)

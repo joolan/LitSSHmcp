@@ -152,6 +152,23 @@ public class SystemPromptBuilderTests
         // 无智能体时原样返回（基础提示必须始终保留）
         Assert.Equal(basePrompt, SystemPromptBuilder.AppendAgent(basePrompt, null, null, null));
     }
+
+    [Fact]
+    public void Build_injects_worklog_section_only_when_enabled()
+    {
+        Assert.DoesNotContain("## 工作日志", SystemPromptBuilder.Build(null, null, null));
+
+        var enabled = SystemPromptBuilder.Build(null, null, null, workLog: true,
+            workLogDir: @"C:\ws\worklogs", workLogModelSummary: true);
+        Assert.Contains("## 工作日志", enabled);
+        Assert.Contains(@"C:\ws\worklogs", enabled);
+        Assert.Contains("ops_worklog_write", enabled);
+
+        var noSummary = SystemPromptBuilder.Build(null, null, null, workLog: true,
+            workLogDir: @"C:\ws\worklogs", workLogModelSummary: false);
+        Assert.Contains("## 工作日志", noSummary);
+        Assert.DoesNotContain("ops_worklog_write", noSummary);
+    }
 }
 
 public class SkillRegistryTests : IDisposable

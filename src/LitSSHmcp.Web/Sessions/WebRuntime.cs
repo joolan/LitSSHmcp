@@ -71,7 +71,8 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
             ownerUsername: request.OwnerUsername,
             ownerRole: request.OwnerRole,
             scopeSpillByOwner: true,
-            scopeMemoryByOwner: true);
+            scopeMemoryByOwner: true,
+            enableWorkLog: false);
         if (!string.IsNullOrEmpty(request.Summary))
             runtime.Session.RestoreSummary(request.Summary);
         if (request.ToolPolicy is { Count: > 0 })

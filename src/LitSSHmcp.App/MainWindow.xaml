@@ -4,7 +4,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:views="clr-namespace:LitSSHmcp.App.Views"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
-        Title="LitSSH MCP Manager" Height="860" Width="1400" MinWidth="1100" MinHeight="720"
+        Title="LitSSH MCP Manager" Height="950" Width="1400" MinWidth="1100" MinHeight="720"
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica"
         PreviewKeyDown="OnWindowPreviewKeyDown">
     <Window.Resources>
@@ -430,6 +430,22 @@
                                 </WrapPanel>
                             </Border>
 
+                            <TextBlock Text="使用说明" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,20">
+                                <WrapPanel>
+                                    <ui:Button Content="快速上手" Icon="{ui:SymbolIcon Play24}" Tag="QuickStart"
+                                               Padding="12,5" Margin="0,0,8,8" Click="OnOpenHelp"/>
+                                    <ui:Button Content="功能说明" Icon="{ui:SymbolIcon Document24}" Tag="Features"
+                                               Padding="12,5" Margin="0,0,8,8" Click="OnOpenHelp"/>
+                                    <ui:Button Content="快捷键" Icon="{ui:SymbolIcon Code24}" Tag="Shortcuts"
+                                               Padding="12,5" Margin="0,0,8,8" Click="OnOpenHelp"/>
+                                    <ui:Button Content="安全与审批" Icon="{ui:SymbolIcon ShieldCheckmark24}" Tag="Security"
+                                               Padding="12,5" Margin="0,0,8,8" Click="OnOpenHelp"/>
+                                    <ui:Button Content="MCP 工具说明" Icon="{ui:SymbolIcon PlugConnected24}" Tag="McpTools"
+                                               Padding="12,5" Margin="0,0,8,8" Click="OnOpenHelp"/>
+                                </WrapPanel>
+                            </Border>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

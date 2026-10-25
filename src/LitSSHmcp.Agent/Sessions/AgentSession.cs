@@ -2,6 +2,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 
@@ -26,6 +27,7 @@ public sealed class AgentSession
     private readonly IAgentTool? _roundNotifier;
     private readonly Func<long, long, bool>? _budgetCheck;
     private readonly Action<long, long>? _onUsageDelta;
+    private readonly WorkLogStore? _workLog;
 
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
     private bool _planMode;
@@ -64,7 +66,8 @@ public sealed class AgentSession
         IAgentTool? roundNotifier = null,
         Func<string, CancellationToken, Task<AssetGraphContextResult?>>? graphContext = null,
         Func<long, long, bool>? budgetCheck = null,
-        Action<long, long>? onUsageDelta = null)
+        Action<long, long>? onUsageDelta = null,
+        WorkLogStore? workLog = null)
     {
         _client = client;
         _provider = provider;
@@ -79,6 +82,7 @@ public sealed class AgentSession
         _roundNotifier = roundNotifier;
         _budgetCheck = budgetCheck;
         _onUsageDelta = onUsageDelta;
+        _workLog = workLog;
         Messages.Add(new ChatMessage(ChatRole.System, systemPrompt));
         if (history is not null)
             Messages.AddRange(history);
@@ -144,12 +148,32 @@ public sealed class AgentSession
         // 并发轮会交错写 Messages/工具配对。每会话独立 runtime 后正常路径不会重入，此为硬闸。
         if (Interlocked.CompareExchange(ref _turnInProgress, 1, 0) != 0)
             throw new InvalidOperationException("该会话正在执行上一轮，不能并发发送（会话级闸门应已拦截）。");
+
+        var workLogTurn = _workLog?.BeginTurn(string.Concat(userContents.OfType<TextContent>().Select(t => t.Text)));
+        var sink = workLogTurn is null ? progress : new WorkLogProgress(progress, workLogTurn, _toolsByName);
         try
         {
-            await SendCoreAsync(userContents, progress, ct);
+            await SendCoreAsync(userContents, sink, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            if (workLogTurn is not null)
+            {
+                workLogTurn.Cancelled = true;
+                workLogTurn.Error = "本轮已取消";
+            }
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (workLogTurn is not null)
+                workLogTurn.Error = ex.Message;
+            throw;
         }
         finally
         {
+            if (_workLog is not null && workLogTurn is not null)
+                await _workLog.AppendTurnAsync(workLogTurn, CancellationToken.None);
             Volatile.Write(ref _turnInProgress, 0);
         }
     }
@@ -410,6 +434,65 @@ public sealed class AgentSession
             user, assistant, toolResults);
     }
 
+    /// <summary>把本轮 UI 事件旁路成工作日志：工具调用/结果、最终文本与结束状态（不影响原有事件消费）。</summary>
+    private sealed class WorkLogProgress : IProgress<AgentEvent>
+    {
+        private readonly IProgress<AgentEvent>? _inner;
+        private readonly WorkLogTurn _turn;
+        private readonly IReadOnlyDictionary<string, IAgentTool> _tools;
+        private readonly Dictionary<string, PendingCall> _pending = new(StringComparer.Ordinal);
+        private readonly StringBuilder _text = new();
+
+        private readonly record struct PendingCall(string Name, IDictionary<string, object?>? Arguments);
+
+        public WorkLogProgress(IProgress<AgentEvent>? inner, WorkLogTurn turn,
+            IReadOnlyDictionary<string, IAgentTool> tools)
+        {
+            _inner = inner;
+            _turn = turn;
+            _tools = tools;
+        }
+
+        public void Report(AgentEvent value)
+        {
+            switch (value.Kind)
+            {
+                case AgentEventKind.ToolCall:
+                    _text.Clear();
+                    _pending[value.CallId ?? string.Empty] = new PendingCall(
+                        value.ToolName ?? string.Empty, ParseArgs(value.ArgumentsJson));
+                    break;
+                case AgentEventKind.ToolResult:
+                    var key = value.CallId ?? string.Empty;
+                    _pending.Remove(key, out var pending);
+                    var name = value.ToolName ?? pending.Name ?? string.Empty;
+                    var meta = name.Length > 0 && _tools.TryGetValue(name, out var tool) ? tool : null;
+                    _turn.RecordToolCall(name, pending.Arguments, value.ToolSuccess,
+                        meta?.ReadOnly ?? true, meta?.Destructive ?? false, value.DurationMs, value.Text);
+                    break;
+                case AgentEventKind.AssistantText when value.Text is not null:
+                    _text.Append(value.Text);
+                    break;
+                case AgentEventKind.Done:
+                    _turn.Succeeded = true;
+                    _turn.AssistantText = _text.ToString();
+                    break;
+                case AgentEventKind.Error when value.Text is not null:
+                    _turn.Error = value.Text;
+                    break;
+            }
+            _inner?.Report(value);
+        }
+
+        private static IDictionary<string, object?>? ParseArgs(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return null;
+            try { return JsonSerializer.Deserialize<Dictionary<string, object?>>(json); }
+            catch { return null; }
+        }
+    }
+
     /// <summary>执行单个工具调用（异常转为失败结果；取消向上抛，由调用方补齐孤儿）。</summary>
     private async Task<(bool Ok, string Text, long Ms)> InvokeOneAsync(
         string name, IDictionary<string, object?>? arguments, CancellationToken ct)
@@ -633,6 +716,8 @@ public sealed class AgentSession
         if (dropped.Count == 0)
             return false;
 
+        await RecordCompactionAsync(dropped, ct);
+
         if (_config.AutoSummarize)
         {
             try { await SummarizeAsync(dropped, ct); }
@@ -730,6 +815,8 @@ public sealed class AgentSession
 
         var dropped = Messages.Skip(start).Take(cutIndex - start).ToList();
 
+        await RecordCompactionAsync(dropped, ct);
+
         if (_config.AutoSummarize && dropped.Count > 0)
         {
             try { await SummarizeAsync(dropped, ct); }
@@ -742,6 +829,33 @@ public sealed class AgentSession
         if (!string.IsNullOrWhiteSpace(_summary))
             Messages.Add(new ChatMessage(ChatRole.System, SummaryPromptPrefix + _summary));
         Messages.AddRange(keptMessages);
+    }
+
+    /// <summary>压缩前把「被丢弃且含变更操作」的旧轮次记入工作日志（无工作日志/无变更时为空操作）。</summary>
+    private async Task RecordCompactionAsync(IReadOnlyList<ChatMessage> dropped, CancellationToken ct)
+    {
+        if (_workLog is null || dropped.Count == 0)
+            return;
+
+        var mutatingTools = new List<string>();
+        foreach (var message in dropped)
+            foreach (var call in message.Contents.OfType<FunctionCallContent>())
+                if (!string.Equals(call.Name, WorkLogTools.WriteToolName, StringComparison.Ordinal) &&
+                    _toolsByName.TryGetValue(call.Name, out var tool) && (!tool.ReadOnly || tool.Destructive))
+                    mutatingTools.Add(call.Name);
+
+        if (mutatingTools.Count == 0)
+            return;
+
+        var userTexts = dropped
+            .Where(m => m.Role == ChatRole.User)
+            .Select(m => string.Concat(m.Contents.OfType<TextContent>().Select(t => t.Text)))
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .ToList();
+        var turns = dropped.Count(m => m.Role == ChatRole.User);
+
+        await _workLog.AppendCompactionAsync(LocalAudit.AmbientSessionId, turns, dropped.Count, userTexts,
+            mutatingTools, ct);
     }
 
     private bool WithinLimits(List<ChatMessage> messages, int countLimit, int tokenLimit)

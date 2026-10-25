@@ -738,4 +738,40 @@ public class AgentSessionTests
         await second.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(2, session.Messages.Count(m => m.Role == ChatRole.User));   // 被拒的 "b" 未入历史
     }
+
+    [Fact]
+    public async Task Worklog_records_successful_mutating_tool_turn()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-worklog-session-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = WorkLogStore.TryCreate(
+                new AgentWorkLogConfig { Enabled = true, Dir = dir }, dir, null, scopeByOwner: false)!;
+            var call = new FunctionCallContent("c1", "ssh_execute_command",
+                new Dictionary<string, object?> { ["serverId"] = "web01", ["command"] = "uptime" });
+            var client = new FakeChatClient(
+                new ChatResponse(new List<ChatMessage>
+                {
+                    new(ChatRole.Assistant, new AIContent[] { call })
+                }),
+                new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "完成") }));
+
+            var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+                new[] { new FakeTool("ssh_execute_command", "ok") }, "sys", new AgentConfig(),
+                workLog: store);
+
+            await session.SendAsync("执行 uptime", null);
+
+            var path = store.GetDailyPath(DateTime.Now);
+            Assert.True(File.Exists(path));
+            var text = await File.ReadAllTextAsync(path);
+            Assert.Contains("ssh_execute_command", text);
+            Assert.Contains("ssh:web01", text);
+            Assert.Contains("uptime", text);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
 }

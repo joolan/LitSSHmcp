@@ -240,6 +240,40 @@ public class MainWindowXamlTests
     }
 
     [Fact]
+    public void Help_window_parses_xaml()
+    {
+        var ex = RunSta(() => _ = new HelpWindow("QuickStart"));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void Help_section_ignores_heading_like_code_comments()
+    {
+        var method = typeof(HelpWindow).GetMethod(
+            "ExtractSection", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        const string markdown = """
+# Web 端
+
+```bash
+# 默认访问 http://localhost:5000
+```
+
+## 账号
+
+内容
+
+# 快捷键
+""";
+        var section = (string)method!.Invoke(null, new object[] { markdown, "Web 端" })!;
+
+        Assert.Contains("## 账号", section);
+        Assert.Contains("内容", section);
+        Assert.DoesNotContain("# 快捷键", section);
+    }
+
+    [Fact]
     public void Temporary_ssh_window_parses_xaml()
     {
         var ex = RunSta(() =>

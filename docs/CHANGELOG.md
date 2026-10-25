@@ -6,6 +6,9 @@
 
 ### 新增
 
+- **应用内使用说明**：新增 `HelpWindow` + `docs/HELP.md`（Markdig 渲染），首页提供快速上手 / 功能说明 / 快捷键 / 安全与审批 / MCP 工具说明入口；原「设置 → MCP 工具说明」Tab 迁入说明窗口。
+- **桌面端 AI 工作日志**：含变更操作的任务结束后自动追加到工作区 `worklogs/年/年-月-日.md`，按天归档、永久保留；默认记录失败 / 被拒操作，纯只读调查可选，写入前统一脱敏；提供「AI 助手设置 → 工作日志」开关、目录与打开目录入口；启用后 AI 可用 `ops_worklog_write` 追加 3-5 行复盘。Web 端暂不启用。
+- **AI 工作目录入口拆分**：侧栏「打开工作目录」固定打开共享工作区根目录（不随选中会话变化）；会话右键「打开会话工作目录」按右键命中的会话打开其独立目录（未分配目录时提示）。
 - **历史与会话列表按用户隔离（P0-2）**：Web 强制模式下 `ssh_get_command_history` / `datasource_get_sql_history` / `mcp_list_sessions` 默认只返回当前登录用户的数据；新增 `allUsers` 参数，仅管理员可显式查看全局。Web 宿主新增 `LITSSH_AUTHZ_ROLE` 角色注入，`Sessions` 表新增 `OwnerUserId`（旧库自动迁移），会话记录按宿主注入的归因用户落库。普通成员伪造 `allUsers=true` 或传入他人 `sessionId` 均无法越权；桌面未启用强制模式时保持原有全量行为。
 - **全局清单与拓扑查询按授权收口（P0-B）**：Web 强制模式下 `ssh_list_servers` / `datasource_list` 只返回命中 `read` 白名单的目标；数据源列表同时隐藏未授权隧道服务器与 `accessibleFromSshServers` 关联引用。新增 `ToolSecurityDescriptor.SelfScopedGlobal` 显式标记“工具自身按用户裁剪”的全局清单；其余无目标全局查询（`topology_get_overview` / `topology_get_dependencies` / `topology_search` / `topology_neighbors` / `topology_path` / `topology_impact` / `topology_explain`）在强制模式下仅管理员可用，避免普通成员读取无法按目标裁剪的全量资产图。管理员与桌面未强制模式保持原行为。
 - **工具安全目录与 read/write/exec 授权级别**：新增 `ToolSecurityCatalog` / `ToolSecurityDescriptor`，为全部 61 个 MCP 工具统一声明目标形态、目标参数、最低访问级别与写锁需求；`McpAuthorizationFilter` 改为按目录解析并 fail-closed，覆盖 `log_*` / `docker_*` / `java_*` / `service_*` / `topology_*` / `app_health_snapshot` 等此前未校验的目标工具；`ssh_execute_command` / `ssh_execute_sudo` / `docker_exec` / `ssh_snapshot_refresh` 要求 exec，`app_health_snapshot` 扩展到应用关联的服务器/数据源，`topology_discover` 要求全部涉及服务器授权。新增 `write` 级别（read &lt; write &lt; exec），同一用户可用多行规则分别授权不同目标；SQL/Redis 执行按实际语句动态要求 read/write，SQL `Sensitive` 不再当只读。桌面授权矩阵同步 0=read / 1=write / 2=exec，工具目录一致性测试强制注册工具与安全目录同名同数。

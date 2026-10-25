@@ -53,6 +53,7 @@ public sealed class AgentRuntime : IAsyncDisposable
     private readonly Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? _recall;
     private readonly Func<string, CancellationToken, Task<AssetGraphContextResult?>>? _graphContext;
     private readonly SpillStore? _spill;
+    private readonly WorkLogStore? _workLog;
     private List<string> _activeSkillIds = new();
     private AgentPromptContext? _activeAgent;
     private bool _planMode;
@@ -79,6 +80,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? recall,
         Func<string, CancellationToken, Task<AssetGraphContextResult?>>? graphContext,
         SpillStore? spill,
+        WorkLogStore? workLog,
         IEnumerable<ChatMessage>? history)
     {
         Hosts = hosts;
@@ -99,6 +101,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         _recall = recall;
         _graphContext = graphContext;
         _spill = spill;
+        _workLog = workLog;
         Session = BuildSession(provider, history);
     }
 
@@ -196,7 +199,7 @@ public sealed class AgentRuntime : IAsyncDisposable
             tools.Add(PlanTools.Create(_onPlan));
         session = new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill,
             roundNotifier: _roundNotifier, graphContext: _graphContext, budgetCheck: budgetCheck,
-            onUsageDelta: budget is null ? null : budget.Add);
+            onUsageDelta: budget is null ? null : budget.Add, workLog: _workLog);
         session.SetToolPolicy(_toolPolicy);
         session.SetPlanMode(_planMode);
         return session;
@@ -228,7 +231,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         string? ownerUsername = null,
         string? ownerRole = null,
         bool scopeSpillByOwner = false,
-        bool scopeMemoryByOwner = false)
+        bool scopeMemoryByOwner = false,
+        bool enableWorkLog = true)
     {
         // D8 启用层：会话级连接器子集只在全局启用集合内收窄（null=继承全局默认集合；全局停用恒出局）
         var servers = McpSubsetPolicy.EffectiveServers(AgentMcpServerConfig.Normalize(config.McpServers), enabledMcpIds);
@@ -366,6 +370,14 @@ public sealed class AgentRuntime : IAsyncDisposable
         var sharedWritable = ownerRole is null || isAdmin;
         var workspaceTools = WorkspaceTools.Create(workspaceRoot, sessionRoot is null ? null : sharedRoot,
             sharedWritable).ToList();
+        // 桌面端工作日志恒落在共享工作区（不随会话目录删除/清扫），Web 端由宿主显式关闭。
+        var workLog = enableWorkLog
+            ? WorkLogStore.TryCreate(config.WorkLog ?? new AgentWorkLogConfig(), sharedRoot, ownerUserId,
+                scopeByOwner: false)
+            : null;
+        IReadOnlyList<IAgentTool> workLogTools = workLog is { ModelSummary: true } && !config.ReadOnly
+            ? WorkLogTools.Create(workLog)
+            : Array.Empty<IAgentTool>();
         var skillsDir = SkillRegistry.ResolveDir(config.SkillsDir, bundledSkillsDir);
         var skillTools = skillsDir is null ? new List<IAgentTool>() : SkillTools.Create(skillsDir).ToList();
 
@@ -404,11 +416,14 @@ public sealed class AgentRuntime : IAsyncDisposable
             scriptTools: scriptTools.Count > 0,
             assetGraph: availableGroups.Contains(ToolGroups.Topology) ? assetGraph : null,
             sessionWorkspaceDir: sessionRoot,
-            sharedWorkspaceDir: sessionRoot is null ? null : sharedRoot);
+            sharedWorkspaceDir: sessionRoot is null ? null : sharedRoot,
+            workLog: workLog is not null,
+            workLogDir: workLog?.RootDir,
+            workLogModelSummary: workLog is { ModelSummary: true } && !config.ReadOnly);
 
         // 主代理基础工具 = MCP + 工作区文档 + 技能参考 + 落盘读取 + 记忆/脚本登记 + 宿主注入的本地工具（不含子代理/计划，它们依赖 client/回调，按会话构建）
         var baseTools = mcpTools.Concat(workspaceTools).Concat(skillTools).Concat(spillTools)
-            .Concat(memoryTools).Concat(scriptTools)
+            .Concat(memoryTools).Concat(scriptTools).Concat(workLogTools)
             .Concat(extraTools ?? Enumerable.Empty<IAgentTool>()).ToList();
         // 子代理只给只读类工具(MCP/技能/落盘)，不给工作区写工具与计划, 避免副作用与递归
         var subTools = mcpTools.Concat(skillTools).Concat(spillTools).ToList();
@@ -432,7 +447,7 @@ public sealed class AgentRuntime : IAsyncDisposable
                 hostStatuses.Add(new McpHostStatus(s.Id, s.Name, false, info.Error is null, info.ToolCount, info.Error));
         }
 
-        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, graphContext, spill, history);
+        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, graphContext, spill, workLog, history);
         runtime.WorkspaceRoot = workspaceRoot;
         if (activeSkillIds is { Count: > 0 })
             runtime.SetActiveSkills(activeSkillIds);

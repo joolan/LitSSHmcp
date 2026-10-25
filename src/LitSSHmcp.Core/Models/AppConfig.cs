@@ -184,6 +184,9 @@ public class AgentConfig
     /// <summary>长期记忆/RAG（远程 Embeddings 向量化 + 本地 SQLite 向量库存储/检索）配置。</summary>
     public AgentMemoryConfig Memory { get; set; } = new();
 
+    /// <summary>桌面端工作日志：含变更操作的任务结束后自动追加到工作区 worklogs/日期文件（Web 端暂不启用）。</summary>
+    public AgentWorkLogConfig WorkLog { get; set; } = new();
+
     /// <summary>运行预算（单轮墙钟上限 / 会话成本上限；防失控烧钱，默认不限）。</summary>
     public AgentBudgetConfig Budget { get; set; } = new();
 
@@ -436,6 +439,27 @@ public class AgentMemoryConfig
 
     /// <summary>召回相似度阈值（余弦, 0~1; 越高越严格）。默认 0.15。</summary>
     public double RecallThreshold { get; set; } = 0.15;
+}
+
+/// <summary>
+/// 桌面端工作日志：按天追加、永久保留（不自动删除）的运维流水，供交接/复盘/审计引用。
+/// 与「滚动摘要」（仅上下文续接）和「ops_memory_*」（可复用经验）分工不同。
+/// </summary>
+public class AgentWorkLogConfig
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>日志根目录；空=工作区目录下的 worklogs/。目录由宿主控制，模型不能改。</summary>
+    public string Dir { get; set; } = string.Empty;
+
+    /// <summary>记录失败/被拒绝的操作（便于复盘踩坑）；关闭时只记成功收尾的任务。</summary>
+    public bool IncludeFailures { get; set; } = true;
+
+    /// <summary>记录纯只读调查（默认关闭；开启后只读任务也会生成「调查」条目）。</summary>
+    public bool IncludeReadOnly { get; set; }
+
+    /// <summary>向模型暴露 ops_worklog_write，允许在任务结束后追加 3-5 行复盘。</summary>
+    public bool ModelSummary { get; set; } = true;
 }
 
 /// <summary>

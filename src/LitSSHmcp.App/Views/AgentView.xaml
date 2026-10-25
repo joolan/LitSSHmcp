@@ -55,10 +55,11 @@
                     </StackPanel>
                 </Button>
                 <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
-                        Margin="0,0,0,14" Click="OnOpenWorkspace">
+                        Margin="0,0,0,14" Click="OnOpenSharedWorkspace"
+                        ToolTip="打开共享工作区根目录（不随当前会话切换；会话工作目录请在会话上右键打开）">
                     <StackPanel Orientation="Horizontal">
                         <ui:SymbolIcon Symbol="Folder24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,10,0"/>
-                        <TextBlock Text="打开工作区" VerticalAlignment="Center"/>
+                        <TextBlock Text="打开工作目录" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
 
@@ -244,7 +245,7 @@
                             <MenuItem Header="归档" Click="OnArchiveSession"/>
                             <MenuItem Header="删除" Click="OnDeleteSession"/>
                             <Separator/>
-                            <MenuItem Header="打开工作区文件夹" Click="OnOpenWorkspace"/>
+                            <MenuItem Header="打开会话工作目录" Click="OnOpenSessionWorkspace"/>
                             <Separator/>
                             <MenuItem Header="清空显示" Click="OnClearDisplay"/>
                             <MenuItem Header="导出 Markdown" Click="OnExport"/>

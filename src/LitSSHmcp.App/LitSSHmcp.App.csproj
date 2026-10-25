@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\LitSSHmcp.Core\LitSSHmcp.Core.csproj" />
@@ -21,6 +21,7 @@
        ② docs/TOOLS.md ③ 本文件嵌入内容(无需改代码, 刷新文档即可) — 详见 docs/TOOLS.md 顶部"同步约定"。 -->
   <ItemGroup>
     <EmbeddedResource Include="..\..\docs\TOOLS.md" Link="docs\TOOLS.md" LogicalName="LitSSHmcp.App.docs.TOOLS.md" />
+    <EmbeddedResource Include="..\..\docs\HELP.md" Link="docs\HELP.md" LogicalName="LitSSHmcp.App.docs.HELP.md" />
   </ItemGroup>
   <!-- 内嵌 VNC（noVNC，MPL-2.0）静态资源：随 App 输出到 novnc/，由 VncWebHost 在本机回环上提供 -->
   <ItemGroup>
@@ -29,6 +30,7 @@
 
   <ItemGroup>
     <PackageReference Include="AvalonEdit" Version="6.3.0.90" />
+    <PackageReference Include="Markdig" Version="0.37.0" />
     <PackageReference Include="PdfPig" Version="0.1.16" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />

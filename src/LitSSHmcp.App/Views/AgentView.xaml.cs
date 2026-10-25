@@ -803,21 +803,44 @@ public partial class AgentView : UserControl
         _ = _viewModel.ClearSessionMessagesAsync(_contextSession ?? _viewModel.SelectedSession);
     }
 
-    private void OnOpenWorkspace(object sender, RoutedEventArgs e)
+    private void OnOpenSharedWorkspace(object sender, RoutedEventArgs e)
     {
         try
         {
-            var dir = _viewModel.WorkspaceDir;
-            Directory.CreateDirectory(dir);
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = dir,
-                UseShellExecute = true
-            });
+            NativeShell.OpenFolder(_viewModel.SharedWorkspaceRoot);
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show("打开工作区文件夹失败: " + ex.Message, "AI 运维助手");
+            System.Windows.MessageBox.Show("打开工作目录失败: " + ex.Message, "AI 运维助手");
+        }
+    }
+
+    private void OnOpenSessionWorkspace(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("打开会话工作目录", OpenSessionWorkspaceAsync);
+
+    private async Task OpenSessionWorkspaceAsync()
+    {
+        var session = _contextSession ?? _viewModel.SelectedSession;
+        if (session is null)
+            return;
+
+        var dir = await _viewModel.GetSessionWorkspaceDirAsync(session);
+        if (string.IsNullOrWhiteSpace(dir))
+        {
+            (_services?.Dialogs ?? new UserDialogService()).Info(
+                "该会话尚未分配独立工作目录（发送首条消息后自动创建）。共享工作区可用左侧「打开工作目录」。",
+                "打开会话工作目录");
+            return;
+        }
+
+        try
+        {
+            NativeShell.OpenFolder(dir);
+        }
+        catch (Exception ex)
+        {
+            (_services?.Dialogs ?? new UserDialogService()).Error(
+                "打开会话工作目录失败: " + ex.Message, "打开会话工作目录");
         }
     }
 

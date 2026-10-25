@@ -1,5 +1,6 @@
-# maybe-todo: 本地研究/待办草稿文件夹，禁止上传
+# maybe-todo / maybe-to: 本地研究/待办/设计草稿文件夹，禁止上传
 maybe-todo/
+maybe-to/
 
 # Build results
 bin/

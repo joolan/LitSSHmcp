@@ -165,9 +165,13 @@
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppPressedBrush}"/>
                         </Trigger>
-                        <Trigger Property="IsKeyboardFocused" Value="True">
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsKeyboardFocused, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                <Condition Binding="{Binding Path=(controls:KeyboardFocusRing.ShowRing), RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                            </MultiDataTrigger.Conditions>
                             <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
-                        </Trigger>
+                        </MultiDataTrigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
                         </Trigger>
@@ -206,10 +210,14 @@
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppSelectionBrush}"/>
                             <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
                         </Trigger>
-                        <Trigger Property="IsKeyboardFocused" Value="True">
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsKeyboardFocused, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                <Condition Binding="{Binding Path=(controls:KeyboardFocusRing.ShowRing), RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                            </MultiDataTrigger.Conditions>
                             <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
                             <Setter TargetName="Bd" Property="BorderThickness" Value="1"/>
-                        </Trigger>
+                        </MultiDataTrigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
                         </Trigger>
@@ -329,9 +337,13 @@
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppSelectionBrush}"/>
                         </Trigger>
-                        <Trigger Property="IsKeyboardFocused" Value="True">
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsKeyboardFocused, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                <Condition Binding="{Binding Path=(controls:KeyboardFocusRing.ShowRing), RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                            </MultiDataTrigger.Conditions>
                             <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
-                        </Trigger>
+                        </MultiDataTrigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
                         </Trigger>
@@ -366,9 +378,13 @@
                             <Setter Property="FontWeight" Value="SemiBold"/>
                             <Setter TargetName="Ind" Property="Background" Value="{DynamicResource AppAccentBrush}"/>
                         </Trigger>
-                        <Trigger Property="IsKeyboardFocused" Value="True">
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsKeyboardFocused, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                <Condition Binding="{Binding Path=(controls:KeyboardFocusRing.ShowRing), RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                            </MultiDataTrigger.Conditions>
                             <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
-                        </Trigger>
+                        </MultiDataTrigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
                         </Trigger>

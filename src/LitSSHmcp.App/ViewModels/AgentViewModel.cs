@@ -105,6 +105,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         Turns.CollectionChanged += (_, e) =>
         {
+            if (!_restoringCachedTurns)
+                InvalidateTranscriptCache(_sessionId);
             if (e.Action == NotifyCollectionChangedAction.Reset || Turns.Count == 0)
                 _visibleFrom = 0;
             OnPropertyChanged(nameof(EmptyStateVisibility));
@@ -389,7 +391,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICollectionView TurnsView { get; }
 
     private int _visibleFrom;
-    private const int TranscriptPageSize = 20;
+    private const int TranscriptPageSize = 10;
 
     /// <summary>是否还有更早的记录可加载。</summary>
     public bool HasMoreHistory => _visibleFrom > 0;
@@ -962,14 +964,20 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         ? $"归因：{state.Username}"
         : "归因：未登录（local）";
 
+    public string DesktopLoginName => _desktopLogin?.Current?.Username ?? "本地模式";
+
+    public string DesktopLoginStatus => IsDesktopLoggedIn ? "已登录" : "未登录";
+
     /// <summary>登录按钮文案（未登录=登录…，已登录=注销）。</summary>
-    public string DesktopLoginActionText => IsDesktopLoggedIn ? "注销" : "登录…";
+    public string DesktopLoginActionText => IsDesktopLoggedIn ? "注销" : "登录";
 
     /// <summary>登录态变化后刷新绑定（由窗口在登录/注销/启动恢复后调用）。</summary>
     public void NotifyDesktopLoginChanged()
     {
         OnPropertyChanged(nameof(IsDesktopLoggedIn));
         OnPropertyChanged(nameof(DesktopLoginLabel));
+        OnPropertyChanged(nameof(DesktopLoginName));
+        OnPropertyChanged(nameof(DesktopLoginStatus));
         OnPropertyChanged(nameof(DesktopLoginActionText));
     }
 
@@ -1129,6 +1137,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 _suppressSelection = true;
                 SelectedSession = target;
                 _suppressSelection = false;
+                SyncSidebarSelection();
                 await LoadSessionAsync(target.Id);
             }
             else
@@ -1314,11 +1323,15 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 return;
             }
 
+            if (await TryRestoreCachedSessionAsync(id, session))
+                return;
+
             var (turns, history, hasUser) = await BuildTranscriptAsync(id);
             foreach (var turn in turns)
                 Turns.Add(turn);
             ctx.LiveTurns = Turns.ToList();   // 权威镜像与可见集合对齐（运行期间以此为准）
             _sessionTitled = hasUser;
+            CacheTranscript(id, session?.UpdatedAt, turns, hasUser);
             ResetTranscriptWindow();
 
             RestorePlan(await _store.GetSessionPlanAsync(id));
@@ -1410,6 +1423,9 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 }
             }
         }
+
+        CollapseHistoricalTurns(turns); FinalizeHistoricalTurns(turns);
+
 
         var recentTurns = _agentConfig.ColdStartRecentTurns;
         var from = recentTurns > 0 ? Math.Max(0, turns.Count - recentTurns) : 0;
@@ -1729,15 +1745,14 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         catch { /* 保存失败不影响主流程 */ }
     }
 
-    private async Task RestorePlanModeAsync(long sessionId)
+    private Task RestorePlanModeAsync(long sessionId)
     {
-        var planMode = false;
-        try { planMode = await _store.GetSessionPlanModeAsync(sessionId); }
-        catch { planMode = false; }
-        _planMode = planMode;
+        // 桌面端已隐藏计划模式入口，统一以执行模式打开；后端与 Web 端能力保留。
+        _planMode = false;
         OnPropertyChanged(nameof(IsPlanMode));
         OnPropertyChanged(nameof(PlanModeText));
         OnPropertyChanged(nameof(PlanModeIndex));
+        return Task.CompletedTask;
     }
 
     /// <summary>状态栏里的外部 MCP 连接失败提示（为空=全部正常）。</summary>

@@ -62,17 +62,79 @@
                     </StackPanel>
                 </Button>
 
-                <Border DockPanel.Dock="Bottom" Margin="4,8,4,0" Padding="8,6" CornerRadius="6"
-                        Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
-                        BorderThickness="1"
-                        ToolTip="桌面登录仅用于归因：新会话与审计记为登录用户（未登录=local）；桌面不做权限限制（评估报告 D1）。登录态跨重启保持，账号与 Web 助手共用 web.db。">
-                    <StackPanel>
-                        <TextBlock Text="{Binding DesktopLoginLabel}" FontSize="{DynamicResource AppFontSizeMicro}" TextTrimming="CharacterEllipsis"/>
-                        <Button Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
-                                Margin="0,4,0,0" Padding="6,3" Content="{Binding DesktopLoginActionText}"
-                                Click="OnDesktopLogin"/>
-                    </StackPanel>
-                </Border>
+                <Button DockPanel.Dock="Bottom" Style="{DynamicResource ActionRowButton}"
+                        Margin="4,8,4,0" Padding="8,7" HorizontalContentAlignment="Stretch"
+                        Background="{DynamicResource AppSurfaceAltBrush}"
+                        ToolTip="点击登录/注销审计归因用户。登录仅用于归因：新会话与审计记为登录用户（未登录=local）。桌面不做权限限制，登录态跨重启保持，账号与 Web 助手共用 web.db。"
+                        AutomationProperties.Name="桌面登录状态，点击登录或注销"
+                        Click="OnDesktopLogin">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Width="24" Height="24" CornerRadius="12" VerticalAlignment="Center">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDesktopLoggedIn}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource AppSuccessSubtleBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <ui:SymbolIcon Symbol="Person24" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <ui:SymbolIcon.Style>
+                                    <Style TargetType="{x:Type ui:SymbolIcon}">
+                                        <Setter Property="Foreground" Value="{DynamicResource AppTextTertiaryBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsDesktopLoggedIn}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource AppSuccessBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:SymbolIcon.Style>
+                            </ui:SymbolIcon>
+                        </Border>
+
+                        <StackPanel Grid.Column="1" Margin="8,0,8,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding DesktopLoginName}" FontWeight="SemiBold"
+                                       FontSize="{DynamicResource AppFontSizeMicro}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding DesktopLoginStatus}" FontSize="10" Margin="0,1,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsDesktopLoggedIn}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource AppSuccessBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding DesktopLoginActionText}" FontSize="10" Margin="0,0,2,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource AppTextTertiaryBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsDesktopLoggedIn}" Value="False">
+                                                <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <ui:SymbolIcon Symbol="ChevronRight24" FontSize="10" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource AppTextTertiaryBrush}"/>
+                        </StackPanel>
+                    </Grid>
+                </Button>
 
                 <TextBlock DockPanel.Dock="Top" Text="{Binding Sessions.Count, StringFormat='任务/会话 ({0})'}"
                            FontWeight="SemiBold" Margin="4,2,0,6"/>
@@ -622,33 +684,20 @@
                                         <MenuItem Header="添加文件…" Click="OnAddFile"/>
                                         <MenuItem Header="选择技能…" Click="OnSelectSkills"/>
                                         <MenuItem Header="工具审批策略…" Click="OnToolPolicy"/>
-                                        <MenuItem Header="用量 / 成本…" Click="OnShowUsage"/>
-                                        <MenuItem Header="清除全部附件" Click="OnClearAttachments"/>
                                         <Separator/>
                                         <MenuItem Header="清空显示" Click="OnClearDisplay"/>
                                         <MenuItem Header="导出 Markdown" Click="OnExport"/>
-                                        <Separator/>
-                                        <MenuItem Header="AI 助手设置" Click="OnOpenSettings"/>
                                     </ContextMenu>
                                 </ui:Button.ContextMenu>
                             </ui:Button>
 
-                            <ComboBox Grid.Column="1" Width="124" Height="34" Margin="8,0,0,0" HorizontalAlignment="Left"
-                                      VerticalContentAlignment="Center" Padding="10,4"
-                                      SelectedIndex="{Binding PlanModeIndex, Mode=TwoWay}"
-                                      ToolTip="执行模式=可正常执行写操作；计划模式=只做只读调研、可列计划，不会擅自执行（切回执行模式后由你发指令）">
-                                <ComboBoxItem Content="执行模式"/>
-                                <ComboBoxItem Content="计划模式"/>
-                            </ComboBox>
-
-                            <!-- 连接器：查看已配置的 MCP 服务器并快速启用/停用 -->
-                            <ui:Button Grid.Column="2" Padding="10,4" Height="34" Margin="8,0,0,0" HorizontalAlignment="Left"
+                            <!-- 连接器：图标入口，查看已配置的 MCP 服务器并快速启用/停用 -->
+                            <ui:Button Grid.Column="2" Appearance="Transparent" BorderThickness="0"
+                                       Width="30" Height="30" Padding="0" Margin="8,0,0,0" HorizontalAlignment="Left"
                                        VerticalContentAlignment="Center" Click="OnConnectorsClick"
-                                       ToolTip="连接器：查看已配置的 MCP 服务器（内置 LitSSH MCP + 外部 MCP）并启用/停用；改完立即重建连接生效">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="PlugConnected24" FontSize="15" Margin="0,0,6,0"/>
-                                    <TextBlock Text="连接器" VerticalAlignment="Center"/>
-                                </StackPanel>
+                                       ToolTip="连接器：查看已配置的 MCP 服务器（内置 LitSSH MCP + 外部 MCP）并启用/停用；改完立即重建连接生效"
+                                       AutomationProperties.Name="MCP 连接器">
+                                <ui:SymbolIcon Symbol="PlugConnected24" FontSize="15"/>
                             </ui:Button>
 
                             <!-- 上下文占用：环形进度，悬浮看详情 -->

@@ -41,9 +41,13 @@
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AppPressedBrush}"/>
                             </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsKeyboardFocused, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                    <Condition Binding="{Binding Path=(controls:KeyboardFocusRing.ShowRing), RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                </MultiDataTrigger.Conditions>
                                 <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
-                            </Trigger>
+                            </MultiDataTrigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
                             </Trigger>
@@ -225,7 +229,7 @@
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Home}">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel>
-                            <controls:PageHeader Icon="Home24" Title="主页" Subtitle="AI 快捷提问与资产概览"/>
+                            <controls:PageHeader Icon="Home24" Title="主页"/>
 
                             <TextBlock Text="AI 快捷提问" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
@@ -291,7 +295,7 @@
                                 </TextBlock.Style>
                             </TextBlock>
 
-                            <TextBlock Text="资产概览" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
+                            <TextBlock Text="资产概览" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,16,0,8"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                             <WrapPanel Margin="0,0,0,16">
                                 <Border Style="{DynamicResource CardBorderStyle}" Width="250" Margin="0,0,12,12"

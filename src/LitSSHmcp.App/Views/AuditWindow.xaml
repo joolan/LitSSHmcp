@@ -197,34 +197,28 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,8">
-            <WrapPanel>
+            <WrapPanel Margin="0,0,0,8">
                 <TextBlock Text="搜索:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <ui:TextBox x:Name="KeywordBox" Width="260" Margin="0,0,12,6"
+                <ui:TextBox x:Name="KeywordBox" Width="240" Margin="0,0,12,0"
                             PlaceholderText="命令 / SQL / 服务器 / 会话 / 用户…"
                             KeyDown="OnFilterKeyDown"/>
                 <TextBlock Text="服务器/数据源 ID:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <ui:TextBox x:Name="FilterBox" Width="180" Margin="0,0,12,6"
+                <ui:TextBox x:Name="FilterBox" Width="170" Margin="0,0,12,0"
                             ToolTip="按服务器 ID 或数据源 ID 过滤"
                             KeyDown="OnFilterKeyDown"/>
                 <TextBlock Text="会话 ID:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <ui:TextBox x:Name="SessionBox" Width="220" Margin="0,0,12,6"
+                <ui:TextBox x:Name="SessionBox" Width="200" Margin="0,0,12,0"
                             ToolTip="只显示某个 MCP 会话产生的记录；当前会话 ID 见 mcp_self_check 输出"
                             KeyDown="OnFilterKeyDown"/>
                 <TextBlock Text="条数:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <ui:TextBox x:Name="LimitBox" Width="64" Text="200" Margin="0,0,0,6"
+                <ui:TextBox x:Name="LimitBox" Width="64" Text="200" Margin="0,0,12,0"
                             KeyDown="OnFilterKeyDown"/>
-            </WrapPanel>
-
-            <WrapPanel Margin="0,6,0,0">
                 <TextBlock Text="类型:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <ComboBox ItemsSource="{Binding CategoryOptions}" SelectedIndex="{Binding CategoryIndex}" Width="132" Margin="0,0,12,6"
-                          ToolTip="按事件类型过滤: 全部 / 执行 / 审批拦截 / 只读探测 / 列表元数据 / 文件传输 / 本地工具"/>
-                <CheckBox Content="含归档" IsChecked="{Binding IncludeHistory}" VerticalAlignment="Center" Margin="0,0,12,6"
+                <ComboBox ItemsSource="{Binding CategoryOptions}" SelectedIndex="{Binding CategoryIndex}" Width="132" Margin="0,0,12,0"
+                          ToolTip="按事件类型过滤：全部 / 执行 / 审批拦截 / 只读探测 / 列表元数据 / 文件传输 / 本地工具"/>
+                <CheckBox Content="含归档" IsChecked="{Binding IncludeHistory}" VerticalAlignment="Center"
                           ToolTip="包含超过保留天数、已移动到历史归档表的记录（永久保留）"/>
             </WrapPanel>
-
-            <TextBlock Text="{Binding SummaryText}" Margin="0,8,0,0" FontWeight="SemiBold"
-                       Foreground="{DynamicResource AppTextPrimaryBrush}"/>
         </StackPanel>
 
         <Grid Grid.Row="1">

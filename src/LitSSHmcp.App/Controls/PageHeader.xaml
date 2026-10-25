@@ -20,7 +20,20 @@
                                Foreground="{DynamicResource AppAccentBrush}"/>
                 <TextBlock Text="{Binding Title, ElementName=Root}" Style="{DynamicResource PageTitleStyle}"/>
             </DockPanel>
-            <TextBlock Text="{Binding Subtitle, ElementName=Root}" Style="{DynamicResource PageSubtitleStyle}"/>
+            <TextBlock Text="{Binding Subtitle, ElementName=Root}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+                        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeCaption}"/>
+                        <Setter Property="Margin" Value="0,4,0,0"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Subtitle, ElementName=Root}" Value="">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
         </StackPanel>
 
         <ContentPresenter Grid.Row="0" Grid.Column="1" Content="{Binding Actions, ElementName=Root}"

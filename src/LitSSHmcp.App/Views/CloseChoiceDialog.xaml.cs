@@ -28,5 +28,4 @@ public partial class CloseChoiceDialog : FluentWindow
 
     private void OnExit(object sender, RoutedEventArgs e) { _choice = CloseChoice.Exit; Close(); }
 
-    private void OnCancel(object sender, RoutedEventArgs e) { _choice = CloseChoice.Cancel; Close(); }
 }

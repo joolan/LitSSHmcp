@@ -15,7 +15,6 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <ui:TitleBar Grid.Row="0" Title="端口转发（本地 / 远程 / 动态 SOCKS）"/>
 
@@ -174,8 +173,5 @@
             </StackPanel>
         </Grid>
 
-        <DockPanel Grid.Row="3" Style="{DynamicResource DialogFooterPanelStyle}">
-            <ui:Button DockPanel.Dock="Right" Content="关闭" MinWidth="88" IsCancel="True" Click="OnClose"/>
-        </DockPanel>
     </Grid>
 </ui:FluentWindow>

@@ -353,6 +353,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             if (_currentPage == value) return;
             _currentPage = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(ShowAgentBadge));
         }
     }
 
@@ -1106,36 +1107,6 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         CurrentPage = MainPage.RemoteDesktops;
     }
 
-    // AI 运维助手(内嵌 MCP 客户端 + OpenAI 兼容大模型; 需先在「AI 助手设置」配置模型)
-    // 非模态独立窗口: 可与主界面同时操作
-    private AgentWindow? _agentWindow;
-
-    private AgentWindow EnsureAgentWindow()
-    {
-        if (_agentWindow is { IsLoaded: true })
-        {
-            _agentWindow.Activate();
-            return _agentWindow;
-        }
-
-        _agentWindow = _windows.CreateAgentWindow(
-            _configService,
-            _services.CreateAgentContextStore(),
-            _services.BundledSkillsDir,
-            ResolveSessionTerminal,
-            AiTerminals);
-        _agentWindow.ViewModel.SessionRemoved += CloseSessionTerminal;
-        _agentWindow.Closed += (_, _) =>
-        {
-            if (_agentWindow is not null)
-                _agentWindow.ViewModel.SessionRemoved -= CloseSessionTerminal;
-            _agentWindow = null;
-        };
-        _agentWindow.Show();
-        return _agentWindow;
-    }
-
-    /// <summary>AI 会话被删除/归档时，关闭其对应的本机终端标签（避免孤儿终端）。</summary>
     private void CloseSessionTerminal(long sessionId)
     {
         void Close()
@@ -1161,7 +1132,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             Close();
     }
 
-    private void OpenAgent() => EnsureAgentWindow();
+    private void OpenAgent() => NavigateAgent();
 
     // 主页「AI 快捷提问」：把文字与附件填入 AI 运维助手的输入区
     private void AskAgent() => SendHomeAsk();
@@ -1178,8 +1149,11 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             return;
         }
 
-        var window = EnsureAgentWindow();
-        var vm = window.ViewModel;
+        var view = EnsureAgentPage();
+        CurrentPage = MainPage.Agent;
+        if (IsAgentDetached)
+            ActivateAgent();
+        var vm = view.ViewModel;
         if (!string.IsNullOrWhiteSpace(vm.Input) || vm.HasAttachments)
         {
             if (!_dialogs.Confirm(
@@ -1191,7 +1165,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             vm.Input = string.Empty;
         }
 
-        window.SubmitPrompt(text, paths);
+        view.SubmitPrompt(text, paths);
         HomeQuestion = string.Empty;
         ClearHomeAttachments();
         HomeStatusIsError = false;
@@ -1301,7 +1275,8 @@ public enum MainPage
     Servers,
     DataSources,
     Applications,
-    RemoteDesktops
+    RemoteDesktops,
+    Agent
 }
 
 /// <summary>SSH 会话管理窗口的布局方式。</summary>

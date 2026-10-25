@@ -60,6 +60,8 @@ public sealed class WpfWindowService : IWindowService
         IAiTerminalBroker? localTerminalBroker = null) =>
         new(configService, store, skillsDir, localTerminalResolver, localTerminalBroker, Services) { Topmost = false };
 
+    public AgentWindow CreateAgentWindow(AgentView view) => new(view) { Topmost = false };
+
     public SnapshotHistoryWindow CreateSnapshotHistoryWindow(
         ISnapshotStore store,
         IConfigService configService,

@@ -949,6 +949,11 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// </summary>
     public bool IsBusy => _connectionTesting || CurrentContext.IsBusy;
 
+    public int RunningSessionCount => _contexts.Values.Count(c => c.IsBusy);
+    public bool HasRunningSessions => RunningSessionCount > 0;
+    public int PendingApprovalSessionCount => _contexts.Values.Count(c => c.State == SessionRunState.WaitingApproval);
+    public bool HasPendingApprovalSessions => PendingApprovalSessionCount > 0;
+
     /// <summary>桌面登录态（D1 收尾，仅归因）：已登录=登录用户名，未登录=local。</summary>
     public bool IsDesktopLoggedIn => _desktopLogin?.Current is not null;
 
@@ -973,6 +978,10 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         OnPropertyChanged(nameof(IsBusy));
         OnPropertyChanged(nameof(SendButtonText));
+        OnPropertyChanged(nameof(RunningSessionCount));
+        OnPropertyChanged(nameof(HasRunningSessions));
+        OnPropertyChanged(nameof(PendingApprovalSessionCount));
+        OnPropertyChanged(nameof(HasPendingApprovalSessions));
         foreach (var cmd in new[] { SendCommand, StopCommand, SendOrStopCommand, NewSessionCommand, DeleteSessionCommand, ContinueCommand, RegenerateCommand, RetryStepCommand, TestConnectionCommand })
             (cmd as RelayCommand)?.RaiseCanExecuteChanged();
     }

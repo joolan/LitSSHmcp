@@ -98,12 +98,30 @@
                             </Grid>
                         </ui:Button>
                         <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
-                                   HorizontalAlignment="Center" ToolTip="打开 AI 运维助手"
-                                   AutomationProperties.Name="AI 运维助手" Command="{Binding OpenAgentCommand}">
-                            <StackPanel VerticalAlignment="Center">
-                                <ui:SymbolIcon Symbol="Chat24" FontSize="19" HorizontalAlignment="Center"/>
-                                <TextBlock Text="AI" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
-                            </StackPanel>
+                                   HorizontalAlignment="Center" ToolTip="AI 运维助手"
+                                   AutomationProperties.Name="AI 运维助手"
+                                   HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                   Command="{Binding OpenAgentCommand}">
+                            <Grid Width="56" Height="54">
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Agent}"/>
+                                <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
+                                        HorizontalAlignment="Left" Margin="4,10"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Agent}"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Chat24" FontSize="19" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="AI" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0"
+                                        MinWidth="14" Height="14" CornerRadius="7" Padding="3,0"
+                                        Background="{DynamicResource AppAccentBrush}"
+                                        ToolTip="{Binding AgentBadgeTooltip}"
+                                        Visibility="{Binding ShowAgentBadge, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding AgentBadgeText}" FontSize="9" FontWeight="Bold"
+                                               Foreground="{DynamicResource AppAccentTextBrush}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
                         </ui:Button>
                         <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="打开 SSH 会话管理"
@@ -434,6 +452,27 @@
                 <Grid x:Name="RemoteDesktopsView"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=RemoteDesktops}">
                     <views:RemoteDesktopManageView DataContext="{Binding RemoteDesktopPage}"/>
+                </Grid>
+
+                <!-- AI 运维助手（常驻页面，切换导航不停止任务） -->
+                <Grid x:Name="AgentPage"
+                      Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Agent}">
+                    <ContentControl Content="{Binding AgentPageView}"/>
+
+                    <StackPanel Panel.ZIndex="1" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440"
+                                Visibility="{Binding IsAgentDetached, Converter={StaticResource BoolToVis}}">
+                        <ui:SymbolIcon Symbol="Chat24" FontSize="44" HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="AI 助手正在独立窗口运行" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                        <TextBlock Text="任务会继续执行；可以激活独立窗口，或收回主界面。"
+                                   Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,16"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <ui:Button Content="激活独立窗口" Appearance="Primary" Padding="14,5" Margin="0,0,8,0"
+                                       Command="{Binding ActivateAgentCommand}"/>
+                            <ui:Button Content="收回主界面" Padding="14,5"
+                                       Command="{Binding DockAgentCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
                 </Grid>
             </Grid>
         </Grid>

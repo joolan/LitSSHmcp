@@ -39,6 +39,8 @@ public interface IWindowService
         Func<string, LocalTerminalSessionViewModel?>? localTerminalResolver = null,
         IAiTerminalBroker? localTerminalBroker = null);
 
+    AgentWindow CreateAgentWindow(AgentView view);
+
     SnapshotHistoryWindow CreateSnapshotHistoryWindow(
         ISnapshotStore store,
         IConfigService configService,

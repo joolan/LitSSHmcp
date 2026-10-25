@@ -29,6 +29,7 @@ public partial class MainWindow : FluentWindow
         DataContext = new MainViewModel();
         WindowLayout.Attach(this, "main");
         Closing += OnMainClosing;
+        Closed += (_, _) => ViewModel.DisposeAgentPage();
         if (Application.Current is { } app)
             app.Exit += (_, _) => DisposeTray();
 

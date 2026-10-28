@@ -1,4 +1,4 @@
-﻿using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using Xunit;
 
@@ -47,7 +47,7 @@ public class WorkspaceToolsAuditTests : IDisposable
         await Tool(tools, "ops_doc_write").InvokeAsync(Args(("mode", "patch"), ("find", "v1"), ("replace", "v1x"), ("path", rel)), default);
         var readsBefore = Snapshot().Count(r => r.FilePath == full);
         await Tool(tools, "ops_doc_read").InvokeAsync(Args(("path", rel)), default);
-        await Tool(tools, "ops_doc_list").InvokeAsync(Args(), default);
+        await Tool(tools, "ops_doc_read").InvokeAsync(Args(("action", "list")), default);
 
         var mine = Snapshot().Where(r => r.FilePath == full).ToList();
         Assert.Equal(3, mine.Count);                                   // write+append+patch 各一条

@@ -62,6 +62,21 @@
                                     <TextBlock Text="(concise=只讲重点 / standard / detailed)" VerticalAlignment="Center"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Text="会话工具模式:" VerticalAlignment="Center"/>
+                                    <ComboBox ItemsSource="{Binding ProfileOptions}" SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
+                                              Width="110" Margin="6,0,16,0"
+                                              ToolTip="auto=全部；diagnose=诊断/巡检（只读+快照刷新/拓扑发现）；change=变更/发布；assets=资产治理（只读+拓扑发现）；chat=问答。新会话生效。"/>
+                                    <TextBlock Text="(auto / diagnose / change / assets / chat；新会话生效)" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6"
+                                            Visibility="{Binding HasProfileSuggestion, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding SuggestedProfileText}" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                    <ui:Button Content="采用推荐" Padding="10,3" Margin="8,0,0,0"
+                                               Command="{Binding ApplySuggestedProfileCommand}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="单个工具结果注入上限(字符):" VerticalAlignment="Center"/>
                                     <ui:TextBox FontWeight="Normal" Text="{Binding ToolResultMaxChars, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,0,0"/>
                                 </StackPanel>
@@ -86,13 +101,12 @@
                                 <CheckBox Content="只读模式（仅向模型暴露只读工具）" IsChecked="{Binding ReadOnly, Mode=TwoWay}" Margin="0,0,0,6"/>
                                 <TextBlock TextWrapping="Wrap" Margin="26,0,0,8" FontSize="{DynamicResource AppFontSizeMicro}"
                                            Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                           Text="只读模式保留的工具（按 MCP 只读注解 readOnlyHint）：查询/读取/诊断/巡检类——ssh_list_servers、ssh_get_sudo_status、ssh_test_connection、ssh_snapshot_get、ssh_list_files；datasource_list、datasource_test_connection、mysql_query、postgres_query、redis_read/redis_diagnostics；docker_query、service_query、log_query、java_processes/java_diagnostics、topology_get_overview/get_dependencies/query/discover、app_health_snapshot、mcp_usage_guide/self_check；以及本地只读工具（skill_list/read、spill_list/read/grep、ops_doc_read/list、update_plan、run_subagent）。不含执行/写入/审批类：ssh_execute_command/sudo、ssh_upload*/download*、mysql/postgres/redis 的 *_execute、docker_restart/exec、service_restart 等。"/>
+                                           Text="只读模式保留的工具（按 MCP 只读注解 readOnlyHint）：查询/读取/诊断/巡检类——ssh_list_servers、ssh_get_sudo_status、ssh_test_connection、ssh_snapshot_get、ssh_list_files；datasource_list、datasource_test_connection、mysql_query、postgres_query、redis_read/redis_diagnostics；docker_query、service_query、log_query、java_processes/java_diagnostics、topology_get_overview/get_dependencies/query/timeline/diff、app_health_snapshot、mcp_usage_guide/self_check；以及本地只读工具（skill、spill、ops_doc_read、ops_insight、update_plan、run_subagent）。不含执行/写入/审批类：ssh_execute_command/sudo、ssh_upload*/download*、mysql/postgres/redis 的 *_execute、docker_restart/exec、service_restart 等。"/>
 
                                 <TextBlock Text="工作日志（桌面端）" FontWeight="SemiBold" Margin="0,10,0,6"/>
                                 <CheckBox Content="启用工作日志（含变更操作的任务结束后自动追加到工作区 worklogs/年/年-月-日.md，永久保留）" IsChecked="{Binding WorkLogEnabled, Mode=TwoWay}" Margin="0,0,0,4"/>
                                 <CheckBox Content="记录失败/被拒绝的操作（便于复盘踩坑）" IsChecked="{Binding WorkLogIncludeFailures, Mode=TwoWay}" Margin="0,0,0,4"/>
                                 <CheckBox Content="记录只读调查（默认关闭；开启后纯查询任务也记一条“调查”）" IsChecked="{Binding WorkLogIncludeReadOnly, Mode=TwoWay}" Margin="0,0,0,4"/>
-                                <CheckBox Content="允许 AI 追加任务复盘（ops_worklog_write：3-5 行目标/关键操作/结果/后续）" IsChecked="{Binding WorkLogModelSummary, Mode=TwoWay}" Margin="0,0,0,4"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                                     <TextBlock Text="日志目录（空=工作区\worklogs）:" VerticalAlignment="Center"/>
                                     <ui:TextBox FontWeight="Normal" Text="{Binding WorkLogDir, UpdateSourceTrigger=PropertyChanged}" Width="320" Margin="6,0,8,0"/>
@@ -493,6 +507,150 @@
                         </Grid>
                     </Grid>
                 </TabItem>
+                <!-- ===== Tab：记忆候选（后台 consolidation 生成的事件候选，人工批准/拒绝）===== -->
+                <TabItem Header="记忆候选">
+                    <Grid Margin="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Margin="0,0,0,8" LastChildFill="False">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <TextBlock Text="状态:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox ItemsSource="{Binding ConsolidationStatusFilters}"
+                                          SelectedItem="{Binding ConsolidationStatusFilter, Mode=TwoWay}"
+                                          Width="110" Margin="0,0,12,0"/>
+                                <ui:Button Content="刷新" Padding="12,4" Click="OnReloadConsolidationCandidates"/>
+                            </StackPanel>
+                            <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       Text="后台 consolidation 从 raw 会话片段提炼的事件/资产事实/脚本候选。批准后写入对应记忆（脚本只存经验、不执行）；拒绝可填写原因。候选仅在本机 agent.db 中，按团队/私有作用域隔离。"/>
+                        </DockPanel>
+                        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}">
+                            <ListBox ItemsSource="{Binding ConsolidationCandidates}"
+                                     SelectedItem="{Binding SelectedConsolidationCandidate, Mode=TwoWay}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="Padding" Value="10,7"/>
+                                        <Setter Property="Margin" Value="0,0,0,2"/>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel ToolTip="{Binding PayloadJson}">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                                       FontFamily="{DynamicResource AppFontUiFamily}"/>
+                                            <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+                            <ui:Button Content="批准应用" Padding="12,4" Margin="0,0,8,0"
+                                       Click="OnApproveConsolidationCandidate"
+                                       ToolTip="批准候选：事件写入 agent_incident；资产事实/脚本写入对应记忆（脚本不执行）"/>
+                            <ui:Button Content="拒绝…" Padding="12,4"
+                                       Click="OnRejectConsolidationCandidate"
+                                       ToolTip="拒绝该候选并记录原因；候选状态变为 rejected"/>
+                        </StackPanel>
+                    </Grid>
+                </TabItem>
+                <!-- ===== Tab：运维视图（事件浏览 + 时间线 + 资产画像）===== -->
+                <TabItem Header="运维视图">
+                    <Grid Margin="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Margin="0,0,0,8" LastChildFill="False">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <TextBlock Text="状态:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox ItemsSource="{Binding OpsIncidentStatusFilters}"
+                                          SelectedItem="{Binding OpsIncidentStatusFilter, Mode=TwoWay}"
+                                          Width="110" Margin="0,0,12,0"/>
+                                <ui:Button Content="刷新" Padding="12,4" Click="OnReloadOpsIncidents"/>
+                            </StackPanel>
+                            <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       Text="事件浏览：左侧选择事件查看时间线；资产画像支持 ssh:/ds:/app:/service:/cert: 前缀，展示配置关系、影响面与历史记忆。"/>
+                        </DockPanel>
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="340"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{DynamicResource CardBorderStyle}">
+                                <ListBox ItemsSource="{Binding OpsIncidents}"
+                                         SelectedItem="{Binding SelectedOpsIncident, Mode=TwoWay}"
+                                         SelectionChanged="OnOpsIncidentSelectionChanged"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Padding" Value="8,6"/>
+                                            <Setter Property="Margin" Value="0,0,0,2"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold"
+                                                           FontFamily="{DynamicResource AppFontUiFamily}"/>
+                                                <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+                            <Grid Grid.Column="1" Margin="8,0,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <Border Style="{DynamicResource CardBorderStyle}">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Top" Text="时间线" FontWeight="SemiBold" Margin="2,0,0,6"/>
+                                        <TextBox Text="{Binding OpsTimelineText, Mode=OneWay}" IsReadOnly="True"
+                                                 TextWrapping="Wrap" AcceptsReturn="True"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 FontFamily="{DynamicResource AppFontMonoFamily}"
+                                                 FontSize="{DynamicResource AppFontSizeMicro}"
+                                                 Background="Transparent" BorderThickness="0"/>
+                                    </DockPanel>
+                                </Border>
+                                <DockPanel Grid.Row="1" Margin="0,8,0,6">
+                                    <TextBlock Text="资产画像:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <ui:Button DockPanel.Dock="Right" Content="加载" Padding="12,3"
+                                               Click="OnLoadOpsAssetProfile"/>
+                                    <ui:TextBox Text="{Binding OpsAssetId, UpdateSourceTrigger=PropertyChanged}"
+                                                FontWeight="Normal" Margin="0,0,8,0"/>
+                                </DockPanel>
+                                <Border Grid.Row="2" Style="{DynamicResource CardBorderStyle}">
+                                    <TextBox Text="{Binding OpsAssetProfileText, Mode=OneWay}" IsReadOnly="True"
+                                             TextWrapping="Wrap" AcceptsReturn="True"
+                                             VerticalScrollBarVisibility="Auto"
+                                             FontFamily="{DynamicResource AppFontMonoFamily}"
+                                             FontSize="{DynamicResource AppFontSizeMicro}"
+                                             Background="Transparent" BorderThickness="0"/>
+                                </Border>
+                            </Grid>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
                 <!-- ===== Tab：智能体（可切换的角色设定：系统提示附加段 + 回答风格覆盖）===== -->
                 <TabItem Header="智能体">
                     <Grid Margin="12">

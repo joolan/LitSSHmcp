@@ -34,6 +34,10 @@ public partial class AgentSettingsWindow : FluentWindow
                     _ = _viewModel.LoadArchivedAsync();
                 else if (header == "记忆管理")
                     _ = _viewModel.LoadMemoryEntriesAsync();
+                else if (header == "记忆候选")
+                    _ = _viewModel.LoadConsolidationCandidatesAsync();
+                else if (header == "运维视图")
+                    _ = _viewModel.LoadOpsIncidentsAsync();
             }
         };
 
@@ -67,6 +71,8 @@ public partial class AgentSettingsWindow : FluentWindow
             "model" => "大模型设置",
             "archive" => "归档记录",
             "memory" or "memories" or "memoryManage" => "记忆管理",
+            "consolidation" or "candidates" or "memoryCandidates" => "记忆候选",
+            "ops" or "insights" or "opsInsights" or "opsView" => "运维视图",
             "agents" or "agent" => "智能体",
             "mcp" or "mcpServers" => "MCP 服务器",
             _ => null
@@ -158,6 +164,46 @@ public partial class AgentSettingsWindow : FluentWindow
     }
 
     private void OnReloadMemories(object sender, RoutedEventArgs e) => _ = _viewModel.LoadMemoryEntriesAsync();
+
+    private void OnReloadConsolidationCandidates(object sender, RoutedEventArgs e) =>
+        _ = _viewModel.LoadConsolidationCandidatesAsync();
+
+    private void OnReloadOpsIncidents(object sender, RoutedEventArgs e) =>
+        _ = _viewModel.LoadOpsIncidentsAsync();
+
+    private void OnOpsIncidentSelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        _ = _viewModel.LoadOpsTimelineAsync(_viewModel.SelectedOpsIncident);
+
+    private void OnLoadOpsAssetProfile(object sender, RoutedEventArgs e) =>
+        _ = _viewModel.LoadOpsAssetProfileAsync();
+
+    private void OnApproveConsolidationCandidate(object sender, RoutedEventArgs e)
+    {
+        var entry = _viewModel.SelectedConsolidationCandidate;
+        if (entry is null)
+        {
+            _dialogs.Info("请先在候选列表中选择一条。", "记忆候选");
+            return;
+        }
+        if (!_dialogs.Confirm($"批准候选 #{entry.Id} 并应用？\n\n{entry.Title}", "批准候选"))
+            return;
+        _ = _viewModel.ApproveConsolidationCandidateAsync(entry);
+    }
+
+    private void OnRejectConsolidationCandidate(object sender, RoutedEventArgs e)
+    {
+        var entry = _viewModel.SelectedConsolidationCandidate;
+        if (entry is null)
+        {
+            _dialogs.Info("请先在候选列表中选择一条。", "记忆候选");
+            return;
+        }
+        var reason = TextInputDialog.Prompt(this, "拒绝候选",
+            $"拒绝候选 #{entry.Id} 的原因（可留空）:", "重复/无证据");
+        if (reason is null)
+            return;
+        _ = _viewModel.RejectConsolidationCandidateAsync(entry, reason);
+    }
 
     private void OnDeleteMemory(object sender, RoutedEventArgs e)
     {

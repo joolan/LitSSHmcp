@@ -4,7 +4,7 @@ namespace LitSSHmcp.Agent;
 
 /// <summary>
 /// 大工具结果的落盘存储：把超长结果写入文件，上下文只保留预览 + <c>spill://&lt;handle&gt;</c> 句柄，
-/// 模型再用 <c>spill_read(mode=read|grep)</c> 按需分段读取/搜索，避免一次性把大输出灌进上下文。
+/// 模型再用 <c>spill(action=read|grep)</c> 按需分段读取/搜索，避免一次性把大输出灌进上下文。
 /// </summary>
 public sealed class SpillStore
 {

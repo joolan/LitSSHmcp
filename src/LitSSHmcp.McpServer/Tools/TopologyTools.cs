@@ -1,6 +1,6 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
@@ -59,7 +59,7 @@ public class TopologyTools
     }
 
     [McpServerTool(Name = "topology_discover", UseStructuredContent = true, OutputSchemaType = typeof(DiscoverResultDto), Destructive = false, ReadOnly = false, Idempotent = false, OpenWorld = true)]
-    [Description("自动发现并补全拓扑(java进程/网络连接/JDBC配置/processlist), 会执行远端只读探测命令并写入拓扑缓存。拓扑缺失或过期时用; 通常需10-60秒/台, 扫描期间可用取消中断")]
+    [Description("自动发现并补全拓扑(java进程/网络连接/JDBC配置/processlist)；执行远端只读探测并写入拓扑缓存。拓扑缺失/过期时用，通常10-60秒/台")]
     public async Task<DiscoverResultDto> DiscoverTopology(
         [Description("限定扫描的服务器ID或名称, 逗号分隔; 留空扫描全部")] string? serverIds = null,
         [Description("配置文件搜索路径, 空格分隔; 留空使用配置中允许的路径(security.discovery.allowedSearchPaths)")] string? searchPaths = null,

@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace LitSSHmcp.Core.Models;
 
@@ -102,6 +102,16 @@ public class AppLockConfig
     public int Iterations { get; set; } = 210_000;
 }
 
+/// <summary>会话工具 profile：按场景收窄工具面，减少选择歧义与固定 token；Auto=保持全部。</summary>
+public enum AgentToolProfile
+{
+    Auto,
+    Diagnose,
+    Change,
+    Assets,
+    Chat
+}
+
 /// <summary>
 /// 内置 AI 运维助手配置：通过 OpenAI 兼容大模型对话，经内嵌 MCP 客户端调用本机 MCP 服务器完成运维。
 /// </summary>
@@ -136,8 +146,8 @@ public class AgentConfig
     /// <summary>工作区目录（Agent 的文档读写工具 ops_doc_* 只能在此目录内读写）；空=默认「我的文档\LitSSH」。</summary>
     public string WorkspaceDir { get; set; } = string.Empty;
 
-    /// <summary>保留最近 N 条消息（超出时丢弃最早的；0=不裁剪，仅受模型上限约束）。</summary>
-    public int ContextLimit { get; set; } = 40;
+    /// <summary>保留最近 N 条消息（超出时丢弃最早的；0=不裁剪，仅受模型上限约束）。默认 120，约 30 轮工具型对话，与冷启动 30 轮对齐。</summary>
+    public int ContextLimit { get; set; } = 120;
 
     /// <summary>上下文 token 估算上限（与 ContextLimit 共同构成双阈值；超出时连同最旧整轮一起裁剪；0=仅按条数）。</summary>
     public int ContextTokenLimit { get; set; } = 96000;
@@ -157,10 +167,10 @@ public class AgentConfig
     /// <summary>提前触发比例：达到上限的该比例即开始裁剪/摘要（0.1~1，默认 0.8）。</summary>
     public double ContextTrimRatio { get; set; } = 0.8;
 
-    /// <summary>发送给模型时精简 MCP 工具描述（截短为要点 + 指向 mcp_usage_guide，降低每次请求固定 token；默认开）。</summary>
+    /// <summary>发送给模型时精简 MCP 工具描述：仅压缩超长描述（&gt;200 字符）并指向 mcp_usage_guide；短描述（含 action 枚举/互斥提示）原样保留。默认开。</summary>
     public bool CompactToolDescriptions { get; set; } = true;
 
-    /// <summary>超大工具结果落盘为句柄（上下文只放预览 + spill:// 句柄，模型用 spill_read(mode=read|grep) 按需读取/搜索；默认开）。</summary>
+    /// <summary>超大工具结果落盘为句柄（上下文只放预览 + spill:// 句柄，模型用 spill(action=read|grep) 按需读取/搜索；默认开）。</summary>
     public bool SpillLargeToolResults { get; set; } = true;
 
     /// <summary>大结果落盘目录；空=默认 %APPDATA%\LitSSH\spills。</summary>
@@ -181,8 +191,14 @@ public class AgentConfig
     /// <summary>允许的工具分组（空=全部，仍受 tools.enabledGroups 约束）。</summary>
     public string[] AllowedToolGroups { get; set; } = Array.Empty<string>();
 
+    /// <summary>会话工具 profile：Auto=全部；Diagnose=只读诊断 + 快照刷新/拓扑发现等非变更探测；Change=变更/发布；Assets=资产治理 + 拓扑发现；Chat=问答。</summary>
+    public AgentToolProfile Profile { get; set; } = AgentToolProfile.Auto;
+
     /// <summary>长期记忆/RAG（远程 Embeddings 向量化 + 本地 SQLite 向量库存储/检索）配置。</summary>
     public AgentMemoryConfig Memory { get; set; } = new();
+
+    /// <summary>后台记忆整理（raw → 事件/候选）配置；默认关闭。</summary>
+    public AgentConsolidationConfig Consolidation { get; set; } = new();
 
     /// <summary>桌面端工作日志：含变更操作的任务结束后自动追加到工作区 worklogs/日期文件（Web 端暂不启用）。</summary>
     public AgentWorkLogConfig WorkLog { get; set; } = new();
@@ -437,8 +453,60 @@ public class AgentMemoryConfig
     /// <summary>每次召回的记忆条数。</summary>
     public int TopK { get; set; } = 5;
 
-    /// <summary>召回相似度阈值（余弦, 0~1; 越高越严格）。默认 0.15。</summary>
+    /// <summary>召回相似度阈值（余弦, 0~1; 越高越严格）。默认 0.15；作为相对阈值的下限。</summary>
     public double RecallThreshold { get; set; } = 0.15;
+
+    /// <summary>相对召回阈值：有效阈值 = max(RecallThreshold, 本类 top1 分 * 本值)。
+    /// 0=关闭；默认 0.8，用于抑制低分噪声，同时保留绝对下限。</summary>
+    public double RecallRelativeMargin { get; set; } = 0.8;
+
+    /// <summary>同一来源（如单个会话）保留的 raw 片段上限；超出时删除最旧。默认 50。</summary>
+    public int RawKeepPerSource { get; set; } = 50;
+
+    /// <summary>结构化记忆时间衰减半衰期（天）；越小越偏向近期经验。默认 30。</summary>
+    public double RecencyHalfLifeDays { get; set; } = 30;
+
+    /// <summary>单轮召回注入的最大字符数；默认 1500。</summary>
+    public int MaxRecallChars { get; set; } = 1500;
+
+    /// <summary>记忆召回 embeddings 超时（秒；0=不限）；默认 5。</summary>
+    public double EmbeddingTimeoutSeconds { get; set; } = 5;
+
+    /// <summary>可选的独立 rerank 模型 Id（空=不调用重排模型，使用 FTS/时间/频次重排）。</summary>
+    public string RerankProviderId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 后台 consolidation：把未处理的 raw 会话片段提炼为事件/候选。
+/// 默认关闭；开启后仅在成功轮之后后台运行（受最小间隔/条数/候选数限制）。
+/// </summary>
+public class AgentConsolidationConfig
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>未处理 raw 少于该值时跳过。</summary>
+    public int MinRawCount { get; set; } = 5;
+
+    /// <summary>单次最多读取的 raw 条数。</summary>
+    public int MaxRawPerRun { get; set; } = 100;
+
+    /// <summary>单次最多生成候选数。</summary>
+    public int MaxCandidatesPerRun { get; set; } = 20;
+
+    /// <summary>后台自动运行的最小间隔（分钟）。</summary>
+    public int MinIntervalMinutes { get; set; } = 10;
+
+    /// <summary>单个会话送入提炼器的最大字符数。</summary>
+    public int MaxInputCharsPerSession { get; set; } = 6000;
+
+    /// <summary>每日最多自动运行次数（0=不限；force=true 的手动触发不受限）。</summary>
+    public int MaxRunsPerDay { get; set; }
+
+    /// <summary>每日最多处理的 raw 条数（0=不限；force=true 的手动触发不受限）。</summary>
+    public int MaxRawPerDay { get; set; }
+
+    /// <summary>consolidation 专用低成本模型 Id（空=复用当前会话模型）。</summary>
+    public string ProviderId { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -457,9 +525,6 @@ public class AgentWorkLogConfig
 
     /// <summary>记录纯只读调查（默认关闭；开启后只读任务也会生成「调查」条目）。</summary>
     public bool IncludeReadOnly { get; set; }
-
-    /// <summary>向模型暴露 ops_worklog_write，允许在任务结束后追加 3-5 行复盘。</summary>
-    public bool ModelSummary { get; set; } = true;
 }
 
 /// <summary>

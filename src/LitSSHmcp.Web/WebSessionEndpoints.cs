@@ -90,6 +90,143 @@ public static class WebSessionEndpoints
             }
         });
 
+        // 批量变更面板：直接调用当前会话的 fleet_change 工具（审批仍走该会话的 MCP/Web 审批通道）。
+        api.MapPost("/{id:long}/fleet-change", async (long id, FleetChangeRequest req, HttpContext ctx,
+            WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            if (string.IsNullOrWhiteSpace(req.Mode))
+                return Results.BadRequest(new { error = "mode 为必填" });
+            try
+            {
+                var args = new Dictionary<string, object?>
+                {
+                    ["mode"] = req.Mode,
+                    ["planId"] = req.PlanId,
+                    ["serverIds"] = req.ServerIds,
+                    ["command"] = req.Command,
+                    ["rollbackCommand"] = req.RollbackCommand,
+                    ["concurrency"] = req.Concurrency ?? 4,
+                    ["timeoutSeconds"] = req.TimeoutSeconds ?? 60,
+                    ["maxTargets"] = req.MaxTargets ?? 20,
+                    ["riskNote"] = req.RiskNote,
+                    ["confirm"] = req.Confirm ?? false
+                };
+                var text = await manager.InvokeToolAsync(principal, id, FleetChangeTools.ToolName, args,
+                    ctx.RequestAborted);
+                return Results.Ok(new { text });
+            }
+            catch (WebSessionBusyException)
+            {
+                return Results.Json(new { error = "会话正在执行上一轮，请稍后重试" },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        api.MapGet("/{id:long}/fleet-change/{planId}", async (long id, string planId, HttpContext ctx,
+            WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            try
+            {
+                var plan = await manager.GetFleetPlanAsync(principal, id, planId, ctx.RequestAborted);
+                return plan is null ? Results.NotFound() : Results.Ok(plan);
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        api.MapDelete("/{id:long}/fleet-change/{planId}", async (long id, string planId, HttpContext ctx,
+            WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            try
+            {
+                var removed = await manager.DeleteFleetPlanAsync(principal, id, planId, ctx.RequestAborted);
+                return removed ? Results.NoContent() : Results.NotFound();
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        api.MapPost("/{id:long}/fleet-change/cancel", async (long id, HttpContext ctx, WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            try
+            {
+                await manager.CancelFleetChangeAsync(principal, id, ctx.RequestAborted);
+                return Results.NoContent();
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        api.MapGet("/{id:long}/fleet-plans", async (long id, HttpContext ctx, WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            try
+            {
+                var plans = await manager.ListFleetPlansAsync(principal, id, ctx.RequestAborted);
+                // 列表只返回摘要，避免把命令/回滚/逐台输出等详情批量下发。
+                var summaries = plans.Select(p => new
+                {
+                    p.Id,
+                    p.Phase,
+                    p.Running,
+                    p.CreatedAt,
+                    p.UpdatedAt,
+                    p.DryRunOk,
+                    p.CanaryOk,
+                    p.RolledBack,
+                    TargetCount = p.Targets.Count,
+                    AppliedCount = p.AppliedTargets.Count
+                });
+                return Results.Ok(summaries);
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        api.MapGet("/{id:long}/fleet-targets", async (long id, string? query, HttpContext ctx,
+            WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            try
+            {
+                var args = new Dictionary<string, object?> { ["query"] = query };
+                var text = await manager.InvokeToolAsync(principal, id, FleetTargetTools.ToolName, args,
+                    ctx.RequestAborted);
+                return Results.Ok(new { text });
+            }
+            catch (WebSessionBusyException)
+            {
+                return Results.Json(new { error = "会话正在执行上一轮，请稍后重试" },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
         // 聊天图片附件上传（仅图片、单张 ≤10MB）：返回相对会话目录路径，随 WS user 帧回传
         api.MapPost("/{id:long}/attachments", async (long id, HttpContext ctx, WebSessionManager manager) =>
         {
@@ -434,6 +571,7 @@ public static class WebSessionEndpoints
                 AgentEventKind.ToolResult => new { type = "tool_result", tool = e.ToolName, ok = e.ToolSuccess, ms = e.DurationMs },
                 AgentEventKind.MemoryRecall => new { type = "memory_recall", text = e.Text },
                 AgentEventKind.AssetGraphContext => new { type = "asset_graph_context", text = e.Text },
+                AgentEventKind.Warning => new { type = "warning", message = e.Text },
                 AgentEventKind.Error => new { type = "error", message = e.Text },
                 _ => new { type = "event", kind = e.Kind.ToString() }
             };
@@ -500,4 +638,8 @@ public static class WebSessionEndpoints
 
 /// <summary>PUT /api/sessions/{id}/provider 请求体（会话级模型切换）。</summary>
 public sealed record SetProviderRequest(string? ProviderId);
+
+/// <summary>POST /api/sessions/{id}/fleet-change 请求体（批量变更面板）。</summary>
+public sealed record FleetChangeRequest(string? Mode, string? PlanId, string? ServerIds, string? Command,
+    string? RollbackCommand, int? Concurrency, int? MaxTargets, int? TimeoutSeconds, string? RiskNote, bool? Confirm);
 }

@@ -21,6 +21,7 @@
         </StackPanel>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,10,16,14">
+            <ui:Button x:Name="CancelButton" Content="取消" IsCancel="True" Padding="14,5" Margin="0,0,8,0"/>
             <ui:Button Content="最小化到托盘" Appearance="Primary" Padding="14,5" Click="OnMinimize"/>
             <ui:Button Content="退出程序" Appearance="Danger" Foreground="{DynamicResource AppTextOnDangerBrush}" Padding="14,5" Margin="8,0,0,0" Click="OnExit"/>
         </StackPanel>

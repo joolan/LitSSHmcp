@@ -36,36 +36,47 @@ public class AssetGraphContextProviderTests
         Assert.Contains("app:order (application)", context!.Text);
         Assert.Contains("app:order -runsOn-> ssh:s1", context.Text);
         Assert.Equal(new[] { "app:order" }, context.AssetIds);
+        Assert.Contains("ssh:s1", context.RelatedAssetIds ?? Array.Empty<string>());
         Assert.Equal(0, searchCalls);
     }
 
     [Fact]
-    public async Task Falls_back_to_search_when_asset_not_in_prompt_graph()
+    public async Task Returns_null_for_generic_query_without_known_or_explicit_asset()
     {
-        var searched = new List<string>();
-        var topology = new FakeTool("topology_query", args =>
+        var topologyCalls = 0;
+        var topology = new FakeTool("topology_query", _ =>
         {
-            if (Equals(args!["action"], "search"))
-            {
-                searched.Add((string)args["query"]!);
-                return Json("""{"items":[{"node":{"id":"service:s1:nginx","type":"service"}}]}""");
-            }
-            Assert.Equal("neighbors", args["action"]);
-            Assert.Equal("service:s1:nginx", args["assetId"]);
-            return Json("""
-                {"root":{"id":"service:s1:nginx","type":"service"},
-                 "nodes":[{"id":"service:s1:nginx","type":"service"}],
-                 "edges":[]}
-                """);
+            topologyCalls++;
+            return Json("""{"items":[]}""");
         });
         var provider = AssetGraphContextProvider.Create(topology, null);
 
         var context = await provider!("nginx 为什么没启动", CancellationToken.None);
 
+        Assert.Null(context);
+        Assert.Equal(0, topologyCalls);   // 不再对普通词做 topology search
+    }
+
+    [Fact]
+    public async Task Uses_explicit_asset_id_without_search()
+    {
+        var topology = new FakeTool("topology_query", args =>
+        {
+            Assert.Equal("neighbors", args!["action"]);
+            Assert.Equal("ssh:s1", args["assetId"]);
+            return Json("""
+                {"root":{"id":"ssh:s1","type":"ssh"},
+                 "nodes":[{"id":"ssh:s1","type":"ssh"}],
+                 "edges":[]}
+                """);
+        });
+        var provider = AssetGraphContextProvider.Create(topology, null);
+
+        var context = await provider!("check ssh:s1", CancellationToken.None);
+
         Assert.NotNull(context);
-        Assert.Contains("service:s1:nginx (service)", context!.Text);
-        Assert.Equal(new[] { "service:s1:nginx" }, context.AssetIds);
-        Assert.Contains("nginx", searched);
+        Assert.Contains("ssh:s1 (ssh)", context!.Text);
+        Assert.Equal(new[] { "ssh:s1" }, context.AssetIds);
     }
 
     [Fact]

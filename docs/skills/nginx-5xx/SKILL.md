@@ -2,6 +2,9 @@
 name: nginx-5xx
 description: 排查网站/接口的 nginx 5xx（502/503/504）与网关超时、请求打不开。适用于「502 Bad Gateway」「504 超时」「站点访问报错」。
 appliesTo: [ssh, log, command, service, docker, topology]
+triggers: [nginx 502, nginx 503, nginx 504, 502 Bad Gateway, 503, 504, 5xx, upstream 超时, nginx 报错, 网关超时, 站点访问报错]
+symptoms: [http_5xx, upstream_error, gateway_timeout]
+assets: [nginx, app, domain]
 ---
 
 # nginx 5xx / 网关超时排查

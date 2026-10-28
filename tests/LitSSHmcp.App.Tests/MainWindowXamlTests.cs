@@ -74,6 +74,18 @@ public class MainWindowXamlTests
         => window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.DataBind);
 
     [Fact]
+    public void Close_choice_dialog_has_cancel_button()
+    {
+        var ex = RunSta(() =>
+        {
+            var dialog = new CloseChoiceDialog();
+            var cancel = (System.Windows.Controls.Button)dialog.FindName("CancelButton")!;
+            Assert.True(cancel.IsCancel);
+        });
+        Assert.Null(ex);
+    }
+
+    [Fact]
     public void App_settings_window_parses_xaml()
     {
         var ex = RunSta(() => _ = new AppSettingsWindow(new ConfigService()));

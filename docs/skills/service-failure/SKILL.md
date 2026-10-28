@@ -2,6 +2,9 @@
 name: service-failure
 description: systemd 服务启动失败 / 反复重启 / 不健康排查。适用于「service failed」「服务起不来」「Active: failed」「journalctl 报错」。
 appliesTo: [service, ssh, command, log]
+triggers: [服务起不来, 服务启动失败, 服务异常, 服务反复重启, service failed, Active: failed, systemd 失败, journalctl 报错]
+symptoms: [service_failed, service_down, service_restart_loop]
+assets: [service, ssh, app]
 ---
 
 # systemd 服务失败排查

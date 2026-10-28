@@ -1,6 +1,6 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
@@ -44,7 +44,8 @@ public class ServerTools
                 AuthType = s.AuthType.ToString(),
                 Description = s.Description,
                 Tags = s.Tags,
-                LastConnectedAt = s.LastConnectedAt
+                LastConnectedAt = s.LastConnectedAt,
+                CanExec = McpAuthorizationFilter.IsTargetExecutableForCaller(policy, AssetNode.Ssh(s.Id))
             }).ToList();
 
         await LogAuditAsync(string.Empty, string.Empty, "LIST_SERVERS", $"{servers.Count} servers", CommandStatus.Executed, AuditCategory.Meta);
@@ -52,9 +53,9 @@ public class ServerTools
     }
 
     [McpServerTool(Name = "ssh_test_connection", UseStructuredContent = true, OutputSchemaType = typeof(SshTestConnectionDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("测试SSH连通性并区分失败原因: auth_failed(账号密码/密钥错)/host_key_mismatch(主机密钥变化, 可能是中间人, 需先核对指纹)/timeout/connection_error。连不上服务器时先用它")]
+    [Description("测试SSH连通性并区分失败原因：auth_failed/host_key_mismatch(可能是中间人，先核对指纹)/timeout/connection_error。连不上服务器时先用它")]
     public async Task<SshTestConnectionDto> TestConnection(
-        [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();

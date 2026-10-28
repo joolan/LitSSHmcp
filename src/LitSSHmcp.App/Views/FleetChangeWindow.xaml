@@ -1,0 +1,128 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.FleetChangeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="批量变更" Height="720" Width="820" MinWidth="640" MinHeight="520"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="批量变更"/>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="14,0,14,12">
+            <Border Style="{DynamicResource CardBorderStyle}" Padding="14">
+                <StackPanel>
+                    <TextBlock Text="安全流程：plan → dry_run → canary → apply → rollback。canary/apply/rollback 必须确认；apply 前必须有回滚命令且 canary 成功。"
+                               TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="从服务器清单选择（只显示当前账号有权限的目标）" Margin="0,0,0,4"/>
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="TargetQueryBox" Grid.Column="0" Margin="0,0,8,0"
+                                 ToolTip="按 ID / 名称 / 主机 / 标签过滤"/>
+                        <ui:Button Grid.Column="1" x:Name="LoadTargetsButton" Content="加载目标" Click="OnLoadTargets"
+                                   Margin="0,0,8,0" Appearance="Secondary"/>
+                        <ui:Button Grid.Column="2" x:Name="ClearTargetsButton" Content="清空" Click="OnClearTargets"
+                                   Appearance="Secondary"/>
+                    </Grid>
+                    <ListBox x:Name="TargetList" Height="120" Margin="0,0,0,8"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" IsEnabled="{Binding CanSelect}"
+                                          Content="{Binding Display}"
+                                          Margin="0,1" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock Text="目标（serverId，逗号/换行分隔；选择清单会自动覆盖）" Margin="0,0,0,4"/>
+                    <TextBox x:Name="ServerIdsBox" Height="66" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                             FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,8"
+                             ToolTip="例如 web01, web02, 10.0.0.5；最多 100 台"/>
+
+                    <TextBlock Text="变更命令（不支持脚本文件）" Margin="0,0,0,4"/>
+                    <TextBox x:Name="CommandBox" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,8"
+                             ToolTip="例如 systemctl restart nginx"/>
+
+                    <TextBlock Text="回滚命令（apply 前必填）" Margin="0,0,0,4"/>
+                    <TextBox x:Name="RollbackBox" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,8"
+                             ToolTip="例如 systemctl start nginx.prev &amp;&amp; systemctl restart nginx"/>
+
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="80"/>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="80"/>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="80"/>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="80"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="并发" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="1" x:Name="ConcurrencyBox" Text="4" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="3" Text="最多目标" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="4" x:Name="MaxTargetsBox" Text="20" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="6" Text="超时(秒)" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="7" x:Name="TimeoutBox" Text="60" VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <TextBlock Text="计划 ID（生成计划后自动填入；可从最近计划恢复）" Margin="0,0,0,4"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="PlanIdBox" Grid.Column="0" IsReadOnly="True" Margin="0,0,8,0"
+                                 FontFamily="{DynamicResource AppFontMonoFamily}"/>
+                        <ComboBox x:Name="PlanSelect" Grid.Column="1" Width="300"
+                                  ToolTip="最近 2 小时内的计划（切换会话/重启后可恢复）"
+                                  SelectionChanged="OnPlanSelected"/>
+                        <ui:Button x:Name="DeletePlanButton" Grid.Column="2" Content="删除" Click="OnDeletePlan"
+                                   Appearance="Secondary" Margin="8,0,0,0"
+                                   ToolTip="删除当前计划（不影响已执行目标）"/>
+                    </Grid>
+
+                    <WrapPanel Margin="0,0,0,10">
+                        <ui:Button x:Name="PlanButton" Content="生成计划" Click="OnRun" Tag="plan" Margin="0,0,8,8"/>
+                        <ui:Button x:Name="DryButton" Content="预检 dry_run" Click="OnRun" Tag="dry_run" Margin="0,0,8,8"/>
+                        <ui:Button x:Name="CanaryButton" Content="金丝雀 canary" Click="OnRun" Tag="canary" Margin="0,0,8,8"/>
+                        <ui:Button x:Name="ApplyButton" Content="全量 apply" Click="OnRun" Tag="apply" Margin="0,0,8,8"/>
+                        <ui:Button x:Name="RetryButton" Content="重试失败" Click="OnRun" Tag="retry_failed" Margin="0,0,8,8"/>
+                        <ui:Button x:Name="RollbackButton" Content="回滚 rollback" Click="OnRun" Tag="rollback" Margin="0,0,8,8"/>
+                        <ui:Button x:Name="StatusButton" Content="查看状态" Click="OnRun" Tag="status" Appearance="Secondary" Margin="0,0,8,8"/>
+                        <ui:Button x:Name="CancelButton" Content="取消执行" Click="OnCancel" IsEnabled="False"
+                                   Appearance="Secondary" Margin="0,0,8,8"/>
+                    </WrapPanel>
+
+                    <TextBlock x:Name="StatusText" Text="填写目标与命令后生成计划。" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,6"/>
+                    <ListBox x:Name="TargetStatusList" Height="100" Margin="0,0,0,6"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBox x:Name="OutputBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" Height="260"
+                             FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
+    </Grid>
+</ui:FluentWindow>

@@ -2,6 +2,9 @@
 name: docker-container-down
 description: Docker 容器起不来 / 反复重启 / 退出 / 不健康排查。适用于「容器 Exited」「Restarting」「ImagePullBackOff 类」「容器启动后立刻退出」。
 appliesTo: [docker, ssh, command, log]
+triggers: [容器起不来, 容器退出, 容器异常, 容器反复重启, 容器不健康, docker 容器, Exited, Restarting, ImagePullBackOff, container down]
+symptoms: [container_down, crashloop, image_pull_failed]
+assets: [container, docker, app]
 ---
 
 # 容器起不来排查

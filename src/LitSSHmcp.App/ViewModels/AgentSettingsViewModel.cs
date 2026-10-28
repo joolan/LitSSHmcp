@@ -380,14 +380,33 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
     private bool _workLogIncludeReadOnly;
     public bool WorkLogIncludeReadOnly { get => _workLogIncludeReadOnly; set => Set(ref _workLogIncludeReadOnly, value); }
 
-    private bool _workLogModelSummary = true;
-    public bool WorkLogModelSummary { get => _workLogModelSummary; set => Set(ref _workLogModelSummary, value); }
-
     /// <summary>回答风格选项。</summary>
     public IReadOnlyList<string> ResponseStyles { get; } = new[] { "concise", "standard", "detailed" };
 
     private string _responseStyle = "concise";
     public string ResponseStyle { get => _responseStyle; set => Set(ref _responseStyle, value); }
+
+    /// <summary>会话工具 profile 选项；运行时按场景收窄工具面。</summary>
+    public IReadOnlyList<string> ProfileOptions { get; } = new[] { "auto", "diagnose", "change", "assets", "chat" };
+
+    private string _selectedProfile = "auto";
+    public string SelectedProfile { get => _selectedProfile; set => Set(ref _selectedProfile, value); }
+
+    private string _suggestedProfileText = string.Empty;
+    public string SuggestedProfileText { get => _suggestedProfileText; set => Set(ref _suggestedProfileText, value); }
+
+    private string _suggestedProfile = string.Empty;
+
+    public RelayCommand ApplySuggestedProfileCommand => _applySuggestedProfile ??= new RelayCommand(_ =>
+    {
+        if (_suggestedProfile.Length == 0) return;
+        SelectedProfile = _suggestedProfile;
+        SuggestedProfileText = $"已采用推荐模式：{_suggestedProfile}（保存后新会话生效）";
+    });
+
+    public bool HasProfileSuggestion => _suggestedProfile.Length > 0;
+
+    private RelayCommand? _applySuggestedProfile;
 
     private string _maxToolIterations = "20";
     public string MaxToolIterations { get => _maxToolIterations; set => Set(ref _maxToolIterations, value); }
@@ -687,8 +706,8 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
             WorkLogDir = agent.WorkLog?.Dir ?? string.Empty;
             WorkLogIncludeFailures = agent.WorkLog?.IncludeFailures ?? true;
             WorkLogIncludeReadOnly = agent.WorkLog?.IncludeReadOnly ?? false;
-            WorkLogModelSummary = agent.WorkLog?.ModelSummary ?? true;
             ResponseStyle = string.IsNullOrWhiteSpace(agent.ResponseStyle) ? "concise" : agent.ResponseStyle;
+            SelectedProfile = agent.Profile.ToString().ToLowerInvariant();
             MaxToolIterations = agent.MaxToolIterations.ToString();
             BudgetMaxTurnSeconds = (agent.Budget?.MaxTurnSeconds ?? 0).ToString();
             BudgetMaxSessionCost = (agent.Budget?.MaxSessionCost ?? 0).ToString();
@@ -725,6 +744,7 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
                 LocalAutoApproved.Add(AutoApprovedCommandRule.Display(rule));
             }
 
+            await LoadProfileSuggestionAsync();
             StatusMessage = "已加载";
         }
         catch (Exception ex)
@@ -732,6 +752,35 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
             StatusMessage = "加载失败: " + ex.Message;
         }
     });
+
+    private async Task LoadProfileSuggestionAsync()
+    {
+        try
+        {
+            var sessions = await _contextStore.ListSessionsAsync();
+            var latest = sessions.FirstOrDefault();
+            _suggestedProfile = string.Empty;
+            SuggestedProfileText = string.Empty;
+            if (latest is not null)
+            {
+                var messages = await _contextStore.GetMessagesAsync(latest.Id);
+                var firstUser = messages.FirstOrDefault(m => m.Role == "user")?.Content;
+                var suggestion = ToolProfileSuggester.Suggest(firstUser);
+                if (suggestion is not null)
+                {
+                    _suggestedProfile = suggestion.Value.ToString().ToLowerInvariant();
+                    SuggestedProfileText = $"最近会话更像「{_suggestedProfile}」模式，可一键采用";
+                }
+            }
+            OnPropertyChanged(nameof(HasProfileSuggestion));
+        }
+        catch
+        {
+            _suggestedProfile = string.Empty;
+            SuggestedProfileText = string.Empty;
+            OnPropertyChanged(nameof(HasProfileSuggestion));
+        }
+    }
 
     public void Save() => AsyncOperation.Run("保存助手设置", SaveAsync);
 
@@ -767,8 +816,9 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent.WorkLog.Dir = WorkLogDir ?? string.Empty;
             config.Agent.WorkLog.IncludeFailures = WorkLogIncludeFailures;
             config.Agent.WorkLog.IncludeReadOnly = WorkLogIncludeReadOnly;
-            config.Agent.WorkLog.ModelSummary = WorkLogModelSummary;
             config.Agent.ResponseStyle = string.IsNullOrWhiteSpace(ResponseStyle) ? "concise" : ResponseStyle;
+            config.Agent.Profile = Enum.TryParse<AgentToolProfile>(SelectedProfile, ignoreCase: true, out var profile)
+                ? profile : AgentToolProfile.Auto;
             config.Agent.MaxToolIterations = (int)Math.Max(1, ParseLong(MaxToolIterations, 20));
             config.Agent.Budget ??= new AgentBudgetConfig();
             config.Agent.Budget.MaxTurnSeconds = (int)Math.Max(0, ParseLong(BudgetMaxTurnSeconds, 0));

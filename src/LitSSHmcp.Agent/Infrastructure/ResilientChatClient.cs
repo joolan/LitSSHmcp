@@ -10,14 +10,18 @@ namespace LitSSHmcp.Agent;
 public sealed class ResilientChatClient : DelegatingChatClient
 {
     private readonly SemaphoreSlim _gate;
+    private readonly bool _ownsGate;
     private readonly int _timeoutSeconds;
     private readonly int _maxRetries;
 
-    public ResilientChatClient(IChatClient innerClient, int maxConcurrency, int timeoutSeconds, int maxRetries)
+    /// <param name="sharedGate">跨会话共享的并发闸门（同一 provider/model 共用一个）；null=当前包装器独占。</param>
+    public ResilientChatClient(IChatClient innerClient, int maxConcurrency, int timeoutSeconds, int maxRetries,
+        SemaphoreSlim? sharedGate = null)
         : base(innerClient)
     {
         var concurrency = Math.Max(1, maxConcurrency);
-        _gate = new SemaphoreSlim(concurrency, concurrency);
+        _gate = sharedGate ?? new SemaphoreSlim(concurrency, concurrency);
+        _ownsGate = sharedGate is null;
         _timeoutSeconds = timeoutSeconds;
         _maxRetries = Math.Max(0, maxRetries);
     }
@@ -161,7 +165,7 @@ public sealed class ResilientChatClient : DelegatingChatClient
     /// </summary>
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (disposing && _ownsGate)
             _gate.Dispose();
     }
 }

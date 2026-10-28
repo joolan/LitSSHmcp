@@ -19,8 +19,11 @@ public sealed class AgentSession
     private readonly AgentConfig _config;
     private readonly IReadOnlyList<IAgentTool> _tools;
     private readonly Dictionary<string, IAgentTool> _toolsByName;
+    /// <summary>工具定义（名称+描述+JSON schema）的固定 token 估算；每次请求都相同，缓存避免重复序列化。</summary>
+    private readonly int _toolDefinitionTokens;
     private readonly Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? _recall;
     private readonly Func<string, CancellationToken, Task<AssetGraphContextResult?>>? _graphContext;
+    private readonly string? _assetGraph;
     private string _systemPrompt;
     private readonly SpillStore? _spill;
     private readonly int? _maxIterationsOverride;
@@ -35,7 +38,8 @@ public sealed class AgentSession
 
     /// <summary>计划模式每轮附在用户消息尾部的提示（不改系统提示/工具集，保持前缀缓存稳定）。</summary>
     private const string PlanModeNotice =
-        "【计划模式】当前处于计划模式：只做只读调研/取证，可用 update_plan 列计划；" +
+        "【计划模式】当前处于计划模式：只做只读调研/取证，可用 update_plan 列计划、" +
+        "ssh_snapshot_refresh/topology_discover 等只读探测；" +
         "**不要执行任何写操作**（命令/SQL/文件写入/重启等）。" +
         "若用户的指令含执行/变更意图，明确提示用户“当前处于计划模式，需切换到执行模式后才能开始”，并先给出计划，不要擅自执行。";
 
@@ -50,6 +54,13 @@ public sealed class AgentSession
         "会话成本预算已耗尽，停止本轮模型调用。请提高 agent.budget.maxSessionCost 或切换到更便宜的模型。";
     private const string ToolResultOmitted = "[较早的工具结果已省略以节省上下文；如需完整内容请重新调用该工具]";
     private const string SummaryPromptPrefix = "以下是更早对话的摘要(仅供参考, 以实际工具结果为准):\n";
+
+    /// <summary>Graph-RAG 单轮最长等待时间；超时跳过本轮注入，不阻塞对话。</summary>
+    private static readonly TimeSpan GraphContextTimeout = TimeSpan.FromSeconds(3);
+    /// <summary>记忆召回单轮最长等待时间（含远程 embeddings）；超时跳过本轮注入。</summary>
+    private static readonly TimeSpan MemoryRecallTimeout = TimeSpan.FromSeconds(5);
+    /// <summary>图谱 + 记忆合并注入的上限（字符）；超出截断，避免挤占上下文。</summary>
+    private const int MaxRetrievalContextChars = 5000;
 
     public List<ChatMessage> Messages { get; } = new();
 
@@ -67,15 +78,18 @@ public sealed class AgentSession
         Func<string, CancellationToken, Task<AssetGraphContextResult?>>? graphContext = null,
         Func<long, long, bool>? budgetCheck = null,
         Action<long, long>? onUsageDelta = null,
-        WorkLogStore? workLog = null)
+        WorkLogStore? workLog = null,
+        string? assetGraph = null)
     {
         _client = client;
         _provider = provider;
         _tools = tools.ToList();
         _config = config;
         _toolsByName = _tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
+        _toolDefinitionTokens = TokenEstimator.EstimateToolDefinitions(_tools.Select(t => t.Tool));
         _recall = recall;
         _graphContext = graphContext;
+        _assetGraph = assetGraph;
         _systemPrompt = systemPrompt;
         _spill = spill;
         _maxIterationsOverride = maxIterationsOverride;
@@ -124,7 +138,7 @@ public sealed class AgentSession
         }
     }
 
-    private bool IsDenied(string toolName) =>
+    internal bool IsDenied(string toolName) =>
         _toolPolicy is not null && _toolPolicy.TryGetValue(toolName, out var policy) && policy == AgentToolPolicy.Deny;
 
     private static string DeniedMessage(string toolName) =>
@@ -132,10 +146,24 @@ public sealed class AgentSession
         + "如需使用，请在输入区 + 菜单 → 工具审批策略 里把它改回「默认」或「允许」。";
 
     private bool IsPlanBlocked(string toolName) =>
-        _planMode && _toolsByName.TryGetValue(toolName, out var tool) && !tool.ReadOnly;
+        _planMode && _toolsByName.TryGetValue(toolName, out var tool) &&
+        !ToolProfileFilter.IsProfileReadOnly(tool);
 
     private static string PlanBlockedMessage(string toolName) =>
         $"计划模式下不允许执行写操作（工具 {toolName}），未执行。请切到「执行模式」后重试。";
+
+    /// <summary>宿主机（桌面/Web 可视化面板）直接调用当前会话内的工具；不写入对话历史、不产生工具轨迹。</summary>
+    public async Task<object?> InvokeHostToolAsync(string toolName, IDictionary<string, object?>? arguments,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(toolName))
+            return "(缺少工具名)";
+        if (IsDenied(toolName))
+            return "(工具已被当前会话策略禁用)";
+        if (!_toolsByName.TryGetValue(toolName, out var tool))
+            return $"(当前会话不可用工具: {toolName}; 请检查 profile/工具分组)";
+        return await tool.InvokeAsync(arguments, ct);
+    }
 
     /// <summary>发送一条用户消息并跑到本轮结束（含工具调用）；事件通过 <paramref name="progress"/> 推送。</summary>
     public Task SendAsync(string userText, IProgress<AgentEvent>? progress, CancellationToken ct = default)
@@ -196,52 +224,25 @@ public sealed class AgentSession
         await CompactIfNeededAsync(ct);
 
         // 计划模式：把提示附在本轮用户消息前（尾部位，不动系统提示/工具集，缓存友好）。
+        var recentUserTexts = RecentUserTexts(3);
         var effectiveContents = _planMode
             ? new List<AIContent> { new TextContent(PlanModeNotice) }.Concat(userContents).ToList()
             : userContents.ToList();
         Messages.Add(new ChatMessage(ChatRole.User, effectiveContents));
 
-        // Graph-RAG：先解析问题中的资产并注入 1 跳邻域；解析出的资产 ID 再用于约束记忆召回。
-        AssetGraphContextResult? graphContext = null;
-        if (_graphContext is not null)
+        // 检索上下文（图谱 + 记忆）合并成一条**临时** System 消息：本轮结束后移除，
+        // 持久历史保持 append-only，避免长会话累积历史召回文本、也尽量不打断前缀缓存。
+        var transientContext = new List<ChatMessage>(1);
+        try
         {
-            try
+            var retrieval = await BuildRetrievalContextAsync(userText, recentUserTexts, progress, ct);
+            if (retrieval is not null)
             {
-                graphContext = await _graphContext(userText, ct);
-                if (!string.IsNullOrWhiteSpace(graphContext?.Text))
-                {
-                    Messages.Insert(Messages.Count - 1, new ChatMessage(ChatRole.System,
-                        "以下是从资产图谱按本次请求自动检索的上下文(只读快照, 以实际工具结果为准):\n" + graphContext.Text));
-                    progress?.Report(new AgentEvent(AgentEventKind.AssetGraphContext, Text: graphContext.Text));
-                }
+                Messages.Insert(Messages.Count - 1, retrieval);
+                transientContext.Add(retrieval);
             }
-            catch
-            {
-                // 图谱检索失败忽略，不影响本轮
-            }
-        }
 
-        // 长期记忆召回：作为一条临时系统上下文插在用户消息之前；有图谱种子时按资产过滤，减少跨资产误用。
-        if (_recall is not null)
-        {
-            try
-            {
-                var memory = await _recall(userText, graphContext?.AssetIds, ct);
-                if (!string.IsNullOrWhiteSpace(memory))
-                {
-                    Messages.Insert(Messages.Count - 1, new ChatMessage(ChatRole.System,
-                        "以下是与本次请求可能相关的历史/文档记忆(仅供参考, 以实际工具结果为准):\n" + memory));
-                    // 召回可见性：推送给 UI 以"记忆召回"步骤展示本轮注入了什么（不影响模型上下文）
-                    progress?.Report(new AgentEvent(AgentEventKind.MemoryRecall, Text: memory));
-                }
-            }
-            catch
-            {
-                // 召回失败忽略，不影响本轮
-            }
-        }
-
-        var options = new ChatOptions
+            var options = new ChatOptions
         {
             Tools = _tools.Select(t => t.Tool).ToList(),
             Temperature = (float)_provider.Temperature
@@ -263,8 +264,8 @@ public sealed class AgentSession
                 return;
             }
 
-            // 本轮请求发出前的估算值：与真实 usage 对比得到校准比值
-            var estimatedBeforeRequest = TokenEstimator.Estimate(Messages);
+            // 本轮请求发出前的估算值：消息 + 工具定义（provider 的 input 包含 tools，不含会让校准比值虚高）
+            var estimatedBeforeRequest = TokenEstimator.Estimate(Messages) + _toolDefinitionTokens;
 
             // 流式接收：逐段把文本增量推给 UI，同时累积为完整响应（含工具调用）。
             var updates = new List<ChatResponseUpdate>();
@@ -328,6 +329,8 @@ public sealed class AgentSession
 
                 if (parallelIndices.Count > 1)
                 {
+                    // 用 Task.Run 隔离：部分本地工具在首个 await 前可能同步阻塞，
+                    // 直接调用会先占满当前线程，导致“并行”退化为串行（见并行工具测试）。
                     var tasks = parallelIndices
                         .Select(i => Task.Run(() => InvokeOneAsync(calls[i].Name, calls[i].Arguments, ct), ct))
                         .ToArray();
@@ -390,7 +393,135 @@ public sealed class AgentSession
             await CompactIfNeededAsync(ct);
         }
 
-        progress?.Report(new AgentEvent(AgentEventKind.Error, Text: $"工具调用超过 {maxIterations} 轮, 已停止本轮"));
+            progress?.Report(new AgentEvent(AgentEventKind.Error, Text: $"工具调用超过 {maxIterations} 轮, 已停止本轮"));
+        }
+        finally
+        {
+            // 检索上下文只服务本轮；移除后持久历史仍是 append-only，下一轮不会被旧召回文本拖大。
+            foreach (var message in transientContext)
+                Messages.Remove(message);
+        }
+    }
+
+    /// <summary>最近若干条用户文本（不含当前轮），用于短追问的召回查询补全。</summary>
+    private List<string> RecentUserTexts(int max)
+    {
+        var texts = new List<string>();
+        foreach (var message in Messages.Where(m => m.Role == ChatRole.User))
+        {
+            var text = string.Concat(message.Contents.OfType<TextContent>().Select(t => t.Text));
+            if (text.StartsWith(PlanModeNotice, StringComparison.Ordinal))
+                text = text[PlanModeNotice.Length..];
+            text = text.Trim();
+            if (text.Length > 0)
+                texts.Add(text);
+        }
+        return texts.TakeLast(Math.Max(1, max)).ToList();
+    }
+
+    /// <summary>
+    /// 构建本轮临时检索上下文：Graph-RAG 与记忆召回**并行**，各自限时；
+    /// 记忆召回只用已知/显式资产做过滤（图谱 1 跳邻域不再串行回填，避免二次等待）。
+    /// 失败/超时只发 Warning 事件并跳过注入，绝不影响本轮对话。最终合并成一条 System 消息。
+    /// </summary>
+    private async Task<ChatMessage?> BuildRetrievalContextAsync(string userText,
+        IReadOnlyList<string> recentUserTexts, IProgress<AgentEvent>? progress, CancellationToken ct)
+    {
+        var builder = new StringBuilder();
+
+        // 先用本地资产清单解析种子（不产生 MCP 调用）；无种子时记忆按 query 召回。
+        var seeds = AssetGraphContextProvider.ResolveSeeds(_assetGraph, userText);
+        var recallAssets = seeds.Count > 0 ? seeds : null;
+        var recallQuery = MemoryRecallQueryBuilder.Build(userText, recentUserTexts, recallAssets);
+
+        // 注意：memoryTask 必须先启动，再 await 图谱，才能让两者真正并行。
+        var memoryTask = _recall is null
+            ? null
+            : RecallMemoryAsync(recallQuery, recallAssets, progress, ct);
+        // 没有已知/显式资产时直接跳过图谱（门控）；有种子才启动 1 跳邻域查询。
+        var graphTask = _graphContext is null || seeds.Count == 0
+            ? null
+            : FetchGraphContextAsync(userText, progress, ct);
+
+        var graphContext = graphTask is null ? null : await graphTask;
+        if (!string.IsNullOrWhiteSpace(graphContext?.Text))
+        {
+            builder.AppendLine("### 资产图谱(只读快照, 以实际工具结果为准)");
+            builder.AppendLine(graphContext.Text.Trim());
+        }
+
+        var memory = memoryTask is null ? null : await memoryTask;
+        if (!string.IsNullOrWhiteSpace(memory))
+        {
+            builder.AppendLine("### 相关历史/文档记忆(仅供参考, 以实际工具结果为准)");
+            builder.AppendLine(memory.Trim());
+        }
+
+        if (builder.Length == 0)
+            return null;
+
+        var text = "以下是根据本次请求自动检索的上下文(仅供参考, 以实际工具结果为准):\n" + builder.ToString().Trim();
+        if (text.Length > MaxRetrievalContextChars)
+            text = text[..MaxRetrievalContextChars].TrimEnd() + "\n…(检索上下文已截断)";
+        return new ChatMessage(ChatRole.System, text);
+    }
+
+    private async Task<AssetGraphContextResult?> FetchGraphContextAsync(string userText,
+        IProgress<AgentEvent>? progress, CancellationToken ct)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(GraphContextTimeout);
+            var graph = await _graphContext!(userText, timeout.Token);
+            if (!string.IsNullOrWhiteSpace(graph?.Text))
+                progress?.Report(new AgentEvent(AgentEventKind.AssetGraphContext, Text: graph.Text));
+            return graph;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                Text: $"资产图谱检索超时(>{GraphContextTimeout.TotalSeconds:F0}s)，本轮未注入"));
+            return null;
+        }
+        catch (Exception ex)
+        {
+            progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                Text: "资产图谱检索失败，本轮未注入: " + Shorten(ex.Message)));
+            return null;
+        }
+    }
+
+    private async Task<string?> RecallMemoryAsync(string userText, IReadOnlyCollection<string>? recallAssets,
+        IProgress<AgentEvent>? progress, CancellationToken ct)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(MemoryRecallTimeout);
+            var memory = await _recall!(userText, recallAssets, timeout.Token);
+            if (!string.IsNullOrWhiteSpace(memory))
+                progress?.Report(new AgentEvent(AgentEventKind.MemoryRecall, Text: memory));
+            return memory;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                Text: $"记忆召回超时(>{MemoryRecallTimeout.TotalSeconds:F0}s)，本轮未注入"));
+            return null;
+        }
+        catch (Exception ex)
+        {
+            progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                Text: "记忆召回失败，本轮未注入: " + Shorten(ex.Message)));
+            return null;
+        }
+    }
+
+    private static string Shorten(string? message)
+    {
+        var text = (message ?? "unknown").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return text.Length <= 120 ? text : text[..120] + "…";
     }
 
     public int EstimatedTokens => TokenEstimator.Estimate(Messages);
@@ -430,8 +561,7 @@ public sealed class AgentSession
                 toolResults += tokens;
         }
 
-        return new ContextBreakdown(system, summary, TokenEstimator.EstimateToolDefinitions(_tools.Select(t => t.Tool)),
-            user, assistant, toolResults);
+        return new ContextBreakdown(system, summary, _toolDefinitionTokens, user, assistant, toolResults);
     }
 
     /// <summary>把本轮 UI 事件旁路成工作日志：工具调用/结果、最终文本与结束状态（不影响原有事件消费）。</summary>
@@ -613,6 +743,28 @@ public sealed class AgentSession
             var ratio = Math.Clamp(input / (double)estimatedAtRequest, 0.1, 10.0);
             UsageRatio = UsageRatio is null ? ratio : UsageRatio.Value * 0.6 + ratio * 0.4;
         }
+    }
+
+    /// <summary>记录辅助模型调用（滚动摘要等）的用量：计入会话 token/成本，但不影响主请求的校准与“上一次请求”指标。</summary>
+    private void RecordAuxiliaryUsage(ChatResponse response)
+    {
+        SessionRequestCount++;
+        var usage = response.Usage;
+        if (usage is null)
+            return;
+
+        var input = usage.InputTokenCount ?? 0;
+        var output = usage.OutputTokenCount ?? 0;
+        if (input > 0)
+            Interlocked.Add(ref _sessionInputTokens, input);
+        if (output > 0)
+            Interlocked.Add(ref _sessionOutputTokens, output);
+        if (input > 0 || output > 0)
+            _onUsageDelta?.Invoke(input, output);
+
+        var cached = usage.CachedInputTokenCount ?? 0;
+        if (cached > 0)
+            SessionCachedInputTokens += cached;
     }
 
     /// <summary>滚动摘要文本（无则空串）；用于跨重启/会话重建持久化。</summary>
@@ -840,8 +992,7 @@ public sealed class AgentSession
         var mutatingTools = new List<string>();
         foreach (var message in dropped)
             foreach (var call in message.Contents.OfType<FunctionCallContent>())
-                if (!string.Equals(call.Name, WorkLogTools.WriteToolName, StringComparison.Ordinal) &&
-                    _toolsByName.TryGetValue(call.Name, out var tool) && (!tool.ReadOnly || tool.Destructive))
+                if (_toolsByName.TryGetValue(call.Name, out var tool) && (!tool.ReadOnly || tool.Destructive))
                     mutatingTools.Add(call.Name);
 
         if (mutatingTools.Count == 0)
@@ -936,11 +1087,16 @@ public sealed class AgentSession
         toolName.Equals("local_shell", StringComparison.OrdinalIgnoreCase) ||
         toolName.EndsWith("_logs", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>mcp_usage_guide 是参考文档，默认 4000 字符会把路由段截掉；单独放宽到 8000（summary 模式已控制在 8000 内）。</summary>
+    private const int GuideResultMaxChars = 8000;
+
     /// <summary>把工具结果按 <see cref="AgentConfig.ToolResultMaxChars"/> 截断后再放入上下文（完整结果仍推送给界面）。
     /// 日志类工具保留尾部（最新日志），其余保留头部；若启用落盘，超大结果写入文件并只放预览 + <c>spill://</c> 句柄。</summary>
     private string BuildToolResultContextText(string toolName, string resultText)
     {
         var max = _config.ToolResultMaxChars;
+        if (max > 0 && toolName.Equals("mcp_usage_guide", StringComparison.OrdinalIgnoreCase))
+            max = Math.Max(max, GuideResultMaxChars);
         if (max <= 0 || resultText.Length <= max)
             return resultText;
 
@@ -958,7 +1114,7 @@ public sealed class AgentSession
                 var label = tail ? "以下为最新内容" : "预览";
                 return preview +
                     $"\n…[结果过大({resultText.Length} 字符/{lines} 行), 已落盘为 {SpillStore.Scheme}{handle}; " +
-                    $"用 spill_read(handle=\"{handle}\", mode=\"read\", offset, limit) 分段读取, spill_read(mode=\"grep\", pattern) 搜索, spill_list 列出; {label}]";
+                    $"用 spill(action=\"read\", handle=\"{handle}\", offset, limit) 分段读取, spill(action=\"grep\", handle=\"{handle}\", pattern) 搜索, spill(action=\"list\") 列出; {label}]";
             }
             catch
             {
@@ -1005,6 +1161,7 @@ public sealed class AgentSession
             },
             new ChatOptions { MaxOutputTokens = 512, Temperature = 0 },
             ct);
+        RecordAuxiliaryUsage(response);
 
         var text = response.Text?.Trim();
         if (string.IsNullOrWhiteSpace(text))

@@ -114,36 +114,6 @@ public class WorkLogStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Model_note_appends_to_same_daily_file()
-    {
-        var store = CreateStore();
-
-        var result = await store.AppendNoteAsync("目标：重启 nginx\n结果：健康检查通过");
-
-        Assert.Contains("已追加", result);
-        var text = await File.ReadAllTextAsync(store.GetDailyPath(DateTime.Now));
-        Assert.Contains("复盘", text);
-        Assert.Contains("健康检查通过", text);
-    }
-
-    [Fact]
-    public async Task Worklog_tool_appends_model_note()
-    {
-        var store = CreateStore();
-        var tool = Assert.Single(WorkLogTools.Create(store));
-
-        Assert.Equal("ops_worklog_write", tool.Name);
-        Assert.False(tool.ReadOnly);
-        var result = await tool.InvokeAsync(
-            new Dictionary<string, object?> { ["content"] = "目标：重启\n结果：通过" }, default);
-
-        Assert.Contains("已追加", result!.ToString());
-        var text = await File.ReadAllTextAsync(store.GetDailyPath(DateTime.Now));
-        Assert.Contains("复盘", text);
-        Assert.Contains("结果：通过", text);
-    }
-
-    [Fact]
     public async Task Compaction_marker_only_written_when_mutating_tools_present()
     {
         var store = CreateStore();
@@ -157,19 +127,61 @@ public class WorkLogStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Ops_doc_write_cannot_tamper_worklogs()
+    public async Task Ops_doc_write_allows_worklog_append_but_blocks_overwrite()
     {
         var tools = WorkspaceTools.Create(_workspace);
         var write = tools.Single(t => t.Name == "ops_doc_write");
+        var read = tools.Single(t => t.Name == "ops_doc_read");
+        var date = DateTime.Now;
+        var relative = $"worklogs/{date:yyyy}/{date:yyyy-MM-dd}.md";
+        var full = Path.Combine(_workspace, "worklogs", date.ToString("yyyy"), date.ToString("yyyy-MM-dd") + ".md");
 
-        var result = await write.InvokeAsync(new Dictionary<string, object?>
+        var appended = await write.InvokeAsync(new Dictionary<string, object?>
         {
-            ["path"] = "worklogs/2026/2026-01-01.md",
+            ["mode"] = "append",
+            ["path"] = relative,
+            ["content"] = "## 复盘\n- 目标：重启 nginx\n- 结果：通过"
+        }, default);
+        Assert.Contains("已追加", appended!.ToString());
+        var text = await File.ReadAllTextAsync(full);
+        Assert.Contains("# " + date.ToString("yyyy-MM-dd"), text);
+        Assert.Contains("结果：通过", text);
+
+        var overwritten = await write.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["mode"] = "overwrite",
+            ["path"] = relative,
             ["content"] = "tampered"
         }, default);
+        Assert.Contains("宿主维护", overwritten!.ToString());
+        Assert.Contains("结果：通过", await File.ReadAllTextAsync(full));
 
-        Assert.Contains("宿主维护", result!.ToString());
-        Assert.False(File.Exists(Path.Combine(_workspace, "worklogs", "2026", "2026-01-01.md")));
+        var listed = await read.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["action"] = "list",
+            ["path"] = "worklogs"
+        }, default);
+        Assert.Contains(relative, listed!.ToString());
+    }
+
+    [Fact]
+    public async Task Ops_doc_write_redacts_worklog_content()
+    {
+        var tools = WorkspaceTools.Create(_workspace);
+        var write = tools.Single(t => t.Name == "ops_doc_write");
+        var date = DateTime.Now;
+        var relative = $"worklogs/{date:yyyy}/{date:yyyy-MM-dd}.md";
+
+        await write.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["mode"] = "append",
+            ["path"] = relative,
+            ["content"] = "password=FAKE_PASSWORD_FOR_TEST"
+        }, default);
+
+        var text = await File.ReadAllTextAsync(Path.Combine(_workspace, "worklogs", date.ToString("yyyy"), date.ToString("yyyy-MM-dd") + ".md"));
+        Assert.DoesNotContain("FAKE_PASSWORD_FOR_TEST", text);
+        Assert.Contains("******", text);
     }
 
     [Fact]

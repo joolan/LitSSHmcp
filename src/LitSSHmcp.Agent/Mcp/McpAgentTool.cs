@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 
 namespace LitSSHmcp.Agent;
@@ -48,4 +49,13 @@ internal sealed class McpAgentTool : IAgentTool
 
     public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct) =>
         await _tool.InvokeAsync(new AIFunctionArguments(arguments), ct);
+
+    public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments,
+        IProgress<ProgressNotificationValue>? progress, CancellationToken ct)
+    {
+        if (progress is null)
+            return await InvokeAsync(arguments, ct);
+        var tool = _tool.WithProgress(progress);
+        return await tool.InvokeAsync(new AIFunctionArguments(arguments), ct);
+    }
 }

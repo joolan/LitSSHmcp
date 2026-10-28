@@ -1,6 +1,6 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
@@ -49,7 +49,7 @@ public class AppTools
     }
 
     [McpServerTool(Name = "app_health_snapshot", UseStructuredContent = true, OutputSchemaType = typeof(AppHealthSnapshotDto), ReadOnly = true, OpenWorld = true)]
-    [Description("按应用聚合一键体检快照: 所在服务器的Java进程/容器/监听端口(按应用名/容器名/端口过滤) + 依赖数据源的连通性(可选诊断)。跨机排查某应用时先用它, 再按需下钻到具体工具")]
+    [Description("按应用聚合体检：所在服务器的 Java 进程/容器/监听端口 + 依赖数据源连通性(可选诊断)。跨机排查某应用时先用它，再按需下钻")]
     public async Task<AppHealthSnapshotDto> AppHealthSnapshot(
         [Description("应用标识: ID或名称, 可在拓扑总览里查看, 可用topology_get_overview列出")] string appId,
         [Description("true=对依赖数据源额外做整体诊断(更慢更全); 默认只测连通性")] bool includeDiagnostics = false,

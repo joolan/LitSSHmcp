@@ -71,9 +71,7 @@ public static class SubAgents
 
         var tools = FilterByGroups(subTools, ArgumentReader.ReadString(args, "groups"));
 
-        var prompt =
-            "你是主代理委派的**子代理**：只做**只读**调查取证，用工具收集事实后**只返回简洁结论**(要点/证据/未决)，不要提问、不要做任何写操作。"
-            + (string.IsNullOrEmpty(restrictionNote) ? string.Empty : restrictionNote);
+        var prompt = SystemPromptBuilder.BuildSubAgentPrompt(restrictionNote);
 
         if (budgetCheck is not null && !budgetCheck(0, 0))
             return "(子代理已取消：会话成本预算已耗尽；请提高 agent.budget.maxSessionCost 或切换更便宜的模型)";

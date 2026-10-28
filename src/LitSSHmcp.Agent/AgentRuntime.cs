@@ -20,7 +20,14 @@ public sealed class AgentRuntime : IAsyncDisposable
     public AgentSession Session { get; private set; }
     public AgentProviderConfig Provider { get; private set; }
     public AgentMemoryService? Memory { get; }
+    public AgentConsolidationService? Consolidation { get; }
+    public IFleetPlanStore FleetPlans { get; }
+    public string FleetPlanOwnerKey { get; }
+    public long? FleetPlanSessionId { get; }
     public int ToolCount => Session.ToolCount;
+
+    /// <summary>后台 consolidation 最终失败（含自动重试后仍失败/异常）；供宿主记录告警，不阻断主流程。</summary>
+    public event Action<string>? ConsolidationFailed;
 
     /// <summary>
     /// 本次运行装配的工作区主根（会话目录或共享工作区），由 <see cref="StartAsync"/> 赋值。
@@ -52,11 +59,13 @@ public sealed class AgentRuntime : IAsyncDisposable
     private readonly Action<IReadOnlyList<PlanItem>>? _onPlan;
     private readonly Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? _recall;
     private readonly Func<string, CancellationToken, Task<AssetGraphContextResult?>>? _graphContext;
+    private readonly string? _assetGraph;
     private readonly SpillStore? _spill;
     private readonly WorkLogStore? _workLog;
     private List<string> _activeSkillIds = new();
     private AgentPromptContext? _activeAgent;
     private bool _planMode;
+    private int _consolidating;
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
 
     private const string ReadOnlyNote =
@@ -69,6 +78,10 @@ public sealed class AgentRuntime : IAsyncDisposable
         IReadOnlyList<McpHostStatus> mcpHostStatuses,
         AgentProviderConfig provider,
         AgentMemoryService? memory,
+        AgentConsolidationService? consolidation,
+        IFleetPlanStore fleetPlans,
+        string fleetPlanOwnerKey,
+        long? fleetPlanSessionId,
         string? memoryDisabledReason,
         AgentConfig config,
         Func<IEnumerable<string>?, AgentPromptContext?, string> promptBuilder,
@@ -81,13 +94,18 @@ public sealed class AgentRuntime : IAsyncDisposable
         Func<string, CancellationToken, Task<AssetGraphContextResult?>>? graphContext,
         SpillStore? spill,
         WorkLogStore? workLog,
-        IEnumerable<ChatMessage>? history)
+        IEnumerable<ChatMessage>? history,
+        string? assetGraph = null)
     {
         Hosts = hosts;
         McpWarnings = mcpWarnings;
         McpHostStatuses = mcpHostStatuses;
         Provider = provider;
         Memory = memory;
+        Consolidation = consolidation;
+        FleetPlans = fleetPlans;
+        FleetPlanOwnerKey = fleetPlanOwnerKey;
+        FleetPlanSessionId = fleetPlanSessionId;
         MemoryDisabledReason = memoryDisabledReason;
         _config = config;
         _readOnlyNote = config.ReadOnly ? ReadOnlyNote : null;
@@ -100,6 +118,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         _onPlan = onPlan;
         _recall = recall;
         _graphContext = graphContext;
+        _assetGraph = assetGraph;
         _spill = spill;
         _workLog = workLog;
         Session = BuildSession(provider, history);
@@ -161,6 +180,10 @@ public sealed class AgentRuntime : IAsyncDisposable
         Session.SetPlanMode(planMode);
     }
 
+    /// <summary>宿主机（桌面/Web 面板）直接调用当前会话工具；不写对话历史。</summary>
+    public Task<object?> InvokeHostToolAsync(string toolName, IDictionary<string, object?>? arguments,
+        CancellationToken ct = default) => Session.InvokeHostToolAsync(toolName, arguments, ct);
+
     /// <summary>用当前配置与工具重新构建对话会话（仅换历史/模型，不重连 MCP）。</summary>
     public void ResetSession(AgentProviderConfig provider, IEnumerable<ChatMessage>? history)
     {
@@ -175,6 +198,14 @@ public sealed class AgentRuntime : IAsyncDisposable
         var tools = new List<IAgentTool>(_baseTools);
         AgentSession? session = null;
 
+        // 批量只读查询：把内置只读目标工具扇出到多台；策略检查延迟到调用时读取当前会话策略。
+        if (ToolProfileFilter.AllowsLocal(FleetTools.ToolName, _config.Profile))
+        {
+            var fleetTool = FleetTools.Create(_baseTools, name => session?.IsDenied(name) ?? false);
+            if (fleetTool is not null)
+                tools.Add(fleetTool);
+        }
+
         Func<long, long, bool>? budgetCheck = null;
         SessionCostBudget? budget = null;
         var limit = _config.Budget?.MaxSessionCost ?? 0;
@@ -186,7 +217,7 @@ public sealed class AgentRuntime : IAsyncDisposable
             budgetCheck = (_, _) => budget.Check();
         }
 
-        if (_config.EnableSubAgent)
+        if (_config.EnableSubAgent && ToolProfileFilter.AllowsLocal(SubAgents.ToolName, _config.Profile))
         {
             tools.Add(SubAgents.Create(client, provider, _config, _subTools, _readOnlyNote,
                 onUsage: (input, output) => session?.AddChildUsage(input, output),
@@ -195,11 +226,11 @@ public sealed class AgentRuntime : IAsyncDisposable
                 toolPolicyProvider: () => _toolPolicy,
                 planModeProvider: () => _planMode));
         }
-        if (_onPlan is not null)
+        if (_onPlan is not null && ToolProfileFilter.AllowsLocal("update_plan", _config.Profile))
             tools.Add(PlanTools.Create(_onPlan));
         session = new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill,
             roundNotifier: _roundNotifier, graphContext: _graphContext, budgetCheck: budgetCheck,
-            onUsageDelta: budget is null ? null : budget.Add, workLog: _workLog);
+            onUsageDelta: budget is null ? null : budget.Add, workLog: _workLog, assetGraph: _assetGraph);
         session.SetToolPolicy(_toolPolicy);
         session.SetPlanMode(_planMode);
         return session;
@@ -232,7 +263,9 @@ public sealed class AgentRuntime : IAsyncDisposable
         string? ownerRole = null,
         bool scopeSpillByOwner = false,
         bool scopeMemoryByOwner = false,
-        bool enableWorkLog = true)
+        bool enableWorkLog = true,
+        long? sessionId = null,
+        IFleetPlanStore? fleetPlanStore = null)
     {
         // D8 启用层：会话级连接器子集只在全局启用集合内收窄（null=继承全局默认集合；全局停用恒出局）
         var servers = McpSubsetPolicy.EffectiveServers(AgentMcpServerConfig.Normalize(config.McpServers), enabledMcpIds);
@@ -312,10 +345,23 @@ public sealed class AgentRuntime : IAsyncDisposable
         if (builtinHost is not null)
         {
             foreach (var tool in ToolFilter.Apply(builtinHost.Tools, config))
-            {
-                usedNames.Add(tool.Name);
                 builtinTools.Add(new McpAgentTool(tool, config.CompactToolDescriptions));
-            }
+        }
+        // 会话 profile 先裁剪远程工具；后续技能索引/能力边界/Graph-RAG 都基于裁剪后的工具集。
+        builtinTools = builtinTools.Where(t => ToolProfileFilter.AllowsRemote(t, config.Profile)).ToList();
+        usedNames = new HashSet<string>(builtinTools.Select(t => t.Name), StringComparer.Ordinal);
+
+        // mcp_usage_guide 按本次会话实际暴露的工具裁剪返回内容（profile/只读/分组过滤后的结果），
+        // 避免模型看到“已不可用”的路由。工具声明/参数不变，只在调用结果上后处理。
+        if (builtinHost is not null)
+        {
+            var allBuiltinNames = builtinHost.Tools.Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
+            var allowedBuiltinNames = builtinTools.Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
+            builtinTools = builtinTools
+                .Select(t => string.Equals(t.Name, "mcp_usage_guide", StringComparison.Ordinal)
+                    ? new GuideFilterTool(t, allBuiltinNames, allowedBuiltinNames)
+                    : t)
+                .ToList();
         }
 
         // Graph-RAG：仅在内置 topology 工具存在时启用；每次发送前自动解析资产并拉 1 跳邻域。
@@ -330,6 +376,10 @@ public sealed class AgentRuntime : IAsyncDisposable
             var count = 0;
             foreach (var tool in ToolFilter.Apply(host.Tools, config))
             {
+                if (!ToolProfileFilter.AllowsRemote(
+                        new McpAgentTool(tool, config.CompactToolDescriptions), config.Profile))
+                    continue;
+
                 var name = tool.Name;
                 if (!usedNames.Add(name))
                 {
@@ -375,11 +425,16 @@ public sealed class AgentRuntime : IAsyncDisposable
             ? WorkLogStore.TryCreate(config.WorkLog ?? new AgentWorkLogConfig(), sharedRoot, ownerUserId,
                 scopeByOwner: false)
             : null;
-        IReadOnlyList<IAgentTool> workLogTools = workLog is { ModelSummary: true } && !config.ReadOnly
-            ? WorkLogTools.Create(workLog)
-            : Array.Empty<IAgentTool>();
+        // 工作日志路径（系统提示用）：会话模式写共享区，单根模式写根目录；日期取会话启动日，保持提示词稳定。
+        var workLogRoot = sessionRoot is null ? WorkLogStore.DirName : $"{WorkspaceTools.SharedPrefix}{WorkLogStore.DirName}";
+        var workLogDate = DateTime.Now;
+        var workLogPath = workLog is null
+            ? null
+            : $"{workLogRoot}/{workLogDate:yyyy}/{workLogDate:yyyy-MM-dd}.md";
         var skillsDir = SkillRegistry.ResolveDir(config.SkillsDir, bundledSkillsDir);
-        var skillTools = skillsDir is null ? new List<IAgentTool>() : SkillTools.Create(skillsDir).ToList();
+        var skillTools = skillsDir is null
+            ? new List<IAgentTool>()
+            : SkillTools.Create(skillsDir, availableGroups).ToList();
 
         var spill = TryCreateSpill(config, ownerUserId, scopeSpillByOwner);
         var spillTools = spill is null ? new List<IAgentTool>() : SpillTools.Create(spill).ToList();
@@ -388,6 +443,68 @@ public sealed class AgentRuntime : IAsyncDisposable
         var (memory, memoryDisabledReason) = await TryCreateMemoryAsync(config, provider, ownerUserId,
             scopeMemoryByOwner, isAdmin, ct);
         var memoryTools = memory is null ? new List<IAgentTool>() : MemoryTools.Create(memory).ToList();
+        var incidentTools = memory is null ? new List<IAgentTool>() : IncidentTools.Create(memory).ToList();
+        AgentConsolidationService? consolidation = null;
+        if (memory is not null && config.Consolidation?.Enabled == true)
+        {
+            try
+            {
+                IChatClient? consolidationClient = null;
+                var modelId = config.Consolidation.ProviderId?.Trim();
+                if (!string.IsNullOrWhiteSpace(modelId))
+                {
+                    var lowCost = AgentProviderGroupConfig.Flatten(config.Providers)
+                        .FirstOrDefault(p => string.Equals(p.Id, modelId, StringComparison.Ordinal));
+                    if (lowCost is not null)
+                    {
+                        try { consolidationClient = ChatClientFactory.Create(lowCost); }
+                        catch { /* 低成本模型不可用时回退当前模型 */ }
+                    }
+                }
+                consolidationClient ??= ChatClientFactory.Create(provider);
+                consolidation = new AgentConsolidationService(memory.Store, consolidationClient,
+                    config.Consolidation);
+            }
+            catch
+            {
+                consolidation = null;   // 后台整理失败不应阻断主助手
+            }
+        }
+        var consolidationTools = consolidation is null
+            ? new List<IAgentTool>()
+            : ConsolidationTools.Create(consolidation).ToList();
+        // 诊断/变更报告契约：无记忆/只读模式下降级为“只生成报告、不落库”的只读工具。
+        var diagnosisTool = DiagnosisTools.Create(config.ReadOnly ? null : memory);
+        var diagnosisEnabled = ToolProfileFilter.AllowsLocal(DiagnosisTools.ToolName, config.Profile);
+        // 洞察工具（时间线 + 资产画像）只在记忆启用时注册：无记忆时两者没有可读数据，避免默认工具面冗余。
+        IAgentTool? insightTool = null;
+        if (memory is not null)
+        {
+            var timelineTool = TimelineTools.Create(memory.Store);
+            var assetProfileTool = AssetProfileTools.Create(memory.Store,
+                mcpTools.FirstOrDefault(t => string.Equals(t.Name, "topology_query", StringComparison.Ordinal)));
+            insightTool = InsightTools.Create(timelineTool, assetProfileTool);
+        }
+        var fleetPlans = fleetPlanStore ??
+                         (sessionId is null ? new MemoryFleetPlanStore() : new SqliteFleetPlanStore());
+        AgentRuntime? fleetRuntime = null;
+        Func<string, bool> fleetDenied = name => fleetRuntime?.Session.IsDenied(name) ?? false;
+        var listServersTool = mcpTools.FirstOrDefault(t => string.Equals(t.Name, "ssh_list_servers",
+            StringComparison.Ordinal));
+        var fleetTargetsTool = FleetTargetTools.Create(listServersTool, fleetDenied);
+        var fleetTargetsEnabled = fleetTargetsTool is not null &&
+                                  ToolProfileFilter.AllowsLocal(FleetTargetTools.ToolName, config.Profile);
+        var fleetChangeTool = FleetChangeTools.Create(
+            mcpTools.FirstOrDefault(t => string.Equals(t.Name, "ssh_execute_fleet", StringComparison.Ordinal)),
+            mcpTools.FirstOrDefault(t => string.Equals(t.Name, "ssh_test_connection", StringComparison.Ordinal)),
+            fleetPlans, ownerUserId ?? "local", sessionId, listServersTool, fleetDenied);
+        var fleetChangeEnabled = fleetChangeTool is not null &&
+                                 ToolProfileFilter.AllowsLocal(FleetChangeTools.ToolName, config.Profile);
+        // 批量执行工具只作为 fleet_change 的底层能力，不直接暴露给模型，强制走 plan/canary/apply/rollback。
+        if (fleetChangeTool is not null)
+            mcpTools = mcpTools
+                .Where(t => !string.Equals(t.Name, "ssh_execute_fleet", StringComparison.Ordinal))
+                .ToList();
         // 脚本复用登记（写 MANIFEST + 可选同步记忆）：台账恒在共享区（D6 scripts/ 留共享，不随会话割裂）
         var scriptTools = ScriptTools.Create(sharedRoot, memory, sharedWritable).ToList();
         Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? recall =
@@ -396,10 +513,16 @@ public sealed class AgentRuntime : IAsyncDisposable
                 : (query, assetIds, token) => memory.RecallAsync(query, assetIds: assetIds, ct: token);
 
         // 系统提示按"激活技能"动态构建（未选技能=仅注入索引）；切换技能时用同一定义重算。
-        var skillFiles = skillsDir is null ? null : SkillRegistry.ListReferenceFiles(skillsDir);
-        Func<IEnumerable<string>?, AgentPromptContext?, string> promptBuilder = (activeSkills, agent) => SystemPromptBuilder.Build(
+        // 技能参考文件只列当前激活技能目录下的文件；索引模式不注入（避免把所有技能的 references 都塞进前缀）。
+        Func<IEnumerable<string>?, AgentPromptContext?, string> promptBuilder = (activeSkills, agent) =>
+        {
+            var active = activeSkills?.ToList();
+            var skillFiles = skillsDir is null || active is not { Count: > 0 }
+                ? null
+                : SkillRegistry.ListReferenceFiles(skillsDir, activeSkillIds: active);
+            return SystemPromptBuilder.Build(
             serverInstructionsText,
-            SkillRegistry.Load(config.SkillsDir, bundledSkillsDir, availableGroups, activeSkills?.ToList()),
+            SkillRegistry.Load(config.SkillsDir, bundledSkillsDir, availableGroups, active),
             config.SystemPrompt,
             skillFiles: skillFiles,
             spillTools: spill is not null,
@@ -419,14 +542,31 @@ public sealed class AgentRuntime : IAsyncDisposable
             sharedWorkspaceDir: sessionRoot is null ? null : sharedRoot,
             workLog: workLog is not null,
             workLogDir: workLog?.RootDir,
-            workLogModelSummary: workLog is { ModelSummary: true } && !config.ReadOnly);
+            workLogPath: workLogPath,
+            workLogRoot: workLog is null ? null : workLogRoot,
+            fleetTools: FleetTools.HasEligible(mcpTools),
+            fleetChangeTools: fleetChangeEnabled,
+            profileName: ToolProfileFilter.Display(config.Profile),
+            diagnosisTools: diagnosisEnabled,
+            insightTools: insightTool is not null);
+        };
 
         // 主代理基础工具 = MCP + 工作区文档 + 技能参考 + 落盘读取 + 记忆/脚本登记 + 宿主注入的本地工具（不含子代理/计划，它们依赖 client/回调，按会话构建）
         var baseTools = mcpTools.Concat(workspaceTools).Concat(skillTools).Concat(spillTools)
-            .Concat(memoryTools).Concat(scriptTools).Concat(workLogTools)
+            .Concat(memoryTools).Concat(incidentTools).Concat(consolidationTools)
+            .Concat(diagnosisEnabled ? new[] { diagnosisTool } : Array.Empty<IAgentTool>())
+            .Concat(insightTool is null ? Array.Empty<IAgentTool>() : new[] { insightTool })
+            .Concat(fleetTargetsEnabled ? new[] { fleetTargetsTool! } : Array.Empty<IAgentTool>())
+            .Concat(fleetChangeEnabled ? new[] { fleetChangeTool! } : Array.Empty<IAgentTool>())
+            .Concat(scriptTools)
             .Concat(extraTools ?? Enumerable.Empty<IAgentTool>()).ToList();
         // 子代理只给只读类工具(MCP/技能/落盘)，不给工作区写工具与计划, 避免副作用与递归
         var subTools = mcpTools.Concat(skillTools).Concat(spillTools).ToList();
+        // profile 的本地工具白名单（远程工具已在上方按分组/只读裁剪）。
+        baseTools = baseTools.Where(t => t.ToolGroup is not null ||
+                                         ToolProfileFilter.AllowsLocal(t.Name, config.Profile)).ToList();
+        subTools = subTools.Where(t => t.ToolGroup is not null ||
+                                       ToolProfileFilter.AllowsLocal(t.Name, config.Profile)).ToList();
         // 全局只读：MCP 工具已由 ToolFilter 过滤，这里再过滤本地工具（写文档工具等），保证运行时工具集一次性恒定。
         if (config.ReadOnly)
         {
@@ -447,7 +587,8 @@ public sealed class AgentRuntime : IAsyncDisposable
                 hostStatuses.Add(new McpHostStatus(s.Id, s.Name, false, info.Error is null, info.ToolCount, info.Error));
         }
 
-        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, graphContext, spill, workLog, history);
+        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, consolidation, fleetPlans, ownerUserId ?? "local", sessionId, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, graphContext, spill, workLog, history, assetGraph);
+        fleetRuntime = runtime;
         runtime.WorkspaceRoot = workspaceRoot;
         if (activeSkillIds is { Count: > 0 })
             runtime.SetActiveSkills(activeSkillIds);
@@ -477,18 +618,20 @@ public sealed class AgentRuntime : IAsyncDisposable
         }
     }
 
-    /// <summary>把一轮对话（用户+助手）加入长期记忆（无记忆时为空操作；内容经质量门压缩，同源保留上限）。</summary>
-    public async Task IndexTurnAsync(string userText, string assistantText, CancellationToken ct = default)
+    /// <summary>把一轮对话（用户+助手）加入长期记忆（无记忆时为空操作；按会话分桶、脱敏后入库）。</summary>
+    public async Task IndexTurnAsync(string? sessionId, string userText, string assistantText,
+        CancellationToken ct = default)
     {
         if (Memory is null)
             return;
         try
         {
-            var content = MemoryQuality.BuildRawContent(userText, assistantText);
+            var content = MemoryQuality.PrepareRawContent(userText, assistantText);
             if (content is null)
                 return;
-            await Memory.IndexAsync("会话", content, ct);
-            await Memory.PruneRawAsync("会话", RawPerSourceLimit, ct);
+            var source = RawSource(sessionId);
+            await Memory.IndexAsync(source, content, ct);
+            await Memory.PruneRawAsync(source, RawKeepPerSource, ct);
         }
         catch
         {
@@ -496,8 +639,54 @@ public sealed class AgentRuntime : IAsyncDisposable
         }
     }
 
-    /// <summary>同源("会话")raw 片段保留条数上限。</summary>
-    public const int RawPerSourceLimit = 200;
+    /// <summary>后台索引一轮对话：不阻塞回合收尾；失败静默（记住内容已脱敏，写入失败不影响主流程）。</summary>
+    public void IndexTurnInBackground(string? sessionId, string userText, string assistantText)
+    {
+        if (Memory is null)
+            return;
+        _ = Task.Run(() => IndexTurnAsync(sessionId, userText, assistantText, CancellationToken.None));
+    }
+
+    /// <summary>后台 consolidation：不阻塞回合；同一 runtime 同时只跑一个，间隔/条数由配置控制。</summary>
+    public void ConsolidateInBackground()
+    {
+        if (Consolidation is null)
+            return;
+        if (Interlocked.Exchange(ref _consolidating, 1) != 0)
+            return;
+        _ = Task.Run(async () =>
+        {
+            string? failure = null;
+            try
+            {
+                var result = await Consolidation.RunAsync(force: false, CancellationToken.None);
+                if (result.StartsWith("consolidation 失败", StringComparison.Ordinal))
+                    failure = result;
+            }
+            catch (Exception ex)
+            {
+                failure = "consolidation 异常: " + ex.Message;
+            }
+            finally
+            {
+                if (failure is not null)
+                {
+                    try { ConsolidationFailed?.Invoke(failure); } catch { /* 告警失败不影响后台 */ }
+                }
+                Volatile.Write(ref _consolidating, 0);
+            }
+        });
+    }
+
+    /// <summary>同一会话 raw 片段默认保留条数（agent.memory.rawKeepPerSource 未配置/非法时）。</summary>
+    public const int DefaultRawKeepPerSource = 50;
+
+    private int RawKeepPerSource =>
+        _config.Memory?.RawKeepPerSource is > 0 ? _config.Memory.RawKeepPerSource : DefaultRawKeepPerSource;
+
+    /// <summary>raw 记忆按会话分桶，避免所有会话共享一个全局上限。</summary>
+    private static string RawSource(string? sessionId) =>
+        string.IsNullOrWhiteSpace(sessionId) ? "会话" : "会话:" + sessionId.Trim();
 
     /// <summary>
     /// 尝试创建长期记忆服务。返回 (服务, 禁用原因)：
@@ -517,8 +706,22 @@ public sealed class AgentRuntime : IAsyncDisposable
         {
             var embedder = EmbeddingClientFactory.Create(config.Memory, provider.ApiKey);
             var access = scopeByOwner ? new MemoryAccessScope(ownerUserId!, isAdmin) : null;
+            IChatClient? reranker = null;
+            var rerankId = config.Memory.RerankProviderId?.Trim();
+            if (!string.IsNullOrWhiteSpace(rerankId))
+            {
+                var rerankProvider = AgentProviderGroupConfig.Flatten(config.Providers)
+                    .FirstOrDefault(p => string.Equals(p.Id, rerankId, StringComparison.Ordinal));
+                if (rerankProvider is not null)
+                {
+                    try { reranker = ChatClientFactory.Create(rerankProvider); }
+                    catch { /* 重排模型不可用时回退规则重排 */ }
+                }
+            }
             var memory = new AgentMemoryService(new AgentMemoryStore(null, access), embedder, config.Memory.TopK,
-                config.Memory.RecallThreshold);
+                config.Memory.RecallThreshold, config.Memory.Model, config.Memory.RecencyHalfLifeDays,
+                config.Memory.MaxRecallChars, config.Memory.EmbeddingTimeoutSeconds, reranker,
+                config.Memory.RecallRelativeMargin);
             await memory.InitializeAsync(ct);
             return (memory, null);
         }
@@ -534,25 +737,16 @@ public sealed class AgentRuntime : IAsyncDisposable
         if (Memory is null)
             return;
 
+        var indexer = new DocumentIndexer(Memory);
         _ = Task.Run(async () =>
         {
             try
             {
-                if (!Directory.Exists(workspaceDir))
-                    return;
-
-                foreach (var file in Directory.EnumerateFiles(workspaceDir, "*", SearchOption.AllDirectories).Take(50))
-                {
-                    var info = new FileInfo(file);
-                    if (info.Length > 200_000)
-                        continue;
-                    var content = await File.ReadAllTextAsync(file);
-                    await Memory.IndexAsync($"文档:{Path.GetRelativePath(workspaceDir, file)}", content);
-                }
+                await indexer.IndexAsync(workspaceDir);
             }
             catch
             {
-                // 后台索引失败忽略
+                // 后台索引失败忽略；下次启动会按 hash 重试
             }
         });
     }

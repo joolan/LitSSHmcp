@@ -2,6 +2,9 @@
 name: java-gc-jvm
 description: Java 进程 GC/JVM 诊断（内存涨、GC 频繁、CPU 飙高、线程死锁、堆溢出）。适用于「Java 服务卡顿/内存高」「Full GC 频繁」「jstack/jmap」「OOM」。
 appliesTo: [java, ssh, command, log]
+triggers: [Java, JVM, Java 内存, Full GC, GC 频繁, GC 时间长, 堆溢出, 线程死锁, 线程阻塞, jstack, jmap, Java 卡顿, OOM]
+symptoms: [gc_pressure, jvm_oom, thread_blocked, heap_overflow]
+assets: [java, app]
 ---
 
 # Java GC / JVM 诊断

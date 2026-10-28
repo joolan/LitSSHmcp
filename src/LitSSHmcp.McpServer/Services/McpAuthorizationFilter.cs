@@ -134,6 +134,22 @@ public static class McpAuthorizationFilter
         return allowed;
     }
 
+    /// <summary>当前调用者是否对该目标具备 exec 权限（用于批量变更 plan 阶段预检，不执行命令）。</summary>
+    public static bool IsTargetExecutableForCaller(AuthorizationConfig policy, string targetKey)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        if (!EnforcementEnabled || CallerScope.Current.IsAdmin)
+            return true;
+
+        var (allowed, _) = EvaluateAccess(
+            policy,
+            Environment.GetEnvironmentVariable(HostEnv.AuthzUser),
+            AuditContext.CurrentUserId,
+            new[] { targetKey },
+            ToolAccessLevel.Exec);
+        return allowed;
+    }
+
     /// <summary>
     /// 解析调用所需的最低访问级别：SQL/Redis 执行按实际语句动态判定，其余按目录静态声明。
     /// shell 命令不再用“首词只读”降级授权，统一要求 exec。

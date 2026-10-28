@@ -1,6 +1,6 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
@@ -40,9 +40,9 @@ public class PostgresTools
     }
 
     [McpServerTool(Name = "postgres_query", UseStructuredContent = true, OutputSchemaType = typeof(QueryResultDto), ReadOnly = true, OpenWorld = true)]
-    [Description("PostgreSQL 只读入口：action=query 执行 SELECT/SHOW/EXPLAIN/DESC/WITH；action=explain 分析执行计划；action=diagnostics 做连接/活动会话/等待锁/复制/缓存/死锁整体诊断。写 SQL 用 postgres_execute。")]
+    [Description("PG 只读入口：action=query 执行 SELECT/SHOW/EXPLAIN/WITH；action=explain 看执行计划；action=diagnostics 做连接/锁/复制诊断。写用 postgres_execute")]
     public async Task<QueryResultDto> PostgresQuery(
-        [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
+        [Description("数据源 ID/名称")] string datasourceId,
         [Description("读取类型：query / explain / diagnostics")] string action,
         [Description("query/explain 的只读 SQL；diagnostics 可留空")] string? sql = null,
         [Description("query 最大返回行数(默认100, 上限1000)")] int maxRows = 100,
@@ -141,9 +141,9 @@ public class PostgresTools
     }
 
     [McpServerTool(Name = "postgres_execute", UseStructuredContent = true, OutputSchemaType = typeof(ExecuteResultDto), Destructive = true, OpenWorld = true)]
-    [Description("在PostgreSQL数据源执行写SQL(INSERT/UPDATE/DELETE/DDL)。危险语句拒绝、敏感语句桌面确认; 只读用postgres_query")]
+    [Description("在 PostgreSQL 数据源执行写 SQL(INSERT/UPDATE/DELETE/DDL)。危险语句拒绝、敏感语句需确认；只读用 postgres_query")]
     public async Task<ExecuteResultDto> PostgresExecute(
-        [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
+        [Description("数据源 ID/名称")] string datasourceId,
         [Description("要执行的SQL语句(单条)")] string sql,
         CancellationToken cancellationToken = default)
     {
@@ -212,7 +212,7 @@ public class PostgresTools
     }
 
     private async Task<QueryResultDto> PostgresExplain(
-        [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
+        [Description("数据源 ID/名称")] string datasourceId,
         [Description("要分析的SELECT语句")] string sql,
         CancellationToken cancellationToken = default)
     {
@@ -249,7 +249,7 @@ public class PostgresTools
     }
 
     private async Task<DiagnosticsResultDto> PostgresDiagnostics(
-        [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
+        [Description("数据源 ID/名称")] string datasourceId,
         CancellationToken cancellationToken = default)
     {
         var (ds, driver, _, status, error) = await ResolveAsync(datasourceId);

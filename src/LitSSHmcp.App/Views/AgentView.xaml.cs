@@ -267,6 +267,12 @@ public partial class AgentView : UserControl
         Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()), System.Windows.Threading.DispatcherPriority.Input);
     }
 
+    private void OnFleetChangeClick(object sender, RoutedEventArgs e)
+    {
+        var window = new FleetChangeWindow(_viewModel, _services?.Dialogs) { Owner = Window.GetWindow(this) };
+        window.ShowDialog();
+    }
+
     private void OnOpenSettings(object sender, RoutedEventArgs e) => OpenSettings(null);
 
     /// <summary>桌面登录 / 注销（评估报告 D1 收尾，仅归因：新会话 owner 与审计 UserId）。</summary>

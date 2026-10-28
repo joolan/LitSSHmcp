@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using LitSSHmcp.Core.Services.Security;
 
 namespace LitSSHmcp.Agent;
 
@@ -51,6 +52,22 @@ public static partial class MemoryQuality
             return compressed;
         }
         return $"用户: {userText}\n助手: {assistantText}";
+    }
+
+    /// <summary>
+    /// 构造可入库的 raw 片段：先按日志/长度压缩，再做持久化前脱敏；脱敏后仍疑似含凭据则整轮丢弃。
+    /// raw 与结构化记忆共用「凭据绝不入库」原则。
+    /// </summary>
+    public static string? PrepareRawContent(string userText, string assistantText)
+    {
+        var content = BuildRawContent(userText, assistantText);
+        if (content is null)
+            return null;
+
+        var (redacted, _) = SecretRedactor.RedactWithChange(content);
+        if (string.IsNullOrWhiteSpace(redacted) || ContainsSensitive(redacted))
+            return null;
+        return redacted;
     }
 
     /// <summary>用户输入是否像"贴了一大段日志/命令原始输出"（多行 + 时间戳/常见日志前缀密度高）。</summary>

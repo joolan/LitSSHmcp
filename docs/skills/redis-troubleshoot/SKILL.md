@@ -2,6 +2,9 @@
 name: redis-troubleshoot
 description: Redis 内存/命中率/慢日志/大 key/连接问题排查。适用于「缓存慢」「内存涨满」「命中率低」「Redis 连不上/阻塞」。
 appliesTo: [datasource, redis, ssh]
+triggers: [Redis 内存, Redis 连不上, Redis 连接失败, 缓存慢, 缓存异常, 命中率低, 大 key, evicted, maxmemory, Redis 阻塞, 慢日志]
+symptoms: [redis_memory, redis_connection, cache_miss, eviction]
+assets: [redis, ds]
 ---
 
 # Redis 排障
@@ -26,5 +29,5 @@ appliesTo: [datasource, redis, ssh]
 - 危险命令（`FLUSHALL`/`KEYS`/`CONFIG REWRITE`/阻塞类）会被直接拒绝或强确认；优先 `SCAN` 而非 `KEYS`。
 - 写/管理命令一律弹桌面确认。
 
-## 深入（按需 skill_read）
+## 深入（按需 skill(action="read")）
 内存持续增长 runbook：`references/memory-runbook.md`（增长速率量化、大key/过期键/碎片归因、处置与验证）。

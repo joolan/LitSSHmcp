@@ -17,7 +17,7 @@
 
         <TextBlock Grid.Row="1" Margin="16,4,16,8" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeCaption}"
                    Foreground="{DynamicResource AppTextSecondaryBrush}"
-                   Text="勾选本会话需要激活的运维技能（可多选）。未选择任何技能时，助手只接收技能索引，按需 skill_read 读取；激活后其正文会注入本轮系统提示。灰色=涉及当前未启用的能力域。"/>
+                   Text="勾选本会话需要激活的运维技能（可多选）。未选择任何技能时，助手只接收技能索引，按需 skill(action='read') 读取；激活后其正文会注入本轮系统提示。灰色=涉及当前未启用的能力域。"/>
 
         <Grid Grid.Row="2" Margin="16,0,16,0">
             <Grid.ColumnDefinitions>

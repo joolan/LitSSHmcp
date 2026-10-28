@@ -2,6 +2,9 @@
 name: log-triage
 description: 在服务器上定位日志文件、按关键字/正则检索并聚合同类错误，快速缩小故障范围。适用于「去某台机器找报错」「日志在哪」「统计错误数量」「打开对应日志」。
 appliesTo: [ssh, log, command]
+triggers: [日志, 查看日志, 找日志, 日志在哪, 报错, Exception, ERROR, 日志检索, 日志分析, 错误统计, 打开日志]
+symptoms: [log_error, exception, error_spike]
+assets: [log, ssh, app]
 ---
 
 # 日志定位与错误聚合
@@ -19,7 +22,7 @@ appliesTo: [ssh, log, command]
    - 按小时分布：`grep ERROR <file> | awk '{print $1" "$2}' | cut -d: -f1 | sort | uniq -c`
    - 首次/末次：`grep -n -m1 ERROR <file>` 与 `tac <file> | grep -m1 ERROR`
 6. **关联变更**：把错误首次时间点与部署/重启/发布对齐——看 `service_query(action="logs")`、`journalctl` 与变更记录。
-7. **大日志**：`log_query(action="grep")` 精确关键字 + 时间窗/行数，避免整文件拉取；超大结果会自动落盘为 `spill://` 句柄，用 `spill_read(mode=read|grep)` 分段读取或搜索。
+7. **大日志**：`log_query(action="grep")` 精确关键字 + 时间窗/行数，避免整文件拉取；超大结果会自动落盘为 `spill://` 句柄，用 `spill(action="read", mode="read|grep")` 分段读取或搜索。
 
 ## 处置
 - 高频同类错误 → 定位根因（结合 `service_query(action="status")`、`docker_query(action="logs")`、`java_diagnostics(action="threads")`、`mysql_query(action="diagnostics")`）。

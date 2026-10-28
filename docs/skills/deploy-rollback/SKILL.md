@@ -2,6 +2,9 @@
 name: deploy-rollback
 description: 发布后验证与回滚检查单（灰度/重启/切流后确认健康，异常时快速回滚）。适用于「刚发布完要确认」「发布后报错要不要回滚」「回滚步骤」。
 appliesTo: [ssh, command, service, docker, topology]
+triggers: [回滚, 发布失败, 部署失败, 上线失败, 发布后报错, 发布后异常, rollback, CI/CD, 灰度发布]
+symptoms: [deploy_failed, rollback, post_release_error]
+assets: [app, service, container, docker]
 ---
 
 # 发布后验证与回滚检查单
@@ -32,5 +35,5 @@ appliesTo: [ssh, command, service, docker, topology]
 - 发布/回滚均为变更操作：遵循"先只读取证 → 最小变更 → 变更后验证"，并说明影响与回滚点。
 - 涉及重启/切版本前，确认无正在进行的批量任务。
 
-## 深入（按需 skill_read）
+## 深入（按需 skill(action="read")）
 CI/CD 快速回滚 runbook：`references/ci-cd-rollback-runbook.md`（决策门槛、按发布形态回滚对照表、回滚后验证清单）。

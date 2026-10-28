@@ -4,6 +4,9 @@ import { ChatController } from "./chat.js";
 import { ApprovalsPanel } from "./approvals.js";
 import { FilesPanel } from "./files.js";
 import { MemoryAdminPanel } from "./memory.js";
+import { ConsolidationAdminPanel } from "./consolidation.js";
+import { OpsInsightsPanel } from "./ops.js";
+import { FleetChangePanel } from "./fleet.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -45,6 +48,24 @@ const els = {
   memoryRefresh: $("memory-refresh"),
   memoryClose: $("memory-close"),
   memoryCurrent: $("memory-current"),
+  consolidationAdminBtn: $("consolidation-admin-btn"),
+  consolidationSheet: $("consolidation-admin"),
+  consolidationList: $("consolidation-list"),
+  consolidationRuns: $("consolidation-runs"),
+  consolidationAlert: $("consolidation-alert"),
+  consolidationStatus: $("consolidation-status"),
+  consolidationRefresh: $("consolidation-refresh"),
+  consolidationClose: $("consolidation-close"),
+  opsInsightsBtn: $("ops-insights-btn"),
+  opsSheet: $("ops-insights"),
+  opsIncidents: $("ops-incident-list"),
+  opsStatus: $("ops-incident-status"),
+  opsRefresh: $("ops-refresh"),
+  opsClose: $("ops-close"),
+  opsTimeline: $("ops-timeline"),
+  opsAssetId: $("ops-asset-id"),
+  opsAssetLoad: $("ops-asset-load"),
+  opsAssetProfile: $("ops-asset-profile"),
   messages: $("messages"),
   toBottom: $("to-bottom"),
   loadOlder: $("load-older"),
@@ -52,6 +73,33 @@ const els = {
   input: $("input"),
   sendBtn: $("send-btn"),
   attachBtn: $("attach-btn"),
+  fleetBtn: $("fleet-btn"),
+  fleetSheet: $("fleet-change"),
+  fleetClose: $("fleet-close"),
+  fleetServerIds: $("fleet-server-ids"),
+  fleetTargetQuery: $("fleet-target-query"),
+  fleetLoadTargets: $("fleet-load-targets"),
+  fleetClearTargets: $("fleet-clear-targets"),
+  fleetTargetList: $("fleet-target-list"),
+  fleetTargetStatus: $("fleet-target-status"),
+  fleetCancel: $("fleet-cancel"),
+  fleetCommand: $("fleet-command"),
+  fleetRollback: $("fleet-rollback"),
+  fleetConcurrency: $("fleet-concurrency"),
+  fleetMaxTargets: $("fleet-max-targets"),
+  fleetTimeout: $("fleet-timeout"),
+  fleetPlanId: $("fleet-plan-id"),
+  fleetPlanSelect: $("fleet-plan-select"),
+  fleetDeletePlan: $("fleet-delete-plan"),
+  fleetProgress: $("fleet-progress"),
+  fleetOutput: $("fleet-output"),
+  fleetPlan: $("fleet-plan"),
+  fleetDry: $("fleet-dry"),
+  fleetCanary: $("fleet-canary"),
+  fleetApply: $("fleet-apply"),
+  fleetRollbackBtn: $("fleet-rollback-btn"),
+  fleetRetry: $("fleet-retry"),
+  fleetStatus: $("fleet-status"),
   fileInput: $("file-input"),
   chips: $("attachment-chips"),
   filesPane: $("files-pane"),
@@ -127,7 +175,85 @@ const memoryAdmin = new MemoryAdminPanel({
   onToast,
 });
 
-els.memoryAdminBtn.addEventListener("click", () => memoryAdmin.open());
+const consolidationAdmin = new ConsolidationAdminPanel({
+  sheetEl: els.consolidationSheet,
+  listEl: els.consolidationList,
+  runsEl: els.consolidationRuns,
+  alertEl: els.consolidationAlert,
+  statusEl: els.consolidationStatus,
+  refreshBtn: els.consolidationRefresh,
+  closeBtn: els.consolidationClose,
+  onToast,
+});
+
+els.memoryAdminBtn.addEventListener("click", () => {
+  consolidationAdmin.close();
+  memoryAdmin.open();
+});
+els.consolidationAdminBtn.addEventListener("click", () => {
+  memoryAdmin.close();
+  consolidationAdmin.open();
+});
+
+const opsInsights = new OpsInsightsPanel({
+  sheetEl: els.opsSheet,
+  incidentsEl: els.opsIncidents,
+  statusEl: els.opsStatus,
+  refreshBtn: els.opsRefresh,
+  closeBtn: els.opsClose,
+  timelineEl: els.opsTimeline,
+  assetIdEl: els.opsAssetId,
+  assetLoadBtn: els.opsAssetLoad,
+  profileEl: els.opsAssetProfile,
+  onToast,
+});
+
+els.opsInsightsBtn.addEventListener("click", () => {
+  memoryAdmin.close();
+  consolidationAdmin.close();
+  opsInsights.open();
+});
+
+const fleetChange = new FleetChangePanel({
+  sheetEl: els.fleetSheet,
+  closeBtn: els.fleetClose,
+  buttons: {
+    plan: els.fleetPlan,
+    dry: els.fleetDry,
+    canary: els.fleetCanary,
+    apply: els.fleetApply,
+    rollback: els.fleetRollbackBtn,
+    retry: els.fleetRetry,
+    status: els.fleetStatus,
+  },
+  serverIdsEl: els.fleetServerIds,
+  targetQueryEl: els.fleetTargetQuery,
+  loadTargetsBtn: els.fleetLoadTargets,
+  clearTargetsBtn: els.fleetClearTargets,
+  targetListEl: els.fleetTargetList,
+  targetStatusEl: els.fleetTargetStatus,
+  cancelBtn: els.fleetCancel,
+  commandEl: els.fleetCommand,
+  rollbackEl: els.fleetRollback,
+  concurrencyEl: els.fleetConcurrency,
+  maxTargetsEl: els.fleetMaxTargets,
+  timeoutEl: els.fleetTimeout,
+  planIdEl: els.fleetPlanId,
+  planSelectEl: els.fleetPlanSelect,
+  deletePlanBtn: els.fleetDeletePlan,
+  progressEl: els.fleetProgress,
+  outputEl: els.fleetOutput,
+  getSessionId: () => chat.sessionId,
+  onToast,
+});
+
+// Web 端批量变更入口暂时不开放（index.html 的 #fleet-btn 已隐藏）；保留面板与绑定，恢复时移除 hidden。
+els.fleetBtn.addEventListener("click", () => {
+  memoryAdmin.close();
+  consolidationAdmin.close();
+  opsInsights.close?.();
+  fleetChange.open();
+});
 
 function onToast(message) {
   els.toast.textContent = message;
@@ -175,7 +301,11 @@ function showApp(user) {
   els.appView.hidden = false;
   els.whoami.textContent = `${user.username}（${user.role}）`;
   els.memoryAdminBtn.hidden = user.role !== "admin";
-  if (user.role !== "admin") memoryAdmin.close();
+  els.consolidationAdminBtn.hidden = user.role !== "admin";
+  if (user.role !== "admin") {
+    memoryAdmin.close();
+    consolidationAdmin.close();
+  }
   updatePlaceholder();
   approvals.start();
   loadProviders().catch(() => {});
@@ -212,6 +342,8 @@ els.logoutBtn.addEventListener("click", async () => {
   chat.close();
   files.close();
   memoryAdmin.close();
+  consolidationAdmin.close();
+  opsInsights.close();
   me = null;
   sessions = [];
   activeId = null;
@@ -323,6 +455,11 @@ document.addEventListener("click", (ev) => {
   }
   if (memoryAdmin.isOpen() && !els.memorySheet.contains(ev.target) && !els.memoryAdminBtn.contains(ev.target))
     memoryAdmin.close();
+  if (consolidationAdmin.isOpen() && !els.consolidationSheet.contains(ev.target) &&
+      !els.consolidationAdminBtn.contains(ev.target))
+    consolidationAdmin.close();
+  if (opsInsights.isOpen() && !els.opsSheet.contains(ev.target) && !els.opsInsightsBtn.contains(ev.target))
+    opsInsights.close();
 });
 
 // ---- 会话列表 ----
@@ -554,6 +691,10 @@ document.addEventListener("keydown", (ev) => {
     closeModelSheet();
   } else if (memoryAdmin.isOpen()) {
     memoryAdmin.close();
+  } else if (consolidationAdmin.isOpen()) {
+    consolidationAdmin.close();
+  } else if (opsInsights.isOpen()) {
+    opsInsights.close();
   } else if (document.body.classList.contains("drawer-open")) {
     closeDrawer();
   }

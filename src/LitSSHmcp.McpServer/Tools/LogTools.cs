@@ -1,6 +1,6 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
@@ -25,9 +25,9 @@ public class LogTools
     }
 
     [McpServerTool(Name = "log_query", UseStructuredContent = true, OutputSchemaType = typeof(LogQueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("统一日志文件查询：action=tail 看尾部、action=grep 按关键字/正则检索、action=find 发现最近日志。可传 path 或 appId，路径须在 security.logs.allowedPaths 白名单内。")]
+    [Description("日志文件查询：action=tail/grep/find 分别看尾部/检索/发现日志。可传 path 或 appId；路径须在 security.logs.allowedPaths 内")]
     public async Task<LogQueryResultDto> LogQuery(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("查询类型：tail / grep / find")] string action,
         [Description("日志文件绝对路径（tail/grep 与 appId 二选一；find 时可作搜索目录）")] string? path = null,
         [Description("应用标识(ID/名称): 用应用管理里配置的日志路径（tail/grep）")] string? appId = null,
@@ -54,9 +54,8 @@ public class LogTools
         }
     }
 
-    [Description("查看服务器上日志文件的尾部(按行)。可传 path(绝对路径) 或 appId(用应用管理里配置的日志路径); 路径须在白名单内。不确定路径时先用 log_query action=find; 按关键字过滤用 log_query action=grep; 容器日志用 docker_query action=logs")]
     public async Task<LogResultDto> LogTail(
-        [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("日志文件绝对路径, 如 /var/log/myapp/app.log; 与 appId 二选一")] string? path = null,
         [Description("应用标识(ID/名称): 用其在应用管理里配置的日志路径; 与 path 二选一")] string? appId = null,
         [Description("返回最后 N 行(默认200)")] int lines = 200,
@@ -79,9 +78,8 @@ public class LogTools
         return ToLogResult(resolved, pattern: null, outcome);
     }
 
-    [Description("在服务器日志文件中按关键字/正则检索(返回匹配行的行号)。可传 path 或 appId; 路径须在白名单内。只看尾部用 log_query action=tail, 不确定路径先用 log_query action=find")]
     public async Task<LogResultDto> LogGrep(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("检索关键字或正则, 如 Exception / 'OutOfMemory|GC overhead'")] string pattern,
         [Description("日志文件绝对路径; 与 appId 二选一")] string? path = null,
         [Description("应用标识(ID/名称): 用其在应用管理里配置的日志路径; 与 path 二选一")] string? appId = null,
@@ -123,9 +121,8 @@ public class LogTools
         return ToLogResult(resolved, pattern, outcome);
     }
 
-    [Description("发现服务器上最近被写入的日志文件(.log, 按修改时间倒序)。不确定日志路径时先用它, 再用 log_query action=tail/grep 读取; 搜索范围限于 security.logs.allowedPaths")]
     public async Task<LogFileListDto> LogFind(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("可选: 限定搜索目录(须在白名单内); 留空则在 security.logs.allowedPaths 全部路径下搜索")] string? path = null,
         [Description("只列出最近 N 分钟内修改过的文件(默认1440=24小时, 上限10080)")] int minutes = 1440,
         [Description("最多返回数量(默认100, 上限500)")] int maxResults = 100,

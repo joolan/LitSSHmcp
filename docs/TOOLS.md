@@ -1,13 +1,13 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器代码注册 **37 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **36 个常规工具**，宿主会话看到 **37 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；工具说明文本本身也内置了"当用户问…时使用"的意图提示（AI 客户端在 `tools/list` 时即可看到）。
+MCP 服务器代码注册 **38 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **37 个常规工具**，宿主会话看到 **38 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；各工具 `[Description]` 只保留 1~2 句能力与关键互斥提示，完整的"意图→工具"路由由 `mcp_usage_guide` 提供（见下方路由表）。
 
 > **⚠ 同步约定（唯一事实来源）**：本文件是 MCP 工具说明的**唯一事实来源**。以下三处必须与本文件**双向同步**，工具发生任何变动（新增/改名/删除、参数变化、描述与路由变化）时缺一不可：
-> 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`get_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
+> 1. **MCP 服务器端** — `src/LitSSHmcp.McpServer/Tools/*.cs` 中 `[McpServerTool]` / `[Description]` 注解、`Program.cs` 的 `WithTools<T>()` 注册（`mcp_usage_guide` 的内置工具清单由这些注解**反射生成**，无需手改）；
 > 2. **本仓库文档** — `docs/TOOLS.md`（本文件，含 README/CHANGELOG 中的工具列表与数量）；
 > 3. **桌面 App 端** — `src/LitSSHmcp.App/Views/McpToolsWindow`（菜单 **配置 → MCP工具说明**，本文件以 `EmbeddedResource` 嵌入后在窗口中展示，文案数量来自本文件）。
 >
-> 任一处遗漏都会导致 AI 客户端拿到的工具说明与实际能力不一致；一致性由 `tests/LitSSHmcp.McpServer.Tests` 自动校验（已注册工具 ↔ 本文件 ↔ `get_usage_guide` 清单）。
+> 任一处遗漏都会导致 AI 客户端拿到的工具说明与实际能力不一致；一致性由 `tests/LitSSHmcp.McpServer.Tests` 自动校验（已注册工具 ↔ 本文件 ↔ `mcp_usage_guide` 清单）。
 >
 > **文档结构约定**：本文档的 `##` 标题即「工具分组」，格式 `## <中文分组名>（<分组键>）`，其中分组键与 `config.json` 的 `tools.enabledGroups`（及 App「工具分组设置」）严格一致；每个工具用 `### \`工具名\`` 表示；其它 `###` 子标题（不带反引号）只是章节内的说明小标题，不计入工具。
 >
@@ -65,7 +65,7 @@ MCP 服务器代码注册 **37 个工具**，按用途分为 14 组；其中 `mc
 | 分组键 | 中文名 | 包含的工具 |
 |--------|--------|-----------|
 | `ssh` | SSH 服务器 | `ssh_list_servers`、`ssh_test_connection`、`ssh_snapshot_get`、`ssh_snapshot_refresh` |
-| `command` | 命令执行 | `ssh_execute_command`、`ssh_execute_sudo`、`ssh_get_sudo_status` |
+| `command` | 命令执行 | `ssh_execute_command`、`ssh_execute_fleet`、`ssh_execute_sudo`、`ssh_get_sudo_status` |
 | `fileTransfer` | 文件传输 | `ssh_upload`、`ssh_download`、`ssh_list_files` |
 | `datasource` | 数据源 | `datasource_list`、`datasource_test_connection` |
 | `mysql` | MySQL 执行 | `mysql_query`、`mysql_execute` |
@@ -187,7 +187,7 @@ MCP 服务器代码注册 **37 个工具**，按用途分为 14 组；其中 `mc
 
 ### `ssh_list_servers`
 - **参数**：无
-- **返回**：`{ success, count, servers: [...] }`，每项含 `id/name/host/port/username/authType/description/tags/lastConnectedAt`（**无密码**）
+- **返回**：`{ success, count, servers: [...] }`，每项含 `id/name/host/port/username/authType/description/tags/lastConnectedAt/canExec`（**无密码**）；`canExec` 为当前调用者是否具备该目标的 exec 权限（供批量变更 plan 预检，不执行命令）
 - **说明**：**已禁用的服务器不会出现在本列表中**。服务器一旦禁用：① 不出现在 `ssh_list_servers`；② 任何按服务器标识解析的工具（`ssh_*` / `docker_*` / `service_*` / `log_*` / `java_*` / 应用与文件等）都返回 `server_disabled` 并拒绝执行；③ 资产拓扑中该服务器不可建链/连接；④ 拓扑自动发现跳过它。需在桌面 App 的「服务器编辑」里取消勾选“禁用”并保存后恢复。Web 强制模式下还只返回当前用户命中 `read` 白名单的 `ssh:<id>`；桌面未启用强制时保持全量。
 
 ### `ssh_test_connection`
@@ -220,6 +220,11 @@ MCP 服务器代码注册 **37 个工具**，按用途分为 14 组；其中 `mc
 - **脚本安全门**：识别"执行脚本文件"形态（`bash x.sh`、`python3 /opt/a.py`、`powershell -File a.ps1`、`./x.sh`；`bash -c "…"` 内联形态不走此门）时，执行前先 `cat` 预读远端内容做**服务端规则扫描**（命令过滤规则 + 脚本专用规则：fork炸弹/`curl|sh`/写裸盘/反弹shell/SSH凭据/清历史/crontab等）：命中危险模式**直接 `status=blocked` 不进审批**；扫描报告（结论/命中行/sha256/助手评估）附在审批弹窗，**脚本形态一律需人工同意**（即使命令行本身无敏感词）。探测读取本身写审计（`category=probe`）。脚本专用内置规则可在 `security.scriptRules` 按标签禁用单条或整体关闭，并可追加自定义危险/可疑正则（安全设置页可编辑，保存后热生效）。
 - **安全链路**：挂起/交互拦截 → 黑名单直接拒绝 → 脚本内容扫描(危险硬拒) → 敏感命令/脚本人工确认 → 执行 → 写审计（sudo 提权命令用 `ssh_execute_sudo`）
 
+### `ssh_execute_fleet`
+- **参数**：`serverIds`（逗号/空格分隔，最多 maxTargets 台）、`command`（单条非脚本命令）、`concurrency`（1-8，默认 4）、`maxTargets`（1-100，默认 20）、`timeoutSeconds`（单台命令超时 1-3600，默认 60）、`riskNote`（可选，展示在审批弹窗）
+- **返回**：`{ success, status, error, command, summary, total, succeeded, failed, items: [{ serverId, serverName, host, success, status, error, output, truncated, exitCode, durationMs }] }`
+- **说明**：一次人工审批后在多台服务器执行同一条命令；命令过滤/审批/审计/写互斥仍生效；**不支持脚本文件**（`bash x.sh`/`python3 x.py`/`./x.sh`）和交互/常驻命令；建议先做只读预检并先用 1 台 canary。执行中通过 MCP progress 通知逐台报告 `progress/total` 与 `serverId/serverName/success/error`，供 Agent/桌面面板展示实时进度（Web 入口暂时隐藏）。
+
 ### `ssh_execute_sudo`
 - **参数**：`serverId`、`command`
 - **返回**：同 `ssh_execute_command`，并额外带 `escalation` —— 本次实际提权机制：`direct`（未提权/已是目标用户）、`sudo`、`su`、`auto:sudo`、`auto:su`、`auto:failed`（用于排障与向用户说明“到底用了 sudo 还是 su”）；未配置提权时返回 `status: "sudo_not_configured"`
@@ -236,7 +241,7 @@ MCP 服务器代码注册 **37 个工具**，按用途分为 14 组；其中 `mc
 
 ## 文件传输组（fileTransfer）
 
-上传/下载受 `fileTransfer.enabled` 开关与 `allowedLocalPaths` / `allowedRemotePaths` 白名单约束（越界返回 `path_not_allowed`，禁用返回 `file_transfer_disabled`），路径会做规范化并拦截 `..` 穿越。**上传源对称约束**（需求 D6）：宿主注入了会话工作目录（`LITSSH_SESSION_WORKSPACE_DIR`）时，上传源还须位于该会话目录之内（与"下载落点限会话目录"对称，`PathGuard` 物理解析防链接逃逸），否则 `path_not_allowed`；共享工作区文件可先经 `ops_doc_read`/`ops_doc_write` 复制到会话目录再上传。上传/下载过程中会通过 MCP `notifications/progress` 推送进度（字节数/百分比）。
+上传/下载受 `fileTransfer.enabled` 开关与 `allowedLocalPaths` / `allowedRemotePaths` 白名单约束（越界返回 `path_not_allowed`，禁用返回 `file_transfer_disabled`），路径会做规范化并拦截 `..` 穿越。**上传源对称约束**（需求 D6）：宿主注入了会话工作目录（`LITSSH_SESSION_WORKSPACE_DIR`）时，上传源还须位于该会话目录之内（与"下载落点限会话目录"对称，`PathGuard` 物理解析防链接逃逸），否则 `path_not_allowed`；共享工作区文件请先复制到会话目录再上传。上传/下载过程中会通过 MCP `notifications/progress` 推送进度（字节数/百分比）。
 
 ### `ssh_upload`
 - **参数**：`serverId`、`localPaths`（每行一个：文件或目录）、`remoteDirectory`（远程目标目录，须在 `allowedRemotePaths` 内）、`recursive`（默认 false，目录递归子目录）、`maxFiles`（默认 200，1~5000）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
@@ -289,7 +294,7 @@ MCP 服务器代码注册 **37 个工具**，按用途分为 14 组；其中 `mc
 ### `postgres_query`（只读）
 - **参数**：`datasourceId`（ID/名称）、`action`（`query` / `explain` / `diagnostics`）、`sql`（query/explain 必填）、`maxRows`（query 默认 100，上限 1000）
 - **返回**：`{ success, status, datasourceId, name, action, columns, rows, rowCount, truncated, summary, data, durationMs, error }`
-- **action**：`query` 执行 SELECT/SHOW/EXPLAIN/DESC/WITH；`explain` 分析执行计划；`diagnostics` 返回连接/活动会话/等待锁/复制/缓存命中/死锁等整体诊断（`summary` + `data`）
+- **action**：`query` 执行 SELECT/SHOW/EXPLAIN/WITH；`explain` 分析执行计划；`diagnostics` 返回连接/活动会话/等待锁/复制/缓存命中/死锁等整体诊断（`summary` + `data`）
 - **限制**：单条语句；非只读语句返回 `status: "blocked"`；数据修改型 CTE 与 `EXPLAIN ANALYZE <DML>` 返回 `status: "not_readonly_statement"`，提示改用 `postgres_execute`
 
 ### `postgres_execute`（写操作）
@@ -430,9 +435,10 @@ MCP 服务器代码注册 **37 个工具**，按用途分为 14 组；其中 `mc
 ## 指南组（guide）
 
 ### `mcp_usage_guide`
-- **参数**：无
-- **返回**：内置使用指南 JSON（服务器/数据源意图路由、提权使用法、拓扑排查工作流、安全注意事项）
-- **场景**：AI 不确定工具用法时的第一站
+- **参数**：`detail`（可选，`summary` 默认 / `full`）——`summary` 只返回意图路由、取 ID、错误处理等关键约定（不含工具清单，较少 token）；`full` 额外返回完整工具清单（含各工具描述）
+- **返回**：内置使用指南 JSON（服务器/数据源意图路由、提权使用法、拓扑排查工作流、安全注意事项；`full` 含 `tools`）
+- **场景**：AI 不确定工具用法时的第一站；先看 `summary`，需要完整清单再传 `detail=full`
+- **App 裁剪**：内置 AI 运维助手会按当前会话 profile/只读/分组进一步裁剪返回的路由行与工具行，避免推荐本次不可用的工具；服务端仍按 `tools.enabledGroups` 做第一层裁剪。
 
 ### `mcp_self_check`
 - **参数**：`serverId`（可选，ID/名称/主机名）、`datasourceId`（可选，ID/名称）

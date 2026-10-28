@@ -2,6 +2,9 @@
 name: ssl-cert-expiry
 description: HTTPS 证书即将/已过期或证书链问题排查。适用于「证书过期」「NET::ERR_CERT」「https 报错」「证书不匹配」。
 appliesTo: [ssh, command, topology]
+triggers: [证书过期, 证书到期, 证书即将过期, SSL 证书, TLS 证书, HTTPS 证书, NET::ERR_CERT, 证书不匹配, 证书链, cert expired]
+symptoms: [cert_expiry, tls_error, cert_mismatch]
+assets: [cert, domain, nginx]
 ---
 
 # TLS/HTTPS 证书排查
@@ -25,5 +28,5 @@ appliesTo: [ssh, command, topology]
 - 续期/替换证书属变更操作，需用户明确要求；自动续期先确认 cron/timer 是否正常。
 - 不要忽略 `host_key_mismatch`（可能与证书问题混淆，属 SSH 层安全事件）。
 
-## 深入（按需 skill_read）
+## 深入（按需 skill(action="read")）
 证书周期巡检 runbook：`references/inspection-runbook.md`（批量探测、到期阈值分级、续期计划与复测）。

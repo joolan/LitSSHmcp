@@ -27,6 +27,31 @@ public interface IWebRuntime : IAsyncDisposable
     /// <summary>发送一轮（可带图片等 AI 内容附件）。</summary>
     Task SendAsync(IReadOnlyList<AIContent> contents, IProgress<AgentEvent>? progress, CancellationToken ct);
     string Summary { get; }
+
+    /// <summary>把成功轮后台写入长期记忆（默认空实现，测试假运行时可忽略）。</summary>
+    void IndexTurnInBackground(string sessionId, string userText, string assistantText) { }
+
+    /// <summary>后台 consolidation（默认空实现，测试假运行时可忽略）。</summary>
+    void ConsolidateInBackground() { }
+
+    /// <summary>后台 consolidation 最终失败（默认空实现；生产运行时转发给宿主记录访问日志/告警）。</summary>
+    event Action<string>? ConsolidationFailed
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>宿主机面板直接调用当前会话工具（默认空实现，测试假运行时可忽略）。</summary>
+    Task<object?> InvokeHostToolAsync(string toolName, IDictionary<string, object?>? arguments,
+        CancellationToken ct) => Task.FromResult<object?>("(测试运行时未实现)");
+
+    /// <summary>读取批量变更计划（默认空实现）。</summary>
+    Task<FleetPlanState?> GetFleetPlanAsync(string ownerKey, long sessionId, string planId,
+        CancellationToken ct) => Task.FromResult<FleetPlanState?>(null);
+
+    /// <summary>列出当前 owner/session 的批量变更计划（默认空实现）。</summary>
+    Task<IReadOnlyList<FleetPlanState>> ListFleetPlansAsync(string ownerKey, long sessionId,
+        CancellationToken ct) => Task.FromResult<IReadOnlyList<FleetPlanState>>(Array.Empty<FleetPlanState>());
 }
 
 public interface IWebRuntimeFactory
@@ -41,8 +66,13 @@ public interface IWebRuntimeFactory
 public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
 {
     private readonly IConfigService _configService;
+    private readonly IFleetPlanStore _fleetPlans;
 
-    public AgentWebRuntimeFactory(IConfigService configService) => _configService = configService;
+    public AgentWebRuntimeFactory(IConfigService configService, IFleetPlanStore? fleetPlans = null)
+    {
+        _configService = configService;
+        _fleetPlans = fleetPlans ?? new SqliteFleetPlanStore();
+    }
 
     public async Task<IWebRuntime> CreateAsync(WebRuntimeRequest request, CancellationToken ct)
     {
@@ -72,12 +102,16 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
             ownerRole: request.OwnerRole,
             scopeSpillByOwner: true,
             scopeMemoryByOwner: true,
-            enableWorkLog: false);
+            enableWorkLog: false,
+            sessionId: request.SessionId,
+            fleetPlanStore: _fleetPlans);
         if (!string.IsNullOrEmpty(request.Summary))
             runtime.Session.RestoreSummary(request.Summary);
         if (request.ToolPolicy is { Count: > 0 })
             runtime.Session.SetToolPolicy(request.ToolPolicy);
-        return new AgentWebRuntime(runtime, agent.Budget, provider.InputPricePerMTok, provider.OutputPricePerMTok);
+        var webRuntime = new AgentWebRuntime(runtime, agent.Budget, provider.InputPricePerMTok, provider.OutputPricePerMTok);
+        runtime.ConsolidationFailed += webRuntime.NotifyConsolidationFailed;
+        return webRuntime;
     }
 
     /// <summary>
@@ -101,6 +135,25 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
         double inputPricePerMTok, double outputPricePerMTok) : IWebRuntime
     {
         public string Summary => runtime.Session.Summary;
+
+        public void IndexTurnInBackground(string sessionId, string userText, string assistantText) =>
+            runtime.IndexTurnInBackground(sessionId, userText, assistantText);
+
+        public event Action<string>? ConsolidationFailed;
+
+        internal void NotifyConsolidationFailed(string message) => ConsolidationFailed?.Invoke(message);
+
+        public void ConsolidateInBackground() => runtime.ConsolidateInBackground();
+
+        public Task<object?> InvokeHostToolAsync(string toolName, IDictionary<string, object?>? arguments,
+            CancellationToken ct) => runtime.InvokeHostToolAsync(toolName, arguments, ct);
+
+        public Task<FleetPlanState?> GetFleetPlanAsync(string ownerKey, long sessionId, string planId,
+            CancellationToken ct) => runtime.FleetPlans.GetAsync(planId, ownerKey, sessionId, ct);
+
+        public async Task<IReadOnlyList<FleetPlanState>> ListFleetPlansAsync(string ownerKey, long sessionId,
+            CancellationToken ct) =>
+            await runtime.FleetPlans.ListAsync(ownerKey, sessionId, ct);
 
         public Task SendAsync(IReadOnlyList<AIContent> contents, IProgress<AgentEvent>? progress, CancellationToken ct)
         {

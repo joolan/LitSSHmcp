@@ -1,14 +1,16 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
+using System.Text.Json;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.McpServer.Services;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace LitSSHmcp.McpServer.Tools;
@@ -23,6 +25,7 @@ public class CommandTools
     private readonly IAuditLogService _auditLogService;
     private readonly ISecurityOptionsProvider _securityOptions;
     private readonly ScriptRiskAnalyzer _scriptRisk;
+    private readonly IGuardedCommandService _guarded;
 
     public CommandTools(
         IConfigService configService,
@@ -31,7 +34,8 @@ public class CommandTools
         IApprovalService approvalService,
         IAuditLogService auditLogService,
         ISecurityOptionsProvider securityOptions,
-        ScriptRiskAnalyzer scriptRisk)
+        ScriptRiskAnalyzer scriptRisk,
+        IGuardedCommandService guarded)
     {
         _configService = configService;
         _sshService = sshService;
@@ -40,12 +44,13 @@ public class CommandTools
         _auditLogService = auditLogService;
         _securityOptions = securityOptions;
         _scriptRisk = scriptRisk;
+        _guarded = guarded;
     }
 
     [McpServerTool(Name = "ssh_execute_command", UseStructuredContent = true, OutputSchemaType = typeof(CommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("在SSH服务器执行Shell命令(查日志/进程/磁盘/网络等)。危险命令返回status=blocked, 敏感命令需人工确认(可能返回rejected/approval_timeout/approval_unavailable); SQL用mysql_*/postgres_*, Redis用redis_*; 输出最多2万字符, 超出置truncated=true; 超时可用timeoutSeconds调整(默认60s, 超时返回status=timeout); 会挂起/需交互的命令(如 tail -f、docker logs -f、journalctl -f、vi/top/less、sudo、ping不带-c)会直接返回status=blocking_command并给出替代写法——不要用前台方式启动常驻进程, 请用 nohup ... & / setsid / systemctl / docker -d; 执行脚本文件(如 bash x.sh、python3 x.py、./x.sh)会先预读内容做服务端风险扫描并在审批弹窗展示, 扫描出危险模式直接status=blocked")]
+    [Description("在SSH服务器执行Shell命令。SQL用mysql_*/postgres_*、Redis用redis_*；危险命令blocked、敏感命令需审批；挂起命令(tail -f/vi/sudo)返回blocking_command；脚本会扫描")]
     public async Task<CommandResultDto> ExecuteCommand(
-        [Description("服务器标识: ID/名称/主机名均可, 可用ssh_list_servers列出")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("要执行的Shell命令(单条), 如 'df -h'、'tail -n 100 /var/log/app.log'")] string command,
         [Description("命令超时秒数(1-3600, 默认60); 超时返回 status=timeout")] int timeoutSeconds = 60,
         [Description("助手对该操作的风险评估摘要(可选), 会展示在审批弹窗中并标注为『助手评估(仅供参考)』; 服务端规则扫描才是权威")] string? riskNote = null,
@@ -212,10 +217,53 @@ public class CommandTools
         };
     }
 
+    [McpServerTool(Name = "ssh_execute_fleet", UseStructuredContent = true, OutputSchemaType = typeof(FleetCommandResultDto), Destructive = true, OpenWorld = true)]
+    [Description("多台服务器批量执行同一条非脚本命令(一次审批，逐台返回)。仅支持幂等命令，不支持脚本文件与 tail -f/vi/top 等交互命令；命令过滤/审批/审计仍生效。建议先做只读预检并用 1 台 canary")]
+    public async Task<FleetCommandResultDto> ExecuteFleet(
+        [Description("目标服务器 ID/名称，逗号或空格分隔（最多 maxTargets 台）")] string serverIds,
+        [Description("要执行的单条非脚本命令，如 systemctl restart nginx")] string command,
+        [Description("并发数(1-8, 默认4)")] int concurrency = 4,
+        [Description("最多目标数(1-100, 默认20)")] int maxTargets = 20,
+        [Description("助手对批量操作的风险评估摘要(可选), 展示在审批弹窗；服务端规则扫描才是权威")] string? riskNote = null,
+        [Description("单台命令超时秒数(1-3600, 默认60)")] int timeoutSeconds = 60,
+        IProgress<ProgressNotificationValue>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var references = (serverIds ?? string.Empty)
+            .Split(new[] { ',', '，', ';', ' ', '\t', '\r', '\n' },
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var fleetProgress = progress is null
+            ? null
+            : new InlineProgress<GuardedFleetProgress>(p => progress.Report(new ProgressNotificationValue
+            {
+                Progress = p.Completed,
+                Total = p.Total,
+                Message = JsonSerializer.Serialize(new
+                {
+                    serverId = p.ServerId,
+                    serverName = p.ServerName,
+                    host = p.Host,
+                    success = p.Success,
+                    error = p.Error,
+                    output = p.Output
+                })
+            }));
+        var outcome = await _guarded.RunFleetAsync(references, command, concurrency, maxTargets,
+            operationLabel: "批量变更", riskReport: riskNote, ct: cancellationToken, progress: fleetProgress, timeoutSeconds: timeoutSeconds);
+        return FleetCommandResultDto.From(outcome);
+    }
+
     private static string TrimOneLine(string? text)
     {
         var t = (text ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
         return t.Length == 0 ? "未知原因" : (t.Length > 120 ? t[..120] + "…" : t);
     }
 
+}
+
+internal sealed class InlineProgress<T>(Action<T> handler) : IProgress<T>
+{
+    public void Report(T value) => handler(value);
 }

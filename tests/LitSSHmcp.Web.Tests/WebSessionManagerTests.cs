@@ -68,6 +68,99 @@ public class WebSessionManagerTests
             () => _manager.StopTurnAsync(_bob, session.Id));
         await Assert.ThrowsAsync<WebSessionNotFoundException>(
             () => _manager.DeleteSessionAsync(_bob, session.Id));
+        await Assert.ThrowsAsync<WebSessionNotFoundException>(
+            () => _manager.InvokeToolAsync(_bob, session.Id, "fleet_change",
+                new Dictionary<string, object?> { ["mode"] = "plan" }));
+    }
+
+    [Fact]
+    public async Task Invoke_tool_uses_owner_runtime_and_returns_text()
+    {
+        var session = await _manager.CreateSessionAsync(_alice, "批量变更");
+        var args = new Dictionary<string, object?> { ["mode"] = "plan", ["serverIds"] = "web01" };
+
+        var text = await _manager.InvokeToolAsync(_alice, session.Id, "fleet_change", args);
+
+        Assert.Equal("host:fleet_change", text);
+        Assert.Equal("101", Assert.Single(_factory.Requests).OwnerUserId);
+        var call = Assert.Single(_factory.ToolCalls);
+        Assert.Equal("fleet_change", call.Tool);
+        Assert.Equal("plan", call.Arguments!["mode"]);
+    }
+
+    [Fact]
+    public async Task Get_fleet_plan_is_owner_and_session_scoped()
+    {
+        var session = await _manager.CreateSessionAsync(_alice, "批量变更");
+        _factory.PlanToReturn = new FleetPlanState
+        {
+            Id = "p1",
+            OwnerKey = "101",
+            SessionId = session.Id,
+            Targets = { "s1" }
+        };
+
+        var plan = await _manager.GetFleetPlanAsync(_alice, session.Id, "p1");
+        Assert.NotNull(plan);
+        Assert.Equal("s1", Assert.Single(plan!.Targets));
+        Assert.Null(await _manager.GetFleetPlanAsync(_alice, session.Id, "missing"));
+        await Assert.ThrowsAsync<WebSessionNotFoundException>(
+            () => _manager.GetFleetPlanAsync(_bob, session.Id, "p1"));
+    }
+
+    [Fact]
+    public async Task Delete_fleet_plan_and_session_cleanup_are_scoped()
+    {
+        var session = await _manager.CreateSessionAsync(_alice, "计划清理");
+        var plans = new MemoryFleetPlanStore();
+        var manager = new WebSessionManager(_store, _factory, new WebAccessLog(), _config, plans);
+        await plans.SaveAsync(new FleetPlanState { Id = "p1", OwnerKey = "101", SessionId = session.Id });
+        await plans.SaveAsync(new FleetPlanState { Id = "p2", OwnerKey = "101", SessionId = session.Id });
+
+        Assert.True(await manager.DeleteFleetPlanAsync(_alice, session.Id, "p1"));
+        Assert.Null(await plans.GetAsync("p1", "101", session.Id));
+        await Assert.ThrowsAsync<WebSessionNotFoundException>(
+            () => manager.DeleteFleetPlanAsync(_bob, session.Id, "p2"));
+
+        await manager.DeleteSessionAsync(_alice, session.Id);
+        Assert.Null(await plans.GetAsync("p2", "101", session.Id));
+    }
+
+    [Fact]
+    public async Task Cancel_fleet_change_cancels_running_tool()
+    {
+        var session = await _manager.CreateSessionAsync(_alice, "批量取消");
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _factory.OnInvokeHostTool = async (_, _, ct) =>
+        {
+            entered.TrySetResult(true);
+            await Task.Delay(Timeout.Infinite, ct);
+            return null;
+        };
+
+        var running = _manager.InvokeToolAsync(_alice, session.Id, "fleet_change",
+            new Dictionary<string, object?> { ["mode"] = "apply", ["planId"] = "p1", ["confirm"] = true });
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await _manager.CancelFleetChangeAsync(_alice, session.Id);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task Consolidation_failure_writes_access_log()
+    {
+        var logDir = Path.Combine(WebTestEnv.DataDir, $"logs-{Guid.NewGuid():N}");
+        var manager = new WebSessionManager(_store, _factory, new WebAccessLog(logDir), _config);
+        var session = await manager.CreateSessionAsync(_alice, "失败告警");
+        await manager.InvokeToolAsync(_alice, session.Id, "status", new Dictionary<string, object?>());
+
+        _factory.EmitConsolidationFailure("consolidation 失败: provider timeout");
+
+        var file = Assert.Single(Directory.GetFiles(logDir, "web-access-*.log"));
+        var text = await File.ReadAllTextAsync(file);
+        Assert.Contains("consolidation_failed", text);
+        Assert.Contains($"session={session.Id}", text);
+        Assert.Contains("provider timeout", text);
     }
 
     [Fact]
@@ -120,6 +213,35 @@ public class WebSessionManagerTests
         Assert.Equal(("user", "你好"), (messages[0].Role, messages[0].Content));
         Assert.Equal(("assistant", "hello"), (messages[1].Role, messages[1].Content));
         Assert.Equal("summary", await _store.GetSessionSummaryAsync(session.Id));
+    }
+
+    [Fact]
+    public async Task Run_turn_indexes_successful_turn_in_background()
+    {
+        var session = await _manager.CreateSessionAsync(_alice, "记忆");
+
+        await _manager.RunTurnAsync(_alice, session.Id, "磁盘满", new Recorder());
+
+        var indexed = Assert.Single(_factory.Indexed);
+        Assert.Equal(session.Id.ToString(), indexed.SessionId);
+        Assert.Equal("磁盘满", indexed.UserText);
+        Assert.Equal("echo:磁盘满", indexed.AssistantText);
+    }
+
+    [Fact]
+    public async Task Run_turn_does_not_index_failed_turn()
+    {
+        var session = await _manager.CreateSessionAsync(_alice, "失败");
+        _factory.OnSend = (_, progress, _) =>
+        {
+            progress!.Report(new AgentEvent(AgentEventKind.AssistantText, Text: "partial"));
+            progress.Report(new AgentEvent(AgentEventKind.Error, Text: "boom"));
+            return Task.CompletedTask;
+        };
+
+        await _manager.RunTurnAsync(_alice, session.Id, "磁盘满", new Recorder());
+
+        Assert.Empty(_factory.Indexed);
     }
 
     [Fact]
@@ -388,21 +510,48 @@ public class WebSessionManagerTests
 public sealed class FakeRuntimeFactory : IWebRuntimeFactory
 {
     public List<WebRuntimeRequest> Requests { get; } = new();
+    public List<(string SessionId, string UserText, string AssistantText)> Indexed { get; } = new();
+    public List<(string Tool, IDictionary<string, object?>? Arguments)> ToolCalls { get; } = new();
+    public List<(long SessionId, string OwnerUserId)> Consolidations { get; } = new();
     public Func<string, IProgress<AgentEvent>?, CancellationToken, Task>? OnSend { get; set; }
+    public Func<string, IDictionary<string, object?>?, CancellationToken, Task<object?>>? OnInvokeHostTool { get; set; }
     public bool Disposed { get; private set; }
     public string Summary { get; set; } = "summary";
+    public FleetPlanState? PlanToReturn { get; set; }
+    private readonly List<FakeRuntime> _runtimes = new();
+
+    public void EmitConsolidationFailure(string message)
+    {
+        lock (_runtimes) _runtimes[^1].EmitConsolidationFailure(message);
+    }
     /// <summary>最近一轮收到的内容（断言图片附件用）。</summary>
     public IReadOnlyList<AIContent>? LastContents { get; private set; }
 
     public Task<IWebRuntime> CreateAsync(WebRuntimeRequest request, CancellationToken ct)
     {
         lock (Requests) Requests.Add(request);
-        return Task.FromResult<IWebRuntime>(new FakeRuntime(this));
+        var runtime = new FakeRuntime(this, request.SessionId, request.OwnerUserId);
+        lock (_runtimes) _runtimes.Add(runtime);
+        return Task.FromResult<IWebRuntime>(runtime);
     }
 
-    private sealed class FakeRuntime(FakeRuntimeFactory owner) : IWebRuntime
+    private sealed class FakeRuntime(FakeRuntimeFactory owner, long sessionId, string ownerUserId) : IWebRuntime
     {
         public string Summary => owner.Summary;
+
+        public event Action<string>? ConsolidationFailed;
+
+        public void EmitConsolidationFailure(string message) => ConsolidationFailed?.Invoke(message);
+
+        public void ConsolidateInBackground()
+        {
+            lock (owner.Consolidations) owner.Consolidations.Add((sessionId, ownerUserId));
+        }
+
+        public void IndexTurnInBackground(string sessionId, string userText, string assistantText)
+        {
+            lock (owner.Indexed) owner.Indexed.Add((sessionId, userText, assistantText));
+        }
 
         public Task SendAsync(IReadOnlyList<AIContent> contents, IProgress<AgentEvent>? progress, CancellationToken ct)
         {
@@ -412,6 +561,28 @@ public sealed class FakeRuntimeFactory : IWebRuntimeFactory
                 return owner.OnSend(userText, progress, ct);
             progress?.Report(new AgentEvent(AgentEventKind.AssistantText, Text: "echo:" + userText));
             return Task.CompletedTask;
+        }
+
+        public Task<object?> InvokeHostToolAsync(string toolName, IDictionary<string, object?>? arguments,
+            CancellationToken ct)
+        {
+            lock (owner.ToolCalls)
+                owner.ToolCalls.Add((toolName, arguments));
+            if (owner.OnInvokeHostTool is not null)
+                return owner.OnInvokeHostTool(toolName, arguments, ct);
+            return Task.FromResult<object?>($"host:{toolName}");
+        }
+
+        public Task<FleetPlanState?> GetFleetPlanAsync(string ownerKey, long sessionId, string planId,
+            CancellationToken ct)
+        {
+            var plan = owner.PlanToReturn;
+            return Task.FromResult(plan is not null &&
+                                   plan.Id == planId &&
+                                   plan.OwnerKey == ownerKey &&
+                                   plan.SessionId == sessionId
+                ? plan
+                : null);
         }
 
         public ValueTask DisposeAsync()

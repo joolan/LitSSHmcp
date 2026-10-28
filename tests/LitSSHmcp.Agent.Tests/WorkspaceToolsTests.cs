@@ -35,7 +35,7 @@ public class WorkspaceToolsTests : IDisposable
         var read = await Tool(tools, "ops_doc_read").InvokeAsync(Args(("path", "OPS_ASSETS.md")), default);
         Assert.Equal("hello-ops", read);
 
-        var listed = await Tool(tools, "ops_doc_list").InvokeAsync(Args(), default);
+        var listed = await Tool(tools, "ops_doc_read").InvokeAsync(Args(("action", "list")), default);
         Assert.Contains("OPS_ASSETS.md", (string)listed!);
         Assert.Contains("hello-ops", File.ReadAllText(Path.Combine(root, "OPS_ASSETS.md")));
     }

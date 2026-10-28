@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using ModelContextProtocol;
 
 namespace LitSSHmcp.Agent;
 
@@ -20,4 +21,9 @@ public interface IAgentTool
     AITool Tool { get; }
 
     Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct);
+
+    /// <summary>带进度的调用（MCP 工具会转发 progress 通知；本地工具默认忽略）。</summary>
+    Task<object?> InvokeAsync(IDictionary<string, object?>? arguments,
+        IProgress<ProgressNotificationValue>? progress, CancellationToken ct) =>
+        InvokeAsync(arguments, ct);
 }

@@ -31,10 +31,44 @@ public class UsageGuideFilterTests
         Assert.DoesNotContain("docker_ps", json);
         Assert.DoesNotContain("ssh_execute_command", json);
         Assert.DoesNotContain("ssh_list_servers", json);
+        // error_handling 也按启用分组裁剪：ssh 禁用时不再推荐快照刷新/查询
+        Assert.DoesNotContain("ssh_snapshot_refresh", json);
+        Assert.DoesNotContain("ssh_snapshot_get", json);
+        Assert.Contains("readonly_statement", json);
 
         // 明确告知被停用的能力域
         Assert.True(doc.RootElement.TryGetProperty("disabled_groups", out var disabled));
         Assert.True(disabled.GetArrayLength() > 0);
+    }
+
+    [Fact]
+    public void BuildGuide_summary_omits_tool_list_and_keeps_routing()
+    {
+        var json = UsageGuideTools.BuildGuide(null, includeInternalTools: true,
+            includeToolList: false, summaryOnly: true);
+        using var doc = JsonDocument.Parse(json);
+
+        Assert.False(doc.RootElement.TryGetProperty("tools", out _));
+        Assert.True(doc.RootElement.TryGetProperty("server_query_guide", out _));
+        Assert.True(doc.RootElement.TryGetProperty("datasource_query_guide", out _));
+        Assert.True(doc.RootElement.TryGetProperty("topology_guide", out _));
+        Assert.True(doc.RootElement.TryGetProperty("error_handling", out _));
+        Assert.True(json.Length < 8000, $"summary guide too long: {json.Length}");
+    }
+
+    [Fact]
+    public async Task GetUsageGuide_defaults_to_summary_and_full_includes_tools()
+    {
+        var guideTools = new UsageGuideTools();
+
+        var summary = await guideTools.GetUsageGuide();
+        using (var summaryDoc = JsonDocument.Parse(summary))
+            Assert.False(summaryDoc.RootElement.TryGetProperty("tools", out _));
+
+        var full = await guideTools.GetUsageGuide("full");
+        using var fullDoc = JsonDocument.Parse(full);
+        Assert.True(fullDoc.RootElement.TryGetProperty("tools", out var tools));
+        Assert.True(tools.GetArrayLength() > 0);
     }
 
     [Fact]
@@ -44,7 +78,7 @@ public class UsageGuideFilterTests
         using var doc = JsonDocument.Parse(json);
 
         // 与 ToolCatalogConsistencyTests.ExpectedToolCount 一致：宿主会话包含内部工具
-        Assert.Equal(37, doc.RootElement.GetProperty("tools").GetArrayLength());
+        Assert.Equal(38, doc.RootElement.GetProperty("tools").GetArrayLength());
         Assert.False(doc.RootElement.TryGetProperty("disabled_groups", out _));
     }
 
@@ -57,7 +91,7 @@ public class UsageGuideFilterTests
         var names = doc.RootElement.GetProperty("tools").EnumerateArray()
             .Select(e => e.GetProperty("name").GetString()!)
             .ToArray();
-        Assert.Equal(36, names.Length);
+        Assert.Equal(37, names.Length);
         Assert.DoesNotContain("mcp_approval_round", names);
         Assert.DoesNotContain("ssh_upload_file", names);
         Assert.DoesNotContain("service_status", names);

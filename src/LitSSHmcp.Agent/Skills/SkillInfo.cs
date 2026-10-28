@@ -4,7 +4,7 @@ using LitSSHmcp.Core.Models;
 
 /// <summary>
 /// 一条技能（技能目录项）的元数据：用于 AI 助手的技能选择器与按域裁剪。
-/// <see cref="MainPath"/> 为相对技能根目录的路径（如 <c>nginx-5xx/SKILL.md</c>），可直接传给 <c>skill_read</c>。
+/// <see cref="MainPath"/> 为相对技能根目录的路径（如 <c>nginx-5xx/SKILL.md</c>），可直接传给 <c>skill(action="read", path=...)</c>。
 /// </summary>
 public sealed record SkillInfo(
     /// <summary>技能标识（目录名或单文件名，不含扩展名）。</summary>
@@ -15,7 +15,7 @@ public sealed record SkillInfo(
     string Title,
     /// <summary>适用说明（frontmatter description）。</summary>
     string Description,
-    /// <summary>相对技能根目录的主文件路径（skill_read 用）。</summary>
+    /// <summary>相对技能根目录的主文件路径（skill(action="read") 用）。</summary>
     string MainPath,
     /// <summary>涉及的工具能力域（frontmatter appliesTo ∪ 正文扫描）。</summary>
     IReadOnlyList<string> Domains,
@@ -26,6 +26,15 @@ public sealed record SkillInfo(
     /// <summary>主文件字节数。</summary>
     int SizeBytes)
 {
+    /// <summary>frontmatter triggers：用户问题/告警中可直接命中的关键词。</summary>
+    public IReadOnlyList<string> Triggers { get; init; } = Array.Empty<string>();
+
+    /// <summary>frontmatter symptoms：机器可读的症状标签（如 disk_full / http_5xx）。</summary>
+    public IReadOnlyList<string> Symptoms { get; init; } = Array.Empty<string>();
+
+    /// <summary>frontmatter assets：适用资产/技术类型（ssh/ds/app/service/container/domain/cert/mysql/redis/nginx/docker/java）。</summary>
+    public IReadOnlyList<string> AssetTypes { get; init; } = Array.Empty<string>();
+
     /// <summary>域标签（人类可读，逗号分隔）；无则空串。</summary>
     public string DomainText => Domains.Count == 0 ? string.Empty : string.Join("、", Domains.Select(ToolGroups.Display));
 }

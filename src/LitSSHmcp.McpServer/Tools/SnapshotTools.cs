@@ -1,6 +1,6 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
@@ -40,9 +40,9 @@ public class SnapshotTools
     }
 
     [McpServerTool(Name = "ssh_snapshot_get", UseStructuredContent = true, OutputSchemaType = typeof(SnapshotDto), ReadOnly = true, OpenWorld = true)]
-    [Description("查询服务器整机快照(默认最新一份)。**默认仅返回各维度概览(status/关键指标/数据大小), 不是完整数据**; 需要某维度完整数据用 section 指定, 或 detail=\"full\" 取全部(较大)。排查服务器问题时优先看概览再按需取维度; 从未生成过会提示用 ssh_snapshot_refresh 生成")]
+    [Description("查询服务器整机快照(默认最新一份)。默认只返回各维度概览(status/关键指标/数据大小)，需要完整数据用 section 指定或 detail=\"full\"。从未生成过会提示用 ssh_snapshot_refresh")]
     public async Task<SnapshotDto> GetSnapshot(
-        [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("可选: 指定快照ID取某一份历史; 不传则取该服务器最新一份")] long? snapshotId = null,
         [Description("可选: 只取某维度完整数据, 取值 resource/portmap/docker/nginx_tls/systemd/security; 不传则返回概览")] string? section = null,
         [Description("可选: summary(默认,各维度概览)/full(全部完整数据,较大)")] string? detail = null,
@@ -80,9 +80,9 @@ public class SnapshotTools
     }
 
     [McpServerTool(Name = "ssh_snapshot_refresh", UseStructuredContent = true, OutputSchemaType = typeof(SnapshotDto), ReadOnly = false, Idempotent = false, Destructive = false, OpenWorld = true)]
-    [Description("重新采集服务器整机快照。耗时较长(典型10-30秒);同一服务器同时只允许一个快照。**距上次成功快照小于 snapshot.minRefreshIntervalSeconds(默认60s)时会直接返回已有快照(status=fresh)而不重采**,需强制重采传 force=true。默认仅返回各维度概览,可用 section/detail 参数")]
+    [Description("重新采集服务器整机快照(典型10-30秒，同一服务器单飞)。距上次成功快照不足60s且未传 force=true 时返回已有快照(status=fresh)；默认仅返回概览，可用 section/detail 取完整数据")]
     public async Task<SnapshotDto> RefreshSnapshot(
-        [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("可选: 只取某维度完整数据, 取值 resource/portmap/docker/nginx_tls/systemd/security; 不传则返回概览")] string? section = null,
         [Description("可选: summary(默认,各维度概览)/full(全部完整数据,较大)")] string? detail = null,
         [Description("可选: 忽略最短刷新间隔强制重采(默认 false)")] bool force = false,

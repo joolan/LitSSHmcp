@@ -32,6 +32,38 @@ public class AgentMemoryStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Search_hybrid_fts_boosts_lexical_matches()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        await store.AddStructuredAsync("task", "disk", "会话", "磁盘满时清理 journald",
+            new[] { 1f, 0f }, "", "", 1);
+        await store.AddStructuredAsync("task", "nginx", "会话", "nginx 配置证书检查",
+            new[] { 1f, 0f }, "", "", 1);
+
+        var hits = await store.SearchAsync(new[] { 1f, 0f }, 2, queryText: "磁盘");
+
+        Assert.Equal(2, hits.Count);
+        Assert.Equal("磁盘满时清理 journald", hits[0].Content);
+    }
+
+    [Fact]
+    public async Task Search_can_exclude_raw_and_exposes_timestamps()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        await store.AddAsync("会话", "raw 片段", new[] { 1f, 0f });
+        await store.AddStructuredAsync("task", "k", "会话", "结构化经验", new[] { 1f, 0f }, "", "", 1);
+
+        var structured = await store.SearchAsync(new[] { 1f, 0f }, 10, includeRaw: false);
+
+        var hit = Assert.Single(structured);
+        Assert.Equal("task", hit.Kind);
+        Assert.False(string.IsNullOrWhiteSpace(hit.CreatedAt));
+        Assert.False(string.IsNullOrWhiteSpace(hit.UpdatedAt));
+    }
+
+    [Fact]
     public async Task List_includeRaw_and_deleteById()
     {
         var store = NewStore();

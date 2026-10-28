@@ -129,6 +129,27 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public async Task Plan_mode_allows_safe_probe_tool()
+    {
+        var call = new FunctionCallContent("c1", "ssh_snapshot_refresh", new Dictionary<string, object?>());
+        var assistantWithCall = new ChatMessage(ChatRole.Assistant, new AIContent[] { call });
+        var final = new ChatMessage(ChatRole.Assistant, "refreshed");
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { assistantWithCall }),
+            new ChatResponse(new List<ChatMessage> { final }));
+
+        // 非只读但只做探测（写本地快照）的工具在计划模式下应放行
+        var probe = new FakeTool("ssh_snapshot_refresh", "ok");
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new[] { probe }, "sys", new AgentConfig());
+        session.SetPlanMode(true);
+
+        await session.SendAsync("刷新快照", null);
+
+        Assert.NotNull(probe.LastArgs);
+    }
+
+    [Fact]
     public async Task Unknown_tool_reports_error_result()
     {
         var call = new FunctionCallContent("c1", "nope", new Dictionary<string, object?>());
@@ -244,6 +265,34 @@ public class AgentSessionTests
         Assert.DoesNotContain(session.Messages, m => m.Text == "a1");
         Assert.Contains(session.Messages, m => m.Role == ChatRole.System && m.Text!.Contains("SUMMARY"));
         Assert.Contains(session.Messages, m => m.Text == "a3");
+    }
+
+    [Fact]
+    public async Task Summary_usage_is_counted_in_session_totals()
+    {
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.User, "u1"),
+            new(ChatRole.Assistant, "a1"),
+            new(ChatRole.User, "u2"),
+            new(ChatRole.Assistant, "a2"),
+            new(ChatRole.User, "u3"),
+            new(ChatRole.Assistant, "a3"),
+        };
+
+        var client = new SequencedUsageChatClient(
+            ("SUMMARY", new UsageDetails { InputTokenCount = 50, OutputTokenCount = 5 }),
+            ("final", new UsageDetails { InputTokenCount = 100, OutputTokenCount = 10 }));
+        var config = new AgentConfig { ContextLimit = 3, ContextTokenLimit = 0, AutoSummarize = true };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "SYS", config, history);
+
+        await session.SendAsync("hi", null);
+
+        // 摘要（非主循环）与主请求的 usage 都应计入会话总量/成本
+        Assert.Equal(150L, session.SessionInputTokens);
+        Assert.Equal(15L, session.SessionOutputTokens);
+        Assert.Equal(2, session.SessionRequestCount);
     }
 
     [Fact]
@@ -565,6 +614,95 @@ public class AgentSessionTests
 
         // 轮次信号失败不影响对话（降级 = 多弹审批，不误放行）
         Assert.Contains(events, e => e.Kind == AgentEventKind.Done);
+    }
+
+    [Fact]
+    public async Task Retrieval_context_is_injected_for_request_and_removed_after_turn()
+    {
+        var client = new CapturingChatClient();
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig(),
+            recall: (_, _, _) => Task.FromResult<string?>("记忆内容: 先 df 定位分区"));
+        var events = new List<AgentEvent>();
+
+        await session.SendAsync("磁盘满", new SyncProgress(events.Add));
+
+        Assert.NotNull(client.LastMessages);
+        Assert.Contains(client.LastMessages!,
+            m => m.Role == ChatRole.System && (m.Text ?? string.Empty).Contains("记忆内容"));
+        Assert.DoesNotContain(session.Messages,
+            m => m.Role == ChatRole.System && (m.Text ?? string.Empty).Contains("记忆内容"));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.MemoryRecall);
+    }
+
+    [Fact]
+    public async Task Retrieval_context_does_not_accumulate_across_turns()
+    {
+        var client = new CapturingChatClient();
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig(),
+            recall: (_, _, _) => Task.FromResult<string?>("记忆内容: 先 df 定位分区"));
+
+        await session.SendAsync("第一轮", new SyncProgress(_ => { }));
+        await session.SendAsync("第二轮", new SyncProgress(_ => { }));
+
+        Assert.Equal(0, session.Messages.Count(m =>
+            m.Role == ChatRole.System && (m.Text ?? string.Empty).Contains("记忆内容")));
+        Assert.Equal(2, session.Messages.Count(m => m.Role == ChatRole.User));
+    }
+
+    [Fact]
+    public async Task Retrieval_failures_emit_warning_and_turn_still_completes()
+    {
+        var client = new FakeChatClient(new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig(),
+            recall: (_, _, _) => Task.FromException<string?>(new InvalidOperationException("embedding down")),
+            graphContext: (_, _) => Task.FromException<AssetGraphContextResult?>(
+                new InvalidOperationException("graph down")));
+        var events = new List<AgentEvent>();
+
+        // 显式资产 ID 让图谱门控放行，从而覆盖“图谱失败只告警、不阻断本轮”
+        await session.SendAsync("check ssh:s1", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Warning && e.Text!.Contains("记忆召回失败"));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Warning && e.Text!.Contains("资产图谱检索失败"));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Done);
+    }
+
+    private sealed class SequencedUsageChatClient : IChatClient
+    {
+        private readonly Queue<(string Text, UsageDetails Usage)> _responses;
+
+        public SequencedUsageChatClient(params (string Text, UsageDetails Usage)[] responses) =>
+            _responses = new Queue<(string, UsageDetails)>(responses);
+
+        public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            var (text, usage) = _responses.Count > 0
+                ? _responses.Dequeue()
+                : ("ok", new UsageDetails());
+            return Task.FromResult(new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, text) })
+            {
+                Usage = usage
+            });
+        }
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            var (text, usage) = _responses.Count > 0
+                ? _responses.Dequeue()
+                : ("ok", new UsageDetails());
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant,
+                new AIContent[] { new TextContent(text), new UsageContent(usage) });
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public void Dispose() { }
     }
 
     private sealed class UsageEmittingChatClient : IChatClient

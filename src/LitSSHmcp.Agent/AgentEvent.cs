@@ -16,6 +16,8 @@ public enum AgentEventKind
     AssetGraphContext,
     /// <summary>本轮结束。</summary>
     Done,
+    /// <summary>非致命警告（如记忆召回/图谱检索失败），不影响本轮继续。</summary>
+    Warning,
     /// <summary>错误/中止。</summary>
     Error
 }

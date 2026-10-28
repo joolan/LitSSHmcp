@@ -2,6 +2,9 @@
 name: disk-full
 description: 磁盘空间或 inode 满导致写入失败、服务异常。适用于「No space left on device」「磁盘满了」「df 100%」「写不进文件」。
 appliesTo: [ssh, command, log]
+triggers: [磁盘满, 磁盘空间不足, 磁盘满了, No space left, No space left on device, df 100%, inode 满, inode, 写不进文件, 磁盘告警]
+symptoms: [disk_full, inode_exhausted, no_space]
+assets: [ssh, app]
 ---
 
 # 磁盘 / inode 满排查
@@ -23,5 +26,5 @@ appliesTo: [ssh, command, log]
 - 删除文件属破坏性操作：先列清单让用户确认，禁止 `rm -rf` 通配大目录。
 - 不要动 `/proc`、系统关键文件；`/var/lib/docker` 清理优先用 docker 原生命令（`docker system prune` 等，需确认）。
 
-## 深入（按需 skill_read）
+## 深入（按需 skill(action="read")）
 磁盘周期巡检 runbook：`references/inspection-runbook.md`（批量采集、阈值分级报告、巡检对比与预警）。

@@ -1,6 +1,6 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
@@ -32,7 +32,7 @@ public class GraphTools
     }
 
     [McpServerTool(Name = "topology_query", UseStructuredContent = true, OutputSchemaType = typeof(TopologyQueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("拓扑图统一查询入口：action=search 搜索资产、neighbors 看邻域、path 查有向链路、impact 查变更影响面、explain 解释依赖边来源/证据/过期。返回 result 为对应动作的结构化结果。")]
+    [Description("拓扑图统一查询入口：action=search/neighbors/path/impact/explain 分别做搜索/邻域/链路/影响面/证据解释。result 为对应动作的结构化结果")]
     public async Task<TopologyQueryResultDto> TopologyQuery(
         [Description("查询类型：search / neighbors / path / impact / explain")] string action,
         [Description("search 的搜索词：名称/ID/主机/端口/标签片段")] string? query = null,
@@ -83,7 +83,6 @@ public class GraphTools
         }
     }
 
-    [Description("按名称/ID/主机/端口/标签搜索资产(服务器/应用/服务/容器/部署/数据库/域名/端口/证书)。定位排查前先找准确切 ID")]
     private async Task<GraphSearchResult> Search(
         [Description("搜索词: 名称、ID、主机、端口或标签片段")] string query,
         [Description("可选类型过滤: ssh,datasource,application,service,container,deploy,system,domain,port,cert,mq(逗号/空格分隔); 留空=全部")] string? kinds = null,
@@ -95,7 +94,6 @@ public class GraphTools
         return result;
     }
 
-    [Description("查询某资产的邻域子图(入边+出边, 可多跳)。看它连了谁、谁连了它")]
     private async Task<GraphNeighborhood> GetNeighbors(
         [Description("资产ID, 如 ssh:web-01 / ds:mysql-01 / app:order-service, 也接受纯ID或名称")] string assetId,
         [Description("跳数, 默认1, 最大6")] int depth = 1,
@@ -107,7 +105,6 @@ public class GraphTools
         return result;
     }
 
-    [Description("查询两个资产之间的有向链路(如域名→应用→端口→服务器)。无路径时返回明确原因")]
     private async Task<GraphPathResult> FindPaths(
         [Description("起点资产ID/名称")] string from,
         [Description("终点资产ID/名称")] string to,
@@ -119,7 +116,6 @@ public class GraphTools
         return result;
     }
 
-    [Description("反向查询影响面: 某服务器/数据库/应用/证书变更会影响哪些资产(爆炸半径)。默认排除待确认节点")]
     private async Task<GraphImpactResult> GetImpact(
         [Description("资产ID, 如 ssh:web-01 / ds:mysql-01 / app:order-service, 也接受纯ID或名称")] string assetId,
         [Description("最大反向跳数, 默认6, 最大6")] int maxDepth = 6,
@@ -131,7 +127,6 @@ public class GraphTools
         return result;
     }
 
-    [Description("解释某资产的关联边: 来源(manual/discovered)、证据、末次发现时间、是否过期。用于核实 AI 的依赖结论")]
     private async Task<GraphExplainResult> Explain(
         [Description("资产ID/名称")] string assetId,
         [Description("可选: 只看与另一资产之间的边")] string? to = null,

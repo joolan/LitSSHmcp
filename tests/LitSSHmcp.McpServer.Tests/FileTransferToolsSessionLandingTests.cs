@@ -63,11 +63,12 @@ public class FileTransferToolsSessionLandingTests : IDisposable
         SessionWorkspace.Current = _sessionUnderRoot;
         var (tools, ssh) = MakeTools(MakeConfig(_root));
 
-        var result = await tools.DownloadFile("srv1", "/var/log/app.log");
+        var result = await tools.Download("srv1", "/var/log/app.log");
 
         Assert.True(result.Success);
         Assert.Null(result.Status);
-        Assert.Equal(Path.Combine(_sessionUnderRoot, "app.log"), ssh.LastDownloadLocalPath);
+        Assert.Equal(_sessionUnderRoot, result.LocalDirectory);
+        Assert.Equal(_sessionUnderRoot, ssh.LastDownloadBatchDirectory);
     }
 
     [Fact]
@@ -76,10 +77,12 @@ public class FileTransferToolsSessionLandingTests : IDisposable
         SessionWorkspace.Current = _sessionUnderRoot;
         var (tools, ssh) = MakeTools(MakeConfig(_root));
 
-        var result = await tools.DownloadFile("srv1", "/var/log/app.log", "sub/y.log");
+        var result = await tools.Download("srv1", "/var/log/app.log", "sub/y.log");
 
         Assert.True(result.Success);
-        Assert.Equal(Path.Combine(_sessionUnderRoot, "sub", "y.log"), ssh.LastDownloadLocalPath);
+        var expected = Path.Combine(_sessionUnderRoot, "sub", "y.log");
+        Assert.Equal(expected, result.LocalDirectory);
+        Assert.Equal(expected, ssh.LastDownloadBatchDirectory);
     }
 
     [Fact]
@@ -89,12 +92,12 @@ public class FileTransferToolsSessionLandingTests : IDisposable
         SessionWorkspace.Current = _sessionOutsideRoot;
         var (tools, ssh) = MakeTools(MakeConfig(_root));
 
-        var result = await tools.DownloadFile("srv1", "/var/log/app.log");
+        var result = await tools.Download("srv1", "/var/log/app.log");
 
         Assert.False(result.Success);
         Assert.Equal("path_not_allowed", result.Status);
         Assert.Contains(_sessionOutsideRoot, result.Error);
-        Assert.Null(ssh.LastDownloadLocalPath);   // 落地尝试被拦在白名单，不得触达传输
+        Assert.Null(ssh.LastDownloadBatchDirectory);   // 落地尝试被拦在白名单，不得触达传输
     }
 
     [Fact]
@@ -103,12 +106,12 @@ public class FileTransferToolsSessionLandingTests : IDisposable
         SessionWorkspace.Current = null;          // 旧会话/直连 MCP：现状行为
         var (tools, ssh) = MakeTools(MakeConfig(_root));
 
-        var result = await tools.DownloadFile("srv1", "/var/log/app.log");
+        var result = await tools.Download("srv1", "/var/log/app.log");
 
         Assert.False(result.Success);
         Assert.Equal("bad_request", result.Status);
-        Assert.Contains("localPath", result.Error);
-        Assert.Null(ssh.LastDownloadLocalPath);
+        Assert.Contains("localDirectory", result.Error);
+        Assert.Null(ssh.LastDownloadBatchDirectory);
     }
 
     [Fact]
@@ -134,16 +137,16 @@ public class FileTransferToolsSessionLandingTests : IDisposable
 
         SessionWorkspace.Current = _sessionUnderRoot;
         var (tools, ssh) = MakeTools(MakeConfig(_root));
-        var ok = await tools.UploadFile("srv1", inRoot, "/var/log/a.txt");
+        var ok = await tools.Upload("srv1", inRoot, "/var/log");
         Assert.True(ok.Success);
-        Assert.Equal(inRoot, ssh.LastUploadLocalPath);
+        Assert.Equal(new[] { inRoot }, ssh.LastUploadBatchPaths!);
 
         SessionWorkspace.Current = _sessionOutsideRoot;
-        var denied = await tools.UploadFile("srv1", outside, "/var/log/a.txt");
+        var denied = await tools.Upload("srv1", outside, "/var/log");
         Assert.False(denied.Success);
         Assert.Equal("path_not_allowed", denied.Status);
         // 越界上传没有触达传输层（仍是第一次成功的路径, 未被覆盖）
-        Assert.Equal(inRoot, ssh.LastUploadLocalPath);
+        Assert.Equal(new[] { inRoot }, ssh.LastUploadBatchPaths!);
     }
 
     [Fact]
@@ -159,19 +162,20 @@ public class FileTransferToolsSessionLandingTests : IDisposable
         SessionWorkspace.Current = _sessionUnderRoot;
         var (tools, ssh) = MakeTools(MakeConfig(_root));
 
-        var denied = await tools.UploadFile("srv1", sibling, "/var/log/note.txt");
+        var denied = await tools.Upload("srv1", sibling, "/var/log");
         Assert.False(denied.Success);
         Assert.Equal("path_not_allowed", denied.Status);
         Assert.Contains("会话工作目录", denied.Error);
-        Assert.Null(ssh.LastUploadLocalPath);                       // 未触达传输层
+        Assert.Null(ssh.LastUploadBatchPaths);                       // 未触达传输层
 
+        // Upload 工具内部走同一批处理路径；再直接调 UploadFiles 覆盖批量入口
         var deniedBatch = await tools.UploadFiles("srv1", sibling, "/var/log/");
         Assert.Equal("path_not_allowed", deniedBatch.Status);
         Assert.Contains("会话工作目录", deniedBatch.Error);
 
-        var ok = await tools.UploadFile("srv1", inSession, "/var/log/ok.txt");
+        var ok = await tools.Upload("srv1", inSession, "/var/log");
         Assert.True(ok.Success);
-        Assert.Equal(inSession, ssh.LastUploadLocalPath);
+        Assert.Equal(new[] { inSession }, ssh.LastUploadBatchPaths!);
     }
 
     [Fact]
@@ -185,23 +189,19 @@ public class FileTransferToolsSessionLandingTests : IDisposable
         SessionWorkspace.Current = null;
         var (tools, ssh) = MakeTools(MakeConfig(_root));
 
-        var ok = await tools.UploadFile("srv1", sharedFile, "/var/log/x.sh");
+        var ok = await tools.Upload("srv1", sharedFile, "/var/log");
         Assert.True(ok.Success);
-        Assert.Equal(sharedFile, ssh.LastUploadLocalPath);
+        Assert.Equal(new[] { sharedFile }, ssh.LastUploadBatchPaths!);
     }
 
     private sealed class StubSsh : ISshService
     {
-        public string? LastDownloadLocalPath { get; private set; }
         public string? LastDownloadBatchDirectory { get; private set; }
-        public string? LastUploadLocalPath { get; private set; }
+        public List<string>? LastUploadBatchPaths { get; private set; }
 
         public Task<FileTransferResult> DownloadFileAsync(SshServerConfig server, string remotePath, string localPath,
-            IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default)
-        {
-            LastDownloadLocalPath = localPath;
-            return Task.FromResult(new FileTransferResult { Success = true, Message = "ok" });
-        }
+            IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default) =>
+            Task.FromResult(new FileTransferResult { Success = true, Message = "ok" });
 
         public Task<BatchTransferResult> DownloadBatchAsync(SshServerConfig server, IReadOnlyList<string> remotePaths,
             string localDirectory, bool recursive, int maxFiles, long maxTotalBytes,
@@ -212,11 +212,8 @@ public class FileTransferToolsSessionLandingTests : IDisposable
         }
 
         public Task<FileTransferResult> UploadFileAsync(SshServerConfig server, string localPath, string remotePath,
-            IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default)
-        {
-            LastUploadLocalPath = localPath;
-            return Task.FromResult(new FileTransferResult { Success = true, Message = "ok" });
-        }
+            IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default) =>
+            Task.FromResult(new FileTransferResult { Success = true, Message = "ok" });
 
         public Task<bool> TestConnectionAsync(SshServerConfig server, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConnectionProbeResult> ProbeConnectionAsync(SshServerConfig server, CancellationToken ct = default) => throw new NotSupportedException();
@@ -226,7 +223,16 @@ public class FileTransferToolsSessionLandingTests : IDisposable
         public Task<RemoteFileListResult> ListRemoteFilesAsync(SshServerConfig server, string remotePath, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<bool> RemoteFileExistsAsync(SshServerConfig server, string remotePath, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<BatchTransferResult> UploadBatchAsync(SshServerConfig server, IReadOnlyList<string> localPaths, string remoteDirectory,
-            bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default) => throw new NotSupportedException();
+            bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default)
+        {
+            LastUploadBatchPaths = localPaths.ToList();
+            return Task.FromResult(new BatchTransferResult
+            {
+                Success = true,
+                Total = localPaths.Count,
+                Succeeded = localPaths.Count
+            });
+        }
         public Task<CommandResult> ExecuteStreamingAsync(SshServerConfig server, string command,
             Action<string>? onStdout = null, Action<string>? onStderr = null, string? stdinText = null,
             CancellationToken ct = default, int timeoutSeconds = 120) => throw new NotSupportedException();

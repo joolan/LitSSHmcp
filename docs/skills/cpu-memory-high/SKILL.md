@@ -2,6 +2,9 @@
 name: cpu-memory-high
 description: CPU 飙高 / 内存泄漏 / OOM / 负载高定位。适用于「CPU 100%」「内存一直涨」「被 OOM Killer 杀了」「load 高」「服务卡顿」。
 appliesTo: [ssh, command, java, log]
+triggers: [CPU 高, CPU 100%, 内存高, 内存泄漏, 内存一直涨, OOM, OOM Killer, 负载高, load average, swap 高, 服务卡顿]
+symptoms: [cpu_high, memory_high, load_high, oom]
+assets: [ssh, java, app]
 ---
 
 # CPU / 内存 / 负载飙高排查

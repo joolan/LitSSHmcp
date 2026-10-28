@@ -41,7 +41,7 @@ public class McpProtocolIntegrationTests
             var tools = list.GetProperty("result").GetProperty("tools").EnumerateArray().ToList();
             var names = tools.Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
 
-            Assert.Equal(36, tools.Count);
+            Assert.Equal(37, tools.Count);
             Assert.DoesNotContain("mcp_approval_round", names);
             Assert.Contains("ssh_upload", names);
             Assert.Contains("ssh_download", names);
@@ -131,7 +131,7 @@ public class McpProtocolIntegrationTests
                 var list = await external.RequestAsync("tools/list", new { });
                 var names = list.GetProperty("result").GetProperty("tools").EnumerateArray()
                     .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
-                Assert.Equal(36, names.Count);
+                Assert.Equal(37, names.Count);
                 Assert.DoesNotContain("mcp_approval_round", names);
             }
 
@@ -146,7 +146,7 @@ public class McpProtocolIntegrationTests
             var hostList = await host.RequestAsync("tools/list", new { });
             var hostNames = hostList.GetProperty("result").GetProperty("tools").EnumerateArray()
                 .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
-            Assert.Equal(37, hostNames.Count);
+            Assert.Equal(38, hostNames.Count);
             Assert.Contains("mcp_approval_round", hostNames);
         }
         finally
@@ -182,7 +182,7 @@ public class McpProtocolIntegrationTests
 
             // 工具仍会列出（外部客户端不含内部工具）
             var list = await client.RequestAsync("tools/list", new { });
-            Assert.Equal(36, list.GetProperty("result").GetProperty("tools").GetArrayLength());
+            Assert.Equal(37, list.GetProperty("result").GetProperty("tools").GetArrayLength());
 
             // 但任何调用都被拒绝
             var call = await client.RequestAsync("tools/call", new { name = "mcp_self_check", arguments = new { } });
@@ -194,6 +194,66 @@ public class McpProtocolIntegrationTests
         finally
         {
             try { Directory.Delete(dataDir, recursive: true); } catch { /* 忽略清理失败 */ }
+        }
+    }
+
+    [Fact]
+    public async Task Fleet_execute_emits_progress_notifications_over_stdio()
+    {
+        var exe = LocateServerExecutable();
+        var dataDir = Path.Combine(Path.GetTempPath(), "litssh-mcp-progress-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dataDir);
+        await File.WriteAllTextAsync(Path.Combine(dataDir, "config.json"), """
+            {
+              "schemaVersion": 3,
+              "servers": [
+                {
+                  "id": "s1", "name": "s1", "host": "127.0.0.1", "port": 1,
+                  "username": "nobody", "authType": "Password", "password": "x"
+                }
+              ],
+              "security": {
+                "connectionPool": { "connectTimeoutSeconds": 5 }
+              }
+            }
+            """, Encoding.UTF8);
+
+        try
+        {
+            using var client = new McpStdioClient(exe, dataDir);
+            await client.RequestAsync("initialize", new
+            {
+                protocolVersion = "2024-11-05",
+                capabilities = new { },
+                clientInfo = new { name = "it-progress", version = "1.0" }
+            });
+            await client.NotifyAsync("notifications/initialized");
+
+            var call = await client.RequestAsync("tools/call", new Dictionary<string, object?>
+            {
+                ["name"] = "ssh_execute_fleet",
+                ["arguments"] = new Dictionary<string, object?>
+                {
+                    ["serverIds"] = "s1",
+                    ["command"] = "echo progress-test",
+                    ["concurrency"] = 1,
+                    ["maxTargets"] = 1
+                },
+                ["_meta"] = new Dictionary<string, object?> { ["progressToken"] = "it-progress" }
+            });
+
+            Assert.True(call.GetProperty("result").TryGetProperty("structuredContent", out _));
+            var progress = client.Progress;
+            Assert.NotEmpty(progress);
+            var paramsElement = progress.Last().GetProperty("params");
+            Assert.Equal("it-progress", paramsElement.GetProperty("progressToken").GetString());
+            Assert.True(paramsElement.GetProperty("total").GetInt32() >= 1);
+            using var message = JsonDocument.Parse(paramsElement.GetProperty("message").GetString()!);
+            Assert.Equal("s1", message.RootElement.GetProperty("serverId").GetString());
+        }
+        finally
+        {
+            try { Directory.Delete(dataDir, recursive: true); } catch { /* ignore */ }
         }
     }
 
@@ -232,6 +292,12 @@ public class McpProtocolIntegrationTests
         private readonly Process _process;
         private readonly StreamWriter _stdin;
         private int _nextId;
+        private readonly List<JsonElement> _progress = new();
+
+        public IReadOnlyList<JsonElement> Progress
+        {
+            get { lock (_progress) return _progress.ToList(); }
+        }
 
         public McpStdioClient(string exe, string dataDir, bool internalTools = false)
         {
@@ -293,7 +359,15 @@ public class McpProtocolIntegrationTests
 
                 using var document = JsonDocument.Parse(line);
                 var root = document.RootElement;
-                if (root.TryGetProperty("id", out var idElement) &&
+                if (!root.TryGetProperty("id", out var idElement) &&
+                    root.TryGetProperty("method", out var methodElement) &&
+                    methodElement.ValueKind == JsonValueKind.String &&
+                    methodElement.GetString() == "notifications/progress")
+                {
+                    lock (_progress) _progress.Add(root.Clone());
+                    continue;
+                }
+                if (root.TryGetProperty("id", out idElement) &&
                     idElement.ValueKind == JsonValueKind.Number &&
                     idElement.GetInt32() == id)
                 {

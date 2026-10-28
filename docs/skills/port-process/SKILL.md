@@ -2,6 +2,9 @@
 name: port-process
 description: 定位端口占用、进程与监听关系（谁占了 80/443、LISTEN 的进程是谁、端口不通）。适用于「端口被占用」「address already in use」「找不到监听进程」「服务没起来但没报错」。
 appliesTo: [ssh, command, topology]
+triggers: [端口占用, 端口被占, 端口冲突, address already in use, 找不到监听进程, 监听进程, 谁占了端口, ss -lntp, lsof, 服务没起来但没报错]
+symptoms: [port_conflict, port_in_use, listener_missing]
+assets: [ssh, service, container]
 ---
 
 # 端口占用与进程定位

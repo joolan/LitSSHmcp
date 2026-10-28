@@ -1585,7 +1585,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         var wasCurrent = session.Id == _sessionId;
         // 会话删除入审计（§10.A.1 本地工具补审计三类之一）；FilePath=该会话工作目录（§5.3.5 清理范围, M1-7 落实）
         var sessionDir = await _store.GetSessionWorkspaceDirAsync(session.Id);
-        await _store.DeleteSessionAsync(session.Id);
+        await _store.DeleteSessionAsync(session.Id); await TryDeleteFleetPlansAsync(session.Id);
         // 附件/会话产出随会话删除清理（§5.3.5）：仅限共享区 jobs/ 内的会话目录（PathGuard 物理判定）
         var (removedDir, cleanedFiles) = CleanupSessionWorkspace(sessionDir);
         await LocalAudit.LogAsync("session_delete", $"SESSION_DELETE: {session.Title}",
@@ -1816,8 +1816,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 _skills.ActiveIdsOrNull, _planMode, SelectedAgent?.ToPromptContext(),
                 extraTools: localTools, assetGraph: assetGraph,
                 sessionWorkspaceDir: string.IsNullOrWhiteSpace(ctx.WorkspaceDir) ? null : ctx.WorkspaceDir,
-                ownerUserId: ownerUserId,
-                enabledMcpIds: _sessionMcpSubset);
+                ownerUserId: ownerUserId, enabledMcpIds: _sessionMcpSubset,
+                sessionId: ctx.SessionId > 0 ? ctx.SessionId : null, fleetPlanStore: FleetPlanStore);
             ctx.RuntimeVersion = _poolVersion;
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {ctx.Runtime!.ToolCount} 个工具"
@@ -2378,7 +2378,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         SyncLocalAuditSession();
 
         // D1：桌面可选登录——已登录则新会话归因为登录用户名，未登录为 local（桌面仅归因不限权）
-        var owner = _desktopLogin?.Current?.Username ?? "local";
+        var owner = _desktopLogin?.Current?.Username ?? "local"; await TryAdoptFleetPlansAsync(owner, _sessionId);
         var dir = WorkspaceLayout.ResolveSessionDir(
             WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir), owner, _sessionId);
         await _store.SetSessionOwnerUserIdAsync(_sessionId, owner);
@@ -2538,16 +2538,9 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 // 触达时间失败忽略（会话可能已删除）
             }
-            try
-            {
-                // 质量门：仅成功轮入库 raw 记忆（取消/失败轮不污染召回）
-                if (ctx.Runtime is not null && turnSucceeded)
-                    await ctx.Runtime.IndexTurnAsync(turn.UserText, assistantText.ToString());
-            }
-            catch
-            {
-                // 记忆写入失败忽略
-            }
+            if (ctx.Runtime is not null && turnSucceeded)
+                ctx.Runtime.IndexTurnInBackground(ctx.SessionId.ToString(), turn.UserText, assistantText.ToString());
+            if (turnSucceeded) ctx.Runtime?.ConsolidateInBackground();
             await ReloadSessionsAsync();
             if (ReferenceEquals(ctx, CurrentContext))
             {
@@ -2707,6 +2700,13 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 var graphStep = new AgentStep("资产图谱", string.Empty, isInfo: true);
                 graphStep.Complete(true, e.Text ?? string.Empty, 0);
                 turn.Steps.Add(graphStep);
+                break;
+
+            case AgentEventKind.Warning:
+                FlushDelta(turn, ctx);
+                FlushReasoning(turn, ctx);
+                var warning = "⚠ " + (e.Text ?? "警告");
+                turn.Note = string.IsNullOrWhiteSpace(turn.Note) ? warning : turn.Note + "\n" + warning;
                 break;
 
             case AgentEventKind.Error:

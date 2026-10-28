@@ -2,6 +2,9 @@
 name: mysql-troubleshoot
 description: MySQL 连接数/慢查询/锁/复制延迟/性能问题排查。适用于「数据库连不上」「Too many connections」「SQL 慢」「表锁住」「主从延迟」。
 appliesTo: [datasource, mysql, ssh]
+triggers: [MySQL, 慢查询, 慢 SQL, 数据库连不上, Too many connections, 主从延迟, 表锁, deadlock, 死锁, 连接数满, 数据库性能]
+symptoms: [slow_query, mysql_connection, deadlock, replication_lag]
+assets: [mysql, ds]
 ---
 
 # MySQL 排障
@@ -26,5 +29,5 @@ appliesTo: [datasource, mysql, ssh]
 - 只读查询用 `mysql_query`；任何写/改结构用 `mysql_execute`（无 WHERE 的 UPDATE/DELETE、DROP 等会被拒绝）。
 - 结果最多 1000 行；大结果走落盘句柄。凭据不会出现在任何返回里。
 
-## 深入（按需 skill_read）
+## 深入（按需 skill(action="read")）
 慢查询深度排查 runbook：`references/slow-query-runbook.md`（慢日志/digest 定位、mysql_query(action="explain") 归因、处置与验证闭环）。

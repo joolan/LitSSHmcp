@@ -1,6 +1,6 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
@@ -25,9 +25,9 @@ public class DockerTools
     }
 
     [McpServerTool(Name = "docker_query", UseStructuredContent = true, OutputSchemaType = typeof(DockerQueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("Docker 只读入口：action=ps 列容器、action=logs 看日志、action=inspect 看详情、action=stats 看资源占用、action=images 看镜像。重启用 docker_restart，容器内执行用 docker_exec。")]
+    [Description("Docker 只读入口：action=ps/logs/inspect/stats/images 分别查容器/日志/详情/资源/镜像。重启用 docker_restart，容器内执行用 docker_exec")]
     public async Task<DockerQueryResultDto> DockerQuery(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("查询类型：ps / logs / inspect / stats / images")] string action,
         [Description("容器名或容器ID（logs/inspect 必填）")] string? container = null,
         [Description("ps: true=包含已停止容器")] bool all = false,
@@ -53,9 +53,8 @@ public class DockerTools
         }
     }
 
-    [Description("列出服务器上的Docker容器(名称/镜像/状态/端口)。all=true 含已停止容器; 看容器日志用 docker_query action=logs, 重启用 docker_restart")]
     public async Task<DockerPsDto> DockerPs(
-        [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("true=包含已停止的容器(-a); 默认只看运行中")] bool all = false,
         CancellationToken cancellationToken = default)
     {
@@ -103,9 +102,8 @@ public class DockerTools
         };
     }
 
-    [Description("查看Docker容器日志。用tail限制行数, since按时间过滤(如 '10m'/'2024-01-01T00:00:00'); 容器操作异常时优先看它")]
     public async Task<RemoteCommandResultDto> DockerLogs(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("容器名或容器ID")] string container,
         [Description("返回最近的行数(默认200, 上限5000)")] int tail = 200,
         [Description("起始时间(可选), 如 10m / 2h / 2024-01-01T00:00:00")] string? since = null,
@@ -123,9 +121,8 @@ public class DockerTools
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [Description("查看Docker容器详情(inspect, JSON): 环境变量/挂载/网络/重启次数/健康检查。排查容器配置问题用")]
     public async Task<RemoteCommandResultDto> DockerInspect(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("容器名或容器ID")] string container,
         CancellationToken cancellationToken = default)
     {
@@ -136,18 +133,16 @@ public class DockerTools
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [Description("查看Docker容器资源占用(CPU/内存/网络/磁盘IO的一次性快照)。容器占满CPU/内存/OOM时用")]
     public async Task<RemoteCommandResultDto> DockerStats(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         CancellationToken cancellationToken = default)
     {
         const string command = "docker stats --no-stream --format '{{.Name}} | CPU {{.CPUPerc}} | MEM {{.MemUsage}} ({{.MemPerc}}) | NET {{.NetIO}} | BLOCK {{.BlockIO}} | PIDs {{.PIDs}}'";
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [Description("列出服务器上的Docker镜像(仓库/标签/大小/创建时间)。排查镜像版本/磁盘占用用")]
     public async Task<RemoteCommandResultDto> DockerImages(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         CancellationToken cancellationToken = default)
     {
         const string command = "docker images --format '{{.Repository}}:{{.Tag}} | {{.ID}} | {{.Size}} | {{.CreatedSince}}'";
@@ -155,9 +150,9 @@ public class DockerTools
     }
 
     [McpServerTool(Name = "docker_restart", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("重启Docker容器(会短暂中断服务, 需人工确认)。确认容器名用 docker_query action=ps, 重启后看 docker_query action=logs")]
+    [Description("重启 Docker 容器(短暂中断，需人工确认)。容器名用 docker_query(action=ps) 确认，重启后看 action=logs")]
     public async Task<RemoteCommandResultDto> DockerRestart(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("容器名或容器ID")] string container,
         CancellationToken cancellationToken = default)
     {
@@ -169,9 +164,9 @@ public class DockerTools
     }
 
     [McpServerTool(Name = "docker_exec", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("在运行中的Docker容器内执行命令(需人工确认)。用于容器内排查: 查进程/看配置/测端口。命令按 POSIX argv 拆分并逐参数转义, 不展开变量/通配符/管道; 需要 shell 语法请显式写 sh -c '...'。只读排查优先用 docker_query action=logs/inspect")]
+    [Description("在运行中的Docker容器内执行命令(需人工确认)。命令按 POSIX argv 拆分并逐参数转义，不展开变量/通配符/管道；需要 shell 语法请显式写 sh -c '...'；只读排查用 docker_query")]
     public async Task<RemoteCommandResultDto> DockerExec(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("容器名或容器ID")] string container,
         [Description("要在容器内执行的命令, 如 'ps -ef' / 'cat /app/config.yml'")] string command,
         CancellationToken cancellationToken = default)

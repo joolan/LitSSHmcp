@@ -143,7 +143,7 @@
     "systemPrompt": "",
     "skillsDir": "",
     "workspaceDir": "C:\\Users\\<你>\\Documents\\LitSSH",
-    "contextLimit": 40,
+    "contextLimit": 120,
     "contextTokenLimit": 96000,
     "autoSummarize": true,
     "toolResultMaxChars": 4000,
@@ -156,6 +156,7 @@
     "responseStyle": "concise",
     "readOnly": false,
     "allowedToolGroups": [],
+    "profile": "auto",
     "mcpServerPath": "",
     "mcpServers": [
       { "id": "litssh", "name": "LitSSH MCP（内置）", "builtin": true, "enabled": true, "transport": "stdio", "command": "", "args": [], "env": [], "url": "", "headers": [], "lastError": "", "lastValidatedAt": "", "lastToolCount": 0 },
@@ -176,7 +177,24 @@
       "model": "text-embedding-3-small",
       "apiKey": "",
       "topK": 5,
-      "recallThreshold": 0.15
+      "recallThreshold": 0.15,
+      "recallRelativeMargin": 0.8,
+      "rawKeepPerSource": 50,
+      "recencyHalfLifeDays": 30,
+      "maxRecallChars": 1500,
+      "embeddingTimeoutSeconds": 5,
+      "rerankProviderId": ""
+    },
+    "consolidation": {
+      "enabled": false,
+      "minRawCount": 5,
+      "maxRawPerRun": 100,
+      "maxCandidatesPerRun": 20,
+      "minIntervalMinutes": 10,
+      "maxInputCharsPerSession": 6000,
+      "maxRunsPerDay": 0,
+      "maxRawPerDay": 0,
+      "providerId": ""
     },
     "providers": [
       {

@@ -1,7 +1,10 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
+using System.Text.Json;
+using LitSSHmcp.Agent;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Approval;
 using LitSSHmcp.Core.Services.Storage;
+using Microsoft.Extensions.AI;
 using Renci.SshNet;
 
 namespace LitSSHmcp.Cli;
@@ -60,6 +63,9 @@ class Program
                 }
                 return Decide(args[1], approved: false);
 
+            case "recall-eval":
+                return await RunRecallEval(args.Skip(1).ToArray());
+
             default:
                 Console.WriteLine($"未知命令: {command}");
                 PrintUsage();
@@ -84,8 +90,100 @@ class Program
   litssh connect web-server
   litssh run web-server ""df -h""
   litssh approvals
-  litssh approve 3f2a9c...");
+  litssh approve 3f2a9c...
+  litssh recall-eval <cases.json> [--provider <id>] [--rerank-provider <id>] [--top-k 5] [--output <report.json>]");
     }
+
+    static async Task<int> RunRecallEval(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            Console.WriteLine("用法: litssh recall-eval <cases.json> [--provider <id>] [--rerank-provider <id>] [--top-k 5] [--output report.json]");
+            return 1;
+        }
+
+        var path = args[0];
+        string? providerId = null;
+        string? rerankProviderId = null;
+        string? output = null;
+        var topK = 5;
+        for (var i = 1; i < args.Length; i++)
+        {
+            switch (args[i].ToLowerInvariant())
+            {
+                case "--provider" when i + 1 < args.Length:
+                    providerId = args[++i];
+                    break;
+                case "--rerank-provider" when i + 1 < args.Length:
+                    rerankProviderId = args[++i];
+                    break;
+                case "--top-k" when i + 1 < args.Length && int.TryParse(args[++i], out var value):
+                    topK = Math.Clamp(value, 1, 50);
+                    break;
+                case "--output" when i + 1 < args.Length:
+                    output = args[++i];
+                    break;
+            }
+        }
+
+        if (!File.Exists(path))
+        {
+            Console.WriteLine($"评测文件不存在: {path}");
+            return 1;
+        }
+        var file = MemoryRecallEvaluator.LoadFile(await File.ReadAllTextAsync(path));
+        if (file.Cases.Count == 0 || file.Memories.Count == 0)
+        {
+            Console.WriteLine("评测文件需要非空 memories 与 cases。");
+            return 1;
+        }
+
+        var config = await new ConfigService().LoadConfigAsync();
+        var providers = AgentProviderGroupConfig.Flatten(config.Agent.Providers);
+        var provider = (!string.IsNullOrWhiteSpace(providerId)
+                           ? providers.FirstOrDefault(p => p.Id == providerId)
+                           : null)
+                       ?? providers.FirstOrDefault(p => p.Id == config.Agent.ActiveProviderId)
+                       ?? providers.FirstOrDefault();
+        if (provider is null || config.Agent.Memory?.Enabled != true ||
+            string.IsNullOrWhiteSpace(config.Agent.Memory.Model))
+        {
+            Console.WriteLine("需要启用 agent.memory 并配置 Embeddings 模型/可用模型。");
+            return 1;
+        }
+
+        var embedder = EmbeddingClientFactory.Create(config.Agent.Memory, provider.ApiKey);
+        IChatClient? reranker = null;
+        if (!string.IsNullOrWhiteSpace(rerankProviderId))
+        {
+            var rerankProvider = providers.FirstOrDefault(p => p.Id == rerankProviderId);
+            if (rerankProvider is not null)
+            {
+                try { reranker = ChatClientFactory.Create(rerankProvider); }
+                catch { /* 回退规则重排 */ }
+            }
+        }
+
+        var report = await MemoryRecallEvaluator.EvaluateAsync(file, embedder,
+            new MemoryRecallEvalOptions(topK), reranker);
+        Console.WriteLine($"recall: {report.Cases} cases / {report.Memories} memories");
+        Console.WriteLine($"Recall@{topK}: {report.Recall:P1}  MRR: {report.Mrr:P2}");
+        foreach (var result in report.CaseResults)
+        {
+            Console.WriteLine($"  [{result.CaseId}] recall={result.ExpectedKeys.Count - result.Misses.Count}/{result.ExpectedKeys.Count} firstHit={result.FirstHitRank}");
+            foreach (var miss in result.Misses)
+                Console.WriteLine($"    miss: {miss}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(output))
+        {
+            await File.WriteAllTextAsync(output,
+                JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"报告写入: {output}");
+        }
+        return 0;
+    }
+
 
     static int ListApprovals()
     {

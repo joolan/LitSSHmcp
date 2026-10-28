@@ -52,14 +52,25 @@ public static class WorkspaceTools
 
         var read = new LocalFunction(
             "ops_doc_read",
-            "读取工作区文档(默认 OPS_ASSETS.md); " + pathDoc,
-            "{\"type\":\"object\",\"properties\":{" + PathProp(pathDoc + "; 省略则读 OPS_ASSETS.md(共享资产档案)") + "}}",
-            args => Read(root, shared, ArgumentReader.ReadString(args, "path")));
+            "工作区文档: action=list 列出文件, action=read 读取文档(默认); " + pathDoc,
+            "{\"type\":\"object\",\"properties\":{" +
+            "\"action\":{\"type\":\"string\",\"enum\":[\"list\",\"read\"],\"description\":\"list=列出工作区文档, read=读取文档(默认)\"}," +
+            PathProp(pathDoc + "; read 省略则读 OPS_ASSETS.md(共享资产档案); list 可限定目录(如 shared/worklogs 回看工作日志)") + "}}",
+            args =>
+            {
+                var action = (ArgumentReader.ReadString(args, "action") ?? "read").Trim().ToLowerInvariant();
+                return action switch
+                {
+                    "list" => List(root, shared, ArgumentReader.ReadString(args, "path")),
+                    "read" => Read(root, shared, ArgumentReader.ReadString(args, "path")),
+                    _ => "错误: action 仅支持 list/read"
+                };
+            });
 
         var write = new LocalFunction(
             "ops_doc_write",
             "写入/增量更新工作区文档; mode=overwrite 覆盖全文(默认), append 末尾追加(不存在则创建), patch 把第一处 find 替换为 replace; " +
-            "用于维护资产档案(共享区)与任务产出文档(本会话目录)" +
+            "用于维护资产档案(共享区)与任务产出文档(本会话目录); append 也可补写当天工作日志(如 shared/worklogs/YYYY/YYYY-MM-DD.md), overwrite/patch 不允许改工作日志" +
             (shared is null ? string.Empty : "; 脚本类文件(.sh/.py/.ps1等)直接写入共享区会自动在文件头标记『未审阅』(建议改经 ops_promote 提升以桌面确认)"),
             "{\"type\":\"object\",\"properties\":{" +
             "\"mode\":{\"type\":\"string\",\"enum\":[\"overwrite\",\"append\",\"patch\"],\"description\":\"overwrite=覆盖全文(默认), append=末尾追加, patch=定点替换\"}," +
@@ -85,17 +96,10 @@ public static class WorkspaceTools
                 };
             });
 
-        var list = new LocalFunction(
-            "ops_doc_list",
-            "列出工作区文档文件" + (shared is null ? string.Empty : "(本会话目录 + shared/ 共享区)"),
-            """{"type":"object","properties":{}}""",
-            _ => List(root, shared));
-
         return new IAgentTool[]
         {
             new LocalAgentTool(read, readOnly: true),
-            new LocalAgentTool(write),
-            new LocalAgentTool(list, readOnly: true)
+            new LocalAgentTool(write)
         };
     }
 
@@ -162,21 +166,41 @@ public static class WorkspaceTools
     {
         var full = ResolveTarget(root, shared, path, out var isShared);
         EnsureSharedWriteAllowed(sharedWritable, isShared);
-        if (IsWorkLogPath(Rel(root, full, shared)))
-            return "(工作日志目录由宿主维护, 禁止通过 ops_doc_* 写入)";
+        var rel = Rel(root, full, shared);
+        var isWorkLog = IsWorkLogPath(rel);
+
+        // 工作日志只允许 append（overwrite/patch 仍由 Write/Patch 拦截）；写前脱敏，复用自动日志的跨进程锁。
+        if (isWorkLog)
+            content = SecretRedactor.Redact(content);
         if (!File.Exists(full))
-            content = MaybeStampUnreviewed(root, shared, full, content);   // 新建文件才打标, 追加既有文件保留原头部
+            content = MaybeStampUnreviewed(root, shared, full, content);
+
         if (content.Length > MaxWriteChars)
             return $"(内容过长 {content.Length} 字符, 超过上限 {MaxWriteChars}, 未追加)";
-        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-        var prefix = File.Exists(full) && new FileInfo(full).Length > 0 ? Environment.NewLine : string.Empty;
-        File.AppendAllText(full, prefix + content);
-        var bytes = Encoding.UTF8.GetByteCount(content);
-        await LocalAudit.LogAsync("ops_doc_append", $"DOC_APPEND: {Rel(root, full, shared)}",
-            CommandStatus.Executed, result: $"+{bytes} 字节", filePath: full).ConfigureAwait(false);
-        return $"已追加到 {Rel(root, full, shared)} ({bytes} 字节)";
-    }
 
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+
+        if (isWorkLog)
+        {
+            var lockPath = Path.Combine(Path.GetTempPath(), "LitSSH", "worklog.lock");
+            using var _ = await CrossProcessFileLock.AcquireAsync(lockPath, TimeSpan.FromSeconds(5), ct);
+            var header = $"# {DateTime.Now:yyyy-MM-dd} 工作日志{Environment.NewLine}{Environment.NewLine}";
+            if (!File.Exists(full) || new FileInfo(full).Length == 0)
+                await File.WriteAllTextAsync(full, header + content, new UTF8Encoding(false), ct);
+            else
+                await File.AppendAllTextAsync(full, Environment.NewLine + content, new UTF8Encoding(false), ct);
+        }
+        else
+        {
+            var prefix = File.Exists(full) && new FileInfo(full).Length > 0 ? Environment.NewLine : string.Empty;
+            File.AppendAllText(full, prefix + content);
+        }
+
+        var bytes = Encoding.UTF8.GetByteCount(content);
+        await LocalAudit.LogAsync("ops_doc_append", $"DOC_APPEND: {rel}",
+            CommandStatus.Executed, result: $"+{bytes} 字节", filePath: full).ConfigureAwait(false);
+        return $"已追加到 {rel} ({bytes} 字节)";
+    }
     private static async Task<string> Patch(string root, string? shared, bool sharedWritable, string? path, string find, string replace, CancellationToken ct = default)
     {
         var full = ResolveTarget(root, shared, path, out var isShared);
@@ -208,9 +232,12 @@ public static class WorkspaceTools
             throw new InvalidOperationException("共享工作区只读(仅管理员可写), 请写入本会话工作目录");
     }
 
-    private static string List(string root, string? shared)
+    private static string List(string root, string? shared, string? path = null)
     {
-        // 不跟随 reparse point（junction/符号链接）：避免枚举沿链接遍历到工作区之外（§10.C.3）
+        if (!string.IsNullOrWhiteSpace(path))
+            return ListDirectory(root, shared, path!);
+
+        // 不跟随 reparse point（junction/符号链接），避免沿链接枚举到工作区之外（§10.C.3）
         var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
         var files = new List<string>();
         files.AddRange(Directory.EnumerateFiles(root, "*", options)
@@ -219,7 +246,7 @@ public static class WorkspaceTools
 
         if (shared is not null)
         {
-            // 共享区只展示资产相关子树的根级与脚本/记忆文档，避免 jobs/ 其他会话目录混入清单
+            // 共享区只展示资产档案与其它脚本/报告文档，避免 jobs/ 下会话目录进入清单
             var sharedFiles = Directory.EnumerateFiles(shared, "*", options)
                 .Select(f => Path.GetRelativePath(shared, f).Replace('\\', '/'))
                 .Where(rel => !IsSessionTreePath(rel) && !IsWorkLogPath(rel))
@@ -234,6 +261,44 @@ public static class WorkspaceTools
         return ordered.Count == 0 ? "(工作区暂无文件)" : string.Join('\n', ordered);
     }
 
+    /// <summary>显式目录列举（如 shared/worklogs 回看历史工作日志）；不受默认列表的 worklogs 隐藏规则限制。</summary>
+    private static string ListDirectory(string root, string? shared, string path)
+    {
+        string full;
+        bool isShared;
+        try
+        {
+            full = ResolveTarget(root, shared, path, out isShared);
+        }
+        catch (Exception ex)
+        {
+            return $"(非法路径) {ex.Message}";
+        }
+
+        if (!Directory.Exists(full))
+            return $"(目录不存在) {path}";
+
+        try
+        {
+            var options = new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                AttributesToSkip = FileAttributes.ReparsePoint
+            };
+            var files = Directory.EnumerateFiles(full, "*", options)
+                .Select(f => isShared
+                    ? SharedPrefix + Path.GetRelativePath(shared!, f).Replace('\\', '/')
+                    : Path.GetRelativePath(root, f).Replace('\\', '/'))
+                .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                .Take(200)
+                .ToList();
+            return files.Count == 0 ? "(目录下无文件)" : string.Join('\n', files);
+        }
+        catch (Exception ex)
+        {
+            return $"(列目录失败) {ex.Message}";
+        }
+    }
     /// <summary>把相对路径解析到工作区内（单根，供 <c>ops_script_register</c> 等外部调用复用）。</summary>
     public static string ResolvePath(string root, string? path) => Resolve(root, null, path);
 
@@ -311,7 +376,7 @@ public static class WorkspaceTools
         return string.Equals(first, WorkspaceLayout.JobsDirName, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>工作日志目录不进入 ops_doc_list（避免按天文件挤占文档清单；需要时仍可按路径显式读取）。</summary>
+    /// <summary>工作日志目录不进入 ops_doc_read(action=list)（避免按天文件挤占文档清单；需要时仍可按路径显式读取）。</summary>
     private static bool IsWorkLogPath(string relative)
     {
         var rel = relative.StartsWith(SharedPrefix, StringComparison.OrdinalIgnoreCase)

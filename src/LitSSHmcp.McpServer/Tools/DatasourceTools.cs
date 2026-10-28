@@ -1,6 +1,6 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
@@ -88,9 +88,9 @@ public class DatasourceTools
     }
 
     [McpServerTool(Name = "datasource_test_connection", UseStructuredContent = true, OutputSchemaType = typeof(TestConnectionResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("测试数据源(MySQL/PostgreSQL/Redis)连通性, 自动直连或建SSH隧道, 返回AccessMode与ViaTunnelServer。测SSH通信用ssh_test_connection")]
+    [Description("测试数据源(MySQL/PostgreSQL/Redis)连通性，自动直连或建SSH隧道，返回 AccessMode/ViaTunnelServer。测SSH通信用 ssh_test_connection")]
     public async Task<TestConnectionResultDto> GetDatasourceStatus(
-        [Description("数据源标识: ID或名称均可, 可用datasource_list列出")] string datasourceId,
+        [Description("数据源 ID/名称")] string datasourceId,
         CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();

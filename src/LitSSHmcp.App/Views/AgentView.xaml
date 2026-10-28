@@ -55,6 +55,14 @@
                     </StackPanel>
                 </Button>
                 <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
+                        Margin="0,0,0,2" Click="OnFleetChangeClick"
+                        ToolTip="批量变更：plan → dry_run → canary → apply → rollback（写操作走 MCP 审批）">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="ArrowSync24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,10,0"/>
+                        <TextBlock Text="批量变更" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
                         Margin="0,0,0,14" Click="OnOpenSharedWorkspace"
                         ToolTip="打开共享工作区根目录（不随当前会话切换；会话工作目录请在会话上右键打开）">
                     <StackPanel Orientation="Horizontal">

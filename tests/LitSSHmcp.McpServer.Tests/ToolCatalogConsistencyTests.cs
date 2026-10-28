@@ -10,19 +10,19 @@ using Xunit;
 namespace LitSSHmcp.McpServer.Tests;
 
 /// <summary>
-/// 保证"已注册工具 ↔ docs/TOOLS.md ↔ get_usage_guide 内置清单 ↔ ToolSecurityCatalog"四者一致
+/// 保证"已注册工具 ↔ docs/TOOLS.md ↔ mcp_usage_guide 内置清单 ↔ ToolSecurityCatalog"四者一致
 /// (单一事实来源的一致性守门测试)。工具新增/改名/删除后若忘记同步文档或安全目录, 本测试会失败。
 /// </summary>
 public class ToolCatalogConsistencyTests
 {
-    private const int ExpectedToolCount = 37;
+    private const int ExpectedToolCount = 38;
 
     [Fact]
     public async Task Registered_tools_match_docs_and_usage_guide()
     {
         var registered = GetRegisteredTools();      // name -> description (来自 [McpServerTool]/[Description])
         var docs = ParseDocsTools();                // (分组键, 工具名) 来自 docs/TOOLS.md
-        var guide = GetGuideToolNames();             // get_usage_guide（宿主模式包含内部工具）
+        var guide = GetGuideToolNames();             // mcp_usage_guide（宿主模式包含内部工具）
 
         // 1) 数量与集合: 注册工具 == docs == 安全目录 == 期望数量
         Assert.Equal(ExpectedToolCount, registered.Count);
@@ -33,13 +33,26 @@ public class ToolCatalogConsistencyTests
         Assert.Equal(registeredNames, securityNames);
         Assert.All(registeredNames, name => Assert.NotNull(ToolSecurityCatalog.Find(name)));
 
-        // 2) get_usage_guide 内置清单 == 注册工具
+        // 2) mcp_usage_guide 内置清单 == 注册工具
         Assert.Equal(registeredNames, guide.OrderBy(x => x, StringComparer.Ordinal).ToArray());
 
         // 3) 每个工具都必须归属某个分组, 且 docs 分组键集合/顺序 == ToolGroups.All
         Assert.All(docs, d => Assert.NotNull(d.Group));
         var docGroups = docs.Select(d => d.Group!).Distinct().ToArray();
         Assert.Equal(ToolGroups.All, docGroups);
+    }
+
+    [Fact]
+    public void Tool_descriptions_stay_within_budget()
+    {
+        var registered = GetRegisteredTools();
+
+        Assert.All(registered, kv =>
+            Assert.True(kv.Value.Length <= 120,
+                $"{kv.Key} 描述过长({kv.Value.Length} 字符)：请把细节移到 docs/TOOLS.md 或 mcp_usage_guide"));
+
+        var total = registered.Values.Sum(d => d.Length);
+        Assert.True(total <= 3300, $"工具描述总长 {total} 字符，超过预算 3300");
     }
 
     private static Dictionary<string, string> GetRegisteredTools()

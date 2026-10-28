@@ -212,7 +212,7 @@ public partial class AgentSettingsViewModel
             await store.ClearAsync();
             MemoryEntries.Clear();
             MemoryStatsText = string.Empty;
-            StatusMessage = "记忆库已清空。换新 Embeddings 模型后历史向量不可复用，请重新积累或让 AI 用 ops_memory_write(mode=save)/ops_script_register 重新登记。";
+            StatusMessage = "记忆库已清空。换新 Embeddings 模型后历史向量不可复用，请重新积累或让 AI 用 ops_memory_write(action=save)/ops_script_register 重新登记。";
         }
         catch (Exception ex)
         {

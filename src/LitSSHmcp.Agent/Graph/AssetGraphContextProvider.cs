@@ -4,8 +4,9 @@ using System.Text.RegularExpressions;
 
 namespace LitSSHmcp.Agent;
 
-/// <summary>Graph-RAG 注入结果：可读上下文 + 本轮解析出的种子资产 ID（供记忆按资产过滤）。</summary>
-public sealed record AssetGraphContextResult(string Text, IReadOnlyList<string> AssetIds);
+/// <summary>Graph-RAG 注入结果：可读上下文 + 种子资产 ID + 1 跳邻域资产 ID（供记忆按资产过滤）。</summary>
+public sealed record AssetGraphContextResult(string Text, IReadOnlyList<string> AssetIds,
+    IReadOnlyList<string>? RelatedAssetIds = null);
 
 /// <summary>
 /// Graph-RAG：发送前从用户问题里解析资产，再通过 topology_query（action=search/neighbors）
@@ -14,14 +15,11 @@ public sealed record AssetGraphContextResult(string Text, IReadOnlyList<string> 
 public static class AssetGraphContextProvider
 {
     private const int MaxKnownEntities = 3;
-    private const int MaxCandidateTokens = 2;
     private const int MaxContextChars = 1400;
 
-    private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "the", "and", "for", "with", "from", "that", "this", "what", "how", "why",
-        "please", "check", "show", "list", "help", "server", "service", "services"
-    };
+    /// <summary>显式资产 ID（ssh:/ds:/app:/service:/container:/domain:/cert: 前缀）。</summary>
+    private static readonly Regex ExplicitAssetId = new(
+        @"(?i)\b(?:ssh|ds|app|service|container|domain|cert):[A-Za-z0-9._-]+", RegexOptions.Compiled);
 
     public static Func<string, CancellationToken, Task<AssetGraphContextResult?>>? Create(
         IAgentTool? topologyTool, string? assetGraph)
@@ -29,17 +27,8 @@ public static class AssetGraphContextProvider
         if (topologyTool is null)
             return null;
 
-        return async (query, ct) =>
-        {
-            try
-            {
-                return await BuildAsync(topologyTool, assetGraph, query, ct);
-            }
-            catch
-            {
-                return null;
-            }
-        };
+        // 失败/超时由调用方（AgentSession）统一捕获并推 Warning 事件，避免静默丢失可观测性。
+        return (query, ct) => BuildAsync(topologyTool, assetGraph, query, ct);
     }
 
     private static async Task<AssetGraphContextResult?> BuildAsync(
@@ -48,21 +37,9 @@ public static class AssetGraphContextProvider
         if (string.IsNullOrWhiteSpace(query))
             return null;
 
-        var known = MatchKnownEntities(assetGraph, query);
-        var seeds = new List<string>(known);
-        if (seeds.Count == 0)
-        {
-            foreach (var token in ExtractTokens(query))
-            {
-                var found = await SearchAsync(topologyTool, token, ct);
-                foreach (var id in found)
-                    if (!seeds.Contains(id, StringComparer.Ordinal))
-                        seeds.Add(id);
-                if (seeds.Count >= MaxKnownEntities)
-                    break;
-            }
-        }
-
+        // 只使用本地资产清单命中或问题中显式写出的资产 ID；不再对普通词做 topology search，
+        // 避免每个请求都额外打一次 MCP（这也是本轮 Graph-RAG 门控的核心）。
+        var seeds = ResolveSeeds(assetGraph, query);
         if (seeds.Count == 0)
             return null;
 
@@ -95,29 +72,11 @@ public static class AssetGraphContextProvider
         var text = sb.ToString().TrimEnd();
         if (text.Length > MaxContextChars)
             text = text[..MaxContextChars].TrimEnd() + "\n…（上下文已截断）";
-        return new AssetGraphContextResult(text, seeds.Take(MaxKnownEntities).ToArray());
-    }
-
-    private static async Task<List<string>> SearchAsync(IAgentTool topologyTool, string query, CancellationToken ct)
-    {
-        var result = await InvokeAsync(topologyTool,
-            new Dictionary<string, object?> { ["action"] = "search", ["query"] = query, ["limit"] = 5 }, ct);
-        var ids = new List<string>();
-        if (result is null)
-            return ids;
-
-        var items = Property(result.Value, "items");
-        if (items is not { ValueKind: JsonValueKind.Array } array)
-            return ids;
-
-        foreach (var item in array.EnumerateArray())
-        {
-            var node = Property(item, "node");
-            var id = node is { } n ? String(n, "id") : null;
-            if (!string.IsNullOrWhiteSpace(id))
-                ids.Add(id);
-        }
-        return ids;
+        var related = nodes.Keys
+            .Where(id => !seeds.Contains(id, StringComparer.Ordinal))
+            .Take(10)
+            .ToArray();
+        return new AssetGraphContextResult(text, seeds.Take(MaxKnownEntities).ToArray(), related);
     }
 
     private static async Task<JsonElement?> InvokeAsync(
@@ -188,10 +147,11 @@ public static class AssetGraphContextProvider
         }
     }
 
-    private static List<string> MatchKnownEntities(string? assetGraph, string query)
+    /// <summary>从本地资产清单中匹配问题里出现的资产 ID/名称（纯本地字符串匹配，无 MCP 调用）。</summary>
+    public static IReadOnlyList<string> MatchKnownEntities(string? assetGraph, string? query)
     {
         var result = new List<string>();
-        if (string.IsNullOrWhiteSpace(assetGraph))
+        if (string.IsNullOrWhiteSpace(assetGraph) || string.IsNullOrWhiteSpace(query))
             return result;
 
         foreach (var line in assetGraph.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -215,13 +175,27 @@ public static class AssetGraphContextProvider
         return result;
     }
 
-    private static IEnumerable<string> ExtractTokens(string query)
+    /// <summary>问题中显式写出的资产 ID（如 ssh:web-01 / ds:mysql-01 / app:order）。</summary>
+    public static IReadOnlyList<string> ExtractExplicitAssetIds(string? query)
     {
-        return Regex.Matches(query, @"[A-Za-z0-9_.:-]{2,}")
-            .Select(m => m.Value.Trim('.', ':', '-', '_'))
-            .Where(t => t.Length >= 2 && !StopWords.Contains(t))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(MaxCandidateTokens);
+        if (string.IsNullOrWhiteSpace(query))
+            return Array.Empty<string>();
+
+        return ExplicitAssetId.Matches(query)
+            .Select(m => m.Value)
+            .Distinct(StringComparer.Ordinal)
+            .Take(MaxKnownEntities)
+            .ToArray();
+    }
+
+    /// <summary>本轮 Graph-RAG 的种子：本地清单命中 + 问题中显式写出的资产 ID（最多 3 个）。</summary>
+    public static IReadOnlyList<string> ResolveSeeds(string? assetGraph, string? query)
+    {
+        var seeds = new List<string>(MatchKnownEntities(assetGraph, query));
+        foreach (var id in ExtractExplicitAssetIds(query))
+            if (!seeds.Contains(id, StringComparer.Ordinal))
+                seeds.Add(id);
+        return seeds.Take(MaxKnownEntities).ToArray();
     }
 
     private static JsonElement? Property(JsonElement element, string name)

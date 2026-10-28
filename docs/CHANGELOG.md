@@ -1,13 +1,57 @@
-# Changelog
+﻿# Changelog
 
 本项目的所有重要变更都记录在此文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.4.1] - 2026-10-27
+
+### 变更
+
+- **批量变更入口调整**：桌面端从 AI 输入区移到左侧栏「新建分组」与「打开工作目录」之间，避免被误认为聊天指令；Web 端入口暂时隐藏（保留实现与后端链路）；仍使用当前会话的 `fleet_change`、审批与写锁。
+- **MCP 工具面精简与一致性**：工具描述总量 4052 → 3059 字符、单条最长 ≤120，新增描述预算测试；`mcp_usage_guide` 默认 `summary`（路由优先、不含工具清单，`detail=full` 取全量），App 侧按当前 profile/只读/分组进一步裁剪；参数说明去重；清理旧单文件传输实现与非工具方法描述；服务端描述不再引用 App 专属工具。
+- **Profile 探测白名单**：`diagnose`/`assets` 允许 `ssh_snapshot_refresh`/`topology_discover` 等非变更探测，安全只读模式仍按 `ReadOnlyHint` 过滤。
+- **Agent 上下文与并发**：上下文校准把工具定义计入估算；`agent.contextLimit` 默认 40→120（约 30 轮，与冷启动对齐）；滚动摘要调用计入会话 token/成本；计划模式放行快照刷新/拓扑发现等安全探测；provider 并发闸门改为跨会话共享。
+- **Agent 检索/子代理/技能**：Graph-RAG 只在命中本地资产或显式资产 ID 时触发（不再对普通词做 topology search），与记忆召回并行；记忆召回使用已知/显式资产种子；子代理复用主代理 BasePrompt 并补只读/不可信数据安全约束；技能参考文件只注入当前激活技能目录，索引模式不再批量注入。
+- **Consolidation/技能包收敛**：Consolidation 去掉自动应用、自动重试、Web 周期调度与 `consolidation-eval`/评测器，保留 raw → pending 候选 → 人工审核的最小闭环；技能包升级改为技能级清单，只补装新的内置技能目录，不覆盖/不复活已有文件。
+- **本地工具 action 化**：`skill`、`spill`、`ops_doc_read(action=list|read)`、`ops_insight(action=timeline|asset_profile)` 合并；`ops_insight` 仅在记忆启用时注册，默认工具面减少。
+- **记忆召回质量**：新增 `agent.memory.recallRelativeMargin`（默认 0.8），raw 有效阈值 = `max(recallThreshold, raw top1 × 比例)`，结构化经验仍用绝对下限；短追问用 `MemoryRecallQueryBuilder` 拼接最近 1–2 轮用户文本与已解析资产（不调用模型）；近重复命中时，同资产但根因/处置明显不同不再自动合并，改为新增独立条目并提示核对；失败教训可用 `tags=pitfall`，结构化召回标签补时间（>30 天时 mo/y）与资产。
+- **记忆写/删合并**：`ops_memory_write` 增加 `action=delete`，移除独立 `ops_memory_delete`；记忆工具从 3 个降为 2 个（`ops_memory_list` + `ops_memory_write(action=save|update|delete)`），`ops_memory_list` 仍为只读。
+- **工作日志改用已有工具**：移除 `ops_worklog_write`；系统提示给出当天日志路径与固定复盘格式，模型用 `ops_doc_write(mode=append, ...)` 补写；`ops_doc_write` 对 `worklogs/` 只允许 append（脱敏 + 跨进程锁），`ops_doc_read(action=list, path="shared/worklogs")` 可回看历史。
+- **版本号**：1.4.0 → 1.4.1。
 
 ### 新增
 
+- **AI 记忆 raw 分桶与 Web 摄取**：raw 会话记忆按 `会话:{sessionId}` 分桶（`agent.memory.rawKeepPerSource`，默认 50 条/会话），不再所有会话共享一个全局 200 条上限；Web 成功轮与桌面一致自动入库（失败/取消轮不入库）；入库前统一走 `SecretRedactor` 脱敏，仍疑似含凭据的轮次整轮丢弃；记忆写入改为后台执行，不阻塞回合收尾。
+- **AI 记忆文档分块与增量索引**：新增 `DocumentChunker` + `DocumentIndexer`，工作区文档按标题/长度切成 ≤2000 字符片段（200 字符重叠，围栏代码块内的 `#` 不当标题），不再整文件一个向量；按文件 hash + embeddings 模型判断是否需要重建，变更时原子替换旧 chunk 并清理旧版整文件索引（`agent_doc_state` 记录 hash/模型/分块数/作用域）；单文件 2MB、200 chunk、单根 500 文件上限，跳过二进制与 `.git/bin/obj/node_modules/spills/jobs/worklogs` 目录。
+- **AI 检索上下文槽位化**：图谱 + 记忆召回合并为单条临时 System 消息，仅本轮可见、回合结束后移除，持久历史保持 append-only，长会话不再累积历史召回文本；图谱 3s、记忆召回 5s 超时，失败/超时推送 `Warning` 事件（不误判回合失败），合并注入上限 5000 字符。
+- **AI 记忆召回质量与性能**：结构化 / raw 分开检索并各自分配配额（结构化优先，raw 最多 2 席且不足时互相补齐），避免 raw 高分饿死结构化经验；新增时间衰减（`agent.memory.recencyHalfLifeDays`，默认 30 天）与频次微调排序；单轮注入字符预算（`agent.memory.maxRecallChars`，默认 1500）；查询 embedding 缓存（64 条/运行时，重复追问不重复调用远程 API）与超时（`agent.memory.embeddingTimeoutSeconds`，默认 5s）；存储层按 `Kind/Status/资产` 预过滤后按最新 Id 限制扫描行数（5000），并返回时间戳用于排序。
+- **AI 技能**：新增统一只读 `skill(action=match|list|read)` 本地工具；`match` 按 triggers/symptoms/assets + 关键词排序，返回候选、路径、命中原因与工具域可用性；`read` 按需读取正文；14 个内置场景技能补充 `triggers/symptoms/assets` frontmatter，系统提示按需 match → read。
+- **AI 批量只读查询 `fleet_query`**：把同一个只读目标工具并发扇出到多台服务器/数据源/应用（`ssh_snapshot_get`、`log_query`、`docker_query`、`service_query`、`java_diagnostics`、`mysql_query`、`redis_read`、`app_health_snapshot` 等），聚合成功/失败、每台摘要与耗时；仅允许内置只读目标工具，写操作/未知工具拒绝，目标工具仍受会话工具策略约束；默认并发 4、最多 100 目标、结果按 18k 字符预算截断，适合 100 台规模的同构巡检。
+- **AI 事件/事故记忆 `ops_incident_*`**：新增 `agent_incident` 表，记录一次排障的 现象→证据(快照/工具调用/日志路径)→根因→处置→结果/置信度/状态，支持按资产/状态检索、`supersede` 旧事件指向新事件；`ops_incident_write(mode=save|supersede)` + `ops_incident_list` 仅在记忆启用时注册。同时新增 `memory_asset` 关系表，结构化记忆与事件写入/更新/删除时同步维护资产关联（Web 团队/私有作用域隔离），为后续图谱遍历与后台 consolidation 打底。
+- **AI 会话工具 profile**：新增 `agent.profile`（`auto` / `diagnose` / `change` / `assets` / `chat`），在现有工具分组/只读/白名单之后按场景再收窄工具面：诊断=只读远程 + 本地记忆/事件写入/plan/subagent/fleet；资产治理=资产/拓扑/数据源清单 + doc/script；问答=技能/文档/记忆检索 + guide；变更/auto=全量。系统提示写入“当前会话模式”，会话内工具集恒定，保持前缀缓存稳定。
+- **AI 后台 consolidation（收敛版）**：新增 `agent.consolidation` 配置（默认关闭）与 `agent_consolidation_candidate` / `agent_consolidation_run` 表；成功轮后后台读取未处理 raw（`ConsolidatedAt` 标记、按会话分组），规则/LLM 只生成 **pending 事件候选**，由管理员人工审核后再写入 `agent_incident`；不再自动应用、不再周期调度/自动重试。受最小间隔/最小 raw 数/单次上限/输入字符上限约束；新增 `ops_consolidation_run`（手动触发）与 `ops_consolidation_list`（查看候选）；失败不影响主对话。
+- **AI consolidation 审核 API + Web 面板（D3）**：新增管理员接口 `GET /api/admin/consolidation/candidates`、`POST .../{id}/approve`、`POST .../{id}/reject`，以及 `GET /api/admin/incidents`、`POST /api/admin/incidents/{id}/supersede`；批准候选会把 payload 写入 `agent_incident` 并回填 `appliedRef=incident:{id}`，拒绝记录原因；非管理员 401/403，写操作落 Web 访问日志。Web SPA 顶栏新增仅 admin 可见的「候选审核」入口（`js/consolidation.js`）：按状态筛选候选、查看 payload/资产/证据/置信度、批准写入事件或填写原因拒绝；桌面端「助手设置 → 记忆候选」Tab 提供同样列表/状态筛选/批准/拒绝（`AgentSettingsViewModel.Consolidation` + XAML）。
+- **AI consolidation 程序化沉淀（D4）**：LLM 提炼新增 `assetFacts`（资产事实：端口/路径/版本/日志位置/依赖）与 `scriptCandidate`（可复用命令序列），生成 `asset_fact` / `script` 候选；批准 `asset_fact` 写入 `kind=asset` 记忆（带资产关系），批准 `script` 写入 `kind=script` 记忆（只存经验，不落盘、不执行）。候选审核 UI/API 同步支持这两类（批准按钮改为“批准应用”）；技能候选暂未生成。
+- **AI 结构化诊断/变更报告契约**：新增 `ops_diagnosis_write(mode=diagnose|change)`：固定输出 现象/证据/根因/处置/验证/影响面/回滚/置信度，有记忆时同时写入事件（验证/影响面/回滚合并进处置轨迹）；`mode=change` 强制要求 verification + rollback，无验证不得声称成功；无记忆/只读模式降级为只生成报告的只读工具。系统提示新增报告契约段，最终回答直接使用工具返回报告。
+- **AI 事件/资产洞察**：新增只读 `ops_insight(action=timeline|asset_profile)` 统一入口；timeline 把事件记录与 `agent_messages` 串成时间线（支持 incidentId/sessionId），asset_profile 按资产返回图谱 1 跳邻域/反向影响面/事实/历史事件/脚本经验；`memory_asset` 精确查询避免 `LIKE` 前缀误命中；仅在记忆启用时注册。
+- **运维视图可视化（桌面/Web）**：桌面「助手设置 → 运维视图」Tab 与 Web 顶栏「运维视图」面板提供：事件浏览（状态筛选、资产/根因/时间）、点击事件查看时间线（用户请求/工具调用与结果/助手结论）、按资产 ID 加载资产画像（配置关系/影响面/历史事件/资产事实/脚本经验）。Web 新增 `/api/ops/incidents`、`/api/ops/timeline`、`/api/ops/asset-profile`（登录用户，按团队/私有作用域读取）；桌面复用 `TimelineTools` 与 `AssetProfileService`。
+- **AI 批量变更（计划/dry-run/canary/回滚）**：MCP 新增 `ssh_execute_fleet`（100 台以内，一次人工审批 + 命令过滤/审计/全局写锁，逐台返回结果；拒绝脚本文件与交互命令）；Agent 新增 `fleet_change` 编排工具，强制 `plan → dry_run（连通性）→ canary（1 台）→ apply（其余）→ rollback（已变更目标）`，canary/apply/rollback 必须 confirm，apply 前必须 canary 成功且计划含 rollbackCommand。系统提示增加批量变更安全流程。
+- **批量变更可视化（桌面；Web 入口暂时隐藏）**：桌面左侧栏新增「批量变更」窗口（初版在输入区，后移至左侧栏）；Web 输入区入口暂时隐藏（保留面板实现）；可填写目标/命令/回滚/并发并依次执行 plan、dry_run、canary、apply、rollback、status，自动回填计划 ID 并展示逐台结果，可从最近计划恢复；执行仍走当前会话的 `fleet_change`，写操作继续经过 MCP/Web 审批，不绕过 canary 与全局写锁。
+- **批量变更计划持久化与实时进度**：`fleet_change` 计划写入 `agent.db`（owner/会话作用域、2 小时 TTL），运行时重建/切换后仍可恢复；MCP `ssh_execute_fleet` 通过 progress 通知逐台上报，桌面面板轮询计划状态展示阶段与逐台结果（Web 入口暂时隐藏）；新增取消执行接口，取消会停止后续目标但不会自动回滚已成功目标。
+- **批量变更目标选择**：新增只读 `fleet_targets` 工具（基于 `ssh_list_servers` 按当前账号可见范围裁剪），桌面面板可按 ID/名称/主机/标签过滤并勾选目标（Web 入口暂时隐藏）；`plan` 生成前会校验目标存在于可见清单和 `canExec`（exec 权限），未知/无权/无 exec 目标直接拒绝。
+- **批量变更收尾加固**：计划列表仅返回摘要；新建桌面会话首次落库时自动接管未分配会话的计划；底层 `ssh_execute_fleet` 被会话策略禁用时拒绝 canary/apply/rollback；runtime 初始化增加并发锁；超过 15 分钟无进度的 `Running` 计划自动标记为 stale；MCP 真实 stdio progress 通知与 Web 取消链路补集成测试；删除会话时同步清理其计划，桌面支持手动删除计划（Web 入口暂时隐藏）。
+- **Consolidation 运营化**：新增每日运行/raw 配额（`maxRunsPerDay`/`maxRawPerDay`，手动 force 可绕过）、低成本模型 `providerId`（空=复用会话模型）、`GET /api/admin/consolidation/runs` 与 Web「运行历史」；`agent_consolidation_run` 记录可直接查看。
+- **Profile 设置页**：桌面「AI 助手设置 → 助手设置」新增会话工具模式选择（`auto/diagnose/change/assets/chat`），保存到 `agent.profile`，新会话生效；无需手改 config.json。
+- **Profile 推荐**：桌面助手设置加载时读取最近会话首个用户诉求，按变更/诊断/资产关键词给出 profile 建议（只建议、不静默切换），可一键采用；`ToolProfileSuggester` 可单测。
+- **记忆检索 FTS5/BM25 混合召回**：`agent_memory_fts` 词法索引（外部内容表 + 触发器自动维护，启动 rebuild 兼容旧库）；召回在向量基线之上按 BM25 排名轻量融合，并对 unicode61 分词有限的中文补充 `LIKE` 子串兜底；新增中英文运维同义词查询改写与精确短语轻量重排；`memory.rerankProviderId` 可挂独立 rerank 模型（失败/超时/非法输出自动回退）；FTS 失败自动退回纯向量。
+- **记忆召回评测**：新增 `MemoryRecallEvaluator` + CLI `litssh recall-eval <cases.json>`，支持注入 Embeddings/可选 rerank 模型，输出 Recall@K、MRR 与逐 case miss；可用于 golden set 回归对比。
+- **Consolidation 失败告警**：后台 consolidation 失败或异常时触发宿主事件，Web 写入 `consolidation_failed` 访问日志；管理员「记忆候选」面板根据最近 20 次运行显示失败次数与最近错误。
+- **UI P0 收尾**：关闭程序对话框补充「取消」按钮（`IsCancel`），新增 XAML 解析/取消属性测试；其余 P0 项已完成逐项点检。
+- **取消链路测试补齐**：新增 `ssh_execute_fleet` 工具到 guarded runner 的取消透传测试，以及 `fleet_change` 取消后计划落为 `cancelled` 的状态测试。
+- **批量变更超时与选择性回滚**：`ssh_execute_fleet`/`fleet_change plan` 新增 `timeoutSeconds`（1-3600，默认 60）；`rollback` 可传 `serverIds` 仅回滚指定已变更目标，桌面面板同步超时输入（Web 入口暂时隐藏）。
+- **批量变更失败重试**：`fleet_change(mode=retry_failed)` 只重试状态为 failed 的目标（需 confirm；dry_run 通过；已有变更时要求 rollbackCommand），桌面面板新增「重试失败」（Web 入口暂时隐藏）；成功重试金丝雀目标会恢复 canary 状态。
+- **告警接入 Web**：新增 Alertmanager 兼容入口 POST /api/alerts/alertmanager（LITSSH_ALERT_WEBHOOK_TOKEN，固定时间比较；按 hostname/instance/serverId 映射 SSH 资产）；firing 创建团队事件、resolved 取代匹配 open 事件，重复 firing 幂等；事件自动出现在「运维视图」。
 - **应用内使用说明**：新增 `HelpWindow` + `docs/HELP.md`（Markdig 渲染），首页提供快速上手 / 功能说明 / 快捷键 / 安全与审批 / MCP 工具说明入口；原「设置 → MCP 工具说明」Tab 迁入说明窗口。
-- **桌面端 AI 工作日志**：含变更操作的任务结束后自动追加到工作区 `worklogs/年/年-月-日.md`，按天归档、永久保留；默认记录失败 / 被拒操作，纯只读调查可选，写入前统一脱敏；提供「AI 助手设置 → 工作日志」开关、目录与打开目录入口；启用后 AI 可用 `ops_worklog_write` 追加 3-5 行复盘。Web 端暂不启用。
+- **桌面端 AI 工作日志**：含变更操作的任务结束后自动追加到工作区 `worklogs/年/年-月-日.md`，按天归档、永久保留；默认记录失败 / 被拒操作，纯只读调查可选，写入前统一脱敏；提供「AI 助手设置 → 工作日志」开关、目录与打开目录入口；启用后 AI 可用已有的 `ops_doc_write(mode=append, path=...当天日志...)` 追加 3-5 行复盘（无专用工作日志工具）；系统提示给出当天路径与固定格式。Web 端暂不启用。
 - **AI 工作目录入口拆分**：侧栏「打开工作目录」固定打开共享工作区根目录（不随选中会话变化）；会话右键「打开会话工作目录」按右键命中的会话打开其独立目录（未分配目录时提示）。
 - **历史与会话列表按用户隔离（P0-2）**：Web 强制模式下 `ssh_get_command_history` / `datasource_get_sql_history` / `mcp_list_sessions` 默认只返回当前登录用户的数据；新增 `allUsers` 参数，仅管理员可显式查看全局。Web 宿主新增 `LITSSH_AUTHZ_ROLE` 角色注入，`Sessions` 表新增 `OwnerUserId`（旧库自动迁移），会话记录按宿主注入的归因用户落库。普通成员伪造 `allUsers=true` 或传入他人 `sessionId` 均无法越权；桌面未启用强制模式时保持原有全量行为。
 - **全局清单与拓扑查询按授权收口（P0-B）**：Web 强制模式下 `ssh_list_servers` / `datasource_list` 只返回命中 `read` 白名单的目标；数据源列表同时隐藏未授权隧道服务器与 `accessibleFromSshServers` 关联引用。新增 `ToolSecurityDescriptor.SelfScopedGlobal` 显式标记“工具自身按用户裁剪”的全局清单；其余无目标全局查询（`topology_get_overview` / `topology_get_dependencies` / `topology_search` / `topology_neighbors` / `topology_path` / `topology_impact` / `topology_explain`）在强制模式下仅管理员可用，避免普通成员读取无法按目标裁剪的全量资产图。管理员与桌面未强制模式保持原行为。

@@ -15,6 +15,7 @@ description: Use when operating or troubleshooting servers and applications thro
 
 0. **资产档案按需读取**：需要既有的服务器/应用/日志路径/拓扑信息时，才读工作区 `OPS_ASSETS.md`（见第 9 节）；本次确认/纠正了新事实再**增量更新**，**不必每轮都读写**。
    **先查记忆再动手**：每轮用户消息会**自动召回**相关记忆注入上下文（格式 `[kind:key ×freq] 内容`，`×freq` 越高 = 越多环境验证过；`superseded` 条目不再出现）——先看有没有现成路径；没有或想按类别翻阅时用 `ops_memory_list(kind=task|asset|script, assetId?)`。用过脚本再查 `scripts/MANIFEST.md`（见第 10 节）。
+   **先匹配场景技能**：按问题/告警/资产类型调用 `skill(action="match", query=..., assetTypes=...)`，再用 `skill(action="read", path=...)` 读取匹配技能的正文；不要只凭技能索引猜步骤，匹配结果仅供参考，执行仍以工具实际结果为准。
 1. 不确定有哪些工具 / 怎么用 → 调 `mcp_usage_guide`；MCP 自身异常 → `mcp_self_check`。
 2. 拿到准确的标识：
    - 服务器：`ssh_list_servers` → 取 `id`（用 `id` 最稳，也可传名称/主机名）。
@@ -145,9 +146,9 @@ description: Use when operating or troubleshooting servers and applications thro
 
 - **查后做**：相关记忆**每轮自动召回**注入上下文（`[kind:key ×freq] 内容`，`×freq` 越高 = 越多环境验证过）；主动翻阅/按类别筛选用 `ops_memory_list(kind, assetId?, limit)`。
 - **成后记**（只记可复用的，失败教训也可）：
-  - `ops_memory_write(mode="save", kind, key, content, assetIds?, tags?)` — `kind`：`task`（已验证操作路径/排障步骤）、`script`（脚本用途与要点）、`asset`（服务器/应用事实，文档之外的机器可读补充）。
-  - 同 `kind+key` 再次保存 = 合并更新（频次+1、资产合并）；**路径改进时**用 `ops_memory_write(mode="update", key, content, status="superseded")` 让旧记录退役，不要原地抹掉历史。
-  - `ops_memory_list(kind, limit)` / `ops_memory_delete(key)`（按 kind 管理，删除同 key 最新一条）。
+  - `ops_memory_write(action="save", kind, key, content, assetIds?, tags?)` — `kind`：`task`（已验证操作路径/排障步骤）、`script`（脚本用途与要点）、`asset`（服务器/应用事实，文档之外的机器可读补充）。
+  - 同 `kind+key` 再次保存 = 合并更新（频次+1、资产合并）；**路径改进时**用 `ops_memory_write(action="update", key, content, status="superseded")` 让旧记录退役，不要原地抹掉历史。
+  - `ops_memory_list(kind, limit)` / `ops_memory_write(action="delete", kind, key)`（按 kind 管理，删除同 key 最新一条）。
   - 记一条 = 一段话可直接照做的事实（含关键参数/输出特征），不记流水账；**绝密钥/口令/私钥路径**。
 - **脚本复用闭环**（详见 `docs/skills/script-deploy-verify/SKILL.md`）：
   - 工作区约定：`scripts/local/`（源）、`scripts/remote/`（远端副本/说明）、`scripts/MANIFEST.md`（台账：路径/用途/适用环境/已部署资产/哈希）。

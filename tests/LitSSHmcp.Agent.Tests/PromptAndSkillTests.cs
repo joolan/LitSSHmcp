@@ -57,12 +57,14 @@ public class SystemPromptBuilderTests
     {
         var prompt = SystemPromptBuilder.Build(null, null, null, spillTools: true, memoryTools: true);
         Assert.Contains("ops_doc_write(mode=overwrite|append|patch)", prompt);
-        Assert.Contains("ops_memory_write(mode=save", prompt);
-        Assert.Contains("spill_read(mode=read|grep)", prompt);
+        Assert.Contains("ops_memory_write(action=save", prompt);
+        Assert.Contains("tags=pitfall", prompt);
+        Assert.Contains("spill(action=", prompt);
         Assert.DoesNotContain("ops_doc_append", prompt);
         Assert.DoesNotContain("ops_doc_patch", prompt);
         Assert.DoesNotContain("ops_memory_save", prompt);
         Assert.DoesNotContain("ops_memory_update", prompt);
+        Assert.DoesNotContain("ops_memory_delete", prompt);
         Assert.DoesNotContain("spill_grep", prompt);
     }
 
@@ -154,20 +156,20 @@ public class SystemPromptBuilderTests
     }
 
     [Fact]
-    public void Build_injects_worklog_section_only_when_enabled()
+    public void Build_injects_worklog_section_and_uses_ops_doc_write()
     {
         Assert.DoesNotContain("## 工作日志", SystemPromptBuilder.Build(null, null, null));
 
         var enabled = SystemPromptBuilder.Build(null, null, null, workLog: true,
-            workLogDir: @"C:\ws\worklogs", workLogModelSummary: true);
+            workLogDir: @"C:\ws\worklogs",
+            workLogPath: "shared/worklogs/2026/2026-10-28.md",
+            workLogRoot: "shared/worklogs");
         Assert.Contains("## 工作日志", enabled);
         Assert.Contains(@"C:\ws\worklogs", enabled);
-        Assert.Contains("ops_worklog_write", enabled);
-
-        var noSummary = SystemPromptBuilder.Build(null, null, null, workLog: true,
-            workLogDir: @"C:\ws\worklogs", workLogModelSummary: false);
-        Assert.Contains("## 工作日志", noSummary);
-        Assert.DoesNotContain("ops_worklog_write", noSummary);
+        Assert.Contains("ops_doc_write(mode=\"append\"", enabled);
+        Assert.Contains("shared/worklogs/2026/2026-10-28.md", enabled);
+        Assert.Contains("ops_doc_read(action=\"list\", path=\"shared/worklogs\")", enabled);
+        Assert.DoesNotContain("ops_worklog_write", enabled);
     }
 }
 

@@ -223,6 +223,10 @@ export class ChatController {
         this.appendInfo("资产图谱", frame.text || "");
         this.scrollDown();
         break;
+      case "warning":
+        this.appendInfo("提示", frame.message || "");
+        this.scrollDown();
+        break;
       case "done":
         this.flushAssistantRender();
         this.setBusy(false);

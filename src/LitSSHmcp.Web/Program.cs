@@ -59,6 +59,7 @@ builder.Services.AddSingleton<WebAccountsStore>();
 builder.Services.AddSingleton<WebAuthService>();
 builder.Services.AddSingleton<WebAccessLog>();
 builder.Services.AddSingleton<IContextStore, ContextStore>();
+builder.Services.AddSingleton<IFleetPlanStore>(_ => new SqliteFleetPlanStore());
 builder.Services.AddSingleton<IWebRuntimeFactory, AgentWebRuntimeFactory>();
 builder.Services.AddSingleton<WebSessionManager>();
 builder.Services.AddSingleton<WebApprovalHub>();
@@ -202,6 +203,9 @@ app.MapWebSessionEndpoints();
 app.MapWebApprovalEndpoints();
 app.MapWebFileEndpoints();
 app.MapWebMemoryEndpoints();
+app.MapWebConsolidationEndpoints();
+app.MapWebOpsEndpoints();
+app.MapWebAlertEndpoints();
 
 // 审批桥就绪即启轮询（§3.3.1：cli 文件通道 → 浏览器推送）；单例首次解析触发后台循环
 _ = app.Services.GetRequiredService<WebApprovalHub>();

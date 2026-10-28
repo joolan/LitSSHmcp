@@ -1,4 +1,5 @@
 using System.Text;
+using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using Microsoft.Extensions.AI;
 
@@ -6,29 +7,64 @@ namespace LitSSHmcp.Agent;
 
 /// <summary>
 /// 技能文件工具（本地、非 MCP）：只读，路径限制在技能目录内。
-/// 技能索引（大技能的标题/描述/章节）已注入系统提示，SKILL.md 全文与 <c>references/</c> 等细节按需用 <c>skill_read</c> 读取，避免每次请求都携带整个技能目录。
+/// 技能索引（大技能的标题/描述/章节）已注入系统提示，SKILL.md 全文与 <c>references/</c> 等细节按需用 <c>skill(action=\"read\")</c> 读取，避免每次请求都携带整个技能目录。
 /// </summary>
 public static class SkillTools
 {
     private const int MaxReadBytes = 100_000;
 
-    public static IReadOnlyList<IAgentTool> Create(string skillsDir)
+    public static IReadOnlyList<IAgentTool> Create(string skillsDir, IReadOnlySet<string>? availableGroups = null)
     {
         var root = Path.GetFullPath(skillsDir);
 
-        var list = new LocalFunction(
-            "skill_list",
-            $"列出可用的技能文件(相对技能目录的路径); 技能根目录: {root}",
-            """{"type":"object","properties":{}}""",
-            _ => ListFiles(root));
+        var function = new LocalFunction(
+            "skill",
+            $"技能工具：action=match 按问题/资产类型匹配技能；action=list 列出参考文件；action=read 读取 SKILL.md 或 references 全文。技能根目录: {root}；路径相对该目录；开始排查前先 match，再 read。",
+            """{"type":"object","properties":{"action":{"type":"string","enum":["match","list","read"],"description":"match=匹配技能(默认), list=列出参考文件, read=读取文件"},"query":{"type":"string","description":"match: 用户问题/告警/现象"},"assetTypes":{"type":"string","description":"match: 可选, 逗号分隔资产/技术类型, 如 ssh,ds,app,service,container,domain,cert,mysql,redis,nginx,docker,java"},"limit":{"type":"integer","description":"match: 最多返回条数, 默认3, 上限5"},"path":{"type":"string","description":"read: 相对技能目录的文件路径, 如 SKILL.md、references/ssh-workarounds.md"}},"required":[]}""",
+            args =>
+            {
+                var action = (ArgumentReader.ReadString(args, "action") ?? "match").Trim().ToLowerInvariant();
+                return action switch
+                {
+                    "match" => FormatMatches(SkillRegistry.Match(
+                        root,
+                        ArgumentReader.ReadString(args, "query"),
+                        ArgumentReader.ReadString(args, "assetTypes"),
+                        availableGroups,
+                        ArgumentReader.ReadInt(args, "limit") ?? 3)),
+                    "list" => ListFiles(root),
+                    "read" => Read(root, ArgumentReader.ReadString(args, "path")),
+                    _ => "错误: action 仅支持 match/list/read"
+                };
+            });
 
-        var read = new LocalFunction(
-            "skill_read",
-            $"读取技能文件全文(如 SKILL.md 或 references/ssh-workarounds.md); path 相对技能目录({root}), 只读",
-            """{"type":"object","properties":{"path":{"type":"string","description":"相对技能目录的文件路径, 如 SKILL.md、references/ssh-workarounds.md"}},"required":["path"]}""",
-            args => Read(root, ArgumentReader.ReadString(args, "path")));
+        return new IAgentTool[] { new LocalAgentTool(function, readOnly: true) };
+    }
 
-        return new IAgentTool[] { new LocalAgentTool(list, readOnly: true), new LocalAgentTool(read, readOnly: true) };
+    private static string FormatMatches(IReadOnlyList<SkillMatch> matches)
+    {
+        if (matches.Count == 0)
+            return "(未匹配到技能；可 skill(action=\"list\") 查看参考文件，或直接按工具取证。技能匹配仅供参考，不要凭记忆猜步骤。)";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"匹配到 {matches.Count} 个技能（按相关度）：");
+        for (var i = 0; i < matches.Count; i++)
+        {
+            var m = matches[i];
+            sb.Append(i + 1).Append(". ").Append(m.Skill.Name)
+                .Append(" | 路径: ").Append(m.Skill.MainPath)
+                .Append(" | 域: ").Append(string.IsNullOrEmpty(m.Skill.DomainText) ? "未声明" : m.Skill.DomainText);
+            if (!m.Skill.Applicable)
+                sb.Append(" | **不可执行**: 未启用 ")
+                    .Append(string.Join("、", m.Skill.DisabledDomains.Select(ToolGroups.Display)));
+            sb.AppendLine();
+            if (m.Reasons.Count > 0)
+                sb.AppendLine("   匹配: " + string.Join("; ", m.Reasons));
+            if (!string.IsNullOrWhiteSpace(m.Skill.Description))
+                sb.AppendLine("   适用: " + m.Skill.Description);
+        }
+        sb.Append("用 skill(action=\"read\", path=...) 读取完整步骤；匹配仅供参考，执行前以工具实际结果为准。");
+        return sb.ToString().Trim();
     }
 
     private static string ListFiles(string root)

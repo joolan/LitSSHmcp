@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LitSSHmcp.Core\LitSSHmcp.Core.csproj" />
+    <ProjectReference Include="..\LitSSHmcp.Agent\LitSSHmcp.Agent.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

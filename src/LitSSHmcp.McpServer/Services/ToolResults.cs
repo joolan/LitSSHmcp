@@ -97,6 +97,9 @@ public sealed class SshServerSummaryDto
     public string? Description { get; set; }
     public string[] Tags { get; set; } = Array.Empty<string>();
     public DateTime? LastConnectedAt { get; set; }
+
+    /// <summary>当前调用者是否具备 exec 权限；null 表示服务器未提供该信息（旧版本/桌面不强制）。</summary>
+    public bool? CanExec { get; set; }
 }
 
 public sealed class SshServerListDto
@@ -154,6 +157,60 @@ public sealed class DiscoverResultDto
 
     public static DiscoverResultDto Fail(string status, string error) =>
         new() { Success = false, Status = status, Error = error };
+}
+
+public sealed class FleetCommandItemDto
+{
+    public string ServerId { get; set; } = string.Empty;
+    public string ServerName { get; set; } = string.Empty;
+    public string Host { get; set; } = string.Empty;
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public string? Output { get; set; }
+    public bool Truncated { get; set; }
+    public int ExitCode { get; set; }
+    public double DurationMs { get; set; }
+
+    public static FleetCommandItemDto From(GuardedFleetItem item) => new()
+    {
+        ServerId = item.ServerId,
+        ServerName = item.ServerName,
+        Host = item.Host,
+        Success = item.Success,
+        Status = item.Status,
+        Error = item.Error,
+        Output = item.Output,
+        Truncated = item.Truncated,
+        ExitCode = item.ExitCode,
+        DurationMs = item.DurationMs
+    };
+}
+
+public sealed class FleetCommandResultDto
+{
+    public bool Success { get; set; }
+    public string? Status { get; set; }
+    public string? Error { get; set; }
+    public string? Command { get; set; }
+    public string? Summary { get; set; }
+    public int Total { get; set; }
+    public int Succeeded { get; set; }
+    public int Failed { get; set; }
+    public List<FleetCommandItemDto> Items { get; set; } = new();
+
+    public static FleetCommandResultDto From(GuardedFleetOutcome outcome) => new()
+    {
+        Success = outcome.Success,
+        Status = outcome.Status,
+        Error = outcome.Error,
+        Command = outcome.Command,
+        Summary = outcome.Summary,
+        Total = outcome.Total,
+        Succeeded = outcome.Succeeded,
+        Failed = outcome.Failed,
+        Items = outcome.Items.Select(FleetCommandItemDto.From).ToList()
+    };
 }
 
 public sealed class CommandResultDto

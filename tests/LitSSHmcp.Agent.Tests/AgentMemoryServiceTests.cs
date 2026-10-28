@@ -1,4 +1,5 @@
 using LitSSHmcp.Agent;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.AI;
 using Xunit;
 
@@ -124,6 +125,7 @@ public class AgentMemoryServiceTests : IDisposable
         await svc.SaveAsync("task", "exp0", "磁盘满经验甲: journalctl --vacuum-size 清理 journald 日志后 df 恢复正常", "ssh:s0", null);
         await svc.SaveAsync("task", "exp1", "磁盘满经验乙: /var/log/app 未轮转导致占满, 配 logrotate 后恢复", "ssh:s1", null);
         await svc.SaveAsync("task", "exp2", "磁盘满经验丙: docker 系统盘镜像堆积, docker system prune 释放空间", "ssh:s2", null);
+
         for (var i = 0; i < 4; i++)
             await svc.IndexAsync("会话", $"磁盘满 排查第{i}轮: 用户问为什么磁盘满, 助手查 df 定位分区");
 
@@ -142,6 +144,39 @@ public class AgentMemoryServiceTests : IDisposable
         await svc.SaveAsync("task", "k", "磁盘满处理经验: journal vacuum 修复", null, null);
         var recalled = await svc.RecallAsync("完全无关的天气查询内容今天");
         Assert.Null(recalled);
+    }
+
+    [Fact]
+    public async Task Recall_relative_margin_filters_low_score_raw_tail()
+    {
+        var store = new AgentMemoryStore(_dbPath);
+        var svc = new AgentMemoryService(store, new FixedEmbedder(), 5, 0.15, recallRelativeMargin: 0.9);
+        await svc.InitializeAsync();
+        await store.AddAsync("会话", "磁盘满处理: 先 df 定位分区, 再清理日志", new[] { 1f, 0f });
+        await store.AddAsync("会话", "磁盘满相关噪音: 旧的通用建议",
+            new[] { 0.5f, MathF.Sqrt(0.75f) });
+
+        var recalled = await svc.RecallAsync("磁盘满");
+
+        Assert.NotNull(recalled);
+        Assert.Contains("先 df 定位分区", recalled);
+        Assert.DoesNotContain("旧的通用建议", recalled);
+    }
+
+    [Fact]
+    public async Task Save_does_not_merge_conflicting_root_cause_for_same_asset()
+    {
+        var store = new AgentMemoryStore(_dbPath);
+        var svc = new AgentMemoryService(store, new FixedEmbedder(), 5, 0.15);
+        await svc.InitializeAsync();
+        await svc.SaveAsync("task", "disk-a", "现象: /var 满; 根因: journald; 处置: vacuum", "ssh:s1", null);
+
+        var result = await svc.SaveAsync("task", "disk-b",
+            "现象: /var 满; 根因: docker overlay; 处置: prune", "ssh:s1", null);
+
+        Assert.Contains("可能冲突", result);
+        Assert.NotNull(await store.FindByKeyAsync("task", "disk-b"));
+        Assert.Equal(1, (await store.FindByKeyAsync("task", "disk-a"))!.Freq);
     }
 
     [Fact]
@@ -198,6 +233,23 @@ public class AgentMemoryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task PruneRaw_is_scoped_per_session_source()
+    {
+        var (svc, store) = await CreateAsync();
+        for (var i = 0; i < 6; i++)
+        {
+            await svc.IndexAsync("会话:101", $"会话101第{i}轮: 磁盘满排查 journal 清理经验内容足够长{i}");
+            await svc.IndexAsync("会话:202", $"会话202第{i}轮: nginx 5xx 排查 upstream 经验内容足够长{i}");
+        }
+
+        await svc.PruneRawAsync("会话:101", 2);
+
+        var remaining = await store.ListAsync(null, null, 100, includeRaw: true);
+        Assert.Equal(2, remaining.Count(r => r.Source == "会话:101"));
+        Assert.Equal(6, remaining.Count(r => r.Source == "会话:202"));
+    }
+
+    [Fact]
     public async Task IndexTurn_compresses_log_dump()
     {
         var (svc, store) = await CreateAsync();
@@ -228,6 +280,103 @@ public class AgentMemoryServiceTests : IDisposable
     {
         var content = MemoryQuality.BuildRawContent("磁盘满怎么办", "先 df 定位再处理 /var");
         Assert.Equal("用户: 磁盘满怎么办\n助手: 先 df 定位再处理 /var", content);
+    }
+
+    [Fact]
+    public void PrepareRawContent_redacts_url_credentials_before_store()
+    {
+        var content = MemoryQuality.PrepareRawContent(
+            "连接 mysql://app:supersecret@db1:3306/order 失败", "检查网络与账号权限后恢复");
+        Assert.NotNull(content);
+        Assert.DoesNotContain("supersecret", content);
+        Assert.Contains("******", content);
+    }
+
+    [Fact]
+    public void PrepareRawContent_drops_turns_with_assignment_secrets()
+    {
+        var content = MemoryQuality.PrepareRawContent(
+            "password=hunter2 后登录失败", "改完密码并重启服务后恢复");
+        Assert.Null(content);
+    }
+
+    [Fact]
+    public void PrepareRawContent_keeps_normal_turn()
+    {
+        var content = MemoryQuality.PrepareRawContent("磁盘满怎么办", "先 df 定位再处理 /var");
+        Assert.Equal("用户: 磁盘满怎么办\n助手: 先 df 定位再处理 /var", content);
+    }
+
+    [Fact]
+    public async Task Recall_ranks_recent_memory_ahead_when_scores_equal()
+    {
+        var store = new AgentMemoryStore(_dbPath);
+        var svc = new AgentMemoryService(store, new FixedEmbedder(), 5, 0.15);
+        await svc.InitializeAsync();
+        var oldId = await store.AddStructuredAsync("task", "old", "会话",
+            "磁盘满经验: 先 df 定位再清理日志", new[] { 1f, 0f }, "ssh:s1", "", 1);
+        await store.AddStructuredAsync("task", "new", "会话",
+            "磁盘满经验: 先 df 定位再清理日志", new[] { 1f, 0f }, "ssh:s1", "", 1);
+
+        await using (var connection = new SqliteConnection($"Data Source={_dbPath}"))
+        {
+            await connection.OpenAsync();
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = "UPDATE agent_memory SET CreatedAt=@t, UpdatedAt=@t WHERE Id=@id;";
+            cmd.Parameters.AddWithValue("@t", DateTime.UtcNow.AddDays(-365).ToString("O"));
+            cmd.Parameters.AddWithValue("@id", oldId);
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var recalled = await svc.RecallAsync("磁盘满 清理日志");
+
+        Assert.NotNull(recalled);
+        Assert.True(recalled!.IndexOf("task:new", StringComparison.Ordinal) <
+                    recalled.IndexOf("task:old", StringComparison.Ordinal));
+        Assert.Contains("task:old ×1, 1y", recalled);
+    }
+
+    [Fact]
+    public async Task Recall_topK_one_falls_back_to_raw_when_no_structured()
+    {
+        var (svc, _) = await CreateAsync(topK: 1);
+        await svc.IndexAsync("会话", "磁盘满排查: 先 df 定位分区再清理 journal 日志");
+
+        var recalled = await svc.RecallAsync("磁盘满 清理日志");
+
+        Assert.NotNull(recalled);
+        Assert.Contains("会话", recalled);
+    }
+
+    [Fact]
+    public async Task Recall_caches_query_embedding_across_repeated_queries()
+    {
+        var store = new AgentMemoryStore(_dbPath);
+        var embedder = new CountingEmbedder();
+        var svc = new AgentMemoryService(store, embedder, 5, 0.15);
+        await svc.InitializeAsync();
+        await svc.SaveAsync("task", "disk", "磁盘满经验: 先 df 定位再清理日志", "ssh:s1", null);
+        embedder.Reset();
+
+        await svc.RecallAsync("磁盘满 清理日志");
+        await svc.RecallAsync("磁盘满 清理日志");
+
+        Assert.Equal(1, embedder.Calls);
+    }
+
+    [Fact]
+    public async Task Recall_respects_max_char_budget()
+    {
+        var store = new AgentMemoryStore(_dbPath);
+        var svc = new AgentMemoryService(store, new FixedEmbedder(), 5, 0.15, null, 30, 220);
+        await svc.InitializeAsync();
+        await store.AddStructuredAsync("task", "long", "会话",
+            new string('x', 1000), new[] { 1f, 0f }, "", "", 1);
+
+        var recalled = await svc.RecallAsync("x");
+
+        Assert.NotNull(recalled);
+        Assert.True(recalled!.Length <= 240, $"recall 长度 {recalled.Length} 超出预算");
     }
 
     [Fact]
@@ -281,6 +430,46 @@ public class AgentMemoryServiceTests : IDisposable
 
         Assert.Contains("没有 v1", await svc.RollbackAsync("task", "only", 1));
         Assert.Contains("未找到", await svc.RollbackAsync("task", "missing", 1));
+    }
+
+    /// <summary>固定二维向量 + 调用计数：验证查询向量缓存。</summary>
+    private sealed class CountingEmbedder : IEmbeddingGenerator<string, Embedding<float>>, IDisposable
+    {
+        public int Calls { get; private set; }
+
+        public void Reset() => Calls = 0;
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose() { }
+
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values, EmbeddingGenerationOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            var list = values.Select(_ =>
+            {
+                Calls++;
+                return new Embedding<float>(new[] { 1f, 0f });
+            }).ToList();
+            return Task.FromResult(new GeneratedEmbeddings<Embedding<float>>(list));
+        }
+    }
+
+    /// <summary>固定二维向量 embedder：让测试可以精确控制召回分数（相同文本/向量 → 同分）。</summary>
+    private sealed class FixedEmbedder : IEmbeddingGenerator<string, Embedding<float>>, IDisposable
+    {
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose() { }
+
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values, EmbeddingGenerationOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            var list = values.Select(_ => new Embedding<float>(new[] { 1f, 0f })).ToList();
+            return Task.FromResult(new GeneratedEmbeddings<Embedding<float>>(list));
+        }
     }
 
     /// <summary>确定性假 embedder：相同文本 → 相同向量；基于字符 n-gram 的重叠度近似语义相似。</summary>

@@ -30,6 +30,8 @@
     <span class="spacer"></span>
     <button id="approval-badge" class="badge" hidden title="有待审批操作，点击展开">待审批 <b id="approval-count">0</b></button>
     <button id="memory-admin-btn" class="ghost" hidden title="团队记忆库（管理员）：查看历史、回滚、归档">记忆库</button>
+    <button id="consolidation-admin-btn" class="ghost" hidden title="记忆候选审核（管理员）：批准/拒绝后台提炼的事件候选">候选审核</button>
+    <button id="ops-insights-btn" class="ghost" title="运维视图：事件浏览、时间线、资产画像">运维视图</button>
     <span id="whoami" class="whoami"></span>
     <button id="logout-btn" class="ghost" title="退出登录">退出</button>
   </header>
@@ -65,6 +67,8 @@
         </div>
         <div class="composer-toolbar">
           <button type="button" id="attach-btn" class="tool-btn" title="添加图片（也可粘贴/拖拽）">＋ 图片</button>
+          <!-- 批量变更 Web 入口暂时不开放；保留按钮、面板与后端链路，恢复时移除本按钮的 hidden。 -->
+          <button type="button" id="fleet-btn" class="tool-btn" hidden title="批量变更：plan → dry_run → canary → apply → rollback">批量变更</button>
           <button type="button" id="model-btn" class="chip" title="切换本会话模型">模型… ▾</button>
           <span class="spacer"></span>
           <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
@@ -119,6 +123,118 @@
       <div id="memory-list" class="memory-list"></div>
       <div class="memory-versions-head">历史版本 <span id="memory-current"></span></div>
       <div id="memory-versions" class="memory-versions"></div>
+    </div>
+  </div>
+
+  <!-- 管理员记忆候选审核：后台 consolidation 生成的事件候选（仅 admin 显示入口） -->
+  <div id="consolidation-admin" class="sheet consolidation-sheet" hidden>
+    <div class="sheet-head">
+      <span>记忆候选审核</span>
+      <span class="spacer"></span>
+      <select id="consolidation-status" title="按状态筛选">
+        <option value="pending">待审核</option>
+        <option value="">全部</option>
+        <option value="applied">已应用</option>
+        <option value="rejected">已拒绝</option>
+        <option value="conflict">冲突</option>
+      </select>
+      <button id="consolidation-refresh" class="ghost" title="刷新列表">刷新</button>
+      <button id="consolidation-close" class="ghost">关闭</button>
+    </div>
+    <div class="sheet-body consolidation-body">
+      <div id="consolidation-alert" class="consolidation-alert" hidden></div>
+      <div id="consolidation-list" class="consolidation-list"></div>
+      <div class="ops-section-title" style="margin-top:12px">运行历史</div>
+      <div id="consolidation-runs" class="consolidation-list"></div>
+    </div>
+  </div>
+
+  <!-- 运维视图：事件浏览 + 时间线 + 资产画像（登录用户可见，服务端按团队/私有作用域过滤） -->
+  <div id="ops-insights" class="sheet ops-insights-sheet" hidden>
+    <div class="sheet-head">
+      <span>运维视图</span>
+      <span class="spacer"></span>
+      <select id="ops-incident-status" title="事件状态筛选">
+        <option value="">全部状态</option>
+        <option value="resolved">已解决</option>
+        <option value="open">进行中</option>
+        <option value="superseded">已过时</option>
+      </select>
+      <button id="ops-refresh" class="ghost" title="刷新事件列表">刷新</button>
+      <button id="ops-close" class="ghost">关闭</button>
+    </div>
+    <div class="sheet-body ops-body">
+      <div class="ops-grid">
+        <div class="ops-col ops-list-col">
+          <div class="ops-section-title">事件浏览</div>
+          <div id="ops-incident-list" class="ops-incident-list"></div>
+        </div>
+        <div class="ops-col">
+          <div class="ops-section-title">时间线</div>
+          <pre id="ops-timeline" class="ops-pre">选择左侧事件查看时间线</pre>
+          <div class="ops-profile-head">
+            <span class="ops-section-title">资产画像</span>
+            <input id="ops-asset-id" placeholder="ssh:web01 / app:order-service / cert:..." />
+            <button id="ops-asset-load" class="ghost">加载</button>
+          </div>
+          <pre id="ops-asset-profile" class="ops-pre">输入资产 ID 查看图谱关系与历史记忆</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 批量变更：plan → dry_run → canary → apply → rollback；审批仍走本会话 Web 审批通道 -->
+  <div id="fleet-change" class="sheet fleet-sheet" hidden>
+    <div class="sheet-head">
+      <span>批量变更</span>
+      <span class="spacer"></span>
+      <button id="fleet-close" class="ghost">关闭</button>
+    </div>
+    <div class="sheet-body fleet-body">
+      <div class="fleet-grid">
+        <label>从服务器清单选择（只显示当前账号有权限的目标）</label>
+        <div class="fleet-target-tools">
+          <input id="fleet-target-query" placeholder="按 ID / 名称 / 主机 / 标签过滤" />
+          <button id="fleet-load-targets" class="ghost">加载目标</button>
+          <button id="fleet-clear-targets" class="ghost">清空选择</button>
+        </div>
+        <div id="fleet-target-list" class="fleet-target-list"></div>
+        <label for="fleet-server-ids">目标（serverId，逗号/换行分隔；选择清单会自动覆盖）</label>
+        <textarea id="fleet-server-ids" rows="3" placeholder="web01, web02, 10.0.0.5"></textarea>
+        <label for="fleet-command">变更命令（不支持脚本文件）</label>
+        <input id="fleet-command" placeholder="systemctl restart nginx" />
+        <label for="fleet-rollback">回滚命令（apply 前必填）</label>
+        <input id="fleet-rollback" placeholder="systemctl start nginx.prev && systemctl restart nginx" />
+        <div class="fleet-row">
+          <label for="fleet-concurrency">并发</label>
+          <input id="fleet-concurrency" type="number" min="1" max="20" value="4" />
+          <label for="fleet-max-targets">最多目标</label>
+          <input id="fleet-max-targets" type="number" min="1" max="100" value="20" />
+          <label for="fleet-timeout">超时(秒)</label>
+          <input id="fleet-timeout" type="number" min="1" max="3600" value="60" />
+        </div>
+        <label for="fleet-plan-id">计划 ID（plan 后自动填入；可从最近计划恢复）</label>
+        <div class="fleet-plan-row">
+          <input id="fleet-plan-id" readonly placeholder="点击“生成计划”后自动填入" />
+          <select id="fleet-plan-select" title="最近 2 小时内的计划">
+            <option value="">最近计划…</option>
+          </select>
+          <button id="fleet-delete-plan" class="ghost" title="删除当前选中的计划">删除</button>
+        </div>
+        <div class="fleet-actions">
+          <button id="fleet-plan" class="primary">生成计划</button>
+          <button id="fleet-dry">预检 dry_run</button>
+          <button id="fleet-canary">金丝雀 canary</button>
+          <button id="fleet-apply">全量 apply</button>
+          <button id="fleet-retry">重试失败</button>
+          <button id="fleet-rollback-btn">回滚 rollback</button>
+          <button id="fleet-status" class="ghost">查看状态</button>
+          <button id="fleet-cancel" class="ghost" hidden>取消执行</button>
+        </div>
+        <div id="fleet-progress" class="fleet-progress" hidden></div>
+        <div id="fleet-target-status" class="fleet-target-status"></div>
+        <pre id="fleet-output" class="fleet-output">填写目标与命令后生成计划；按顺序 dry_run → canary → apply。canary/apply/rollback 会要求确认。</pre>
+      </div>
     </div>
   </div>
 

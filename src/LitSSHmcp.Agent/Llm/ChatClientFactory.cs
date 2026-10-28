@@ -18,6 +18,9 @@ public static class ChatClientFactory
     /// <summary>底层客户端缓存（进程级共享；IChatClient 线程安全，可跨会话复用）。</summary>
     private static readonly ConcurrentDictionary<string, Lazy<IChatClient>> RawClients = new(StringComparer.Ordinal);
 
+    /// <summary>provider/model 级并发闸门：多个会话/子代理共享同一 provider 时，MaxConcurrency 全局生效。</summary>
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> ProviderGates = new(StringComparer.Ordinal);
+
     public static IChatClient Create(AgentProviderConfig provider)
     {
         if (!provider.Type.Equals("openai", StringComparison.OrdinalIgnoreCase))
@@ -29,7 +32,15 @@ public static class ChatClientFactory
 
         var raw = GetOrCreateRawClient(provider);
         // 手动驱动工具循环(见 AgentSession)，因此不启用自动函数调用中间件；但加并发/超时/重试中间件。
-        var resilient = new ResilientChatClient(raw, provider.MaxConcurrency, provider.TimeoutSeconds, provider.MaxRetries);
+        // 并发闸门按 provider/model 共享：多会话/子代理不会各自放大 provider 并发。
+        var gateKey = BuildClientKey(provider) + "|" + Math.Max(1, provider.MaxConcurrency);
+        var gate = ProviderGates.GetOrAdd(gateKey, _ =>
+        {
+            var concurrency = Math.Max(1, provider.MaxConcurrency);
+            return new SemaphoreSlim(concurrency, concurrency);
+        });
+        var resilient = new ResilientChatClient(raw, provider.MaxConcurrency, provider.TimeoutSeconds,
+            provider.MaxRetries, gate);
         resilient.PromptCacheKey = ComputePromptCacheKey(provider.Endpoint, provider.Id, provider.Model);
         return resilient;
     }
@@ -37,9 +48,9 @@ public static class ChatClientFactory
     /// <summary>取（或建）缓存中的底层客户端；并发首建时只有写进字典的那份被使用，其余丢弃。</summary>
     private static IChatClient GetOrCreateRawClient(AgentProviderConfig provider)
     {
+        var key = BuildClientKey(provider);
         var model = provider.Model.Trim();
         var endpoint = provider.Endpoint?.Trim();
-        var key = $"{endpoint}|{HashSecret(provider.ApiKey!)}|{model}";
 
         return RawClients.GetOrAdd(key, _ => new Lazy<IChatClient>(() =>
         {
@@ -50,6 +61,10 @@ public static class ChatClientFactory
             return client.GetChatClient(model).AsIChatClient();
         })).Value;
     }
+
+    /// <summary>客户端/闸门缓存键：端点 + API Key 哈希 + 模型；只留密钥哈希，避免明文进内存字典键。</summary>
+    private static string BuildClientKey(AgentProviderConfig provider) =>
+        $"{provider.Endpoint?.Trim()}|{HashSecret(provider.ApiKey!)}|{provider.Model.Trim()}";
 
     /// <summary>缓存键只留密钥哈希，避免 API Key 以明文形式出现在内存字典键中。</summary>
     private static string HashSecret(string secret) =>

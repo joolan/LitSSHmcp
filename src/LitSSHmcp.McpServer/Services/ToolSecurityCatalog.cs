@@ -117,6 +117,8 @@ public static class ToolSecurityCatalog
 
         // 命令执行：任意 shell 执行都要求 exec，不再用“首词只读”降低授权。
         ServerExec("ssh_execute_command");
+        Add("ssh_execute_fleet", ToolTargetKind.MultiServer, ToolAccessLevel.Exec, writeLock: true,
+            targetArguments: "serverIds");
         ServerExec("ssh_execute_sudo");
         ServerRead("ssh_get_sudo_status");
 

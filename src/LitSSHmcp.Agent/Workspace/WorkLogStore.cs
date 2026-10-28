@@ -45,14 +45,12 @@ public sealed class WorkLogStore
     private const int MaxResultChars = 400;
     private const int MaxErrorChars = 400;
     private const int MaxActionChars = 300;
-    private const int MaxNoteChars = 2000;
 
     private readonly string _root;
     private readonly string? _ownerSegment;
     private readonly bool _includeFailures;
     private readonly bool _includeReadOnly;
 
-    public bool ModelSummary { get; }
     public string RootDir => _ownerSegment is null ? _root : Path.Combine(_root, _ownerSegment);
 
     private WorkLogStore(string root, string? ownerSegment, AgentWorkLogConfig config)
@@ -61,7 +59,6 @@ public sealed class WorkLogStore
         _ownerSegment = ownerSegment;
         _includeFailures = config.IncludeFailures;
         _includeReadOnly = config.IncludeReadOnly;
-        ModelSummary = config.ModelSummary;
     }
 
     /// <summary>创建写入器；未启用或目录不可用时返回 null（不影响会话启动）。</summary>
@@ -106,7 +103,7 @@ public sealed class WorkLogStore
     {
         try
         {
-            var ops = turn.Calls.Where(c => !IsWorkLogTool(c.Name)).ToList();
+            var ops = turn.Calls.ToList();
             var mutating = ops.Where(c => !c.ReadOnly || c.Destructive).ToList();
             if (mutating.Count == 0 && !(_includeReadOnly && ops.Count > 0))
                 return null;
@@ -166,32 +163,6 @@ public sealed class WorkLogStore
         }
     }
 
-    /// <summary>把模型提供的任务复盘追加到当天日志（由 ops_worklog_write 调用）。</summary>
-    public async Task<string> AppendNoteAsync(string? content, CancellationToken ct = default)
-    {
-        var text = content?.Trim();
-        if (string.IsNullOrWhiteSpace(text))
-            return "错误: content 不能为空";
-        if (text.Length > MaxNoteChars)
-            text = text[..MaxNoteChars];
-
-        try
-        {
-            var now = DateTime.Now;
-            var sb = new StringBuilder();
-            sb.AppendLine($"### 复盘 · {now:HH:mm:ss} · {SessionLabel(LocalAudit.AmbientSessionId)}");
-            sb.AppendLine(SecretRedactor.Redact(text));
-            sb.AppendLine();
-            var path = GetDailyPath(now);
-            await AppendAsync(path, sb.ToString(), ct);
-            return $"已追加今日工作日志复盘（{path}）";
-        }
-        catch (Exception ex)
-        {
-            return "工作日志写入失败: " + ex.Message;
-        }
-    }
-
     /// <summary>
     /// 上下文压缩点：仅当被丢弃的旧轮次包含变更类工具时追加一条索引，避免压缩后无法追溯。
     /// </summary>
@@ -235,9 +206,6 @@ public sealed class WorkLogStore
         else
             await File.AppendAllTextAsync(path, entry, new UTF8Encoding(false), ct);
     }
-
-    private static bool IsWorkLogTool(string name) =>
-        string.Equals(name, WorkLogTools.WriteToolName, StringComparison.Ordinal);
 
     private static string SessionLabel(string? sessionId) =>
         string.IsNullOrWhiteSpace(sessionId) ? "本机会话" : "会话 " + sessionId;

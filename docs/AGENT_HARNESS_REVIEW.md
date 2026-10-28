@@ -1,4 +1,4 @@
-# AI 运维助手 Harness 评审与改进设计
+﻿# AI 运维助手 Harness 评审与改进设计
 
 本文针对 LitSSH AI 运维助手（`LitSSHmcp.Agent` + `LitSSHmcp.App`）做一次完整梳理：**关程序重开后的上下文恢复 / provider 缓存**核查，以及 harness（工具、轮次、提示词、技能、上下文、图片）的改进设计与落地记录。附录含 provider 缓存模型与图像 token 事实表。
 
@@ -114,7 +114,7 @@
 - **深度 runbook 技能包**：mysql 慢查询 / redis 内存 / 磁盘巡检 / 证书巡检 / CI-CD 回滚 5 份 `references/` 深度 runbook（`skill_read` 按需读取）。
 - **prompt_cache_key 注入（仅官方端点）**：`ResilientChatClient.ApplyCacheKey` + `ChatClientFactory.ComputePromptCacheKey/IsOfficialOpenAIEndpoint`；`RawRepresentationFactory` + `ChatCompletionOptions.Patch`（`$.prompt_cache_key`），key=`litssh-`+SHA256 短哈希；调用方 factory 不覆盖、非官方端点不注入。
 - **资产图谱注入**：`AssetGraphPromptFormatter`（≤4000 字符、无时间戳、降级裁剪、禁用服务器排除）+ `SystemPromptBuilder` 新段 `## 资产清单(拓扑快照)`（插 MCP 服务器约定前）+ `AgentRuntime.StartAsync(assetGraph:)`（仅 topology 工具组启用时透传）+ `AgentViewModel.EnsureRuntimeAsync` 渲染注入。
-- **记忆质量门（四层）**：①系统提示内容质量规则；②`SaveAsync` 敏感词/过短/近重复(余弦>0.92)合并门禁（`MemoryQuality` + `FindNearDuplicateAsync`）；③raw 仅成功轮入库 + 日志型压缩≤200字 + 同源保留 200 条（`PruneRawAsync`）；④召回结构化优先 + raw ≤ min(2,topK) + `recallThreshold` 配置化。
+- **记忆质量门（四层）**：①系统提示内容质量规则；②`SaveAsync` 敏感词/过短/近重复(余弦>0.92)合并门禁（`MemoryQuality` + `FindNearDuplicateAsync`）；③raw 仅成功轮入库 + 日志型压缩≤200字 + 按会话分桶（默认 50 条/会话，`agent.memory.rawKeepPerSource`）+ 入库前 `SecretRedactor` 脱敏；④召回结构化/raw 分开检索并分配额（结构化优先、raw ≤ min(2,topK) 且不足互补）+ 时间衰减/频次排序 + 注入预算 + 查询缓存 + embeddings 超时 + `recallThreshold` 配置化 + raw 相对阈值 `recallRelativeMargin`（默认 0.8）+ 短追问 `MemoryRecallQueryBuilder`（最近 1–2 轮用户文本/资产）+ 近重复冲突安全阀（同资产根因/处置不同不自动合并）+ 失败教训 `tags=pitfall` + 结构化召回时间标签（>30 天时 mo/y）。
 - **拓扑 Phase 4/5 文档对齐**：`UPGRADE_PLAN.md` 标注 Phase 4（拓扑增强/管理拆分）与 Phase 5（三通道审批弹窗）已完成；拓扑节点悬浮 tooltip 补发现节点 `ports`/`path`/`type` 字段。
 - **测试**：`ScriptRiskAnalyzerTests`（脚本门规则）、`ScriptExecFormTests`（命令形态识别）等新增 33 项 + 本轮新增 7 项（预算/记忆/召回 UI）+ WP-A/B/C 共 29 项（PromptCacheKey 11 + AssetGraph 8 + MemoryService 10）；全量 889 项通过（Core 455 / Agent 163 / App 170 / McpServer 101）。
 

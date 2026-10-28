@@ -92,7 +92,8 @@ public sealed class WebCsrfMiddleware
         var method = ctx.Request.Method;
         var mutating = HttpMethods.IsPost(method) || HttpMethods.IsPut(method)
             || HttpMethods.IsPatch(method) || HttpMethods.IsDelete(method);
-        if (mutating && ctx.Request.Path != "/api/login")
+        if (mutating && ctx.Request.Path != "/api/login" &&
+            !ctx.Request.Path.Equals(WebAlertEndpoints.Path, StringComparison.OrdinalIgnoreCase))
         {
             ctx.Request.Cookies.TryGetValue(WebAuthExtensions.CsrfCookie, out var cookie);
             var header = ctx.Request.Headers[WebAuthExtensions.CsrfHeader].ToString();

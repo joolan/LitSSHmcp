@@ -5,7 +5,7 @@ using Xunit;
 namespace LitSSHmcp.Agent.Tests;
 
 /// <summary>
-/// 本地工具合并后的清单门禁：工作区 3、落盘 2、记忆 3，旧工具名不得再出现。
+/// 本地工具合并后的清单门禁：工作区 2（read/write）、落盘 1（action）、记忆 3，旧工具名不得再出现。
 /// </summary>
 public class LocalToolInventoryTests : IDisposable
 {
@@ -19,14 +19,13 @@ public class LocalToolInventoryTests : IDisposable
     }
 
     [Fact]
-    public void Workspace_exposes_read_write_list_only()
+    public void Workspace_exposes_read_and_write_only()
     {
         var tools = WorkspaceTools.Create(Path.Combine(_root, "ws"));
-        Assert.Equal(new[] { "ops_doc_read", "ops_doc_write", "ops_doc_list" },
-            tools.Select(t => t.Name).ToArray());
+        Assert.Equal(new[] { "ops_doc_read", "ops_doc_write" }, tools.Select(t => t.Name).ToArray());
         Assert.True(tools.Single(t => t.Name == "ops_doc_read").ReadOnly);
-        Assert.True(tools.Single(t => t.Name == "ops_doc_list").ReadOnly);
         Assert.False(tools.Single(t => t.Name == "ops_doc_write").ReadOnly);
+        Assert.DoesNotContain("ops_doc_list", tools.Select(t => t.Name));
         Assert.DoesNotContain("ops_doc_append", tools.Select(t => t.Name));
         Assert.DoesNotContain("ops_doc_patch", tools.Select(t => t.Name));
     }
@@ -53,46 +52,48 @@ public class LocalToolInventoryTests : IDisposable
     }
 
     [Fact]
-    public async Task Spill_exposes_list_and_read_with_modes()
+    public async Task Spill_exposes_single_action_tool()
     {
         var store = new SpillStore(Path.Combine(_root, "spills"), retentionDays: 0);
         var tools = SpillTools.Create(store);
-        Assert.Equal(new[] { "spill_list", "spill_read" }, tools.Select(t => t.Name).ToArray());
+        Assert.Equal(new[] { "spill" }, tools.Select(t => t.Name).ToArray());
         Assert.All(tools, t => Assert.True(t.ReadOnly));
         Assert.DoesNotContain("spill_grep", tools.Select(t => t.Name));
 
         var handle = store.Save("test", "line-1\nline-2");
-        var read = tools.Single(t => t.Name == "spill_read");
-        Assert.Contains("line-1", Text(await read.InvokeAsync(Args(("handle", handle)), default)));
-        Assert.Contains("line-2", Text(await read.InvokeAsync(
-            Args(("mode", "grep"), ("handle", handle), ("pattern", "line-2")), default)));
-        Assert.Contains("仅支持 read/grep",
-            Text(await read.InvokeAsync(Args(("mode", "list"), ("handle", handle)), default)));
+        var spill = tools.Single(t => t.Name == "spill");
+        Assert.Contains("line-1", Text(await spill.InvokeAsync(Args(("handle", handle)), default)));
+        Assert.Contains("line-2", Text(await spill.InvokeAsync(
+            Args(("action", "grep"), ("handle", handle), ("pattern", "line-2")), default)));
+        Assert.Contains("仅支持 list/read/grep",
+            Text(await spill.InvokeAsync(Args(("action", "delete"), ("handle", handle)), default)));
     }
 
     [Fact]
-    public async Task Memory_exposes_write_list_delete_and_write_dispatches_modes()
+    public async Task Memory_exposes_write_list_and_write_dispatches_actions()
     {
         var store = new AgentMemoryStore(_dbPath);
         var service = new AgentMemoryService(store, new FakeEmbedder(), topK: 5);
         await service.InitializeAsync();
         var tools = MemoryTools.Create(service);
 
-        Assert.Equal(new[] { "ops_memory_list", "ops_memory_write", "ops_memory_delete" },
+        Assert.Equal(new[] { "ops_memory_list", "ops_memory_write" },
             tools.Select(t => t.Name).ToArray());
         Assert.DoesNotContain("ops_memory_save", tools.Select(t => t.Name));
         Assert.DoesNotContain("ops_memory_update", tools.Select(t => t.Name));
+        Assert.DoesNotContain("ops_memory_delete", tools.Select(t => t.Name));
 
         var write = tools.Single(t => t.Name == "ops_memory_write");
         Assert.Contains("已新增", Text(await write.InvokeAsync(Args(
-            ("mode", "save"), ("kind", "task"), ("key", "disk"), ("content", "磁盘满排查与恢复路径")), default)));
+            ("action", "save"), ("kind", "task"), ("key", "disk"), ("content", "磁盘满排查与恢复路径")), default)));
         Assert.Contains("已更新", Text(await write.InvokeAsync(Args(
-            ("mode", "update"), ("kind", "task"), ("key", "disk"), ("status", "superseded")), default)));
-        Assert.Contains("仅支持 save/update",
-            Text(await write.InvokeAsync(Args(("mode", "delete"), ("kind", "task"), ("key", "disk")), default)));
+            ("action", "update"), ("kind", "task"), ("key", "disk"), ("status", "superseded")), default)));
+        Assert.Contains("仅支持 save/update/delete",
+            Text(await write.InvokeAsync(Args(("action", "archive"), ("kind", "task"), ("key", "disk")), default)));
+        Assert.Contains("已删除", Text(await write.InvokeAsync(Args(
+            ("action", "delete"), ("kind", "task"), ("key", "disk")), default)));
 
-        var record = await store.FindByKeyAsync("task", "disk");
-        Assert.Equal("superseded", record!.Status);
+        Assert.Null(await store.FindByKeyAsync("task", "disk"));
     }
 
     private static string Text(object? value) => value?.ToString() ?? string.Empty;

@@ -2,6 +2,9 @@
 name: network-connectivity
 description: 排查到目标主机/端口的网络连通性（ping/telnet/curl 不通、DNS、路由、防火墙）。适用于「连不上数据库/接口」「超时」「丢包」「域名解析失败」。
 appliesTo: [ssh, command, topology]
+triggers: [网络不通, 连接超时, 请求超时, 端口不通, 隧道, 跳板机, DNS, 域名解析失败, ping 不通, 丢包, connection refused, 路由]
+symptoms: [network_unreachable, timeout, packet_loss, dns_failure]
+assets: [ssh, domain, service, ds]
 ---
 
 # 网络连通性排查

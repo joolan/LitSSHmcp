@@ -1,6 +1,6 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
@@ -31,7 +31,7 @@ public class JavaTools
     [McpServerTool(Name = "java_processes", UseStructuredContent = true, OutputSchemaType = typeof(JavaProcessListDto), ReadOnly = true, OpenWorld = true)]
     [Description("列出服务器上的Java进程(pid/运行时长/CPU/内存/启动命令)。可传 appId 只看某应用的进程; 要定位应用pid后做线程/堆分析时先用它")]
     public async Task<JavaProcessListDto> JavaProcesses(
-        [Description("服务器标识: ID/名称/主机名, 可用ssh_list_servers列出")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("可选: 应用标识(ID/名称), 只显示匹配该应用的Java进程")] string? appId = null,
         CancellationToken cancellationToken = default)
     {
@@ -80,9 +80,9 @@ public class JavaTools
     }
 
     [McpServerTool(Name = "java_diagnostics", UseStructuredContent = true, OutputSchemaType = typeof(RemoteCommandResultDto), ReadOnly = true, OpenWorld = true)]
-    [Description("统一 Java 进程诊断：action=threads 抓线程栈、action=heap 看堆/GC、action=info 看 JVM 版本与运行时长。传 pid，或传 appId 自动解析（唯一命中才行）。")]
+    [Description("Java 进程诊断：action=threads/heap/info 分别抓线程栈/看堆与GC/看 JVM 版本与运行时长。传 pid，或传 appId 自动解析（唯一命中才行）")]
     public Task<RemoteCommandResultDto> JavaDiagnostics(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("诊断类型：threads / heap / info")] string action,
         [Description("Java进程 pid（用 java_processes 获取）；与 appId 二选一")] string? pid = null,
         [Description("应用标识(ID/名称): 自动解析其 Java 进程 pid；与 pid 二选一")] string? appId = null,
@@ -100,9 +100,8 @@ public class JavaTools
             })
         };
 
-    [Description("抓取Java进程线程栈(jstack -l)。传 pid, 或传 appId 自动解析该应用的pid(唯一命中才行)。分析死锁/CPU飙高/线程池耗尽/阻塞时用")]
     public async Task<RemoteCommandResultDto> JavaThreads(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("Java进程 pid(用java_processes获取); 与 appId 二选一")] string? pid = null,
         [Description("应用标识(ID/名称): 自动解析其Java进程pid; 与 pid 二选一")] string? appId = null,
         CancellationToken cancellationToken = default)
@@ -115,9 +114,8 @@ public class JavaTools
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [Description("查看Java堆内存与GC情况(jcmd GC.heap_info + jstat -gcutil)。传 pid, 或传 appId 自动解析pid。内存涨/频繁GC/OOM排查用")]
     public async Task<RemoteCommandResultDto> JavaHeap(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("Java进程 pid; 与 appId 二选一")] string? pid = null,
         [Description("应用标识(ID/名称): 自动解析其Java进程pid; 与 pid 二选一")] string? appId = null,
         CancellationToken cancellationToken = default)
@@ -130,9 +128,8 @@ public class JavaTools
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
     }
 
-    [Description("查看Java进程的JVM版本与运行时长(jcmd VM.version / VM.uptime)。传 pid, 或传 appId 自动解析pid。确认JDK版本与是否刚重启过用")]
     public async Task<RemoteCommandResultDto> JavaInfo(
-        [Description("服务器标识: ID/名称/主机名")] string serverId,
+        [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("Java进程 pid; 与 appId 二选一")] string? pid = null,
         [Description("应用标识(ID/名称): 自动解析其Java进程pid; 与 pid 二选一")] string? appId = null,
         CancellationToken cancellationToken = default)

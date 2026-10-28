@@ -58,14 +58,17 @@ public sealed class WebSessionManager : IAsyncDisposable
     private readonly WebAccessLog _accessLog;
     private readonly IConfigService _configService;
     private readonly ConcurrentDictionary<long, SessionSlot> _slots = new();
+    private readonly ConcurrentDictionary<long, CancellationTokenSource> _fleetCts = new();
+    private readonly IFleetPlanStore? _fleetPlans;
 
     public WebSessionManager(IContextStore store, IWebRuntimeFactory runtimeFactory,
-        WebAccessLog accessLog, IConfigService configService)
+        WebAccessLog accessLog, IConfigService configService, IFleetPlanStore? fleetPlans = null)
     {
         _store = store;
         _runtimeFactory = runtimeFactory;
         _accessLog = accessLog;
         _configService = configService;
+        _fleetPlans = fleetPlans;
     }
 
     /// <summary>Web 会话目录固定根默认值：&lt;data&gt;/jobs（评估报告 §8.3）。</summary>
@@ -99,8 +102,11 @@ public sealed class WebSessionManager : IAsyncDisposable
     private sealed class SessionSlot
     {
         public IWebRuntime? Runtime;
+        public string OwnerUserId = string.Empty;
+        public string OwnerUsername = string.Empty;
         public string WorkspaceDir = string.Empty;
         public readonly SemaphoreSlim TurnGate = new(1, 1);
+        public readonly SemaphoreSlim RuntimeGate = new(1, 1);
         public CancellationTokenSource? TurnCts;
     }
 
@@ -168,11 +174,20 @@ public sealed class WebSessionManager : IAsyncDisposable
         if (_slots.TryRemove(sessionId, out var slot))
         {
             try { slot.TurnCts?.Cancel(); } catch { /* 停轮失败忽略 */ }
+            if (_fleetCts.TryRemove(sessionId, out var fleetCts))
+            {
+                try { fleetCts.Cancel(); } catch { /* 已结束 */ }
+            }
             if (slot.Runtime is not null)
             {
                 try { await slot.Runtime.DisposeAsync(); } catch { /* 释放失败忽略 */ }
             }
             slot.TurnGate.Dispose();
+        }
+        if (_fleetPlans is not null)
+        {
+            try { await _fleetPlans.DeleteBySessionAsync(sessionId, ct); }
+            catch { /* 计划清理失败不影响会话删除 */ }
         }
         var dir = await _store.GetSessionWorkspaceDirAsync(sessionId, ct);
         if (!string.IsNullOrWhiteSpace(dir))
@@ -217,9 +232,12 @@ public sealed class WebSessionManager : IAsyncDisposable
             await EnsureFriendlyTitleAsync(sessionId, userText, turnCts.Token);
 
             var assistantText = new StringBuilder();
-            // 同步转发（不经 Progress<T> 线程池派发），保持事件到达顺序
+            var turnFailed = false;
+            // 同步转发（不经过 Progress<T> 线程池派发），保持事件到达顺序。
             var sink = new SyncProgress(e =>
             {
+                if (e.Kind == AgentEventKind.Error)
+                    turnFailed = true;
                 if (e.Kind == AgentEventKind.AssistantText && e.Text is not null)
                     assistantText.Append(e.Text);
                 progress.Report(e);
@@ -227,8 +245,14 @@ public sealed class WebSessionManager : IAsyncDisposable
             using var auditScope = LocalAudit.BeginRunScope(sessionId.ToString());
             await slot.Runtime!.SendAsync(contents, sink, turnCts.Token);
 
-            if (assistantText.Length > 0)
-                await _store.AppendMessageAsync(sessionId, "assistant", assistantText.ToString(), CancellationToken.None);
+            if (!turnFailed)
+            {
+                if (assistantText.Length > 0)
+                    await _store.AppendMessageAsync(sessionId, "assistant", assistantText.ToString(),
+                        CancellationToken.None);
+                slot.Runtime.IndexTurnInBackground(sessionId.ToString(), userText, assistantText.ToString());
+                slot.Runtime.ConsolidateInBackground();
+            }
             try { await _store.SetSessionSummaryAsync(sessionId, slot.Runtime.Summary, CancellationToken.None); } catch { /* 摘要失败不阻断 */ }
             try { await _store.TouchSessionAsync(sessionId, CancellationToken.None); } catch { /* 触达失败忽略 */ }
             _accessLog.Write("turn_done", owner.Username, null, $"session={sessionId}");
@@ -254,6 +278,85 @@ public sealed class WebSessionManager : IAsyncDisposable
             turnCts.Dispose();
             slot.TurnGate.Release();
         }
+    }
+
+    /// <summary>宿主机面板调用当前会话工具（白名单由调用方限定；与聊天共用轮次闸门）。</summary>
+    public async Task<string> InvokeToolAsync(WebPrincipal owner, long sessionId, string toolName,
+        IDictionary<string, object?> arguments, CancellationToken ct = default)
+    {
+        await EnsureOwnerAsync(owner, sessionId, ct);
+        var slot = _slots.GetOrAdd(sessionId, _ => new SessionSlot());
+        if (!await slot.TurnGate.WaitAsync(0, ct))
+            throw new WebSessionBusyException();
+        CancellationTokenSource? fleetCts = null;
+        try
+        {
+            await EnsureRuntimeAsync(owner, sessionId, slot, ct);
+            var token = ct;
+            if (string.Equals(toolName, FleetChangeTools.ToolName, StringComparison.Ordinal))
+            {
+                fleetCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                _fleetCts[sessionId] = fleetCts;
+                token = fleetCts.Token;
+            }
+            using var auditScope = LocalAudit.BeginRunScope(sessionId.ToString());
+            var result = await slot.Runtime!.InvokeHostToolAsync(toolName, arguments, token);
+            _accessLog.Write("session_tool", owner.Username, null, $"session={sessionId} tool={toolName}");
+            return result?.ToString() ?? string.Empty;
+        }
+        finally
+        {
+            if (fleetCts is not null)
+            {
+                _fleetCts.TryRemove(sessionId, out _);
+                fleetCts.Dispose();
+            }
+            slot.TurnGate.Release();
+        }
+    }
+
+    /// <summary>取消当前会话正在执行的批量变更（owner 校验）。</summary>
+    public async Task CancelFleetChangeAsync(WebPrincipal owner, long sessionId, CancellationToken ct = default)
+    {
+        await EnsureOwnerAsync(owner, sessionId, ct);
+        if (_fleetCts.TryGetValue(sessionId, out var cts))
+        {
+            try { cts.Cancel(); } catch { /* 已结束 */ }
+            _accessLog.Write("fleet_change_cancel", owner.Username, null, $"session={sessionId}");
+        }
+    }
+
+    /// <summary>读取批量变更计划状态（owner/session 作用域由计划库与运行时共同校验）。</summary>
+    public async Task<FleetPlanState?> GetFleetPlanAsync(WebPrincipal owner, long sessionId, string planId,
+        CancellationToken ct = default)
+    {
+        await EnsureOwnerAsync(owner, sessionId, ct);
+        var slot = _slots.GetOrAdd(sessionId, _ => new SessionSlot());
+        await EnsureRuntimeAsync(owner, sessionId, slot, ct);
+        return await slot.Runtime!.GetFleetPlanAsync(owner.UserId.ToString(), sessionId, planId, ct);
+    }
+
+    /// <summary>列出当前 owner/session 最近批量变更计划。</summary>
+    public async Task<IReadOnlyList<FleetPlanState>> ListFleetPlansAsync(WebPrincipal owner, long sessionId,
+        CancellationToken ct = default)
+    {
+        await EnsureOwnerAsync(owner, sessionId, ct);
+        var slot = _slots.GetOrAdd(sessionId, _ => new SessionSlot());
+        await EnsureRuntimeAsync(owner, sessionId, slot, ct);
+        return await slot.Runtime!.ListFleetPlansAsync(owner.UserId.ToString(), sessionId, ct);
+    }
+
+    /// <summary>删除一条批量变更计划（owner/会话作用域）。</summary>
+    public async Task<bool> DeleteFleetPlanAsync(WebPrincipal owner, long sessionId, string planId,
+        CancellationToken ct = default)
+    {
+        await EnsureOwnerAsync(owner, sessionId, ct);
+        if (_fleetPlans is null)
+            return false;
+        var removed = await _fleetPlans.DeleteScopedAsync(planId, owner.UserId.ToString(), sessionId, ct);
+        if (removed)
+            _accessLog.Write("fleet_plan_delete", owner.Username, null, $"session={sessionId} plan={planId}");
+        return removed;
     }
 
     /// <summary>停止当前轮次（owner 校验）。</summary>
@@ -413,10 +516,16 @@ public sealed class WebSessionManager : IAsyncDisposable
         }
     }
 
-    private async Task EnsureRuntimeAsync(WebPrincipal owner, long sessionId, SessionSlot slot, CancellationToken ct)    {
+    private async Task EnsureRuntimeAsync(WebPrincipal owner, long sessionId, SessionSlot slot, CancellationToken ct)
+    {
         if (slot.Runtime is not null)
             return;
-        var dir = await _store.GetSessionWorkspaceDirAsync(sessionId, ct);
+        await slot.RuntimeGate.WaitAsync(ct);
+        try
+        {
+            if (slot.Runtime is not null)
+                return;
+            var dir = await _store.GetSessionWorkspaceDirAsync(sessionId, ct);
         if (string.IsNullOrWhiteSpace(dir))
             throw new InvalidOperationException("会话目录未分配");
         var messages = await _store.GetMessagesAsync(sessionId, ct);
@@ -430,11 +539,20 @@ public sealed class WebSessionManager : IAsyncDisposable
         var vision = SessionContextBuilder.ResolveSupportsVision(config, sessionRow?.ProviderId);
         var built = SessionContextBuilder.Build(config, agentId, activeSkills, planMode, messages, dir, vision);
         var toolPolicy = await LoadToolPolicyAsync(sessionId, ct);
-        slot.WorkspaceDir = dir;
-        slot.Runtime = await _runtimeFactory.CreateAsync(
-            new WebRuntimeRequest(sessionId, owner.UserId.ToString(), owner.Username, owner.Role, dir, built.History, summary,
-                sessionRow?.ProviderId, built.ActiveAgent, built.ActiveSkillIds, built.PlanMode, built.AssetGraph,
-                toolPolicy), ct);
+            slot.OwnerUserId = owner.UserId.ToString();
+            slot.OwnerUsername = owner.Username;
+            slot.WorkspaceDir = dir;
+            slot.Runtime = await _runtimeFactory.CreateAsync(
+                new WebRuntimeRequest(sessionId, owner.UserId.ToString(), owner.Username, owner.Role, dir, built.History, summary,
+                    sessionRow?.ProviderId, built.ActiveAgent, built.ActiveSkillIds, built.PlanMode, built.AssetGraph,
+                    toolPolicy), ct);
+            slot.Runtime.ConsolidationFailed += message => _accessLog.Write("consolidation_failed",
+                slot.OwnerUsername, null, $"session={sessionId} {message}");
+        }
+        finally
+        {
+            slot.RuntimeGate.Release();
+        }
     }
 
     /// <summary>读取会话级工具策略（桌面配置、Web 生效）；损坏/空值按无策略处理，不影响会话启动。</summary>

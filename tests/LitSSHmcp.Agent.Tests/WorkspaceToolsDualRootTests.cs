@@ -48,7 +48,7 @@ public class WorkspaceToolsDualRootTests : IDisposable
         Assert.Equal("ASSET", read);
 
         // 清单：会话条目裸名 + 共享条目 shared/ 前缀，且不暴露 jobs/ 会话树
-        var listed = (string)(await Tool(tools, "ops_doc_list").InvokeAsync(Args(), default))!;
+        var listed = (string)(await Tool(tools, "ops_doc_read").InvokeAsync(Args(("action", "list")), default))!;
         Assert.Contains("report.md", listed);
         Assert.Contains("shared/notes.md", listed);
         Assert.DoesNotContain("shared/jobs/", listed);
@@ -80,7 +80,7 @@ public class WorkspaceToolsDualRootTests : IDisposable
         var tools = DualRootTools();
         await Tool(tools, "ops_doc_write").InvokeAsync(Args(("content", "NOTE"), ("path", "shared/notes.md")), default);
 
-        var listed = (string)(await Tool(tools, "ops_doc_list").InvokeAsync(Args(), default))!;
+        var listed = (string)(await Tool(tools, "ops_doc_read").InvokeAsync(Args(("action", "list")), default))!;
         Assert.Contains("shared/notes.md", listed);
         Assert.DoesNotContain("secret.md", listed);
         Assert.DoesNotContain("shared/jobs/", listed);

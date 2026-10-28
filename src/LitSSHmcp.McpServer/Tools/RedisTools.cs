@@ -1,6 +1,6 @@
 // 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
-//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + get_usage_guide 内置清单(由注解反射生成, 无需手改);
+//   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
@@ -49,7 +49,7 @@ public class RedisTools
     [McpServerTool(Name = "redis_diagnostics", UseStructuredContent = true, OutputSchemaType = typeof(DiagnosticsResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
     [Description("Redis整体诊断: 内存/客户端/命中率/键空间/慢日志/主从/持久化。问'缓存慢/内存涨/命中率低'时优先用; 看具体key用redis_read")]
     public async Task<DiagnosticsResultDto> RedisDiagnostics(
-        [Description("数据源标识: ID/名称, 可用datasource_list列出(type=redis)")] string datasourceId,
+        [Description("数据源 ID/名称(type=redis)")] string datasourceId,
         [Description("Redis DB 索引(0..15, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
         CancellationToken cancellationToken = default)
     {
@@ -90,9 +90,9 @@ public class RedisTools
     }
 
     [McpServerTool(Name = "redis_read", UseStructuredContent = true, OutputSchemaType = typeof(RedisCommandResultDto), ReadOnly = true, OpenWorld = true)]
-    [Description("在Redis数据源执行只读命令(GET/HGETALL/INFO/SLOWLOG等白名单)。写命令用redis_execute, 整体体检用redis_diagnostics; 含空格的值用引号, 如 HGETALL user:1; 切库用db参数(不要发SELECT)")]
+    [Description("在Redis数据源执行只读命令(GET/HGETALL/INFO/SLOWLOG等白名单)。写命令用 redis_execute，整体体检用 redis_diagnostics；含空格的值用引号；切库用 db 参数(不要发 SELECT)")]
     public async Task<RedisCommandResultDto> RedisRead(
-        [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
+        [Description("数据源 ID/名称")] string datasourceId,
         [Description("Redis命令, 如 GET key / HGETALL user:1 / SLOWLOG GET 10")] string command,
         [Description("Redis DB 索引(0..15, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
         [Description("数组返回的最大元素数(默认200, 上限1000), 超出截断")] int maxItems = 200,
@@ -179,9 +179,9 @@ public class RedisTools
     }
 
     [McpServerTool(Name = "redis_execute", UseStructuredContent = true, OutputSchemaType = typeof(RedisCommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("在Redis数据源执行写/管理命令(SET/DEL/EXPIRE/CONFIG SET等)。危险命令拒绝、其余一律桌面确认; 只读用redis_read; 切库用db参数(不要发SELECT)")]
+    [Description("在Redis数据源执行写/管理命令(SET/DEL/EXPIRE/CONFIG SET等)。危险命令拒绝、其余一律桌面确认；只读用 redis_read；切库用 db 参数")]
     public async Task<RedisCommandResultDto> RedisExecute(
-        [Description("数据源标识: ID/名称, 可用datasource_list列出")] string datasourceId,
+        [Description("数据源 ID/名称")] string datasourceId,
         [Description("要执行的Redis写命令, 含空格的值用引号包裹, 如 SET session:1 'abc' EX 60")] string command,
         [Description("Redis DB 索引(0..15, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
         CancellationToken cancellationToken = default)

@@ -26,7 +26,7 @@ public static class McpServerInstructions
             sb.Append($"2) ID 获取: {string.Join(", ", idParts)}。\n");
 
         if (enabled.Contains(ToolGroups.Guide))
-            sb.Append("3) 不确定用哪个工具时, 先调用 mcp_usage_guide 获取当前可用工具清单与\"意图→工具\"路由表。\n");
+            sb.Append("3) 不确定用哪个工具时, 先调用 mcp_usage_guide(默认 summary 只返回路由, 较少 token; 需要完整工具清单传 detail=full)。\n");
 
         sb.Append("4) 写操作(SQL 写 / Redis 写 / 文件传输 / 敏感命令)会弹桌面确认; 被拒绝会返回 status=rejected, 不要重试轰炸。\n");
         sb.Append("5) 所有入参/出参都不含密码; 命令与 SQL 均写入本机审计库。");

@@ -125,6 +125,10 @@ public static class McpWriteGateFilter
         if (config is null)
             return null;
 
+        // 批量变更使用全局写锁，避免多个批量任务同时改写多台机器。
+        if (string.Equals(toolName, "ssh_execute_fleet", StringComparison.Ordinal))
+            return "fleet:all";
+
         if (toolName.StartsWith("ssh_", StringComparison.Ordinal) ||
             toolName is "service_restart" or "docker_restart" or "docker_exec")
         {

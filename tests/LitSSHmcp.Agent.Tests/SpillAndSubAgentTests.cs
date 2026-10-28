@@ -28,14 +28,15 @@ public class SpillAndSubAgentTests : IDisposable
         Assert.Null(store.Resolve("a/b.txt"));
 
         var tools = SpillTools.Create(store);
-        var read = await Tool(tools, "spill_read").InvokeAsync(Args(("handle", handle), ("offset", 100), ("limit", 5)), default);
+        var spill = Tool(tools, "spill");
+        var read = await spill.InvokeAsync(Args(("handle", handle), ("offset", 100), ("limit", 5)), default);
         Assert.Contains("100: line101", (string)read!);
         Assert.Contains("共 500 行", (string)read!);
 
-        var grep = await Tool(tools, "spill_read").InvokeAsync(Args(("mode", "grep"), ("handle", handle), ("pattern", @"line12\d")), default);
+        var grep = await spill.InvokeAsync(Args(("action", "grep"), ("handle", handle), ("pattern", @"line12\d")), default);
         Assert.Contains("line120", (string)grep!);
 
-        var list = await Tool(tools, "spill_list").InvokeAsync(Args(), default);
+        var list = await spill.InvokeAsync(Args(("action", "list")), default);
         Assert.Contains(handle, (string)list!);
     }
 
@@ -96,6 +97,23 @@ public class SpillAndSubAgentTests : IDisposable
 
         Assert.Equal("sub-answer", result!.ToString());
         Assert.Equal("run_subagent", tool.Name);
+    }
+
+    [Fact]
+    public async Task Sub_agent_prompt_includes_base_and_safety_rules()
+    {
+        var client = new FakeChatClient(new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "sub-answer") }));
+        var tool = SubAgents.Create(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new AgentConfig { MaxToolIterations = 3 }, Array.Empty<IAgentTool>());
+
+        await tool.InvokeAsync(Args(("task", "check server X")), default);
+
+        var system = client.LastMessages!.First(m => m.Role == ChatRole.System).Text!;
+        Assert.StartsWith("你是 LitSSH 运维助手", system);   // 复用主代理 BasePrompt
+        Assert.Contains("子代理约束", system);
+        Assert.Contains("不可信数据", system);
+        Assert.Contains("只读", system);
+        Assert.Contains("不得调用任何写", system);
     }
 
     [Fact]
@@ -277,14 +295,20 @@ public class SpillAndSubAgentTests : IDisposable
             _responses = new Queue<ChatResponse>(responses);
         }
 
-        public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult(_responses.Count > 0 ? _responses.Dequeue()
+        public IReadOnlyList<ChatMessage>? LastMessages { get; private set; }
+
+        public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            LastMessages = messages.ToList();
+            return Task.FromResult(_responses.Count > 0 ? _responses.Dequeue()
                 : new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "ok") }));
+        }
 
         public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
             IEnumerable<ChatMessage> messages, ChatOptions? options = null,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            LastMessages = messages.ToList();
             var response = _responses.Count > 0 ? _responses.Dequeue()
                 : new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "ok") });
             foreach (var message in response.Messages)

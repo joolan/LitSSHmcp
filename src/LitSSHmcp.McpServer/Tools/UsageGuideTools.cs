@@ -30,8 +30,9 @@ public class UsageGuideTools
     public UsageGuideTools(IConfigService configService) => _configService = configService;
 
     [McpServerTool(Name = "mcp_usage_guide", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("获取LitSSH MCP使用指南(当前可用工具清单+意图路由+注意事项)。不确定用哪个工具时先调它")]
-    public async Task<string> GetUsageGuide()
+    [Description("获取LitSSH MCP使用指南(意图路由/取ID/错误处理)。不确定用哪个工具时先调它; detail=summary(默认)只返回路由, detail=full 含完整工具清单")]
+    public async Task<string> GetUsageGuide(
+        [Description("summary(默认,只返回路由/关键约定,较少token)/full(含完整工具清单)")] string? detail = null)
     {
         IReadOnlySet<string>? enabled = null;
         if (_configService is not null)
@@ -48,35 +49,31 @@ public class UsageGuideTools
             }
         }
 
-        return BuildGuide(enabled);
+        var full = string.Equals(detail?.Trim(), "full", StringComparison.OrdinalIgnoreCase);
+        return BuildGuide(enabled, includeToolList: full, summaryOnly: !full);
     }
 
     /// <summary>
     /// 依据启用分组构建指南：工具清单与路由文案都只保留与<b>实际暴露工具</b>相关的部分。
     /// <paramref name="enabled"/> 为 null 表示不裁剪（全部启用）。
     /// <paramref name="includeInternalTools"/> 为 null 时按宿主环境决定是否包含内部工具。
+    /// <paramref name="includeToolList"/> 为 false 时省略 <c>tools</c> 清单（summary 模式，减少 token）。
+    /// <paramref name="summaryOnly"/> 为 true 时省略冗长补充说明（datasource_guide / sudo_types 等）。
+    /// 路由段始终排在工具清单之前，避免 App 按 4000 字符截断时先把路由裁掉。
     /// </summary>
-    internal static string BuildGuide(IReadOnlySet<string>? enabled, bool? includeInternalTools = null)
+    internal static string BuildGuide(IReadOnlySet<string>? enabled, bool? includeInternalTools = null,
+        bool includeToolList = true, bool summaryOnly = false)
     {
         var tools = EnumerateToolInfos();
         var toolGroup = tools.ToDictionary(t => t.Name, t => t.Group, StringComparer.Ordinal);
         var includeInternal = includeInternalTools ?? HostEnv.InternalToolsEnabled;
 
-        var visibleTools = tools
-            .Where(t => t.Group is null || enabled is null || enabled.Contains(t.Group))
-            .Where(t => !string.Equals(t.Name, ApprovalRoundTools.ToolName, StringComparison.Ordinal)
-                        || includeInternal)
-            .OrderBy(t => t.Name, StringComparer.Ordinal)
-            .Select(t => new { name = t.Name, description = t.Description })
-            .Cast<object>()
-            .ToArray();
-
         string[] Keep(string[] lines) => lines.Where(l => !ReferencesDisabledTool(l, enabled, toolGroup)).ToArray();
 
+        // 路由优先：App 默认按 4000 字符截断工具结果，把工具清单放最后可避免路由被裁掉。
         var guide = new Dictionary<string, object?>
         {
-            ["title"] = "LitSSH MCP 使用指南",
-            ["tools"] = visibleTools
+            ["title"] = "LitSSH MCP 使用指南"
         };
 
         var serverGuideLines = Keep(new[]
@@ -176,27 +173,30 @@ public class UsageGuideTools
             };
         }
 
-        var datasourcePoints = Keep(new[]
+        if (!summaryOnly)
         {
-            "'看有哪些数据库'→datasource_list, '测数据库能否连上'→datasource_test_connection, '查数据'→mysql_query(action=query), '改数据'→mysql_execute",
-            "'PG查数据'→postgres_query(action=query), 'PG改数据'→postgres_execute, 'PG体检'→postgres_query(action=diagnostics)",
-            "'查缓存/读key'→redis_read, '写缓存/删key/设过期'→redis_execute, 'Redis体检'→redis_diagnostics",
-            "datasource_list 返回 host/port/username 可以直接用于与应用日志中的连接串比对; type=redis 的数据源只能用 Redis 工具",
-            "mysql_query 统一只读入口: action=query 执行 SELECT/SHOW/EXPLAIN/DESC/WITH(单条, 结果最多1000行), action=explain 看执行计划, action=diagnostics 做整体诊断; 数据修改型CTE与 EXPLAIN ANALYZE <DML> 会被识别为写操作并拒绝(请改用 mysql_execute)",
-            "mysql_execute 用于 INSERT/UPDATE/DELETE/DDL, 会触发安全策略与用户审批",
-            "redis_read 只允许只读白名单命令, 结果已JSON化并截断超长字符串/超大数组; 非白名单命令会提示改用 redis_execute",
-            "redis_execute 的写命令一律弹桌面确认, 危险命令(清库/关服/换主从/加载模块/阻塞连接类)直接拒绝",
-            "Redis 切库用 redis_read/redis_execute/redis_diagnostics 的 db 参数(0..15, 返回里的 db 字段回显实际库); 不要在命令里发 SELECT(跨调用不保证同一连接); 连接与SSH隧道按 数据源+DB 复用(空闲30s释放)",
-            "数据源 accessMode=sshTunnel 时数据库只能经指定SSH服务器访问, MCP会自动建隧道(Redis同样适用)",
-            "凭据由用户通过管理界面或配置文件录入, 任何工具都不会返回密码"
-        });
-        if (datasourcePoints.Length > 0)
-        {
-            guide["datasource_guide"] = new
+            var datasourcePoints = Keep(new[]
             {
-                description = "数据源(MySQL/PostgreSQL/Redis)使用说明",
-                points = datasourcePoints
-            };
+                "'看有哪些数据库'→datasource_list, '测数据库能否连上'→datasource_test_connection, '查数据'→mysql_query(action=query), '改数据'→mysql_execute",
+                "'PG查数据'→postgres_query(action=query), 'PG改数据'→postgres_execute, 'PG体检'→postgres_query(action=diagnostics)",
+                "'查缓存/读key'→redis_read, '写缓存/删key/设过期'→redis_execute, 'Redis体检'→redis_diagnostics",
+                "datasource_list 返回 host/port/username 可以直接用于与应用日志中的连接串比对; type=redis 的数据源只能用 Redis 工具",
+                "mysql_query 统一只读入口: action=query 执行 SELECT/SHOW/EXPLAIN/DESC/WITH(单条, 结果最多1000行), action=explain 看执行计划, action=diagnostics 做整体诊断; 数据修改型CTE与 EXPLAIN ANALYZE <DML> 会被识别为写操作并拒绝(请改用 mysql_execute)",
+                "mysql_execute 用于 INSERT/UPDATE/DELETE/DDL, 会触发安全策略与用户审批",
+                "redis_read 只允许只读白名单命令, 结果已JSON化并截断超长字符串/超大数组; 非白名单命令会提示改用 redis_execute",
+                "redis_execute 的写命令一律弹桌面确认, 危险命令(清库/关服/换主从/加载模块/阻塞连接类)直接拒绝",
+                "Redis 切库用 redis_read/redis_execute/redis_diagnostics 的 db 参数(0..15, 返回里的 db 字段回显实际库); 不要在命令里发 SELECT(跨调用不保证同一连接); 连接与SSH隧道按 数据源+DB 复用(空闲30s释放)",
+                "数据源 accessMode=sshTunnel 时数据库只能经指定SSH服务器访问, MCP会自动建隧道(Redis同样适用)",
+                "凭据由用户通过管理界面或配置文件录入, 任何工具都不会返回密码"
+            });
+            if (datasourcePoints.Length > 0)
+            {
+                guide["datasource_guide"] = new
+                {
+                    description = "数据源(MySQL/PostgreSQL/Redis)使用说明",
+                    points = datasourcePoints
+                };
+            }
         }
 
         var sudoWhen = Keep(new[]
@@ -242,10 +242,30 @@ public class UsageGuideTools
             "所有SQL与Redis命令操作(含被拒绝的)都会写入审计日志"
         });
 
-        guide["error_handling"] = "看 success 与 status 字段判断失败类型并决定是否重试: blocked=被安全策略禁止(不要重试); rejected=用户拒绝(不要重试); approval_timeout/approval_unavailable=审批超时或不可用(可提示用户后用同一命令重试); server_not_found/datasource_not_found=标识不存在(改用列表工具拿正确ID, 错误信息里已回显可用ID); readonly_statement=只读语句用错了写工具(改用mysql_query/postgres_query/redis_read); not_readonly_statement=写语句用错了只读工具(改用*_execute); sudo_not_configured=未配置提权; snapshot_not_found=该服务器还没快照(用ssh_snapshot_refresh生成); snapshot_in_progress=该服务器已有快照在采集(不要重复刷新,稍后用ssh_snapshot_get查); auth_failed=账号/密钥错; host_key_mismatch=主机密钥变化(可能是安全事件, 先人工核对指纹, 不要重试); timeout/rate_limited/connection_error=可稍后重试";
-        guide["sudo_types"] = "Auto=自动(先sudo,失败再su - root,推荐), CurrentUser=使用SSH用户密码sudo(常用), RootUser=切换root(需root密码), CustomUser=切换指定用户(需该用户密码)";
-        guide["sensitive_commands"] = "rm, chmod, chown, reboot, shutdown, systemctl stop/restart, kill, pkill, mount, umount, 以及 docker rm/rmi/run/exec/stop/restart/compose down 等写操作";
-        guide["blocked_commands"] = "rm -rf /, mkfs, dd if=/dev/zero, docker system prune, docker volume rm, docker run --privileged 等";
+        var errorHandling = Keep(new[]
+        {
+            "看 success 与 status 字段判断失败类型并决定是否重试",
+            "blocked=被安全策略禁止(不要重试)",
+            "rejected=用户拒绝(不要重试)",
+            "approval_timeout/approval_unavailable=审批超时或不可用(可提示用户后用同一命令重试)",
+            "server_not_found/datasource_not_found=标识不存在(改用列表工具拿正确ID, 错误信息里已回显可用ID)",
+            "readonly_statement=只读语句用错了写工具(改用对应的只读查询工具)",
+            "not_readonly_statement=写语句用错了只读工具(改用对应的写工具)",
+            "sudo_not_configured=未配置提权",
+            "snapshot_not_found=该服务器还没快照(用ssh_snapshot_refresh生成)",
+            "snapshot_in_progress=该服务器已有快照在采集(不要重复刷新,稍后用ssh_snapshot_get查)",
+            "auth_failed=账号/密钥错",
+            "host_key_mismatch=主机密钥变化(可能是安全事件, 先人工核对指纹, 不要重试)",
+            "timeout/rate_limited/connection_error=可稍后重试"
+        });
+        if (errorHandling.Length > 0)
+            guide["error_handling"] = string.Join("; ", errorHandling);
+        if (!summaryOnly)
+        {
+            guide["sudo_types"] = "Auto=自动(先sudo,失败再su - root,推荐), CurrentUser=使用SSH用户密码sudo(常用), RootUser=切换root(需root密码), CustomUser=切换指定用户(需该用户密码)";
+            guide["sensitive_commands"] = "rm, chmod, chown, reboot, shutdown, systemctl stop/restart, kill, pkill, mount, umount, 以及 docker rm/rmi/run/exec/stop/restart/compose down 等写操作";
+            guide["blocked_commands"] = "rm -rf /, mkfs, dd if=/dev/zero, docker system prune, docker volume rm, docker run --privileged 等";
+        }
 
         if (enabled is not null)
         {
@@ -260,6 +280,20 @@ public class UsageGuideTools
                     "上面这些能力在当前部署中**未启用**（工具不存在，调用会失败）。不要尝试调用相关工具；" +
                     "如确需使用，请提示用户在桌面 App「设置 → 工具分组」中开启后重连。";
             }
+        }
+
+        // 工具清单放最后：App 默认按 4000 字符截断工具结果，路由优先可避免被裁掉。
+        if (includeToolList)
+        {
+            var visibleTools = tools
+                .Where(t => t.Group is null || enabled is null || enabled.Contains(t.Group))
+                .Where(t => !string.Equals(t.Name, ApprovalRoundTools.ToolName, StringComparison.Ordinal)
+                            || includeInternal)
+                .OrderBy(t => t.Name, StringComparer.Ordinal)
+                .Select(t => new { name = t.Name, description = t.Description })
+                .Cast<object>()
+                .ToArray();
+            guide["tools"] = visibleTools;
         }
 
         return JsonSerializer.Serialize(guide, new JsonSerializerOptions
@@ -298,7 +332,7 @@ public class UsageGuideTools
 
     /// <summary>
     /// 反射本程序集中所有带 <see cref="McpServerToolAttribute"/> 的方法, 生成工具清单(名称 + 分组 + 描述)。
-    /// 使 get_usage_guide 的工具清单始终与已注册工具一致, 消除"手工清单"漂移。
+    /// 使 mcp_usage_guide 的工具清单始终与已注册工具一致, 消除"手工清单"漂移。
     /// </summary>
     private static ToolInfo[] EnumerateToolInfos() =>
         typeof(UsageGuideTools).Assembly

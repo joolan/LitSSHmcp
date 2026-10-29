@@ -70,6 +70,37 @@ public static class ToolSupport
     /// </summary>
     public static (SshServerConfig? Server, string? Status, string? Error) ResolveServer(AppConfig config, string reference)
     {
+        var result = ResolveServerCore(config, reference);
+        if (result.Server is not null || result.Status != "server_not_found")
+            return result;
+
+        var normalized = TrimReferencePrefix(reference, "ssh://", "ssh:");
+        if (string.Equals(normalized, reference, StringComparison.Ordinal))
+            return result;
+
+        var normalizedResult = ResolveServerCore(config, normalized);
+        if (normalizedResult.Server is not null || normalizedResult.Status != "server_not_found")
+            return normalizedResult;
+
+        var notFound = ServerNotFound(config, reference);
+        return (null, notFound.Status, notFound.Error);
+    }
+
+    private static string TrimReferencePrefix(string reference, params string[] prefixes)
+    {
+        foreach (var prefix in prefixes)
+        {
+            if (!reference.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+            var trimmed = reference[prefix.Length..].Trim();
+            if (trimmed.Length > 0)
+                return trimmed;
+        }
+        return reference;
+    }
+
+    private static (SshServerConfig? Server, string? Status, string? Error) ResolveServerCore(AppConfig config, string reference)
+    {
         var byId = config.Servers.Where(s => string.Equals(s.Id, reference, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (byId.Length == 1)
             return AllowIfEnabled(byId[0]);
@@ -82,7 +113,7 @@ public static class ToolSupport
             return AllowIfEnabled(matches[0]);
 
         if (matches.Length > 1)
-            return (null, "server_ambiguous", AmbiguousMessage("服务", reference, matches.Select(ServerLabel)));
+            return (null, "server_ambiguous", AmbiguousMessage("服务器", reference, matches.Select(ServerLabel)));
 
         var (status, error) = ServerNotFound(config, reference);
         return (null, status, error);
@@ -224,6 +255,25 @@ public static class ToolSupport
     /// <summary>解析数据源并禁止歧义（规则同 <see cref="ResolveServer"/>）。</summary>
     public static (DataSourceConfig? Datasource, string? Status, string? Error) ResolveDatasource(AppConfig config, string reference)
     {
+        var result = ResolveDatasourceCore(config, reference);
+        if (result.Datasource is not null || result.Status != "datasource_not_found")
+            return result;
+
+        var normalized = TrimReferencePrefix(reference, "ds:");
+        if (string.Equals(normalized, reference, StringComparison.Ordinal))
+            return result;
+
+        var normalizedResult = ResolveDatasourceCore(config, normalized);
+        if (normalizedResult.Datasource is not null || normalizedResult.Status != "datasource_not_found")
+            return normalizedResult;
+
+        var notFound = DatasourceNotFound(config, reference);
+        return (null, notFound.Status, notFound.Error);
+    }
+
+    private static (DataSourceConfig? Datasource, string? Status, string? Error) ResolveDatasourceCore(
+        AppConfig config, string reference)
+    {
         var byId = config.DataSources.Where(d => string.Equals(d.Id, reference, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (byId.Length == 1)
             return (byId[0], null, null);
@@ -252,6 +302,25 @@ public static class ToolSupport
 
     /// <summary>解析应用并禁止歧义（规则同 <see cref="ResolveServer"/>）。</summary>
     public static (ApplicationConfig? Application, string? Status, string? Error) ResolveApplication(AppConfig config, string reference)
+    {
+        var result = ResolveApplicationCore(config, reference);
+        if (result.Application is not null || result.Status != "app_not_found")
+            return result;
+
+        var normalized = TrimReferencePrefix(reference, "app:");
+        if (string.Equals(normalized, reference, StringComparison.Ordinal))
+            return result;
+
+        var normalizedResult = ResolveApplicationCore(config, normalized);
+        if (normalizedResult.Application is not null || normalizedResult.Status != "app_not_found")
+            return normalizedResult;
+
+        var notFound = ApplicationNotFound(config, reference);
+        return (null, notFound.Status, notFound.Error);
+    }
+
+    private static (ApplicationConfig? Application, string? Status, string? Error) ResolveApplicationCore(
+        AppConfig config, string reference)
     {
         var byId = config.Applications.Where(a => string.Equals(a.Id, reference, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (byId.Length == 1)
@@ -287,6 +356,7 @@ public static class ToolSupport
             "timeout" => "timeout",
             "auth" => "auth_failed",
             "host_key" => "host_key_mismatch",
+            "channel" => "channel_error",
             "network" => "connection_error",
             _ => "failed"
         };

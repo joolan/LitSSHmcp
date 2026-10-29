@@ -40,7 +40,7 @@ public sealed class SshConnectionPool : ISshConnectionPool, IDisposable
     public SshConnectionLease Rent(SshServerConfig server)
     {
         var lease = _commands.Rent(server);
-        return new SshConnectionLease((SshClient)lease.Client, lease.Dispose);
+        return new SshConnectionLease((SshClient)lease.Client, lease.Dispose, lease.Invalidate);
     }
 
     public SftpConnectionLease RentSftp(SshServerConfig server)
@@ -106,10 +106,10 @@ public sealed class SshConnectionPool : ISshConnectionPool, IDisposable
 
         public sealed class Lease : IDisposable
         {
-            private readonly Action _release;
+            private readonly Action<bool> _release;
             private int _released;
 
-            internal Lease(BaseClient client, Action release)
+            internal Lease(BaseClient client, Action<bool> release)
             {
                 Client = client;
                 _release = release;
@@ -117,10 +117,17 @@ public sealed class SshConnectionPool : ISshConnectionPool, IDisposable
 
             public BaseClient Client { get; }
 
+            /// <summary>丢弃当前连接（通道损坏/半开），不是正常归还。</summary>
+            public void Invalidate()
+            {
+                if (Interlocked.Exchange(ref _released, 1) == 0)
+                    _release(true);
+            }
+
             public void Dispose()
             {
                 if (Interlocked.Exchange(ref _released, 1) == 0)
-                    _release();
+                    _release(false);
             }
         }
 
@@ -150,7 +157,7 @@ public sealed class SshConnectionPool : ISshConnectionPool, IDisposable
                 {
                     slot.Client = EnsureConnected(slot.Client, server, options);
                     slot.LastUsedUtc = DateTime.UtcNow;
-                    return new Lease(slot.Client, () => Release(slot));
+                    return new Lease(slot.Client, discard => Release(slot, discard));
                 }
                 catch
                 {
@@ -168,8 +175,15 @@ public sealed class SshConnectionPool : ISshConnectionPool, IDisposable
                 return slot;
             }
 
-            private void Release(Slot slot)
+            private void Release(Slot slot, bool discard)
             {
+                if (discard)
+                {
+                    // 命令通道可能在 TCP 仍 IsConnected 时已经失效；不能把它放回池复用。
+                    // 当前租约持有 slot.Gate，其他 Rent/Sweep 不会同时操作该槽位。
+                    SafeDispose(slot.Client);
+                    slot.Client = default;
+                }
                 slot.LastUsedUtc = DateTime.UtcNow;
                 slot.Gate.Release();
                 _capacity.Release();
@@ -262,15 +276,24 @@ public sealed class SshConnectionPool : ISshConnectionPool, IDisposable
 public sealed class SshConnectionLease : IDisposable
 {
     private readonly Action _release;
+    private readonly Action _invalidate;
     private int _released;
 
-    internal SshConnectionLease(SshClient client, Action release)
+    internal SshConnectionLease(SshClient client, Action release, Action invalidate)
     {
         Client = client;
         _release = release;
+        _invalidate = invalidate;
     }
 
     public SshClient Client { get; }
+
+    /// <summary>丢弃当前连接（通道损坏/半开），避免下一次调用继续复用。</summary>
+    public void Invalidate()
+    {
+        if (Interlocked.Exchange(ref _released, 1) == 0)
+            _invalidate();
+    }
 
     public void Dispose()
     {

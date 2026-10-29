@@ -6,6 +6,8 @@
 
 ### 变更
 
+- **SSH 命令通道自愈**：池化命令连接在 channel open 失败/异常时丢弃，不再把坏连接放回池；仅对明确的 channel-open 失败安全重试一次，sudo 路径异常也会淘汰连接，避免“SSH 探测正常但 echo ok 持续失败”。
+- **子代理可配置**：新增 `agent.subAgentMaxIterations`（默认 8，1-20）与 `agent.subAgentSummaryMaxChars`（默认 2000，500-8000）；子代理可使用只读 `fleet_query`，系统提示明确“预计 3 个以上只读工具/大日志先委派”，并在返回前按上限截断摘要。
 - **批量变更入口调整**：桌面端从 AI 输入区移到左侧栏「新建分组」与「打开工作目录」之间，避免被误认为聊天指令；Web 端入口暂时隐藏（保留实现与后端链路）；仍使用当前会话的 `fleet_change`、审批与写锁。
 - **MCP 工具面精简与一致性**：工具描述总量 4052 → 3059 字符、单条最长 ≤120，新增描述预算测试；`mcp_usage_guide` 默认 `summary`（路由优先、不含工具清单，`detail=full` 取全量），App 侧按当前 profile/只读/分组进一步裁剪；参数说明去重；清理旧单文件传输实现与非工具方法描述；服务端描述不再引用 App 专属工具。
 - **Profile 探测白名单**：`diagnose`/`assets` 允许 `ssh_snapshot_refresh`/`topology_discover` 等非变更探测，安全只读模式仍按 `ReadOnlyHint` 过滤。

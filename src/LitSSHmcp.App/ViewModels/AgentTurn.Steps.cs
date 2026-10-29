@@ -8,6 +8,8 @@ public partial class AgentTurn
 {
     public ObservableCollection<LocalApprovalRequest> Approvals { get; } = new();
 
+    public ToolLimitApprovalRequest? ToolLimitRequest { get; set; }
+
     private readonly HashSet<AgentStep> _hookedSteps = new();
 
     private void OnStepsChanged(object? sender, NotifyCollectionChangedEventArgs e)

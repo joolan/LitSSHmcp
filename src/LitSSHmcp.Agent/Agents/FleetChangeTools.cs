@@ -548,9 +548,15 @@ public static class FleetChangeTools
             ? new List<string>()
             : value.Split(new[] { ',', '，', ';', ' ', '\t', '\r', '\n' },
                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(NormalizeTarget)
                 .Distinct(StringComparer.Ordinal)
                 .Take(MaxTargetsLimit)
                 .ToList();
+
+    private static string NormalizeTarget(string value) =>
+        value.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase) ? value[6..].Trim()
+        : value.StartsWith("ssh:", StringComparison.OrdinalIgnoreCase) ? value[4..].Trim()
+        : value;
 
     private static string ToJson(object? value)
     {

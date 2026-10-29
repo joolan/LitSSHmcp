@@ -49,6 +49,20 @@ public class FleetChangeToolsTests
     }
 
     [Fact]
+    public async Task Plan_normalizes_asset_id_prefixes()
+    {
+        var tool = FleetChangeTools.Create(new FakeFleetExecTool(), new FakeTestConnectionTool())!;
+
+        var text = await Invoke(tool, ("mode", "plan"), ("serverIds", "ssh:s1, ssh://s2"),
+            ("command", "systemctl restart nginx"));
+
+        Assert.Contains("- s1", text);
+        Assert.Contains("- s2", text);
+        Assert.DoesNotContain("- ssh:s1", text);
+        Assert.DoesNotContain("- ssh://s2", text);
+    }
+
+    [Fact]
     public async Task Plan_rejects_script_files()
     {
         var tool = FleetChangeTools.Create(new FakeFleetExecTool(), new FakeTestConnectionTool())!;

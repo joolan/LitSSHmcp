@@ -57,6 +57,7 @@ public sealed class AgentRuntime : IAsyncDisposable
     private readonly List<IAgentTool> _subTools;
     private readonly IAgentTool? _roundNotifier;
     private readonly Action<IReadOnlyList<PlanItem>>? _onPlan;
+    private readonly AgentSession.ToolLimitContinuation? _toolLimitContinuation;
     private readonly Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? _recall;
     private readonly Func<string, CancellationToken, Task<AssetGraphContextResult?>>? _graphContext;
     private readonly string? _assetGraph;
@@ -95,7 +96,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         SpillStore? spill,
         WorkLogStore? workLog,
         IEnumerable<ChatMessage>? history,
-        string? assetGraph = null)
+        string? assetGraph = null,
+        AgentSession.ToolLimitContinuation? toolLimitContinuation = null)
     {
         Hosts = hosts;
         McpWarnings = mcpWarnings;
@@ -116,6 +118,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         _subTools = subTools;
         _roundNotifier = roundNotifier;
         _onPlan = onPlan;
+        _toolLimitContinuation = toolLimitContinuation;
         _recall = recall;
         _graphContext = graphContext;
         _assetGraph = assetGraph;
@@ -199,9 +202,10 @@ public sealed class AgentRuntime : IAsyncDisposable
         AgentSession? session = null;
 
         // 批量只读查询：把内置只读目标工具扇出到多台；策略检查延迟到调用时读取当前会话策略。
+        IAgentTool? fleetTool = null;
         if (ToolProfileFilter.AllowsLocal(FleetTools.ToolName, _config.Profile))
         {
-            var fleetTool = FleetTools.Create(_baseTools, name => session?.IsDenied(name) ?? false);
+            fleetTool = FleetTools.Create(_baseTools, name => session?.IsDenied(name) ?? false);
             if (fleetTool is not null)
                 tools.Add(fleetTool);
         }
@@ -219,20 +223,32 @@ public sealed class AgentRuntime : IAsyncDisposable
 
         if (_config.EnableSubAgent && ToolProfileFilter.AllowsLocal(SubAgents.ToolName, _config.Profile))
         {
-            tools.Add(SubAgents.Create(client, provider, _config, _subTools, _readOnlyNote,
+            var subAgentTools = _subTools.ToList();
+            if (fleetTool is not null)
+                subAgentTools.Add(fleetTool);
+            tools.Add(SubAgents.Create(client, provider, _config, subAgentTools, _readOnlyNote,
                 onUsage: (input, output) => session?.AddChildUsage(input, output),
                 budgetCheck: budgetCheck,
                 onUsageDelta: budget is null ? null : budget.Add,
                 toolPolicyProvider: () => _toolPolicy,
                 planModeProvider: () => _planMode));
         }
+        IReadOnlyList<PlanItem> latestPlan = Array.Empty<PlanItem>();
         if (_onPlan is not null && ToolProfileFilter.AllowsLocal("update_plan", _config.Profile))
-            tools.Add(PlanTools.Create(_onPlan));
+        {
+            tools.Add(PlanTools.Create(items =>
+            {
+                latestPlan = items;
+                _onPlan(items);
+            }));
+        }
         session = new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill,
             roundNotifier: _roundNotifier, graphContext: _graphContext, budgetCheck: budgetCheck,
             onUsageDelta: budget is null ? null : budget.Add, workLog: _workLog, assetGraph: _assetGraph);
         session.SetToolPolicy(_toolPolicy);
         session.SetPlanMode(_planMode);
+        session.SetPlanProvider(() => latestPlan);
+        session.SetToolLimitContinuation(_toolLimitContinuation);
         return session;
     }
 
@@ -265,7 +281,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         bool scopeMemoryByOwner = false,
         bool enableWorkLog = true,
         long? sessionId = null,
-        IFleetPlanStore? fleetPlanStore = null)
+        IFleetPlanStore? fleetPlanStore = null,
+        AgentSession.ToolLimitContinuation? toolLimitContinuation = null)
     {
         // D8 启用层：会话级连接器子集只在全局启用集合内收窄（null=继承全局默认集合；全局停用恒出局）
         var servers = McpSubsetPolicy.EffectiveServers(AgentMcpServerConfig.Normalize(config.McpServers), enabledMcpIds);
@@ -587,7 +604,7 @@ public sealed class AgentRuntime : IAsyncDisposable
                 hostStatuses.Add(new McpHostStatus(s.Id, s.Name, false, info.Error is null, info.ToolCount, info.Error));
         }
 
-        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, consolidation, fleetPlans, ownerUserId ?? "local", sessionId, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, graphContext, spill, workLog, history, assetGraph);
+        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, consolidation, fleetPlans, ownerUserId ?? "local", sessionId, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, graphContext, spill, workLog, history, assetGraph, toolLimitContinuation);
         fleetRuntime = runtime;
         runtime.WorkspaceRoot = workspaceRoot;
         if (activeSkillIds is { Count: > 0 })

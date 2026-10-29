@@ -153,6 +153,8 @@
     "spillDir": "",
     "spillRetentionDays": 7,
     "enableSubAgent": true,
+    "subAgentMaxIterations": 8,
+    "subAgentSummaryMaxChars": 2000,
     "responseStyle": "concise",
     "readOnly": false,
     "allowedToolGroups": [],

@@ -521,8 +521,32 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
+                        <StackPanel Grid.Row="0">
+                        <!-- 工具调用次数上限：在当前轮输入区确认是否继续执行 -->
+                        <Border Margin="0,0,0,8" Padding="12" CornerRadius="8"
+                                Background="{DynamicResource AppWarningSubtleBrush}"
+                                BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1"
+                                Visibility="{Binding HasPendingToolLimit, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <DockPanel LastChildFill="False">
+                                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Warning24" FontSize="{DynamicResource AppFontSizeSubtitle}"
+                                                   Foreground="{DynamicResource AppWarningBrush}" Margin="0,0,8,0"/>
+                                    <TextBlock DockPanel.Dock="Left" Text="{Binding PendingToolLimit.Title}" FontWeight="SemiBold"
+                                               FontSize="13" VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <TextBlock Text="{Binding PendingToolLimit.Message}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,6,0,0"/>
+                                <WrapPanel Margin="0,8,0,0">
+                                    <ui:Button Content="停止本轮" Padding="12,4" Margin="0,0,6,6"
+                                               Command="{Binding PendingToolLimit.StopCommand}"/>
+                                    <ui:Button Content="继续执行" Appearance="Primary" Padding="12,4" Margin="0,0,0,6"
+                                               Command="{Binding PendingToolLimit.ContinueCommand}"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
                         <!-- 本机命令审批：吸附在输入框上方，随输入区一起移动，不被对话滚动顶走 -->
-                        <Border Grid.Row="0" Margin="0,0,0,8" Padding="12" CornerRadius="8"
+                        <Border Margin="0,0,0,8" Padding="12" CornerRadius="8"
                                 Background="{DynamicResource AppWarningSubtleBrush}"
                                 BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1"
                                 Visibility="{Binding HasPendingApproval, Converter={StaticResource BoolToVis}}">
@@ -566,6 +590,7 @@
                                 </WrapPanel>
                             </StackPanel>
                         </Border>
+                        </StackPanel>
 
                         <!-- 顶部拖拽把手：调整输入区高度 -->
                         <Thumb Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Cursor="SizeNS" Background="Transparent"

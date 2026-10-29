@@ -272,6 +272,12 @@ public sealed class TemporaryChatViewModel : INotifyPropertyChanged, IAsyncDispo
                     FlushReasoning(turn);
                 break;
 
+            case AgentEventKind.Incomplete:
+                FlushDelta(turn);
+                FlushReasoning(turn);
+                turn.Note = "⚠ " + (e.Text ?? "本轮未完成");
+                break;
+
             case AgentEventKind.Error:
                 FlushDelta(turn);
                 FlushReasoning(turn);

@@ -34,7 +34,7 @@ public static class SubAgents
 
         var function = new LocalFunction(
             ToolName,
-            "把一次独立的只读取证/调查任务委派给子代理在隔离上下文中完成, 只返回结论摘要(大量原始输出不回主上下文)。适合跨多工具的大日志/多步取证; task 需自包含(含 serverId/目标与期望)",
+            "把一次独立的只读取证/调查任务委派给子代理在隔离上下文中完成, 只返回结论摘要(大量原始输出不回主上下文)。预计需要 3 个以上只读工具、跨多台主机或大日志时优先使用; task 需自包含(含 serverId/目标与期望)",
             """{"type":"object","properties":{"task":{"type":"string","description":"交给子代理的独立只读任务, 自包含(含 serverId/目标与期望结论)"},"groups":{"type":"string","description":"可选: 限制子代理可用工具分组(逗号分隔, 如 ssh,log,docker,java)"}},"required":["task"]}""",
             (args, ct) => RunAsync(client, provider, config, subTools, restrictionNote, toolPolicy, planMode,
                 onUsage, budgetCheck, onUsageDelta, toolPolicyProvider, planModeProvider, taskCounts, args, ct));
@@ -70,8 +70,11 @@ public static class SubAgents
             return $"(同一子任务已委派 {count - 1} 次仍无结论，已阻止重复调用；请不要再对同一任务调用 run_subagent——请改换策略、缩小任务范围，或调整会话工具/只读设置后自行继续。)";
 
         var tools = FilterByGroups(subTools, ArgumentReader.ReadString(args, "groups"));
+        var summaryMaxChars = config.SubAgentSummaryMaxChars > 0
+            ? Math.Clamp(config.SubAgentSummaryMaxChars, 500, 8000)
+            : 2000;
 
-        var prompt = SystemPromptBuilder.BuildSubAgentPrompt(restrictionNote);
+        var prompt = SystemPromptBuilder.BuildSubAgentPrompt(restrictionNote, summaryMaxChars);
 
         if (budgetCheck is not null && !budgetCheck(0, 0))
             return "(子代理已取消：会话成本预算已耗尽；请提高 agent.budget.maxSessionCost 或切换更便宜的模型)";
@@ -79,8 +82,10 @@ public static class SubAgents
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromMinutes(4));
 
-        // 子代理轮数上限压低（避免长时间空转）：默认不超过 8 轮。
-        var maxIterations = config.MaxToolIterations > 0 ? Math.Min(config.MaxToolIterations, 8) : 8;
+        // 子代理独立轮数上限（默认 8；可通过 agent.subAgentMaxIterations 调整，最多 20）。
+        var maxIterations = config.SubAgentMaxIterations > 0
+            ? Math.Clamp(config.SubAgentMaxIterations, 1, 20)
+            : 8;
         var effectivePolicy = toolPolicyProvider?.Invoke() ?? toolPolicy;
         var effectivePlanMode = planModeProvider?.Invoke() ?? planMode;
         var session = new AgentSession(client, provider, tools, prompt, config, maxIterationsOverride: maxIterations,
@@ -113,6 +118,8 @@ public static class SubAgents
                 : "无工具输出";
             return $"(子代理未产出结论 · {detail})。请勿重复委派同一任务；请基于已有信息继续、缩小任务范围，或调整会话工具/只读设置。";
         }
+        if (text.Length > summaryMaxChars)
+            text = text[..summaryMaxChars] + "\n…[子代理摘要已按上限截断]";
         return text;
     }
 

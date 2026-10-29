@@ -44,6 +44,179 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public async Task Tool_limit_can_be_extended_by_host_confirmation()
+    {
+        static ChatResponse Call(string id) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent(id, "echo", new Dictionary<string, object?>())
+            })
+        });
+
+        var client = new FakeChatClient(
+            Call("c1"), Call("c2"), Call("c3"),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { new FakeTool("echo", "ok") }, "sys",
+            new AgentConfig { MaxToolIterations = 2 });
+
+        var confirmations = 0;
+        session.SetToolLimitContinuation((used, limit, _) =>
+        {
+            confirmations++;
+            Assert.Equal(2, used);
+            Assert.Equal(2, limit);
+            return Task.FromResult(true);
+        });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Equal(1, confirmations);
+        Assert.Equal(3, session.Messages.Count(m => m.Role == ChatRole.Tool));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Warning && e.Text!.Contains("重新从 0 累计"));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Done);
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Error);
+    }
+
+    [Fact]
+    public async Task Tool_limit_can_be_stopped_by_host_confirmation()
+    {
+        static ChatResponse Call(string id) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent(id, "echo", new Dictionary<string, object?>())
+            })
+        });
+
+        var client = new FakeChatClient(Call("c1"), Call("c2"),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { new FakeTool("echo", "ok") }, "sys",
+            new AgentConfig { MaxToolIterations = 2 });
+
+        session.SetToolLimitContinuation((_, _, _) => Task.FromResult(false));
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Equal(2, session.Messages.Count(m => m.Role == ChatRole.Tool));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Incomplete && e.Text!.Contains("用户选择停止"));
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Done);
+    }
+
+    [Fact]
+    public async Task Truncated_response_is_not_reported_as_done()
+    {
+        var response = new ChatResponse(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, "partial answer")
+        })
+        {
+            FinishReason = ChatFinishReason.Length
+        };
+        var client = new FakeChatClient(response);
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig());
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Incomplete && e.Text!.Contains("截断"));
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Done);
+    }
+
+    [Fact]
+    public async Task Empty_response_is_incomplete_instead_of_done()
+    {
+        var client = new FakeChatClient(new ChatResponse(Array.Empty<ChatMessage>()));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig());
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Incomplete && e.Text!.Contains("空响应"));
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Done);
+    }
+
+    [Fact]
+    public async Task Incomplete_plan_is_nudged_then_marked_incomplete()
+    {
+        IReadOnlyList<PlanItem> plan = Array.Empty<PlanItem>();
+        var planTool = PlanTools.Create(items => plan = items);
+        var updatePlan = new FunctionCallContent("p1", "update_plan",
+            new Dictionary<string, object?> { ["steps"] = "- [ ] 第一步" });
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, new AIContent[] { updatePlan }) }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "接下来执行第一步") }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "接下来执行第一步") }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "接下来执行第一步") }));
+
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { planTool }, "sys", new AgentConfig());
+        session.SetPlanProvider(() => plan);
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("执行任务", new SyncProgress(events.Add));
+
+        Assert.Equal(2, events.Count(e => e.Kind == AgentEventKind.Warning && e.Text!.Contains("自动追问")));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Incomplete && e.Text!.Contains("计划仍有"));
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Done);
+        Assert.Equal(4, client.Requests.Count);
+        Assert.Contains(client.Requests[2], m => m.Role == ChatRole.User && m.Text!.Contains("计划尚未完成"));
+    }
+
+    [Fact]
+    public async Task Nudged_model_can_complete_plan_and_end_normally()
+    {
+        IReadOnlyList<PlanItem> plan = Array.Empty<PlanItem>();
+        var planTool = PlanTools.Create(items => plan = items);
+        FakeChatClient client = null!;
+        var startPlan = new FunctionCallContent("p1", "update_plan",
+            new Dictionary<string, object?> { ["steps"] = "- [ ] 第一步" });
+        var finishPlan = new FunctionCallContent("p2", "update_plan",
+            new Dictionary<string, object?> { ["steps"] = "- [x] 第一步" });
+        client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, new AIContent[] { startPlan }) }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "接下来执行第一步") }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, new AIContent[] { finishPlan }) }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "任务完成") }));
+
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { planTool }, "sys", new AgentConfig());
+        session.SetPlanProvider(() => plan);
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("执行任务", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Warning && e.Text!.Contains("自动追问"));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Done);
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Incomplete);
+        Assert.Contains(client.Requests[2], m => m.Role == ChatRole.User && m.Text!.Contains("计划尚未完成"));
+    }
+
+    [Fact]
+    public async Task Content_filter_is_blocked_instead_of_done()
+    {
+        var response = new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "blocked") })
+        {
+            FinishReason = ChatFinishReason.ContentFilter
+        };
+        var client = new FakeChatClient(response);
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig());
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Error && e.Text!.Contains("内容过滤"));
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Done);
+    }
+
+    [Fact]
     public async Task Turn_budget_wall_clock_stops_loop_with_error()
     {
         // 单轮墙钟预算：工具耗时(1.2s)超过预算(1s)后，第 2 轮模型调用前停止本轮并报 Error。
@@ -795,6 +968,8 @@ public class AgentSessionTests
 
         public FakeChatClient(params ChatResponse[] responses) => _responses = new Queue<ChatResponse>(responses);
 
+        public List<IReadOnlyList<ChatMessage>> Requests { get; } = new();
+
         public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
             Task.FromResult(_responses.Count > 0
                 ? _responses.Dequeue()
@@ -804,6 +979,7 @@ public class AgentSessionTests
             IEnumerable<ChatMessage> messages, ChatOptions? options = null,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            Requests.Add(messages.ToList());
             var response = _responses.Count > 0
                 ? _responses.Dequeue()
                 : new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "ok") });
@@ -811,7 +987,10 @@ public class AgentSessionTests
             foreach (var message in response.Messages)
             {
                 await Task.Yield();
-                yield return new ChatResponseUpdate(message.Role, message.Contents);
+                yield return new ChatResponseUpdate(message.Role, message.Contents)
+                {
+                    FinishReason = response.FinishReason
+                };
             }
         }
 

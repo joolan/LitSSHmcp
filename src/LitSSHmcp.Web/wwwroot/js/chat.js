@@ -230,7 +230,7 @@ export class ChatController {
       case "done":
         this.flushAssistantRender();
         this.setBusy(false);
-        this.onStatus(frame.stopped ? "已停止" : "就绪");
+        this.onStatus(frame.incomplete ? "未完成" : (frame.stopped ? "已停止" : "就绪"));
         this.resetRun();
         // 以落库内容为准重放（权威视图）：流式帧可能丢尾，导致"结论内容不全"；
         // 服务端在 done 之前已把 assistant 文本落库，因此这里重建一定完整。

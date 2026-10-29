@@ -100,6 +100,39 @@ public class SpillAndSubAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task Sub_agent_does_not_return_raw_tool_output_to_parent()
+    {
+        var call = new FunctionCallContent("c1", "echo", new Dictionary<string, object?>());
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, new AIContent[] { call }) }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "sub-summary") }));
+        var tool = SubAgents.Create(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new AgentConfig { MaxToolIterations = 3 }, new IAgentTool[] { new FakeTool("echo", new string('x', 10000)) });
+
+        var result = (await tool.InvokeAsync(Args(("task", "check server X")), default))!.ToString()!;
+
+        Assert.Equal("sub-summary", result);
+        Assert.DoesNotContain(new string('x', 100), result);
+    }
+
+    [Fact]
+    public async Task Sub_agent_summary_is_capped_before_returning_to_parent()
+    {
+        var client = new FakeChatClient(new ChatResponse(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new string('x', 2000))
+        }));
+        var tool = SubAgents.Create(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new AgentConfig { MaxToolIterations = 3, SubAgentSummaryMaxChars = 500 },
+            Array.Empty<IAgentTool>());
+
+        var result = (await tool.InvokeAsync(Args(("task", "check server X")), default))!.ToString()!;
+
+        Assert.Contains("子代理摘要已按上限截断", result);
+        Assert.True(result.Length < 700);
+    }
+
+    [Fact]
     public async Task Sub_agent_prompt_includes_base_and_safety_rules()
     {
         var client = new FakeChatClient(new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "sub-answer") }));

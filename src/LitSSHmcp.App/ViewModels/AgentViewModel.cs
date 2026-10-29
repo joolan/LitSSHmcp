@@ -1817,7 +1817,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 extraTools: localTools, assetGraph: assetGraph,
                 sessionWorkspaceDir: string.IsNullOrWhiteSpace(ctx.WorkspaceDir) ? null : ctx.WorkspaceDir,
                 ownerUserId: ownerUserId, enabledMcpIds: _sessionMcpSubset,
-                sessionId: ctx.SessionId > 0 ? ctx.SessionId : null, fleetPlanStore: FleetPlanStore);
+                sessionId: ctx.SessionId > 0 ? ctx.SessionId : null, fleetPlanStore: FleetPlanStore, toolLimitContinuation: (used, limit, ct) => RequestToolLimitApprovalAsync(ctx, used, limit, ct));
             ctx.RuntimeVersion = _poolVersion;
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {ctx.Runtime!.ToolCount} 个工具"
@@ -2702,7 +2702,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 turn.Steps.Add(graphStep);
                 break;
 
-            case AgentEventKind.Warning:
+            case AgentEventKind.Incomplete: case AgentEventKind.Warning:
                 FlushDelta(turn, ctx);
                 FlushReasoning(turn, ctx);
                 var warning = "⚠ " + (e.Text ?? "警告");

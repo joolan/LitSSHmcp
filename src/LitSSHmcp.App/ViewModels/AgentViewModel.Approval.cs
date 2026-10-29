@@ -10,10 +10,22 @@ public partial class AgentViewModel
 
     public bool HasPendingApproval => PendingApproval is not null;
 
+    /// <summary>当前会话等待中的工具次数上限续跑确认（吸附加载到输入区上方）。</summary>
+    public ToolLimitApprovalRequest? PendingToolLimit =>
+        CurrentContext.ActiveTurn?.ToolLimitRequest is { IsPending: true } request ? request : null;
+
+    public bool HasPendingToolLimit => PendingToolLimit is not null;
+
     private void RaisePendingApprovalChanged()
     {
         OnPropertyChanged(nameof(PendingApproval));
         OnPropertyChanged(nameof(HasPendingApproval));
+    }
+
+    private void RaisePendingToolLimitChanged()
+    {
+        OnPropertyChanged(nameof(PendingToolLimit));
+        OnPropertyChanged(nameof(HasPendingToolLimit));
     }
 
     /// <summary>

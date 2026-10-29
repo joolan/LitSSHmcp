@@ -14,6 +14,9 @@ namespace LitSSHmcp.Agent;
 /// </summary>
 public sealed class AgentSession
 {
+    /// <summary>工具调用达到单轮上限时请求宿主继续；返回 true=重新累计，false=停止本轮。</summary>
+    public delegate Task<bool> ToolLimitContinuation(int used, int limit, CancellationToken ct);
+
     private readonly IChatClient _client;
     private readonly AgentProviderConfig _provider;
     private readonly AgentConfig _config;
@@ -27,6 +30,8 @@ public sealed class AgentSession
     private string _systemPrompt;
     private readonly SpillStore? _spill;
     private readonly int? _maxIterationsOverride;
+    private Func<IReadOnlyList<PlanItem>>? _planProvider;
+    private ToolLimitContinuation? _toolLimitContinuation;
     private readonly IAgentTool? _roundNotifier;
     private readonly Func<long, long, bool>? _budgetCheck;
     private readonly Action<long, long>? _onUsageDelta;
@@ -50,6 +55,10 @@ public sealed class AgentSession
     private const int MaxSummarizeInputChars = 8000;
     /// <summary>同一轮内连续工具失败的熔断阈值（含审批被拒；达到即停止本轮，避免空转）。</summary>
     private const int MaxConsecutiveToolFailures = 4;
+    /// <summary>计划未完成但模型提前收尾时，最多自动追问继续的次数。</summary>
+    private const int MaxContinuationNudges = 2;
+    private const string ContinuePrompt =
+        "计划尚未完成。请立即继续执行下一步，不要只描述将要做什么；如果无法继续，请明确说明阻塞原因。";
     private const string BudgetExceededMessage =
         "会话成本预算已耗尽，停止本轮模型调用。请提高 agent.budget.maxSessionCost 或切换到更便宜的模型。";
     private const string ToolResultOmitted = "[较早的工具结果已省略以节省上下文；如需完整内容请重新调用该工具]";
@@ -120,6 +129,13 @@ public sealed class AgentSession
 
     /// <summary>设置计划模式（运行期标志）：不改系统提示/工具集，仅每轮附提示并拦截写工具。</summary>
     public void SetPlanMode(bool planMode) => _planMode = planMode;
+
+    /// <summary>提供最新任务计划（由 update_plan 回调回填），用于检测“计划未完成但模型提前收尾”。</summary>
+    public void SetPlanProvider(Func<IReadOnlyList<PlanItem>>? planProvider) => _planProvider = planProvider;
+
+    /// <summary>设置工具次数上限交互；为空时保持旧行为（直接报错停止）。</summary>
+    public void SetToolLimitContinuation(ToolLimitContinuation? continuation) =>
+        _toolLimitContinuation = continuation;
 
     /// <summary>通报 MCP 服务端「新的对话轮次开始」（审批「本轮次内放行」授权的跨进程失效边界）。</summary>
     private async Task NotifyRoundStartAsync(string roundId, CancellationToken ct)
@@ -252,11 +268,50 @@ public sealed class AgentSession
 
         var maxIterations = Math.Max(1, _maxIterationsOverride ?? _config.MaxToolIterations);
         var consecutiveFailures = 0;   // 跨模型轮次累计：连续工具失败达到阈值即熔断
+        var continuationNudges = 0;    // 计划未完成时自动追问继续的次数上限
         // 运行预算：单轮墙钟上限（agent.budget.maxTurnSeconds，0=不限）——每轮模型调用前检查，超限停止本轮。
         var turnBudgetSeconds = _config.Budget?.MaxTurnSeconds ?? 0;
         var turnSw = System.Diagnostics.Stopwatch.StartNew();
-        for (var iteration = 0; iteration < maxIterations; iteration++)
+        var iteration = 0;
+        while (true)
         {
+            if (iteration >= maxIterations)
+            {
+                if (_toolLimitContinuation is null)
+                {
+                    progress?.Report(new AgentEvent(AgentEventKind.Error,
+                        Text: $"工具调用超过 {maxIterations} 轮, 已停止本轮"));
+                    return;
+                }
+
+                bool approved;
+                try
+                {
+                    approved = await _toolLimitContinuation(iteration, maxIterations, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    progress?.Report(new AgentEvent(AgentEventKind.Error,
+                        Text: $"工具次数上限继续确认失败，已停止本轮：{ex.Message}"));
+                    return;
+                }
+
+                if (!approved)
+                {
+                    ReportIncomplete(progress,
+                        $"工具调用已达到上限（{maxIterations} 次），用户选择停止，本轮未完成。");
+                    return;
+                }
+
+                iteration = 0;
+                progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                    Text: $"已获准继续工具调用，次数重新从 0 累计（本轮上限 {maxIterations} 次）。"));
+            }
+
             if (turnBudgetSeconds > 0 && turnSw.Elapsed.TotalSeconds >= turnBudgetSeconds)
             {
                 progress?.Report(new AgentEvent(AgentEventKind.Error,
@@ -303,6 +358,50 @@ public sealed class AgentSession
             var calls = contents.OfType<FunctionCallContent>().ToList();
             if (calls.Count == 0)
             {
+                var responseText = string.Concat(contents.OfType<TextContent>().Select(t => t.Text));
+                if (response.FinishReason == ChatFinishReason.ContentFilter)
+                {
+                    progress?.Report(new AgentEvent(AgentEventKind.Error,
+                        Text: "模型输出被内容过滤，任务已阻塞，本轮未完成。"));
+                    return;
+                }
+                if (response.FinishReason == ChatFinishReason.Length)
+                {
+                    ReportIncomplete(progress,
+                        "模型输出被截断（finish_reason=length），本轮未完成；请缩小任务或提高模型 maxTokens 后继续。");
+                    return;
+                }
+                if (response.FinishReason == ChatFinishReason.ToolCalls)
+                {
+                    ReportIncomplete(progress, "模型声明了工具调用但未返回可解析的 tool_call，本轮未完成。");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(responseText))
+                {
+                    ReportIncomplete(progress, "模型返回空响应，本轮未完成。");
+                    return;
+                }
+
+                var incompletePlanItems = CountIncompletePlanItems();
+                if (incompletePlanItems > 0 && !_planMode && continuationNudges < MaxContinuationNudges)
+                {
+                    continuationNudges++;
+                    var nudge = new ChatMessage(ChatRole.User, ContinuePrompt);
+                    Messages.Add(nudge);
+                    transientContext.Add(nudge);
+                    progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                        Text: $"计划仍有 {incompletePlanItems} 项未完成，已自动追问模型继续执行" +
+                              $"（{continuationNudges}/{MaxContinuationNudges}）。"));
+                    continue;
+                }
+                if (incompletePlanItems > 0)
+                {
+                    ReportIncomplete(progress, _planMode
+                        ? $"当前为计划模式，计划仍有 {incompletePlanItems} 项未执行；本轮只生成计划，未执行写操作。"
+                        : $"计划仍有 {incompletePlanItems} 项未完成，已停止。请发送“继续”或检查阻塞原因。");
+                    return;
+                }
+
                 progress?.Report(new AgentEvent(AgentEventKind.Done));
                 return;
             }
@@ -391,9 +490,8 @@ public sealed class AgentSession
 
             // 轮内复查：工具结果可能很大，每轮结束后按阈值裁剪旧轮/压缩较早的工具结果，避免单轮冲爆上下文。
             await CompactIfNeededAsync(ct);
+            iteration++;
         }
-
-            progress?.Report(new AgentEvent(AgentEventKind.Error, Text: $"工具调用超过 {maxIterations} 轮, 已停止本轮"));
         }
         finally
         {
@@ -402,6 +500,21 @@ public sealed class AgentSession
                 Messages.Remove(message);
         }
     }
+
+    private int CountIncompletePlanItems()
+    {
+        try
+        {
+            return _planProvider?.Invoke()?.Count(i => !i.Done) ?? 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static void ReportIncomplete(IProgress<AgentEvent>? progress, string text) =>
+        progress?.Report(new AgentEvent(AgentEventKind.Incomplete, Text: text));
 
     /// <summary>最近若干条用户文本（不含当前轮），用于短追问的召回查询补全。</summary>
     private List<string> RecentUserTexts(int max)
@@ -603,8 +716,11 @@ public sealed class AgentSession
                 case AgentEventKind.AssistantText when value.Text is not null:
                     _text.Append(value.Text);
                     break;
+                case AgentEventKind.Incomplete when value.Text is not null:
+                    _turn.Error = value.Text;
+                    break;
                 case AgentEventKind.Done:
-                    _turn.Succeeded = true;
+                    _turn.Succeeded = string.IsNullOrEmpty(_turn.Error);
                     _turn.AssistantText = _text.ToString();
                     break;
                 case AgentEventKind.Error when value.Text is not null:

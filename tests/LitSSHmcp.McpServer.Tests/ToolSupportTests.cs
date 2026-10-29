@@ -42,6 +42,7 @@ public class ToolSupportTests
     [InlineData("timeout", "timeout")]
     [InlineData("auth", "auth_failed")]
     [InlineData("host_key", "host_key_mismatch")]
+    [InlineData("channel", "channel_error")]
     [InlineData("network", "connection_error")]
     [InlineData(null, "failed")]
     public void CommandFailureStatus_maps_error_kinds(string? kind, string expected)
@@ -141,6 +142,51 @@ public class ToolSupportTests
         var (server, status, _) = ToolSupport.ResolveServer(config, "s1");
 
         Assert.NotNull(server);
+        Assert.Null(status);
+    }
+
+    [Theory]
+    [InlineData("ssh:s1")]
+    [InlineData("ssh://s1")]
+    public void ResolveServer_accepts_asset_id_prefix(string reference)
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web", Host = "10.0.0.1" } }
+        };
+
+        var (server, status, _) = ToolSupport.ResolveServer(config, reference);
+
+        Assert.NotNull(server);
+        Assert.Null(status);
+        Assert.Equal("s1", server!.Id);
+    }
+
+    [Fact]
+    public void ResolveDatasource_accepts_ds_prefix()
+    {
+        var config = new AppConfig
+        {
+            DataSources = new[] { new DataSourceConfig { Id = "d1", Name = "order", Host = "10.0.0.1", Type = "mysql" } }
+        };
+
+        var (ds, status, _) = ToolSupport.ResolveDatasource(config, "ds:d1");
+
+        Assert.NotNull(ds);
+        Assert.Null(status);
+    }
+
+    [Fact]
+    public void ResolveApplication_accepts_app_prefix()
+    {
+        var config = new AppConfig
+        {
+            Applications = new[] { new ApplicationConfig { Id = "a1", Name = "order" } }
+        };
+
+        var (app, status, _) = ToolSupport.ResolveApplication(config, "app:a1");
+
+        Assert.NotNull(app);
         Assert.Null(status);
     }
 

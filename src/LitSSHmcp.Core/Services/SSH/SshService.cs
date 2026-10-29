@@ -40,31 +40,44 @@ public class SshService : ISshService
         if (_pool is not null && options is { Enabled: true })
         {
             var lease = _pool.Rent(server);
-            return new SshConnection(lease.Client, lease.Dispose);
+            return new SshConnection(lease.Client, lease.Dispose, lease.Invalidate);
         }
 
         var client = CreateSshClient(server);
         client.Connect();
-        return new SshConnection(client, () =>
+        void Close()
         {
             try { client.Disconnect(); } catch { /* ignore */ }
             client.Dispose();
-        });
+        }
+        return new SshConnection(client, Close, Close);
     }
 
     private sealed class SshConnection : IDisposable
     {
         private readonly Action _release;
-        public SshConnection(SshClient client, Action release)
+        private readonly Action _invalidate;
+        private int _disposed;
+        public SshConnection(SshClient client, Action release, Action invalidate)
         {
             Client = client;
             _release = release;
+            _invalidate = invalidate;
         }
 
         public SshClient Client { get; }
+
+        /// <summary>标记命令通道失效，池化连接将被丢弃而不是归还复用。</summary>
+        public void Invalidate()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                _invalidate();
+        }
+
         public void Dispose()
         {
-            try { _release(); } catch { /* ignore */ }
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                _release();
         }
     }
 
@@ -179,6 +192,9 @@ public class SshService : ISshService
                 return "host_key";
             if (ContainsAny(msg, "authentication failed", "permission denied", "username/password"))
                 return "auth";
+            if (ContainsAny(msg, "channel request failed", "session channel open failed",
+                    "channel open failed", "failed to open channel", "could not open channel"))
+                return "channel";
             if (ContainsAny(msg, "timed out", "timeout"))
                 return "timeout";
             if (ContainsAny(msg, "no route", "refused", "unreachable", "name or service", "not known", "network is"))
@@ -202,25 +218,7 @@ public class SshService : ISshService
             try
             {
                 Log($"Executing command on {server.Host}:{server.Port}: {command}");
-                using var conn = OpenConnection(server);
-                var client = conn.Client;
-                using var cmd = client.CreateCommand(command);
-                cmd.CommandTimeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 3600));
-                var result = cmd.Execute();
-                sw.Stop();
-
-                Log($"Command executed, exit code: {cmd.ExitStatus}, duration: {sw.ElapsedMilliseconds}ms");
-                if (!string.IsNullOrEmpty(result))
-                    Log($"Command output: {result.Substring(0, Math.Min(result.Length, 500))}");
-
-                return RedactResult(new CommandResult
-                {
-                    Success = cmd.ExitStatus == 0,
-                    Output = result,
-                    Error = cmd.Error,
-                    ExitCode = cmd.ExitStatus ?? -1,
-                    Duration = sw.Elapsed
-                }, server);
+                return ExecuteCommandWithRetry(server, command, timeoutSeconds, sw);
             }
             catch (Exception ex)
             {
@@ -242,6 +240,71 @@ public class SshService : ISshService
         }, ct);
     }
 
+    private CommandResult ExecuteCommandWithRetry(SshServerConfig server, string command, int timeoutSeconds, Stopwatch sw)
+    {
+        using var conn = OpenConnection(server);
+        try
+        {
+            return ExecuteCommandOnClient(conn.Client, server, command, timeoutSeconds, sw);
+        }
+        catch (Exception ex) when (IsSafeChannelFailure(ex))
+        {
+            // 旧池化连接可能在 TCP 仍 IsConnected 时已无法打开 session/command channel。
+            // 只对“打开通道失败”做一次安全重试；命令可能已执行的网络中断不在此列。
+            conn.Invalidate();
+            Log($"Command channel failed; evicted connection and retrying once: {ex.Message}", "WARN");
+            using var retry = OpenConnection(server);
+            try
+            {
+                return ExecuteCommandOnClient(retry.Client, server, command, timeoutSeconds, sw);
+            }
+            catch
+            {
+                retry.Invalidate();
+                throw;
+            }
+        }
+        catch
+        {
+            conn.Invalidate();
+            throw;
+        }
+    }
+
+    private CommandResult ExecuteCommandOnClient(SshClient client, SshServerConfig server, string command,
+        int timeoutSeconds, Stopwatch sw)
+    {
+        using var cmd = client.CreateCommand(command);
+        cmd.CommandTimeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 3600));
+        var result = cmd.Execute();
+        sw.Stop();
+
+        Log($"Command executed, exit code: {cmd.ExitStatus}, duration: {sw.ElapsedMilliseconds}ms");
+        if (!string.IsNullOrEmpty(result))
+            Log($"Command output: {result.Substring(0, Math.Min(result.Length, 500))}");
+
+        return RedactResult(new CommandResult
+        {
+            Success = cmd.ExitStatus == 0,
+            Output = result,
+            Error = cmd.Error,
+            ExitCode = cmd.ExitStatus ?? -1,
+            Duration = sw.Elapsed
+        }, server);
+    }
+
+    private static bool IsSafeChannelFailure(Exception? ex)
+    {
+        for (var depth = 0; ex is not null && depth < 5; depth++, ex = ex.InnerException)
+        {
+            var message = ex.Message ?? string.Empty;
+            if (ContainsAny(message, "channel request failed", "session channel open failed",
+                    "channel open failed", "failed to open channel", "could not open channel"))
+                return true;
+        }
+        return false;
+    }
+
     public async Task<CommandResult> ExecuteWithSudoAsync(SshServerConfig server, string command, CancellationToken ct = default)
     {
         return await Task.Run(() =>
@@ -250,6 +313,7 @@ public class SshService : ISshService
                 return RateLimitedCommand(limitReason);
 
             var sw = Stopwatch.StartNew();
+            SshConnection? connection = null;
             try
             {
                 Log($"Executing sudo command on {server.Host}:{server.Port}");
@@ -259,8 +323,8 @@ public class SshService : ISshService
                 // 只走 sudo/su 的交互式通道，管不到 AI 自带的那层 sudo。
                 var effectiveCommand = StripSudoPrefix(command);
 
-                using var conn = OpenConnection(server);
-                var client = conn.Client;
+                connection = OpenConnection(server);
+                var client = connection.Client;
 
                 CommandResult Execute() => server.SudoType switch
                 {
@@ -289,6 +353,7 @@ public class SshService : ISshService
             catch (Exception ex)
             {
                 sw.Stop();
+                connection?.Invalidate();
                 Log($"Sudo command execution failed: {ex.Message}", "ERROR");
                 return RedactResult(new CommandResult
                 {
@@ -300,6 +365,7 @@ public class SshService : ISshService
             }
             finally
             {
+                connection?.Dispose();
                 lease?.Dispose();
             }
         }, ct);

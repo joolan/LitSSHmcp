@@ -182,6 +182,12 @@ public class AgentConfig
     /// <summary>启用子代理工具 run_subagent（把独立只读取证任务委派到隔离上下文，只回摘要；默认开）。</summary>
     public bool EnableSubAgent { get; set; } = true;
 
+    /// <summary>子代理单次任务最多工具调用轮数（1-20，默认 8）；复杂只读取证可调高。</summary>
+    public int SubAgentMaxIterations { get; set; } = 8;
+
+    /// <summary>子代理返回给主上下文的摘要字符上限（500-8000，默认 2000）。</summary>
+    public int SubAgentSummaryMaxChars { get; set; } = 2000;
+
     /// <summary>回答风格：concise(默认, 只讲重点) / standard / detailed；影响系统提示的长度与展开要求。</summary>
     public string ResponseStyle { get; set; } = "concise";
 

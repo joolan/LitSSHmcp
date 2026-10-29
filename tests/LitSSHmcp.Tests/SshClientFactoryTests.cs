@@ -64,4 +64,10 @@ public class SshClientFactoryTests
         using var client = SshClientFactory.Create(server, knownHosts: null, hostKeyMode: SshHostKeyMode.Off);
         Assert.NotNull(client);
     }
+
+    [Fact]
+    public void Channel_open_failure_is_classified_as_channel()
+    {
+        Assert.Equal("channel", SshService.ClassifySshException(new Exception("Channel request failed.")));
+    }
 }

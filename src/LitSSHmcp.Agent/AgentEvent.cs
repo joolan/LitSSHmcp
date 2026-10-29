@@ -14,8 +14,10 @@ public enum AgentEventKind
     MemoryRecall,
     /// <summary>本轮自动检索的资产图谱上下文（命中资产 + 邻域）。</summary>
     AssetGraphContext,
-    /// <summary>本轮结束。</summary>
+    /// <summary>本轮正常结束。</summary>
     Done,
+    /// <summary>本轮未完成即结束（输出截断/空响应/计划未完成），不应当作成功。</summary>
+    Incomplete,
     /// <summary>非致命警告（如记忆召回/图谱检索失败），不影响本轮继续。</summary>
     Warning,
     /// <summary>错误/中止。</summary>

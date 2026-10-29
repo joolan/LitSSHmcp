@@ -16,6 +16,17 @@ public class SystemPromptBuilderTests
     }
 
     [Fact]
+    public void Build_includes_fact_and_destructive_confirmation_rules()
+    {
+        var prompt = SystemPromptBuilder.Build(null, null, null);
+
+        Assert.Contains("事实 / 推断 / 未知", prompt);
+        Assert.Contains("用户指令过短", prompt);
+        Assert.Contains("清空、全部删除", prompt);
+        Assert.Contains("宁可多确认一轮", prompt);
+    }
+
+    [Fact]
     public void Build_handles_nulls()
     {
         var prompt = SystemPromptBuilder.Build(null, null, null);

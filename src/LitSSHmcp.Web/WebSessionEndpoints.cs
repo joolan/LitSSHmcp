@@ -498,7 +498,7 @@ public static class WebSessionEndpoints
         try
         {
             await manager.RunTurnAsync(principal, id, text, attachments, progress, ct);
-            await WriteTerminalFrameAsync(frames.Writer, new { type = "done" });
+            await WriteTerminalFrameAsync(frames.Writer, new { type = "done", incomplete = progress.Incomplete });
         }
         catch (WebSessionBusyException)
         {
@@ -561,8 +561,12 @@ public static class WebSessionEndpoints
     /// </summary>
     private sealed class FrameProgress(ChannelWriter<object> writer) : IProgress<AgentEvent>
     {
+        public bool Incomplete { get; private set; }
+
         public void Report(AgentEvent e)
         {
+            if (e.Kind == AgentEventKind.Incomplete)
+                Incomplete = true;
             object frame = e.Kind switch
             {
                 AgentEventKind.AssistantText => new { type = "assistant_text", text = e.Text },
@@ -571,6 +575,7 @@ public static class WebSessionEndpoints
                 AgentEventKind.ToolResult => new { type = "tool_result", tool = e.ToolName, ok = e.ToolSuccess, ms = e.DurationMs },
                 AgentEventKind.MemoryRecall => new { type = "memory_recall", text = e.Text },
                 AgentEventKind.AssetGraphContext => new { type = "asset_graph_context", text = e.Text },
+                AgentEventKind.Incomplete => new { type = "warning", message = e.Text },
                 AgentEventKind.Warning => new { type = "warning", message = e.Text },
                 AgentEventKind.Error => new { type = "error", message = e.Text },
                 _ => new { type = "event", kind = e.Kind.ToString() }

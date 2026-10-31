@@ -729,6 +729,12 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
         return "\"" + schema.Replace("\"", "\"\"") + "\".\"" + table.Name.Replace("\"", "\"\"") + "\"";
     }
 
+    public string QuoteIdentifier(string ident) =>
+        SelectedDatasource is { } ds ? QuoteIdent(ds, ident) : ident;
+
+    public string QuoteTableName(DbTableInfo table) =>
+        SelectedDatasource is { } ds ? QuoteObject(ds, table) : table.Name;
+
     private static string QuoteIdent(DataSourceConfig ds, string ident)
         => ds.Type.Equals("mysql", StringComparison.OrdinalIgnoreCase)
             ? "`" + ident.Replace("`", "``") + "`"

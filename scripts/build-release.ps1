@@ -1,8 +1,8 @@
 ﻿# LitSSH MCP 发布脚本
 # 生成「App(含内置 MCP 服务器)」「独立 MCP 服务器」「CLI」「Web 助手」四类产物。
 # 用法:
-#   powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.5.0
-#   powershell ... -File scripts\build-release.ps1 -Version v1.5.0 -FrameworkDependent
+#   powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.5.1
+#   powershell ... -File scripts\build-release.ps1 -Version v1.5.1 -FrameworkDependent
 param(
     [string]$Version = "dev",
     [string]$Runtime = "win-x64",

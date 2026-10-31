@@ -77,6 +77,7 @@ public partial class ServerManageView : UserControl
             menu.Items.Add(item);
         }
 
+        Add("新建 AI 会话…", () => vm.NewAiSessionCommand.Execute(null));
         Add("打开代理浏览器 (SOCKS)…", () => vm.OpenProxiedBrowserCommand.Execute(null), enabled: !server.Disabled);
         Add("远程互传（服务器↔服务器）…", () => vm.OpenRemoteCopyCommand.Execute(null));
         Add("Docker 查看/管理…", () => vm.OpenDockerManagerCommand.Execute(null));
@@ -95,6 +96,8 @@ public partial class ServerManageView : UserControl
         if (ViewModel is { } vm)
             vm.SelectedServer = null;
     }
+
+    private void OnNewAiSessionClick(object sender, RoutedEventArgs e) => ViewModel?.NewAiSessionCommand.Execute(null);
 
     private void OnOpenTerminalClick(object sender, RoutedEventArgs e) => ViewModel?.OpenTerminalCommand.Execute(null);
 

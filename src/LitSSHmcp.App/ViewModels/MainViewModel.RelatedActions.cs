@@ -28,7 +28,7 @@ public partial class MainViewModel
                 break;
 
             case AgentRelatedTargetKind.DataSource when target.DataSource is { } datasource:
-                var page = DatasourcePage ??= new DatasourceManageViewModel(_configService, services: _services);
+                var page = DatasourcePage ??= CreateDatasourcePage();
                 menu.Items.Add(CreateRelatedMenuItem("插入会话", () => InsertRelatedPrompt(target)));
                 menu.Items.Add(new Separator());
                 menu.Items.Add(CreateRelatedMenuItem("打开数据库工作台", () => page.OpenWorkbenchItemCommand.Execute(datasource)));

@@ -436,7 +436,7 @@ dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publi
 dotnet publish src/LitSSHmcp.Web -c Release -r win-x64 --self-contained -o publish-web
 ```
 
-> 也可使用一键脚本（一次产出 App/MCP/CLI/Web 四类产物）：`powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.5.0`
+> 也可使用一键脚本（一次产出 App/MCP/CLI/Web 四类产物）：`powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.5.1`
 
 ### 3. 配置 SSH 服务器
 

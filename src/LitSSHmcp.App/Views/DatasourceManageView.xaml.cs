@@ -62,6 +62,9 @@ public partial class DatasourceManageView : UserControl
 
     private void OnWorkbenchClick(object sender, RoutedEventArgs e) => ViewModel?.WorkbenchCommand.Execute(null);
 
+    private void OnNewAiSessionClick(object sender, RoutedEventArgs e)
+        => ViewModel?.NewAiSessionItemCommand.Execute(ViewModel.SelectedDataSource);
+
     private void OnItemDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not ListView listView)

@@ -15,6 +15,132 @@
             <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
             <EventSetter Event="Expanded" Handler="OnObjectTreeExpanded"/>
         </Style>
+        <ControlTemplate x:Key="DbVerticalScrollBarTemplate" TargetType="{x:Type ScrollBar}">
+            <Grid Width="14" Background="Transparent">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="14"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="14"/>
+                </Grid.RowDefinitions>
+                <RepeatButton Grid.Row="0" Command="{x:Static ScrollBar.PageUpCommand}" Focusable="False"
+                              Background="Transparent" BorderThickness="0">
+                    <TextBlock Text="▲" FontSize="8" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </RepeatButton>
+                <Track x:Name="PART_Track" Grid.Row="1" IsDirectionReversed="True">
+                    <Track.DecreaseRepeatButton>
+                        <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Focusable="False" Opacity="0"/>
+                    </Track.DecreaseRepeatButton>
+                    <Track.Thumb>
+                        <Thumb>
+                            <Thumb.Template>
+                                <ControlTemplate TargetType="{x:Type Thumb}">
+                                    <Border Background="{DynamicResource AppTextSecondaryBrush}" Opacity="0.5"
+                                            CornerRadius="4" Margin="4,1"/>
+                                </ControlTemplate>
+                            </Thumb.Template>
+                        </Thumb>
+                    </Track.Thumb>
+                    <Track.IncreaseRepeatButton>
+                        <RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Focusable="False" Opacity="0"/>
+                    </Track.IncreaseRepeatButton>
+                </Track>
+                <RepeatButton Grid.Row="2" Command="{x:Static ScrollBar.PageDownCommand}" Focusable="False"
+                              Background="Transparent" BorderThickness="0">
+                    <TextBlock Text="▼" FontSize="8" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </RepeatButton>
+            </Grid>
+        </ControlTemplate>
+        <ControlTemplate x:Key="DbHorizontalScrollBarTemplate" TargetType="{x:Type ScrollBar}">
+            <Grid Height="14" Background="Transparent">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                </Grid.ColumnDefinitions>
+                <RepeatButton Grid.Column="0" Command="{x:Static ScrollBar.PageLeftCommand}" Focusable="False"
+                              Background="Transparent" BorderThickness="0">
+                    <TextBlock Text="◀" FontSize="8" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </RepeatButton>
+                <Track x:Name="PART_Track" Grid.Column="1" Orientation="Horizontal" IsDirectionReversed="False">
+                    <Track.DecreaseRepeatButton>
+                        <RepeatButton Command="{x:Static ScrollBar.PageLeftCommand}" Focusable="False" Opacity="0"/>
+                    </Track.DecreaseRepeatButton>
+                    <Track.Thumb>
+                        <Thumb>
+                            <Thumb.Template>
+                                <ControlTemplate TargetType="{x:Type Thumb}">
+                                    <Border Background="{DynamicResource AppTextSecondaryBrush}" Opacity="0.5"
+                                            CornerRadius="4" Margin="1,4"/>
+                                </ControlTemplate>
+                            </Thumb.Template>
+                        </Thumb>
+                    </Track.Thumb>
+                    <Track.IncreaseRepeatButton>
+                        <RepeatButton Command="{x:Static ScrollBar.PageRightCommand}" Focusable="False" Opacity="0"/>
+                    </Track.IncreaseRepeatButton>
+                </Track>
+                <RepeatButton Grid.Column="2" Command="{x:Static ScrollBar.PageRightCommand}" Focusable="False"
+                              Background="Transparent" BorderThickness="0">
+                    <TextBlock Text="▶" FontSize="8" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </RepeatButton>
+            </Grid>
+        </ControlTemplate>
+        <Style x:Key="DbScrollBarStyle" TargetType="{x:Type ScrollBar}">
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="MinWidth" Value="14"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template" Value="{StaticResource DbVerticalScrollBarTemplate}"/>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="Height" Value="14"/>
+                    <Setter Property="MinHeight" Value="14"/>
+                    <Setter Property="Template" Value="{StaticResource DbHorizontalScrollBarTemplate}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource DbScrollBarStyle}"/>
+        <Style TargetType="{x:Type ui:DynamicScrollBar}" BasedOn="{StaticResource DbScrollBarStyle}"/>
+        <Style x:Key="DbTreeScrollViewerStyle" TargetType="{x:Type ScrollViewer}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollViewer}">
+                        <Grid Background="{TemplateBinding Background}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <ScrollContentPresenter Grid.Row="0" Grid.Column="0"
+                                                    Margin="{TemplateBinding Padding}"
+                                                    Content="{TemplateBinding Content}"
+                                                    ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                    CanContentScroll="{TemplateBinding CanContentScroll}"/>
+                            <ScrollBar Grid.Row="0" Grid.Column="1" x:Name="PART_VerticalScrollBar"
+                                       Orientation="Vertical" Style="{StaticResource DbScrollBarStyle}"
+                                       Value="{TemplateBinding VerticalOffset}"
+                                       Maximum="{TemplateBinding ScrollableHeight}"
+                                       ViewportSize="{TemplateBinding ViewportHeight}"
+                                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
+                            <ScrollBar Grid.Row="1" Grid.Column="0" x:Name="PART_HorizontalScrollBar"
+                                       Orientation="Horizontal" Style="{StaticResource DbScrollBarStyle}"
+                                       Value="{TemplateBinding HorizontalOffset}"
+                                       Maximum="{TemplateBinding ScrollableWidth}"
+                                       ViewportSize="{TemplateBinding ViewportWidth}"
+                                       Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"/>
+                            <Rectangle Grid.Row="1" Grid.Column="1" Fill="Transparent"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <!-- 片段菜单行：无边框、悬停高亮（菜单观感） -->
         <Style x:Key="FlatMenuButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
@@ -233,12 +359,16 @@
                             </DockPanel>
                         </Border>
 
+                        <ScrollViewer Style="{StaticResource DbTreeScrollViewerStyle}"
+                                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                         <TreeView ItemsSource="{Binding ObjectTree}" BorderThickness="0" Background="Transparent"
                                   ItemContainerStyle="{StaticResource DbTreeItemStyle}"
                                   SelectedItemChanged="OnObjectTreeSelected"
                                   MouseDoubleClick="OnObjectTreeDoubleClick"
                                   ContextMenuOpening="OnObjectTreeMenuOpening"
-                                  PreviewMouseRightButtonDown="OnObjectTreeRightDown">
+                                  PreviewMouseRightButtonDown="OnObjectTreeRightDown"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                  ScrollViewer.VerticalScrollBarVisibility="Disabled">
                             <TreeView.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem Header="刷新对象" Command="{Binding RefreshObjectsCommand}"/>
@@ -298,6 +428,7 @@
                                 </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
                         </TreeView>
+                        </ScrollViewer>
                     </DockPanel>
 
                     <!-- Redis：键浏览（分批 SCAN + 时间预算，百万级键不卡死） -->
@@ -565,48 +696,31 @@
                                 </TextBlock.Style>
                             </TextBlock>
                             <Grid Visibility="{Binding ShowResultGrid, Converter={StaticResource BoolToVis}}">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="*"/>
-                                </Grid.RowDefinitions>
-                                <Grid Grid.Row="0" Margin="0,0,0,2">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="{Binding RowHeaderActualWidth, ElementName=ResultGrid}"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <ItemsControl x:Name="FilterRow" Grid.Column="1" ItemsSource="{Binding Columns, ElementName=ResultGrid}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <TextBox Width="{Binding ActualWidth}" Tag="{Binding Header}" Margin="0,0,1,0"
-                                                         Padding="2,0" Height="22" TextChanged="OnColumnFilterChanged"
-                                                         ToolTip="按此列筛选（包含匹配）"/>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </Grid>
-                                <DataGrid Grid.Row="1" x:Name="ResultGrid" ItemsSource="{Binding Results}" IsReadOnly="True"
-                                      AutoGenerateColumns="True" CanUserAddRows="False" CanUserDeleteRows="False"
-                                      HeadersVisibility="All" GridLinesVisibility="All" SelectionUnit="Cell"
-                                      LoadingRow="OnResultLoadingRow" AutoGeneratedColumns="OnAutoGeneratedColumns"
-                                      SelectionMode="Extended" ClipboardCopyMode="IncludeHeader"
-                                      EnableRowVirtualization="True" EnableColumnVirtualization="True"
-                                      FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}" MouseDoubleClick="OnResultDoubleClick"
-                                      AutoGeneratingColumn="OnAutoGeneratingColumn"
-                                      PreviewMouseRightButtonDown="OnResultRightDown">
-                                    <DataGrid.ContextMenu>
-                                        <ContextMenu>
-                                            <MenuItem Header="复制单元格" Click="OnCopyCell"/>
-                                            <MenuItem Header="复制整行" Click="OnCopyRow"/>
-                                            <MenuItem Header="复制全部结果" Click="OnCopyAll"/>
-                                            <MenuItem Header="复制为 INSERT 语句" Click="OnCopyInsert"/>
-                                            <Separator/>
-                                            <MenuItem Header="查看完整内容…" Click="OnViewCell"/>
-                                        </ContextMenu>
-                                    </DataGrid.ContextMenu>
-                                </DataGrid>
+                                <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                                        CornerRadius="4" ClipToBounds="True" Background="{DynamicResource AppSurfaceBrush}">
+                                    <DataGrid x:Name="ResultGrid" ItemsSource="{Binding Results}" IsReadOnly="True"
+                                          AutoGenerateColumns="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                                          HeadersVisibility="All" GridLinesVisibility="All" SelectionUnit="Cell"
+                                          LoadingRow="OnResultLoadingRow" AutoGeneratedColumns="OnAutoGeneratedColumns"
+                                          SelectionMode="Extended" ClipboardCopyMode="IncludeHeader"
+                                          EnableRowVirtualization="True" EnableColumnVirtualization="True"
+                                          FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}" MouseDoubleClick="OnResultDoubleClick"
+                                          AutoGeneratingColumn="OnAutoGeneratingColumn"
+                                          PreviewMouseRightButtonDown="OnResultRightDown"
+                                          PreviewMouseLeftButtonDown="OnResultLeftDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="复制单元格" Click="OnCopyCell"/>
+                                                <MenuItem Header="复制整行" Click="OnCopyRow"/>
+                                                <MenuItem Header="复制全部结果" Click="OnCopyAll"/>
+                                                <MenuItem Header="复制为 INSERT 语句" Click="OnCopyInsert"/>
+                                                <MenuItem Header="复制为 UPDATE 语句" Click="OnCopyUpdate"/>
+                                                <Separator/>
+                                                <MenuItem Header="查看完整内容…" Click="OnViewCell"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                    </DataGrid>
+                                </Border>
                             </Grid>
 
                             <DockPanel Visibility="{Binding ShowPlan, Converter={StaticResource BoolToVis}}">

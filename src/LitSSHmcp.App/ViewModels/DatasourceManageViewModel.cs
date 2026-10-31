@@ -35,6 +35,12 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
         TestCommand = new RelayCommand(_ => Test(), _ => SelectedDataSource != null);
         WorkbenchCommand = new RelayCommand(_ => OpenWorkbench(SelectedDataSource));
         OpenWorkbenchItemCommand = new RelayCommand(p => OpenWorkbench(p as DataSourceConfig));
+        NewAiSessionItemCommand = new RelayCommand(p =>
+        {
+            var ds = p as DataSourceConfig ?? SelectedDataSource;
+            if (ds is not null)
+                NewAiSessionRequested?.Invoke(ds);
+        }, p => (p as DataSourceConfig ?? SelectedDataSource) is not null);
         EditItemCommand = new RelayCommand(p => { SelectedDataSource = p as DataSourceConfig; Edit(); });
         TestItemCommand = new RelayCommand(p => { SelectedDataSource = p as DataSourceConfig; Test(); });
         ViewItemCommand = new RelayCommand(p => View(p as DataSourceConfig));
@@ -147,6 +153,9 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
     public ICommand TestCommand { get; }
     public ICommand WorkbenchCommand { get; }
     public ICommand OpenWorkbenchItemCommand { get; }
+    public ICommand NewAiSessionItemCommand { get; }
+
+    public event Action<DataSourceConfig>? NewAiSessionRequested;
     public ICommand EditItemCommand { get; }
     public ICommand TestItemCommand { get; }
     public ICommand ViewItemCommand { get; }

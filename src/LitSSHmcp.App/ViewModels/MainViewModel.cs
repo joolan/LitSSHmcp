@@ -53,6 +53,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     public ICommand OpenAuditCommand { get; }
     public ICommand OpenTopologyCommand { get; }
     public ICommand OpenAgentCommand { get; }
+    public ICommand NewAiSessionCommand { get; }
     public ICommand NavigateHomeCommand { get; }
     public ICommand NavigateServersCommand { get; }
     public ICommand NavigateDataSourcesCommand { get; }
@@ -104,6 +105,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         OpenAuditCommand = new RelayCommand(_ => OpenAudit());
         OpenTopologyCommand = new RelayCommand(_ => OpenTopology());
         OpenAgentCommand = new RelayCommand(_ => OpenAgent());
+        NewAiSessionCommand = new RelayCommand(_ => NewAiSessionForServer(SelectedServer), _ => SelectedServer != null);
         NavigateHomeCommand = new RelayCommand(_ => NavigateHome());
         NavigateServersCommand = new RelayCommand(_ => CurrentPage = MainPage.Servers);
         NavigateDataSourcesCommand = new RelayCommand(_ => NavigateDataSources());
@@ -181,6 +183,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             (OpenProxiedBrowserCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenSnapshotHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (NewAiSessionCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
     }
 
@@ -1070,7 +1073,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
 
     private void NavigateDataSources()
     {
-            DatasourcePage ??= new DatasourceManageViewModel(_configService, services: _services);
+        DatasourcePage ??= CreateDatasourcePage();
         DatasourcePage.RefreshCommand.Execute(null);
         CurrentPage = MainPage.DataSources;
     }

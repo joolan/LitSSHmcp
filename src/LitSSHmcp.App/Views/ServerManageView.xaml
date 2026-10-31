@@ -74,6 +74,8 @@
                           controls:GroupExpanderBehavior.StorageKey="server.groups">
                     <ListView.ContextMenu>
                         <ContextMenu>
+                            <MenuItem Header="新建 AI 会话" Click="OnNewAiSessionClick"/>
+                            <Separator/>
                             <MenuItem Header="打开终端（交互式）" Click="OnOpenTerminalClick"/>
                             <MenuItem Header="SFTP 文件管理" Click="OnSftpManagerClick"/>
                             <MenuItem Header="打开代理浏览器 (SOCKS)…" Click="OnOpenProxiedBrowserClick"/>

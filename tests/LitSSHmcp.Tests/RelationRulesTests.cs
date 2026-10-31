@@ -25,6 +25,8 @@ public class RelationRulesTests
     [InlineData("app:shop", "deploy:shop@1.4.2", "deployedFrom")]
     [InlineData("app:shop", "system:commerce", "partOf")]
     [InlineData("app:shop", "app:gateway", "upstreamOf")]
+    [InlineData("app:shop", "app:docker-shop", "runsIn")]
+    [InlineData("ds:mysql-01", "app:docker-shop", "runsIn")]
     public void Accepts_logical_relations(string from, string to, string type)
     {
         Assert.True(RelationRules.TryValidate(from, to, type, out var error), error);
@@ -45,6 +47,8 @@ public class RelationRulesTests
     [InlineData("service:s1:nginx", "app:shop", "runsOn")]
     [InlineData("app:shop", "ssh:s1", "deployedFrom")]
     [InlineData("ssh:s1", "system:commerce", "partOf")]
+    [InlineData("ssh:s1", "app:docker-shop", "runsIn")]
+    [InlineData("app:shop", "ssh:s1", "runsIn")]
     public void Rejects_illogical_relations(string from, string to, string type)
     {
         Assert.False(RelationRules.TryValidate(from, to, type, out var error));

@@ -598,7 +598,103 @@ public sealed class AssetGraphQueryService : IAssetGraphQueryService
                 nodes[id].Label = text;
         }
 
-        return (nodes, contribution.Edges);
+        var edges = contribution.Edges.ToList();
+        var seen = edges.Select(EdgeKey).ToHashSet(StringComparer.Ordinal);
+        foreach (var edge in BuildAccessRouteEdges(server, snapshot))
+        {
+            if (!seen.Add(EdgeKey(edge)))
+                continue;
+
+            Ensure(edge.From);
+            Ensure(edge.To);
+            edges.Add(edge);
+        }
+
+        return (nodes, edges);
+    }
+
+    private static IEnumerable<TopologyEdge> BuildAccessRouteEdges(SshServerConfig server, ServerSnapshot snapshot)
+    {
+        if (string.IsNullOrWhiteSpace(snapshot.DataJson))
+            yield break;
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(snapshot.DataJson);
+        }
+        catch (JsonException)
+        {
+            yield break;
+        }
+
+        using (document)
+        {
+            if (!document.RootElement.TryGetProperty("sections", out var sections) ||
+                !sections.TryGetProperty("topology_access", out var section) ||
+                section.ValueKind != JsonValueKind.Object ||
+                !section.TryGetProperty("data", out var data) ||
+                data.ValueKind != JsonValueKind.Object)
+                yield break;
+
+            var at = ParseSnapshotTime(snapshot);
+            if (data.TryGetProperty("sshJump", out var jump) && jump.ValueKind == JsonValueKind.Object)
+            {
+                var targetId = StringValue(jump, "targetId");
+                var jumpId = StringValue(jump, "jumpId");
+                if (!string.IsNullOrWhiteSpace(targetId) && !string.IsNullOrWhiteSpace(jumpId))
+                {
+                    yield return AccessEdge(
+                        AssetNode.Ssh(targetId), AssetNode.Ssh(jumpId),
+                        $"snapshot access: ssh jump {jumpId}", at);
+                }
+            }
+
+            if (data.TryGetProperty("tunnels", out var tunnels) && tunnels.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var tunnel in tunnels.EnumerateArray())
+                {
+                    if (tunnel.ValueKind != JsonValueKind.Object)
+                        continue;
+
+                    var datasourceId = StringValue(tunnel, "datasourceId");
+                    if (string.IsNullOrWhiteSpace(datasourceId))
+                        continue;
+
+                    yield return AccessEdge(
+                        AssetNode.Ds(datasourceId), AssetNode.Ssh(server.Id),
+                        $"snapshot access: datasource tunnel {datasourceId}", at);
+                }
+            }
+        }
+    }
+
+    private static TopologyEdge AccessEdge(string from, string to, string evidence, DateTime at) => new()
+    {
+        From = from,
+        To = to,
+        Type = "accessedVia",
+        Evidence = evidence,
+        Source = "config",
+        Confidence = 1.0,
+        FirstSeenAt = at,
+        LastSeenAt = at,
+        ValidFrom = at,
+        LastVerifiedAt = at
+    };
+
+    private static string? StringValue(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static DateTime ParseSnapshotTime(ServerSnapshot snapshot)
+    {
+        if (DateTime.TryParse(snapshot.CompletedAt ?? snapshot.CreatedAt, null,
+                System.Globalization.DateTimeStyles.RoundtripKind, out var parsed))
+            return parsed.ToUniversalTime();
+
+        return DateTime.UtcNow;
     }
 
     private static string TypeFromId(string id)
@@ -672,6 +768,19 @@ public sealed class AssetGraphQueryService : IAssetGraphQueryService
         if (byId.Length > 1)
         {
             error = AmbiguousMessage(id, byId);
+            return null;
+        }
+
+        var profileId = StripAssetPrefix(id);
+        var byProfile = view.Nodes.Values
+            .Where(n => InfoStrings(n, "profileIds").Any(p =>
+                string.Equals(p, profileId, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        if (byProfile.Length == 1)
+            return byProfile[0];
+        if (byProfile.Length > 1)
+        {
+            error = AmbiguousMessage(id, byProfile);
             return null;
         }
 
@@ -807,6 +916,35 @@ public sealed class AssetGraphQueryService : IAssetGraphQueryService
 
     private static string? InfoValue(TopologyNode node, string key) =>
         node.Info is not null && node.Info.TryGetValue(key, out var value) ? FormatValue(value) : null;
+
+    private static string[] InfoStrings(TopologyNode node, string key)
+    {
+        if (node.Info is null || !node.Info.TryGetValue(key, out var value))
+            return Array.Empty<string>();
+
+        return value switch
+        {
+            string[] values => values,
+            IEnumerable<string> values => values.ToArray(),
+            JsonElement { ValueKind: JsonValueKind.Array } element => element
+                .EnumerateArray()
+                .Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => x.GetString() ?? string.Empty)
+                .Where(x => x.Length > 0)
+                .ToArray(),
+            _ => Array.Empty<string>()
+        };
+    }
+
+    private static string StripAssetPrefix(string id)
+    {
+        foreach (var prefix in new[] { AssetNode.SshPrefix, AssetNode.DsPrefix, AssetNode.AppPrefix })
+        {
+            if (id.StartsWith(prefix, StringComparison.Ordinal))
+                return id[prefix.Length..];
+        }
+        return id;
+    }
 
     private static string FormatValue(object? value)
     {

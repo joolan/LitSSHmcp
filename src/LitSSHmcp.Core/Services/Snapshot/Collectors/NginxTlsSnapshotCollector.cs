@@ -77,7 +77,7 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
         if (certPaths.Count > 0)
         {
             var command = string.Join("; ", certPaths.Select(path =>
-                $"echo '##CERT:{path}'; openssl x509 -in {ShellQuote.Single(path)} -noout -enddate -subject -ext subjectAltName 2>&1 | head -30"));
+                $"echo '##CERT:{path}'; openssl x509 -in {ShellQuote.Single(path)} -noout -enddate -subject -ext subjectAltName -fingerprint -sha256 2>&1 | head -40"));
             var certResult = await context.ExecuteAsync(command, context.Elevate, ct);
             if (certResult.ErrorKind is not null && !certResult.Success)
             {
@@ -169,6 +169,7 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
                     ["notAfter"] = c.GetValueOrDefault("notAfter"),
                     ["daysRemaining"] = c.GetValueOrDefault("daysRemaining"),
                     ["expired"] = c.GetValueOrDefault("expired"),
+                    ["fingerprint"] = c.GetValueOrDefault("fingerprint"),
                     ["dnsNames"] = c.GetValueOrDefault("dnsNames")
                 }).ToList()
             })
@@ -367,6 +368,7 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
         {
             string? notAfterRaw = null;
             string? subjectLine = null;
+            string? fingerprint = null;
             var dnsNames = new List<string>();
             var ipNames = new List<string>();
             string? error = null;
@@ -377,6 +379,13 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
                     notAfterRaw = line["notAfter=".Length..].Trim();
                 else if (line.StartsWith("subject=", StringComparison.Ordinal))
                     subjectLine = line["subject=".Length..].Trim();
+                else if (line.Contains("Fingerprint=", StringComparison.OrdinalIgnoreCase) &&
+                         line.Contains("SHA256", StringComparison.OrdinalIgnoreCase))
+                {
+                    var index = line.IndexOf('=');
+                    if (index >= 0 && index < line.Length - 1)
+                        fingerprint = line[(index + 1)..].Trim();
+                }
                 else if (line.Contains("DNS:", StringComparison.Ordinal) || line.Contains("IP Address:", StringComparison.Ordinal))
                     ParseSanLine(line, dnsNames, ipNames);
                 else if (line.Length > 0 && error is null &&
@@ -408,6 +417,7 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
                 ["notAfter"] = notAfter?.ToString("O"),
                 ["daysRemaining"] = notAfter is null ? (long?)null : (long)Math.Floor((notAfter.Value - nowUtc).TotalDays),
                 ["expired"] = notAfter is not null && notAfter < nowUtc,
+                ["fingerprint"] = fingerprint,
                 ["dnsNames"] = dnsNames.Distinct().ToList(),
                 ["ipNames"] = ipNames.Distinct().ToList(),
                 ["error"] = error

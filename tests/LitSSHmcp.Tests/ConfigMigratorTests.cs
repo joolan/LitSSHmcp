@@ -137,6 +137,48 @@ public class ConfigMigratorTests
     }
 
     [Fact]
+    public void Null_application_urls_are_filled()
+    {
+        var config = new AppConfig
+        {
+            SchemaVersion = AppConfig.CurrentSchemaVersion,
+            Applications = new[]
+            {
+                new ApplicationConfig { Id = "app1", Name = "order", Urls = null! }
+            }
+        };
+
+        var changed = ConfigMigrator.Migrate(config);
+
+        Assert.True(changed);
+        Assert.NotNull(config.Applications[0].Urls);
+        Assert.Empty(config.Applications[0].Urls);
+    }
+
+    [Fact]
+    public void Legacy_application_server_id_migrates_to_runtime_environment()
+    {
+        var config = new AppConfig
+        {
+            SchemaVersion = AppConfig.CurrentSchemaVersion,
+            Servers = new[]
+            {
+                new SshServerConfig { Id = "s1", Name = "web", Host = "10.0.0.1", AssetKey = "web" }
+            },
+            Applications = new[]
+            {
+                new ApplicationConfig { Id = "app1", Name = "order", ServerId = "s1" }
+            }
+        };
+
+        var changed = ConfigMigrator.Migrate(config);
+
+        Assert.True(changed);
+        Assert.Equal(RuntimeEnvironmentKind.SshServer, config.Applications[0].RuntimeKind);
+        Assert.Equal("web", config.Applications[0].RuntimeSshAssetKey);
+    }
+
+    [Fact]
     public void Null_remote_desktops_is_filled()
     {
         var config = new AppConfig { RemoteDesktops = null!, SchemaVersion = AppConfig.CurrentSchemaVersion };

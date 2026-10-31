@@ -74,6 +74,8 @@ public sealed class LocalTerminalTool : IAgentTool
 
     public string? ToolGroup => "local";
 
+    public bool IsLocal => true;
+
     public AITool Tool => _schema;
 
     private const string Description =

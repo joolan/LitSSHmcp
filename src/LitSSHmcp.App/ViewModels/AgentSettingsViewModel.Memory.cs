@@ -44,19 +44,22 @@ public partial class AgentSettingsViewModel
     }
 
     /// <summary>加载记忆列表（读当前磁盘 agent.db，不受"是否已保存"影响；单次最多 500 条）。</summary>
-    public async Task LoadMemoryEntriesAsync()
+    public async Task LoadMemoryEntriesAsync(CancellationToken ct = default)
     {
         try
         {
-            var store = new AgentMemoryStore();
             var kind = string.IsNullOrEmpty(MemoryKindFilter) || MemoryKindFilter == "全部"
                 ? null
                 : MemoryKindFilter;
-            var records = await store.ListAsync(kind, null, 500, includeRaw: true);
+            var records = await _memoryStore.ListAsync(kind, null, 500, includeRaw: true, ct: ct);
+            ct.ThrowIfCancellationRequested();
             MemoryEntries.Clear();
             foreach (var r in records)
                 MemoryEntries.Add(MemoryEntry.From(r));
             StatusMessage = MemoryEntries.Count == 0 ? "记忆库为空" : $"已加载 {MemoryEntries.Count} 条记忆";
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (Exception ex)
         {
@@ -71,7 +74,7 @@ public partial class AgentSettingsViewModel
             return;
         try
         {
-            var store = new AgentMemoryStore();
+            var store = _memoryStore;
             var ok = await store.DeleteByIdAsync(entry.Id);
             if (ok)
                 MemoryEntries.Remove(entry);
@@ -105,7 +108,7 @@ public partial class AgentSettingsViewModel
             return;
         try
         {
-            var store = new AgentMemoryStore();
+            var store = _memoryStore;
             var versions = await store.ListVersionsAsync(entry.Id);
             MemoryVersions.Clear();
             foreach (var v in versions)
@@ -125,7 +128,7 @@ public partial class AgentSettingsViewModel
     {
         try
         {
-            var store = new AgentMemoryStore();
+            var store = _memoryStore;
             var removed = await store.PruneHistoryAsync(
                 AgentMemoryStore.DefaultHistoryKeep, entry?.Id);
             await LitSSHmcp.Core.Services.Storage.LocalAudit.LogAsync(
@@ -152,7 +155,7 @@ public partial class AgentSettingsViewModel
             return;
         try
         {
-            var store = new AgentMemoryStore();
+            var store = _memoryStore;
             var ok = await store.RestoreVersionAsync(entry.Id, version.Version);
             await LitSSHmcp.Core.Services.Storage.LocalAudit.LogAsync(
                 "agent_memory",
@@ -181,7 +184,7 @@ public partial class AgentSettingsViewModel
             return;
         try
         {
-            var store = new AgentMemoryStore();
+            var store = _memoryStore;
             var ok = await store.ArchiveByIdAsync(entry.Id);
             await LitSSHmcp.Core.Services.Storage.LocalAudit.LogAsync(
                 "agent_memory",
@@ -208,7 +211,7 @@ public partial class AgentSettingsViewModel
     {
         try
         {
-            var store = new AgentMemoryStore();
+            var store = _memoryStore;
             await store.ClearAsync();
             MemoryEntries.Clear();
             MemoryStatsText = string.Empty;

@@ -634,11 +634,6 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private long _sessionId;
     private bool _sessionTitled;
 
-    // ---- 跨进程对账（Web 进程也会写 agent.db）：5s 轻量比较会话列表/选中会话更新时间 ----
-    private CancellationTokenSource? _autoRefreshCts;
-    private string _lastSessionSnapshot = string.Empty;
-    private readonly Dictionary<long, string> _loadedSessionUpdatedAt = new();
-
     private AgentProviderConfig? _selectedProvider;
     public AgentProviderConfig? SelectedProvider
     {
@@ -859,11 +854,6 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             case SlashCommands.Skills:
                 Input = string.Empty;
                 CloseSlashPalette();
-                if (SessionSubsetLocked)
-                {
-                    StatusMessage = "首条消息后锁定：技能子集改动将在下个会话生效。";
-                    return true;
-                }
                 ReloadSkillCatalog();
                 SkillsPickerRequested?.Invoke();
                 return true;
@@ -1044,7 +1034,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     /// <summary>
     /// D8 启用层锁定（与工作目录同一锁定原则）：会话已启动（已落库 / 工作目录已分配 / 已有轮次）或运行中
-    /// → 连接器/技能子集不可再改，改动下个会话生效。
+    /// → 连接器子集不可再改，改动下个会话生效；技能仍可在会话中热切换。
     /// </summary>
     public bool SessionSubsetLocked =>
         !McpSubsetPolicy.EnableLayerEditable(_sessionId, _sessionWorkspaceDir, Turns.Count, CurrentContext.IsBusy);
@@ -1179,86 +1169,6 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         catch
         {
             // 裁剪失败忽略
-        }
-    }
-
-    /// <summary>启动跨进程对账循环（每 5s：Web 等独立进程写 agent.db 后，桌面自动刷新列表/当前会话）。</summary>
-    private void StartAutoRefresh()
-    {
-        if (_autoRefreshCts is not null)
-            return;
-        _autoRefreshCts = new CancellationTokenSource();
-        _ = AutoRefreshLoopAsync(_autoRefreshCts.Token);
-    }
-
-    private async Task AutoRefreshLoopAsync(CancellationToken ct)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(ct))
-                _uiInvoke(() => _ = AutoRefreshTickAsync());
-        }
-        catch (OperationCanceledException)
-        {
-            // 窗口关闭
-        }
-    }
-
-    /// <summary>
-    /// 轻量对账：会话列表快照变化 → 重载列表；当前会话空闲且其 UpdatedAt 变化 → 重载该会话消息。
-    /// 本地有会话执行中/正在编辑时不打扰。跨进程只能看到已落库的整轮结果（无法实时流式）。
-    /// </summary>
-    private async Task AutoRefreshTickAsync()
-    {
-        if (_autoRefreshCts is null || IsBusy || IsLoading)
-            return;
-        try
-        {
-            var rows = await _store.ListSessionsAsync();
-            var snapshot = SessionAutoRefresh.Snapshot(rows);
-            if (!string.Equals(snapshot, _lastSessionSnapshot, StringComparison.Ordinal))
-            {
-                _lastSessionSnapshot = snapshot;
-                await ReloadSessionsAsync();
-            }
-
-            if (_sessionId <= 0 || _editingTurn is not null)
-                return;
-            var latest = Sessions.FirstOrDefault(s => s.Id == _sessionId);
-            if (latest is null)
-                return;
-            _loadedSessionUpdatedAt.TryGetValue(_sessionId, out var loaded);
-            if (!SessionAutoRefresh.ShouldReloadSelected(loaded, latest.UpdatedAt))
-                return;
-            await LoadSessionAsync(_sessionId);
-        }
-        catch
-        {
-            // 对账失败忽略（下一轮重试）
-        }
-    }
-
-    public async Task ReloadSessionsAsync()
-    {
-        var list = await _store.ListSessionsAsync();
-        _lastSessionSnapshot = SessionAutoRefresh.Snapshot(list);
-        // 后台会话轮结束也会触发本刷新：先保住当前选中，避免正在显示的会话被列表重建清掉选中
-        var keepId = _selectedSession?.Id;
-        Sessions.Clear();
-        foreach (var s in list)
-            Sessions.Add(s);
-        ApplySessionFilter();
-        if (keepId is { } id)
-        {
-            var again = Sessions.FirstOrDefault(s => s.Id == id);
-            if (!ReferenceEquals(again, _selectedSession))
-            {
-                _suppressSelection = true;
-                SelectedSession = again;
-                _suppressSelection = false;
-                SyncSidebarSelection();
-            }
         }
     }
 
@@ -1688,12 +1598,6 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>应用技能选择（技能选择窗口回调）：更新 chip、持久化到会话、并热更新运行时系统提示。</summary>
     public void ApplySkillSelection(IReadOnlyList<string> skillIds)
     {
-        if (SessionSubsetLocked)
-        {
-            // D8 启用层：与连接器子集同一锁定原则，首条消息后技能子集也不可再改
-            StatusMessage = "首条消息后锁定：技能子集改动将在下个会话生效。";
-            return;
-        }
         _skills.SetActiveIds(skillIds);
         _ = _skills.PersistAsync(_sessionId, _store);
         if (_runtime is not null && !IsBusy)
@@ -2549,6 +2453,15 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 _suppressSelection = false;
                 SyncSidebarSelection();
                 RefreshContextInfo();
+            }
+            if (Sessions.FirstOrDefault(s => s.Id == ctx.SessionId) is { } updatedRow)
+            {
+                // 本轮内容已由本地落库并上屏：同步“已加载版本”，避免 5s 对账把当前会话再重载一遍。
+                _loadedSessionUpdatedAt[ctx.SessionId] = updatedRow.UpdatedAt;
+                IEnumerable<AgentTurn> sourceTurns = ReferenceEquals(ctx, CurrentContext) ? Turns : ctx.LiveTurns;
+                var turnsSnapshot = sourceTurns.ToList();
+                var hasUser = turnsSnapshot.Any(t => !string.IsNullOrEmpty(t.UserText) || t.StorageText is not null);
+                CacheTranscript(ctx.SessionId, updatedRow.UpdatedAt, turnsSnapshot, hasUser);
             }
             // 终态（Done/Failed/Stopped）保留到下一轮开始：不占用闸门（IsBusy 只认排队/执行/待审批），
             // 同时让状态文案可见（“已停止/上轮失败”）。

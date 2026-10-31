@@ -12,20 +12,20 @@
 ## 何时做（这是“进化”的关键）
 - **每次运维任务开始时**：档案存在 → 先读，用它拿准确 `serverId/appId/datasourceId`、端口、日志/部署路径、依赖；不存在 → 询问用户是否创建，默认创建。
 - **任务过程中/结束时**：一旦发现**新事实**或**纠正了旧事实**（新服务器/应用、真实日志路径、端口、依赖、隧道跳板、被禁用项、废弃/示例配置），**立即更新档案**并追加一条变更记录。
-- 拓扑有变动、或用户要求时：调 `topology_discover` 与档案**对账**，把新增/未匹配端点写入“待确认”。
-- 需要定位资产、查链路或评估变更影响时，先用图谱工具拿实时结果：`topology_query(action="search")`（定位）→ `topology_query(action="neighbors"/"path")`（关系链路）→ `topology_query(action="impact")`（影响面）→ `topology_query(action="explain")`（来源/证据/是否过期），再把确认后的关系写回档案。
+- 拓扑有变动、或用户要求时：调 `topology_discover` 与档案**对账**，把发现报告/未匹配端点/配置建议写入档案的“待确认/存疑”；发现结果不写入人工主图。
+- 需要定位资产、查链路或评估变更影响时，先用图谱工具拿实时结果：`topology_query(action="search")`（定位）→ `topology_query(action="dependencies")`（上下游）→ `topology_query(action="neighbors"/"path")`（关系链路）→ `topology_query(action="impact")`（影响面）→ `topology_query(action="explain")`（来源/证据），再把确认后的关系写回档案；快照历史变化用 `topology_history(action="timeline"/"diff")`。
 
 ## 内容结构（建议，用表格保持精简可机读）
 - **服务器**：`id` | 名称 | `host:port` | 环境(prod/test) | 用途 | 登录方式 | 提权(sudo/su/自动) | 状态(启用/禁用) | 备注
 - **数据源**：`id` | 名称 | 类型 | 入口 `host:port` | 访问方式(直连 / SSH隧道 + 跳板服务器) | 归属服务器 | 备注
 - **应用**：`id/名称` | 所属服务器 | 端口 | 部署路径(jar/workdir) | **日志路径** | 配置文件 | 启动方式(自建/systemd/docker) | 备注
-- **拓扑关系**：源 | 关系(`runsOn`/`connectsTo`/`canAccess`/`hostedOn`/`listensOn`/`exposes`/`tlsBy`/`resolvesTo`/`relatedTo`) | 目标 | 证据 | 来源(manual/discovered) | 末次确认 | 是否存疑/过期
+- **拓扑关系**：源 | 关系(`runsOn`/`runsIn`/`connectsTo`/`canAccess`/`upstreamOf`/`accessedVia`/`relatedTo`) | 目标 | 证据 | 来源(manual/runtime/access) | 末次确认 | 是否存疑
 - **域名 / 端口 / 证书**：域名 | 归属服务器 | 暴露应用 | TLS 证书路径/到期时间 | 证据来源(snapshot nginx_tls)；端口 | 协议/绑定地址 | 进程/PID | 归属服务器 | 证据来源(snapshot portmap)
 - **待确认 / 存疑**：未能匹配的端点、疑似废弃或示例配置、相互冲突项（附证据）
 - **更新日志**：日期 | 类型(数据/结构) | 变更 | 证据来源(工具名/命令) | 置信度(高/中/低)
 
 ## 维护规则（防止越用越乱）
-1. **以 MCP 实时数据为准**：`ssh_list_servers` / `datasource_list` / `topology_query(action="search")` / `topology_get_overview` 与档案冲突时，用实时数据纠正档案并记一条变更；关系冲突先看 `topology_query(action="explain")` 的来源与 `stale` 标记，再决定是否改档案。
+1. **以 MCP 实时数据为准**：`ssh_list_servers` / `datasource_list` / `topology_query(action="overview")` / `topology_query(action="search")` 与档案冲突时，用实时数据纠正档案并记一条变更；关系冲突先看 `topology_query(action="explain")` 的来源与证据，再决定是否改档案。
 2. **记稳定的 `id`**：`serverId`/`datasourceId`/`appId` 是调用工具的关键；档案里必须存 `id`，而不仅是名称/主机名（名称可能重名触发 `*_ambiguous`）。
 3. **只记事实、带证据**：每条尽量标注来源工具与时间；推断类放“待确认”并降置信度。
 4. **绝不存密钥**：不放密码/私钥/口令/token；用户粘贴了也要脱敏后再记。
@@ -63,10 +63,10 @@
   5. 链接用**相对路径**（随工作区移动不失效）；拆分前先与用户确认（影响可读性）。
 
 ## 与 MCP 工具配合
-- 刷新清单：`ssh_list_servers`、`datasource_list`、`topology_query(action="search")`、`topology_get_overview`、`topology_get_dependencies`。
-- 定位与关系：`topology_query(action="search")` 按名称/ID/主机/端口找资产；`topology_query(action="neighbors")` 看邻域；`topology_query(action="path")` 查两个资产的有向链路；`topology_query(action="impact")` 反查变更影响面；`topology_query(action="explain")` 核对边的来源、证据、`lastSeenAt` 与 `stale`。模糊 ID 命中多个会返回 `asset_ambiguous`，用精确 ID 重试。
-- 服务/容器/部署/域名/端口/证书：图谱已从最近快照生成 `service:*` / `container:*` / `deploy:*` / `domain:*` / `port:*` / `cert:*` 节点（`runsOn`/`listensOn`/`deployedFrom`/`exposes`/`tlsBy`/`hostedOn`/`resolvesTo`）；需要实时值或快照未覆盖时，再用 `ssh_snapshot_get` 的 `systemd`/`docker`/`nginx_tls`/`portmap` 取证，并在“更新日志”注明来源。
+- 刷新清单：`ssh_list_servers`、`datasource_list`、`topology_query(action="overview")`、`topology_query(action="search")`、`topology_query(action="dependencies")`。
+- 定位与关系：`topology_query(action="search")` 按名称/ID/主机/端口找资产；`topology_query(action="dependencies")` 看上下游；`topology_query(action="neighbors")` 看邻域；`topology_query(action="path")` 查两个资产的有向链路；`topology_query(action="impact")` 反查变更影响面；`topology_query(action="explain")` 核对边的来源与证据。模糊 ID 命中多个会返回 `asset_ambiguous`，用精确 ID 重试。
+- 服务/容器/部署/域名/端口/证书：属于快照证据，用 `ssh_snapshot_get` 的 `systemd`/`docker`/`nginx_tls`/`portmap` 查看；需要历史变化时用 `topology_history(action="timeline"/"diff", serverId=...)`。这些低层节点不进入人工主图，也不再用 `topology_query(kinds=service,...)` 查询。
 - **整机盘点**：`ssh_snapshot_get(serverId)` 一次拿到 资源/端口↔进程↔服务（含程序路径 `exe` 与启动命令 `cmdline`）/Docker 容器/nginx 域名与证书/systemd/**安全巡检（security）**，快速补全“端口/进程/容器/证书/服务归属”，并作为安全基线证据；需要最新数据用 `ssh_snapshot_refresh`。
 - 补全应用细节：`java_processes`（启动命令/jar/工作目录）、`docker_query(action="ps"/"inspect")`（端口/挂载）、`log_query(action="find")`（日志路径）、`service_query(action="status")`（systemd 单元）。
-- 对账发现：`topology_discover`；把 `UnmatchedEndpoints`/notes 里的“未匹配端点、占位符主机、疑似外部依赖”写进“待确认”。
+- 对账发现：`topology_discover`；把 `UnmatchedEndpoints`/notes 里的“未匹配端点、占位符主机、疑似外部依赖”写进“待确认/存疑”，并作为配置建议处理，不写入人工主图。
 - 提速回顾：档案里存好每个应用的**日志路径**后，后续直接 `log_query(action="tail"/"grep", appId=...)`，无需再 `action="find"`。

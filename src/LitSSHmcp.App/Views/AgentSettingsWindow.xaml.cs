@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using LitSSHmcp.Agent;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
@@ -14,6 +15,9 @@ public partial class AgentSettingsWindow : FluentWindow
 {
     private readonly AgentSettingsViewModel _viewModel;
     private readonly LitSSHmcp.App.Services.UserDialogService _dialogs = new();
+    private readonly DispatcherTimer _tabLoadTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
+    private CancellationTokenSource? _tabLoadCts;
+    private TabItem? _pendingTab;
 
     public AgentSettingsWindow(IConfigService configService, string? initialTab = null,
         IAppServices? services = null)
@@ -25,20 +29,21 @@ public partial class AgentSettingsWindow : FluentWindow
 
         SelectTab(initialTab);
 
-        // 切到「归档记录」时刷新列表；切到「记忆管理」时刷新记忆明细
+        // 快速切换 Tab 时只加载最终停留的页面；取消上一轮读取，避免重复初始化
+        // agent.db/snapshots 相关存储造成锁竞争和 UI 卡顿。
+        _tabLoadTimer.Tick += async (_, _) =>
+        {
+            _tabLoadTimer.Stop();
+            await LoadPendingTabAsync();
+        };
         Tabs.SelectionChanged += (_, _) =>
         {
-            if (Tabs.SelectedItem is TabItem { Header: string header })
-            {
-                if (header == "归档记录")
-                    _ = _viewModel.LoadArchivedAsync();
-                else if (header == "记忆管理")
-                    _ = _viewModel.LoadMemoryEntriesAsync();
-                else if (header == "记忆候选")
-                    _ = _viewModel.LoadConsolidationCandidatesAsync();
-                else if (header == "运维视图")
-                    _ = _viewModel.LoadOpsIncidentsAsync();
-            }
+            if (Tabs.SelectedItem is not TabItem tab)
+                return;
+            _pendingTab = tab;
+            _tabLoadCts?.Cancel();
+            _tabLoadTimer.Stop();
+            _tabLoadTimer.Start();
         };
 
         // API Key 用 PasswordBox 展示为圆点：随选中模型同步，输入时回写 VM
@@ -54,6 +59,54 @@ public partial class AgentSettingsWindow : FluentWindow
             SyncApiKeyBox();
             SyncMemoryApiKeyBox();
         };
+    }
+
+    private async Task LoadPendingTabAsync()
+    {
+        _tabLoadCts?.Cancel();
+        if (_pendingTab?.Header is not string header)
+            return;
+
+        var cts = new CancellationTokenSource();
+        _tabLoadCts = cts;
+        try
+        {
+            switch (header)
+            {
+                case "归档记录":
+                    await _viewModel.LoadArchivedAsync(cts.Token);
+                    break;
+                case "记忆管理":
+                    await _viewModel.LoadMemoryEntriesAsync(cts.Token);
+                    break;
+                case "记忆候选":
+                    await _viewModel.LoadConsolidationCandidatesAsync(cts.Token);
+                    break;
+                case "运维视图":
+                    await _viewModel.LoadOpsIncidentsAsync(cts.Token);
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_tabLoadCts, cts))
+            {
+                _tabLoadCts = null;
+                cts.Dispose();
+            }
+        }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _tabLoadTimer.Stop();
+        _tabLoadCts?.Cancel();
+        _tabLoadCts?.Dispose();
+        _tabLoadCts = null;
+        base.OnClosed(e);
     }
 
     private bool _syncingApiKey;

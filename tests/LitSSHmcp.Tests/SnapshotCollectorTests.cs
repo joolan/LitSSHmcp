@@ -307,6 +307,7 @@ public class SnapshotCollectorTests
                      "subject=CN = a.com\n" +
                      "X509v3 Subject Alternative Name:\n" +
                      "    DNS:a.com, DNS:www.a.com, IP Address:10.0.0.5\n" +
+                     "sha256 Fingerprint=AA:BB:CC:DD:EE:FF\n" +
                      "##CERT:/etc/nginx/cert/b.pem\n" +
                      "openssl: command not found";
 
@@ -320,6 +321,7 @@ public class SnapshotCollectorTests
         Assert.False((bool)certs[0]["expired"]!);
         Assert.Contains("www.a.com", (List<string>)certs[0]["dnsNames"]!);
         Assert.Contains("10.0.0.5", (List<string>)certs[0]["ipNames"]!);
+        Assert.Equal("AA:BB:CC:DD:EE:FF", certs[0]["fingerprint"]);
         Assert.Null(certs[0]["error"]);
         Assert.NotNull(certs[1]["error"]);
     }

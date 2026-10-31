@@ -70,7 +70,8 @@ public class SystemPromptBuilderTests
         Assert.Contains("ops_doc_write(mode=overwrite|append|patch)", prompt);
         Assert.Contains("ops_memory_write(action=save", prompt);
         Assert.Contains("tags=pitfall", prompt);
-        Assert.Contains("spill(action=", prompt);
+        Assert.Contains("spill(action=\"read\", handle=", prompt);
+        Assert.DoesNotContain("mode=\"read|grep\"", prompt);
         Assert.DoesNotContain("ops_doc_append", prompt);
         Assert.DoesNotContain("ops_doc_patch", prompt);
         Assert.DoesNotContain("ops_memory_save", prompt);

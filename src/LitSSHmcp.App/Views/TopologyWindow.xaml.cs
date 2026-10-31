@@ -129,6 +129,9 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnRefresh(object sender, RoutedEventArgs e) => _viewModel.Load();
 
+    private void OnOpenExplorer(object sender, RoutedEventArgs e) =>
+        new AssetTopologyExplorerWindow { Owner = this }.Show();
+
     private void OnTimeline(object sender, RoutedEventArgs e)
     {
         var initialServerId = ServerFilterBox.Text
@@ -271,7 +274,6 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnDeleteEdge(object sender, RoutedEventArgs e) => _viewModel.DeleteSelectedEdge();
     private void OnSaveEdge(object sender, RoutedEventArgs e) => _viewModel.SaveSelectedEdge();
-    private void OnConfirmEdge(object sender, RoutedEventArgs e) => _viewModel.ConfirmSelectedEdge();
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
@@ -544,19 +546,53 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
         relations.Click += (_, _) => OpenNodeRelations(id);
         menu.Items.Add(relations);
 
-        // 待确认节点(disc:)额外提供 确认/删除
-        if (id.Contains(":disc:", StringComparison.Ordinal))
+        var profiles = _viewModel.GetProfiles(id);
+        if (profiles.Count > 0)
         {
             menu.Items.Add(new Separator());
 
-            var confirm = new MenuItem { Header = "确认节点（登记为资产）" };
-            confirm.Click += (_, _) => _viewModel.ConfirmNode(id);
-            menu.Items.Add(confirm);
+            var setKey = new MenuItem { Header = "设置资产标识（合并）…" };
+            setKey.Click += (_, _) =>
+            {
+                var current = profiles.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.AssetKey))?.AssetKey ?? string.Empty;
+                var value = TextInputDialog.Prompt(
+                    this,
+                    "设置资产标识",
+                    "同一实例的多条接入配置填相同值。\n" +
+                    "把两个节点的资产标识设为相同值，即可合并为同一个逻辑资产；留空则按配置 Id 归并。",
+                    current);
+                if (value is not null)
+                    _viewModel.SetNodeAssetKey(id, value);
+            };
+            menu.Items.Add(setKey);
 
-            var removeNode = new MenuItem { Header = "删除节点（清理发现边）" };
-            removeNode.Click += (_, _) => _viewModel.DeleteDiscoveredNode(id);
-            menu.Items.Add(removeNode);
+            if (profiles.Count > 1)
+            {
+                var split = new MenuItem { Header = "拆分接入方式…" };
+                foreach (var profile in profiles)
+                {
+                    var item = new MenuItem
+                    {
+                        Header = $"{profile.Name} ({profile.Id})"
+                    };
+                    item.Click += (_, _) =>
+                    {
+                        var value = TextInputDialog.Prompt(
+                            this,
+                            "拆分接入方式",
+                            "给该接入配置设置一个新的资产标识，使其单独成为逻辑资产。\n" +
+                            "留空则使用配置 Id。",
+                            profile.Id);
+                        if (value is not null)
+                            _viewModel.SplitProfile(id, profile.Id, value);
+                    };
+                    split.Items.Add(item);
+                }
+                menu.Items.Add(split);
+            }
         }
+
+        // 待确认节点(disc:)不再进入主图，相关操作已移除
 
         menu.IsOpen = true;
         e.Handled = true;
@@ -630,19 +666,6 @@ public partial class TopologyWindow : Wpf.Ui.Controls.FluentWindow
         if (string.IsNullOrWhiteSpace(id))
             return;
         try { Clipboard.SetText(id); } catch { /* ignore */ }
-    }
-
-    private void OnInspectorConfirmNode(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel.SelectedIdOrNull is { } id)
-            _viewModel.ConfirmNode(id);
-    }
-
-    private void OnInspectorDeleteNode(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel.SelectedIdOrNull is { } id)
-            _viewModel.DeleteDiscoveredNode(id);
-        _viewModel.ClearSelection();
     }
 
     private void OnCanvasMouseMove(object sender, MouseEventArgs e)

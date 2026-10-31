@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using LitSSHmcp.Core.Models;
 
 namespace LitSSHmcp.Core.Services.Topology;
@@ -161,13 +160,17 @@ public static class SnapshotTopologyBuilder
             if (string.IsNullOrWhiteSpace(name))
                 continue;
 
-            var containerId = ContainerNodeId(server, name);
+            var (composeProject, composeService) = ParseComposeLabels(String(row, "labels"));
+            var containerId = ContainerNodeId(server, name, composeProject, composeService);
             var image = String(row, "image") ?? string.Empty;
             var state = String(row, "state") ?? string.Empty;
             contribution.NodeInfo[containerId] = Info(verifiedAt, name, new Dictionary<string, object?>
             {
                 ["containerName"] = name,
                 ["containerId"] = String(row, "id"),
+                ["composeProject"] = composeProject,
+                ["composeService"] = composeService,
+                ["workloadKey"] = WorkloadKey(server, name, composeProject, composeService),
                 ["image"] = image,
                 ["state"] = state,
                 ["status"] = String(row, "status"),
@@ -200,7 +203,7 @@ public static class SnapshotTopologyBuilder
                     $"snapshot docker: container={name} published={port}/{proto}", verifiedAt));
             }
 
-            var app = MatchContainerApplication(config, server, name);
+            var app = MatchContainerApplication(config, server, name, composeProject, composeService);
             if (app is null)
                 continue;
 
@@ -320,7 +323,7 @@ public static class SnapshotTopologyBuilder
             }
             else if (IsAppProcess(process))
             {
-                contribution.Edges.Add(Edge(PendingAppId(process), portId, "listensOn",
+                contribution.Edges.Add(Edge(TopologyIds.PendingApp(server.Id, process), portId, "listensOn",
                     $"snapshot portmap(未登记应用): process={process} port={port}", verifiedAt));
             }
             else
@@ -333,7 +336,7 @@ public static class SnapshotTopologyBuilder
                 }
                 else
                 {
-                    var pendingDs = PendingDatasourceId(process);
+                    var pendingDs = PendingDatasourceId(server, process, port.Value);
                     if (pendingDs is not null)
                         contribution.Edges.Add(Edge(pendingDs, portId, "listensOn",
                             $"snapshot portmap(未登记数据源): process={process} port={port}", verifiedAt));
@@ -359,7 +362,9 @@ public static class SnapshotTopologyBuilder
             contribution.Notes.Add($"{server.Name}: nginx 配置已截断，域名/证书可能不完整");
 
         var proxyApp = MatchProxyApplication(config, server);
-        var proxyNode = proxyApp is not null ? AssetNode.App(proxyApp.Id) : PendingAppId("nginx");
+        var proxyNode = proxyApp is not null
+            ? AssetNode.App(proxyApp.Id)
+            : TopologyIds.PendingApp(server.Id, "nginx");
 
         var count = 0;
         foreach (var row in domains.EnumerateArray())
@@ -376,11 +381,15 @@ public static class SnapshotTopologyBuilder
             if (string.IsNullOrWhiteSpace(domain) || domain == "_")
                 continue;
 
-            var domainId = $"domain:{SanitizeId(domain)}";
+            var normalizedDomain = TopologyIds.NormalizeDomain(domain);
+            if (normalizedDomain.Length == 0)
+                continue;
+
+            var domainId = $"domain:{SanitizeId(normalizedDomain)}";
             var ports = IntArray(row, "ports");
             var ssl = Bool(row, "ssl");
 
-            contribution.NodeInfo[domainId] = Info(verifiedAt, domain, new Dictionary<string, object?>
+            contribution.NodeInfo[domainId] = Info(verifiedAt, normalizedDomain, new Dictionary<string, object?>
             {
                 ["ports"] = string.Join(",", ports),
                 ["ssl"] = ssl,
@@ -389,9 +398,9 @@ public static class SnapshotTopologyBuilder
             });
 
             contribution.Edges.Add(Edge(domainId, sshNode, "resolvesTo",
-                $"snapshot nginx_tls: domain={domain} server={server.Name}", verifiedAt));
+                $"snapshot nginx_tls: domain={normalizedDomain} server={server.Name}", verifiedAt));
             contribution.Edges.Add(Edge(domainId, proxyNode, "exposes",
-                $"snapshot nginx_tls: domain={domain}", verifiedAt));
+                $"snapshot nginx_tls: domain={normalizedDomain}", verifiedAt));
 
             if (!row.TryGetProperty("certificates", out var certs) || certs.ValueKind != JsonValueKind.Array)
                 continue;
@@ -404,16 +413,21 @@ public static class SnapshotTopologyBuilder
                 var path = String(cert, "path") ?? string.Empty;
                 var subjectCn = String(cert, "subjectCn");
                 var notAfter = String(cert, "notAfter");
-                var certId = $"cert:{ShortHash($"{server.Id}|{path}|{subjectCn}")}";
+                var fingerprint = String(cert, "fingerprint");
+                var certId = string.IsNullOrWhiteSpace(fingerprint)
+                    ? $"cert:{ShortHash($"{server.Id}|{path}|{subjectCn}")}"
+                    : $"cert:{SanitizeId(fingerprint)}";
                 var label = string.IsNullOrWhiteSpace(subjectCn) ? $"证书 {ShortHash(path)}" : $"证书 {subjectCn}";
 
                 contribution.NodeInfo[certId] = Info(verifiedAt, label, new Dictionary<string, object?>
                 {
                     ["path"] = path,
                     ["subjectCn"] = subjectCn,
+                    ["notAfter"] = notAfter,
                     ["expiresAt"] = notAfter,
                     ["daysRemaining"] = Long(cert, "daysRemaining"),
                     ["expired"] = Bool(cert, "expired"),
+                    ["fingerprint"] = fingerprint,
                     ["dnsNames"] = StringArray(cert, "dnsNames"),
                     ["serverId"] = server.Id,
                     ["description"] = $"TLS 证书 · {server.Name} · 到期 {notAfter}"
@@ -428,46 +442,55 @@ public static class SnapshotTopologyBuilder
     private static ApplicationConfig? MatchApplication(
         AppConfig config, SshServerConfig server, int port, string process, string exe, string cmdline)
     {
-        var candidates = config.Applications.Where(a => ApplicationOnServer(a, server)).ToArray();
         var text = $"{process} {exe} {cmdline}";
-        var byName = candidates.FirstOrDefault(a => NameMatches(a, text));
+        var byName = config.Applications.FirstOrDefault(a =>
+            ApplicationMayMatch(a, server) && NameMatches(a, text));
         if (byName is not null)
             return byName;
 
         // nginx/haproxy 等代理进程不能按端口反推后端应用（80/443 往往由代理占用）
         return ProxyProcesses.Contains(process)
             ? null
-            : candidates.FirstOrDefault(a => a.Port == port);
+            : config.Applications.FirstOrDefault(a => HasExplicitServerBinding(a, server) && a.Port == port);
     }
 
-    private static ApplicationConfig? MatchProxyApplication(AppConfig config, SshServerConfig server) =>
-        config.Applications.FirstOrDefault(a =>
-            ApplicationOnServer(a, server) &&
-            (a.Type.Contains("nginx", StringComparison.OrdinalIgnoreCase) ||
-             a.Name.Contains("nginx", StringComparison.OrdinalIgnoreCase)));
+    private static ApplicationConfig? MatchProxyApplication(AppConfig config, SshServerConfig server)
+    {
+        var proxyApps = config.Applications.Where(IsProxyApplication).ToArray();
+        var explicitMatch = proxyApps.FirstOrDefault(a => HasExplicitServerBinding(a, server));
+        if (explicitMatch is not null)
+            return explicitMatch;
+
+        var unbound = proxyApps.Where(IsUnboundApplication).ToArray();
+        return unbound.Length == 1 ? unbound[0] : null;
+    }
+
+    private static bool IsProxyApplication(ApplicationConfig app) =>
+        app.Type.Contains("nginx", StringComparison.OrdinalIgnoreCase) ||
+        app.Name.Contains("nginx", StringComparison.OrdinalIgnoreCase);
 
     private static DataSourceConfig? MatchDatasource(AppConfig config, SshServerConfig server, int port) =>
         config.DataSources.FirstOrDefault(d =>
             d.Port == port && DatasourceOnServer(d, server) && DataServiceType(d.Type) is not null);
 
-    private static bool ApplicationOnServer(ApplicationConfig app, SshServerConfig server) =>
-        string.IsNullOrWhiteSpace(app.Host) ||
-        app.Host.Equals(server.Host, StringComparison.OrdinalIgnoreCase) ||
-        app.Host.Equals(server.Name, StringComparison.OrdinalIgnoreCase);
+    private static bool HasExplicitServerBinding(ApplicationConfig app, SshServerConfig server) =>
+        !string.IsNullOrWhiteSpace(app.ServerId)
+            ? string.Equals(app.ServerId, server.Id, StringComparison.OrdinalIgnoreCase)
+            : !string.IsNullOrWhiteSpace(app.Host) && TopologyHost.MatchesServer(server, app.Host);
+
+    private static bool IsUnboundApplication(ApplicationConfig app) =>
+        string.IsNullOrWhiteSpace(app.ServerId) && string.IsNullOrWhiteSpace(app.Host);
+
+    private static bool ApplicationMayMatch(ApplicationConfig app, SshServerConfig server) =>
+        HasExplicitServerBinding(app, server) || IsUnboundApplication(app);
 
     private static bool DatasourceOnServer(DataSourceConfig ds, SshServerConfig server)
     {
-        if (IsLocalHost(ds.Host))
+        if (TopologyHost.IsLocalHost(ds.Host))
             return ds.AccessMode == AccessMode.SshTunnel &&
                    string.Equals(ds.TunnelServerId, server.Id, StringComparison.OrdinalIgnoreCase);
-        return ds.Host.Equals(server.Host, StringComparison.OrdinalIgnoreCase) ||
-               ds.Host.Equals(server.Name, StringComparison.OrdinalIgnoreCase);
-    }
 
-    private static bool IsLocalHost(string? host)
-    {
-        var h = (host ?? string.Empty).Trim();
-        return h.Equals("localhost", StringComparison.OrdinalIgnoreCase) || h is "127.0.0.1" or "::1";
+        return TopologyHost.MatchesServer(server, ds.Host);
     }
 
     private static bool NameMatches(ApplicationConfig app, string text)
@@ -493,7 +516,7 @@ public static class SnapshotTopologyBuilder
         _ => null
     };
 
-    private static string? PendingDatasourceId(string process)
+    private static string? PendingDatasourceId(SshServerConfig server, string process, int port)
     {
         var type = process.ToLowerInvariant() switch
         {
@@ -502,19 +525,80 @@ public static class SnapshotTopologyBuilder
             "postgres" => "postgres",
             _ => null
         };
-        return type is null ? null : $"ds:disc:{type}";
+        return type is null ? null : TopologyIds.PendingLocalDatasource(server.Id, type, port);
     }
 
     private static ApplicationConfig? MatchContainerApplication(
-        AppConfig config, SshServerConfig server, string containerName)
+        AppConfig config,
+        SshServerConfig server,
+        string containerName,
+        string? composeProject,
+        string? composeService)
     {
-        var candidates = config.Applications.Where(a => ApplicationOnServer(a, server)).ToArray();
+        var candidates = config.Applications.Where(a => ApplicationMayMatch(a, server)).ToArray();
+        var composeAlias = !string.IsNullOrWhiteSpace(composeProject) && !string.IsNullOrWhiteSpace(composeService)
+            ? $"{composeProject}/{composeService}"
+            : null;
+
         return candidates.FirstOrDefault(a =>
                    !string.IsNullOrWhiteSpace(a.ContainerName) &&
-                   a.ContainerName.Equals(containerName, StringComparison.OrdinalIgnoreCase))
+                   (a.ContainerName.Equals(containerName, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrWhiteSpace(composeService) &&
+                     a.ContainerName.Equals(composeService, StringComparison.OrdinalIgnoreCase)) ||
+                    (composeAlias is not null &&
+                     a.ContainerName.Equals(composeAlias, StringComparison.OrdinalIgnoreCase))))
                ?? candidates.FirstOrDefault(a =>
                    a.Name.Equals(containerName, StringComparison.OrdinalIgnoreCase) ||
+                   (!string.IsNullOrWhiteSpace(composeService) &&
+                    a.Name.Equals(composeService, StringComparison.OrdinalIgnoreCase)) ||
                    a.Id.Equals(containerName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static (string? Project, string? Service) ParseComposeLabels(string? labels)
+    {
+        if (string.IsNullOrWhiteSpace(labels))
+            return (null, null);
+
+        string? project = null;
+        string? service = null;
+        foreach (var pair in labels.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var index = pair.IndexOf('=');
+            if (index <= 0)
+                continue;
+
+            var key = pair[..index].Trim();
+            var value = pair[(index + 1)..].Trim();
+            if (key.Equals("com.docker.compose.project", StringComparison.OrdinalIgnoreCase))
+                project = value;
+            else if (key.Equals("com.docker.compose.service", StringComparison.OrdinalIgnoreCase))
+                service = value;
+        }
+
+        return (
+            string.IsNullOrWhiteSpace(project) ? null : project,
+            string.IsNullOrWhiteSpace(service) ? null : service);
+    }
+
+    private static string WorkloadKey(
+        SshServerConfig server,
+        string name,
+        string? composeProject,
+        string? composeService) =>
+        !string.IsNullOrWhiteSpace(composeProject) && !string.IsNullOrWhiteSpace(composeService)
+            ? $"{server.Id}/{composeProject}/{composeService}"
+            : $"{server.Id}/{name}";
+
+    private static string ContainerNodeId(
+        SshServerConfig server,
+        string name,
+        string? composeProject,
+        string? composeService)
+    {
+        var workload = !string.IsNullOrWhiteSpace(composeProject) && !string.IsNullOrWhiteSpace(composeService)
+            ? $"{composeProject}:{composeService}"
+            : name;
+        return $"container:{SanitizeId(server.Id)}:{SanitizeId(workload)}";
     }
 
     private static IEnumerable<(int Port, string Proto)> PublishedPorts(string? value)
@@ -565,9 +649,6 @@ public static class SnapshotTopologyBuilder
             name = name[..^".service".Length];
         return $"service:{SanitizeId(server.Id)}:{SanitizeId(name)}";
     }
-
-    private static string ContainerNodeId(SshServerConfig server, string name) =>
-        $"container:{SanitizeId(server.Id)}:{SanitizeId(name)}";
 
     private static void MergeNodeInfo(
         SnapshotGraphContribution contribution, string nodeId, Dictionary<string, object?> info)
@@ -661,10 +742,7 @@ public static class SnapshotTopologyBuilder
             .ToArray();
     }
 
-    private static string PendingAppId(string name) => $"app:disc:{SanitizeId(name)}";
-
-    private static string SanitizeId(string value) =>
-        Regex.Replace(value.ToLowerInvariant(), @"[^a-z0-9\-_.]", "-");
+    private static string SanitizeId(string value) => TopologyIds.SanitizeId(value);
 
     private static string ShortHash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..12].ToLowerInvariant();

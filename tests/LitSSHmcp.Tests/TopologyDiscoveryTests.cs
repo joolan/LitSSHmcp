@@ -27,20 +27,17 @@ public class TopologyDiscoveryTests
             SsOutput = string.Empty,
             ConfigScanOutput = "/opt/order/application.yml:    url: jdbc:mysql://10.9.9.9:3306/orderdb"
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
 
-        Assert.Contains(result.NewEdges, e => e.From == "app:disc:order-svc" && e.To == "ssh:s1" && e.Type == "runsOn");
+        Assert.Contains(result.NewEdges, e => e.From == "app:disc:s1:order-svc" && e.To == "ssh:s1" && e.Type == "runsOn");
         // 远程且未匹配到已配置服务器/数据源的 DB 端点: 只登记为未匹配端点, 不建待确认节点
         Assert.DoesNotContain(result.NewEdges, e => e.To.StartsWith("ds:disc:", StringComparison.Ordinal));
         Assert.Contains(result.UnmatchedEndpoints, d => (d["url"]?.ToString() ?? "").Contains("jdbc:mysql"));
         Assert.Contains(result.Notes, n => n.Contains("已跳过"));
-        Assert.True(store.Edges.Count >= 1);
     }
 
     [Fact]
@@ -57,9 +54,8 @@ public class TopologyDiscoveryTests
         };
 
         var ssh = new FakeSsh { JavaOutput = string.Empty, DockerOutput = string.Empty, SsOutput = string.Empty };
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
@@ -87,19 +83,16 @@ public class TopologyDiscoveryTests
             SsOutput = string.Empty,
             ConfigScanOutput = "/opt/order/application.yml:    url: jdbc:mysql://10.9.9.9:3306/orderdb"
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
 
         // 人工已声明 ssh:s1 -> ds:dsX canAccess，发现不应把它计入/写入
         Assert.DoesNotContain(result.NewEdges, e => e.From == "ssh:s1" && e.To == "ds:dsX" && e.Type == "canAccess");
-        Assert.DoesNotContain(store.Edges, e => e.From == "ssh:s1" && e.To == "ds:dsX" && e.Type == "canAccess");
         // 但推断出的应用依赖仍应被发现
-        Assert.Contains(result.NewEdges, e => e.From == "app:disc:order" && e.To == "ds:dsX" && e.Type == "connectsTo");
+        Assert.Contains(result.NewEdges, e => e.From == "app:disc:s1:order" && e.To == "ds:dsX" && e.Type == "connectsTo");
     }
 
     [Fact]
@@ -128,19 +121,17 @@ public class TopologyDiscoveryTests
                 "/opt/order/application.yml:    spring.kafka.bootstrap-servers: 10.0.0.7:9092\n" +
                 "/opt/order/application.yml:    spring.rabbitmq.addresses: amqp://guest:guest@10.0.0.8:5672/"
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
 
-        Assert.Contains(result.NewEdges, e => e.From == "app:disc:backend" && e.To == "ssh:s1" && e.Type == "runsOn");
-        Assert.Contains(result.NewEdges, e => e.From == "app:disc:foo" && e.To == "app:disc:backend" && e.Type == "connectsTo");
-        Assert.Contains(result.NewEdges, e => e.From == "app:disc:foo" && e.To == "app:disc:10.0.0.9-8080" && e.Type == "connectsTo");
-        Assert.Contains(result.NewEdges, e => e.From == "app:disc:order" && e.To == "mq:disc:10.0.0.7-9092" && e.Type == "connectsTo");
-        Assert.Contains(result.NewEdges, e => e.From == "app:disc:order" && e.To == "mq:disc:10.0.0.8-5672" && e.Type == "connectsTo");
+        Assert.Contains(result.NewEdges, e => e.From == "app:disc:s1:backend" && e.To == "ssh:s1" && e.Type == "runsOn");
+        Assert.Contains(result.NewEdges, e => e.From == "app:disc:s1:foo" && e.To == "app:disc:s1:backend" && e.Type == "connectsTo");
+        Assert.Contains(result.NewEdges, e => e.From == "app:disc:s1:foo" && e.To == "app:disc:s1:10.0.0.9-8080" && e.Type == "connectsTo");
+        Assert.Contains(result.NewEdges, e => e.From == "app:disc:s1:order" && e.To == "mq:disc:10.0.0.7-9092" && e.Type == "connectsTo");
+        Assert.Contains(result.NewEdges, e => e.From == "app:disc:s1:order" && e.To == "mq:disc:10.0.0.8-5672" && e.Type == "connectsTo");
     }
 
     [Fact]
@@ -159,10 +150,8 @@ public class TopologyDiscoveryTests
             SsOutput = string.Empty,
             ConfigScanOutput = "/opt/order/application.yml:    spring.rabbitmq.addresses: amqp://guest:guest@rabbit.internal:5672/\n"
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
@@ -191,10 +180,8 @@ public class TopologyDiscoveryTests
                 "/opt/order/application.yml:    spring.rabbitmq.addresses: amqps://guest:guest@amqps:5672/\n" +
                 "/opt/order/application.yml:    spring.rabbitmq.addresses: amqp://guest:guest@amqp:6379/\n"
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
@@ -224,10 +211,8 @@ public class TopologyDiscoveryTests
                 "/opt/order/application.yml:    spring.redis.host: 127.0.0.1\n" +
                 "/opt/order/application.yml:    spring.redis.port: 6379\n"
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
@@ -254,10 +239,8 @@ public class TopologyDiscoveryTests
             ListenOutput = "LISTEN 0 128 127.0.0.1:5672 0.0.0.0:* users:((\"beam.smp\",pid=7,fd=6))\n",
             ConfigScanOutput = "/opt/order/application.yml:    spring.rabbitmq.addresses: amqp://guest:guest@127.0.0.1:5672/\n"
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
@@ -282,10 +265,8 @@ public class TopologyDiscoveryTests
             ListenOutput = "LISTEN 0 128 127.0.0.1:5671 0.0.0.0:* users:((\"beam.smp\",pid=7,fd=6))\n",
             ConfigScanOutput = "/opt/order/application.yml:    spring.rabbitmq.addresses: amqps://guest:guest@localhost/\n"
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
@@ -313,21 +294,17 @@ public class TopologyDiscoveryTests
                 "LISTEN 0 511 0.0.0.0:80 0.0.0.0:* users:((\"nginx\",pid=1234,fd=6))\n" +
                 "LISTEN 0 128 127.0.0.1:6379 0.0.0.0:* users:((\"redis-server\",pid=2345,fd=6))\n"
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
 
         // nginx → 应用节点；redis → 数据源节点；systemd(user=postgres) 不应出现
-        Assert.Contains(result.NewEdges, e => e.From == "app:disc:nginx" && e.To == "ssh:s1" && e.Type == "runsOn");
-        Assert.Contains(result.NewEdges, e => e.From == "ssh:s1" && e.To == "ds:disc:redis" && e.Type == "canAccess");
-        Assert.DoesNotContain(result.NewEdges, e => e.From == "app:disc:systemd" || e.From == "app:disc:python3");
+        Assert.Contains(result.NewEdges, e => e.From == "app:disc:s1:nginx" && e.To == "ssh:s1" && e.Type == "runsOn");
+        Assert.Contains(result.NewEdges, e => e.From == "ssh:s1" && e.To == "ds:disc:local:s1:redis:6379" && e.Type == "canAccess");
+        Assert.DoesNotContain(result.NewEdges, e => e.From == "app:disc:s1:systemd" || e.From == "app:disc:s1:python3");
         // 端口/路径信息写入节点信息
-        Assert.Contains("80", store.NodeInfos["app:disc:nginx"]);
-        Assert.Contains("usr/sbin/nginx", store.NodeInfos["app:disc:nginx"]);
     }
 
     [Fact]
@@ -355,10 +332,8 @@ public class TopologyDiscoveryTests
             SsOutput = string.Empty,
             ServiceOutput = "  1234 mysql mysqld /usr/sbin/mysqld\n"
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
@@ -397,10 +372,8 @@ public class TopologyDiscoveryTests
             SsOutput = string.Empty,
             ServiceOutput = "  1 mysql mysqld /usr/sbin/mysqld\n"
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
+            new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
@@ -415,41 +388,6 @@ public class TopologyDiscoveryTests
     }
 
     [Fact]
-    public async Task Discovery_clears_stale_discovered_edges_on_rerun()
-    {
-        var config = new AppConfig
-        {
-            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
-            DataSources = new[]
-            {
-                // Host=localhost、跳板指向不存在/别的服务器 → 不应归属 s1
-                new DataSourceConfig { Id = "dsX", Name = "x", Type = "mysql", Host = "127.0.0.1", Port = 3306, AccessMode = AccessMode.SshTunnel, TunnelServerId = "s2" }
-            },
-            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
-        };
-
-        var ssh = new FakeSsh
-        {
-            JavaOutput = string.Empty,
-            DockerOutput = string.Empty,
-            SsOutput = string.Empty,
-            ServiceOutput = "  1 mysql mysqld /usr/sbin/mysqld\n"
-        };
-
-        var store = new MemoryTopologyStore();
-        // 预置一条上一轮的错误残留（指向真实数据源、不含 :disc:）
-        store.Edges.Add(new TopologyEdge { From = "ssh:s1", To = "ds:dsX", Type = "canAccess", Source = "discovered", Evidence = "stale" });
-
-        var topology = new TopologyService(
-            new FakeConfig(config), ssh, new EmptyRegistry(), store,
-            new AllowAllCommandFilter(), new NoopAudit());
-
-        await topology.DiscoverAsync(null, null);
-
-        Assert.DoesNotContain(store.Edges, e => e.From == "ssh:s1" && e.To == "ds:dsX");
-    }
-
-    [Fact]
     public async Task Discovery_attributes_localhost_db_client_to_the_server()
     {
         var config = new AppConfig
@@ -460,9 +398,8 @@ public class TopologyDiscoveryTests
         };
 
         var ssh = new FakeSsh();
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), ssh, new FakeRegistry(new FakeMysqlDriver()), store,
+            new FakeConfig(config), ssh, new FakeRegistry(new FakeMysqlDriver()),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
@@ -481,7 +418,7 @@ public class TopologyDiscoveryTests
         };
 
         var ssh = new FakeSsh { ListenOutput = "LISTEN 0 511 0.0.0.0:80 0.0.0.0:* users:((\"nginx\",pid=1,fd=6))" };
-        var topology = new TopologyService(new FakeConfig(config), ssh, new EmptyRegistry(), new MemoryTopologyStore(),
+        var topology = new TopologyService(new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         await topology.DiscoverAsync(null, null);
@@ -490,60 +427,7 @@ public class TopologyDiscoveryTests
     }
 
     [Fact]
-    public async Task Graph_marks_runsOn_conflicts_and_respects_acknowledgement()
-    {
-        var config = new AppConfig
-        {
-            Servers = new[]
-            {
-                new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" },
-                new SshServerConfig { Id = "s2", Name = "web2", Host = "10.0.0.2" }
-            }
-        };
-        var store = new MemoryTopologyStore();
-        var now = DateTime.UtcNow;
-        var first = new TopologyEdge
-        {
-            From = "app:a", To = "ssh:s1", Type = "runsOn", Source = "discovered",
-            LastSeenAt = now, LastVerifiedAt = now
-        };
-        var second = new TopologyEdge
-        {
-            From = "app:a", To = "ssh:s2", Type = "runsOn", Source = "discovered",
-            LastSeenAt = now, LastVerifiedAt = now
-        };
-        store.Edges.Add(first);
-        store.Edges.Add(second);
-
-        var topology = new TopologyService(
-            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(), store,
-            new AllowAllCommandFilter(), new NoopAudit());
-
-        var graph = await topology.GetGraphAsync();
-        var firstEdge = Assert.Single(graph.Edges, e => e.From == "app:a" && e.To == "ssh:s1");
-        var secondEdge = Assert.Single(graph.Edges, e => e.From == "app:a" && e.To == "ssh:s2");
-        Assert.True(firstEdge.Disputed);
-        Assert.True(secondEdge.Disputed);
-        Assert.Contains("ssh:s1", secondEdge.DisputeReason);
-        Assert.Contains("ssh:s2", secondEdge.DisputeReason);
-
-        // 人工确认其中一条后，该边不再标红；另一条仍保持冲突。
-        first.DisputeAcknowledged = true;
-        graph = await topology.GetGraphAsync();
-        Assert.False(Assert.Single(graph.Edges, e => e.To == "ssh:s1").Disputed);
-        Assert.True(Assert.Single(graph.Edges, e => e.To == "ssh:s2").Disputed);
-
-        // 冲突消失后清空原因和确认状态，便于未来再次冲突时重新提示。
-        store.Edges.Remove(second);
-        graph = await topology.GetGraphAsync();
-        var resolved = Assert.Single(graph.Edges, e => e.From == "app:a");
-        Assert.False(resolved.Disputed);
-        Assert.False(resolved.DisputeAcknowledged);
-        Assert.Null(resolved.DisputeReason);
-    }
-
-    [Fact]
-    public async Task Graph_marks_discovered_edge_that_conflicts_with_manual_runsOn()
+    public async Task Graph_uses_curated_relations_and_ignores_discovered_edges()
     {
         var config = new AppConfig
         {
@@ -552,26 +436,20 @@ public class TopologyDiscoveryTests
                 new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" },
                 new SshServerConfig { Id = "s2", Name = "web2", Host = "10.0.0.2" }
             },
-            Relations = new[] { new RelationConfig { From = "app:a", To = "ssh:s1", Type = "runsOn" } }
+            Relations = new[]
+            {
+                new RelationConfig { From = "app:a", To = "ssh:s1", Type = "runsOn" }
+            }
         };
-        var store = new MemoryTopologyStore();
-        store.Edges.Add(new TopologyEdge
-        {
-            From = "app:a", To = "ssh:s2", Type = "runsOn", Source = "discovered",
-            LastSeenAt = DateTime.UtcNow, LastVerifiedAt = DateTime.UtcNow
-        });
 
         var topology = new TopologyService(
-            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(), store,
+            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var graph = await topology.GetGraphAsync();
-        var manual = Assert.Single(graph.Edges, e => e.To == "ssh:s1");
-        var discovered = Assert.Single(graph.Edges, e => e.To == "ssh:s2");
-        Assert.False(manual.Disputed);
-        Assert.True(discovered.Disputed);
-        Assert.Contains("ssh:s1", discovered.DisputeReason);
-        Assert.Contains("ssh:s2", discovered.DisputeReason);
+
+        Assert.Contains(graph.Edges, e => e.From == "app:a" && e.To == "ssh:s1" && e.Type == "runsOn");
+        Assert.DoesNotContain(graph.Edges, e => e.From == "app:a" && e.To == "ssh:s2");
     }
 
     [Fact]
@@ -585,7 +463,7 @@ public class TopologyDiscoveryTests
 
         var gate = new TaskCompletionSource();
         var ssh = new FakeSsh { Block = gate.Task };
-        var topology = new TopologyService(new FakeConfig(config), ssh, new EmptyRegistry(), new MemoryTopologyStore(),
+        var topology = new TopologyService(new FakeConfig(config), ssh, new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit());
 
         var first = topology.DiscoverAsync(null, null);
@@ -653,26 +531,427 @@ public class TopologyDiscoveryTests
                 """
             }
         };
-
-        var store = new MemoryTopologyStore();
         var topology = new TopologyService(
-            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(), store,
+            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(),
             new AllowAllCommandFilter(), new NoopAudit(), snapshotStore);
+
+        await topology.DiscoverAsync(null, null);
+
+        var graph = await topology.GetGraphAsync();
+        Assert.DoesNotContain(graph.Nodes, n => n.Type == "domain" || n.Type == "port");
+        Assert.DoesNotContain(graph.Edges, e => e.Type == "tlsBy");
+
+        var evidence = await topology.GetServerDiscoveryEvidenceAsync("s1");
+        Assert.NotNull(evidence);
+        Assert.Single(evidence!.Ports);
+        Assert.Single(evidence.Domains);
+    }
+
+    [Fact]
+    public async Task Discovery_same_service_names_on_different_servers_stay_distinct()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" },
+                new SshServerConfig { Id = "s2", Name = "web2", Host = "10.0.0.2" }
+            },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh
+        {
+            JavaOutput = string.Empty,
+            DockerOutput = string.Empty,
+            ServiceOutput =
+                "  1234 root  nginx  nginx: master process /usr/sbin/nginx\n" +
+                "  2345 mysql mysqld /usr/sbin/mysqld\n",
+            ListenOutput =
+                "LISTEN 0 511 0.0.0.0:80 0.0.0.0:* users:((\"nginx\",pid=1234,fd=6))\n" +
+                "LISTEN 0 128 127.0.0.1:3306 0.0.0.0:* users:((\"mysqld\",pid=2345,fd=6))\n"
+        };
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(),
+            new AllowAllCommandFilter(), new NoopAudit());
 
         var result = await topology.DiscoverAsync(null, null);
 
-        Assert.Contains(result.NewEdges, e =>
-            e.From == "domain:shop.example.com" && e.To == "app:disc:nginx" && e.Type == "exposes");
-        Assert.Contains(result.NewEdges, e =>
-            e.From == "port:s1:tcp-443" && e.To == "ssh:s1" && e.Type == "hostedOn");
-        Assert.Contains(store.Edges, e =>
-            e.From == "domain:shop.example.com" && e.Type == "tlsBy" && e.To.StartsWith("cert:", StringComparison.Ordinal));
-        Assert.True(store.NodeInfos.ContainsKey("port:s1:tcp-443"));
-        Assert.Contains(store.NodeInfos.Keys, id => id.StartsWith("cert:", StringComparison.Ordinal));
+        Assert.Contains(result.NewEdges, e => e.From == "app:disc:s1:nginx" && e.To == "ssh:s1" && e.Type == "runsOn");
+        Assert.Contains(result.NewEdges, e => e.From == "app:disc:s2:nginx" && e.To == "ssh:s2" && e.Type == "runsOn");
+        Assert.Contains(result.NewEdges, e => e.From == "ssh:s1" && e.To == "ds:disc:local:s1:mysql:3306" && e.Type == "canAccess");
+        Assert.Contains(result.NewEdges, e => e.From == "ssh:s2" && e.To == "ds:disc:local:s2:mysql:3306" && e.Type == "canAccess");
+        Assert.DoesNotContain(result.NewEdges, e => e.From == "app:disc:nginx");
+    }
+
+    [Fact]
+    public async Task Discovery_matches_datasource_by_internal_host()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig
+                {
+                    Id = "s1",
+                    Name = "web1",
+                    Host = "1.2.3.4",
+                    InternalHost = "10.0.0.5"
+                }
+            },
+            DataSources = new[]
+            {
+                new DataSourceConfig { Id = "ds1", Name = "orderdb", Type = "mysql", Host = "10.0.0.5", Port = 3306 }
+            },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh
+        {
+            JavaOutput = string.Empty,
+            DockerOutput = string.Empty,
+            SsOutput = string.Empty,
+            ServiceOutput = "  1 mysql mysqld /usr/sbin/mysqld\n"
+        };
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(),
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        Assert.Contains(result.NewEdges, e => e.From == "ssh:s1" && e.To == "ds:ds1" && e.Type == "canAccess");
+        Assert.DoesNotContain(result.NewEdges, e => e.To.StartsWith("ds:disc:local:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Discovery_reports_duplicate_asset_candidates()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig { Id = "s1", Name = "web-public", Host = "10.0.0.1", Port = 22 },
+                new SshServerConfig { Id = "s2", Name = "web-admin", Host = "10.0.0.1", Port = 22 }
+            },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var topology = new TopologyService(
+            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(),
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        var group = Assert.Single(result.DuplicateCandidates, g => g.AssetType == "ssh");
+        Assert.Equal(2, group.Items.Length);
+        Assert.Contains(result.Notes, n => n.Contains("疑似重复"));
+    }
+
+    [Fact]
+    public async Task Discovery_collects_server_identity()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var ssh = new FakeSsh
+        {
+            MachineIdOutput = "machine-1\n",
+            HostnameOutput = "web1.local\n",
+            HostKeyOutput = "256 SHA256:abc123 root@web (ED25519)\n"
+        };
+        var identityStore = new MemoryIdentityStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), ssh, new EmptyRegistry(),
+            new AllowAllCommandFilter(), new NoopAudit(),
+            snapshotStore: null, identityStore: identityStore);
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        Assert.Contains(identityStore.Records, r =>
+            r.AssetId == "s1" && r.AssetType == "ssh" &&
+            r.IdentityKind == AssetIdentityKinds.SshMachineId && r.IdentityValue == "machine-1");
+        Assert.Contains(identityStore.Records, r =>
+            r.IdentityKind == AssetIdentityKinds.SshHostname && r.IdentityValue == "web1.local");
+        Assert.Contains(identityStore.Records, r =>
+            r.IdentityKind == AssetIdentityKinds.SshHostKey && r.IdentityValue == "SHA256:abc123");
+        Assert.Equal(3, result.IdentityCount);
+    }
+
+    [Fact]
+    public async Task Discovery_collects_mysql_server_uuid()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
+            DataSources = new[]
+            {
+                new DataSourceConfig { Id = "ds1", Name = "orderdb", Type = "mysql", Host = "10.0.0.1", Port = 3306 }
+            },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var identityStore = new MemoryIdentityStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), new FakeSsh(), new FakeRegistry(new FakeMysqlDriver { ServerUuid = "uuid-1" }), new AllowAllCommandFilter(), new NoopAudit(),
+            snapshotStore: null, identityStore: identityStore);
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        Assert.Contains(identityStore.Records, r =>
+            r.AssetId == "ds1" && r.AssetType == "datasource" &&
+            r.IdentityKind == AssetIdentityKinds.MysqlServerUuid && r.IdentityValue == "uuid-1");
+        Assert.Equal(1, result.IdentityCount);
+    }
+
+    [Fact]
+    public async Task Discovery_reports_identity_conflicts_for_cloned_machine_id()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" },
+                new SshServerConfig { Id = "s2", Name = "web2", Host = "10.0.0.2" }
+            },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var identityStore = new MemoryIdentityStore();
+        var topology = new TopologyService(
+            new FakeConfig(config), new FakeSsh { MachineIdOutput = "same-machine\n" },
+            new EmptyRegistry(),
+            new AllowAllCommandFilter(), new NoopAudit(),
+            snapshotStore: null, identityStore: identityStore);
+
+        var result = await topology.DiscoverAsync(null, null);
+
+        Assert.Contains(result.IdentityConflicts, c => c.Contains(AssetIdentityKinds.SshMachineId));
+        Assert.Contains(result.Notes, n => n.Contains("身份冲突"));
+        Assert.Single(identityStore.Records, r => r.IdentityKind == AssetIdentityKinds.SshMachineId);
+    }
+
+    [Fact]
+    public async Task Graph_merges_profiles_with_same_asset_key_and_resolves_alias()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig
+                {
+                    Id = "s1", Name = "web-public", Host = "1.2.3.4", Port = 22,
+                    AssetKey = "prod-web", CreatedAt = new DateTime(2026, 1, 1)
+                },
+                new SshServerConfig
+                {
+                    Id = "s2", Name = "web-internal", Host = "10.0.0.5", Port = 22,
+                    AssetKey = "prod-web", CreatedAt = new DateTime(2026, 1, 2)
+                }
+            },
+            Applications = new[]
+            {
+                new ApplicationConfig
+                {
+                    Id = "order", Name = "order", AssetKey = "order",
+                    RuntimeKind = RuntimeEnvironmentKind.SshServer,
+                    RuntimeSshAssetKey = "prod-web"
+                }
+            }
+        };
+
+        var topology = new TopologyService(
+            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(),
+            new AllowAllCommandFilter(), new NoopAudit());
 
         var graph = await topology.GetGraphAsync();
-        Assert.Contains(graph.Nodes, n => n.Id == "domain:shop.example.com" && n.Type == "domain" && n.Label == "shop.example.com");
-        Assert.Contains(graph.Nodes, n => n.Id == "port:s1:tcp-443" && n.Type == "port");
+
+        var server = Assert.Single(graph.Nodes, n => n.Type == "ssh");
+        Assert.Equal("ssh:prod-web", server.Id);
+        Assert.Equal(2, ((string[])server.Info["profileIds"]!).Length);
+        Assert.Single(graph.Edges, e => e.From == "app:order" && e.Type == "runsOn");
+
+        var dependencies = await topology.GetDependenciesAsync("ssh:s2");
+        Assert.Equal("ssh:prod-web", dependencies.Asset?.Id);
+    }
+
+    [Fact]
+    public async Task Graph_exposes_jump_and_tunnel_access_routes()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig
+                {
+                    Id = "s1", Name = "target", Host = "10.0.0.1", Port = 22,
+                    ProxyJumpServerId = "jump"
+                },
+                new SshServerConfig { Id = "jump", Name = "jump", Host = "10.0.0.2", Port = 22 }
+            },
+            DataSources = new[]
+            {
+                new DataSourceConfig
+                {
+                    Id = "ds1", Name = "orderdb", Type = "mysql", Host = "10.0.0.3", Port = 3306,
+                    AccessMode = AccessMode.SshTunnel, TunnelServerId = "jump"
+                }
+            }
+        };
+
+        var topology = new TopologyService(
+            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(),
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var graph = await topology.GetGraphAsync();
+
+        Assert.Contains(graph.Edges, e =>
+            e.From == "ssh:s1" && e.To == "ssh:jump" && e.Type == "accessedVia");
+        Assert.Contains(graph.Edges, e =>
+            e.From == "ds:ds1" && e.To == "ssh:jump" && e.Type == "accessedVia");
+    }
+
+    [Fact]
+    public async Task Curated_graph_uses_runtime_fields_and_ignores_discovered_edges()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[]
+            {
+                new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1", AssetKey = "web" }
+            },
+            Applications = new[]
+            {
+                new ApplicationConfig
+                {
+                    Id = "docker1", Name = "docker-app", Type = "docker", AssetKey = "docker",
+                    RuntimeKind = RuntimeEnvironmentKind.Standalone
+                },
+                new ApplicationConfig
+                {
+                    Id = "app1", Name = "order", Type = "java", AssetKey = "order",
+                    RuntimeKind = RuntimeEnvironmentKind.SshServer, RuntimeSshAssetKey = "web"
+                }
+            },
+            DataSources = new[]
+            {
+                new DataSourceConfig
+                {
+                    Id = "ds1", Name = "orderdb", Type = "mysql", AssetKey = "db",
+                    RuntimeKind = RuntimeEnvironmentKind.DockerApplication,
+                    RuntimeDockerAssetKey = "docker", RuntimeContainerName = "mysql"
+                }
+            },
+            Relations = new[]
+            {
+                new RelationConfig { From = "app:order", To = "ds:db", Type = "connectsTo" }
+            }
+        };
+
+        var topology = new TopologyService(
+            new FakeConfig(config), new FakeSsh(), new EmptyRegistry(),
+            new AllowAllCommandFilter(), new NoopAudit());
+
+        var graph = await topology.GetCuratedGraphAsync();
+
+        Assert.Contains(graph.Edges, e => e.From == "app:order" && e.To == "ssh:web" && e.Type == "runsOn");
+        Assert.Contains(graph.Edges, e => e.From == "ds:db" && e.To == "app:docker" && e.Type == "runsIn");
+        Assert.Contains(graph.Edges, e => e.From == "app:order" && e.To == "ds:db" && e.Type == "connectsTo");
+        Assert.DoesNotContain(graph.Edges, e => e.From == "ds:db" && e.To == "ssh:web" && e.Type == "canAccess");
+    }
+
+    [Fact]
+    public async Task Server_discovery_evidence_reads_latest_snapshot()
+    {
+        var snapshotStore = new FakeSnapshotStore
+        {
+            Latest = new ServerSnapshot
+            {
+                Id = 7,
+                ServerId = "s1",
+                ServerName = "web1",
+                Status = SnapshotStatus.Succeeded,
+                CreatedAt = "2026-01-02T03:04:05Z",
+                CompletedAt = "2026-01-02T03:04:05Z",
+                DataJson = """
+                {
+                  "sections": {
+                    "portmap": { "status": "ok", "data": { "listeners": [
+                      { "proto": "tcp", "bind": "0.0.0.0", "port": 443, "process": "nginx", "pid": 100, "unit": "nginx.service", "exe": "/usr/sbin/nginx" }
+                    ] } },
+                    "systemd": { "status": "ok", "data": { "units": [
+                      { "unit": "nginx.service", "active": "active", "sub": "running", "description": "Nginx" }
+                    ] } },
+                    "docker": { "status": "ok", "data": { "containers": [
+                      { "name": "shop-api", "image": "shop:1.0", "state": "running", "status": "Up", "ports": "8080->80/tcp", "labels": "com.docker.compose.project=shop,com.docker.compose.service=api" }
+                    ] } },
+                    "nginx_tls": { "status": "ok", "data": { "domains": [
+                      { "domain": "shop.example.com", "ssl": true, "ports": [443], "certificates": [
+                        { "path": "/etc/ssl/shop.pem", "subjectCn": "shop.example.com", "notAfter": "2027-01-01T00:00:00Z", "fingerprint": "AA:BB:CC" }
+                      ] }
+                    ] } }
+                  }
+                }
+                """
+            }
+        };
+
+        var topology = new TopologyService(
+            new FakeConfig(new AppConfig
+            {
+                Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } }
+            }),
+            new FakeSsh(), new EmptyRegistry(),
+            new AllowAllCommandFilter(), new NoopAudit(), snapshotStore);
+
+        var evidence = await topology.GetServerDiscoveryEvidenceAsync("s1");
+
+        Assert.NotNull(evidence);
+        var port = Assert.Single(evidence!.Ports);
+        Assert.Equal(443, port.Port);
+        Assert.True(port.SystemdManaged);
+        Assert.Single(evidence.Services);
+        Assert.Single(evidence.Containers);
+        Assert.Equal("shop", evidence.Containers[0].ComposeProject);
+        Assert.Equal("api", evidence.Containers[0].ComposeService);
+        var domain = Assert.Single(evidence.Domains);
+        Assert.Equal("shop.example.com", domain.Domain);
+        Assert.Equal("AA:BB:CC", Assert.Single(domain.Certificates).Fingerprint);
+    }
+
+    private sealed class MemoryIdentityStore : IAssetIdentityStore
+    {
+        public List<AssetIdentityRecord> Records { get; } = new();
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public Task<bool> TryUpsertAsync(AssetIdentityRecord record)
+        {
+            var conflict = AssetIdentityKinds.IsStrong(record.IdentityKind) &&
+                           Records.Any(r =>
+                               r.AssetType == record.AssetType &&
+                               r.IdentityKind == record.IdentityKind &&
+                               r.IdentityValue == record.IdentityValue &&
+                               r.AssetId != record.AssetId);
+            if (conflict)
+                return Task.FromResult(false);
+
+            Records.RemoveAll(r =>
+                r.AssetId == record.AssetId &&
+                r.IdentityKind == record.IdentityKind &&
+                r.IdentityValue == record.IdentityValue);
+            Records.Add(record);
+            return Task.FromResult(true);
+        }
+
+        public Task<IReadOnlyList<AssetIdentityRecord>> GetByAssetAsync(string assetId) =>
+            Task.FromResult<IReadOnlyList<AssetIdentityRecord>>(
+                Records.Where(r => r.AssetId == assetId).ToArray());
+
+        public Task<IReadOnlyList<AssetIdentityRecord>> GetAllAsync() =>
+            Task.FromResult<IReadOnlyList<AssetIdentityRecord>>(Records.ToArray());
     }
 
     private sealed class FakeSnapshotStore : ISnapshotStore
@@ -701,6 +980,9 @@ public class TopologyDiscoveryTests
         public string SsOutput = "";
         public string ConfigScanOutput = "";
         public string HostnameIOutput = "";
+        public string MachineIdOutput = "";
+        public string HostnameOutput = "";
+        public string HostKeyOutput = "";
 
         public bool SudoUsed { get; private set; }
         public TaskCompletionSource Started { get; } = new();
@@ -713,6 +995,9 @@ public class TopologyDiscoveryTests
                 await Block;
 
             string output =
+                command.Contains("machine-id") ? MachineIdOutput :
+                command.Contains("ssh-keygen -lf") ? HostKeyOutput :
+                command.Contains("hostnamectl") ? HostnameOutput :
                 command.Contains("ss -Hltnp") ? ListenOutput :
                 command.Contains("ps -eo pid,user,comm,args") ? ServiceOutput :
                 command.Contains("grep -E") && command.Contains("java") ? JavaOutput :
@@ -755,40 +1040,6 @@ public class TopologyDiscoveryTests
         public string GetConfigPath() => string.Empty;
     }
 
-    private sealed class MemoryTopologyStore : ITopologyStore
-    {
-        public List<TopologyEdge> Edges { get; } = new();
-        public Dictionary<string, string> NodeInfos { get; } = new();
-        public Task InitializeAsync() => Task.CompletedTask;
-        public Task<TopologyEdge[]> GetEdgesAsync() => Task.FromResult(Edges.ToArray());
-        public Task UpsertEdgeAsync(TopologyEdge edge)
-        {
-            Edges.RemoveAll(e => e.From == edge.From && e.To == edge.To && e.Type == edge.Type);
-            Edges.Add(edge);
-            return Task.CompletedTask;
-        }
-        public Task RemoveEdgesByNodeAsync(string nodeId) { Edges.RemoveAll(e => e.From == nodeId || e.To == nodeId); return Task.CompletedTask; }
-        public Task RemoveEdgeAsync(string from, string to, string type) { Edges.RemoveAll(e => e.From == from && e.To == to && e.Type == type); return Task.CompletedTask; }
-        public Task ReplaceNodeAsync(string oldNodeId, string newNodeId)
-        {
-            foreach (var e in Edges)
-            {
-                if (e.From == oldNodeId) e.From = newNodeId;
-                if (e.To == oldNodeId) e.To = newNodeId;
-            }
-            if (NodeInfos.Remove(oldNodeId, out var info)) NodeInfos[newNodeId] = info;
-            return Task.CompletedTask;
-        }
-        public Task ClearDiscoveredAsync()
-        {
-            Edges.Clear();
-            NodeInfos.Clear();
-            return Task.CompletedTask;
-        }
-        public Task UpsertNodeInfoAsync(string nodeId, string infoJson) { NodeInfos[nodeId] = infoJson; return Task.CompletedTask; }
-        public Task<Dictionary<string, string>> GetNodeInfosAsync() => Task.FromResult(new Dictionary<string, string>(NodeInfos));
-    }
-
     private sealed class AllowAllCommandFilter : ICommandFilterService
     {
         public CommandFilterResult CheckCommand(string command) => CommandFilterResult.Allowed;
@@ -826,10 +1077,25 @@ public class TopologyDiscoveryTests
     private sealed class FakeMysqlDriver : IDatasourceDriver
     {
         public string Type => "mysql";
+        public string? ServerUuid { get; set; }
         public Task<DatasourceTestResult> TestAsync(DataSourceConfig ds, CancellationToken ct = default) =>
             Task.FromResult(new DatasourceTestResult { Success = true });
-        public Task<DatasourceQueryResult> QueryAsync(DataSourceConfig ds, string sql, int maxRows, CancellationToken ct = default) =>
-            Task.FromResult(new DatasourceQueryResult
+        public Task<DatasourceQueryResult> QueryAsync(DataSourceConfig ds, string sql, int maxRows, CancellationToken ct = default)
+        {
+            if (sql.Contains("@@server_uuid", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(new DatasourceQueryResult
+                {
+                    Success = true,
+                    Columns = new[] { "@@server_uuid" },
+                    Rows = new List<Dictionary<string, object?>>
+                    {
+                        new() { ["@@server_uuid"] = ServerUuid }
+                    }
+                });
+            }
+
+            return Task.FromResult(new DatasourceQueryResult
             {
                 Success = true,
                 Columns = new[] { "Host", "User" },
@@ -838,6 +1104,7 @@ public class TopologyDiscoveryTests
                     new() { ["Host"] = "127.0.0.1:50000", ["User"] = "app" }
                 }
             });
+        }
         public Task<DatasourceExecuteResult> ExecuteAsync(DataSourceConfig ds, string sql, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<DatasourceQueryResult> ExplainAsync(DataSourceConfig ds, string sql, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<DatasourceDiagnosticsResult> DiagnoseAsync(DataSourceConfig ds, CancellationToken ct = default) => throw new NotSupportedException();

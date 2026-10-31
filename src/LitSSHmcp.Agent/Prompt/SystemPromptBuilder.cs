@@ -147,7 +147,7 @@ public static class SystemPromptBuilder
             sb.AppendLine();
             sb.AppendLine("## 大输出与委派");
             if (spillTools)
-                sb.AppendLine("- 工具结果若提示已落盘为 `spill://…`, 用 `spill(action=\"read\", mode=\"read|grep\")` 分段读取或搜索, **不要重复调用原工具**。");
+                sb.AppendLine("- 工具结果若提示已落盘为 `spill://…`, 用 `spill(action=\"read\", handle=\"spill://…\", offset, limit)` 分段读取，或用 `spill(action=\"grep\", handle=\"spill://…\", pattern)` 搜索；**不要重复调用原工具**。");
             if (subAgent)
                 sb.AppendLine("- 预计一个**只读**任务需要 3 个以上工具调用、跨多台主机或读取大日志时，**优先先委派 `run_subagent`**（task 自包含，必要时用 groups 收窄工具组），只把摘要带回主上下文；不要让主 Agent 先跑完再用子代理。");
             if (fleetTools)
@@ -259,7 +259,8 @@ public static class SystemPromptBuilder
     }
 
     /// <summary>子代理系统提示：复用主代理基础行为约定 + 只读/不可信数据安全约束。</summary>
-    public static string BuildSubAgentPrompt(string? restrictionNote = null, int summaryMaxChars = 2000)
+    public static string BuildSubAgentPrompt(string? restrictionNote = null, int summaryMaxChars = 2000,
+        bool spillTools = false)
     {
         var sb = new StringBuilder();
         sb.AppendLine(BasePrompt);
@@ -270,6 +271,8 @@ public static class SystemPromptBuilder
         sb.AppendLine("- 不臆造路径/端口/ID；结论以工具实际结果为准；证据不足时明确说明。");
         sb.AppendLine("- 不得调用任何写/变更/审批类工具；如任务需要变更，返回结论并说明需要主代理处理。");
         sb.AppendLine($"- 最终摘要不超过 {summaryMaxChars} 字，按「结论 / 证据 / 未决 / 建议」组织；没有内容的项省略，不要粘贴原始日志。");
+        if (spillTools)
+            sb.AppendLine("- 工具结果若提示已落盘为 `spill://…`, 用 `spill(action=\"read\", handle=\"spill://…\", offset, limit)` 分段读取，或用 `spill(action=\"grep\", handle=\"spill://…\", pattern)` 搜索；不要重复调用原工具。");
         if (!string.IsNullOrWhiteSpace(restrictionNote))
             sb.AppendLine(restrictionNote.Trim());
         return sb.ToString().Trim();

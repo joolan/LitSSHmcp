@@ -44,22 +44,24 @@ public static class SpillTools
         if (path is null || !File.Exists(path))
             return "(句柄无效或文件不存在)";
 
-        var lines = File.ReadAllLines(path);
         var start = Math.Max(0, offset ?? 0);
         var count = Math.Clamp(limit ?? 200, 1, MaxReadLines);
-        if (start >= lines.Length)
-            return $"(偏移 {start} 超出范围, 共 {lines.Length} 行)";
-
         var sb = new StringBuilder();
-        sb.AppendLine($"[{path.Split(Path.DirectorySeparatorChar)[^1]} 共 {lines.Length} 行, 显示 {start}..{Math.Min(lines.Length, start + count) - 1}]");
-        for (var i = start; i < Math.Min(lines.Length, start + count); i++)
+        var total = 0;
+        foreach (var raw in File.ReadLines(path))
         {
-            var line = lines[i];
-            if (line.Length > MaxLineChars)
-                line = line[..MaxLineChars] + "…";
-            sb.AppendLine($"{i}: {line}");
+            if (total >= start && total < start + count)
+            {
+                var line = raw.Length > MaxLineChars ? raw[..MaxLineChars] + "…" : raw;
+                sb.AppendLine($"{total}: {line}");
+            }
+            total++;
         }
-        return sb.ToString().TrimEnd();
+        if (start >= total)
+            return $"(偏移 {start} 超出范围, 共 {total} 行)";
+
+        var header = $"[{path.Split(Path.DirectorySeparatorChar)[^1]} 共 {total} 行, 显示 {start}..{Math.Min(total, start + count) - 1}]";
+        return (header + Environment.NewLine + sb.ToString()).TrimEnd();
     }
 
     private static string Grep(SpillStore store, string? handle, string? pattern, int? max)
@@ -75,16 +77,19 @@ public static class SpillTools
         catch (Exception ex) { return $"(正则无效) {ex.Message}"; }
 
         var take = Math.Clamp(max ?? 100, 1, 1000);
-        var lines = File.ReadAllLines(path);
         var sb = new StringBuilder();
         var hits = 0;
-        for (var i = 0; i < lines.Length && hits < take; i++)
+        var index = 0;
+        foreach (var raw in File.ReadLines(path))
         {
-            if (!regex.IsMatch(lines[i]))
-                continue;
-            var line = lines[i].Length > MaxLineChars ? lines[i][..MaxLineChars] + "…" : lines[i];
-            sb.AppendLine($"{i}: {line}");
-            hits++;
+            if (regex.IsMatch(raw))
+            {
+                var line = raw.Length > MaxLineChars ? raw[..MaxLineChars] + "…" : raw;
+                sb.AppendLine($"{index}: {line}");
+                if (++hits >= take)
+                    break;
+            }
+            index++;
         }
         return hits == 0 ? "(无匹配)" : sb.ToString().TrimEnd();
     }

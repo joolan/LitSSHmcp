@@ -33,6 +33,8 @@
                         <MenuItem Header="快照时间线…" Click="OnTimeline"
                                   ToolTip="按历史快照重放拓扑，查看节点/关系的新增与移除"/>
                         <MenuItem Header="刷新" Click="OnRefresh"/>
+                        <MenuItem Header="新版拓扑（预览）…" Click="OnOpenExplorer"
+                                  ToolTip="打开结构化的服务器泳道视图，便于和当前拓扑对比"/>
                         <MenuItem Header="发现报告" Click="OnDiscoveryReport"
                                   ToolTip="查看最近一次自动发现的说明/未匹配端点(含来源文件)/错误"/>
                         <MenuItem Header="导出图片…" Click="OnExportImage"
@@ -44,6 +46,8 @@
                 </Button.ContextMenu>
             </Button>
             <Button DockPanel.Dock="Right" Content="自动发现" Width="90" Padding="6,4" Margin="6,0,0,0" Click="OnDiscover"/>
+            <Button DockPanel.Dock="Right" Content="新版拓扑" Width="90" Padding="6,4" Margin="6,0,0,0" Click="OnOpenExplorer"
+                    ToolTip="打开结构化的服务器泳道视图（只读预览），与当前拓扑对比"/>
             <Button DockPanel.Dock="Right" Content="重新自动布局" Width="110" Padding="6,4" Margin="6,0,0,0" Click="OnResetLayout"
                     ToolTip="清除手动布局, 恢复自动排列"/>
             <TextBlock DockPanel.Dock="Left" Text="服务器ID(逗号分隔, 留空=全部):" VerticalAlignment="Center" Margin="0,0,6,0"/>
@@ -68,32 +72,6 @@
                     <Border Background="{DynamicResource NodeDbBgBrush}" BorderBrush="{DynamicResource NodeDbBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
                         <TextBlock Text="数据库" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
                     </Border>
-                    <Border Background="{DynamicResource NodeServiceBgBrush}" BorderBrush="{DynamicResource NodeServiceBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
-                        <TextBlock Text="服务" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
-                    </Border>
-                    <Border Background="{DynamicResource NodeContainerBgBrush}" BorderBrush="{DynamicResource NodeContainerBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
-                        <TextBlock Text="容器" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
-                    </Border>
-                    <Border Background="{DynamicResource NodeDeployBgBrush}" BorderBrush="{DynamicResource NodeDeployBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
-                        <TextBlock Text="部署" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
-                    </Border>
-                    <Border Background="{DynamicResource NodeDomainBgBrush}" BorderBrush="{DynamicResource NodeDomainBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,6">
-                        <TextBlock Text="域名" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource NodeTextBrush}"/>
-                    </Border>
-                    <TextBlock Text="- - 自动发现 / ⚠ 冲突边 / 红框=证书过期" FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,12,6"/>
-                    <TextBlock Text="显示:" FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,6,6"/>
-                    <CheckBox Content="服务" IsChecked="{Binding ShowServices}" VerticalAlignment="Center"
-                              MinWidth="0" MinHeight="0" Padding="0" Margin="0,0,16,6"
-                              ToolTip="显示/隐藏 systemd 服务节点"/>
-                    <CheckBox Content="容器" IsChecked="{Binding ShowContainers}" VerticalAlignment="Center"
-                              MinWidth="0" MinHeight="0" Padding="0" Margin="0,0,16,6"
-                              ToolTip="显示/隐藏 Docker 容器节点"/>
-                    <CheckBox Content="部署" IsChecked="{Binding ShowDeploys}" VerticalAlignment="Center"
-                              MinWidth="0" MinHeight="0" Padding="0" Margin="0,0,16,6"
-                              ToolTip="显示/隐藏部署记录节点"/>
-                    <CheckBox Content="域名/端口/证书" IsChecked="{Binding ShowNetwork}" VerticalAlignment="Center"
-                              MinWidth="0" MinHeight="0" Padding="0" Margin="0,0,8,6"
-                              ToolTip="显示/隐藏网络层节点"/>
                 </WrapPanel>
 
                 <Grid x:Name="CanvasHost" Grid.Row="1" Margin="0,6,0,0" Background="{DynamicResource AppSurfaceAltBrush}" ClipToBounds="True"
@@ -302,24 +280,6 @@
                                                     <DataTrigger Binding="{Binding Type}" Value="datasource">
                                                         <Setter Property="Background" Value="{DynamicResource NodeDbBgBrush}"/>
                                                     </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="service">
-                                                        <Setter Property="Background" Value="{DynamicResource NodeServiceBgBrush}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="container">
-                                                        <Setter Property="Background" Value="{DynamicResource NodeContainerBgBrush}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="deploy">
-                                                        <Setter Property="Background" Value="{DynamicResource NodeDeployBgBrush}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="domain">
-                                                        <Setter Property="Background" Value="{DynamicResource NodeDomainBgBrush}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="port">
-                                                        <Setter Property="Background" Value="{DynamicResource NodePortBgBrush}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="cert">
-                                                        <Setter Property="Background" Value="{DynamicResource NodeCertBgBrush}"/>
-                                                    </DataTrigger>
                                                     <DataTrigger Binding="{Binding Type}" Value="system">
                                                         <Setter Property="Background" Value="{DynamicResource NodeSystemBgBrush}"/>
                                                     </DataTrigger>
@@ -339,24 +299,6 @@
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Type}" Value="datasource">
                                                         <Setter Property="Stroke" Value="{DynamicResource NodeDbBorderBrush}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="service">
-                                                        <Setter Property="Stroke" Value="{DynamicResource NodeServiceBorderBrush}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="container">
-                                                        <Setter Property="Stroke" Value="{DynamicResource NodeContainerBorderBrush}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="deploy">
-                                                        <Setter Property="Stroke" Value="{DynamicResource NodeDeployBorderBrush}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="domain">
-                                                        <Setter Property="Stroke" Value="{DynamicResource NodeDomainBorderBrush}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="port">
-                                                        <Setter Property="Stroke" Value="{DynamicResource NodePortBorderBrush}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Type}" Value="cert">
-                                                        <Setter Property="Stroke" Value="{DynamicResource NodeCertBorderBrush}"/>
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding Type}" Value="system">
                                                         <Setter Property="Stroke" Value="{DynamicResource NodeSystemBorderBrush}"/>
@@ -409,30 +351,6 @@
                                                 <DataTrigger Binding="{Binding Type}" Value="application">
                                                     <Setter Property="Background" Value="{DynamicResource NodeAppBgBrush}"/>
                                                     <Setter Property="BorderBrush" Value="{DynamicResource NodeAppBorderBrush}"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding Type}" Value="service">
-                                                    <Setter Property="Background" Value="{DynamicResource NodeServiceBgBrush}"/>
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeServiceBorderBrush}"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding Type}" Value="container">
-                                                    <Setter Property="Background" Value="{DynamicResource NodeContainerBgBrush}"/>
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeContainerBorderBrush}"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding Type}" Value="deploy">
-                                                    <Setter Property="Background" Value="{DynamicResource NodeDeployBgBrush}"/>
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeDeployBorderBrush}"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding Type}" Value="domain">
-                                                    <Setter Property="Background" Value="{DynamicResource NodeDomainBgBrush}"/>
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeDomainBorderBrush}"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding Type}" Value="port">
-                                                    <Setter Property="Background" Value="{DynamicResource NodePortBgBrush}"/>
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodePortBorderBrush}"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding Type}" Value="cert">
-                                                    <Setter Property="Background" Value="{DynamicResource NodeCertBgBrush}"/>
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeCertBorderBrush}"/>
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding Type}" Value="system">
                                                     <Setter Property="Background" Value="{DynamicResource NodeSystemBgBrush}"/>
@@ -563,7 +481,8 @@
                                 </Border>
                                 <TextBlock Text="{Binding SelectedEdgeSummary}" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,0,0,8"/>
                                 <TextBlock Text="关系类型" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                <ComboBox ItemsSource="{Binding RelationTypes}" SelectedItem="{Binding SelectedEdgeType}"
+                                <ComboBox ItemsSource="{Binding RelationTypes}" DisplayMemberPath="Label"
+                                          SelectedValuePath="Value" SelectedValue="{Binding SelectedEdgeType, Mode=TwoWay}"
                                           IsEnabled="{Binding SelectedEdgeEditable}" Margin="0,2,0,8"/>
                                 <TextBlock Text="备注" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 <TextBox Text="{Binding SelectedEdgeNote, UpdateSourceTrigger=PropertyChanged}"
@@ -571,9 +490,6 @@
                                          IsEnabled="{Binding SelectedEdgeEditable}" Margin="0,2,0,8"/>
                                 <TextBlock Text="{Binding SelectedEdgeHint}" Foreground="{DynamicResource AppDangerBrush}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="确认无冲突" Width="88" Padding="6,4" Margin="0,0,6,0" Click="OnConfirmEdge"
-                                            IsEnabled="{Binding SelectedEdgeCanConfirm}"
-                                            ToolTip="核实该冲突边后清除冲突标记"/>
                                     <Button Content="保存" Width="72" Padding="6,4" Margin="0,0,6,0" Click="OnSaveEdge"
                                             IsEnabled="{Binding SelectedEdgeEditable}"/>
                                     <Button Content="删除" Width="72" Padding="6,4" Click="OnDeleteEdge"/>
@@ -646,16 +562,14 @@
                                        Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,8,0,0"/>
                             <TextBlock Text="{Binding SelectedNodeId}" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="10"
                                        Foreground="{DynamicResource AppTextTertiaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                            <CheckBox Content="显示发现证据" IsChecked="{Binding ShowDiscoveryEvidence}"
+                                      Margin="0,10,0,0" ToolTip="仅在选中 SSH 服务器时显示最近快照中的端口、服务、容器、站点和证书证据"/>
+                            <TextBlock Text="{Binding SelectedEvidence}" TextWrapping="Wrap"
+                                       FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,6,0,0"/>
                             <WrapPanel Margin="0,12,0,0">
                                 <ui:Button Content="查看关系" Padding="10,3" Margin="0,0,6,6" Click="OnInspectorRelations"/>
                                 <ui:Button Content="复制 ID" Padding="10,3" Margin="0,0,6,6" Click="OnInspectorCopyId"/>
-                                <ui:Button Content="确认节点" Padding="10,3" Margin="0,0,6,6"
-                                           Visibility="{Binding HasDiscoveredSelection, Converter={StaticResource BoolToVis}}"
-                                           Click="OnInspectorConfirmNode"/>
-                                <ui:Button Content="删除节点" Padding="10,3" Margin="0,0,0,6"
-                                           Foreground="{DynamicResource AppDangerBrush}"
-                                           Visibility="{Binding HasDiscoveredSelection, Converter={StaticResource BoolToVis}}"
-                                           Click="OnInspectorDeleteNode"/>
                             </WrapPanel>
                         </StackPanel>
                     </Border>

@@ -77,6 +77,24 @@ public class DiscoveredContainer
     public bool MatchedConfiguredApp { get; set; }
 }
 
+public class DuplicateAssetItem
+{
+    public string AssetType { get; set; } = string.Empty;
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Host { get; set; } = string.Empty;
+    public int Port { get; set; }
+    public string? Detail { get; set; }
+}
+
+public class DuplicateAssetGroup
+{
+    public string AssetType { get; set; } = string.Empty;
+    public string MatchKey { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public DuplicateAssetItem[] Items { get; set; } = Array.Empty<DuplicateAssetItem>();
+}
+
 public class DiscoveryResult
 {
     public string[] ScannedServers { get; set; } = Array.Empty<string>();
@@ -86,6 +104,9 @@ public class DiscoveryResult
     public DiscoveredContainer[] DockerContainers { get; set; } = Array.Empty<DiscoveredContainer>();
     public List<Dictionary<string, object?>> UnmatchedMysqlClients { get; set; } = new();
     public List<Dictionary<string, object?>> UnmatchedEndpoints { get; set; } = new();
+    public List<DuplicateAssetGroup> DuplicateCandidates { get; set; } = new();
+    public int IdentityCount { get; set; }
+    public List<string> IdentityConflicts { get; set; } = new();
     public string[] Errors { get; set; } = Array.Empty<string>();
     public string[] Notes { get; set; } = Array.Empty<string>();
 }

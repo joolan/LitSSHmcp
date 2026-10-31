@@ -7,6 +7,7 @@ using System.ComponentModel;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
+using LitSSHmcp.Core.Services.Topology;
 using LitSSHmcp.McpServer.Services;
 using ModelContextProtocol.Server;
 
@@ -17,20 +18,24 @@ public class LogTools
 {
     private readonly IConfigService _configService;
     private readonly IGuardedCommandService _runner;
+    private readonly IUrlResolutionService? _urlResolution;
 
-    public LogTools(IConfigService configService, IGuardedCommandService runner)
+    public LogTools(IConfigService configService, IGuardedCommandService runner,
+        IUrlResolutionService? urlResolution = null)
     {
         _configService = configService;
         _runner = runner;
+        _urlResolution = urlResolution;
     }
 
     [McpServerTool(Name = "log_query", UseStructuredContent = true, OutputSchemaType = typeof(LogQueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
-    [Description("日志文件查询：action=tail/grep/find 分别看尾部/检索/发现日志。可传 path 或 appId；路径须在 security.logs.allowedPaths 内")]
+    [Description("日志文件查询：action=tail/grep/find 分别看尾部/检索/发现日志。可传 path、appId，或只传 url 自动解析应用和服务器；路径须在 security.logs.allowedPaths 内")]
     public async Task<LogQueryResultDto> LogQuery(
-        [Description("服务器 ID/名称/主机名")] string serverId,
-        [Description("查询类型：tail / grep / find")] string action,
+        [Description("服务器 ID/名称/主机名；提供 url 时可省略")] string? serverId = null,
+        [Description("查询类型：tail / grep / find")] string action = "tail",
         [Description("日志文件绝对路径（tail/grep 与 appId 二选一；find 时可作搜索目录）")] string? path = null,
         [Description("应用标识(ID/名称): 用应用管理里配置的日志路径（tail/grep）")] string? appId = null,
+        [Description("按访问 URL 自动解析应用和服务器；与 serverId 二选一，多个后端时需再传 appId")] string? url = null,
         [Description("grep 检索关键字或正则")] string? pattern = null,
         [Description("tail 返回最后 N 行（默认200）；grep 时忽略")] int lines = 200,
         [Description("grep 是否忽略大小写（默认true）")] bool ignoreCase = true,
@@ -39,16 +44,54 @@ public class LogTools
         [Description("find 最多返回数量（默认100，上限500）")] int maxResults = 100,
         CancellationToken cancellationToken = default)
     {
-        var kind = action.Trim().ToLowerInvariant();
+        var kind = (action ?? "tail").Trim().ToLowerInvariant();
+
+        if (!string.IsNullOrWhiteSpace(url) && string.IsNullOrWhiteSpace(serverId))
+        {
+            if (_urlResolution is null)
+                return LogQueryResultDto.Fail("url_resolver_unavailable", "URL 解析服务不可用");
+
+            var resolution = await _urlResolution.ResolveAsync(url, cancellationToken);
+            if (!resolution.Success)
+                return LogQueryResultDto.Fail(resolution.Error ?? "url_not_found", resolution.Summary);
+
+            var candidates = resolution.LandingApps ?? new List<UrlMatchedApp>();
+            var selected = !string.IsNullOrWhiteSpace(appId)
+                ? candidates.FirstOrDefault(a =>
+                    string.Equals(a.Id, appId, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(a.Name, appId, StringComparison.OrdinalIgnoreCase))
+                : candidates.Count == 1
+                    ? candidates[0]
+                    : null;
+
+            if (selected is null)
+            {
+                var names = string.Join(", ", candidates.Select(a => $"{a.Name}({a.Id})"));
+                return LogQueryResultDto.Fail("url_ambiguous",
+                    $"URL 匹配到多个应用，请用 appId 指定其中一个: {names}");
+            }
+
+            var chain = resolution.RuntimeChains?.FirstOrDefault(c => c.ApplicationId == selected.Id);
+            if (chain is null || string.IsNullOrWhiteSpace(chain.ServerId))
+                return LogQueryResultDto.Fail("runtime_not_resolved",
+                    chain?.Error ?? $"应用 {selected.Name} 未能解析到服务器运行环境");
+
+            serverId = chain.ServerId;
+            appId = selected.Id;
+        }
+
+        if (string.IsNullOrWhiteSpace(serverId))
+            return LogQueryResultDto.Fail("server_required", "必须提供 serverId 或 url");
+
         switch (kind)
         {
             case "tail":
-                return FromResult(await LogTail(serverId, path, appId, lines, cancellationToken), kind);
+                return FromResult(await LogTail(serverId!, path, appId, lines, cancellationToken), kind);
             case "grep":
-                return FromResult(await LogGrep(serverId, pattern ?? string.Empty, path, appId,
+                return FromResult(await LogGrep(serverId!, pattern ?? string.Empty, path, appId,
                     ignoreCase, maxMatches, cancellationToken), kind);
             case "find":
-                return FromResult(await LogFind(serverId, path, minutes, maxResults, cancellationToken), kind);
+                return FromResult(await LogFind(serverId!, path, minutes, maxResults, cancellationToken), kind);
             default:
                 return LogQueryResultDto.Fail("invalid_argument", "action 须为 tail / grep / find");
         }

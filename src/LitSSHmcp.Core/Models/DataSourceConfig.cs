@@ -48,6 +48,14 @@ public class DataSourceConfig
     public string? Group { get; set; }
     public string? Description { get; set; }
     public string[] Tags { get; set; } = Array.Empty<string>();
+    public string[] Aliases { get; set; } = Array.Empty<string>();
+    public string? AssetKey { get; set; }
+    public string? InstanceKey { get; set; }
+    public RuntimeEnvironmentKind RuntimeKind { get; set; } = RuntimeEnvironmentKind.Unspecified;
+    public string? RuntimeSshAssetKey { get; set; }
+    public string? RuntimeDockerAssetKey { get; set; }
+    public string? RuntimeContainerName { get; set; }
+    public string? RuntimeComposeService { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // —— 治理（可选）：每数据源的限额 / 只读 / 写审批策略 ——
@@ -89,6 +97,15 @@ public class ApplicationConfig
     public string? Group { get; set; }
     public string? Description { get; set; }
     public string[] Tags { get; set; } = Array.Empty<string>();
+    public string[] Aliases { get; set; } = Array.Empty<string>();
+    public string? AssetKey { get; set; }
+    public string? ServerId { get; set; }
+    public RuntimeEnvironmentKind RuntimeKind { get; set; } = RuntimeEnvironmentKind.Unspecified;
+    public string? RuntimeSshAssetKey { get; set; }
+    public string? RuntimeDockerAssetKey { get; set; }
+    public string? RuntimeContainerName { get; set; }
+    public string? RuntimeComposeService { get; set; }
+    public UrlPattern[] Urls { get; set; } = Array.Empty<UrlPattern>();
 
     /// <summary>Docker 容器名（type=docker 时用于把应用关联到容器，便于 AI 运维；拓扑发现据此匹配并自动建立 runsOn 关系）。</summary>
     public string? ContainerName { get; set; }

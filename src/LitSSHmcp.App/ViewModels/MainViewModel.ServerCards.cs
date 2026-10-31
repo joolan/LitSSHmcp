@@ -120,7 +120,6 @@ public partial class MainViewModel
             config.Servers = config.Servers.Where(s => s.Id != server.Id).ToArray();
             config.Relations = config.Relations.Where(r => r.From != nodeId && r.To != nodeId).ToArray();
             await _configService.SaveConfigAsync(config);
-            await CleanupDiscoveredEdgesAsync(nodeId);
 
             StatusMessage = $"已删除服务器: {server.Name}";
             if (ReferenceEquals(SelectedServer, server))
@@ -133,16 +132,4 @@ public partial class MainViewModel
         }
     });
 
-    private async Task CleanupDiscoveredEdgesAsync(string nodeId)
-    {
-        try
-        {
-            await _topologyStore.InitializeAsync();
-            await _topologyStore.RemoveEdgesByNodeAsync(nodeId);
-        }
-        catch
-        {
-            // 清理自动发现边失败不阻断删除
-        }
-    }
 }

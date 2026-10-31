@@ -14,18 +14,16 @@ namespace LitSSHmcp.App.ViewModels;
 public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService;
-    private readonly ITopologyStore _topologyStore;
     private readonly IUserDialogService _dialogs;
     private readonly IWindowService _windows;
     private readonly IAppServices? _services;
     private DataSourceConfig? _selectedDataSource;
     private string _statusMessage = string.Empty;
 
-    public DatasourceManageViewModel(IConfigService configService, ITopologyStore? topologyStore = null,
+    public DatasourceManageViewModel(IConfigService configService,
         IUserDialogService? dialogs = null, IWindowService? windows = null, IAppServices? services = null)
     {
         _configService = configService;
-        _topologyStore = topologyStore ?? new TopologyStore();
         _dialogs = dialogs ?? new UserDialogService();
         _windows = windows ?? new WpfWindowService();
         _services = services;
@@ -300,7 +298,6 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
             config.DataSources = config.DataSources.Where(d => d.Id != SelectedDataSource.Id).ToArray();
             config.Relations = config.Relations.Where(r => r.From != nodeId && r.To != nodeId).ToArray();
             await _configService.SaveConfigAsync(config);
-            await CleanupDiscoveredEdgesAsync(nodeId);
 
             StatusMessage = $"已删除数据源: {SelectedDataSource.Name}";
             SelectedDataSource = null;
@@ -311,12 +308,6 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
             StatusMessage = $"删除失败: {ex.Message}";
         }
     });
-
-    private async Task CleanupDiscoveredEdgesAsync(string nodeId)
-    {
-        try { await _topologyStore.InitializeAsync(); await _topologyStore.RemoveEdgesByNodeAsync(nodeId); }
-        catch { /* 清理失败不阻断 */ }
-    }
 
     private void Test() => AsyncOperation.Run("测试数据源连接", async () =>
     {

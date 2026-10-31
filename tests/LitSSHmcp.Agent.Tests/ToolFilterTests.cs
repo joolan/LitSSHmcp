@@ -20,7 +20,7 @@ public class ToolFilterTests
     [InlineData("service_query", "service")]
     [InlineData("log_query", "log")]
     [InlineData("java_diagnostics", "java")]
-    [InlineData("topology_get_overview", "topology")]
+    [InlineData("topology_query", "topology")]
     [InlineData("app_health_snapshot", "app")]
     [InlineData("mcp_usage_guide", "guide")]
     [InlineData("mcp_approval_round", "guide")]

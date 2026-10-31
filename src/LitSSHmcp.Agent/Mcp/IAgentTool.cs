@@ -17,6 +17,9 @@ public interface IAgentTool
     /// <summary>所属工具分组（MCP 工具按名推断；本地工具为 null）。用于「/工具」会话级裁剪。</summary>
     string? ToolGroup { get; }
 
+    /// <summary>是否为本地工具（工作区文档、记忆、技能、落盘等，不经远程 MCP）。本地工具的调用轮次不计入「最大工具轮数」。</summary>
+    bool IsLocal => false;
+
     /// <summary>提供给模型的工具声明（函数签名）。</summary>
     AITool Tool { get; }
 

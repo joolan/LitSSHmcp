@@ -16,7 +16,6 @@ public class AppServicesTests
         Assert.NotNull(services.CreateSshService());
         Assert.NotNull(services.CreateAuditLog());
         Assert.NotNull(services.CreateSnapshotStore());
-        Assert.NotNull(services.CreateTopologyStore());
         Assert.NotNull(services.CreateAgentContextStore());
         Assert.False(string.IsNullOrWhiteSpace(services.BundledSkillsDir));
     }

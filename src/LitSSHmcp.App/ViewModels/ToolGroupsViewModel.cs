@@ -31,7 +31,7 @@ public class ToolGroupsViewModel : INotifyPropertyChanged, IConfigReloadable
         Add(ToolGroups.Service, "systemd 服务", "service_query / service_restart");
         Add(ToolGroups.Log, "日志文件", "log_query");
         Add(ToolGroups.Java, "JVM 诊断", "java_processes / java_diagnostics");
-        Add(ToolGroups.Topology, "拓扑", "topology_get_overview / topology_get_dependencies / topology_query / topology_discover");
+        Add(ToolGroups.Topology, "拓扑", "topology_query / topology_history / topology_discover");
         Add(ToolGroups.App, "应用体检", "app_health_snapshot");
         Add(ToolGroups.Guide, "指南 / 自检", "mcp_usage_guide / mcp_self_check");
 

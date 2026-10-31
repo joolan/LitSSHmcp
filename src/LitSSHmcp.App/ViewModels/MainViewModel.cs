@@ -23,7 +23,6 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     private readonly IAppServices _services;
     private readonly IConfigService _configService;
     private readonly ISshService _sshService;
-    private readonly ITopologyStore _topologyStore;
     private readonly PortForwardService _portForwardService;
     private readonly IUserDialogService _dialogs;
     private readonly IWindowService _windows;
@@ -82,7 +81,6 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         _dialogs = _services.Dialogs;
         _windows = _services.Windows;
         _configService = _services.Config;
-        _topologyStore = _services.CreateTopologyStore();
         _portForwardService = _services.PortForward;
         _snapshotService = _services.CreateSnapshotService();
         _snapshotStore = _services.CreateSnapshotStore();

@@ -2,6 +2,23 @@
 
 本项目的所有重要变更都记录在此文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.5.0] - 2026-10-31
+
+### 变更
+
+- **资产拓扑统一为人工配置主图**：`topology_query(action="overview")` / 旧版画布 / 新版结构化视图都只读取人工服务器、应用、数据源、域名、人工关系，以及由运行环境字段推导的 `runsOn`、`runsIn` 和由跳板/隧道推导的 `accessedVia`；自动发现不再作为主图数据源。
+- **移除自动发现图存储与待确认节点**：删除 `ITopologyStore` / `TopologyStore`、`TopologyEdges` / `TopologyNodes` 写入与清理逻辑、`*:disc:*` 待确认节点及确认/删除 UI。`topology_discover` 现在只返回发现证据、未匹配端点、配置建议与配置体检结果。
+- **旧版拓扑画布精简**：移除服务、容器、部署、域名、端口、证书图层及图例/过滤器；关系类型下拉精简为 7 种并显示中文（运行于服务器 / 运行于容器 / 连接到 / 可访问 / 上游依赖 / 通过跳板访问 / 相关）；Docker `runsIn` 成员以缩进展示两级归属。
+- **新版结构化拓扑**：新增只读的服务器泳道、应用链路、依赖矩阵、配置建议四个视图，支持搜索、跨服务器依赖筛选、多跳链路、关系矩阵、应用高置信度建议与配置体检。
+- **资产运行环境与 URL**：应用和数据源支持 SSH 服务器 / Docker 应用 / 独立环境运行目标；Docker 目标校验容器名或 Compose service；应用支持多条 URL（角色 / 优先级 / 备注），供 URL 解析与落地应用排查使用。应用编辑弹窗已加宽，URL 角色/优先级/备注改为响应式两行布局。
+- **资产身份与配置质量**：新增 `IAssetIdentityStore`、资产身份探测、重复资产检测、运行环境校验、配置一致性与配置建议服务。
+- **MCP 拓扑工具收敛**：`topology_get_overview` 合并为 `topology_query(action="overview")`；`topology_get_dependencies` 合并为 `topology_query(action="dependencies")`；`asset_resolve_url` 合并为 `topology_query(action="resolve_url")`；`topology_timeline` / `topology_diff` 合并为 `topology_history(action="timeline"|"diff")`；`topology_query` 移除已无意义的 `includeUnconfirmed` 参数（主图不再有 `:disc:` 节点），工具描述与 `kinds`/`relationTypes` 示例改为人工主图类型。拓扑工具从 7 个减至 3 个，不保留旧名兼容别名。
+- **MCP 文档同步**：工具总数更新为 34 个外部工具 + 1 个宿主内部工具；拓扑工具说明改为人工主图语义；`docs/litssh-mcp-ops-skill` 同步移除旧工具名、低层图节点和待确认节点描述。
+- **AI 助手设置**：快速切换设置 Tab 时使用 180ms 防抖并取消上一轮读取，复用 `AgentMemoryStore` 实例，避免重复初始化 `agent.db` 造成 SQLite 锁竞争和界面未响应；同步更新只读模式工具说明。
+- **子代理设置**：新增 `agent.subAgentTimeoutSeconds`（默认 240，30-3600，0=默认）；AI 助手设置中补齐子代理最大轮数、超时与摘要上限输入框。
+- **技能选择**：修复会话开始后输入 `/技能` 不弹出技能选择窗口的问题；技能支持会话内热切换，连接器子集仍保持启动后锁定。
+- **版本号**：1.4.1 → 1.5.0。
+
 ## [1.4.1] - 2026-10-27
 
 ### 变更

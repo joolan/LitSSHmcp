@@ -35,11 +35,10 @@ public partial class AgentSettingsViewModel
         set => Set(ref _selectedConsolidationCandidate, value);
     }
 
-    public async Task LoadConsolidationCandidatesAsync()
+    public async Task LoadConsolidationCandidatesAsync(CancellationToken ct = default)
     {
         try
         {
-            var store = new AgentMemoryStore();
             var status = ConsolidationStatusFilter switch
             {
                 "待审核" => "pending",
@@ -48,13 +47,17 @@ public partial class AgentSettingsViewModel
                 "冲突" => "conflict",
                 _ => null
             };
-            var records = await store.ListConsolidationCandidatesAsync(status, 200);
+            var records = await _memoryStore.ListConsolidationCandidatesAsync(status, 200, ct);
+            ct.ThrowIfCancellationRequested();
             ConsolidationCandidates.Clear();
             foreach (var record in records)
                 ConsolidationCandidates.Add(ConsolidationCandidateEntry.From(record));
             StatusMessage = ConsolidationCandidates.Count == 0
                 ? "暂无匹配的 consolidation 候选"
                 : $"已加载 {ConsolidationCandidates.Count} 个候选";
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (Exception ex)
         {
@@ -69,7 +72,7 @@ public partial class AgentSettingsViewModel
         try
         {
             var memory = await TryCreateConsolidationMemoryAsync();
-            var review = new ConsolidationReviewService(new AgentMemoryStore(), memory);
+            var review = new ConsolidationReviewService(_memoryStore, memory);
             var (ok, message, incidentId) = await review.ApproveAsync(entry.Id);
             StatusMessage = message + (incidentId is null ? string.Empty : $"（事件 #{incidentId}）");
             await LocalAudit.LogAsync("agent_consolidation", $"CONSOLIDATION_APPROVE #{entry.Id}",
@@ -105,7 +108,7 @@ public partial class AgentSettingsViewModel
             return;
         try
         {
-            var review = new ConsolidationReviewService(new AgentMemoryStore());
+            var review = new ConsolidationReviewService(_memoryStore);
             var (ok, message) = await review.RejectAsync(entry.Id, reason);
             StatusMessage = message;
             await LocalAudit.LogAsync("agent_consolidation", $"CONSOLIDATION_REJECT #{entry.Id}",

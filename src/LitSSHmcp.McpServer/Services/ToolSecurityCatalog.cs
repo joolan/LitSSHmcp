@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Topology;
 
 namespace LitSSHmcp.McpServer.Services;
 
@@ -11,6 +12,9 @@ public enum ToolTargetKind
 
     /// <summary>必须有单个 SSH 服务器目标。</summary>
     Server,
+
+    /// <summary>服务器目标或 URL 目标：优先 serverId，缺失时用 url 解析到最终服务器。</summary>
+    ServerOrUrl,
 
     /// <summary>必须有单个数据源目标。</summary>
     Datasource,
@@ -126,7 +130,8 @@ public static class ToolSecurityCatalog
         ServerWrite("ssh_upload");
 
         // 日志 / Java / Docker / systemd。
-        ServerRead("log_query");
+        Add("log_query", ToolTargetKind.ServerOrUrl, ToolAccessLevel.Read,
+            targetArguments: new[] { "serverId", "url" });
         ServerRead("java_processes");
         ServerRead("java_diagnostics");
         ServerRead("docker_query");
@@ -147,11 +152,8 @@ public static class ToolSecurityCatalog
         DatasourceRead("redis_diagnostics");
 
         // 拓扑查询：当前为全局只读，后续按用户裁剪图数据。
-        GlobalRead("topology_get_overview");
-        GlobalRead("topology_get_dependencies");
         GlobalRead("topology_query");
-        Add("topology_timeline", ToolTargetKind.Server, ToolAccessLevel.Read, targetArguments: "serverId");
-        Add("topology_diff", ToolTargetKind.Server, ToolAccessLevel.Read, targetArguments: "serverId");
+        Add("topology_history", ToolTargetKind.Server, ToolAccessLevel.Read, targetArguments: "serverId");
         Add("topology_discover", ToolTargetKind.MultiServer, ToolAccessLevel.Exec, targetArguments: "serverIds");
 
         // 应用聚合体检：扩展到应用关联的服务器/数据源。
@@ -188,6 +190,8 @@ public static class ToolTargetResolver
         {
             ToolTargetKind.None or ToolTargetKind.Global => new(Array.Empty<string>(), null, null),
             ToolTargetKind.Server => ResolveServer(config, GetStringArg(args, "serverId")),
+            ToolTargetKind.ServerOrUrl => ResolveServerOrUrl(
+                config, GetStringArg(args, "serverId"), GetStringArg(args, "url")),
             ToolTargetKind.Datasource => ResolveDatasource(config, GetStringArg(args, "datasourceId"), required: true),
             ToolTargetKind.OptionalServer => ResolveOptionalServer(config, GetStringArg(args, "serverId")),
             ToolTargetKind.OptionalDatasource => ResolveDatasource(config, GetStringArg(args, "datasourceId"), required: false),
@@ -214,6 +218,32 @@ public static class ToolTargetResolver
         string.IsNullOrWhiteSpace(reference)
             ? new(Array.Empty<string>(), null, null)
             : ResolveServer(config, reference);
+
+    private static ToolTargetResolution ResolveServerOrUrl(
+        AppConfig config, string? serverReference, string? url)
+    {
+        if (!string.IsNullOrWhiteSpace(serverReference))
+            return ResolveServer(config, serverReference);
+
+        if (string.IsNullOrWhiteSpace(url))
+            return new(Array.Empty<string>(), "serverId 或 url 至少提供一个", null);
+
+        var resolution = UrlResolutionService.Resolve(config, url);
+        if (!resolution.Success)
+            return new(Array.Empty<string>(), resolution.Error ?? "url_not_found", $"url:{url}");
+
+        var keys = resolution.RuntimeChains
+            .Select(c => c.ServerId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => $"ssh:{id}")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (keys.Length == 0)
+            return new(Array.Empty<string>(), "URL 已匹配应用，但未解析到服务器运行环境", $"url:{url}");
+
+        return new(keys, null, $"url:{resolution.NormalizedUrl ?? url}");
+    }
 
     private static ToolTargetResolution ResolveDatasource(AppConfig config, string? reference, bool required)
     {

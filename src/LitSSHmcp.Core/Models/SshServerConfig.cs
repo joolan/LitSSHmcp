@@ -50,6 +50,10 @@ public class SshServerConfig
     public string? Description { get; set; }
     public string[] Tags { get; set; } = Array.Empty<string>();
 
+    public string[] Aliases { get; set; } = Array.Empty<string>();
+
+    public string? AssetKey { get; set; }
+
     /// <summary>连接管理器分组名（用于树形分组/文件夹）；空 = 未分组。</summary>
     public string Group { get; set; } = string.Empty;
 

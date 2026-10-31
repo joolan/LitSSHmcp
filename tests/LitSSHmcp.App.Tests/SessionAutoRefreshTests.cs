@@ -43,4 +43,36 @@ public class SessionAutoRefreshTests
         Assert.True(SessionAutoRefresh.ShouldReloadSelected(null, "2026-10-18T02:00:00Z"));
         Assert.False(SessionAutoRefresh.ShouldReloadSelected(null, null));
     }
+
+    [Fact]
+    public void SameStructure_ignores_updated_at_but_detects_visible_changes()
+    {
+        var before = new[]
+        {
+            new AgentSessionRow(1, "t", "2026-10-18T00:00:00Z", "2026-10-18T01:00:00Z", "p", "g", 10)
+        };
+        var updated = new[]
+        {
+            new AgentSessionRow(1, "t", "2026-10-18T00:00:00Z", "2026-10-18T02:00:00Z", "p", "g", 10)
+        };
+        var retitled = new[]
+        {
+            new AgentSessionRow(1, "new", "2026-10-18T00:00:00Z", "2026-10-18T02:00:00Z", "p", "g", 10)
+        };
+        var regrouped = new[]
+        {
+            new AgentSessionRow(1, "t", "2026-10-18T00:00:00Z", "2026-10-18T02:00:00Z", "p", "g2", 10)
+        };
+        var reordered = new[]
+        {
+            new AgentSessionRow(1, "t", "2026-10-18T00:00:00Z", "2026-10-18T02:00:00Z", "p", "g", 20)
+        };
+
+        Assert.True(SessionAutoRefresh.SameStructure(before, updated));
+        Assert.True(SessionAutoRefresh.SameStructure(null, null));
+        Assert.False(SessionAutoRefresh.SameStructure(before, retitled));
+        Assert.False(SessionAutoRefresh.SameStructure(before, regrouped));
+        Assert.False(SessionAutoRefresh.SameStructure(before, reordered));
+        Assert.False(SessionAutoRefresh.SameStructure(before, Array.Empty<AgentSessionRow>()));
+    }
 }

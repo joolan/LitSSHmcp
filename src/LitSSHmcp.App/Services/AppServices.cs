@@ -24,7 +24,6 @@ public interface IAppServices
     IAuditLogService CreateAuditLog();
     ISnapshotService CreateSnapshotService();
     ISnapshotStore CreateSnapshotStore();
-    ITopologyStore CreateTopologyStore();
     IDatasourceDriverRegistry CreateDriverRegistry();
     IDatasourceDriverRegistry CreateWorkbenchDriverRegistry();
     ITopologyService CreateTopologyService();
@@ -63,7 +62,6 @@ public sealed class AppServices : IAppServices
     public IAuditLogService CreateAuditLog() => new AuditLogService();
     public ISnapshotService CreateSnapshotService() => AppServiceFactory.CreateSnapshotService();
     public ISnapshotStore CreateSnapshotStore() => AppServiceFactory.CreateSnapshotStore();
-    public ITopologyStore CreateTopologyStore() => new TopologyStore();
     public IDatasourceDriverRegistry CreateDriverRegistry() => AppServiceFactory.CreateDriverRegistry(Config);
     public IDatasourceDriverRegistry CreateWorkbenchDriverRegistry() => AppServiceFactory.CreateWorkbenchDriverRegistry(Config);
     public ITopologyService CreateTopologyService() => AppServiceFactory.CreateTopologyService(Config);

@@ -20,6 +20,7 @@ public static class SubAgents
         AgentConfig config,
         IReadOnlyList<IAgentTool> subTools,
         string? restrictionNote = null,
+        SpillStore? spill = null,
         IReadOnlyDictionary<string, AgentToolPolicy>? toolPolicy = null,
         bool planMode = false,
         Action<long, long>? onUsage = null,
@@ -36,7 +37,7 @@ public static class SubAgents
             ToolName,
             "把一次独立的只读取证/调查任务委派给子代理在隔离上下文中完成, 只返回结论摘要(大量原始输出不回主上下文)。预计需要 3 个以上只读工具、跨多台主机或大日志时优先使用; task 需自包含(含 serverId/目标与期望)",
             """{"type":"object","properties":{"task":{"type":"string","description":"交给子代理的独立只读任务, 自包含(含 serverId/目标与期望结论)"},"groups":{"type":"string","description":"可选: 限制子代理可用工具分组(逗号分隔, 如 ssh,log,docker,java)"}},"required":["task"]}""",
-            (args, ct) => RunAsync(client, provider, config, subTools, restrictionNote, toolPolicy, planMode,
+            (args, ct) => RunAsync(client, provider, config, subTools, restrictionNote, spill, toolPolicy, planMode,
                 onUsage, budgetCheck, onUsageDelta, toolPolicyProvider, planModeProvider, taskCounts, args, ct));
 
         return new LocalAgentTool(function, readOnly: true);
@@ -48,6 +49,7 @@ public static class SubAgents
         AgentConfig config,
         IReadOnlyList<IAgentTool> subTools,
         string? restrictionNote,
+        SpillStore? spill,
         IReadOnlyDictionary<string, AgentToolPolicy>? toolPolicy,
         bool planMode,
         Action<long, long>? onUsage,
@@ -74,13 +76,18 @@ public static class SubAgents
             ? Math.Clamp(config.SubAgentSummaryMaxChars, 500, 8000)
             : 2000;
 
-        var prompt = SystemPromptBuilder.BuildSubAgentPrompt(restrictionNote, summaryMaxChars);
+        var spillEnabled = spill is not null &&
+                           tools.Any(t => string.Equals(t.Name, "spill", StringComparison.Ordinal));
+        var prompt = SystemPromptBuilder.BuildSubAgentPrompt(restrictionNote, summaryMaxChars, spillEnabled);
 
         if (budgetCheck is not null && !budgetCheck(0, 0))
             return "(子代理已取消：会话成本预算已耗尽；请提高 agent.budget.maxSessionCost 或切换更便宜的模型)";
 
+        var timeoutSeconds = config.SubAgentTimeoutSeconds > 0
+            ? Math.Clamp(config.SubAgentTimeoutSeconds, 30, 3600)
+            : 240;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromMinutes(4));
+        timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
         // 子代理独立轮数上限（默认 8；可通过 agent.subAgentMaxIterations 调整，最多 20）。
         var maxIterations = config.SubAgentMaxIterations > 0
@@ -88,8 +95,8 @@ public static class SubAgents
             : 8;
         var effectivePolicy = toolPolicyProvider?.Invoke() ?? toolPolicy;
         var effectivePlanMode = planModeProvider?.Invoke() ?? planMode;
-        var session = new AgentSession(client, provider, tools, prompt, config, maxIterationsOverride: maxIterations,
-            budgetCheck: budgetCheck, onUsageDelta: onUsageDelta);
+        var session = new AgentSession(client, provider, tools, prompt, config, spill: spill,
+            maxIterationsOverride: maxIterations, budgetCheck: budgetCheck, onUsageDelta: onUsageDelta);
         session.SetToolPolicy(effectivePolicy);
         session.SetPlanMode(effectivePlanMode);
         var collector = new TextCollector();

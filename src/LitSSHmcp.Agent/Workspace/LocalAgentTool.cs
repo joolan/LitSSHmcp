@@ -19,6 +19,7 @@ internal sealed class LocalAgentTool : IAgentTool
     public bool Destructive => false;
     public bool ReadOnly => _readOnly;
     public string? ToolGroup => null;
+    public bool IsLocal => true;
 
     public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct) =>
         await _function.InvokeAsync(new AIFunctionArguments(arguments), ct);

@@ -17,6 +17,7 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
 {
     private readonly IConfigService _configService;
     private readonly IContextStore _contextStore = new ContextStore();
+    private readonly AgentMemoryStore _memoryStore = new();
 
     public AgentSettingsViewModel(IConfigService? configService = null)
     {
@@ -149,16 +150,20 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
     public ObservableCollection<AgentSessionRow> ArchivedSessions { get; } = new();
 
     /// <summary>加载已归档会话列表。</summary>
-    public async Task LoadArchivedAsync()
+    public async Task LoadArchivedAsync(CancellationToken ct = default)
     {
         try
         {
-            await _contextStore.InitializeAsync();
-            var list = await _contextStore.ListArchivedSessionsAsync();
+            await _contextStore.InitializeAsync(ct);
+            var list = await _contextStore.ListArchivedSessionsAsync(ct);
+            ct.ThrowIfCancellationRequested();
             ArchivedSessions.Clear();
             foreach (var s in list)
                 ArchivedSessions.Add(s);
             StatusMessage = list.Count == 0 ? "暂无归档会话" : $"已归档 {list.Count} 个会话";
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (Exception ex)
         {
@@ -367,6 +372,15 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
 
     private bool _enableSubAgent = true;
     public bool EnableSubAgent { get => _enableSubAgent; set => Set(ref _enableSubAgent, value); }
+
+    private string _subAgentMaxIterations = "8";
+    public string SubAgentMaxIterations { get => _subAgentMaxIterations; set => Set(ref _subAgentMaxIterations, value); }
+
+    private string _subAgentTimeoutSeconds = "240";
+    public string SubAgentTimeoutSeconds { get => _subAgentTimeoutSeconds; set => Set(ref _subAgentTimeoutSeconds, value); }
+
+    private string _subAgentSummaryMaxChars = "2000";
+    public string SubAgentSummaryMaxChars { get => _subAgentSummaryMaxChars; set => Set(ref _subAgentSummaryMaxChars, value); }
 
     private bool _workLogEnabled = true;
     public bool WorkLogEnabled { get => _workLogEnabled; set => Set(ref _workLogEnabled, value); }
@@ -632,7 +646,7 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
     {
         try
         {
-            var store = new AgentMemoryStore();
+            var store = _memoryStore;
             var stats = await store.GetStatsAsync();
             var dbPath = ConfigPaths.AgentDb;
             var size = File.Exists(dbPath) ? new FileInfo(dbPath).Length : 0;
@@ -702,6 +716,9 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
             SpillDir = agent.SpillDir;
             SpillRetentionDays = agent.SpillRetentionDays.ToString();
             EnableSubAgent = agent.EnableSubAgent;
+            SubAgentMaxIterations = agent.SubAgentMaxIterations.ToString();
+            SubAgentTimeoutSeconds = agent.SubAgentTimeoutSeconds.ToString();
+            SubAgentSummaryMaxChars = agent.SubAgentSummaryMaxChars.ToString();
             WorkLogEnabled = agent.WorkLog?.Enabled ?? true;
             WorkLogDir = agent.WorkLog?.Dir ?? string.Empty;
             WorkLogIncludeFailures = agent.WorkLog?.IncludeFailures ?? true;
@@ -811,6 +828,9 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent.SpillDir = SpillDir ?? string.Empty;
             config.Agent.SpillRetentionDays = (int)Math.Max(0, ParseLong(SpillRetentionDays, 7));
             config.Agent.EnableSubAgent = EnableSubAgent;
+            config.Agent.SubAgentMaxIterations = (int)Math.Clamp(ParseLong(SubAgentMaxIterations, 8), 0, 20);
+            config.Agent.SubAgentTimeoutSeconds = (int)Math.Clamp(ParseLong(SubAgentTimeoutSeconds, 240), 0, 3600);
+            config.Agent.SubAgentSummaryMaxChars = (int)Math.Clamp(ParseLong(SubAgentSummaryMaxChars, 2000), 0, 8000);
             config.Agent.WorkLog ??= new AgentWorkLogConfig();
             config.Agent.WorkLog.Enabled = WorkLogEnabled;
             config.Agent.WorkLog.Dir = WorkLogDir ?? string.Empty;

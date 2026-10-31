@@ -39,27 +39,8 @@ public class TopologyTools
         _securityOptions = securityOptions;
     }
 
-    [McpServerTool(Name = "topology_get_overview", UseStructuredContent = true, OutputSchemaType = typeof(TopologyGraph), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("获取资产拓扑图(服务器/应用/数据库及关系)。跨机排查前先看它")]
-    public async Task<TopologyGraph> GetTopology()
-    {
-        var graph = await _topologyService.GetGraphAsync();
-        await LogAuditAsync("TOPOLOGY_OVERVIEW", $"{graph.Nodes.Length} nodes / {graph.Edges.Length} edges", CommandStatus.Executed, AuditCategory.Meta);
-        return graph;
-    }
-
-    [McpServerTool(Name = "topology_get_dependencies", UseStructuredContent = true, OutputSchemaType = typeof(DependencyGraph), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("查询某资产的上下游依赖(跑在哪/连了谁)。assetId支持 ssh:xx/ds:xx/app:xx 或纯ID/名称")]
-    public async Task<DependencyGraph> GetAssetDependencies(
-        [Description("资产ID, 如 ds:mysql-order-01 / ssh:web-server-01 / app:order-service 或纯ID/名称")] string assetId)
-    {
-        var dep = await _topologyService.GetDependenciesAsync(assetId);
-        await LogAuditAsync($"TOPOLOGY_DEPENDENCIES: {assetId}", dep.Error, dep.Error == null ? CommandStatus.Executed : CommandStatus.Failed, AuditCategory.Meta);
-        return dep;
-    }
-
     [McpServerTool(Name = "topology_discover", UseStructuredContent = true, OutputSchemaType = typeof(DiscoverResultDto), Destructive = false, ReadOnly = false, Idempotent = false, OpenWorld = true)]
-    [Description("自动发现并补全拓扑(java进程/网络连接/JDBC配置/processlist)；执行远端只读探测并写入拓扑缓存。拓扑缺失/过期时用，通常10-60秒/台")]
+    [Description("采集服务器发现证据(java进程/端口/服务/容器/JDBC配置/processlist)；只返回证据与配置建议，不修改人工配置拓扑图，通常10-60秒/台")]
     public async Task<DiscoverResultDto> DiscoverTopology(
         [Description("限定扫描的服务器ID或名称, 逗号分隔; 留空扫描全部")] string? serverIds = null,
         [Description("配置文件搜索路径, 空格分隔; 留空使用配置中允许的路径(security.discovery.allowedSearchPaths)")] string? searchPaths = null,
@@ -119,13 +100,13 @@ public class TopologyTools
         try
         {
             var result = await _topologyService.DiscoverAsync(servers, paths, cancellationToken);
-            await LogAuditAsync("TOPOLOGY_DISCOVER", $"新增 {result.NewEdges.Length} / 更新 {result.UpdatedEdges.Length} / 错误 {result.Errors.Length}", CommandStatus.Executed, AuditCategory.Probe);
+            await LogAuditAsync("TOPOLOGY_DISCOVER", $"证据边 {result.NewEdges.Length} / 错误 {result.Errors.Length}", CommandStatus.Executed, AuditCategory.Probe);
             return new DiscoverResultDto { Success = true, Result = result };
         }
         catch (DiscoveryInProgressException)
         {
             return DiscoverResultDto.Fail("discovery_in_progress",
-                "已有自动发现在执行，请稍后重试（本次已跳过，避免并发扫描；可先用 topology_get_overview 查看已有结果）。");
+                "已有自动发现在执行，请稍后重试（本次已跳过，避免并发扫描；可先用 topology_query(action=overview) 查看人工主图）。");
         }
     }
 

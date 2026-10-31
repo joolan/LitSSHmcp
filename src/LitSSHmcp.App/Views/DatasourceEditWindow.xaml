@@ -78,6 +78,46 @@
                         <ui:TextBox FontWeight="Normal" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}"/>
                     </controls:FormRow>
 
+                    <controls:FormRow Label="资产标识" HelpText="同一数据库实例的多条连接配置填相同值；留空则按数据源 Id 归并">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding AssetKey, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="实例标识" HelpText="Redis 等无稳定 UUID 的兜底身份；MySQL/PostgreSQL 通常留空，由探测自动填充">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding InstanceKey, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="主机别名" HelpText="额外主机名/IP，逗号分隔；用于把直连/隧道配置识别为同一实例">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding AliasesText, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <TextBlock Text="运行环境" Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
+
+                    <controls:FormRow Label="运行环境" HelpText="表示数据库实例实际运行在哪里；不要和上面的访问模式/隧道混淆">
+                        <ComboBox ItemsSource="{Binding RuntimeKindOptions}" SelectedIndex="{Binding RuntimeKindIndex}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="SSH 服务器" HelpText="仅 SSH 服务器环境需要选择；只列出配置了 AssetKey 的服务器">
+                        <ComboBox ItemsSource="{Binding SshTargetOptions}" DisplayMemberPath="Label"
+                                  SelectedValuePath="AssetKey" SelectedValue="{Binding SelectedSshAssetKey}"
+                                  IsEnabled="{Binding IsSshRuntime}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="Docker 应用" HelpText="仅 Docker 环境需要选择；只列出 Type=docker 且配置了 AssetKey 的应用">
+                        <ComboBox ItemsSource="{Binding DockerTargetOptions}" DisplayMemberPath="Label"
+                                  SelectedValuePath="AssetKey" SelectedValue="{Binding SelectedDockerAssetKey}"
+                                  IsEnabled="{Binding IsDockerRuntime}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="容器名" HelpText="Docker 环境必填：容器名或 Compose service 至少填一个">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding RuntimeContainerName, UpdateSourceTrigger=PropertyChanged}"
+                                    IsEnabled="{Binding IsDockerRuntime}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="Compose service" HelpText="Docker 环境必填：容器名或 Compose service 至少填一个">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding RuntimeComposeService, UpdateSourceTrigger=PropertyChanged}"
+                                    IsEnabled="{Binding IsDockerRuntime}"/>
+                    </controls:FormRow>
+
                     <TextBlock Text="治理" Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
 
                     <controls:FormRow Label="只读">

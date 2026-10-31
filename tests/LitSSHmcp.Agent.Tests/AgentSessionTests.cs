@@ -81,6 +81,51 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public async Task Local_only_tool_rounds_do_not_consume_tool_limit()
+    {
+        static ChatResponse Call(string id, string name) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent(id, name, new Dictionary<string, object?>())
+            })
+        });
+
+        var client = new FakeChatClient(
+            Call("c1", "ops_doc_read"), Call("c2", "ops_doc_write"),
+            Call("c3", "ssh_execute_command"),
+            Call("c4", "ops_doc_read"),
+            Call("c5", "ssh_execute_command"),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+        var tools = new IAgentTool[]
+        {
+            new FakeTool("ops_doc_read", "ok", readOnly: true, isLocal: true),
+            new FakeTool("ops_doc_write", "ok", isLocal: true),
+            new FakeTool("ssh_execute_command", "ok")
+        };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            tools, "sys", new AgentConfig { MaxToolIterations = 2 });
+
+        var confirmations = 0;
+        session.SetToolLimitContinuation((used, limit, _) =>
+        {
+            confirmations++;
+            Assert.Equal(2, used);
+            Assert.Equal(2, limit);
+            return Task.FromResult(true);
+        });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        // 3 个远程工具轮次中，只有 2 个计入上限；2 个本地工具轮次被排除。
+        Assert.Equal(1, confirmations);
+        Assert.Equal(5, session.Messages.Count(m => m.Role == ChatRole.Tool));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Warning && e.Text!.Contains("本地工具不计入"));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Done);
+    }
+
+    [Fact]
     public async Task Tool_limit_can_be_stopped_by_host_confirmation()
     {
         static ChatResponse Call(string id) => new(new List<ChatMessage>
@@ -931,15 +976,17 @@ public class AgentSessionTests
         private readonly object? _result;
         private readonly bool _readOnly;
         private readonly int _delayMs;
+        private readonly bool _isLocal;
         private readonly Func<CancellationToken, Task<object?>>? _invoke;
 
         public FakeTool(string name, object? result, bool readOnly = false, int delayMs = 0,
-            Func<CancellationToken, Task<object?>>? invoke = null)
+            Func<CancellationToken, Task<object?>>? invoke = null, bool isLocal = false)
         {
             Name = name;
             _result = result;
             _readOnly = readOnly;
             _delayMs = delayMs;
+            _isLocal = isLocal;
             _invoke = invoke;
             Tool = AIFunctionFactory.Create(() => _result, name);
         }
@@ -949,6 +996,7 @@ public class AgentSessionTests
         public bool Destructive => false;
         public bool ReadOnly => _readOnly;
         public string? ToolGroup => null;
+        public bool IsLocal => _isLocal;
         public IDictionary<string, object?>? LastArgs { get; private set; }
 
         public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct)

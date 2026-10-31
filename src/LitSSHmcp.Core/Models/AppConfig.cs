@@ -185,6 +185,9 @@ public class AgentConfig
     /// <summary>子代理单次任务最多工具调用轮数（1-20，默认 8）；复杂只读取证可调高。</summary>
     public int SubAgentMaxIterations { get; set; } = 8;
 
+    /// <summary>子代理单次任务墙钟超时秒数（30-3600，默认 240；0=使用默认值）。</summary>
+    public int SubAgentTimeoutSeconds { get; set; } = 240;
+
     /// <summary>子代理返回给主上下文的摘要字符上限（500-8000，默认 2000）。</summary>
     public int SubAgentSummaryMaxChars { get; set; } = 2000;
 
@@ -215,7 +218,7 @@ public class AgentConfig
     /// <summary>MCP 服务器 exe 路径；空=自动探测（App 目录 mcp/LitSSHmcp.McpServer.exe / publish）。</summary>
     public string McpServerPath { get; set; } = string.Empty;
 
-    /// <summary>单轮对话内工具调用循环的最大轮数（防失控）。</summary>
+    /// <summary>单轮对话内远程工具调用循环的最大轮数（防失控；本地工具不计入）。</summary>
     public int MaxToolIterations { get; set; } = 20;
 
     /// <summary>会话保留：最多保留的会话数（0=不限）。</summary>
@@ -746,6 +749,12 @@ public class DiscoveryConfig
     /// 探测命令均为只读；提权密码由服务端注入、不会暴露给 AI。
     /// </summary>
     public bool UseSudo { get; set; }
+
+    /// <summary>
+    /// 自动发现时是否采集资产身份（SSH machine-id / host key、MySQL server_uuid、PostgreSQL system_identifier）。
+    /// 只读探测，失败不阻塞发现；默认开启。
+    /// </summary>
+    public bool IdentityProbeEnabled { get; set; } = true;
 }
 
 /// <summary>

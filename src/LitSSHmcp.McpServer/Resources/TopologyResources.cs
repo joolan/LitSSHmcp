@@ -5,7 +5,7 @@ using ModelContextProtocol.Server;
 
 namespace LitSSHmcp.McpServer.Resources;
 
-/// <summary>MCP 资源：资产拓扑总览（只读），等价 <c>topology_get_overview</c> 的返回。</summary>
+/// <summary>MCP 资源：资产拓扑总览（只读），等价 <c>topology_query(action="overview")</c> 的返回。</summary>
 [McpServerResourceType]
 public class TopologyResources
 {

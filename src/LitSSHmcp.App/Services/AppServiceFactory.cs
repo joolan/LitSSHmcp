@@ -158,9 +158,9 @@ public static class AppServiceFactory
         var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
         var ssh = new SshService(knownHosts, security, limiter);
         var registry = CreateDriverRegistry(configService);
-        var store = new TopologyStore();
-        return new TopologyService(configService, ssh, registry, store,
-            new CommandFilterService(security), new AuditLogService(security), new SnapshotStore());
+        return new TopologyService(configService, ssh, registry,
+            new CommandFilterService(security), new AuditLogService(security), new SnapshotStore(),
+            new AssetIdentityStore());
     }
 
     /// <summary>资产图谱查询服务（时间线/Diff 读取快照库；与 MCP 端使用同一实现）。</summary>

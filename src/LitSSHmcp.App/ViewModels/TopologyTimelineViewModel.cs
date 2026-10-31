@@ -44,7 +44,7 @@ public sealed record TimelineChangeRow(string Kind, string Text, bool Added);
 
 /// <summary>
 /// 快照时间线：按服务器读取最近若干快照的图谱重放结果，展示每个时点的节点/边规模与相对上一份快照的变化。
-/// 只读快照库，不连接服务器；与 MCP 的 topology_timeline / topology_diff 使用同一查询服务。
+/// 只读快照库，不连接服务器；与 MCP 的 topology_history 使用同一查询服务。
 /// </summary>
 public sealed class TopologyTimelineViewModel : INotifyPropertyChanged
 {

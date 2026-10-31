@@ -14,6 +14,13 @@ public interface ITopologyService
     Task<TopologyGraph> GetGraphAsync(CancellationToken ct = default);
     Task<DependencyGraph> GetDependenciesAsync(string assetId, CancellationToken ct = default);
     Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default);
+
+    /// <summary>人工配置拓扑：只返回人工资产、人工关系和运行环境关系，不合并自动发现边。</summary>
+    Task<TopologyGraph> GetCuratedGraphAsync(CancellationToken ct = default) => GetGraphAsync(ct);
+
+    /// <summary>服务器详情中的自动发现证据；默认实现返回 null，便于测试替身兼容。</summary>
+    Task<ServerDiscoveryEvidence?> GetServerDiscoveryEvidenceAsync(string serverId, CancellationToken ct = default) =>
+        Task.FromResult<ServerDiscoveryEvidence?>(null);
 }
 
 /// <summary>已有自动发现在执行时抛出（用于节流：同一时间只允许一个发现任务）。</summary>
@@ -22,17 +29,17 @@ public sealed class DiscoveryInProgressException : Exception
     public DiscoveryInProgressException() : base("已有自动发现在执行，请稍后重试") { }
 }
 
-public class TopologyService : ITopologyService
+public partial class TopologyService : ITopologyService
 {
     private const int MaxDepth = 6;
 
     private readonly IConfigService _configService;
     private readonly ISshService _sshService;
     private readonly IDatasourceDriverRegistry _driverRegistry;
-    private readonly ITopologyStore _store;
     private readonly ICommandFilterService _commandFilter;
     private readonly IAuditLogService _auditLogService;
     private readonly ISnapshotStore? _snapshotStore;
+    private readonly IAssetIdentityStore? _identityStore;
     private readonly SemaphoreSlim _discoverGate = new(1, 1);
     private bool _auditReady;
 
@@ -40,153 +47,22 @@ public class TopologyService : ITopologyService
         IConfigService configService,
         ISshService sshService,
         IDatasourceDriverRegistry driverRegistry,
-        ITopologyStore store,
         ICommandFilterService commandFilter,
         IAuditLogService auditLogService,
-        ISnapshotStore? snapshotStore = null)
+        ISnapshotStore? snapshotStore = null,
+        IAssetIdentityStore? identityStore = null)
     {
         _configService = configService;
         _sshService = sshService;
         _driverRegistry = driverRegistry;
-        _store = store;
         _commandFilter = commandFilter;
         _auditLogService = auditLogService;
         _snapshotStore = snapshotStore;
+        _identityStore = identityStore;
     }
 
-    public async Task<TopologyGraph> GetGraphAsync(CancellationToken ct = default)
-    {
-        var config = await _configService.LoadConfigAsync();
-        var nodes = new Dictionary<string, TopologyNode>(StringComparer.Ordinal);
-        var edges = new List<TopologyEdge>();
-
-        foreach (var server in config.Servers)
-        {
-            nodes[AssetNode.Ssh(server.Id)] = new TopologyNode
-            {
-                Id = AssetNode.Ssh(server.Id),
-                Label = server.Name,
-                Type = "ssh",
-                Info = new Dictionary<string, object?>
-                {
-                    ["host"] = server.Host,
-                    ["port"] = server.Port,
-                    ["username"] = server.Username,
-                    ["description"] = server.Description,
-                    ["tags"] = server.Tags,
-                    ["disabled"] = server.Disabled
-                }
-            };
-        }
-
-        foreach (var ds in config.DataSources)
-        {
-            nodes[AssetNode.Ds(ds.Id)] = new TopologyNode
-            {
-                Id = AssetNode.Ds(ds.Id),
-                Label = ds.Name,
-                Type = "datasource",
-                Info = new Dictionary<string, object?>
-                {
-                    ["datasourceType"] = ds.Type,
-                    ["host"] = ds.Host,
-                    ["port"] = ds.Port,
-                    ["username"] = ds.Username,
-                    ["defaultDatabase"] = ds.DefaultDatabase,
-                    ["accessMode"] = ds.AccessMode.ToString(),
-                    ["description"] = ds.Description,
-                    ["tags"] = ds.Tags
-                }
-            };
-        }
-
-        foreach (var app in config.Applications)
-        {
-            nodes[AssetNode.App(app.Id)] = new TopologyNode
-            {
-                Id = AssetNode.App(app.Id),
-                Label = app.Name,
-                Type = "application",
-                Info = new Dictionary<string, object?>
-                {
-                    ["applicationType"] = app.Type,
-                    ["host"] = app.Host,
-                    ["port"] = app.Port,
-                    ["description"] = app.Description,
-                    ["tags"] = app.Tags
-                }
-            };
-        }
-
-        var manualKeys = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var rel in config.Relations)
-        {
-            if (string.IsNullOrWhiteSpace(rel.From) || string.IsNullOrWhiteSpace(rel.To)) continue;
-            edges.Add(new TopologyEdge
-            {
-                From = rel.From,
-                To = rel.To,
-                Type = string.IsNullOrWhiteSpace(rel.Type) ? "relatedTo" : rel.Type,
-                Evidence = rel.Note,
-                Source = "manual",
-                Confidence = 1.0,
-                ValidFrom = DateTime.UtcNow,
-                LastVerifiedAt = DateTime.UtcNow
-            });
-            manualKeys.Add(EdgeKey(rel.From, rel.To, rel.Type));
-            EnsureNode(nodes, rel.From, "discovered");
-            EnsureNode(nodes, rel.To, "discovered");
-        }
-
-        await _store.InitializeAsync();
-        var discoveredEdges = await _store.GetEdgesAsync();
-        await ReconcileDisputesAsync(discoveredEdges, edges, ct);
-        foreach (var edge in discoveredEdges)
-        {
-            if (manualKeys.Contains(EdgeKey(edge.From, edge.To, edge.Type))) continue;
-            edges.Add(edge);
-            EnsureNode(nodes, edge.From, "discovered");
-            EnsureNode(nodes, edge.To, "discovered");
-        }
-
-        // 合并发现节点的附加信息（如监听端口），并在待确认节点标签上显示端口
-        foreach (var (nodeId, json) in await _store.GetNodeInfosAsync())
-        {
-            if (!nodes.TryGetValue(nodeId, out var node)) continue;
-
-            try
-            {
-                if (JsonSerializer.Deserialize<Dictionary<string, object?>>(json) is { } info)
-                {
-                    foreach (var kv in info)
-                        node.Info[kv.Key] = kv.Value;
-                    if (InfoString(node, "label") is { Length: > 0 } infoLabel)
-                        node.Label = infoLabel;
-                }
-            }
-            catch { /* 忽略损坏的 info */ }
-
-            if (nodeId.Contains(":disc:", StringComparison.Ordinal) &&
-                node.Info.TryGetValue("ports", out var portsVal) &&
-                portsVal is string portsText && portsText.Length > 0 &&
-                !node.Label.Contains(":" + portsText, StringComparison.Ordinal))
-                node.Label = node.Label.Replace(" (待确认)", $" :{portsText} (待确认)");
-        }
-
-        return new TopologyGraph
-        {
-            Nodes = nodes.Values.ToArray(),
-            Edges = edges.ToArray(),
-            Summary = new Dictionary<string, object?>
-            {
-                ["sshServers"] = config.Servers.Length,
-                ["dataSources"] = config.DataSources.Length,
-                ["applications"] = config.Applications.Length,
-                ["manualRelations"] = config.Relations.Length,
-                ["discoveredRelations"] = edges.Count(e => e.Source == "discovered")
-            }
-        };
-    }
+    public Task<TopologyGraph> GetGraphAsync(CancellationToken ct = default) =>
+        GetCuratedGraphAsync(ct);
 
     public async Task<DependencyGraph> GetDependenciesAsync(string assetId, CancellationToken ct = default)
     {
@@ -247,9 +123,20 @@ public class TopologyService : ITopologyService
         var drafts = new List<TopologyEdge>();
         var notes = new List<string>();
 
-        // 每次重新发现是"本次扫描的快照"：先清掉上一轮所有"待确认"节点/边，再由本次证据重建。
-        await _store.InitializeAsync();
-        await _store.ClearDiscoveredAsync();
+        result.DuplicateCandidates = DuplicateAssetDetector.FindAll(config);
+        if (result.DuplicateCandidates.Count > 0)
+        {
+            notes.Add($"检测到 {result.DuplicateCandidates.Count} 组疑似重复的接入配置(同一实例可能配置了多条记录)：" +
+                      string.Join("；", result.DuplicateCandidates.Take(5).Select(g =>
+                          $"{g.AssetType} {g.MatchKey} ({g.Items.Length} 条)")) +
+                      (result.DuplicateCandidates.Count > 5 ? " …" : string.Empty));
+        }
+
+        // 自动发现只采集证据，不写拓扑主图。
+        var identityProbeEnabled = _identityStore != null &&
+                                   (config.Security?.Discovery?.IdentityProbeEnabled ?? true);
+        if (identityProbeEnabled)
+            await _identityStore!.InitializeAsync();
 
         // 是否用提权跑部分只读探测（监听端口/配置扫描）——仅对该服务器配置了 SudoType 时生效
         var useSudo = config.Security?.Discovery?.UseSudo ?? false;
@@ -301,6 +188,9 @@ public class TopologyService : ITopologyService
             ct.ThrowIfCancellationRequested();
             var sshNode = AssetNode.Ssh(server.Id);
 
+            if (identityProbeEnabled)
+                await CollectServerIdentityAsync(server, result, notes, ct);
+
             var pidMap = new Dictionary<long, DiscoveredApp>();
 
             var psResult = await ProbeAsync(server,
@@ -347,10 +237,9 @@ public class TopologyService : ITopologyService
                     else if (jar != null)
                     {
                         // 未登记的应用也建"待确认"节点，让发现结果有料（可在资产关系里删除/补登）
-                        var pendingApp = PendingAppId(name);
+                        var pendingApp = TopologyIds.PendingApp(server.Id, name);
                         drafts.Add(NewEdge(pendingApp, sshNode, "runsOn",
                             $"ps(未登记应用): pid={app.Pid} jar={jar}"));
-                        await _store.UpsertNodeInfoAsync(pendingApp, NodeInfoJson("java", null, null, jar));
                     }
                 }
             }
@@ -399,7 +288,7 @@ public class TopologyService : ITopologyService
                         drafts.Add(NewEdge(AssetNode.App(configured.Id), sshNode, "runsOn",
                             $"docker: {containerName} ({image})"));
                     else
-                        drafts.Add(NewEdge(PendingAppId(containerName), sshNode, "runsOn",
+                        drafts.Add(NewEdge(TopologyIds.PendingApp(server.Id, containerName), sshNode, "runsOn",
                             $"docker(未登记应用): {containerName} ({image}) {status}".Trim()));
                 }
             }
@@ -416,6 +305,13 @@ public class TopologyService : ITopologyService
             var serverLocalIps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (IPAddress.TryParse(server.Host, out _))
                 serverLocalIps.Add(server.Host);
+            if (!string.IsNullOrWhiteSpace(server.InternalHost))
+                serverLocalIps.Add(server.InternalHost);
+            foreach (var alias in server.Aliases ?? Array.Empty<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(alias))
+                    serverLocalIps.Add(alias);
+            }
             try
             {
                 foreach (var a in Dns.GetHostAddresses(server.Host))
@@ -428,15 +324,24 @@ public class TopologyService : ITopologyService
                 foreach (Match m in Regex.Matches(ipResult.Output, @"\b\d{1,3}(?:\.\d{1,3}){3}\b"))
                     serverLocalIps.Add(m.Value);
 
+            bool DataSourceHostMatches(DataSourceConfig d, string host) =>
+                TopologyHost.Matches(d.Host, host, dnsCache) ||
+                TopologyHost.Matches(host, d.Host, dnsCache) ||
+                (d.Aliases is { } aliases &&
+                 aliases.Any(alias =>
+                     TopologyHost.Matches(alias, host, dnsCache) ||
+                     TopologyHost.Matches(host, alias, dnsCache)));
+
             // 数据源是否“运行在”本服务器上：
-            //  1) 主机名/IP 双向匹配本服务器(名称/IP/DNS)；
+            //  1) 主机名/IP 双向匹配本服务器(名称/IP/DNS/InternalHost/别名)；
             //  2) 或它的跳板服务器正是本服务器，且地址是本机地址(127.0.0.1/localhost/::1)或本服务器局域网 IP。
             bool DatasourceRunsOnServer(DataSourceConfig d)
             {
-                if (HostMatches(d.Host, server.Host, dnsCache) || HostMatches(server.Host, d.Host, dnsCache))
+                if (TopologyHost.MatchesServer(server, d.Host, dnsCache))
                     return true;
                 var h = (d.Host ?? string.Empty).Trim().Trim('[', ']');
-                if (!IsLocalHost(h) && !serverLocalIps.Contains(h))
+                if (!IsLocalHost(h) && !serverLocalIps.Contains(h) &&
+                    !(d.Aliases is { } aliases && aliases.Any(alias => serverLocalIps.Contains(alias))))
                     return false;
                 return string.Equals(TunnelServerResolver.Resolve(config, d)?.Id, server.Id, StringComparison.OrdinalIgnoreCase);
             }
@@ -474,29 +379,30 @@ public class TopologyService : ITopologyService
                                 .ToArray();
                         // 优先取"主机名/IP 直接指向本服务器"的数据源；其次才是"本机/隧道(跳板=本服务器)"归属的
                         var candidate = candidates.FirstOrDefault(d =>
-                                HostMatches(d.Host, server.Host, dnsCache) || HostMatches(server.Host, d.Host, dnsCache))
+                                TopologyHost.MatchesServer(server, d.Host, dnsCache))
                             ?? candidates.FirstOrDefault();
 
-                        var dsNode = candidate != null ? AssetNode.Ds(candidate.Id) : $"ds:disc:{service}";
+                        var dsNode = candidate != null
+                            ? AssetNode.Ds(candidate.Id)
+                            : TopologyIds.PendingLocalDatasource(server.Id, dsType ?? service,
+                                ports.Count > 0 ? ports.Min() : (int?)null);
                         drafts.Add(NewEdge(sshNode, dsNode, "canAccess",
                             $"process: pid={pid} comm={comm}{portText}" + (candidate == null ? " (未登记数据源)" : "")));
-                        await _store.UpsertNodeInfoAsync(dsNode, NodeInfoJson(dsType ?? service, null, ports));
                     }
                     else
                     {
                         // 应用类服务(nginx/php-fpm/haproxy...) → 应用节点
                         var configured = config.Applications.FirstOrDefault(a => nameMatches(a, service) || nameMatches(a, comm));
-                        var appNode = configured != null ? AssetNode.App(configured.Id) : PendingAppId(service);
+                        var appNode = configured != null
+                            ? AssetNode.App(configured.Id)
+                            : TopologyIds.PendingApp(server.Id, service);
                         drafts.Add(NewEdge(appNode, sshNode, "runsOn",
                             $"process: pid={pid} comm={comm}{portText}" + (configured == null ? " (未登记应用)" : "")));
-                        await _store.UpsertNodeInfoAsync(appNode, NodeInfoJson(service, null, ports, ExtractPathFromArgs(args)));
                     }
                 }
             }
 
-            // 服务器节点的监听端口（整体概览）
-            if (allListenPorts.Count > 0)
-                await _store.UpsertNodeInfoAsync(sshNode, NodeInfoJson(null, null, allListenPorts));
+            // 服务器节点的监听端口（整体概览）不再写入拓扑主图。
 
             var ssResult = await ProbeAsync(server,
                 "(ss -Htnp state established 2>/dev/null || ss -tnp state established 2>/dev/null | grep -v '^State') | head -80", ct);
@@ -514,7 +420,7 @@ public class TopologyService : ITopologyService
 
                     foreach (var ds in config.DataSources)
                     {
-                        if (peerInfo.Value.Port != ds.Port || !HostMatches(ds.Host, peerInfo.Value.Host, dnsCache))
+                        if (peerInfo.Value.Port != ds.Port || !DataSourceHostMatches(ds, peerInfo.Value.Host))
                             continue;
 
                         // 本机/隧道数据源: 仅当当前服务器正是它的隧道服务器时, 本机 ESTAB 才算它的连接,
@@ -565,8 +471,7 @@ public class TopologyService : ITopologyService
                 {
                     if (IsPlaceholderHost(host)) return "主机是占位符/协议名";
                     var isLocal = IsLocalHost(host)
-                        || HostMatches(server.Host, host, dnsCache)
-                        || HostMatches(host, server.Host, dnsCache);
+                        || TopologyHost.MatchesServer(server, host, dnsCache);
                     if (isLocal)
                         return listenResult.Success && !allListenPorts.Contains(port) ? "本机未监听该端口" : null;
                     return MatchesManagedServer(host) ? null : "未匹配到已配置的服务器(疑似外部/示例配置)";
@@ -574,17 +479,14 @@ public class TopologyService : ITopologyService
 
                 // 目标主机能否对应到一台已配置的服务器(按主机/名称/IP/DNS)。
                 bool MatchesManagedServer(string host) =>
-                    config.Servers.Any(s =>
-                        (!string.IsNullOrEmpty(s.Name) && s.Name.Equals(host, StringComparison.OrdinalIgnoreCase)) ||
-                        HostMatches(s.Host, host, dnsCache) ||
-                        HostMatches(host, s.Host, dnsCache));
+                    config.Servers.Any(s => TopologyHost.MatchesServer(s, host, dnsCache));
 
                 void AddDbEndpoint(string host, int port, string url, string filePath, string kind)
                 {
                     var matched = config.DataSources.FirstOrDefault(d =>
                         d.Port == port &&
                         d.Type.Equals(kind, StringComparison.OrdinalIgnoreCase) &&
-                        HostMatches(d.Host, host, dnsCache) &&
+                        DataSourceHostMatches(d, host) &&
                         (!IsLocalHost(host) || DatasourceRunsOnServer(d)));
 
                     if (matched == null)
@@ -610,7 +512,7 @@ public class TopologyService : ITopologyService
                             ["url"] = Truncate(url, 200),
                             ["note"] = $"未匹配到已配置的数据源({kind})，建议核对后补充数据源配置"
                         });
-                        drafts.Add(NewEdge(sshNode, PendingDsId(host, port), "canAccess",
+                        drafts.Add(NewEdge(sshNode, TopologyIds.PendingRemoteDatasource(host, port), "canAccess",
                             $"config(未配置数据源): {filePath} -> {Truncate(url, 160)}"));
                         return;
                     }
@@ -621,7 +523,7 @@ public class TopologyService : ITopologyService
                     var appName = InferAppName(filePath, config.Applications);
                     if (appName == null) return;
 
-                    var appNode = AppNodeForName(appName, config);
+                    var appNode = AppNodeForName(appName, config, server.Id);
                     drafts.Add(NewEdge(appNode, AssetNode.Ds(matched.Id), "connectsTo",
                         $"config: {filePath}"));
                     drafts.Add(NewEdge(appNode, sshNode, "runsOn", $"config: {filePath}"));
@@ -644,10 +546,12 @@ public class TopologyService : ITopologyService
                         : null;
                     var targetNode = configuredTarget != null
                         ? AssetNode.App(configuredTarget.Id)
-                        : PendingAppId(port is int p2 ? $"{host}-{p2}" : host);
+                        : TopologyIds.PendingApp(server.Id, port is int p2 ? $"{host}-{p2}" : host);
 
                     var sourceApp = InferAppName(filePath, config.Applications);
-                    var sourceNode = sourceApp != null ? AppNodeForName(sourceApp, config) : PendingAppId("nginx");
+                    var sourceNode = sourceApp != null
+                        ? AppNodeForName(sourceApp, config, server.Id)
+                        : TopologyIds.PendingApp(server.Id, "nginx");
 
                     drafts.Add(NewEdge(sourceNode, targetNode, "connectsTo",
                         $"{kind}: {filePath} -> {Truncate(target, 120)}"));
@@ -671,8 +575,10 @@ public class TopologyService : ITopologyService
                     }
 
                     var sourceApp = InferAppName(filePath, config.Applications);
-                    var sourceNode = sourceApp != null ? AppNodeForName(sourceApp, config) : sshNode;
-                    drafts.Add(NewEdge(sourceNode, $"mq:disc:{SanitizeId(host)}-{port}", "connectsTo",
+                    var sourceNode = sourceApp != null
+                        ? AppNodeForName(sourceApp, config, server.Id)
+                        : sshNode;
+                    drafts.Add(NewEdge(sourceNode, TopologyIds.PendingMq(host, port), "connectsTo",
                         $"{kind}: {filePath} -> {Truncate(url, 120)}"));
                 }
 
@@ -709,7 +615,7 @@ public class TopologyService : ITopologyService
 
                     // nginx: upstream <name> { ... } → 该 upstream 组视为该服务器上的"待确认"应用
                     foreach (Match m in Regex.Matches(content, @"\bupstream\s+(?<name>[A-Za-z0-9_.\-]+)"))
-                        drafts.Add(NewEdge(PendingAppId(m.Groups["name"].Value), sshNode, "runsOn",
+                        drafts.Add(NewEdge(TopologyIds.PendingApp(server.Id, m.Groups["name"].Value), sshNode, "runsOn",
                             $"nginx upstream: {filePath}"));
 
                     // nginx: proxy_pass http(s)://<目标>[/...]
@@ -744,8 +650,11 @@ public class TopologyService : ITopologyService
                 notes.Add($"{server.Name}: 配置文件扫描失败: {Truncate(grepResult.Error, 200)}");
             }
 
-            await AddSnapshotGraphAsync(config, server, drafts, notes, ct);
+            // 自动发现只采集证据，不写入拓扑主图。
         }
+
+        if (identityProbeEnabled)
+            await CollectDatasourceIdentitiesAsync(config, result, notes, ct);
 
         foreach (var ds in config.DataSources.Where(d => d.Type.Equals("mysql", StringComparison.OrdinalIgnoreCase)))
         {
@@ -776,9 +685,12 @@ public class TopologyService : ITopologyService
             foreach (var (clientHost, count) in clientCounts)
             {
                 var matchedServer = config.Servers.FirstOrDefault(s =>
-                    HostMatches(s.Host, clientHost, dnsCache));
+                    TopologyHost.MatchesServer(s, clientHost, dnsCache));
                 var matchedApp = config.Applications.FirstOrDefault(a =>
-                    !string.IsNullOrEmpty(a.Host) && HostMatches(a.Host, clientHost, dnsCache));
+                    !string.IsNullOrEmpty(a.Host) &&
+                    (TopologyHost.Matches(a.Host, clientHost, dnsCache) ||
+                     (a.Aliases is { } aliases &&
+                      aliases.Any(alias => TopologyHost.Matches(alias, clientHost, dnsCache)))));
 
                 if (matchedServer != null)
                 {
@@ -793,7 +705,7 @@ public class TopologyService : ITopologyService
                 else if (IsLocalHost(clientHost))
                 {
                     // 本机(localhost/127.0.0.1)客户端应归属到该数据源所在的服务器，而不是另建 localhost 节点
-                    var hostServer = config.Servers.FirstOrDefault(s => HostMatches(s.Host, ds.Host, dnsCache))
+                    var hostServer = config.Servers.FirstOrDefault(s => TopologyHost.MatchesServer(s, ds.Host, dnsCache))
                         ?? config.Servers.FirstOrDefault(s => !string.IsNullOrEmpty(ds.TunnelServerId) && s.Id == ds.TunnelServerId);
                     if (hostServer != null)
                         drafts.Add(NewEdge(AssetNode.Ssh(hostServer.Id), AssetNode.Ds(ds.Id), "canAccess",
@@ -811,17 +723,13 @@ public class TopologyService : ITopologyService
                         ["note"] = "该客户端未匹配到已配置的服务器/应用，可用其与应用日志关联分析"
                     });
                     // 未登记的客户端也建"待确认"服务器节点，使图谱能反映真实访问来源
-                    drafts.Add(NewEdge($"ssh:disc:{SanitizeId(clientHost)}", AssetNode.Ds(ds.Id), "canAccess",
+                    drafts.Add(NewEdge(TopologyIds.PendingSsh(clientHost), AssetNode.Ds(ds.Id), "canAccess",
                         $"mysql processlist(未登记客户端): client={clientHost} sessions={count}"));
                 }
             }
         }
 
-        await _store.InitializeAsync();
-        var existing = (await _store.GetEdgesAsync())
-            .ToDictionary(e => EdgeKey(e.From, e.To, e.Type), StringComparer.Ordinal);
-
-        // 人工声明的关系不再重复写入/计入发现结果（避免 NewEdges 把人工边也算 "new"）
+        // 人工声明的关系不再计入发现证据。
         var manualKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var rel in config.Relations)
         {
@@ -829,34 +737,20 @@ public class TopologyService : ITopologyService
                 manualKeys.Add(EdgeKey(rel.From, rel.To, EffectiveType(rel.Type)));
         }
 
-        var newEdges = new List<TopologyEdge>();
-        var updatedEdges = new List<TopologyEdge>();
+        var discoveredEdges = drafts
+            .GroupBy(e => EdgeKey(e.From, e.To, e.Type))
+            .Select(g => g.Last())
+            .Where(e => !manualKeys.Contains(EdgeKey(e.From, e.To, e.Type)))
+            .ToArray();
 
-        foreach (var draft in drafts
-                     .GroupBy(e => EdgeKey(e.From, e.To, e.Type))
-                     .Select(g => g.Last()))
-        {
-            var key = EdgeKey(draft.From, draft.To, draft.Type);
-            if (manualKeys.Contains(key))
-                continue; // 人工已声明，交给人工关系承载
+        foreach (var edge in discoveredEdges)
+            edge.Source = "discovered";
 
-            if (existing.ContainsKey(key))
-            {
-                updatedEdges.Add(draft);
-            }
-            else
-            {
-                newEdges.Add(draft);
-                draft.Source = "discovered";
-            }
-            await _store.UpsertEdgeAsync(draft);
-        }
-
-        result.NewEdges = newEdges.ToArray();
-        result.UpdatedEdges = updatedEdges.ToArray();
+        result.NewEdges = discoveredEdges;
+        result.UpdatedEdges = Array.Empty<TopologyEdge>();
         result.Notes = notes.Append(
-            "扫描结果为证据快照: 新增边已写入拓扑缓存, 可用 topology_get_overview 查看合并后的完整拓扑; " +
-            "未登记的应用/数据源/客户端会以 app:disc:* / ds:disc:* / ssh:disc:* 的\"待确认\"节点出现(可在资产关系里删除)").ToArray();
+            "扫描结果仅作为发现证据/配置建议，不写入拓扑主图；" +
+            "未登记的应用/数据源/客户端可在发现报告、配置建议或服务器发现证据中查看").ToArray();
 
         return result;
 
@@ -870,136 +764,6 @@ public class TopologyService : ITopologyService
     /// P1：把最近一次服务器快照里的 systemd/docker/portmap/nginx_tls 增量写入图谱。
     /// 快照缺失/解析失败只记 note，不影响本轮 SSH 发现结果。
     /// </summary>
-    private async Task AddSnapshotGraphAsync(
-        AppConfig config,
-        SshServerConfig server,
-        List<TopologyEdge> drafts,
-        List<string> notes,
-        CancellationToken ct)
-    {
-        if (_snapshotStore is null)
-            return;
-
-        try
-        {
-            var snapshot = await _snapshotStore.GetLatestAsync(server.Id, ct);
-            if (snapshot is null || string.IsNullOrWhiteSpace(snapshot.DataJson))
-            {
-                notes.Add($"{server.Name}: 暂无可用快照，服务/容器/部署/域名/端口/证书未入库（可先执行一次服务器快照）");
-                return;
-            }
-
-            var contribution = SnapshotTopologyBuilder.Build(config, server, snapshot);
-            drafts.AddRange(contribution.Edges);
-            foreach (var (nodeId, info) in contribution.NodeInfo)
-                await _store.UpsertNodeInfoAsync(nodeId, JsonSerializer.Serialize(info));
-            notes.AddRange(contribution.Notes);
-        }
-        catch (Exception ex)
-        {
-            notes.Add($"{server.Name}: 快照图谱入库失败: {Truncate(ex.Message, 200)}");
-        }
-    }
-
-    /// <summary>
-    /// 构造配置文件扫描命令。所有路径都经 <see cref="ShellQuote.Single"/> 单引号转义，
-    /// 使 <c>; | &amp; $( ) `</c> 等 shell 元字符退化为字面量（防注入的唯一入口，勿绕过）。
-    /// </summary>
-    public static string BuildConfigScanCommand(IEnumerable<string> paths) =>
-        "grep -rE --include='application*.yml' --include='application*.yaml' --include='application*.properties' " +
-        "--include='bootstrap*.yml' --include='bootstrap*.properties' --include='logback*.xml' --include='*.conf' " +
-        $"'jdbc:mysql://|jdbc:postgresql://|redis://|amqp://|amqps://|kafka://|bootstrap[.-]servers|proxy_pass|upstream' " +
-        $"{ShellQuote.Join(paths)} 2>/dev/null | head -120";
-
-    /// <summary>
-    /// 执行拓扑探测命令：先过 CommandFilter（被拦截则不下发），执行后落审计。
-    /// 拓扑发现此前完全绕过命令过滤与审计，属于安全旁路，现统一从这里走。
-    /// </summary>
-    private async Task<CommandResult> ProbeAsync(SshServerConfig server, string command, CancellationToken ct, bool useSudo = false)
-    {
-        if (_commandFilter.CheckCommand(command) == CommandFilterResult.Blocked)
-        {
-            await AuditAsync(server, command, CommandStatus.Blocked, null, null);
-            return new CommandResult
-            {
-                Success = false,
-                Error = "blocked_command: 命令被安全策略禁止执行",
-                ExitCode = -1
-            };
-        }
-
-        // 需要提权时走 sudo 路径（仅当该服务器配置了 SudoType）；提权密码由服务端注入、不暴露给 AI。
-        var result = useSudo && server.SudoType != SudoType.None
-            ? await _sshService.ExecuteWithSudoAsync(server, command, ct)
-            : await _sshService.ExecuteCommandAsync(server, command, ct);
-
-        await AuditAsync(server, command,
-            result.Success ? CommandStatus.Executed : CommandStatus.Failed,
-            result.Output, result.ExitCode);
-        return result;
-    }
-
-    /// <summary>
-    /// 审计写入为"尽力而为"：命令已在远端执行，审计失败绝不能让工具整体报错，
-    /// 否则模型看到失败后重试会造成重复执行。首次写入会懒初始化审计库（App 侧与启动降级场景）。
-    /// </summary>
-    private async Task AuditAsync(SshServerConfig server, string command, CommandStatus status, string? output, int? exitCode)
-    {
-        var log = new CommandAuditLog
-        {
-            ServerId = server.Id,
-            ServerName = server.Name,
-            Command = command,
-            Result = output == null ? null : Truncate(output, 4000),
-            Status = status,
-            ExitCode = exitCode
-        };
-
-        try
-        {
-            if (!_auditReady)
-            {
-                await _auditLogService.InitializeAsync();
-                _auditReady = true;
-            }
-            await _auditLogService.LogCommandAsync(log);
-            return;
-        }
-        catch
-        {
-            _auditReady = false;
-        }
-
-        try { await _auditLogService.LogCommandAsync(log); }
-        catch { /* 审计失败不影响主流程 */ }
-    }
-
-    private static TopologyEdge NewEdge(string from, string to, string type, string evidence) => new()
-    {
-        From = from,
-        To = to,
-        Type = type,
-        Evidence = evidence,
-        Source = "discovered",
-        FirstSeenAt = DateTime.UtcNow,
-        LastSeenAt = DateTime.UtcNow,
-        Confidence = 0.8,
-        ValidFrom = DateTime.UtcNow,
-        LastVerifiedAt = DateTime.UtcNow
-    };
-
-    private static string? InfoString(TopologyNode node, string key)
-    {
-        if (!node.Info.TryGetValue(key, out var value))
-            return null;
-        return value switch
-        {
-            string s => s,
-            JsonElement { ValueKind: JsonValueKind.String } e => e.GetString(),
-            _ => null
-        };
-    }
-
     private static void EnsureNode(Dictionary<string, TopologyNode> nodes, string id, string source)
     {
         if (nodes.ContainsKey(id)) return;
@@ -1034,19 +798,15 @@ public class TopologyService : ITopologyService
     private static string EffectiveType(string? type) =>
         string.IsNullOrWhiteSpace(type) ? "relatedTo" : type.Trim();
 
-    /// <summary>未登记应用的"待确认"节点 ID。</summary>
-    private static string PendingAppId(string name) => $"app:disc:{SanitizeId(name)}";
-
-    /// <summary>未配置数据源的"待确认"节点 ID。</summary>
-    private static string PendingDsId(string host, int port) => $"ds:disc:{SanitizeId(host)}-{port}";
-
     /// <summary>把推断出的应用名映射为节点：已登记则用真实应用节点，否则用"待确认"节点。</summary>
-    private static string AppNodeForName(string appName, AppConfig config)
+    private static string AppNodeForName(string appName, AppConfig config, string serverId)
     {
         var configured = config.Applications.FirstOrDefault(a =>
             a.Name.Equals(appName, StringComparison.OrdinalIgnoreCase) ||
             a.Id.Equals(appName, StringComparison.OrdinalIgnoreCase));
-        return configured != null ? AssetNode.App(configured.Id) : PendingAppId(appName);
+        return configured != null
+            ? AssetNode.App(configured.Id)
+            : TopologyIds.PendingApp(serverId, appName);
     }
 
     private static List<TopologyNode> Collect(TopologyGraph graph, string assetId, bool incoming)
@@ -1080,75 +840,52 @@ public class TopologyService : ITopologyService
 
     private static string? ResolveAssetId(TopologyGraph graph, string assetId)
     {
-        if (graph.Nodes.Any(n => n.Id == assetId)) return assetId;
+        var id = (assetId ?? string.Empty).Trim();
+        if (id.Length == 0) return null;
 
+        if (graph.Nodes.Any(n => n.Id == id)) return id;
+
+        var exact = graph.Nodes.FirstOrDefault(n =>
+            n.Id.EndsWith(":" + id, StringComparison.Ordinal) ||
+            n.Label.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (exact != null) return exact.Id;
+
+        var profileId = StripAssetPrefix(id);
         return graph.Nodes.FirstOrDefault(n =>
-            n.Id.EndsWith(":" + assetId, StringComparison.Ordinal) ||
-            n.Label.Equals(assetId, StringComparison.OrdinalIgnoreCase))?.Id;
+            InfoStrings(n, "profileIds").Any(p =>
+                string.Equals(p, profileId, StringComparison.OrdinalIgnoreCase)))?.Id;
+    }
+
+    private static string StripAssetPrefix(string id)
+    {
+        foreach (var prefix in new[] { AssetNode.SshPrefix, AssetNode.DsPrefix, AssetNode.AppPrefix })
+        {
+            if (id.StartsWith(prefix, StringComparison.Ordinal))
+                return id[prefix.Length..];
+        }
+        return id;
+    }
+
+    private static string[] InfoStrings(TopologyNode node, string key)
+    {
+        if (!node.Info.TryGetValue(key, out var value))
+            return Array.Empty<string>();
+
+        return value switch
+        {
+            string[] values => values,
+            IEnumerable<string> values => values.ToArray(),
+            JsonElement { ValueKind: JsonValueKind.Array } element => element
+                .EnumerateArray()
+                .Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => x.GetString() ?? string.Empty)
+                .Where(x => x.Length > 0)
+                .ToArray(),
+            _ => Array.Empty<string>()
+        };
     }
 
     /// <summary>只能指向一个目标的函数型关系；出现多个目标即视为冲突。</summary>
-    private static readonly HashSet<string> FunctionalRelationTypes =
-        new(StringComparer.OrdinalIgnoreCase) { "runsOn", "hostedOn" };
-
-    /// <summary>
-    /// 自动发现边与人工边/其它发现边冲突时写入 Disputed；人工确认过的边保持不标红，
-    /// 冲突消失后清空标记与确认状态，以便未来再次冲突时能重新提示。
-    /// </summary>
-    private async Task ReconcileDisputesAsync(
-        IReadOnlyList<TopologyEdge> discovered, IReadOnlyList<TopologyEdge> all, CancellationToken ct)
-    {
-        var manualTargets = all
-            .Where(e => string.Equals(e.Source, "manual", StringComparison.OrdinalIgnoreCase))
-            .Where(e => FunctionalRelationTypes.Contains(e.Type))
-            .GroupBy(e => $"{e.From}|{e.Type}", StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.Select(e => e.To).Distinct(StringComparer.Ordinal).ToArray(),
-                StringComparer.Ordinal);
-
-        var changed = new List<TopologyEdge>();
-        foreach (var group in discovered
-                     .Where(e => FunctionalRelationTypes.Contains(e.Type))
-                     .GroupBy(e => $"{e.From}|{e.Type}", StringComparer.Ordinal))
-        {
-            var targets = group.Select(e => e.To).Distinct(StringComparer.Ordinal).ToArray();
-            var conflict = targets.Length > 1;
-            var allTargets = targets.ToHashSet(StringComparer.Ordinal);
-            if (manualTargets.TryGetValue(group.Key, out var manual))
-            {
-                if (manual.Any(t => !allTargets.Contains(t)))
-                    conflict = true;
-                allTargets.UnionWith(manual);
-            }
-
-            var reason = conflict && allTargets.Count > 1
-                ? $"冲突: {group.First().Type} 同时指向 {string.Join(", ", allTargets.OrderBy(x => x, StringComparer.Ordinal))}"
-                : null;
-
-            foreach (var edge in group)
-            {
-                var desiredDisputed = conflict && !edge.DisputeAcknowledged;
-                var desiredReason = conflict ? reason : null;
-                if (edge.Disputed == desiredDisputed && edge.DisputeReason == desiredReason &&
-                    (conflict || !edge.DisputeAcknowledged))
-                {
-                    continue;
-                }
-
-                edge.Disputed = desiredDisputed;
-                edge.DisputeReason = desiredReason;
-                if (!conflict)
-                    edge.DisputeAcknowledged = false;
-                changed.Add(edge);
-            }
-        }
-
-        foreach (var edge in changed)
-        {
-            ct.ThrowIfCancellationRequested();
-            await _store.UpsertEdgeAsync(edge);
-        }
-    }
-
     private static string EdgeKey(string from, string to, string type) => $"{from}|{to}|{type}";
 
     private static (string Host, int Port)? ParseAddress(string address)
@@ -1160,31 +897,6 @@ public class TopologyService : ITopologyService
         return (host, port);
     }
 
-    private static bool HostMatches(string configuredHost, string actualHost, Dictionary<string, string[]> dnsCache)
-    {
-        if (configuredHost.Equals(actualHost, StringComparison.OrdinalIgnoreCase)) return true;
-
-        if (IPAddress.TryParse(configuredHost, out var configuredIp) &&
-            IPAddress.TryParse(actualHost, out var actualIp))
-            return configuredIp.Equals(actualIp);
-
-        try
-        {
-            if (!dnsCache.TryGetValue(configuredHost, out var addresses))
-            {
-                addresses = Dns.GetHostAddresses(configuredHost)
-                    .Select(a => a.ToString())
-                    .ToArray();
-                dnsCache[configuredHost] = addresses;
-            }
-            return addresses.Any(a => a.Equals(actualHost, StringComparison.OrdinalIgnoreCase));
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     private static string StripPort(string hostWithPort)
     {
         var match = Regex.Match(hostWithPort, @"^(?<host>[^:]+):\d+$");
@@ -1192,13 +904,7 @@ public class TopologyService : ITopologyService
     }
 
     /// <summary>本机地址(localhost/127.x/::1/0.0.0.0)，用于归属到当前 SSH 服务器而不是另建节点。</summary>
-    private static bool IsLocalHost(string host)
-    {
-        if (string.IsNullOrWhiteSpace(host)) return false;
-        var h = host.Trim().Trim('[', ']').ToLowerInvariant();
-        return h is "localhost" or "127.0.0.1" or "::1" or "0.0.0.0" or "localhost.localdomain"
-            || h.StartsWith("127.", StringComparison.Ordinal);
-    }
+    private static bool IsLocalHost(string host) => TopologyHost.IsLocalHost(host);
 
     /// <summary>配置里的主机名是否为占位符/变量(如 ${RABBIT_HOST}、&lt;host&gt;)，或误把协议名当主机(amqp/amqps)，这类不应生成发现节点。</summary>
     private static readonly HashSet<string> PlaceholderHosts = new(StringComparer.OrdinalIgnoreCase)
@@ -1255,31 +961,6 @@ public class TopologyService : ITopologyService
     };
 
     /// <summary>节点附加信息 JSON：type / host / ports / path。</summary>
-    private static string NodeInfoJson(string? type, string? host, IEnumerable<int>? ports, string? path = null)
-    {
-        var info = new Dictionary<string, object?>();
-        if (!string.IsNullOrWhiteSpace(type)) info["type"] = type;
-        if (!string.IsNullOrWhiteSpace(host)) info["host"] = host;
-        if (!string.IsNullOrWhiteSpace(path)) info["path"] = path;
-        if (ports != null)
-        {
-            var list = ports.Distinct().OrderBy(x => x).ToArray();
-            if (list.Length > 0) info["ports"] = string.Join(",", list);
-        }
-        return JsonSerializer.Serialize(info);
-    }
-
-    /// <summary>从进程参数里取第一个绝对路径（可执行文件/配置文件），作为"应用路径"的推断值。</summary>
-    private static string? ExtractPathFromArgs(string args)
-    {
-        foreach (Match m in Regex.Matches(args, @"(?<p>/[^\s'""()\]]+)"))
-        {
-            var p = m.Groups["p"].Value;
-            if (p.Length > 1) return p;
-        }
-        return null;
-    }
-
     // 常见服务的默认监听端口：仅当该端口确实在监听时才采用（非 root 拿不到进程名时的兜底）
     private static readonly Dictionary<string, int[]> DefaultServicePorts = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -1380,9 +1061,6 @@ public class TopologyService : ITopologyService
 
         return dir is "." or ".." ? null : dir;
     }
-
-    private static string SanitizeId(string value) =>
-        Regex.Replace(value.ToLowerInvariant(), @"[^a-z0-9\-_.]", "-");
 
     private static string Truncate(string value, int max) =>
         value.Length <= max ? value : value[..max] + "...";

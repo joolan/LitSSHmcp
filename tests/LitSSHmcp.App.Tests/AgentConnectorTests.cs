@@ -143,6 +143,23 @@ public class AgentConnectorTests : IDisposable
     }
 
     [Fact]
+    public void Skills_slash_command_requests_picker_after_session_started()
+    {
+        var (vm, _) = CreateVm(ConfigWith());
+        typeof(AgentViewModel)
+            .GetField("_sessionWorkspaceDir", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(vm, @"C:\tmp\jobs\local\1");
+        Assert.True(vm.SessionSubsetLocked);
+
+        var raised = 0;
+        vm.SkillsPickerRequested += () => raised++;
+        vm.Input = "/技能";
+
+        Assert.True(vm.TryExecuteInputCommand());
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
     public async Task Toggle_is_rejected_after_session_started()
     {
         // D8 锁定原则：会话已启动（工作目录已分配）后启用层不可再改

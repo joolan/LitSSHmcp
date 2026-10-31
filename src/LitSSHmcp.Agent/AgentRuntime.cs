@@ -226,7 +226,7 @@ public sealed class AgentRuntime : IAsyncDisposable
             var subAgentTools = _subTools.ToList();
             if (fleetTool is not null)
                 subAgentTools.Add(fleetTool);
-            tools.Add(SubAgents.Create(client, provider, _config, subAgentTools, _readOnlyNote,
+            tools.Add(SubAgents.Create(client, provider, _config, subAgentTools, _readOnlyNote, _spill,
                 onUsage: (input, output) => session?.AddChildUsage(input, output),
                 budgetCheck: budgetCheck,
                 onUsageDelta: budget is null ? null : budget.Add,

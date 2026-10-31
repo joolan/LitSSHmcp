@@ -23,36 +23,47 @@ public class GraphTools
     private static readonly JsonSerializerOptions ResultJson = new(JsonSerializerDefaults.Web);
 
     private readonly IAssetGraphQueryService _query;
+    private readonly ITopologyService _topologyService;
+    private readonly IUrlResolutionService _urlResolutionService;
     private readonly IAuditLogService _auditLogService;
 
-    public GraphTools(IAssetGraphQueryService query, IAuditLogService auditLogService)
+    public GraphTools(
+        IAssetGraphQueryService query,
+        ITopologyService topologyService,
+        IUrlResolutionService urlResolutionService,
+        IAuditLogService auditLogService)
     {
         _query = query;
+        _topologyService = topologyService;
+        _urlResolutionService = urlResolutionService;
         _auditLogService = auditLogService;
     }
 
     [McpServerTool(Name = "topology_query", UseStructuredContent = true, OutputSchemaType = typeof(TopologyQueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("拓扑图统一查询入口：action=search/neighbors/path/impact/explain 分别做搜索/邻域/链路/影响面/证据解释。result 为对应动作的结构化结果")]
+    [Description("人工拓扑统一查询：action=overview/search/neighbors/path/impact/explain/dependencies/resolve_url；result 为对应动作结果")]
     public async Task<TopologyQueryResultDto> TopologyQuery(
-        [Description("查询类型：search / neighbors / path / impact / explain")] string action,
+        [Description("查询类型：overview / search / neighbors / path / impact / explain / dependencies / resolve_url")] string action,
         [Description("search 的搜索词：名称/ID/主机/端口/标签片段")] string? query = null,
-        [Description("neighbors/impact/explain 的资产 ID/名称")] string? assetId = null,
+        [Description("neighbors/impact/explain/dependencies 的资产 ID/名称")] string? assetId = null,
         [Description("path 的起点资产 ID/名称")] string? from = null,
         [Description("path 的终点资产 ID/名称")] string? to = null,
-        [Description("search 的类型过滤，逗号/空格分隔；留空=全部")] string? kinds = null,
-        [Description("neighbors 的关系类型过滤，逗号/空格分隔；留空=全部")] string? relationTypes = null,
+        [Description("resolve_url 的访问 URL")] string? url = null,
+        [Description("search 的类型过滤，如 ssh,datasource,application,domain；留空=全部")] string? kinds = null,
+        [Description("neighbors 的关系类型过滤，如 runsOn,runsIn,connectsTo,canAccess,upstreamOf,accessedVia,relatedTo；留空=全部")] string? relationTypes = null,
         [Description("explain 的关系类型过滤，如 runsOn")] string? relationType = null,
         [Description("explain 可选：只看与另一资产之间的边")] string? targetAssetId = null,
         [Description("search 返回上限，默认20，最大50")] int limit = 20,
         [Description("neighbors 跳数，默认1，最大6")] int depth = 1,
         [Description("path 最大跳数，默认6，最大6")] int maxHops = 6,
         [Description("impact 最大反向跳数，默认6，最大6")] int maxDepth = 6,
-        [Description("impact 是否包含待确认(:disc:)节点，默认false")] bool includeUnconfirmed = false,
         CancellationToken cancellationToken = default)
     {
         var kind = action.Trim().ToLowerInvariant();
         switch (kind)
         {
+            case "overview":
+                var overview = await GetOverview();
+                return Wrap(kind, $"{overview.Nodes.Length} 个节点 / {overview.Edges.Length} 条关系", null, overview);
             case "search":
                 if (string.IsNullOrWhiteSpace(query))
                     return Fail(kind, "invalid_argument", "action=search 时必须提供 query。");
@@ -71,21 +82,33 @@ public class GraphTools
             case "impact":
                 if (string.IsNullOrWhiteSpace(assetId))
                     return Fail(kind, "invalid_argument", "action=impact 时必须提供 assetId。");
-                var impact = await GetImpact(assetId, maxDepth, includeUnconfirmed, cancellationToken);
+                var impact = await GetImpact(assetId, maxDepth, cancellationToken);
                 return Wrap(kind, impact.Summary, impact.Error, impact);
             case "explain":
                 if (string.IsNullOrWhiteSpace(assetId))
                     return Fail(kind, "invalid_argument", "action=explain 时必须提供 assetId。");
                 var explain = await Explain(assetId, targetAssetId, relationType, cancellationToken);
                 return Wrap(kind, explain.Summary, explain.Error, explain);
+            case "dependencies":
+                if (string.IsNullOrWhiteSpace(assetId))
+                    return Fail(kind, "invalid_argument", "action=dependencies 时必须提供 assetId。");
+                var dependencies = await GetDependencies(assetId, cancellationToken);
+                var dependencySummary = dependencies.Error ??
+                    $"{dependencies.Asset?.Label ?? assetId}: 上游 {dependencies.Upstream.Length} / 下游 {dependencies.Downstream.Length}";
+                return Wrap(kind, dependencySummary, dependencies.Error, dependencies);
+            case "resolve_url":
+                if (string.IsNullOrWhiteSpace(url))
+                    return Fail(kind, "invalid_argument", "action=resolve_url 时必须提供 url。");
+                var resolution = await ResolveUrl(url, cancellationToken);
+                return Wrap(kind, resolution.Summary, resolution.Error, resolution);
             default:
-                return Fail(kind, "invalid_argument", "action 须为 search / neighbors / path / impact / explain");
+                return Fail(kind, "invalid_argument", "action 须为 overview / search / neighbors / path / impact / explain / dependencies / resolve_url");
         }
     }
 
     private async Task<GraphSearchResult> Search(
         [Description("搜索词: 名称、ID、主机、端口或标签片段")] string query,
-        [Description("可选类型过滤: ssh,datasource,application,service,container,deploy,system,domain,port,cert,mq(逗号/空格分隔); 留空=全部")] string? kinds = null,
+        [Description("可选类型过滤: ssh,datasource,application,domain; 留空=全部")] string? kinds = null,
         [Description("返回上限, 默认20, 最大50")] int limit = 20,
         CancellationToken cancellationToken = default)
     {
@@ -97,7 +120,7 @@ public class GraphTools
     private async Task<GraphNeighborhood> GetNeighbors(
         [Description("资产ID, 如 ssh:web-01 / ds:mysql-01 / app:order-service, 也接受纯ID或名称")] string assetId,
         [Description("跳数, 默认1, 最大6")] int depth = 1,
-        [Description("可选关系类型过滤, 如 runsOn,connectsTo,hostedOn,listensOn,exposes,tlsBy,resolvesTo,upstreamOf,deployedFrom,partOf; 留空=全部")] string? relationTypes = null,
+        [Description("可选关系类型过滤, 如 runsOn,runsIn,connectsTo,canAccess,upstreamOf,accessedVia,relatedTo; 留空=全部")] string? relationTypes = null,
         CancellationToken cancellationToken = default)
     {
         var result = await _query.GetNeighborsAsync(assetId, depth, Split(relationTypes), cancellationToken);
@@ -119,10 +142,9 @@ public class GraphTools
     private async Task<GraphImpactResult> GetImpact(
         [Description("资产ID, 如 ssh:web-01 / ds:mysql-01 / app:order-service, 也接受纯ID或名称")] string assetId,
         [Description("最大反向跳数, 默认6, 最大6")] int maxDepth = 6,
-        [Description("是否包含待确认(:disc:)节点, 默认false")] bool includeUnconfirmed = false,
         CancellationToken cancellationToken = default)
     {
-        var result = await _query.GetImpactAsync(assetId, maxDepth, includeUnconfirmed, cancellationToken);
+        var result = await _query.GetImpactAsync(assetId, maxDepth, false, cancellationToken);
         await LogAuditAsync($"TOPOLOGY_IMPACT: {assetId}", result.Summary, result.Error is null);
         return result;
     }
@@ -138,29 +160,51 @@ public class GraphTools
         return result;
     }
 
-    [McpServerTool(Name = "topology_timeline", UseStructuredContent = true, OutputSchemaType = typeof(GraphTimelineResult), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("按服务器快照历史重放拓扑时间线: 每次快照的节点/边及相对上一次的新增、移除。回答“最近变了什么”")]
-    public async Task<GraphTimelineResult> Timeline(
-        [Description("服务器ID/名称, 如 web-01")] string serverId,
-        [Description("最近快照数量, 默认10, 最大20")] int limit = 10,
-        CancellationToken cancellationToken = default)
+    private async Task<TopologyGraph> GetOverview()
     {
-        var result = await _query.GetTimelineAsync(serverId, limit, cancellationToken);
-        await LogAuditAsync($"TOPOLOGY_TIMELINE: {serverId}", result.Summary, result.Error is null);
+        var graph = await _topologyService.GetGraphAsync();
+        await LogAuditAsync("TOPOLOGY_OVERVIEW", $"{graph.Nodes.Length} nodes / {graph.Edges.Length} edges", true);
+        return graph;
+    }
+
+    private async Task<UrlResolutionResult> ResolveUrl(string url, CancellationToken cancellationToken)
+    {
+        var result = await _urlResolutionService.ResolveAsync(url, cancellationToken);
+        await LogAuditAsync($"ASSET_RESOLVE_URL: {url}", result.Summary, result.Success);
         return result;
     }
 
-    [McpServerTool(Name = "topology_diff", UseStructuredContent = true, OutputSchemaType = typeof(GraphDiffResult), ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("比较同一服务器两份快照的拓扑差异(新增/移除节点与边); 默认比较最近两次快照")]
-    public async Task<GraphDiffResult> Diff(
+    private async Task<DependencyGraph> GetDependencies(string assetId, CancellationToken cancellationToken)
+    {
+        var result = await _topologyService.GetDependenciesAsync(assetId, cancellationToken);
+        await LogAuditAsync($"TOPOLOGY_DEPENDENCIES: {assetId}", result.Error, result.Error is null);
+        return result;
+    }
+
+    [McpServerTool(Name = "topology_history", UseStructuredContent = true, OutputSchemaType = typeof(TopologyQueryResultDto), ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("按服务器快照历史查看只读拓扑: action=timeline 重放最近N份快照, action=diff 比较两份快照; 数据来自快照，不是人工主图")]
+    public async Task<TopologyQueryResultDto> TopologyHistory(
+        [Description("查询类型: timeline / diff")] string action,
         [Description("服务器ID/名称, 如 web-01")] string serverId,
-        [Description("可选: 起始快照ID, 留空=最近一次之前的快照")] long? fromSnapshotId = null,
-        [Description("可选: 结束快照ID, 留空=最近一次快照")] long? toSnapshotId = null,
+        [Description("timeline: 最近快照数量, 默认10, 最大20")] int limit = 10,
+        [Description("diff: 起始快照ID, 留空=最近一次之前的快照")] long? fromSnapshotId = null,
+        [Description("diff: 结束快照ID, 留空=最近一次快照")] long? toSnapshotId = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _query.GetDiffAsync(serverId, fromSnapshotId, toSnapshotId, cancellationToken);
-        await LogAuditAsync($"TOPOLOGY_DIFF: {serverId}", result.Summary, result.Error is null);
-        return result;
+        var kind = action.Trim().ToLowerInvariant();
+        switch (kind)
+        {
+            case "timeline":
+                var timeline = await _query.GetTimelineAsync(serverId, limit, cancellationToken);
+                await LogAuditAsync($"TOPOLOGY_HISTORY_TIMELINE: {serverId}", timeline.Summary, timeline.Error is null);
+                return Wrap(kind, timeline.Summary, timeline.Error, timeline);
+            case "diff":
+                var diff = await _query.GetDiffAsync(serverId, fromSnapshotId, toSnapshotId, cancellationToken);
+                await LogAuditAsync($"TOPOLOGY_HISTORY_DIFF: {serverId}", diff.Summary, diff.Error is null);
+                return Wrap(kind, diff.Summary, diff.Error, diff);
+            default:
+                return Fail(kind, "invalid_argument", "action 须为 timeline / diff");
+        }
     }
 
     private static TopologyQueryResultDto Wrap<T>(string action, string summary, string? error, T result) => new()

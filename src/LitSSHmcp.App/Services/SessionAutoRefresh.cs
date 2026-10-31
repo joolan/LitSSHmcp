@@ -22,4 +22,29 @@ public static class SessionAutoRefresh
     /// <summary>选中会话是否需要重载消息：其 UpdatedAt 与上次加载时不同即需要。</summary>
     public static bool ShouldReloadSelected(string? loadedUpdatedAt, string? currentUpdatedAt)
         => !string.Equals(loadedUpdatedAt ?? string.Empty, currentUpdatedAt ?? string.Empty, StringComparison.Ordinal);
+
+    /// <summary>
+    /// 会话列表的可见结构是否相同（Id/标题/分组/排序/模型）；仅 UpdatedAt 变化不算结构变化，
+    /// 可原地更新行而不清空重建侧栏，避免任务结束时闪烁。
+    /// </summary>
+    public static bool SameStructure(IReadOnlyList<AgentSessionRow>? current, IReadOnlyList<AgentSessionRow>? next)
+    {
+        if (ReferenceEquals(current, next))
+            return true;
+        if (current is null || next is null || current.Count != next.Count)
+            return false;
+
+        for (var i = 0; i < current.Count; i++)
+        {
+            var a = current[i];
+            var b = next[i];
+            if (a.Id != b.Id ||
+                !string.Equals(a.Title, b.Title, StringComparison.Ordinal) ||
+                !string.Equals(a.Group, b.Group, StringComparison.Ordinal) ||
+                !string.Equals(a.ProviderId, b.ProviderId, StringComparison.Ordinal) ||
+                a.SortOrder != b.SortOrder)
+                return false;
+        }
+        return true;
+    }
 }

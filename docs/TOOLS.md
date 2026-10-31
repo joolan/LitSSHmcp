@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器代码注册 **38 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **37 个常规工具**，宿主会话看到 **38 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；各工具 `[Description]` 只保留 1~2 句能力与关键互斥提示，完整的"意图→工具"路由由 `mcp_usage_guide` 提供（见下方路由表）。
+MCP 服务器代码注册 **35 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **34 个常规工具**，宿主会话看到 **35 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；各工具 `[Description]` 只保留 1~2 句能力与关键互斥提示，完整的"意图→工具"路由由 `mcp_usage_guide` 提供（见下方路由表）。
 
 > **目标 ID 规范化**：服务器/数据源/应用参数优先按裸 ID 精确匹配（也支持名称或主机名），并兼容 `ssh:` / `ssh://`、`ds:`、`app:` 资产前缀；工具会自动去除前缀，同时保留歧义与禁用校验。
 
@@ -77,7 +77,7 @@ MCP 服务器代码注册 **38 个工具**，按用途分为 14 组；其中 `mc
 | `service` | systemd 服务 | `service_query`、`service_restart` |
 | `log` | 日志文件 | `log_query` |
 | `java` | JVM 诊断 | `java_processes`、`java_diagnostics` |
-| `topology` | 拓扑 | `topology_get_overview`、`topology_get_dependencies`、`topology_discover`、`topology_query`、`topology_timeline`、`topology_diff` |
+| `topology` | 拓扑 | `topology_query`、`topology_history`、`topology_discover` |
 | `app` | 应用体检 | `app_health_snapshot` |
 | `guide` | 指南/自检 | `mcp_usage_guide`、`mcp_self_check` |
 
@@ -152,15 +152,16 @@ MCP 服务器代码注册 **38 个工具**，按用途分为 14 组；其中 `mc
 | 堆内存 / 频繁GC / OOM | `java_diagnostics`（action=heap） | |
 | JVM版本 / 运行时长 | `java_diagnostics`（action=info） | |
 | 某应用整体体检(跨服务器+数据库) | `app_health_snapshot` | 先看它再下钻 |
-| 系统架构 / 拓扑 / 应用部署在哪 / 依赖关系 | `topology_get_overview` | |
-| 某资产的上下游依赖 | `topology_get_dependencies` | |
+| 系统架构 / 拓扑 / 应用部署在哪 / 依赖关系 | `topology_query`（action=overview） | 一次返回人工主图 |
+| 某资产的上下游依赖 | `topology_query`（action=dependencies） | 返回所在服务器与依赖数据源 |
 | 不知道资产 ID / 按名称或端口找资产 | `topology_query`（action=search） | 先拿到精确 ID 再用其它图工具 |
 | 看某资产周围连了谁 | `topology_query`（action=neighbors） | 入边+出边，可多跳 |
-| 两个资产之间怎么走（域名→应用→库） | `topology_query`（action=path） | 有向路径；无路径会说明原因 |
-| 机器/库/证书变更影响谁 | `topology_query`（action=impact） | 反向多跳影响面（爆炸半径） |
+| 两个资产之间怎么走（应用→数据源/服务器） | `topology_query`（action=path） | 有向路径；无路径会说明原因 |
+| 机器/数据库变更影响谁 | `topology_query`（action=impact） | 反向多跳影响面（爆炸半径） |
 | 为什么认为 A 依赖 B / 证据是否过期 | `topology_query`（action=explain） | 来源/证据/末次发现/冲突原因 |
-| 某台机器最近新增或消失了哪些服务/端口 | `topology_timeline` | 按快照历史重放并标出增量 |
-| 两次快照之间具体变了什么 | `topology_diff` | 默认比较最近两次快照 |
+| 某台机器最近新增或消失了哪些服务/端口 | `topology_history`（action=timeline） | 按快照历史重放并标出增量 |
+| 两次快照之间具体变了什么 | `topology_history`（action=diff） | 默认比较最近两次快照 |
+| 用户只给 URL，定位应用/服务器/日志 | `topology_query`（action=resolve_url, url=...）或 `log_query(url=...)` | 按人工应用 URL 解析入口/后端/运行环境 |
 | 拓扑缺失或过期 | `topology_discover` | |
 | 不确定用哪个 | `mcp_usage_guide`（返回内置使用指南） | |
 | MCP是否正常 / 工具用不了 / 自检 | `mcp_self_check` | |
@@ -369,10 +370,10 @@ MCP 服务器代码注册 **38 个工具**，按用途分为 14 组；其中 `mc
 读取远端日志文件，**路径必须在 `security.logs.allowedPaths` 白名单内**（防止读取 `/etc/shadow` 等敏感文件），越界返回 `path_not_allowed`。单次行数受 `security.logs.maxLines` 限制。`tail`/`grep` 的路径可**直接传 `path`**，也可**传 `appId`**（用应用管理里配置的日志路径，须同时在该应用填「日志路径」）；两者都不确定时先用 `find` 发现。
 
 ### `log_query`
-- **参数**：`serverId`、`action`（`tail` / `grep` / `find`）、`path`（日志绝对路径；tail/grep 与 `appId` 二选一；find 时可选搜索目录）、`appId`（tail/grep 用其配置的日志路径）、`pattern`（grep 关键字/正则）、`lines`（tail 默认 200）、`ignoreCase`（grep 默认 true）、`maxMatches`（grep 默认 200，上限 2000）、`minutes`（find 默认 1440）、`maxResults`（find 默认 100，上限 500）
+- **参数**：`serverId`（可选；提供 `url` 时可省略）、`action`（`tail` / `grep` / `find`）、`path`（日志绝对路径；tail/grep 与 `appId` 二选一；find 时可选搜索目录）、`appId`（tail/grep 用其配置的日志路径）、`url`（可选；按访问 URL 自动解析应用/服务器，与 `serverId` 二选一，多个后端时需同时传 `appId`）、`pattern`（grep 关键字/正则）、`lines`（tail 默认 200）、`ignoreCase`（grep 默认 true）、`maxMatches`（grep 默认 200，上限 2000）、`minutes`（find 默认 1440）、`maxResults`（find 默认 100，上限 500）
 - **返回**：`{ success, status, error, serverId, serverName, host, action, path, pattern, count, truncated, lines: [...], files: [{ path, modifiedAt }] }`
-- **说明**：`tail` 返回尾部行，`grep` 返回带行号的匹配行（无匹配 `success: true, count: 0`），`find` 返回按修改时间倒序的候选文件。
-- **错误约定**：`path_required`（未给 path/appId）、`log_path_not_configured`（应用没配日志路径）、`log_path_ambiguous`（应用配了多个可用路径，请用 `path` 指定）、`path_not_allowed`
+- **说明**：`tail` 返回尾部行，`grep` 返回带行号的匹配行（无匹配 `success: true, count: 0`），`find` 返回按修改时间倒序的候选文件。传 `url` 时先用人工应用 URL 解析到落地应用和服务器；多个后端命中时返回 `url_ambiguous`，需再传 `appId`。
+- **错误约定**：`path_required`（未给 path/appId）、`log_path_not_configured`（应用没配日志路径）、`log_path_ambiguous`（应用配了多个可用路径，请用 `path` 指定）、`path_not_allowed`、`url_not_found`、`url_ambiguous`、`runtime_not_resolved`、`server_required`
 
 ## JVM 诊断组（java）
 
@@ -390,41 +391,28 @@ MCP 服务器代码注册 **38 个工具**，按用途分为 14 组；其中 `mc
 
 ## 拓扑组（topology）
 
-> Web 强制模式：无目标的全局拓扑查询（`topology_get_overview` / `topology_get_dependencies` / `topology_query`）仅管理员可用，普通成员调用返回 `authorization_denied`；`topology_discover` / `topology_timeline` / `topology_diff` 按其 `serverId` 做目标授权校验。桌面未启用强制时不受影响。
-
-### `topology_get_overview`
-- **参数**：无
-- **返回**：`{ nodes: [...], edges: [...] }` —— 合并人工声明（`relations`）与自动发现（`TopologyEdges` 表）的全量拓扑
-- **边的含义**：`runsOn`（应用/数据库→服务器）、`connectsTo`（应用→数据库）、`canAccess`（服务器→数据库）、`hostedOn`（端口→服务器）、`listensOn`（应用/数据库→端口）、`exposes`（域名→应用）、`tlsBy`（域名→证书）、`resolvesTo`（域名→服务器）；`relatedTo` 为通用占位关系（无特定语义，按方向参与依赖查询）
-
-### `topology_get_dependencies`
-- **参数**：`assetId` — `ds:订单库` / `ssh:web-01` / `app:order-service`，也接受纯ID或名称
-- **返回**：`{ upstream: [...], downstream: [...] }` 上下游依赖
-- **典型用法**：`topology_get_dependencies("app:order-service")` → 得到它跑在哪台服务器、连了哪些数据库
+> Web 强制模式：无目标的全局拓扑查询 `topology_query`（含 overview/resolve_url）仅管理员可用，普通成员调用返回 `authorization_denied`；`topology_discover` / `topology_history` 按其 `serverId` 做目标授权校验。桌面未启用强制时不受影响。
 
 ### `topology_discover`
 - **参数**：`serverIds`（可选，逗号分隔，留空扫描全部）、`searchPaths`（可选，空格分隔；仅允许 `security.discovery.allowedSearchPaths` 内的路径，留空时使用该白名单）
-- **返回**：`{ success, result: { discovered: [...], edges: [...] } }` 并写入拓扑缓存；越界路径返回 `{ success: false, status: "path_not_allowed", error }`；已有发现在执行时返回 `{ success: false, status: "discovery_in_progress", error }`（自动发现做了节流，同一时间只跑一个）
+- **返回**：`{ success, result: { scannedServers, newEdges, javaProcesses, dockerContainers, unmatchedMysqlClients, unmatchedEndpoints, duplicateCandidates, identityCount, identityConflicts, errors, notes } }` —— 采集服务器发现证据与配置建议；**不修改人工配置拓扑主图**。`newEdges` 为发现草稿/证据边，不是已写入的图边。越界路径返回 `{ success: false, status: "path_not_allowed", error }`；已有发现在执行时返回 `{ success: false, status: "discovery_in_progress", error }`（自动发现做了节流，同一时间只跑一个）
 - **发现手段**：java 进程 / 通用服务进程(nginx/mysql/redis/postgres 等, 按进程名精准匹配, 不依赖 systemd, 带监听端口) / ESTAB 网络连接 / 配置文件 JDBC(`mysql`/`postgresql`)、Redis、RabbitMQ(`amqp://`)、Kafka(`bootstrap.servers`)、Nginx(`upstream`/`proxy_pass`) / `docker ps` 容器 / MySQL `SHOW PROCESSLIST` 反查客户端
-- **待确认节点**：未登记的应用/容器（`app:disc:*`）、未配置的数据库端点（`ds:disc:*`）、未登记的 DB 客户端（`ssh:disc:*`）也会作为"待确认"节点+关系写入缓存（不再只报告），可在资产关系里删除或据其补登记；人工 `relations` 不会被重复写入。
-- **端口信息**：解析 `ss -ltnp` 得到监听端口（可见 root 服务进程名时精确；否则用常见端口兜底），显示在待确认节点标签与节点信息里。可开启 `security.discovery.useSudo`（安全设置）让端口/配置扫描走提权以识别 root 服务。
-- **快照入库（P1）**：发现完成后读取每台服务器最近一次快照，把 `systemd` 的 service 单元、`docker` 容器、`portmap` 监听端口和 `nginx_tls` 域名/证书转成 `service:*` / `container:*` / `deploy:*` / `port:*` / `domain:*` / `cert:*` 节点及 `runsOn` / `listensOn` / `deployedFrom` / `hostedOn` / `exposes` / `tlsBy` / `resolvesTo` 边；边含 `confidence`、`lastVerifiedAt`，节点信息含 `label`、`lastVerifiedAt`，证书含 `expiresAt`/`daysRemaining`。已登记应用按 `containerName` + 镜像 tag 推导 `deploy:<appId>@<version>`。无快照时只记录说明，不影响 SSH 发现结果。
+- **证据与建议**：未登记的应用/容器、未配置的数据库端点、未登记的 DB 客户端会进入发现报告/配置建议/配置体检，**不再作为主图待确认节点**。可在“配置建议”里逐条应用，或到服务器详情查看发现证据。
+- **端口信息**：解析 `ss -ltnp` 得到监听端口（可见 root 服务进程名时精确；否则用常见端口兜底），显示在服务器发现证据里。可开启 `security.discovery.useSudo`（安全设置）让端口/配置扫描走提权以识别 root 服务。
+- **快照证据**：发现/快照完成后读取每台服务器最近一次快照，把 `systemd`、`docker`、`portmap`、`nginx_tls` 作为服务器证据（端口、进程、容器、站点、证书）展示；不进入主图。
 
 ### `topology_query`
-- **参数**：`action`（`search` / `neighbors` / `path` / `impact` / `explain`）、`query`（search 搜索词）、`assetId`（neighbors/impact/explain）、`from` / `to`（path 起终点）、`kinds`（search 类型过滤）、`relationTypes`（neighbors 关系过滤）、`relationType` / `targetAssetId`（explain 可选过滤）、`limit`（search 默认 20，最大 50）、`depth`（neighbors 默认 1，最大 6）、`maxHops`（path 默认 6）、`maxDepth`（impact 默认 6）、`includeUnconfirmed`（impact 默认 false）
-- **返回**：`{ action, success, status, error, summary, result }`；`result` 为对应动作的结构化结果（搜索项/邻域/路径/影响面/边解释）。
-- **说明**：`search` 先找到精确 ID；`neighbors` 看入边+出边；`path` 按有向边查链路；`impact` 反向查爆炸半径；`explain` 核实依赖边来源与是否过期。`detail`/`evidence` 不返回密码或凭据。
-- **冲突检测**：`explain` 会核对 `runsOn` / `hostedOn` 的发现边——同一 `(from, type)` 出现多个目标，或与人工配置目标不一致时标记 `disputed=true`，并在 `disputeReason` 说明冲突目标；App 中人工确认后 `disputeAcknowledged=true`，冲突仍存在但不再标红；冲突消失后自动清空原因与确认状态。
+- **参数**：`action`（`overview` / `search` / `neighbors` / `path` / `impact` / `explain` / `dependencies` / `resolve_url`）、`query`（search 搜索词）、`assetId`（neighbors/impact/explain/dependencies）、`from` / `to`（path 起终点）、`url`（resolve_url 访问 URL）、`kinds`（search 类型过滤，如 `ssh,datasource,application,domain`）、`relationTypes`（neighbors 关系过滤，如 `runsOn,runsIn,connectsTo,canAccess,upstreamOf,accessedVia,relatedTo`）、`relationType` / `targetAssetId`（explain 可选过滤）、`limit`（search 默认 20，最大 50）、`depth`（neighbors 默认 1，最大 6）、`maxHops`（path 默认 6）、`maxDepth`（impact 默认 6）
+- **返回**：`{ action, success, status, error, summary, result }`；`result` 为对应动作的结构化结果（完整主图/搜索项/邻域/路径/影响面/边解释/上下游依赖/URL 解析）。
+- **说明**：`overview` 返回完整人工主图（服务器/应用/数据源/域名及关系）；`search` 先找到精确 ID；`neighbors` 看入边+出边；`path` 按有向边查链路；`impact` 反向查爆炸半径；`explain` 核实依赖边来源与是否过期；`dependencies` 返回资产所在服务器与上下游依赖；`resolve_url` 按应用 URL 解析入口、后端、落地应用、运行环境链和服务器。主图只含人工配置资产与 7 种主图关系，不包含自动发现节点/边；`detail`/`evidence` 不返回密码或凭据。
+- **主图关系**：`runsOn`（应用/数据源→服务器）、`runsIn`（应用/数据源→Docker 应用）、`connectsTo`（应用→数据源/应用）、`canAccess`（服务器→数据源）、`upstreamOf`（应用→应用）、`accessedVia`（服务器/数据源→跳板服务器）、`relatedTo`（通用占位）。
+- **典型用法**：`topology_query(action="dependencies", assetId="app:order-service")` 得到它跑在哪台服务器、连了哪些数据库；`topology_query(action="resolve_url", url="https://shop.example.com/api/order")` 从 URL 定位应用、服务器和日志路径。
+- **冲突检测**：运行环境字段与人工关系冲突时由 `AssetRuntimeValidator` 在保存/配置体检中提示；主图不读取自动发现边。
 
-### `topology_timeline`
-- **参数**：`serverId`（服务器 ID/名称）、`limit`（最近快照数，默认 10，最大 20）
-- **返回**：`{ serverId, points: [{ snapshotId, capturedAt, success, nodes, edges, addedNodes, removedNodes, addedEdges, removedEdges }], truncated, error, summary }`
-- **说明**：对每份快照重放 `systemd` / `docker` / `portmap` / `nginx_tls`，得到该时点的节点/边集合，并与上一份快照比较。回答“这台机器最近多了/少了哪些服务、容器、端口、域名或证书”；边为快照派生，`source=discovered`。
-
-### `topology_diff`
-- **参数**：`serverId`（服务器 ID/名称）、`fromSnapshotId`（可选，起始快照）、`toSnapshotId`（可选，结束快照）；两者留空时比较最近两次快照
-- **返回**：`{ serverId, fromSnapshot, toSnapshot, addedNodes, removedNodes, addedEdges, removedEdges, truncated, error, summary }`
-- **说明**：返回快照之间新增/移除的节点与边，节点含 `id/label/type`，边含 `from/to/type/source`。用于变更复盘、发布前后核对；`from` 必须早于 `to`。
+### `topology_history`
+- **参数**：`action`（`timeline` / `diff`）、`serverId`（服务器 ID/名称）、`limit`（timeline 最近快照数，默认 10，最大 20）、`fromSnapshotId` / `toSnapshotId`（diff 起始/结束快照；留空比较最近两次）
+- **返回**：`{ action, success, status, error, summary, result }`；`timeline` 的 `result` 含 `points[]`（每份快照的节点/边与相对上一次的增删），`diff` 的 `result` 含 `addedNodes/removedNodes/addedEdges/removedEdges`。
+- **说明**：对每份快照重放 `systemd` / `docker` / `portmap` / `nginx_tls`，只读分析快照历史，不读取也不修改人工配置主图。回答“这台机器最近多了/少了哪些服务、容器、端口、域名或证书”以及“两次快照之间具体变了什么”。
 
 ## 应用体检组（app）
 

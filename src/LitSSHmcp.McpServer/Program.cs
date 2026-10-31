@@ -72,7 +72,6 @@ builder.Services.AddSingleton<CliApprovalChannel>();
 builder.Services.AddSingleton<ApprovalRoundTracker>();
 builder.Services.AddSingleton<ApprovalExemptionRegistry>();
 builder.Services.AddSingleton<IApprovalService, ApprovalService>();
-builder.Services.AddSingleton<ITopologyStore, TopologyStore>();
 builder.Services.AddSingleton<ISnapshotStore, SnapshotStore>();
 builder.Services.AddSingleton<ISnapshotService, SnapshotService>();
 // 快照采集维度(可插拔): 新增维度 = 实现 ISnapshotCollector 并在此多注册一行, 无需改快照主流程。
@@ -112,6 +111,8 @@ builder.Services.AddSingleton<IDatasourceDriver, PostgresDriver>();
 builder.Services.AddSingleton<IDatasourceDriver, RedisDriver>();
 builder.Services.AddSingleton<IDatasourceDriverRegistry, DatasourceDriverRegistry>();
 builder.Services.AddSingleton<ITopologyService, TopologyService>();
+builder.Services.AddSingleton<IAssetIdentityStore, AssetIdentityStore>();
+builder.Services.AddSingleton<IUrlResolutionService, UrlResolutionService>();
 builder.Services.AddSingleton<IAssetGraphQueryService, AssetGraphQueryService>();
 
 // 【同步约定 · 请勿删除】每个 WithTools<T>() 对应一个工具类。新增/移除工具类, 或工具类内的工具发生变动
@@ -196,9 +197,6 @@ try
 {
     var configService = host.Services.GetRequiredService<IConfigService>();
     await configService.LoadConfigAsync();
-
-    var topologyStore = host.Services.GetRequiredService<ITopologyStore>();
-    await topologyStore.InitializeAsync();
 
     var snapshotStore = host.Services.GetRequiredService<ISnapshotStore>();
     await snapshotStore.InitializeAsync();

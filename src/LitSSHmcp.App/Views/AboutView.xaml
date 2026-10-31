@@ -23,12 +23,12 @@
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
                     <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Memory 可回滚：新增历史快照表，更新 / 删除 / 归档前自动留存（含向量与 owner/scope）；每个 MemoryId 保留最近 40 版、孤儿快照 30 天清理；桌面「记忆管理」与 Web「记忆库」支持右键查看历史 / 回滚 / 归档，管理员 API 同步提供。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 存储维护：设置新增「存储维护」Tab，统计 config / agent.db / audit.db / snapshots.db / spill / jobs / logs / skills 占用；支持清理 Memory 历史、过期 spill、孤儿会话目录与审计归档（清理后重建剩余哈希链），并展示配置 / 库迁移状态。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• App 结构治理：IUserDialogService / IWindowService 收敛 UI 边界，Agent / Topology / DbWorkbench 多轮拆分；新增 IAppServices 最小组合根与 IConfigReloadable，配置冲突时可统一重新加载已打开窗口。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本地工具精简：工作区 / 记忆 / 落盘 / 本机终端合并为 18 个工具，统一 mode/action 语义；系统提示、技能与工具清单门禁同步。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑统一人工主图：服务器 / 应用 / 数据源 / 域名与人工关系成为唯一主图来源；自动发现只提供证据、配置建议与配置体检，不再生成待确认节点。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 新版结构化拓扑：服务器泳道 / 应用链路 / 依赖矩阵 / 配置建议四个只读视图；应用与数据源支持 SSH / Docker / 独立运行环境及多 URL 访问入口解析。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 旧版拓扑画布精简：关系类型收敛为 7 种并中文展示，Docker runsIn 使用缩进两级展示，移除服务 / 容器 / 部署 / 域名 / 端口 / 证书图层与待确认节点 UI。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 拓扑工具收敛：7 个减至 3 个（topology_query / topology_history / topology_discover）；overview、dependencies、resolve_url 并入统一查询，快照时间线与 Diff 合并为 topology_history。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 助手设置优化：快速切换 Tab 时防抖并取消上一轮读取，复用记忆存储实例，避免重复初始化 agent.db 导致的卡顿；只读模式工具说明与工具分组同步更新。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 质量门禁：全量测试与覆盖率分程序集阈值、七域风险门禁（工具目录 / 授权 / 路径 / 命令 / 脱敏 / Web / 结构预算）持续守住回归。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Web 助手：Kestrel 零构建 SPA，独立账号库（PBKDF2-SHA256 210k 迭代、连续失败指数锁定），每个 AI 会话运行在独立 AgentRuntime 子进程；WebSocket 流式聊天、审批实时推送与 REST 对账，会话目录文件浏览 / 下载，图片附件与全屏预览、会话级模型切换，手机端响应式布局。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 运维与安全：审计 UserId / HMAC-SHA256 链、按会话隔离状态机、PathGuard 防越界、脚本永不免审、应用锁与 Windows Hello、本机 PowerShell 终端 + AI 本地 CLI、外部 MCP 接入、RDP / VNC、MCP Resources、资产拓扑与数据库工作台。"/>
                 </StackPanel>
             </Border>
@@ -53,13 +53,13 @@
                 <StackPanel>
                     <TextBlock Text="MCP 核心能力（AI 可调用的工具）" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,6"
-                               Text="通过 Model Context Protocol（stdio）向任意 MCP 客户端暴露 36 个默认外部工具（另有 1 个宿主内部审批工具），覆盖以下能力域（可在「工具分组」按部署裁剪）："/>
+                               Text="通过 Model Context Protocol（stdio）向任意 MCP 客户端暴露 34 个默认外部工具（另有 1 个宿主内部审批工具），覆盖以下能力域（可在「工具分组」按部署裁剪）："/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 运维：命令执行、sudo 提权、连接测试/状态、批量与目录文件上传下载、目录浏览。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源：MySQL / PostgreSQL 只读查询、执行计划、写操作与诊断（连接数/慢查询/锁/复制），Redis 只读与写/管理命令、诊断；支持直连或 SSH 隧道，密码仅本机保存、不暴露给 AI。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 容器与服务：Docker 容器/镜像/日志/inspect/stats，systemd 服务状态与日志。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机终端：local_shell 在硬白名单内执行本机 CLI（逐次人工审批），支持多终端并行与按 cursor 增量读取输出。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 日志与 Java：按关键字/正则检索日志、发现日志文件，Java 进程/线程栈/堆内存/JVM 信息。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 快照与拓扑：整机快照（资源/端口进程服务/证书/Docker/systemd/安全巡检），资产拓扑总览、依赖查询与自动发现，以及图查询（搜索 / 邻域 / 有向链路 / 影响面 / 证据解释）与拓扑时间线、快照 Diff。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 快照与拓扑：整机快照（资源/端口进程服务/证书/Docker/systemd/安全巡检）；人工配置拓扑主图（overview/search/neighbors/path/impact/explain/dependencies/resolve_url）、快照历史时间线与 Diff、自动发现证据与配置建议。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 聚合体检：按应用聚合所在服务器进程/容器/端口与依赖数据源的连通性，支撑全链路排障。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 安全与审计：命令/SQL 过滤、敏感操作桌面审批、文件传输路径白名单、TOFU 主机密钥校验、按目标限流，全部操作写入 HMAC-SHA256 哈希链审计。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 资源（Resources）：以只读方式向 MCP 客户端暴露服务器清单 / 数据源清单 / 使用指南 / 资产拓扑 / 最新快照概览（litssh:// 资源与模板），供浏览与挂载为上下文；不含密码、禁用项排除，按启用的工具分组裁剪。"/>
@@ -76,7 +76,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机终端：ConPTY 真实本机 PowerShell 终端；AI 本地 CLI 在白名单内执行本机命令（人工审批、超时与进程树清理），单个 AI 会话最多并行管理 4 个独立终端。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 批量执行 / 快速命令：多台服务器并行下发命令；内置快速命令（一键巡检、磁盘/inode/内存/端口/进程/大目录/日志/容器/网络）与「一键巡检」，写操作执行前确认。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源 / 应用管理 + 数据库工作台：维护数据源与应用；工作台支持 SQL 查询/对象浏览/表数据分页预览、Redis 键浏览（分批扫描、补全类型/TTL/大小、DB 切换、大结果集警告）、只读/写入模式与审计。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑：可视化编辑——拖动/缩放节点、拖拽创建关系、自动正交避障连线、网格吸附、撤销重做、导出图片。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑：旧版可视化编辑（拖动/缩放、拖线建关系、正交避障连线、网格吸附、撤销重做、导出图片）+ 新版只读结构化视图（服务器泳道 / 应用链路 / 依赖矩阵 / 配置建议）与配置体检。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 快照：整机态势采集 + 历史查看 + 趋势图（内存 / 磁盘 / Swap / 负载）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 终端录像：交互式终端会话以 asciicast 记录并支持倍速回放（合规/复盘）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 触发事件：本机/远程动作流水线（Git / Webhook / 目录与数据库备份），定时与同步事件触发，附「总览」编排可视化。"/>
@@ -92,7 +92,7 @@
                 <StackPanel>
                     <TextBlock Text="技术栈" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                               Text=".NET 8（桌面 App、MCP 服务器与 Web 助手）· .NET 10（CLI）· WPF + WPF-UI（Fluent）· ASP.NET Core / Kestrel + WebSocket（Web 助手）· Microsoft.Extensions.AI + ModelContextProtocol SDK · OpenAI 兼容大模型（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等）· SSH.NET · MySQL / PostgreSQL / Redis 驱动 · SQLite（审计 / 快照 / 会话 / 拓扑 / 账号）· PBKDF2-SHA256 + DPAPI（密码 / 凭据加密）· AvalonEdit（SQL 编辑器）· RDP ActiveX / WebView2 + noVNC（远程桌面查看器）。"/>
+                               Text=".NET 8（桌面 App、MCP 服务器与 Web 助手）· .NET 10（CLI）· WPF + WPF-UI（Fluent）· ASP.NET Core / Kestrel + WebSocket（Web 助手）· Microsoft.Extensions.AI + ModelContextProtocol SDK · OpenAI 兼容大模型（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等）· SSH.NET · MySQL / PostgreSQL / Redis 驱动 · SQLite（审计 / 快照 / 会话 / 记忆 / 账号 / 身份）· PBKDF2-SHA256 + DPAPI（密码 / 凭据加密）· AvalonEdit（SQL 编辑器）· RDP ActiveX / WebView2 + noVNC（远程桌面查看器）。"/>
                 </StackPanel>
             </Border>
 

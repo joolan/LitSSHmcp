@@ -116,6 +116,9 @@ public class SnapshotService : ISnapshotService
                 catch { appConfig = null; }
             }
 
+            if (appConfig is not null)
+                sections["topology_access"] = BuildAccessRouteSection(appConfig, server);
+
             var context = new SnapshotContext
             {
                 Server = server,
@@ -428,6 +431,38 @@ public class SnapshotService : ISnapshotService
         {
             return new CommandResult { Success = false, Error = ex.Message, ErrorKind = "unknown" };
         }
+    }
+
+    private static Dictionary<string, object?> BuildAccessRouteSection(AppConfig config, SshServerConfig server)
+    {
+        var jump = string.IsNullOrWhiteSpace(server.ProxyJumpServerId)
+            ? null
+            : new Dictionary<string, object?>
+            {
+                ["targetId"] = server.Id,
+                ["jumpId"] = server.ProxyJumpServerId,
+                ["jumpName"] = config.Servers.FirstOrDefault(s => s.Id == server.ProxyJumpServerId)?.Name
+            };
+
+        var tunnels = config.DataSources
+            .Where(d => d.AccessMode == AccessMode.SshTunnel &&
+                        string.Equals(d.TunnelServerId, server.Id, StringComparison.OrdinalIgnoreCase))
+            .Select(d => new Dictionary<string, object?>
+            {
+                ["datasourceId"] = d.Id,
+                ["datasourceName"] = d.Name
+            })
+            .ToList();
+
+        return new Dictionary<string, object?>
+        {
+            ["status"] = "ok",
+            ["data"] = new Dictionary<string, object?>
+            {
+                ["sshJump"] = jump,
+                ["tunnels"] = tunnels
+            }
+        };
     }
 
     private static string BuildDataJson(Dictionary<string, object?> sections, bool elevated) =>

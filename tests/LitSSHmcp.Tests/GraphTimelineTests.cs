@@ -47,6 +47,25 @@ public class GraphTimelineTests
     }
 
     [Fact]
+    public async Task Timeline_reports_access_route_changes()
+    {
+        var store = new FakeSnapshotStore();
+        store.Items.Add(AccessSnapshot(2, "2026-10-19T10:00:00.0000000Z", "jumpB", new[] { "ds1" }));
+        store.Items.Add(AccessSnapshot(1, "2026-10-18T10:00:00.0000000Z", "jumpA", Array.Empty<string>()));
+        var service = new AssetGraphQueryService(new FakeTopologyService(), store, new FakeConfigService());
+
+        var result = await service.GetTimelineAsync("s1");
+
+        Assert.Null(result.Error);
+        Assert.Contains(result.Points[1].AddedEdges, k =>
+            k == "ssh:s1|ssh:jumpB|accessedVia");
+        Assert.Contains(result.Points[1].RemovedEdges, k =>
+            k == "ssh:s1|ssh:jumpA|accessedVia");
+        Assert.Contains(result.Points[1].AddedEdges, k =>
+            k == "ds:ds1|ssh:s1|accessedVia");
+    }
+
+    [Fact]
     public async Task Timeline_requires_snapshot_dependencies()
     {
         var service = new AssetGraphQueryService(new FakeTopologyService());
@@ -81,6 +100,32 @@ public class GraphTimelineTests
                             active = "active",
                             sub = "running"
                         }).ToArray()
+                    }
+                }
+            }
+        })
+    };
+
+    private static ServerSnapshot AccessSnapshot(
+        long id, string createdAt, string jumpId, string[] tunnels) => new()
+    {
+        Id = id,
+        ServerId = "s1",
+        ServerName = "web1",
+        CreatedAt = createdAt,
+        CompletedAt = createdAt,
+        Status = SnapshotStatus.Succeeded,
+        DataJson = JsonSerializer.Serialize(new
+        {
+            sections = new
+            {
+                topology_access = new
+                {
+                    status = "ok",
+                    data = new
+                    {
+                        sshJump = new { targetId = "s1", jumpId, jumpName = jumpId },
+                        tunnels = tunnels.Select(ds => new { datasourceId = ds, datasourceName = ds }).ToArray()
                     }
                 }
             }

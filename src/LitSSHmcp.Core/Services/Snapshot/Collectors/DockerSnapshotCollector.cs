@@ -162,6 +162,7 @@ public sealed class DockerSnapshotCollector : ISnapshotCollector
                         ["state"] = Str(e, "State"),
                         ["status"] = Str(e, "Status"),
                         ["ports"] = Str(e, "Ports"),
+                        ["labels"] = Str(e, "Labels"),
                         ["createdAt"] = Str(e, "CreatedAt"),
                         ["runningFor"] = Str(e, "RunningFor")
                     });

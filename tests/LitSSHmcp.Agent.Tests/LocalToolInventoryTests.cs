@@ -25,6 +25,7 @@ public class LocalToolInventoryTests : IDisposable
         Assert.Equal(new[] { "ops_doc_read", "ops_doc_write" }, tools.Select(t => t.Name).ToArray());
         Assert.True(tools.Single(t => t.Name == "ops_doc_read").ReadOnly);
         Assert.False(tools.Single(t => t.Name == "ops_doc_write").ReadOnly);
+        Assert.All(tools, t => Assert.True(t.IsLocal));
         Assert.DoesNotContain("ops_doc_list", tools.Select(t => t.Name));
         Assert.DoesNotContain("ops_doc_append", tools.Select(t => t.Name));
         Assert.DoesNotContain("ops_doc_patch", tools.Select(t => t.Name));

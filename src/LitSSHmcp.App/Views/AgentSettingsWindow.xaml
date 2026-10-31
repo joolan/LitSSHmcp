@@ -47,7 +47,8 @@
                                     <ui:TextBox FontWeight="Normal" Text="{Binding ContextLimit, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,16,0"/>
                                     <TextBlock Text="上下文 token 上限:" VerticalAlignment="Center"/>
                                     <ui:TextBox FontWeight="Normal" Text="{Binding ContextTokenLimit, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="6,0,16,0"/>
-                                    <TextBlock Text="最大工具轮数:" VerticalAlignment="Center"/>
+                                    <TextBlock Text="最大工具轮数:" VerticalAlignment="Center"
+                                               ToolTip="单轮对话内允许的远程工具调用轮数；本地工具（文档读写、记忆、技能等）不计入。达到上限后可选择继续或停止。"/>
                                     <ui:TextBox FontWeight="Normal" Text="{Binding MaxToolIterations, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
@@ -98,10 +99,21 @@
                                     <ui:TextBox FontWeight="Normal" Text="{Binding SpillRetentionDays, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="6,0,0,0"/>
                                 </StackPanel>
                                 <CheckBox Content="启用子代理（run_subagent：独立上下文的只读取证，只回摘要）" IsChecked="{Binding EnableSubAgent, Mode=TwoWay}" Margin="0,0,0,6"/>
+                                <StackPanel Orientation="Horizontal" Margin="26,0,0,8">
+                                    <TextBlock Text="最大轮数:" VerticalAlignment="Center"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding SubAgentMaxIterations, UpdateSourceTrigger=PropertyChanged}" Width="45" Margin="6,0,16,0"
+                                               ToolTip="子代理单次任务最多远程工具轮数；0=默认 8，有效范围 1-20"/>
+                                    <TextBlock Text="超时(秒):" VerticalAlignment="Center"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding SubAgentTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" Width="55" Margin="6,0,16,0"
+                                               ToolTip="子代理单次任务墙钟超时；0=默认 240 秒，有效范围 30-3600"/>
+                                    <TextBlock Text="摘要上限(字符):" VerticalAlignment="Center"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding SubAgentSummaryMaxChars, UpdateSourceTrigger=PropertyChanged}" Width="65" Margin="6,0,0,0"
+                                               ToolTip="子代理返回主上下文的摘要字符上限；0=默认 2000，有效范围 500-8000"/>
+                                </StackPanel>
                                 <CheckBox Content="只读模式（仅向模型暴露只读工具）" IsChecked="{Binding ReadOnly, Mode=TwoWay}" Margin="0,0,0,6"/>
                                 <TextBlock TextWrapping="Wrap" Margin="26,0,0,8" FontSize="{DynamicResource AppFontSizeMicro}"
                                            Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                           Text="只读模式保留的工具（按 MCP 只读注解 readOnlyHint）：查询/读取/诊断/巡检类——ssh_list_servers、ssh_get_sudo_status、ssh_test_connection、ssh_snapshot_get、ssh_list_files；datasource_list、datasource_test_connection、mysql_query、postgres_query、redis_read/redis_diagnostics；docker_query、service_query、log_query、java_processes/java_diagnostics、topology_get_overview/get_dependencies/query/timeline/diff、app_health_snapshot、mcp_usage_guide/self_check；以及本地只读工具（skill、spill、ops_doc_read、ops_insight、update_plan、run_subagent）。不含执行/写入/审批类：ssh_execute_command/sudo、ssh_upload*/download*、mysql/postgres/redis 的 *_execute、docker_restart/exec、service_restart 等。"/>
+                                           Text="只读模式保留的工具（按 MCP 只读注解 readOnlyHint）：查询/读取/诊断/巡检类——ssh_list_servers、ssh_get_sudo_status、ssh_test_connection、ssh_snapshot_get、ssh_list_files；datasource_list、datasource_test_connection、mysql_query、postgres_query、redis_read/redis_diagnostics；docker_query、service_query、log_query、java_processes/java_diagnostics、topology_query（含 overview/search/neighbors/path/impact/explain/dependencies/resolve_url）、topology_history、app_health_snapshot、mcp_usage_guide/self_check；以及本地只读工具（skill、spill、ops_doc_read、ops_insight、update_plan、run_subagent）。不含执行/写入/审批类：ssh_execute_command/sudo、ssh_upload*/download*、mysql/postgres/redis 的 *_execute、docker_restart/exec、service_restart 等。"/>
 
                                 <TextBlock Text="工作日志（桌面端）" FontWeight="SemiBold" Margin="0,10,0,6"/>
                                 <CheckBox Content="启用工作日志（含变更操作的任务结束后自动追加到工作区 worklogs/年/年-月-日.md，永久保留）" IsChecked="{Binding WorkLogEnabled, Mode=TwoWay}" Margin="0,0,0,4"/>

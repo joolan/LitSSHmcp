@@ -10,7 +10,7 @@ namespace LitSSHmcp.Agent;
 
 /// <summary>
 /// 一次运维对话会话：维护消息历史并**手动驱动工具调用循环**（调用 MCP 工具→把结果喂回模型），
-/// 便于把工具调用/结果写入上下文、推送轨迹事件并约束最大轮数。
+/// 便于把工具调用/结果写入上下文、推送轨迹事件并约束远程工具的最大轮数（本地工具不计入）。
 /// </summary>
 public sealed class AgentSession
 {
@@ -157,6 +157,10 @@ public sealed class AgentSession
     internal bool IsDenied(string toolName) =>
         _toolPolicy is not null && _toolPolicy.TryGetValue(toolName, out var policy) && policy == AgentToolPolicy.Deny;
 
+    /// <summary>本地工具（工作区文档/记忆/技能/落盘等）的调用轮次不占用「最大工具轮数」。</summary>
+    private bool IsLocalTool(string toolName) =>
+        _toolsByName.TryGetValue(toolName, out var tool) && tool.IsLocal;
+
     private static string DeniedMessage(string toolName) =>
         $"工具 {toolName} 已被本会话的「工具审批策略」禁用（拒绝），未执行。"
         + "如需使用，请在输入区 + 菜单 → 工具审批策略 里把它改回「默认」或「允许」。";
@@ -280,7 +284,7 @@ public sealed class AgentSession
                 if (_toolLimitContinuation is null)
                 {
                     progress?.Report(new AgentEvent(AgentEventKind.Error,
-                        Text: $"工具调用超过 {maxIterations} 轮, 已停止本轮"));
+                        Text: $"工具调用超过 {maxIterations} 轮, 已停止本轮（本地工具不计入）"));
                     return;
                 }
 
@@ -303,13 +307,13 @@ public sealed class AgentSession
                 if (!approved)
                 {
                     ReportIncomplete(progress,
-                        $"工具调用已达到上限（{maxIterations} 次），用户选择停止，本轮未完成。");
+                        $"工具调用已达到上限（{maxIterations} 次，本地工具不计入），用户选择停止，本轮未完成。");
                     return;
                 }
 
                 iteration = 0;
                 progress?.Report(new AgentEvent(AgentEventKind.Warning,
-                    Text: $"已获准继续工具调用，次数重新从 0 累计（本轮上限 {maxIterations} 次）。"));
+                    Text: $"已获准继续工具调用，次数重新从 0 累计（本轮上限 {maxIterations} 次；本地工具不计入）。"));
             }
 
             if (turnBudgetSeconds > 0 && turnSw.Elapsed.TotalSeconds >= turnBudgetSeconds)
@@ -356,6 +360,8 @@ public sealed class AgentSession
 
             var contents = assistantMessages.SelectMany(m => m.Contents).ToList();
             var calls = contents.OfType<FunctionCallContent>().ToList();
+            // 仅本地工具（文档读写等）的轮次不占用「最大工具轮数」；同一轮只要含远程工具就计 1 次。
+            var countsTowardToolLimit = calls.Any(c => !IsLocalTool(c.Name));
             if (calls.Count == 0)
             {
                 var responseText = string.Concat(contents.OfType<TextContent>().Select(t => t.Text));
@@ -490,7 +496,8 @@ public sealed class AgentSession
 
             // 轮内复查：工具结果可能很大，每轮结束后按阈值裁剪旧轮/压缩较早的工具结果，避免单轮冲爆上下文。
             await CompactIfNeededAsync(ct);
-            iteration++;
+            if (countsTowardToolLimit)
+                iteration++;
         }
         }
         finally
@@ -1186,14 +1193,33 @@ public sealed class AgentSession
                 return;
 
             var result = Messages[index].Contents.OfType<FunctionResultContent>().FirstOrDefault();
-            if (result is null || result.Result?.ToString() == ToolResultOmitted)
+            var resultText = result?.Result?.ToString();
+            if (result is null || resultText == ToolResultOmitted)
                 continue;
 
+            var handle = ExtractSpillHandle(resultText);
+            var replacement = handle is null
+                ? ToolResultOmitted
+                : $"[较早的大结果已压缩; 完整内容仍在 spill://{handle}, 需要时用 spill(action=\"read\", handle=\"spill://{handle}\", offset, limit) 分段读取]";
             Messages[index] = new ChatMessage(ChatRole.Tool, new AIContent[]
             {
-                new FunctionResultContent(result.CallId, ToolResultOmitted)
+                new FunctionResultContent(result.CallId, replacement)
             });
         }
+    }
+
+    private static string? ExtractSpillHandle(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return null;
+        var index = text.IndexOf(SpillStore.Scheme, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+            return null;
+        var start = index + SpillStore.Scheme.Length;
+        var end = start;
+        while (end < text.Length && (char.IsLetterOrDigit(text[end]) || text[end] is '-' or '_' or '.'))
+            end++;
+        return end > start ? text[start..end] : null;
     }
 
     /// <summary>日志类工具（<c>*_logs</c>/<c>log_query</c>/<c>docker_query</c>）的截断保留**尾部最新内容**，其余保留头部。</summary>
@@ -1215,6 +1241,10 @@ public sealed class AgentSession
             max = Math.Max(max, GuideResultMaxChars);
         if (max <= 0 || resultText.Length <= max)
             return resultText;
+
+        if (string.Equals(toolName, "spill", StringComparison.OrdinalIgnoreCase))
+            return resultText[..max] +
+                   $"\n…[spill 读取结果仍超过 {max} 字符, 已截断; 请减小 limit 或调整 offset 分段读取]";
 
         var tail = PreferTail(toolName);
 

@@ -27,7 +27,6 @@ public partial class NodeRelationsWindow : Wpf.Ui.Controls.FluentWindow
     private readonly string _nodeId;
     private readonly IConfigService _config = AppServiceFactory.CreateConfigService();
     private readonly ITopologyService _topology;
-    private readonly ITopologyStore _store = new TopologyStore();
     private readonly ObservableCollection<RelationRow> _rows = new();
     private RelationRow? _selected;
 
@@ -77,30 +76,6 @@ public partial class NodeRelationsWindow : Wpf.Ui.Controls.FluentWindow
                 FromIsCurrent = r.From == _nodeId,
                 ToIsCurrent = r.To == _nodeId
             });
-        }
-
-        if (graph != null)
-        {
-            foreach (var e in graph.Edges.Where(e =>
-                         string.Equals(e.Source, "discovered", StringComparison.OrdinalIgnoreCase) &&
-                         (e.From == _nodeId || e.To == _nodeId)))
-            {
-                if (_rows.Any(r => r.From == e.From && r.To == e.To && r.Type == e.Type))
-                    continue;
-
-                _rows.Add(new RelationRow
-                {
-                    From = e.From,
-                    Type = e.Type,
-                    To = e.To,
-                    Source = "自动发现",
-                    IsManual = false,
-                    FromLabel = LabelOf(e.From),
-                    ToLabel = LabelOf(e.To),
-                    FromIsCurrent = e.From == _nodeId,
-                    ToIsCurrent = e.To == _nodeId
-                });
-            }
         }
 
         HeaderText.Text = _rows.Count == 0
@@ -192,19 +167,11 @@ public partial class NodeRelationsWindow : Wpf.Ui.Controls.FluentWindow
 
         try
         {
-            if (row.IsManual)
-            {
-                var config = await _config.LoadConfigAsync();
-                config.Relations = config.Relations
-                    .Where(r => !(r.From == row.From && r.To == row.To && r.Type == row.Type))
-                    .ToArray();
-                await _config.SaveConfigAsync(config);
-            }
-            else
-            {
-                await _store.InitializeAsync();
-                await _store.RemoveEdgeAsync(row.From, row.To, row.Type);
-            }
+            var config = await _config.LoadConfigAsync();
+            config.Relations = config.Relations
+                .Where(r => !(r.From == row.From && r.To == row.To && r.Type == row.Type))
+                .ToArray();
+            await _config.SaveConfigAsync(config);
 
             await LoadAsync();
         }

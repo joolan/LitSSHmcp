@@ -1,0 +1,436 @@
+<ui:FluentWindow xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" x:Class="LitSSHmcp.App.Views.AssetTopologyExplorerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="资产拓扑 · 结构化视图（预览）" Height="860" Width="1420"
+        WindowStartupLocation="CenterOwner" WindowBackdropType="Mica"
+        ExtendsContentIntoTitleBar="True">
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <DataTemplate x:Key="AssetChipTemplate">
+            <Button Margin="0,0,8,8" Padding="0" BorderThickness="0" Background="Transparent"
+                    HorizontalContentAlignment="Stretch"
+                    Command="{Binding DataContext.SelectCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                    CommandParameter="{Binding}"
+                    ToolTip="{Binding Detail}">
+                <Border CornerRadius="5" Padding="9,6" MinWidth="150" MaxWidth="250">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{DynamicResource AppCardBrush}"/>
+                            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
+                            <Setter Property="BorderThickness" Value="1"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Kind}" Value="application">
+                                    <Setter Property="Background" Value="{DynamicResource NodeAppBgBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeAppBorderBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="datasource">
+                                    <Setter Property="Background" Value="{DynamicResource NodeDbBgBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeDbBorderBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="service">
+                                    <Setter Property="Background" Value="{DynamicResource NodeServiceBgBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeServiceBorderBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="container">
+                                    <Setter Property="Background" Value="{DynamicResource NodeContainerBgBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeContainerBorderBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="deploy">
+                                    <Setter Property="Background" Value="{DynamicResource NodeDeployBgBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeDeployBorderBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="domain">
+                                    <Setter Property="Background" Value="{DynamicResource NodeDomainBgBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeDomainBorderBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="port">
+                                    <Setter Property="Background" Value="{DynamicResource NodePortBgBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource NodePortBorderBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="cert">
+                                    <Setter Property="Background" Value="{DynamicResource NodeCertBgBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeCertBorderBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="mq">
+                                    <Setter Property="Background" Value="{DynamicResource NodeMqBgBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource NodeMqBorderBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
+                                    <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
+                                    <Setter Property="BorderThickness" Value="2"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding Subtitle}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Button>
+        </DataTemplate>
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="资产拓扑 · 结构化视图（预览）"/>
+
+        <Border Grid.Row="1" Padding="10,8" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1">
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Left" Content="刷新" Width="70" Padding="6,3" Margin="0,0,10,0"
+                        Command="{Binding RefreshCommand}"/>
+                <TextBlock DockPanel.Dock="Left" Text="搜索:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBox DockPanel.Dock="Left" Width="240" VerticalContentAlignment="Center"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         ToolTip="按名称、ID、主机过滤服务器和资产"/>
+                <CheckBox DockPanel.Dock="Left" Content="显示服务/容器/部署/端口/证书"
+                          IsChecked="{Binding ShowLowLevel}" Margin="14,0,0,0" VerticalAlignment="Center"
+                          ToolTip="默认只显示服务器、应用、数据库和域名，减少低层节点噪音"/>
+                <CheckBox DockPanel.Dock="Left" Content="显示全部依赖"
+                          IsChecked="{Binding ShowAllDependencies}" Margin="14,0,0,0" VerticalAlignment="Center"
+                          ToolTip="默认只显示跨服务器依赖；勾选后显示同机依赖"/>
+                <CheckBox DockPanel.Dock="Left" Content="显示发现证据"
+                          IsChecked="{Binding ShowDiscoveryEvidence}" Margin="14,0,0,0" VerticalAlignment="Center"
+                          ToolTip="选中 SSH 服务器时显示最近快照中的端口、服务、容器、站点和证书证据"/>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding Summary}" VerticalAlignment="Center"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            </DockPanel>
+        </Border>
+
+        <TabControl Grid.Row="2" Margin="10">
+            <TabItem Header="服务器泳道">
+                <Grid Margin="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="380"/>
+            </Grid.ColumnDefinitions>
+
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <TextBlock Text="入口 / 域名" Style="{DynamicResource SectionTitleStyle}" Margin="0,0,0,8"/>
+                    <ItemsControl ItemsSource="{Binding EntryAssets}" ItemTemplate="{StaticResource AssetChipTemplate}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <TextBlock Text="服务器泳道" Style="{DynamicResource SectionTitleStyle}" Margin="0,12,0,8"/>
+                    <ItemsControl ItemsSource="{Binding Lanes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource AppCardBrush}"
+                                        BorderBrush="{DynamicResource AppBorderBrush}"
+                                        BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <DockPanel LastChildFill="True">
+                                            <Button DockPanel.Dock="Left" Background="Transparent" BorderThickness="0"
+                                                    Padding="0" HorizontalContentAlignment="Left"
+                                                    Command="{Binding DataContext.SelectCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                    CommandParameter="{Binding Server}"
+                                                    ToolTip="{Binding Server.Detail}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Server.Label}" FontSize="{DynamicResource AppFontSizeLarge}"
+                                                               FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding Server.Subtitle}" Margin="10,0,0,0"
+                                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding ChildSummary}"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                        <ItemsControl ItemsSource="{Binding Children}" ItemTemplate="{StaticResource AssetChipTemplate}"
+                                                      Margin="0,10,0,0">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+
+            <Border Grid.Column="1" Margin="10,0,0,0" Background="{DynamicResource AppCardBrush}"
+                    BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14">
+                        <TextBlock Text="资产详情" Style="{DynamicResource SectionTitleStyle}"/>
+                        <TextBlock Text="{Binding SelectedTitle}" FontSize="{DynamicResource AppFontSizeLarge}"
+                                   FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding SelectedSubtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        <TextBlock Text="{Binding SelectedDetail}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+
+                        <TextBlock Text="发现证据" Style="{DynamicResource SectionTitleStyle}" Margin="0,16,0,6"/>
+                        <TextBlock Text="{Binding SelectedEvidence}" TextWrapping="Wrap"
+                                   FontFamily="{DynamicResource AppFontMonoFamily}"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+
+                        <TextBlock Text="相关关系" Style="{DynamicResource SectionTitleStyle}" Margin="0,16,0,6"/>
+                        <ItemsControl ItemsSource="{Binding SelectedRelations}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Separator Margin="0,14"/>
+                        <DockPanel>
+                            <TextBlock Text="依赖（默认仅跨服务器）" Style="{DynamicResource SectionTitleStyle}"/>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding Dependencies.Count}"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <ItemsControl ItemsSource="{Binding Dependencies}" Margin="0,6,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1"
+                                            Padding="0,5">
+                                        <StackPanel>
+                                            <TextBlock TextWrapping="Wrap">
+                                                <Run Text="{Binding FromLabel, Mode=OneWay}" FontWeight="SemiBold"/>
+                                                <Run Text="  -"/>
+                                                <Run Text="{Binding Relation, Mode=OneWay}"/>
+                                                <Run Text="-&gt;  "/>
+                                                <Run Text="{Binding ToLabel, Mode=OneWay}" FontWeight="SemiBold"/>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding Detail}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="应用链路">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="选择应用 / 域名:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox Width="360" ItemsSource="{Binding FlowTargets}"
+                                  SelectedItem="{Binding SelectedFlowTarget}" DisplayMemberPath="Label"/>
+                        <TextBlock Text="{Binding FlowSummary}" VerticalAlignment="Center" Margin="14,0,0,0"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    </StackPanel>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <ItemsControl ItemsSource="{Binding FlowGroups}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource AppCardBrush}"
+                                                BorderBrush="{DynamicResource AppBorderBrush}"
+                                                BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}" Style="{DynamicResource SectionTitleStyle}"
+                                                           Margin="0,0,0,8"/>
+                                                <ItemsControl ItemsSource="{Binding Nodes}"
+                                                              ItemTemplate="{StaticResource AssetChipTemplate}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock Text="多跳链路路径" Style="{DynamicResource SectionTitleStyle}" Margin="0,4,0,8"/>
+                            <ItemsControl ItemsSource="{Binding FlowPaths}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource AppCardBrush}"
+                                                BorderBrush="{DynamicResource AppBorderBrush}"
+                                                BorderThickness="1" CornerRadius="5" Padding="10,7" Margin="0,0,0,6">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                           FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,0,0,3">
+                                                    <Run Text="{Binding Direction, Mode=OneWay}"/>
+                                                    <Run Text=" · "/>
+                                                    <Run Text="{Binding Hops, Mode=OneWay}"/>
+                                                    <Run Text=" 跳"/>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="依赖矩阵">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                    <StackPanel Margin="8">
+                        <TextBlock Text="行 = 来源服务器，列 = 目标服务器；数字表示关系数量。"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBlock Text="{Binding MatrixSummary}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   Margin="0,0,0,10"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="180" Padding="8,6" Background="{DynamicResource AppSurfaceAltBrush}"
+                                    BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+                                <TextBlock Text="来源 \ 目标" FontWeight="SemiBold"/>
+                            </Border>
+                            <ItemsControl ItemsSource="{Binding MatrixColumns}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Width="92" Padding="6" Background="{DynamicResource AppSurfaceAltBrush}"
+                                                BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1,1,0,1">
+                                            <TextBlock Text="{Binding}" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"
+                                                       ToolTip="{Binding}"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding MatrixRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Width="180" Padding="8,6" Background="{DynamicResource AppCardBrush}"
+                                                BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1,0,1,1">
+                                            <TextBlock Text="{Binding ServerLabel}" TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding ServerLabel}"/>
+                                        </Border>
+                                        <ItemsControl ItemsSource="{Binding Cells}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Width="92" Padding="6" BorderThickness="0,0,1,1">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="{DynamicResource AppCardBrush}"/>
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding HasValue}" Value="True">
+                                                                        <Setter Property="Background" Value="{DynamicResource NodeAppBgBrush}"/>
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource NodeAppBorderBrush}"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="{Binding Text}" HorizontalAlignment="Center"/>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="配置建议">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <DockPanel Margin="0,0,0,10">
+                        <Button DockPanel.Dock="Left" Content="扫描配置建议" Padding="10,3"
+                                Command="{Binding LoadSuggestionsCommand}"/>
+                        <Button DockPanel.Dock="Left" Content="配置体检" Padding="10,3" Margin="8,0,0,0"
+                                Command="{Binding RunConfigurationCheckCommand}"/>
+                        <Button DockPanel.Dock="Left" Content="应用高置信度建议" Padding="10,3" Margin="8,0,0,0"
+                                Command="{Binding ApplyHighConfidenceSuggestionsCommand}"
+                                ToolTip="批量应用置信度 ≥ 85% 的建议；请先扫描并核对"/>
+                        <TextBlock Text="根据自动发现证据建议补 AssetKey、运行环境和 URL；应用前请核对。"
+                                   Margin="12,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    </DockPanel>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                        <ItemsControl ItemsSource="{Binding Suggestions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource AppCardBrush}"
+                                            BorderBrush="{DynamicResource AppBorderBrush}"
+                                            BorderThickness="1" CornerRadius="5" Padding="10" Margin="0,0,0,6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding AssetType}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                                <TextBlock Text="{Binding Value}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                                <TextBlock Text="{Binding Reason}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                           TextWrapping="Wrap"/>
+                                                <TextBlock Text="{Binding ConfidenceText}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="应用" Width="64" Margin="12,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Command="{Binding DataContext.ApplySuggestionCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                    CommandParameter="{Binding}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="配置体检结果" Style="{DynamicResource SectionTitleStyle}" Margin="0,14,0,6"/>
+                        <ItemsControl ItemsSource="{Binding Issues}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource AppCardBrush}"
+                                            BorderBrush="{DynamicResource AppBorderBrush}"
+                                            BorderThickness="1" CornerRadius="5" Padding="10" Margin="0,0,0,6">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding Severity}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                            <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                            <TextBlock Text="{Binding Code}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <TextBlock Grid.Row="3" Margin="12,0,12,8" Text="{Binding StatusMessage}"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+    </Grid>
+</ui:FluentWindow>

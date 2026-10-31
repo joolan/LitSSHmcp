@@ -71,6 +71,14 @@
                                     ToolTip="连接管理器分组名（可留空）；相同分组会归为一组"/>
                     </controls:FormRow>
 
+                    <controls:FormRow Label="资产标识" HelpText="同一实例的多条接入配置填相同值；留空则按服务器 Id 归并">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding AssetKey, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="主机别名" HelpText="额外主机名/IP，逗号分隔；用于把公网/内网/跳板配置识别为同一资产">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding AliasesText, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
                     <controls:FormRow Label="状态">
                         <CheckBox Content="禁用此服务器"
                                   IsChecked="{Binding Disabled, UpdateSourceTrigger=PropertyChanged}"

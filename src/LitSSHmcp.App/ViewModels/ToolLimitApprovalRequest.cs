@@ -24,7 +24,7 @@ public sealed class ToolLimitApprovalRequest : INotifyPropertyChanged
     public int Limit { get; }
     public string Title => $"工具调用达到上限（{Used}/{Limit} 次）";
     public string Message =>
-        "可以继续执行剩余步骤：继续后本轮工具调用次数会从 0 重新累计；" +
+        "本地工具（文档读写、记忆、技能等）不计入上限。可以继续执行剩余步骤：继续后本轮工具调用次数会从 0 重新累计；" +
         "如果是明显的死循环或不需要继续，请选择停止。";
     public Task<bool> DecisionTask => _completion.Task;
     public ICommand ContinueCommand { get; }

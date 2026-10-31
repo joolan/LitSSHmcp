@@ -37,7 +37,7 @@ LitSSH MCP 由三部分组成，可**独立使用**，也可组合使用：
 
 | 组成 | 项目 | 说明 |
 |------|------|------|
-| **🤖 MCP 服务** | `LitSSHmcp.McpServer` | 基于 [Model Context Protocol](https://modelcontextprotocol.io/) 的 stdio 服务器，向任意 MCP 客户端（Claude Desktop / Cursor / Cline / CodeBuddy / opencode 等）暴露 **37 个默认外部工具**（另 1 个宿主内部审批工具仅 LitSSH 桌面/Web 助手可见），安全地执行 SSH、数据库、Docker、日志、Java、拓扑等运维操作。 |
+| **🤖 MCP 服务** | `LitSSHmcp.McpServer` | 基于 [Model Context Protocol](https://modelcontextprotocol.io/) 的 stdio 服务器，向任意 MCP 客户端（Claude Desktop / Cursor / Cline / CodeBuddy / opencode 等）暴露 **34 个默认外部工具**（另 1 个宿主内部审批工具仅 LitSSH 桌面/Web 助手可见），安全地执行 SSH、数据库、Docker、日志、Java、拓扑等运维操作。 |
 | **🖥️ 桌面 App** | `LitSSHmcp.App` | WPF 管理端：可视化维护服务器/数据源/应用/资产拓扑，内置审计日志、MCP 工具说明，以及**内嵌 MCP 客户端的 AI 运维助手**。 |
 | **🌐 Web 助手** | `LitSSHmcp.Web` | 浏览器访问的 AI 运维助手：独立账号登录、每个 AI 会话跑在**独立子进程**中，流式聊天、Web 内审批、服务器文件浏览与下载。 |
 
@@ -67,7 +67,7 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 除工具外，服务还通过 MCP **Resources** 暴露**只读上下文**（供客户端“浏览 / 挂载”，无需调用工具）：`litssh://servers`（服务器清单）、`litssh://datasources`（数据源清单）、`litssh://usage-guide`（使用指南）、`litssh://topology`（资产拓扑）、`litssh://server/{id}/snapshot/latest`（资源模板：某服务器最新快照概览）。资源**不含密码/密钥**、禁用服务器已排除，并按**启用的工具分组**暴露。
 
 <details>
-<summary><b>查看全部 37 个常规工具</b>（另含 1 个宿主内部工具，点击展开）</summary>
+<summary><b>查看全部 34 个常规工具</b>（另含 1 个宿主内部工具，点击展开）</summary>
 
 > 完整参数 / 返回结构 / "用户意图 → 工具" 路由表见 **[docs/TOOLS.md](docs/TOOLS.md)**（唯一事实来源）。工具发生变动时，MCP 服务器端注解、`docs/TOOLS.md`、App 展示三处必须同步。
 
@@ -102,18 +102,15 @@ MCP 服务是纯粹的 stdio 进程，不依赖桌面界面；把它配置到任
 | `java_processes` | 列出 Java 进程（可传 appId 过滤） |
 | `java_diagnostics` | 统一 Java 诊断（action=threads/heap/info，可传 appId 自动解析 pid） |
 | `app_health_snapshot` | 按应用聚合体检（所在服务器进程/容器/端口 + 依赖数据源连通性） |
-| `topology_get_overview` | 资产拓扑图（服务器/应用/服务/容器/部署/数据库/域名/端口/证书及关系） |
-| `topology_get_dependencies` | 查询某资产的上下游依赖 |
-| `topology_discover` | 自动发现拓扑（java/服务进程/端口/ESTAB/JDBC/Redis/RabbitMQ/Kafka/Nginx/docker/processlist；并从最近快照入库服务/容器/部署/域名/端口/证书；有节流） |
-| `topology_query` | 拓扑统一查询（action=search/neighbors/path/impact/explain） |
-| `topology_timeline` | 按快照历史重放拓扑，标出每次新增/移除的服务、容器、端口、域名、证书 |
-| `topology_diff` | 比较两次快照的节点/边差异（默认最近两次） |
+| `topology_discover` | 自动发现证据与配置建议（java/服务进程/端口/ESTAB/JDBC/Redis/RabbitMQ/Kafka/Nginx/docker/processlist/快照；有节流；不写主图） |
+| `topology_query` | 拓扑统一查询（action=overview/search/neighbors/path/impact/explain/dependencies/resolve_url） |
+| `topology_history` | 快照历史分析（action=timeline/diff；只读，不修改人工主图） |
 | `mcp_usage_guide` | 获取使用指南 |
 | `mcp_self_check` | MCP 自检（配置/审计/主机密钥，可测连通性；返回当前会话ID/客户端） |
 
 </details>
 
-**工具分组（按部署裁剪）**：默认暴露全部 37 个常规工具（宿主内部审批工具不受分组开关影响）；可在 App 的 **设置 → 工具分组** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `docker` / `service` / `log` / `java` / `topology` / `app` / `guide`），降低 AI 上下文占用与误选。留空 / 不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。
+**工具分组（按部署裁剪）**：默认暴露全部 34 个常规工具（宿主内部审批工具不受分组开关影响）；可在 App 的 **设置 → 工具分组** 勾选，或直接改 `config.json` 的 `tools.enabledGroups`，只启用需要的分组（`ssh` / `command` / `fileTransfer` / `datasource` / `mysql` / `postgres` / `redis` / `docker` / `service` / `log` / `java` / `topology` / `app` / `guide`），降低 AI 上下文占用与误选。留空 / 不写 = 全部，`["all"]` = 全部，`["none"]` = 全部停用。
 
 **AI 排障 Skill**：仓库内置 [`docs/litssh-mcp-ops-skill/SKILL.md`](docs/litssh-mcp-ops-skill/SKILL.md)（工具无关，随仓库分发），供支持 skills 的 AI 智能体（opencode / Claude 等）使用。内容包含工具路由、标准排障流程、日志路径发现，以及 **MCP 未覆盖能力经 SSH 变通**的方案（如按 Java 启动命令 / 配置文件定位日志后再用 `log_query`）。可复制到对应智能体的 skill 目录，或在 opencode 中用 `skills.paths` 指向该目录。
 
@@ -246,7 +243,7 @@ WPF 桌面管理端，主界面为**左侧图标导航栏 + 右侧页面**：顶
 ### 数据源与应用管理
 
 - **数据源管理**：维护 MySQL / PostgreSQL / Redis 等数据源；顶部 **添加 / 刷新**，条目**右键菜单**为 测试连接 / 编辑 / 删除，双击也可编辑（类型切换时自动带出默认端口 3306/5432/6379）；可设置**治理**项（只读、最大行数、超时、写审批策略）与 **TLS**（`sslMode`：`None` / `Preferred`（默认）/ `Required` / `VerifyCA` / `VerifyFull`；旧版 MySQL/MariaDB TLS 握手失败报 `SSL Authentication Error` 时选 `None`；MySQL 8 非 TLS 可开 `allowPublicKeyRetrieval`；`sslCaFile` 指定本地 PEM CA）。隧道下客户端连 `127.0.0.1`，`VerifyFull` 通常因主机名不匹配不可用，建议 `Required` 或 `VerifyCA`。密码仅本机 DPAPI 加密保存、不对 AI 开放。删除时会提示并级联清理引用它的关系。顶部 **「打开工作台」** 或右键 **「打开工作台（只读查询）」**（MySQL / PostgreSQL / Redis 可见，打开即定位到该数据源）进入**数据库工作台**：SQL 数据源支持对象浏览（库 → 表 → 列，含类型图标、选中对象面包屑与搜索匹配计数）、SQL 查询、表数据分页预览，Redis 支持 **键浏览**（分批 `SCAN` 时间预算续扫、键值有界读取、补全类型/TTL/大小、顶部 DB 切换、大结果集命令执行前警告）与命令输入；两者均有 **片段**（按「数据源 · 库」收藏、点击追加）、**结果复制**（复制单元格 / 整行 / 全部、双击查看完整内容）与 **导出 CSV**；顶部 **只读 / 写入模式**切换（默认只读，写入模式标题、SQL 框、执行按钮与结果区均以红/橙强区分）；写操作复用安全链（危险语句硬拦截 + **执行前预览确认**：展示 SQL 与预计影响行数/样本行 + 执行后成功失败弹窗提示 + 审计），只读数据源不可开启写入。
-- **应用管理**：维护 `app:` 应用节点（名称 / 类型 / 端口 / 主机 / 描述）；Docker 应用把类型填 `docker` 并填**容器名**（与 `docker ps` 的 NAMES 一致），AI 即可用 SSH 工具管理；顶部 **添加 / 刷新**，条目**右键菜单**为 编辑 / 删除，双击也可编辑。
+- **应用管理**：维护 `app:` 应用节点（名称 / 类型 / 端口 / 主机 / 描述 / AssetKey / 别名）；**运行环境**可设 SSH 服务器、Docker 应用或独立环境，Docker 环境需填容器名或 Compose service（至少一个），拓扑据此推导 `runsOn/runsIn`。**URL 访问入口**支持多条，每条含 URL、角色（自动 / 公网入口 / 后端应用 / 内部访问）、优先级与备注；同一 URL 多后端视为负载均衡，供 `topology_query(action="resolve_url")` 解析。Docker 应用把类型填 `docker` 并填**容器名**（与 `docker ps` 的 NAMES 一致），AI 即可用 SSH 工具管理；顶部 **添加 / 刷新**，条目**右键菜单**为 编辑 / 删除，双击也可编辑。
 
 ![数据源管理](docs/images/app-datasource.png)
 
@@ -263,29 +260,31 @@ WPF 桌面管理端，主界面为**左侧图标导航栏 + 右侧页面**：顶
 
 > 环境要求：RDP 依赖系统 RDP 组件（Windows 自带）；内嵌 VNC 依赖 **Microsoft Edge WebView2 运行时**（通常随 Edge/Windows 预装，缺失时给出安装提示）。后续计划：拓扑、`.rdp`/`.vnc` 导入导出、MCP 只读清单。
 
-### 资产拓扑（可视化编辑）
+### 资产拓扑（主图 + 结构化视图）
 
-一张可交互画布，服务器 / 应用 / 数据库及关系可视化（`runsOn` 内嵌、`connectsTo` / `canAccess` 避障正交连线 + 圆点 / 箭头 / 过桥），支持**直接编辑**：
+拓扑主图**只来自人工配置**：服务器、应用、数据源、域名，加上 `config.json` 中的人工关系，以及由运行环境字段推导的 `runsOn/runsIn`、由跳板/隧道配置推导的 `accessedVia`。自动发现结果只作为**发现证据、配置建议、配置体检**展示，不再生成 `*:disc:*` 待确认节点，也不写入主图。
 
-- **拖动**节点（拖服务器带动其内子节点）、**缩放**节点（四角手柄 + 四边内侧直接拉伸）；
-- 从节点**边中点端口**拖到另一节点创建关系（自动推断类型并做逻辑校验）；
-- **点选连线**后右侧出现**关系属性面板**：修改**关系类型**、编辑**备注**并保存，或删除（也可按 `Delete`）；
-- **无限画布**：滚轮缩放、**左键按住空白处拖动平移**、**「更多操作 ▾」**（`＋ / － / 适应 / 100%`（`Ctrl+0` 重置）/ 刷新 / **导出图片…**）；**网格吸附（10px）**；关系属性面板可拖动；
-- **拖动节点进出服务器**：完全落入时自动建立 `runsOn`（不合法则禁止并提示），从服务器内拖出会确认删除 `runsOn`；节点与服务器不允许部分重叠；**服务器缩小时托管子节点自动收紧**；
-- **节点右键 → 查看/编辑关系**：列出相关全部关系（手动 / 自动发现），可删除或编辑类型与备注；**解除 `runsOn`** 后相关应用 / 数据库自动挪到就近空白处；
-- **Ctrl+Z 撤销 / Ctrl+Y 重做**、**「重新自动布局」**；
-- **「更多操作 ▾ → 快照时间线…」**：按服务器回放最近 N 份快照，对比节点/关系规模及新增、移除明细，并可跳转对应快照历史；
-- 手动布局保存在 `%APPDATA%\LitSSH\topology-layout.json`，与应用 / 数据源配置分离；
-- **服务 / 容器 / 部署 / 域名 / 端口 / 证书**图层：不同类型独立配色，顶部复选框可按层隐藏；证书 30 天内黄框、过期红框；冲突边红色 `⚠` 标记，选中后可「确认无冲突」；**选中节点自动高亮反向 2 跳影响面**（谁依赖它），其余节点/边降透明并显示影响数量；
-- 关系逻辑校验（`runsOn` 只能 应用/数据库/服务/容器→服务器 且**每节点只 runsOn 一台**、`connectsTo` 只能 应用/服务/容器→数据库/应用/服务、`canAccess` 只能 服务器→数据库、`deployedFrom` 只能 →部署、`partOf` 只能 →应用/服务/系统、禁止自环）在创建时即时生效。
+- **旧版可视化画布（可编辑）**：服务器 / 应用 / 数据源及关系可视化（`runsOn` 内嵌、`connectsTo` / `canAccess` 避障正交连线 + 圆点 / 箭头 / 过桥）。
+  - **拖动**节点（拖服务器带动其内子节点）、**缩放**节点（四角手柄 + 四边内侧直接拉伸）；
+  - 从节点**边中点端口**拖到另一节点创建关系（自动推断类型并做逻辑校验）；拖动节点进出服务器会直接修改运行环境字段，而不是新增 `runsOn` 人工关系；
+  - **点选连线**后右侧出现**关系属性面板**：修改**关系类型**、编辑**备注**并保存，或删除（也可按 `Delete`）；关系类型下拉已精简并显示中文：运行于服务器 / 运行于容器 / 连接到 / 可访问 / 上游依赖 / 通过跳板访问 / 相关；
+  - **无限画布**：滚轮缩放、**左键按住空白处拖动平移**、**「更多操作 ▾」**（`＋ / － / 适应 / 100%`（`Ctrl+0` 重置）/ 刷新 / **导出图片…**）；**网格吸附（10px）**；关系属性面板可拖动；
+  - **节点右键 → 查看/编辑关系**：列出相关关系，可删除或编辑类型与备注；解除运行环境后相关应用 / 数据源自动挪到就近空白处；
+  - **Ctrl+Z 撤销 / Ctrl+Y 重做**、**「重新自动布局」**；手动布局保存在 `%APPDATA%\LitSSH\topology-layout.json`；
+  - **「更多操作 ▾ → 快照时间线…」**：按服务器回放最近 N 份快照，对比节点/关系规模及新增、移除明细，并可跳转对应快照历史；
+  - **发现证据**：选中服务器后可查看最近快照中的端口、服务、容器、站点和证书证据；这些信息只用于排查与配置建议，不进入主图；Docker `runsIn` 成员在画布中以缩进方式表达两级归属；
+  - **影响面高亮**：选中任一节点后按反向 incoming 边做 2 跳 BFS，高亮「谁依赖它」，其余节点/边降透明并显示影响数量。
+- **新版结构化视图（只读）**：入口为画布顶部「新版拓扑」，提供 **服务器泳道 / 应用链路 / 依赖矩阵 / 配置建议** 四个标签页；支持搜索、跨服务器依赖筛选、链路多跳路径、服务器间关系数量矩阵，以及一键应用高置信度配置建议、运行配置体检。
 
 关系示例：
 
 ```
-app:order-service  --runsOn-->     ssh:web-server-01    # 应用运行在服务器
-ds:mysql-order-01  --runsOn-->     ssh:db-server-01     # MySQL 运行在服务器(数据库也可 runsOn)
+app:order-service  --runsOn-->     ssh:web-server-01    # 应用运行在服务器（运行环境字段推导）
+ds:mysql-order-01  --runsOn-->     ssh:db-server-01     # MySQL 运行在服务器
+app:order-service  --runsIn-->     app:docker-host-01   # 应用运行在 Docker 应用
 app:order-service  --connectsTo--> ds:mysql-order-01    # 应用连接数据库
 ssh:web-server-01  --canAccess-->  ds:mysql-order-01    # 服务器可访问数据库
+ds:mysql-order-01  --accessedVia--> ssh:jump-server-01  # 数据源通过跳板服务器访问
 ```
 
 ![资产拓扑（可视化编辑）](docs/images/app-topology.png)
@@ -298,12 +297,12 @@ ssh:web-server-01  --canAccess-->  ds:mysql-order-01    # 服务器可访问数�
 
 ### AI 运维助手
 
-App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容大模型**（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等，可**多模型启用 / 停用**、设默认、**对话中热切换**），用自然语言对话完成服务器 / 数据源 / 应用运维。它通过**内嵌 MCP 客户端**（stdio 子进程）调用本机 MCP 服务器，即**全部 37 个默认外部工具 + 1 个宿主内部审批工具**（旧工具名已删除；另按会话启用本机终端、工作区文档、任务计划等本地工具），因此**桌面审批、命令过滤器、审计哈希链与第三方 AI 客户端完全一致**。
+App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容大模型**（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等，可**多模型启用 / 停用**、设默认、**对话中热切换**），用自然语言对话完成服务器 / 数据源 / 应用运维。它通过**内嵌 MCP 客户端**（stdio 子进程）调用本机 MCP 服务器，即**全部 34 个默认外部工具 + 1 个宿主内部审批工具**（旧工具名已删除；另按会话启用本机终端、工作区文档、任务计划等本地工具），因此**桌面审批、命令过滤器、审计哈希链与第三方 AI 客户端完全一致**。
 
 - **对话体验**：流式输出、**多会话管理**（新建 / 切换 / 删除、首条消息自动命名，独立 `agent.db`；点「新建任务」**不写库、首次发送消息才落库**；侧栏按**分组**归类（「未分组」置顶、分组可重命名/删除、归档恢复保留分组；支持**拖拽**会话入组/排序、分组**拖拽排序**与**折叠/展开**；右键仅作用于鼠标所在行且打开菜单时保持悬浮高亮））、**只读模式**（全局仅暴露只读工具）、**工具分组裁剪**（均在「AI 助手设置」全局配置；会话期内工具集恒定，利于 Prompt Caching）；打开 / 切换会话有**加载动画**，超长会话**转录分页懒加载**（默认渲染最近 20 轮，顶部可加载更早；会话侧栏仅加载元数据、仅重建当前会话上下文，启动裁剪后台执行）；回答以 **Markdown 渲染**，每轮按 **用户指令(带时间) → 工具过程 → 回答(带时间与耗时)** 展示（工具过程运行中展开、完成后折叠）。
 - **本机 PowerShell 多终端（ConPTY）**：可从「SSH 会话窗口 → 新建连接 → 本机 PowerShell 终端」打开**真实本机终端**；内置助手可用 `local_shell_open` / `local_shell_manage(action=list|read)` / `local_shell_stop` 在**同一可见会话**里管理最多 4 个 `term-N` 终端，并行跑前端、后端、下载与脚本测试（共享 `cwd`/环境）。不带 `terminalId` 的 `local_shell` 使用默认共享终端；传入空闲的 `term-N` 可继续向该终端注入一次性命令，命令结束后终端仍保留；`local_shell_stop` 停止进程树并关闭对应标签。安全：**硬白名单**（仅白名单内 CLI 可执行）、危险命令拦截，`open` 与每命令仍**逐次人工审批**（可勾选放行范围：默认仅本次；「本轮次内允许全部命令（不建议）」下一条用户消息后恢复审批；「本次 AI 会话期间允许全部命令（不建议）」本会话内不再逐条确认，白名单与危险拦截仍生效；「总是允许此命令」写入配置永久记忆），`local_shell_manage` 的 `list`/`read` 只读，`local_shell_stop` 免审批但写审计；长驻命令（`tail -f`、dev server、构建、下载等）可运行，裸 shell/REPL、`Start-Process`/`Start-Job`、尾部 `&` 等后台化写法前置拒绝，超时中断 + 进程树清理。默认**关闭**，在「AI 助手设置 → 本机终端」启用并配置白名单等。**终端按 AI 会话隔离**：每个会话最多 4 个终端，标题形如 `本机 PowerShell [AI-进程Id]`；手动可开多个本机终端互不影响。
 - **斜杠命令**：输入框支持 `/技能`（打开技能选择窗口，多选本会话激活的运维技能）、`/临时聊天`（独立纯聊天面板，不注入技能/工具、仅内存、可切模型、关闭即清空）、`/压缩会话`（摘要较早轮次）、`/清空屏幕`（仅清显示）、`/清空上下文`（仅重置模型上下文）；并支持**用户自定义提示词模板**（「AI 助手设置 → 提示词模板」里定义 `/命令名` → 提示词，选中后填入输入框）；面板悬浮于输入框上方，↑/↓/Enter/Tab/Esc 操作，移动时自动滚动。
-- **技能与工具**：技能为**目录式**（`skills/<name>/SKILL.md`），**技能根目录默认为 `%APPDATA%\LitSSH\skills`**（**稳定目录**：跨重编译 / 升级保留，首次自动把随包 `skills/` 复制过去，用户新装的技能不再随 bin 清理丢失；「AI 助手设置 → 技能根目录」可覆盖），**其绝对路径注入系统提示**（模型安装 / 新增技能时直接落到该目录下的子目录，无需猜测路径；本会话技能索引为启动时快照，新技能**下次会话**生效）。App 随包分发**一组预置运维技能**（nginx 5xx、磁盘满、CPU/内存飙高、MySQL/Redis 排障、容器起不来、systemd 失败、证书到期、日志定位、端口占用、网络连通、发布回滚、Java GC/JVM 等）与总纲 `litssh-mcp-ops-skill`。**默认"索引模式"**（未选技能只注入技能索引，极省 token）；用 `/技能`（带预览的完整选择窗口）或输入区 `+ 菜单 → 选择技能…` 选择，也可在输入框键入 `/` **内联选择**（命令列表中直接列出技能，选中即切换激活、✓ 指示），已激活技能以 **chip** 显示、可移除，选择为**会话级并持久化**（`agent_sessions.ActiveSkills`，跨重启恢复）。选择窗口支持**导入文件/目录、打开技能目录、双击用外部编辑器编辑**。技能按**当前可用能力域**裁剪（涉及域全停用则跳过、部分停用加提示）。自动注入**工作区文档工具** `ops_doc_read(action=list|read)` / `ops_doc_write(mode=overwrite|append|patch)`（维护 `OPS_ASSETS.md` 运维资产档案，按需读、增量写）与**任务计划工具** `update_plan`（顶部**任务计划面板**显示进度 ☑/☐，计划**跨重启恢复**）。
+- **技能与工具**：技能为**目录式**（`skills/<name>/SKILL.md`），**技能根目录默认为 `%APPDATA%\LitSSH\skills`**（**稳定目录**：跨重编译 / 升级保留，首次自动把随包 `skills/` 复制过去，用户新装的技能不再随 bin 清理丢失；「AI 助手设置 → 技能根目录」可覆盖），**其绝对路径注入系统提示**（模型安装 / 新增技能时直接落到该目录下的子目录，无需猜测路径；本会话技能索引为启动时快照，新技能**下次会话**生效）。App 随包分发**一组预置运维技能**（nginx 5xx、磁盘满、CPU/内存飙高、MySQL/Redis 排障、容器起不来、systemd 失败、证书到期、日志定位、端口占用、网络连通、发布回滚、Java GC/JVM 等）与总纲 `litssh-mcp-ops-skill`。**默认"索引模式"**（未选技能只注入技能索引，极省 token）；用 `/技能`（带预览的完整选择窗口）或输入区 `+ 菜单 → 选择技能…` 选择，也可在输入框键入 `/` **内联选择**（命令列表中直接列出技能，选中即切换激活、✓ 指示），已激活技能以 **chip** 显示、可移除，选择为**会话级并持久化**（`agent_sessions.ActiveSkills`，跨重启恢复），并支持**会话内热切换**（切换会重算技能段系统提示前缀缓存；连接器子集仍保持启动后锁定）。选择窗口支持**导入文件/目录、打开技能目录、双击用外部编辑器编辑**。技能按**当前可用能力域**裁剪（涉及域全停用则跳过、部分停用加提示）。自动注入**工作区文档工具** `ops_doc_read(action=list|read)` / `ops_doc_write(mode=overwrite|append|patch)`（维护 `OPS_ASSETS.md` 运维资产档案，按需读、增量写）与**任务计划工具** `update_plan`（顶部**任务计划面板**显示进度 ☑/☐，计划**跨重启恢复**）。
 - **智能体（Agent）**：「AI 助手设置 → 智能体」内置 **通用聊天 / 运维专家 / 数据库分析** 三个预置智能体（可编辑 / 删除 / 新增；含名称、描述、**系统提示附加段**与可选**回答风格覆盖**）。**主窗口输入区**与**临时聊天**均提供**智能体下拉**（末项「智能体设置…」直达设置对应页），切换**就地热更新系统提示**（不重连 MCP、不改工具集、不丢历史；附加段位于提示词**最末尾** → 只使缓存**尾部前缀**失效）；**按会话记忆**（`agent_sessions.AgentId`，回退到全局默认 → 第一个 → 无智能体）并同步全局 `agent.activeAgentId`。系统提示同时内置**软件变更护栏**（不擅自安装 / 升级 / 卸载软件包、不改系统级配置，需先征得用户同意）。数据库工作台 **「AI 分析此 SQL」** 只预填 `sql` 代码块并自动切到「数据库分析」智能体。
 - **MCP 服务器（外部接入）**：「AI 助手设置 → **MCP 服务器**」管理 AI 可用的 MCP —— **内置 LitSSH MCP 置顶、只能启停**（停用后 AI 没有本机服务器 / 数据源等运维工具，exe 路径仍在「助手设置」配置）；可**添加外部 MCP**，传输支持 **stdio**（`command` + `args` 每行一个 + `env` 每行 `KEY=VALUE`）与 **http**（SSE / Streamable HTTP，`url` + `headers` 每行 `Name: Value`），env / header 的值按当前 Windows 用户 **DPAPI 加密**落盘。**启用前必须「校验连接」通过**（完成一次 `initialize` + `tools/list`，15 秒超时，记录校验时间与工具数）；**校验失败也可保存**（保持**停用态**），内置 MCP 停用需二次确认。保存并关闭设置窗口即**重建连接**；某个外部服务器连接失败**只降级不阻断**（状态栏提示「N 个外部 MCP 未连接」，系统提示注明该服务器本次不可用及原因）。外部工具与既有工具**重名时自动加服务器前缀**（如 `` `fs_ssh_exec` → ssh_exec ``，映射写入系统提示），系统提示同时列出每个外部服务器的工具数与**安全边界**：第三方工具**不经过本程序的审批 / 命令过滤 / 审计**（只读模式仅按其自报的 `annotations.readOnlyHint` 过滤），写入 / 删除 / 发送类操作须先征得用户同意。**会话窗口快捷入口**：输入区「计划 / 执行模式」旁的**「连接器」按钮**弹出 MCP 清单（内置置顶、显示连接状态与工具数），**勾选即启用 / 停用并立即生效**（外部启用仍须校验通过、内置停用弹确认），不用绕进设置页。
 - **可选长期记忆 / RAG**：配置 OpenAI 兼容 **Embeddings** 端点即可把历史会话与工作区文档向量化、按相似度**召回**注入上下文；召回使用 **FTS5/BM25 + 向量混合**，带中英文运维同义词查询改写、精确短语轻量重排，可配置独立 `memory.rerankProviderId` 重排模型，中文短词额外用子串匹配兜底；结构化记忆支持历史版本/回滚（每 MemoryId 保留最近 40 版，桌面与 Web 管理员均可操作）。
@@ -311,7 +310,7 @@ App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容
 - **运维视图 / 事件与知识沉淀**：桌面「助手设置 → 运维视图」与 Web 顶栏「运维视图」可查看事件列表、事件时间线（用户请求 / 工具调用与结果 / 助手结论）和资产画像（图谱邻域 / 影响面 / 历史事件 / 资产事实 / 脚本经验）；管理员另有「记忆候选」审核（事件 / 资产事实 / 脚本候选）与 consolidation 运行入口；consolidation 支持每日运行/raw 配额、可选低成本模型 `providerId`，只生成 pending 候选、人工审核后写入；失败会写 `consolidation_failed` 访问日志，Web「记忆候选」面板显示失败告警与运行历史。
 - **批量变更（计划 / 预检 / 金丝雀 / 回滚）**：桌面左侧栏「批量变更」窗口支持从当前账号可见服务器清单筛选目标，按 `plan → dry_run → canary → apply → rollback` 执行，自动回填计划 ID 并展示阶段与逐台结果；计划持久化 `agent.db`（owner/会话隔离、2 小时 TTL，可从最近计划恢复），执行中可取消（不自动回滚已成功目标）、可仅重试失败目标、按目标选择性回滚、设置单台超时，MCP `ssh_execute_fleet` 通过 progress 通知上报逐台进度；Web 入口暂时隐藏（保留实现与后端链路）。
 - **工作目录入口**：AI 侧栏「打开工作目录」固定打开共享工作区根目录（不随会话切换）；会话行右键「打开会话工作目录」打开该会话的独立目录。
-- **稳定性与成本**：每模型可配**超时 / 重试 / 并发**并对失败给出**分类提示**；系统提示内置**提示注入防护**；**技能按需加载**、**工具描述精简**、**快照默认返回概览**、**大结果落盘句柄**（`spill(action="read", mode="read|grep")`）与**子代理隔离**（`run_subagent` 只回摘要；轮数/摘要上限可配，复杂只读取证提前委派）；同一轮**只读工具并行执行**、**连续失败熔断**、日志类结果保留最新尾部；系统提示 / 工具定义为**稳定前缀**并显示**缓存命中率**；工具轨迹与滚动摘要**落库、重启可恢复**；**冷启动只向模型注入最近 N 轮**（`agent.coldStartRecentTurns`，更早由滚动摘要代表，降低首次请求开销）；**回答风格**可选 `concise`(默认) / `standard` / `detailed`；`+ 菜单 → 用量 / 成本…` 展示当前会话的请求次数、输入/输出/缓存命中 token 与**估算成本**（模型价格在「大模型设置」按每百万 token 填写）。
+- **稳定性与成本**：每模型可配**超时 / 重试 / 并发**并对失败给出**分类提示**；系统提示内置**提示注入防护**；**技能按需加载**、**工具描述精简**、**快照默认返回概览**、**大结果落盘句柄**（`spill(action="read"|"grep", handle=...)`）与**子代理隔离**（`run_subagent` 只回摘要；轮数/超时/摘要上限可配，复杂只读取证提前委派）；同一轮**只读工具并行执行**、**连续失败熔断**、日志类结果保留最新尾部；系统提示 / 工具定义为**稳定前缀**并显示**缓存命中率**；工具轨迹与滚动摘要**落库、重启可恢复**；**冷启动只向模型注入最近 N 轮**（`agent.coldStartRecentTurns`，更早由滚动摘要代表，降低首次请求开销）；**回答风格**可选 `concise`(默认) / `standard` / `detailed`；`+ 菜单 → 用量 / 成本…` 展示当前会话的请求次数、输入/输出/缓存命中 token 与**估算成本**（模型价格在「大模型设置」按每百万 token 填写）。
 - **安全**：模型 API Key 本机 **DPAPI 加密**存储；破坏性工具调用会提示"可能等待人工审批"。
 - **桌面登录（可选，仅归因）**：AI 助手窗口侧栏显示「归因：未登录（local）」/「归因：<用户名>」并可**登录 / 注销**——账号与 Web 助手共用 `web.db`（失败计数与锁定曲线同样共享，防绕过限速），登录态经 **DPAPI 加密落盘、跨重启保持**；登录后**新会话** owner 与审计 UserId 记为该用户（会话目录归到其用户名下），未登录继续归因 `local`；桌面**不做权限限制**（评估报告 D1「仅归因不限权」）。
 - **计划模式与工具级策略**：输入区（上下文环左侧）**模式下拉（执行模式 / 计划模式）**——计划模式**不改系统提示/工具集**（缓存友好），每轮附提示并在调用前拦截写工具：模型只做只读调研、列计划不擅自执行；切回执行模式后由你自行发指令（会话级持久化）。`+ 菜单 → 工具审批策略…` 可按工具设置 **默认/允许/拒绝**（拒绝=调用前拦截；允许不绕过服务端桌面审批）。「AI 助手设置 → 助手设置 → 会话工具模式」可直接选择 `auto/diagnose/change/assets/chat`，新会话生效；设置页会根据最近会话首个用户诉求给出建议，可一键采用（不静默切换）。
@@ -328,7 +327,7 @@ App 内置的**大模型运维智能体**——在 App 内配置 **OpenAI 兼容
 
 ## Web 助手
 
-基于浏览器的 AI 运维助手（`LitSSHmcp.Web`，ASP.NET Core + WebSocket），与桌面 App / MCP 服务共用同一套 Core 服务、安全策略与 `config.json`：**每个 AI 会话运行在独立子进程**（进程隔离、互不影响），支持流式聊天（思考 / 工具调用 / 结果分帧推送）、**图片附件**（粘贴 / 拖拽 / 选择，多模态输入）、**会话级模型切换**、Web 内审批卡片（**固定悬浮面板 + 顶栏「待审批 N」徽标**，`/ws/approvals` 实时推送 + REST 定时对账自愈，REST 决策）、服务器目录浏览与文件下载、会话生命周期管理（删除即终止子进程）与并发 / 成本预算约束。输入区与桌面一致：**发送 / 停止合并为一个按钮**，模型选择与图片上传在输入框下方同一工具行；界面为**响应式布局**（桌面居中会话列 + 手机抽屉侧栏 / 底部输入栏 / 底部审批弹层）；**历史分页懒加载**（首屏最近 120 条 + 「加载更早」）；**冷启动上下文与桌面共用同一重建逻辑**（冷启动窗口 / 工具轨迹 / 会话智能体 / 技能 / 计划模式 / 资产图谱 / 视觉图片；Web 仍不含本机终端工具）；Markdown 支持表格、任务列表与代码块复制，工具轨迹渲染为可折叠卡片，**历史图片附件显示缩略图**。桌面端每 5s 对账 `agent.db`，会自动刷新 Web 进程写入的会话列表与选中会话结果（跨进程只能同步已落库的整轮结果）。安全加固见 [Web 助手安全](#web-助手安全)。
+基于浏览器的 AI 运维助手（`LitSSHmcp.Web`，ASP.NET Core + WebSocket），与桌面 App / MCP 服务共用同一套 Core 服务、安全策略与 `config.json`：**每个 AI 会话运行在独立子进程**（进程隔离、互不影响），支持流式聊天（思考 / 工具调用 / 结果分帧推送）、**图片附件**（粘贴 / 拖拽 / 选择，多模态输入）、**会话级模型切换**、Web 内审批卡片（**固定悬浮面板 + 顶栏「待审批 N」徽标**，`/ws/approvals` 实时推送 + REST 定时对账自愈，REST 决策）、服务器目录浏览与文件下载、会话生命周期管理（删除即终止子进程）与并发 / 成本预算约束。输入区与桌面一致：**发送 / 停止合并为一个按钮**，模型选择与图片上传在输入框下方同一工具行；界面为**响应式布局**（桌面居中会话列 + 手机抽屉侧栏 / 底部输入栏 / 底部审批弹层）；**历史分页懒加载**（首屏最近 120 条 + 「加载更早」）；**冷启动上下文与桌面共用同一重建逻辑**（冷启动窗口 / 工具轨迹 / 会话智能体 / 技能 / 计划模式 / 资产图谱 / 视觉图片；Web 仍不含本机终端工具）；Markdown 支持表格、任务列表与代码块复制，工具轨迹渲染为可折叠卡片，**历史图片附件显示缩略图**。桌面端仅在 AI 页面可见、且没有本地会话运行/编辑时对账 `agent.db`：刚有变化时 5s 一次，空闲自动降到 20s，页面重新可见会立即补一次；会自动刷新 Web 进程写入的会话列表与选中会话结果（跨进程只能同步已落库的整轮结果）。安全加固见 [Web 助手安全](#web-助手安全)。
 
 **2026-10 新增**：顶栏「运维视图」（事件 / 时间线 / 资产画像）、管理员「记忆候选」审核；桌面左侧栏提供「批量变更」窗口，Web 端批量变更入口暂时隐藏（保留实现与后端链路）；批量变更沿用当前会话的 MCP 审批与写锁，不绕过 canary。
 
@@ -390,7 +389,7 @@ src\LitSSHmcp.Web\bin\Debug\net8.0\LitSSHmcp.Web.exe --list-users
 | 项目 | 框架 | 职责 |
 |------|------|------|
 | `LitSSHmcp.Core` | net8.0 | 数据模型 + 全部业务服务（SSH / 数据源 / 拓扑 / 安全 / 存储） |
-| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器（stdio）、37 个常规工具 + 1 个宿主内部工具、授权确认弹窗 |
+| `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器（stdio）、34 个常规工具 + 1 个宿主内部工具、授权确认弹窗 |
 | `LitSSHmcp.App` | net8.0-windows | WPF 管理端（服务器 / 数据源 / 应用 / 资产拓扑 / 安全 / 审计 / AI 运维助手） |
 | `LitSSHmcp.Agent` | net8.0 | 内置 AI 运维助手（大模型 + 内嵌 MCP 客户端） |
 | `LitSSHmcp.Web` | net8.0 | 浏览器 Web 助手（Kestrel + SignalR：登录 / 每会话子进程 / 流式聊天 / 审批 / 文件浏览） |
@@ -430,7 +429,7 @@ dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publi
 dotnet publish src/LitSSHmcp.Web -c Release -r win-x64 --self-contained -o publish-web
 ```
 
-> 也可使用一键脚本（一次产出 App/MCP/CLI/Web 四类产物）：`powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.4.1`
+> 也可使用一键脚本（一次产出 App/MCP/CLI/Web 四类产物）：`powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.5.0`
 
 ### 3. 配置 SSH 服务器
 
@@ -594,13 +593,13 @@ AI 会自动使用 `ssh_execute_sudo` 工具提权执行。
 
 AI 的典型排查链路：
 
-1. `topology_get_overview` 拿到全局拓扑：订单服务（Java）运行在哪台 SSH 服务器、连接了哪个 MySQL
-2. 不确定 ID 时先用 `topology_query(action="search")`（名称/主机/端口/标签）找到精确资产，再 `topology_get_dependencies(app:order-service)` 获取上下游依赖
-3. 需要链路/影响面时用 `topology_query(action="path")`（域名→应用→库）、`topology_query(action="impact")`（机器/库/证书变更影响谁）、`topology_query(action="explain")`（来源/证据/是否过期）
+1. `topology_query(action="overview")` 拿到全局拓扑：订单服务（Java）运行在哪台 SSH 服务器、连接了哪个 MySQL
+2. 不确定 ID 时先用 `topology_query(action="search")`（名称/主机/端口/标签）找到精确资产，再用 `topology_query(action="dependencies", assetId="app:order-service")` 获取上下游依赖
+3. 需要链路/影响面时用 `topology_query(action="path")`（应用→数据源/服务器）、`topology_query(action="impact")`（机器/数据库变更影响谁）、`topology_query(action="explain")`（来源/证据）
 4. SSH 侧：`ssh_execute_command` 查看 java 进程、端口、应用日志中的数据库连接异常
 5. 数据库侧：`mysql_query(action="diagnostics")` 看连接数 / 慢查询 / 锁等待 / 复制状态，`mysql_query(action="query")` 查 `SHOW FULL PROCESSLIST` 与慢日志，`mysql_query(action="explain")` 分析问题 SQL；涉及缓存时用 `redis_diagnostics` 看内存 / 命中率 / 慢日志、`redis_read` 查具体 key
 6. 跨机关联：应用日志里的数据库 IP 与 `datasource_list` 返回的 `host/port` 对应，即可确认是哪个数据源（MySQL 3306 / Redis 6379 皆可匹配）
-7. 拓扑过期时用 `topology_discover` 自动补全（扫描 java / 通用服务进程、监听端口、ESTAB 连接、配置文件 JDBC / Redis / RabbitMQ / Kafka / Nginx、docker 容器、MySQL processlist）；发现做了**节流**（同时只跑一个）；未登记的应用 / 数据源 / 客户端会以 `*:disc:*` "待确认"节点出现，可在拓扑页**右键 → 确认节点**登记为资产。
+7. 拓扑过期时用 `topology_discover` 重新采集发现证据与配置建议（扫描 java / 通用服务进程、监听端口、ESTAB 连接、配置文件 JDBC / Redis / RabbitMQ / Kafka / Nginx、docker 容器、MySQL processlist）；发现做了**节流**（同时只跑一个）；未登记的资产/端点会进入发现报告、配置建议和配置体检，**不会生成主图待确认节点**。URL 入口不明确时先用 `topology_query(action="resolve_url", url=...)` 解析落地应用与服务器。
 
 ### 授权确认弹窗
 
@@ -696,7 +695,7 @@ litssh deny <审批ID>               # 拒绝
 | 文档 | 内容 |
 |------|------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计：分层结构、核心模块、安全模型、拓扑模型、线程模型、扩展点 |
-| [docs/TOOLS.md](docs/TOOLS.md) | 37 个常规工具 + 1 个宿主内部工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
+| [docs/TOOLS.md](docs/TOOLS.md) | 34 个常规工具 + 1 个宿主内部工具完整参考：参数、返回结构、"用户意图→工具"路由表 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 迭代历史：每个版本的新增 / 修复 / 变更记录 |
 | [docs/UPGRADE_PLAN.md](docs/UPGRADE_PLAN.md) | 升级方案（Roadmap）：安全、可视化配置、运维、质量的分期计划 |
 | [docs/litssh-mcp-ops-skill/SKILL.md](docs/litssh-mcp-ops-skill/SKILL.md) | AI 排障 Skill（工具路由、标准排障流程、SSH 变通方案） |

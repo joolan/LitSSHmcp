@@ -2,13 +2,16 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Input;
 using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
+using LitSSHmcp.Core.Services.Topology;
 
 namespace LitSSHmcp.App.ViewModels;
 
@@ -17,6 +20,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
     private readonly IConfigService _configService;
     private readonly ISshService _sshService;
     private readonly ServerEditWindow _editWindow;
+    private readonly IUserDialogService _dialogs;
     private SshServerConfig? _editingServer;
     private string _name = string.Empty;
     private string _host = string.Empty;
@@ -29,6 +33,8 @@ public class ServerEditViewModel : INotifyPropertyChanged
     private string _description = string.Empty;
     private string _tagsText = string.Empty;
     private string _group = string.Empty;
+    private string _assetKey = string.Empty;
+    private string _aliasesText = string.Empty;
     private string _statusMessage = string.Empty;
     private bool _isTestRunning;
     private int _sudoTypeIndex;
@@ -37,11 +43,12 @@ public class ServerEditViewModel : INotifyPropertyChanged
 
     public event EventHandler<bool>? DialogClosed;
 
-    public ServerEditViewModel(IConfigService configService, ISshService sshService, ServerEditWindow editWindow, SshServerConfig? server = null, SshServerConfig? prefill = null)
+    public ServerEditViewModel(IConfigService configService, ISshService sshService, ServerEditWindow editWindow, SshServerConfig? server = null, SshServerConfig? prefill = null, IUserDialogService? dialogs = null)
     {
         _configService = configService;
         _sshService = sshService;
         _editWindow = editWindow;
+        _dialogs = dialogs ?? new UserDialogService();
         _editingServer = server;
 
         SaveCommand = new RelayCommand(_ => Save());
@@ -62,6 +69,8 @@ public class ServerEditViewModel : INotifyPropertyChanged
             Description = server.Description ?? string.Empty;
             TagsText = string.Join(", ", server.Tags);
             Group = server.Group ?? string.Empty;
+            AssetKey = server.AssetKey ?? string.Empty;
+            AliasesText = string.Join(", ", server.Aliases);
             SudoTypeIndex = (int)server.SudoType;
             SudoUsername = server.SudoUsername ?? string.Empty;
             Disabled = server.Disabled;
@@ -258,6 +267,18 @@ public class ServerEditViewModel : INotifyPropertyChanged
         set { _group = value; OnPropertyChanged(); }
     }
 
+    public string AssetKey
+    {
+        get => _assetKey;
+        set { _assetKey = value; OnPropertyChanged(); }
+    }
+
+    public string AliasesText
+    {
+        get => _aliasesText;
+        set { _aliasesText = value; OnPropertyChanged(); }
+    }
+
     /// <summary>禁用后：不出现在 MCP 的 ssh_list_servers、拓扑不可建链/连接、发现跳过、工具调用一律 server_disabled。</summary>
     public bool Disabled
     {
@@ -380,6 +401,13 @@ public class ServerEditViewModel : INotifyPropertyChanged
                 return;
             }
 
+            var duplicates = DuplicateAssetDetector.FindSshMatches(config, server);
+            if (duplicates.Count > 0 &&
+                !_dialogs.Confirm(BuildDuplicateMessage(server, duplicates), "疑似重复的服务器配置"))
+            {
+                return;
+            }
+
             // 留空=未修改，保留原密码/密钥口令/提权密码（编辑任意字段不应清空它们）
             server.Password = Coalesce(_editWindow.GetPassword(), _editingServer?.Password);
             server.KeyFilePassphrase = Coalesce(_editWindow.GetKeyPassword(), _editingServer?.KeyFilePassphrase);
@@ -411,6 +439,7 @@ public class ServerEditViewModel : INotifyPropertyChanged
             }
 
             await _configService.SaveConfigAsync(config);
+            _ = AssetIdentitySaveProbe.CaptureServerAsync(_configService, _sshService, server);
             DialogClosed?.Invoke(this, true);
         }
         catch (Exception ex)
@@ -424,8 +453,39 @@ public class ServerEditViewModel : INotifyPropertyChanged
         DialogClosed?.Invoke(this, false);
     }
 
+    private static string BuildDuplicateMessage(
+        SshServerConfig candidate, IReadOnlyList<DuplicateAssetItem> duplicates)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"检测到与当前服务器主机/端口重叠的现有配置（{duplicates.Count} 条）：");
+        foreach (var item in duplicates.Take(8))
+        {
+            sb.AppendLine($"  - {item.Name} ({item.Id})  {item.Host}:{item.Port}");
+            if (!string.IsNullOrWhiteSpace(item.Detail))
+                sb.AppendLine($"    {item.Detail}");
+        }
+        if (duplicates.Count > 8)
+            sb.AppendLine($"  … 另有 {duplicates.Count - 8} 条");
+
+        sb.AppendLine();
+        sb.AppendLine($"当前配置: {candidate.Name}  {candidate.Host}:{candidate.Port}");
+        sb.AppendLine();
+        sb.AppendLine("如果这是同一实例的不同接入方式（公网/内网/跳板/不同账号），可以继续保存；");
+        sb.AppendLine("建议保留这些接入配置，后续由资产身份探测自动归并。");
+        sb.AppendLine();
+        sb.Append("确定继续保存吗？");
+        return sb.ToString();
+    }
+
     private static string? Coalesce(string? input, string? existing) =>
         string.IsNullOrEmpty(input) ? existing : input;
+
+    private static string[] SplitAliases(string? text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? Array.Empty<string>()
+            : text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(x => x.Length > 0)
+                .ToArray();
 
     /// <summary>保存前校验跳板机配置（因为 Host 可被编辑，必须在保存时以最终 Host 复核）。</summary>
     private static bool ValidateJump(AppConfig config, SshServerConfig server, out string? error)
@@ -482,6 +542,8 @@ public class ServerEditViewModel : INotifyPropertyChanged
             KeyFilePath = IsKeyFileAuth ? KeyFilePath : null,
             Description = Description,
             Tags = tags,
+            Aliases = SplitAliases(AliasesText),
+            AssetKey = string.IsNullOrWhiteSpace(AssetKey) ? null : AssetKey.Trim(),
             Group = Group,
             SudoType = (SudoType)SudoTypeIndex,
             SudoUsername = IsCustomSudoUser ? SudoUsername : null,

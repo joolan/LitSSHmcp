@@ -44,7 +44,6 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
     private readonly Dictionary<string, GraphItemVm> _itemsById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<string>> _childrenOf = new(StringComparer.Ordinal);
     private string? _selectedId;
-    private readonly ITopologyStore _topologyStore = new TopologyStore();
     private (string Id, string Side)? _linkFrom;
     private GraphEdgeVm? _selectedEdge;
     private string _selEdgeOldType = string.Empty;
@@ -94,36 +93,6 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
 
     /// <summary>当前是否已有可显示的内容（用于判断"适应"是否该执行）。</summary>
     public bool HasContent => Boxes.Count + Chips.Count + Nodes.Count > 0;
-
-    private bool _showServices = true;
-    private bool _showContainers = true;
-    private bool _showDeploys = true;
-    private bool _showNetwork = true;
-
-    public bool ShowServices
-    {
-        get => _showServices;
-        set { if (_showServices == value) return; _showServices = value; OnPropertyChanged(); ApplyNodeFilter(); }
-    }
-
-    public bool ShowContainers
-    {
-        get => _showContainers;
-        set { if (_showContainers == value) return; _showContainers = value; OnPropertyChanged(); ApplyNodeFilter(); }
-    }
-
-    public bool ShowDeploys
-    {
-        get => _showDeploys;
-        set { if (_showDeploys == value) return; _showDeploys = value; OnPropertyChanged(); ApplyNodeFilter(); }
-    }
-
-    /// <summary>域名/端口/证书合并为一个网络图层。</summary>
-    public bool ShowNetwork
-    {
-        get => _showNetwork;
-        set { if (_showNetwork == value) return; _showNetwork = value; OnPropertyChanged(); ApplyNodeFilter(); }
-    }
 
     public ObservableCollection<GraphBoxVm> Boxes { get; } = new();
     public ObservableCollection<GraphChipVm> Chips { get; } = new();
@@ -197,13 +166,14 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
             var geometry = new Dictionary<string, (double X, double Y, double W, double H)>(StringComparer.Ordinal);
             var labelById = new Dictionary<string, string>(StringComparer.Ordinal);
 
-            var visibleNodes = graph.Nodes.Where(IsNodeVisible).ToArray();
+            var visibleNodes = graph.Nodes;
             var servers = visibleNodes.Where(n => n.Type == "ssh").ToArray();
             var apps = visibleNodes.Where(n => n.Type == "application").ToArray();
             var datasources = visibleNodes.Where(n => n.Type != "ssh" && n.Type != "application").ToArray();
 
             foreach (var node in graph.Nodes)
                 labelById[node.Id] = LabelWithPort(node);
+            var nodesById = graph.Nodes.ToDictionary(n => n.Id, StringComparer.Ordinal);
 
             var tooltipById = graph.Nodes.ToDictionary(n => n.Id, BuildTooltip);
 
@@ -212,6 +182,16 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
                 .Where(e => e.Type == "runsOn")
                 .GroupBy(e => e.From)
                 .ToDictionary(g => g.Key, g => g.First().To);
+
+            // runsIn: 应用/数据源 -> Docker 应用（旧画布用缩进表达第二级）
+            var dockerMembers = graph.Edges
+                .Where(e => e.Type == "runsIn")
+                .GroupBy(e => e.To)
+                .ToDictionary(g => g.Key, g => g.Select(e => e.From).Distinct(StringComparer.Ordinal).ToArray());
+            var memberToDocker = dockerMembers
+                .SelectMany(kv => kv.Value.Select(member => (Member: member, Docker: kv.Key)))
+                .GroupBy(x => x.Member)
+                .ToDictionary(g => g.Key, g => g.First().Docker, StringComparer.Ordinal);
 
             var hostedApps = new Dictionary<string, List<TopologyNode>>(StringComparer.Ordinal);
             var hostedDs = new Dictionary<string, List<TopologyNode>>(StringComparer.Ordinal);
@@ -222,7 +202,7 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
             {
                 if (hostedBy.TryGetValue(app.Id, out var sid) && servers.Any(s => s.Id == sid))
                     Add(hostedApps, sid, app);
-                else
+                else if (!IsNestedUnderHostedDocker(app.Id, memberToDocker, hostedBy, servers))
                     standaloneApps.Add(app);
             }
 
@@ -230,24 +210,42 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
             {
                 if (hostedBy.TryGetValue(ds.Id, out var sid) && servers.Any(s => s.Id == sid))
                     Add(hostedDs, sid, ds);
-                else
+                else if (!IsNestedUnderHostedDocker(ds.Id, memberToDocker, hostedBy, servers))
                     standaloneDs.Add(ds);
             }
 
-            // 左列：服务器区块（内嵌托管的 应用/数据库）
+            // 左列：服务器区块（内嵌托管的 应用/数据库；Docker 成员用缩进表达两级）
             double serverY = 20;
             foreach (var server in servers)
             {
                 var appsHere = hostedApps.TryGetValue(server.Id, out var a) ? a : new List<TopologyNode>();
                 var dsHere = hostedDs.TryGetValue(server.Id, out var d) ? d : new List<TopologyNode>();
-                var children = appsHere.Concat(dsHere).ToArray();
+                var directChildren = appsHere.Concat(dsHere).ToArray();
+                var children = new List<(TopologyNode Node, int Indent)>();
+                foreach (var child in directChildren)
+                {
+                    children.Add((child, 0));
+                    if (!dockerMembers.TryGetValue(child.Id, out var members))
+                        continue;
 
-                var chipArea = children.Length == 0 ? 24 : children.Length * ChipHeight + (children.Length - 1) * ChipGap;
+                    foreach (var memberId in members)
+                    {
+                        if (!nodesById.TryGetValue(memberId, out var member) ||
+                            children.Any(x => x.Node.Id == memberId))
+                            continue;
+                        children.Add((member, 1));
+                    }
+                }
+
+                var chipArea = children.Count == 0 ? 24 : children.Count * ChipHeight + (children.Count - 1) * ChipGap;
                 var boxHeight = ServerHeader + chipArea + 12;
 
-                var sub = children.Length == 0
+                var sub = directChildren.Length == 0
                     ? "(无托管资产)"
                     : $"{appsHere.Count} 应用 / {dsHere.Count} 数据库 (runsOn)";
+
+                if (InfoInt(server, "accessProfileCount") is int accessCount && accessCount > 1)
+                    sub += $" · {accessCount} 接入方式";
 
                 Boxes.Add(new GraphBoxVm
                 {
@@ -263,25 +261,27 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
                 });
                 geometry[server.Id] = (ServerX, serverY, ServerWidth, boxHeight);
 
-                for (var i = 0; i < children.Length; i++)
+                for (var i = 0; i < children.Count; i++)
                 {
                     var chipY = serverY + ServerHeader + i * (ChipHeight + ChipGap);
-                    var child = children[i];
+                    var (child, indent) = children[i];
+                    var chipX = ServerX + 12 + indent * 18;
+                    var chipWidth = ServerWidth - 24 - indent * 18;
                     _parentOf[child.Id] = server.Id;
                     var chip = new GraphChipVm
                     {
                         Id = child.Id,
-                        Label = labelById[child.Id],
+                        Label = indent > 0 ? "└ " + labelById[child.Id] : labelById[child.Id],
                         Type = child.Type,
                         Tooltip = tooltipById[child.Id],
-                        X = ServerX + 12,
+                        X = chipX,
                         Y = chipY,
-                        Width = ServerWidth - 24,
+                        Width = chipWidth,
                         Height = ChipHeight
                     };
                     ApplyNodeHealth(chip, child);
                     Chips.Add(chip);
-                    geometry[child.Id] = (ServerX + 12, chipY, ServerWidth - 24, ChipHeight);
+                    geometry[child.Id] = (chipX, chipY, chipWidth, ChipHeight);
                 }
 
                 serverY += boxHeight + 18;
@@ -361,10 +361,7 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
 
             CanvasHeight = Math.Max(Math.Max(Math.Max(serverY, appY), dsY) + 40, 1400);
             CanvasWidth = Math.Max(Math.Max(DsX + DsWidth, MaxRight()) + 40, 2000);
-            var serviceCount = graph.Nodes.Count(n => n.Type == "service");
-            var containerCount = graph.Nodes.Count(n => n.Type == "container");
-            var deployCount = graph.Nodes.Count(n => n.Type == "deploy");
-            StatusMessage = $"服务器 {servers.Length} 台, 应用 {apps.Length} 个, 服务 {serviceCount} 个, 容器 {containerCount} 个, 部署 {deployCount} 个, 其他资产 {datasources.Length - serviceCount - containerCount - deployCount} 个, 连线 {Edges.Count} 条 (runsOn 以嵌套展示)";
+            StatusMessage = $"服务器 {servers.Length} 台, 应用 {apps.Length} 个, 数据源 {datasources.Length} 个, 连线 {Edges.Count} 条 (runsOn 以嵌套展示)";
             GraphLoaded?.Invoke();
         }
         catch (Exception ex)
@@ -441,7 +438,16 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
         _frameMaxMs = 0;
     }
 
-    public string[] RelationTypes { get; } = RelationRules.KnownTypes;
+    public RelationTypeOption[] RelationTypes { get; } =
+    {
+        new("runsOn", "运行于服务器"),
+        new("runsIn", "运行于容器"),
+        new("connectsTo", "连接到"),
+        new("canAccess", "可访问"),
+        new("upstreamOf", "上游依赖"),
+        new("accessedVia", "通过跳板访问"),
+        new("relatedTo", "相关")
+    };
     public string SelectedEdgeSummary => _selectedEdge == null
         ? string.Empty
         : $"{_selectedEdge.From}  →  {_selectedEdge.To}" + (_selectedEdge.IsDiscovered ? "（自动发现，仅可删除）" : "（手动）");
@@ -499,14 +505,56 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
 
         foreach (var item in Boxes.Concat<GraphItemVm>(Chips).Concat(Nodes))
         {
-            if (!layout.Nodes.TryGetValue(item.Id, out var nl))
+            NodeLayout? nl = layout.Nodes.TryGetValue(item.Id, out var direct) ? direct : null;
+            if (nl is null)
+            {
+                var node = _graph?.Nodes.FirstOrDefault(n => n.Id == item.Id);
+                if (node is not null)
+                {
+                    nl = ProfileLayoutIds(node)
+                        .Select(id => layout.Nodes.TryGetValue(id, out var candidate) ? candidate : null)
+                        .FirstOrDefault(candidate => candidate is not null);
+                }
+            }
+
+            if (nl is null)
                 continue;
+
             item.X = nl.X;
             item.Y = nl.Y;
             item.Width = nl.Width;
             item.Height = nl.Height;
             _geometry[item.Id] = (nl.X, nl.Y, nl.Width, nl.Height);
         }
+    }
+
+    private EdgeLayout? FindEdgeLayout(TopologyLayout layout, TopologyEdge edge)
+    {
+        if (layout.Edges.TryGetValue($"{edge.From}|{edge.Type}|{edge.To}", out var direct))
+            return direct;
+
+        foreach (var from in LayoutIds(edge.From))
+        {
+            foreach (var to in LayoutIds(edge.To))
+            {
+                if (layout.Edges.TryGetValue($"{from}|{edge.Type}|{to}", out var alias))
+                    return alias;
+            }
+        }
+
+        return null;
+    }
+
+    private IEnumerable<string> LayoutIds(string nodeId)
+    {
+        yield return nodeId;
+
+        var node = _graph?.Nodes.FirstOrDefault(n => n.Id == nodeId);
+        if (node is null)
+            yield break;
+
+        foreach (var id in ProfileLayoutIds(node))
+            yield return id;
     }
 
     /// <summary>重建所有连线（fast=true 时用简化路由，用于拖动过程）。</summary>
@@ -546,7 +594,7 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
                 e.From, e.To, e.Type,
                 string.Equals(e.Source, "discovered", StringComparison.OrdinalIgnoreCase),
                 _geometry[e.From], _geometry[e.To],
-                layout.Edges.TryGetValue($"{e.From}|{e.Type}|{e.To}", out var edgeLayout) ? edgeLayout : null))
+                FindEdgeLayout(layout, e)))
             .ToList();
 
         foreach (var group in drawable.GroupBy(r => r.CorridorKey))
@@ -1207,64 +1255,6 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
         }
     }
 
-    private async Task<bool> TryAddRunsOnAsync(string id, string? oldParent, string newParent)
-    {
-        try
-        {
-            var config = await _configService.LoadConfigAsync();
-            var relations = config.Relations
-                .Where(r => !(oldParent != null && r.From == id && r.To == oldParent && r.Type == "runsOn"))
-                .ToList();
-
-            if (!RelationRules.TryValidate(id, newParent, "runsOn", relations.ToArray(), out var error))
-            {
-                RejectDrag($"无法建立 runsOn: {error}");
-                return false;
-            }
-
-            if (!relations.Any(r => r.From == id && r.To == newParent && r.Type == "runsOn"))
-                relations.Add(new RelationConfig { From = id, To = newParent, Type = "runsOn" });
-            config.Relations = relations.ToArray();
-            await _configService.SaveConfigAsync(config);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            RejectDrag($"建立 runsOn 失败: {ex.Message}");
-            return false;
-        }
-    }
-
-    private async Task<bool> TryRemoveRunsOnAsync(string id, string parent)
-    {
-        try
-        {
-            var config = await _configService.LoadConfigAsync();
-            config.Relations = config.Relations
-                .Where(r => !(r.From == id && r.To == parent && r.Type == "runsOn"))
-                .ToArray();
-            await _configService.SaveConfigAsync(config);
-
-            // 同时清理自动发现的 runsOn 缓存
-            try
-            {
-                await _topologyStore.InitializeAsync();
-                await _topologyStore.RemoveEdgeAsync(id, parent, "runsOn");
-            }
-            catch
-            {
-                // 无缓存忽略
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            RejectDrag($"解除 runsOn 失败: {ex.Message}");
-            return false;
-        }
-    }
-
     private void GrowServerToFit(string serverId, Rect child)
     {
         if (!_geometry.TryGetValue(serverId, out var sg))
@@ -1657,17 +1647,9 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
     {
         var f = RelationRules.PrefixOf(fromId);
         var t = RelationRules.PrefixOf(toId);
-        if ((f == "app" || f == "ds" || f == "service" || f == "container") && t == "ssh") return "runsOn";
-        if ((f == "app" || f == "service" || f == "container") &&
-            (t == "ds" || t == "app" || t == "service" || t == "mq")) return "connectsTo";
+        if ((f == "app" || f == "ds") && t == "ssh") return "runsOn";
+        if (f == "app" && (t == "ds" || t == "app")) return "connectsTo";
         if (f == "ssh" && t == "ds") return "canAccess";
-        if ((f == "app" || f == "ds" || f == "service" || f == "container") && t == "port") return "listensOn";
-        if (f == "port" && t == "ssh") return "hostedOn";
-        if ((f == "app" || f == "service" || f == "container") && t == "deploy") return "deployedFrom";
-        if ((f == "app" || f == "service" || f == "container") && t == "system") return "partOf";
-        if (f == "domain" && (t == "app" || t == "service")) return "exposes";
-        if (f == "domain" && t == "cert") return "tlsBy";
-        if (f == "domain" && t == "ssh") return "resolvesTo";
         return "relatedTo";
     }
 
@@ -1675,23 +1657,6 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
     private static bool IsNodeDisabled(TopologyNode node) =>
         node.Info.TryGetValue("disabled", out var v) &&
         (v is bool b ? b : v is string s && bool.TryParse(s, out var parsed) && parsed);
-
-    /// <summary>按图层复选框过滤节点；服务器始终显示（其托管子节点另行过滤）。</summary>
-    private bool IsNodeVisible(TopologyNode node) => node.Type switch
-    {
-        "service" => ShowServices,
-        "container" => ShowContainers,
-        "deploy" => ShowDeploys,
-        "domain" or "port" or "cert" => ShowNetwork,
-        _ => true
-    };
-
-    private void ApplyNodeFilter()
-    {
-        if (_synthetic || _graph == null)
-            return;
-        ApplyGraph(_graph);
-    }
 
     private static void ApplyNodeHealth(GraphItemVm item, TopologyNode node)
     {
@@ -1809,8 +1774,6 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
         OnPropertyChanged(nameof(HasSelectedEdge));
         OnPropertyChanged(nameof(SelectedEdgeSummary));
         OnPropertyChanged(nameof(SelectedEdgeEditable));
-        OnPropertyChanged(nameof(SelectedEdgeDisputed));
-        OnPropertyChanged(nameof(SelectedEdgeCanConfirm));
         RebuildEdgeAnchors();
 
         if (!edge.IsDiscovered)
@@ -1890,53 +1853,9 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
         OnPropertyChanged(nameof(HasSelectedEdge));
         OnPropertyChanged(nameof(SelectedEdgeSummary));
         OnPropertyChanged(nameof(SelectedEdgeEditable));
-        OnPropertyChanged(nameof(SelectedEdgeDisputed));
-        OnPropertyChanged(nameof(SelectedEdgeCanConfirm));
     }
 
     /// <summary>选中发现边是否存在冲突标记（供面板显示确认按钮）。</summary>
-    public bool SelectedEdgeDisputed => _selectedEdge?.IsDisputed == true;
-
-    /// <summary>仅自动发现且带冲突标记的边可人工确认。</summary>
-    public bool SelectedEdgeCanConfirm => _selectedEdge is { IsDiscovered: true, IsDisputed: true };
-
-    /// <summary>人工确认冲突已核实：清除 Disputed 并刷新末次核实时间。</summary>
-    public void ConfirmSelectedEdge() => AsyncOperation.Run("确认拓扑关系", async () =>
-    {
-        if (_selectedEdge is not { IsDiscovered: true, IsDisputed: true } edge)
-            return;
-
-        try
-        {
-            await _topologyStore.InitializeAsync();
-            var stored = (await _topologyStore.GetEdgesAsync())
-                .FirstOrDefault(e => e.From == edge.From && e.To == edge.To && e.Type == edge.Type);
-            if (stored == null)
-            {
-                SelectedEdgeHint = "未找到该关系的存储记录，请刷新后重试。";
-                return;
-            }
-
-            stored.Disputed = false;
-            stored.DisputeAcknowledged = true;
-            stored.LastVerifiedAt = DateTime.UtcNow;
-            await _topologyStore.UpsertEdgeAsync(stored);
-
-            var (from, to, type) = (edge.From, edge.To, edge.Type);
-            StatusMessage = $"已确认关系无冲突: {from} --{type}--> {to}";
-            Load();
-            var updated = Edges.FirstOrDefault(e => e.From == from && e.To == to && e.Type == type);
-            if (updated != null)
-                SelectEdge(updated);
-            else
-                ClearEdgeSelection();
-        }
-        catch (Exception ex)
-        {
-            SelectedEdgeHint = $"确认失败: {ex.Message}";
-        }
-    });
-
     private void RebuildEdgeAnchors()
     {
         EdgeAnchors.Clear();
@@ -2025,22 +1944,14 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
 
         try
         {
-            if (edge.IsDiscovered)
-            {
-                await _topologyStore.InitializeAsync();
-                await _topologyStore.RemoveEdgeAsync(edge.From, edge.To, edge.Type);
-            }
-            else
-            {
-                var config = await _configService.LoadConfigAsync();
-                config.Relations = config.Relations
-                    .Where(r => !(r.From == edge.From && r.To == edge.To && r.Type == edge.Type))
-                    .ToArray();
-                await _configService.SaveConfigAsync(config);
-            }
+            var config = await _configService.LoadConfigAsync();
+            config.Relations = config.Relations
+                .Where(r => !(r.From == edge.From && r.To == edge.To && r.Type == edge.Type))
+                .ToArray();
+            await _configService.SaveConfigAsync(config);
 
             ClearEdgeSelection();
-            StatusMessage = $"已删除关系: {edge.From} --{edge.Type}--> {edge.To}" + (edge.IsDiscovered ? " (已清理自动发现缓存)" : "");
+            StatusMessage = $"已删除关系: {edge.From} --{edge.Type}--> {edge.To}";
             Load();
         }
         catch (Exception ex)
@@ -2060,15 +1971,6 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
         return (p - (a + ab * t)).Length;
     }
 
-    private string _discoveryReport = "尚未运行自动发现。\r\n点击「自动发现」后，这里会显示：扫描的服务器、说明(notes)、未匹配端点(含来源文件/URL/跳过原因)、错误。";
-
-    /// <summary>最近一次自动发现的详细报告（说明/未匹配端点/错误），供「发现报告」窗口展示。</summary>
-    public string DiscoveryReport
-    {
-        get => _discoveryReport;
-        private set { _discoveryReport = value; OnPropertyChanged(); }
-    }
-
     public void Discover(string serverIds) => AsyncOperation.Run("自动发现拓扑", async () =>
     {
         try
@@ -2080,8 +1982,8 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
 
             var result = await _topology.DiscoverAsync(servers, null);
             DiscoveryReport = BuildDiscoveryReport(result);
-            var extra = result.Notes.Length + result.UnmatchedEndpoints.Count > 0
-                ? $"（说明 {result.Notes.Length} 条 / 未匹配端点 {result.UnmatchedEndpoints.Count} 条，详见「更多操作 → 发现报告」）"
+            var extra = result.Notes.Length + result.UnmatchedEndpoints.Count + result.DuplicateCandidates.Count > 0
+                ? $"（说明 {result.Notes.Length} 条 / 疑似重复 {result.DuplicateCandidates.Count} 组 / 未匹配端点 {result.UnmatchedEndpoints.Count} 条，详见「更多操作 → 发现报告」）"
                 : string.Empty;
             StatusMessage = $"发现完成: 新增 {result.NewEdges.Length} 条, 更新 {result.UpdatedEdges.Length} 条, 错误 {result.Errors.Length} 个{extra}";
             Load();
@@ -2096,210 +1998,22 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
         }
     });
 
-    private static string BuildDiscoveryReport(DiscoveryResult r)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine($"自动发现报告  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        sb.AppendLine($"新增边 {r.NewEdges.Length} / 更新边 {r.UpdatedEdges.Length} / 错误 {r.Errors.Length}");
-        if (r.ScannedServers.Length > 0)
-            sb.AppendLine($"扫描服务器: {string.Join(", ", r.ScannedServers)}");
-        sb.AppendLine();
-
-        AppendReportSection(sb, "错误", r.Errors);
-        AppendReportSection(sb, "说明 (notes)", r.Notes);
-
-        if (r.UnmatchedEndpoints.Count > 0)
-        {
-            sb.AppendLine($"未匹配端点 / 已跳过端点 ({r.UnmatchedEndpoints.Count}):");
-            foreach (var d in r.UnmatchedEndpoints)
-            {
-                var server = d.GetValueOrDefault("server");
-                var url = d.GetValueOrDefault("url");
-                var file = d.GetValueOrDefault("file");
-                var note = d.GetValueOrDefault("note");
-                sb.AppendLine($"  - [{server}] {url}");
-                if (file != null) sb.AppendLine($"      文件: {file}");
-                if (note != null) sb.AppendLine($"      原因: {note}");
-            }
-            sb.AppendLine();
-        }
-
-        return sb.ToString();
-    }
-
-    private static void AppendReportSection(StringBuilder sb, string title, string[] items)
-    {
-        if (items.Length == 0)
-            return;
-        sb.AppendLine($"{title} ({items.Length}):");
-        foreach (var item in items)
-            sb.AppendLine("  - " + item);
-        sb.AppendLine();
-    }
-
     /// <summary>把选中的"待确认"节点确认为已登记资产（弹出对应新增窗口并预填），再把发现边重定向到新资产。</summary>
-    public void ConfirmSelectedNode() => ConfirmNode(_selectedId);
-
-    /// <summary>把指定的"待确认"节点确认为已登记资产。</summary>
-    public void ConfirmNode(string? id) => AsyncOperation.Run("确认拓扑节点", async () =>
-    {
-        if (string.IsNullOrWhiteSpace(id) || !id.Contains(":disc:", StringComparison.Ordinal))
-        {
-            StatusMessage = "请先选中一个「待确认」节点(带 disc: 的节点)。";
-            return;
-        }
-
-        try
-        {
-            var newId = await RegisterPendingNodeAsync(id);
-            if (newId == null)
-                return;
-
-            await _topologyStore.ReplaceNodeAsync(id, newId);
-            StatusMessage = $"已确认并登记: {id} → {newId}";
-            Load();
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"确认失败: {ex.Message}";
-        }
-    });
-
-    /// <summary>删除一个"待确认"节点（清理其所有发现边）。</summary>
-    public void DeleteDiscoveredNode(string id) => AsyncOperation.Run("删除待确认节点", async () =>
-    {
-        if (string.IsNullOrWhiteSpace(id) || !id.Contains(":disc:", StringComparison.Ordinal))
-            return;
-
-        try
-        {
-            await _topologyStore.RemoveEdgesByNodeAsync(id);
-            if (string.Equals(_selectedId, id, StringComparison.Ordinal))
-                SelectNode(null);
-            StatusMessage = $"已删除待确认节点: {id}";
-            Load();
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"删除节点失败: {ex.Message}";
-        }
-    });
-
-    private async Task<string?> RegisterPendingNodeAsync(string id)
-    {
-        var owner = Application.Current?.MainWindow;
-
-        // 读取该节点的发现信息（type/host/ports/path），用于预填确认窗口
-        string? infoType = null, infoHost = null, infoPath = null;
-        int? infoPort = null;
-        try
-        {
-            var infos = await _topologyStore.GetNodeInfosAsync();
-            if (infos.TryGetValue(id, out var json) &&
-                JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json) is { } info)
-            {
-                if (info.TryGetValue("type", out var t) && t.ValueKind == JsonValueKind.String) infoType = t.GetString();
-                if (info.TryGetValue("host", out var h) && h.ValueKind == JsonValueKind.String) infoHost = h.GetString();
-                if (info.TryGetValue("path", out var pa) && pa.ValueKind == JsonValueKind.String) infoPath = pa.GetString();
-                if (info.TryGetValue("ports", out var ps) && ps.ValueKind == JsonValueKind.String)
-                {
-                    var first = ps.GetString()?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
-                    if (int.TryParse(first, out var pp)) infoPort = pp;
-                }
-            }
-        }
-        catch { /* info 缺失不阻断 */ }
-
-        // 待确认应用 → 新增应用（预填名称/类型/端口/路径）
-        if (id.StartsWith(AssetNode.AppPrefix + "disc:", StringComparison.Ordinal))
-        {
-            var name = id[(AssetNode.AppPrefix.Length + 5)..];
-            var window = _windows.CreateApplicationEditWindow(owner);
-            var vm = new ApplicationEditViewModel(_configService, null,
-                new ApplicationConfig { Name = name, Type = infoType ?? "java", Port = infoPort, Path = infoPath });
-            window.DataContext = vm;
-            var ok = false;
-            vm.DialogClosed += (_, r) => { ok = r; window.Close(); };
-            window.ShowDialog();
-            if (!ok) return null;
-
-            var config = await _configService.LoadConfigAsync();
-            var created = config.Applications.LastOrDefault(a => a.Name == name);
-            if (created == null) { StatusMessage = "已保存但未找到新应用，请刷新。"; return null; }
-            return AssetNode.App(created.Id);
-        }
-
-        // 待确认数据源 → 新增数据源（预填 host/port/类型）
-        if (id.StartsWith(AssetNode.DsPrefix + "disc:", StringComparison.Ordinal))
-        {
-            var rest = id[(AssetNode.DsPrefix.Length + 5)..];
-            var idx = rest.LastIndexOf('-');
-            string host;
-            int port;
-            if (infoPort is int ip)
-            {
-                port = ip;
-                host = infoHost ?? (idx > 0 && int.TryParse(rest[(idx + 1)..], out _) ? rest[..idx] : string.Empty);
-            }
-            else if (idx > 0 && int.TryParse(rest[(idx + 1)..], out var p))
-            {
-                host = rest[..idx];
-                port = p;
-            }
-            else
-            {
-                host = infoHost ?? string.Empty;
-                port = 3306;
-            }
-
-            var dsType = string.IsNullOrWhiteSpace(infoType) ? "mysql" : infoType!;
-            var config = await _configService.LoadConfigAsync();
-            var window = _windows.CreateDatasourceEditWindow(owner);
-            var vm = new DatasourceEditViewModel(_configService, window, config.Servers, null,
-                new DataSourceConfig { Name = string.IsNullOrEmpty(host) ? rest : host, Host = host, Port = port, Type = dsType });
-            window.DataContext = vm;
-            var ok = false;
-            vm.DialogClosed += (_, r) => { ok = r; window.Close(); };
-            window.ShowDialog();
-            if (!ok) return null;
-
-            var after = await _configService.LoadConfigAsync();
-            var created = string.IsNullOrEmpty(host)
-                ? after.DataSources.LastOrDefault(d => d.Port == port && d.Type.Equals(dsType, StringComparison.OrdinalIgnoreCase))
-                : after.DataSources.LastOrDefault(d => d.Host == host && d.Port == port);
-            if (created == null) { StatusMessage = "已保存但未找到新数据源，请刷新。"; return null; }
-            return AssetNode.Ds(created.Id);
-        }
-
-        // 待确认服务器 → 新增服务器（预填 host）
-        if (id.StartsWith(AssetNode.SshPrefix + "disc:", StringComparison.Ordinal))
-        {
-            var host = id[(AssetNode.SshPrefix.Length + 5)..];
-            var window = _windows.CreateServerEditWindow(owner);
-            var vm = new ServerEditViewModel(_configService, _services.CreateSshService(), window, null,
-                new SshServerConfig { Name = host, Host = host, Port = 22 });
-            window.DataContext = vm;
-            var ok = false;
-            vm.DialogClosed += (_, r) => { ok = r; window.Close(); };
-            window.ShowDialog();
-            if (!ok) return null;
-
-            var config = await _configService.LoadConfigAsync();
-            var created = config.Servers.LastOrDefault(s => s.Host == host);
-            if (created == null) { StatusMessage = "已保存但未找到新服务器，请刷新。"; return null; }
-            return AssetNode.Ssh(created.Id);
-        }
-
-        StatusMessage = "该类型的待确认节点暂不支持一键登记（MQ 端点可在「资产关系」里手动管理）。";
-        return null;
-    }
-
     private static void Add(Dictionary<string, List<TopologyNode>> map, string key, TopologyNode node)
     {
         if (!map.TryGetValue(key, out var list))
             map[key] = list = new List<TopologyNode>();
         list.Add(node);
     }
+
+    private static bool IsNestedUnderHostedDocker(
+        string nodeId,
+        IReadOnlyDictionary<string, string> memberToDocker,
+        IReadOnlyDictionary<string, string> hostedBy,
+        IReadOnlyList<TopologyNode> servers) =>
+        memberToDocker.TryGetValue(nodeId, out var dockerId) &&
+        hostedBy.TryGetValue(dockerId, out var serverId) &&
+        servers.Any(s => s.Id == serverId);
 
     private static Geometry Freeze(Geometry geometry)
     {
@@ -2328,6 +2042,11 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
         var info = node.Info;
         AppendInfo(sb, info, "host", "主机");
         AppendInfo(sb, info, "port", "端口");
+        AppendInfo(sb, info, "assetKey", "资产标识");
+        AppendInfo(sb, info, "internalHost", "内网地址");
+        AppendInfo(sb, info, "accessProfileCount", "接入方式");
+        AppendInfo(sb, info, "aliases", "主机别名");
+        AppendInfo(sb, info, "identityKinds", "身份类型");
         AppendInfo(sb, info, "ports", "监听端口");
         AppendInfo(sb, info, "username", "账号");
         AppendInfo(sb, info, "datasourceType", "数据库类型");
@@ -2402,3 +2121,6 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+
+/// <summary>旧版拓扑关系类型下拉项。</summary>
+public sealed record RelationTypeOption(string Value, string Label);

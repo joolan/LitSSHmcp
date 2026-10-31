@@ -1,11 +1,15 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Windows.Input;
 using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Datasource;
 using LitSSHmcp.Core.Services.Storage;
+using LitSSHmcp.Core.Services.Topology;
 
 namespace LitSSHmcp.App.ViewModels;
 
@@ -15,6 +19,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
     private readonly DatasourceEditWindow _editWindow;
     private readonly DataSourceConfig? _editingDs;
     private readonly SshServerConfig[] _servers;
+    private readonly IUserDialogService _dialogs;
 
     private string _name = string.Empty;
     private int _typeIndex;
@@ -25,6 +30,14 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
     private string _description = string.Empty;
     private string _group = string.Empty;
     private string _tagsText = string.Empty;
+    private string _assetKey = string.Empty;
+    private string _instanceKey = string.Empty;
+    private string _aliasesText = string.Empty;
+    private int _runtimeKindIndex;
+    private string _selectedSshAssetKey = string.Empty;
+    private string _selectedDockerAssetKey = string.Empty;
+    private string _runtimeContainerName = string.Empty;
+    private string _runtimeComposeService = string.Empty;
     private int _accessModeIndex;
     private int _tunnelServerIndex;
     private string _statusMessage = string.Empty;
@@ -44,12 +57,14 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
         DatasourceEditWindow editWindow,
         SshServerConfig[] servers,
         DataSourceConfig? datasource = null,
-        DataSourceConfig? prefill = null)
+        DataSourceConfig? prefill = null,
+        IUserDialogService? dialogs = null)
     {
         _configService = configService;
         _editWindow = editWindow;
         _editingDs = datasource;
         _servers = servers ?? Array.Empty<SshServerConfig>();
+        _dialogs = dialogs ?? new UserDialogService();
         TunnelServerOptions = new[] { "(自动, 按关系推导)" }
             .Concat(_servers.Select(s => $"{s.Name} ({s.Host})"))
             .ToArray();
@@ -69,6 +84,14 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             Description = datasource.Description ?? string.Empty;
             Group = datasource.Group ?? string.Empty;
             TagsText = string.Join(", ", datasource.Tags);
+            AssetKey = datasource.AssetKey ?? string.Empty;
+            InstanceKey = datasource.InstanceKey ?? string.Empty;
+            AliasesText = string.Join(", ", datasource.Aliases);
+            RuntimeKindIndex = (int)datasource.RuntimeKind;
+            SelectedSshAssetKey = datasource.RuntimeSshAssetKey ?? string.Empty;
+            SelectedDockerAssetKey = datasource.RuntimeDockerAssetKey ?? string.Empty;
+            RuntimeContainerName = datasource.RuntimeContainerName ?? string.Empty;
+            RuntimeComposeService = datasource.RuntimeComposeService ?? string.Empty;
             AccessModeIndex = datasource.AccessMode == AccessMode.SshTunnel ? 1 : 0;
             TunnelServerIndex = ResolveTunnelIndex(datasource.TunnelServerId);
             ReadOnlyMode = datasource.ReadOnly;
@@ -87,6 +110,8 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             Host = prefill.Host;
             PortText = prefill.Port.ToString();
         }
+
+        _ = LoadRuntimeOptionsAsync();
     }
 
     public string[] TunnelServerOptions { get; }
@@ -162,6 +187,69 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
     {
         get => _tagsText;
         set { _tagsText = value; OnPropertyChanged(); }
+    }
+
+    public string AssetKey
+    {
+        get => _assetKey;
+        set { _assetKey = value; OnPropertyChanged(); }
+    }
+
+    public string InstanceKey
+    {
+        get => _instanceKey;
+        set { _instanceKey = value; OnPropertyChanged(); }
+    }
+
+    public string AliasesText
+    {
+        get => _aliasesText;
+        set { _aliasesText = value; OnPropertyChanged(); }
+    }
+
+    public ObservableCollection<RuntimeTargetOption> SshTargetOptions { get; } = new();
+    public ObservableCollection<RuntimeTargetOption> DockerTargetOptions { get; } = new();
+
+    public string[] RuntimeKindOptions { get; } = { "未配置", "SSH 服务器", "Docker 应用", "独立环境" };
+
+    public int RuntimeKindIndex
+    {
+        get => _runtimeKindIndex;
+        set
+        {
+            if (_runtimeKindIndex == value) return;
+            _runtimeKindIndex = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsSshRuntime));
+            OnPropertyChanged(nameof(IsDockerRuntime));
+        }
+    }
+
+    public bool IsSshRuntime => RuntimeKindIndex == 1;
+    public bool IsDockerRuntime => RuntimeKindIndex == 2;
+
+    public string SelectedSshAssetKey
+    {
+        get => _selectedSshAssetKey;
+        set { _selectedSshAssetKey = value; OnPropertyChanged(); }
+    }
+
+    public string SelectedDockerAssetKey
+    {
+        get => _selectedDockerAssetKey;
+        set { _selectedDockerAssetKey = value; OnPropertyChanged(); }
+    }
+
+    public string RuntimeContainerName
+    {
+        get => _runtimeContainerName;
+        set { _runtimeContainerName = value; OnPropertyChanged(); }
+    }
+
+    public string RuntimeComposeService
+    {
+        get => _runtimeComposeService;
+        set { _runtimeComposeService = value; OnPropertyChanged(); }
     }
 
     public int AccessModeIndex
@@ -260,6 +348,42 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
         return index < 0 ? 0 : index + 1;
     }
 
+    private async Task LoadRuntimeOptionsAsync()
+    {
+        try
+        {
+            var config = await _configService.LoadConfigAsync();
+            SshTargetOptions.Clear();
+            DockerTargetOptions.Clear();
+
+            var seenServers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var server in config.Servers
+                         .Where(s => !string.IsNullOrWhiteSpace(s.AssetKey))
+                         .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                if (seenServers.Add(server.AssetKey!))
+                    SshTargetOptions.Add(new RuntimeTargetOption(server.AssetKey!, $"{server.Name} ({server.AssetKey})"));
+            }
+
+            var seenApps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var app in config.Applications
+                         .Where(a => !string.IsNullOrWhiteSpace(a.AssetKey) &&
+                                     string.Equals(a.Type, "docker", StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                if (seenApps.Add(app.AssetKey!))
+                    DockerTargetOptions.Add(new RuntimeTargetOption(app.AssetKey!, $"{app.Name} ({app.AssetKey})"));
+            }
+        }
+        catch
+        {
+            // 选项加载失败不阻塞编辑；保存时仍会做运行环境校验
+        }
+    }
+
+    private static string? Normalize(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private void TestConnection() => AsyncOperation.Run("测试数据源连接", async () =>
     {
         _isTestRunning = true;
@@ -315,6 +439,13 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             var password = _editWindow.GetPassword();
             ds.Password = string.IsNullOrEmpty(password) ? _editingDs?.Password : password;
 
+            var duplicates = DuplicateAssetDetector.FindDatasourceMatches(config, ds);
+            if (duplicates.Count > 0 &&
+                !_dialogs.Confirm(BuildDuplicateMessage(ds, duplicates), "疑似重复的数据源配置"))
+            {
+                return;
+            }
+
             if (_editingDs != null)
             {
                 ds.Id = _editingDs.Id;
@@ -328,7 +459,18 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
                 config.DataSources = config.DataSources.Append(ds).ToArray();
             }
 
+            var errors = AssetRuntimeValidator.Validate(config).Issues
+                .Where(i => i.AssetId == ds.Id && i.Severity == AssetRuntimeIssueSeverity.Error)
+                .ToArray();
+            if (errors.Length > 0)
+            {
+                StatusMessage = string.Join(Environment.NewLine,
+                    errors.Take(4).Select(i => i.Message));
+                return;
+            }
+
             await _configService.SaveConfigAsync(config);
+            _ = AssetIdentitySaveProbe.CaptureDatasourceAsync(_configService, ds);
             DialogClosed?.Invoke(this, true);
         }
         catch (Exception ex)
@@ -342,6 +484,37 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
         DialogClosed?.Invoke(this, false);
     }
 
+    private static string[] SplitAliases(string? text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? Array.Empty<string>()
+            : text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(x => x.Length > 0)
+                .ToArray();
+
+    private static string BuildDuplicateMessage(
+        DataSourceConfig candidate, IReadOnlyList<DuplicateAssetItem> duplicates)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"检测到与当前数据源类型/主机/端口重叠的现有配置（{duplicates.Count} 条）：");
+        foreach (var item in duplicates.Take(8))
+        {
+            sb.AppendLine($"  - {item.Name} ({item.Id})  {item.Host}:{item.Port}");
+            if (!string.IsNullOrWhiteSpace(item.Detail))
+                sb.AppendLine($"    {item.Detail}");
+        }
+        if (duplicates.Count > 8)
+            sb.AppendLine($"  … 另有 {duplicates.Count - 8} 条");
+
+        sb.AppendLine();
+        sb.AppendLine($"当前配置: {candidate.Name}  {candidate.Type} {candidate.Host}:{candidate.Port}");
+        sb.AppendLine();
+        sb.AppendLine("如果这是同一数据库实例的不同连接配置（直连/隧道/不同账号/不同库），可以继续保存；");
+        sb.AppendLine("建议保留这些连接配置，后续由资产身份探测自动归并。");
+        sb.AppendLine();
+        sb.Append("确定继续保存吗？");
+        return sb.ToString();
+    }
+
     private DataSourceConfig BuildDataSource()
     {
         var tags = TagsText.Split(',')
@@ -353,6 +526,14 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
         string? tunnelServerId = null;
         if (AccessModeIndex == 1 && TunnelServerIndex > 0 && TunnelServerIndex - 1 < _servers.Length)
             tunnelServerId = _servers[TunnelServerIndex - 1].Id;
+
+        var runtimeKind = RuntimeKindIndex switch
+        {
+            1 => RuntimeEnvironmentKind.SshServer,
+            2 => RuntimeEnvironmentKind.DockerApplication,
+            3 => RuntimeEnvironmentKind.Standalone,
+            _ => RuntimeEnvironmentKind.Unspecified
+        };
 
         return new DataSourceConfig
         {
@@ -368,6 +549,22 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             Group = string.IsNullOrWhiteSpace(Group) ? null : Group.Trim(),
             Description = Description,
             Tags = tags,
+            Aliases = SplitAliases(AliasesText),
+            AssetKey = string.IsNullOrWhiteSpace(AssetKey) ? null : AssetKey.Trim(),
+            InstanceKey = string.IsNullOrWhiteSpace(InstanceKey) ? null : InstanceKey.Trim(),
+            RuntimeKind = runtimeKind,
+            RuntimeSshAssetKey = runtimeKind == RuntimeEnvironmentKind.SshServer
+                ? Normalize(SelectedSshAssetKey)
+                : null,
+            RuntimeDockerAssetKey = runtimeKind == RuntimeEnvironmentKind.DockerApplication
+                ? Normalize(SelectedDockerAssetKey)
+                : null,
+            RuntimeContainerName = runtimeKind == RuntimeEnvironmentKind.DockerApplication
+                ? Normalize(RuntimeContainerName)
+                : null,
+            RuntimeComposeService = runtimeKind == RuntimeEnvironmentKind.DockerApplication
+                ? Normalize(RuntimeComposeService)
+                : null,
             ReadOnly = ReadOnlyMode,
             UsePooling = UsePooling,
             MaxRows = int.TryParse(MaxRowsText?.Trim(), out var maxRows) && maxRows > 0 ? maxRows : null,

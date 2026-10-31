@@ -87,6 +87,55 @@ public class SpillAndSubAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task Spill_tool_result_is_not_respilled()
+    {
+        var store = new SpillStore(_dir, 7);
+        var call = new FunctionCallContent("c1", "spill", new Dictionary<string, object?>());
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, new AIContent[] { call }) }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+        var config = new AgentConfig
+        {
+            ContextLimit = 0, ContextTokenLimit = 0, AutoSummarize = false,
+            ToolResultMaxChars = 100, SpillLargeToolResults = true
+        };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new[] { new FakeTool("spill", new string('y', 1000)) }, "sys", config, spill: store);
+
+        await session.SendAsync("hi", null);
+
+        var text = Assert.IsType<FunctionResultContent>(
+            Assert.Single(Assert.Single(session.Messages, m => m.Role == ChatRole.Tool).Contents)).Result!.ToString()!;
+        Assert.Contains("spill 读取结果仍超过", text);
+        Assert.Empty(store.List());
+    }
+
+    [Fact]
+    public async Task Sub_agent_spills_large_tool_result_to_shared_store()
+    {
+        var store = new SpillStore(_dir, 7);
+        var call = new FunctionCallContent("c1", "echo", new Dictionary<string, object?>());
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, new AIContent[] { call }) }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "sub-summary") }));
+        var big = new string('x', 1000);
+        var config = new AgentConfig
+        {
+            MaxToolIterations = 3, ContextLimit = 0, ContextTokenLimit = 0, AutoSummarize = false,
+            ToolResultMaxChars = 100, SpillLargeToolResults = true
+        };
+        var tool = SubAgents.Create(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            config, new IAgentTool[] { new FakeTool("echo", big), new FakeTool("spill", "noop") }, spill: store);
+
+        var result = (await tool.InvokeAsync(Args(("task", "read logs on server X")), default))!.ToString()!;
+
+        Assert.Equal("sub-summary", result);
+        var handle = Assert.Single(store.List());
+        Assert.Equal(big, await File.ReadAllTextAsync(Path.Combine(store.Dir, handle)));
+        Assert.Contains("spill(action=\"read\"", client.LastMessages!.First(m => m.Role == ChatRole.System).Text);
+    }
+
+    [Fact]
     public async Task Sub_agent_runs_isolated_and_returns_only_summary()
     {
         var client = new FakeChatClient(new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "sub-answer") }));

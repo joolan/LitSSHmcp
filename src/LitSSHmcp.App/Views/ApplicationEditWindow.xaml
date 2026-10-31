@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
-        Title="{Binding WindowTitle}" Height="620" Width="460" MinWidth="440" MinHeight="520"
+        Title="{Binding WindowTitle}" Height="660" Width="640" MinWidth="600" MinHeight="520"
         WindowStartupLocation="CenterOwner"
         ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Grid>
@@ -45,6 +45,90 @@
 
                     <controls:FormRow Label="分组" HelpText="相同分组的应用会在列表中归为一组；可留空">
                         <ui:TextBox FontWeight="Normal" Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="资产标识" HelpText="同一逻辑应用的多条配置填相同值；留空则按应用 Id 归并">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding AssetKey, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="主机别名" HelpText="额外主机名/IP，逗号分隔">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding AliasesText, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <TextBlock Text="运行环境" Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
+
+                    <controls:FormRow Label="运行环境" HelpText="用于把应用挂到服务器或 Docker 应用；运行环境目标必须有资产标识">
+                        <ComboBox ItemsSource="{Binding RuntimeKindOptions}" SelectedIndex="{Binding RuntimeKindIndex}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="SSH 服务器" HelpText="仅 SSH 服务器环境需要选择；只列出配置了 AssetKey 的服务器">
+                        <ComboBox ItemsSource="{Binding SshTargetOptions}" DisplayMemberPath="Label"
+                                  SelectedValuePath="AssetKey" SelectedValue="{Binding SelectedSshAssetKey}"
+                                  IsEnabled="{Binding IsSshRuntime}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="Docker 应用" HelpText="仅 Docker 环境需要选择；只列出 Type=docker 且配置了 AssetKey 的应用">
+                        <ComboBox ItemsSource="{Binding DockerTargetOptions}" DisplayMemberPath="Label"
+                                  SelectedValuePath="AssetKey" SelectedValue="{Binding SelectedDockerAssetKey}"
+                                  IsEnabled="{Binding IsDockerRuntime}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="容器名" HelpText="Docker 环境必填：容器名或 Compose service 至少填一个">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding RuntimeContainerName, UpdateSourceTrigger=PropertyChanged}"
+                                    IsEnabled="{Binding IsDockerRuntime}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="Compose service" HelpText="Docker 环境必填：容器名或 Compose service 至少填一个">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding RuntimeComposeService, UpdateSourceTrigger=PropertyChanged}"
+                                    IsEnabled="{Binding IsDockerRuntime}"/>
+                    </controls:FormRow>
+
+                    <TextBlock Text="URL 访问入口" Style="{DynamicResource SectionTitleStyle}" Margin="0,8,0,6"/>
+
+                    <controls:FormRow Label="URL" HelpText="可配置多个；角色用于区分 Nginx 入口和后端应用，多后端同一 URL 表示负载均衡">
+                        <StackPanel>
+                            <ItemsControl ItemsSource="{Binding UrlRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <ui:TextBox Grid.Row="0" Grid.Column="0" FontWeight="Normal"
+                                                        Text="{Binding Url, UpdateSourceTrigger=PropertyChanged}"
+                                                        PlaceholderText="https://shop.example.com/api/order"
+                                                        ToolTip="例如 https://shop.example.com/api/order"/>
+                                            <Button Grid.Row="0" Grid.Column="1" Content="删除" Margin="6,0,0,0" Padding="8,2"
+                                                    Command="{Binding DataContext.RemoveUrlCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,6,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="120"/>
+                                                    <ColumnDefinition Width="90"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ComboBox Grid.Column="0" SelectedIndex="{Binding RoleIndex}"
+                                                          ItemsSource="{Binding DataContext.UrlRoleOptions, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                          ToolTip="URL 角色"/>
+                                                <ui:TextBox Grid.Column="1" Margin="6,0,0,0" FontWeight="Normal"
+                                                            Text="{Binding PriorityText, UpdateSourceTrigger=PropertyChanged}"
+                                                            PlaceholderText="优先级" ToolTip="优先级，数字越大越优先"/>
+                                                <ui:TextBox Grid.Column="2" Margin="6,0,0,0" FontWeight="Normal"
+                                                            Text="{Binding Note, UpdateSourceTrigger=PropertyChanged}"
+                                                            PlaceholderText="备注" ToolTip="备注（可选）"/>
+                                            </Grid>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Content="+ 添加 URL" HorizontalAlignment="Left" Padding="10,3"
+                                    Command="{Binding AddUrlCommand}"/>
+                        </StackPanel>
                     </controls:FormRow>
 
                     <controls:FormRow Label="日志路径" HelpText="每行一条；须在安全设置 security.logs.allowedPaths 白名单内">

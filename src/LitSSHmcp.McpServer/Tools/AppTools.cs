@@ -51,7 +51,7 @@ public class AppTools
     [McpServerTool(Name = "app_health_snapshot", UseStructuredContent = true, OutputSchemaType = typeof(AppHealthSnapshotDto), ReadOnly = true, OpenWorld = true)]
     [Description("按应用聚合体检：所在服务器的 Java 进程/容器/监听端口 + 依赖数据源连通性(可选诊断)。跨机排查某应用时先用它，再按需下钻")]
     public async Task<AppHealthSnapshotDto> AppHealthSnapshot(
-        [Description("应用标识: ID或名称, 可在拓扑总览里查看, 可用topology_get_overview列出")] string appId,
+        [Description("应用标识: ID或名称, 可在拓扑总览里查看, 可用topology_query(action=overview)列出")] string appId,
         [Description("true=对依赖数据源额外做整体诊断(更慢更全); 默认只测连通性")] bool includeDiagnostics = false,
         CancellationToken cancellationToken = default)
     {

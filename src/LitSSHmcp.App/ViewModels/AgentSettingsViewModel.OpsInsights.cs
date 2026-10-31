@@ -54,20 +54,20 @@ public partial class AgentSettingsViewModel
         private set => Set(ref _opsAssetProfileText, value);
     }
 
-    public async Task LoadOpsIncidentsAsync()
+    public async Task LoadOpsIncidentsAsync(CancellationToken ct = default)
     {
         try
         {
-            var store = new AgentMemoryStore();
             var status = OpsIncidentStatusFilter is "全部" or "" ? null : OpsIncidentStatusFilter;
-            var records = await store.ListIncidentsAsync(null, status, 200);
+            var records = await _memoryStore.ListIncidentsAsync(null, status, 200, ct);
+            ct.ThrowIfCancellationRequested();
             OpsIncidents.Clear();
             foreach (var record in records)
                 OpsIncidents.Add(IncidentInsightEntry.From(record));
             if (OpsIncidents.Count > 0)
             {
                 SelectedOpsIncident = OpsIncidents[0];
-                await LoadOpsTimelineAsync(SelectedOpsIncident);
+                await LoadOpsTimelineAsync(SelectedOpsIncident, ct);
             }
             else
             {
@@ -76,25 +76,32 @@ public partial class AgentSettingsViewModel
             }
             StatusMessage = $"已加载 {OpsIncidents.Count} 个事件";
         }
+        catch (OperationCanceledException)
+        {
+        }
         catch (Exception ex)
         {
             StatusMessage = "读取事件失败: " + ex.Message;
         }
     }
 
-    public async Task LoadOpsTimelineAsync(IncidentInsightEntry? entry)
+    public async Task LoadOpsTimelineAsync(IncidentInsightEntry? entry, CancellationToken ct = default)
     {
         if (entry is null)
             return;
         try
         {
-            var tool = TimelineTools.Create(new AgentMemoryStore(), new ContextStore());
+            var tool = TimelineTools.Create(_memoryStore, _contextStore);
             var text = await tool.InvokeAsync(new Dictionary<string, object?>
             {
                 ["incidentId"] = entry.Id,
                 ["limit"] = 300
-            }, CancellationToken.None);
+            }, ct);
+            ct.ThrowIfCancellationRequested();
             OpsTimelineText = text?.ToString() ?? "(无时间线)";
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (Exception ex)
         {
@@ -112,7 +119,7 @@ public partial class AgentSettingsViewModel
         }
         try
         {
-            OpsAssetProfileText = await AssetProfileService.BuildAsync(new AgentMemoryStore(),
+            OpsAssetProfileText = await AssetProfileService.BuildAsync(_memoryStore,
                 _configService, assetId, 10);
             StatusMessage = $"已加载资产画像: {assetId}";
         }

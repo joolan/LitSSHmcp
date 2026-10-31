@@ -50,6 +50,8 @@ public sealed class PromoteTool : IAgentTool
 
     public string? ToolGroup => "local";
 
+    public bool IsLocal => true;
+
     public AITool Tool => _schema;
 
     private const string Description =

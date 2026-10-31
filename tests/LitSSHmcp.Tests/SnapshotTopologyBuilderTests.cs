@@ -62,11 +62,11 @@ public class SnapshotTopologyBuilderTests
         var contribution = SnapshotTopologyBuilder.Build(config, Server(), Snapshot());
 
         Assert.Contains(contribution.Edges, e =>
-            e.From == "app:disc:nginx" && e.To == "port:s1:tcp-443" && e.Type == "listensOn");
+            e.From == "app:disc:s1:nginx" && e.To == "port:s1:tcp-443" && e.Type == "listensOn");
         Assert.Contains(contribution.Edges, e =>
-            e.From == "ds:disc:mysql" && e.To == "port:s1:tcp-3306" && e.Type == "listensOn");
+            e.From == "ds:disc:local:s1:mysql:3306" && e.To == "port:s1:tcp-3306" && e.Type == "listensOn");
         Assert.Contains(contribution.Edges, e =>
-            e.From == "domain:shop.example.com" && e.To == "app:disc:nginx" && e.Type == "exposes");
+            e.From == "domain:shop.example.com" && e.To == "app:disc:s1:nginx" && e.Type == "exposes");
     }
 
     [Fact]
@@ -156,6 +156,90 @@ public class SnapshotTopologyBuilderTests
         Assert.Equal(0.9, contribution.Edges.First(e => e.Type == "hostedOn").Confidence);
         Assert.Equal(DateTime.Parse("2026-01-02T03:04:05Z").ToUniversalTime(),
             contribution.Edges.First(e => e.Type == "hostedOn").LastVerifiedAt?.ToUniversalTime());
+    }
+
+    [Fact]
+    public void Build_does_not_match_blank_host_application_by_port_on_every_server()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { Server() },
+            Applications = new[]
+            {
+                new ApplicationConfig { Id = "shared", Name = "shared-app", Port = 443 }
+            }
+        };
+
+        var contribution = SnapshotTopologyBuilder.Build(config, Server(), Snapshot());
+
+        Assert.DoesNotContain(contribution.Edges, e =>
+            e.From == "app:shared" && e.Type == "listensOn");
+        Assert.Contains(contribution.Edges, e =>
+            e.From == "app:disc:s1:nginx" && e.To == "port:s1:tcp-443" && e.Type == "listensOn");
+    }
+
+    [Fact]
+    public void Build_uses_certificate_fingerprint_as_cert_identity()
+    {
+        var json = Snapshot().DataJson!
+            .Replace("\"path\": \"/etc/ssl/shop.pem\",",
+                "\"path\": \"/etc/ssl/shop.pem\", \"fingerprint\": \"AA:BB:CC:DD\",");
+
+        var contribution = SnapshotTopologyBuilder.Build(Config(), Server(), new ServerSnapshot
+        {
+            ServerId = "s1",
+            ServerName = "web1",
+            Status = SnapshotStatus.Succeeded,
+            CreatedAt = "2026-01-02T03:04:05Z",
+            DataJson = json
+        });
+
+        Assert.Contains("cert:aa-bb-cc-dd", contribution.NodeInfo.Keys);
+        Assert.Contains(contribution.Edges, e => e.To == "cert:aa-bb-cc-dd" && e.Type == "tlsBy");
+    }
+
+    [Fact]
+    public void Build_uses_compose_project_and_service_as_container_identity()
+    {
+        var snapshot = new ServerSnapshot
+        {
+            ServerId = "s1",
+            ServerName = "web1",
+            Status = SnapshotStatus.Succeeded,
+            CreatedAt = "2026-01-02T03:04:05Z",
+            DataJson = """
+            {
+              "sections": {
+                "docker": {
+                  "status": "ok",
+                  "data": {
+                    "containers": [
+                      {
+                        "id": "c1",
+                        "name": "shop-api-1",
+                        "image": "registry.local/shop-api:1.4.2",
+                        "state": "running",
+                        "status": "Up 2 hours",
+                        "ports": "",
+                        "labels": "com.docker.compose.project=shop,com.docker.compose.service=api",
+                        "createdAt": "2026-01-01T00:00:00Z"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+            """
+        };
+
+        var config = new AppConfig { Servers = new[] { Server() } };
+        var contribution = SnapshotTopologyBuilder.Build(config, Server(), snapshot);
+
+        var containerId = "container:s1:shop-api";
+        Assert.Contains(contribution.NodeInfo.Keys, id => id == containerId);
+        Assert.Equal("shop", contribution.NodeInfo[containerId]["composeProject"]);
+        Assert.Equal("api", contribution.NodeInfo[containerId]["composeService"]);
+        Assert.Contains(contribution.Edges, e => e.From == containerId && e.To == "ssh:s1" && e.Type == "runsOn");
     }
 
     [Fact]

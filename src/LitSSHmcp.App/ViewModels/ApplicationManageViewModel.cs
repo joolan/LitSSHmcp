@@ -15,20 +15,18 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
 {
     private readonly IConfigService _configService;
     private readonly Window? _owner;
-    private readonly ITopologyStore _topologyStore;
     private readonly IUserDialogService _dialogs;
     private readonly IWindowService _windows;
     private ApplicationConfig? _selectedApplication;
     private string _statusMessage = string.Empty;
 
-    public ApplicationManageViewModel(IConfigService configService, Window? owner, ITopologyStore? topologyStore = null,
+    public ApplicationManageViewModel(IConfigService configService, Window? owner,
         IUserDialogService? dialogs = null, IWindowService? windows = null)
     {
         _configService = configService;
         _owner = owner;
         _dialogs = dialogs ?? new UserDialogService();
         _windows = windows ?? new WpfWindowService();
-        _topologyStore = topologyStore ?? new TopologyStore();
 
         RefreshCommand = new RelayCommand(_ => Load());
         AddCommand = new RelayCommand(_ => Add());
@@ -236,7 +234,6 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
             config.Applications = config.Applications.Where(a => a.Id != SelectedApplication.Id).ToArray();
             config.Relations = config.Relations.Where(r => r.From != nodeId && r.To != nodeId).ToArray();
             await _configService.SaveConfigAsync(config);
-            await CleanupDiscoveredEdgesAsync(nodeId);
 
             StatusMessage = $"已删除应用: {SelectedApplication.Name}";
             SelectedApplication = null;
@@ -247,12 +244,6 @@ public class ApplicationManageViewModel : INotifyPropertyChanged, IConfigReloada
             StatusMessage = $"删除失败: {ex.Message}";
         }
     });
-
-    private async Task CleanupDiscoveredEdgesAsync(string nodeId)
-    {
-        try { await _topologyStore.InitializeAsync(); await _topologyStore.RemoveEdgesByNodeAsync(nodeId); }
-        catch { /* 清理失败不阻断 */ }
-    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

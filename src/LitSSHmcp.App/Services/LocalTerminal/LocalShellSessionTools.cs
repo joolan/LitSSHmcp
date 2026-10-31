@@ -34,6 +34,7 @@ public sealed class LocalShellManageTool : IAgentTool
     public bool Destructive => false;
     public bool ReadOnly => true;
     public string? ToolGroup => "local";
+    public bool IsLocal => true;
     public AITool Tool => _schema;
 
     private const string Description =
@@ -146,6 +147,7 @@ public sealed class LocalShellStopTool : IAgentTool
     public bool Destructive => true;
     public bool ReadOnly => false;
     public string? ToolGroup => "local";
+    public bool IsLocal => true;
     public AITool Tool => _schema;
 
     private const string Description =

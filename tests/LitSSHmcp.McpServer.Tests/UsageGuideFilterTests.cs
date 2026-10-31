@@ -78,7 +78,7 @@ public class UsageGuideFilterTests
         using var doc = JsonDocument.Parse(json);
 
         // 与 ToolCatalogConsistencyTests.ExpectedToolCount 一致：宿主会话包含内部工具
-        Assert.Equal(38, doc.RootElement.GetProperty("tools").GetArrayLength());
+        Assert.Equal(35, doc.RootElement.GetProperty("tools").GetArrayLength());
         Assert.False(doc.RootElement.TryGetProperty("disabled_groups", out _));
     }
 
@@ -91,7 +91,7 @@ public class UsageGuideFilterTests
         var names = doc.RootElement.GetProperty("tools").EnumerateArray()
             .Select(e => e.GetProperty("name").GetString()!)
             .ToArray();
-        Assert.Equal(37, names.Length);
+        Assert.Equal(34, names.Length);
         Assert.DoesNotContain("mcp_approval_round", names);
         Assert.DoesNotContain("ssh_upload_file", names);
         Assert.DoesNotContain("service_status", names);

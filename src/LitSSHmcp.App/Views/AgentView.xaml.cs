@@ -50,6 +50,7 @@ public partial class AgentView : UserControl
             HookTurn(turn);
         IsVisibleChanged += (_, e) =>
         {
+            _viewModel.SetViewVisible(e.NewValue is true);
             if (e.NewValue is true)
                 FocusComposer();
         };
@@ -451,11 +452,6 @@ public partial class AgentView : UserControl
 
     private void OpenSkillPicker()
     {
-        if (_viewModel.SessionSubsetLocked)
-        {
-            _viewModel.StatusMessage = "首条消息后锁定：技能子集改动将在下个会话生效。";
-            return;
-        }
         if (_viewModel.AvailableSkills.Count == 0)
         {
             System.Windows.MessageBox.Show("没有可用技能：请在「AI 助手设置 → 技能目录」指定目录，或使用内置技能。",

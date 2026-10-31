@@ -3,6 +3,7 @@ namespace LitSSHmcp.Core.Models;
 /// <summary>
 /// 拓扑关系的逻辑校验：保证关系类型与起止节点的类型匹配。
 /// - runsOn      : 应用/数据库/服务/容器 运行在 服务器 (from = app|ds|service|container, to = ssh)
+/// - runsIn      : 应用/数据库 运行在 Docker 应用        (from = app|ds, to = app)
 /// - connectsTo  : 应用/服务/容器 连接 数据库/应用/服务    (from = app|service|container, to = ds|app|service|mq)
 /// - canAccess   : 服务器 可访问 数据库                     (from = ssh, to = ds)
 /// - hostedOn    : 端口 监听在 服务器                       (from = port, to = ssh)
@@ -13,14 +14,15 @@ namespace LitSSHmcp.Core.Models;
 /// - upstreamOf  : 应用/服务/容器 是 应用/服务/容器 的上游    (from/to = app|service|container)
 /// - deployedFrom: 应用/服务/容器 由 部署记录 部署           (from = app|service|container, to = deploy)
 /// - partOf      : 应用/服务/容器 属于 应用/服务/系统        (from = app|service|container, to = app|service|system)
+/// - accessedVia : 服务器/数据源 通过 服务器 访问                (from = ssh|ds, to = ssh)
 /// - relatedTo   : 通用关系（仅禁止自环）
 /// </summary>
 public static class RelationRules
 {
     public static readonly string[] KnownTypes =
     {
-        "runsOn", "connectsTo", "canAccess", "hostedOn", "listensOn", "exposes", "tlsBy",
-        "resolvesTo", "upstreamOf", "deployedFrom", "partOf", "relatedTo"
+        "runsOn", "runsIn", "connectsTo", "canAccess", "hostedOn", "listensOn", "exposes", "tlsBy",
+        "resolvesTo", "upstreamOf", "deployedFrom", "partOf", "relatedTo", "accessedVia"
     };
 
     public static bool TryValidate(string? from, string? to, string? type, out string? error)
@@ -52,6 +54,19 @@ public static class RelationRules
                 if (t != "ssh")
                 {
                     error = "runsOn 的终点必须是服务器（to=ssh:...）";
+                    return false;
+                }
+                return true;
+
+            case "runsin":
+                if (f != "app" && f != "ds")
+                {
+                    error = "runsIn 的起点必须是应用或数据源（from=app:/ds:）";
+                    return false;
+                }
+                if (t != "app")
+                {
+                    error = "runsIn 的终点必须是 Docker 应用（to=app:...）";
                     return false;
                 }
                 return true;
@@ -158,6 +173,19 @@ public static class RelationRules
                 return true;
 
             case "relatedto":
+                return true;
+
+            case "accessedvia":
+                if (f != "ssh" && f != "ds")
+                {
+                    error = "accessedVia 的起点必须是服务器或数据源（from=ssh:/ds:）";
+                    return false;
+                }
+                if (t != "ssh")
+                {
+                    error = "accessedVia 的终点必须是服务器（to=ssh:）";
+                    return false;
+                }
                 return true;
 
             default:

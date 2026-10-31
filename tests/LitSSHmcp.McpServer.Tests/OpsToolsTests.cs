@@ -1,6 +1,7 @@
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Datasource;
 using LitSSHmcp.Core.Services.Storage;
+using LitSSHmcp.Core.Services.Topology;
 using LitSSHmcp.McpServer.Services;
 using LitSSHmcp.McpServer.Tools;
 using Xunit;
@@ -171,6 +172,64 @@ public class OpsToolsTests
         Assert.False(result.Success);
         Assert.Equal("log_path_ambiguous", result.Status);
         Assert.Null(runner.LastCommand);
+    }
+
+    [Fact]
+    public async Task Log_query_url_resolves_app_and_server()
+    {
+        var config = new AppConfig();
+        config.Security.Logs.AllowedPaths = new[] { "/var/log" };
+        config.Servers = new[]
+        {
+            new SshServerConfig { Id = "s1", Name = "web-01", Host = "10.0.0.1", AssetKey = "web" }
+        };
+        config.Applications = new[]
+        {
+            new ApplicationConfig
+            {
+                Id = "app1", Name = "order", Type = "java", AssetKey = "order",
+                RuntimeKind = RuntimeEnvironmentKind.SshServer, RuntimeSshAssetKey = "web",
+                LogPaths = new[] { "/var/log/order/app.log" },
+                Urls = new[] { new UrlPattern { Url = "https://shop.example.com/api", Role = UrlRole.Auto } }
+            }
+        };
+        var stub = new StubConfig(config);
+        var runner = new CapturingRunner();
+        var tools = new LogTools(stub, runner, new UrlResolutionService(stub));
+
+        var result = await tools.LogQuery(url: "https://shop.example.com/api/order", action: "tail", lines: 20);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal("tail -n 20 -- '/var/log/order/app.log'", runner.LastCommand);
+    }
+
+    [Fact]
+    public async Task Log_query_url_requires_app_when_multiple_backends_match()
+    {
+        var config = new AppConfig();
+        config.Security.Logs.AllowedPaths = new[] { "/var/log" };
+        config.Applications = new[]
+        {
+            new ApplicationConfig
+            {
+                Id = "a1", Name = "order-1", AssetKey = "o1", Type = "java",
+                RuntimeKind = RuntimeEnvironmentKind.Standalone, LogPaths = new[] { "/var/log/a.log" },
+                Urls = new[] { new UrlPattern { Url = "https://shop.example.com/api", Role = UrlRole.Backend } }
+            },
+            new ApplicationConfig
+            {
+                Id = "a2", Name = "order-2", AssetKey = "o2", Type = "java",
+                RuntimeKind = RuntimeEnvironmentKind.Standalone, LogPaths = new[] { "/var/log/b.log" },
+                Urls = new[] { new UrlPattern { Url = "https://shop.example.com/api", Role = UrlRole.Backend } }
+            }
+        };
+        var stub = new StubConfig(config);
+        var tools = new LogTools(stub, new CapturingRunner(), new UrlResolutionService(stub));
+
+        var result = await tools.LogQuery(url: "https://shop.example.com/api/order", action: "tail");
+
+        Assert.False(result.Success);
+        Assert.Equal("url_ambiguous", result.Status);
     }
 
     [Fact]

@@ -25,6 +25,11 @@ public interface IWindowService
     ServerMonitorWindow CreateServerMonitorWindow(ServerMonitorViewModel viewModel);
     DockerManagerWindow CreateDockerManagerWindow(DockerManagerViewModel viewModel);
     FirewallManagerWindow CreateFirewallManagerWindow(FirewallManagerViewModel viewModel);
+    SiteDiscoveryWindow CreateSiteDiscoveryWindow(SiteDiscoveryViewModel viewModel);
+    SiteAssetDashboardWindow CreateSiteAssetDashboardWindow(SiteAssetDashboardViewModel viewModel);
+    BatchProbeSelectionWindow CreateBatchProbeSelectionWindow(BatchProbeSelectionViewModel viewModel);
+    UserManagerWindow CreateUserManagerWindow(UserManagerViewModel viewModel);
+    DatabaseUserManagerWindow CreateDatabaseUserManagerWindow(DatabaseUserManagerViewModel viewModel);
     TerminalLogWindow CreateTerminalLogWindow();
     PortForwardWindow CreatePortForwardWindow(PortForwardViewModel viewModel);
     SyncWindow CreateSyncWindow();

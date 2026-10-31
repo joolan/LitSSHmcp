@@ -1,0 +1,124 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.SiteAssetDashboardWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="站点资产汇总" Height="760" Width="1220" MinHeight="560" MinWidth="920"
+        WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="站点资产汇总"/>
+
+        <Grid Grid.Row="1" Margin="16,8,16,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <UniformGrid Grid.Row="0" Columns="5" Margin="0,0,0,8">
+                <Border Style="{DynamicResource CardBorderStyle}" Padding="12,8" Margin="0,0,6,0">
+                    <StackPanel>
+                        <TextBlock Text="服务器" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding TotalServers}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{DynamicResource CardBorderStyle}" Padding="12,8" Margin="0,0,6,0">
+                    <StackPanel>
+                        <TextBlock Text="站点" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding TotalSites}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{DynamicResource CardBorderStyle}" Padding="12,8" Margin="0,0,6,0">
+                    <StackPanel>
+                        <TextBlock Text="证书" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding TotalCertificates}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{DynamicResource CardBorderStyle}" Padding="12,8" Margin="0,0,6,0">
+                    <StackPanel>
+                        <TextBlock Text="30 天内到期" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding Expiring30}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AppWarningBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{DynamicResource CardBorderStyle}" Padding="12,8">
+                    <StackPanel>
+                        <TextBlock Text="已过期" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding ExpiredCertificates}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AppDangerBrush}"/>
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <WrapPanel Grid.Row="1" Margin="0,0,0,8">
+                <ui:TextBox FontWeight="Normal" Width="260" Margin="0,0,8,0"
+                            Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="搜索服务器 / 域名 / 证书"/>
+                <ComboBox Width="130" Margin="0,0,8,0" ItemsSource="{Binding ExpiryOptions}"
+                          SelectedItem="{Binding ExpiryFilter, Mode=TwoWay}"/>
+                <ui:Button Content="刷新汇总" Padding="12,4" Margin="0,0,6,0" Command="{Binding RefreshCommand}"/>
+                <CheckBox Content="提权" IsChecked="{Binding BatchElevated, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ui:Button Content="选择服务器探测" Padding="12,4" Margin="0,0,6,0" Command="{Binding BatchProbeCommand}"/>
+                <ui:Button Content="停止批量" Padding="12,4" Margin="0,0,6,0" Command="{Binding StopBatchCommand}"/>
+                <ui:Button Content="导出站点 CSV" Padding="12,4" Margin="0,0,6,0" Command="{Binding ExportSitesCommand}"/>
+                <ui:Button Content="导出证书 CSV" Padding="12,4" Margin="0,0,6,0" Command="{Binding ExportCertificatesCommand}"/>
+                <ui:Button Content="结果目录" Padding="12,4" Command="{Binding OpenFolderCommand}"/>
+            </WrapPanel>
+
+            <TabControl Grid.Row="2">
+                <TabItem Header="站点资产">
+                    <ListView ItemsSource="{Binding SitesView}" BorderThickness="0" Background="Transparent" Padding="4">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="服务器" Width="140" DisplayMemberBinding="{Binding ServerName}"/>
+                                <GridViewColumn Header="域名/Host" Width="190" DisplayMemberBinding="{Binding Domain}"/>
+                                <GridViewColumn Header="端口" Width="90" DisplayMemberBinding="{Binding Ports}"/>
+                                <GridViewColumn Header="协议" Width="70" DisplayMemberBinding="{Binding Protocol}"/>
+                                <GridViewColumn Header="服务" Width="100" DisplayMemberBinding="{Binding ServerType}"/>
+                                <GridViewColumn Header="类型" Width="100" DisplayMemberBinding="{Binding SiteType}"/>
+                                <GridViewColumn Header="证书路径" Width="220" DisplayMemberBinding="{Binding CertificatePath}"/>
+                                <GridViewColumn Header="到期" Width="110" DisplayMemberBinding="{Binding NotAfter}"/>
+                                <GridViewColumn Header="剩余" Width="80" DisplayMemberBinding="{Binding DaysText}"/>
+                                <GridViewColumn Header="状态" Width="110" DisplayMemberBinding="{Binding Status}"/>
+                                <GridViewColumn Header="探测时间" Width="150" DisplayMemberBinding="{Binding ProbedAt}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </TabItem>
+                <TabItem Header="证书到期看板">
+                    <ListView ItemsSource="{Binding CertificatesView}" BorderThickness="0" Background="Transparent" Padding="4">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="服务器" Width="140" DisplayMemberBinding="{Binding ServerName}"/>
+                                <GridViewColumn Header="域名" Width="180" DisplayMemberBinding="{Binding Domain}"/>
+                                <GridViewColumn Header="证书路径" Width="260" DisplayMemberBinding="{Binding Path}"/>
+                                <GridViewColumn Header="主题" Width="160" DisplayMemberBinding="{Binding Subject}"/>
+                                <GridViewColumn Header="域名/SAN" Width="220" DisplayMemberBinding="{Binding Domains}"/>
+                                <GridViewColumn Header="到期" Width="110" DisplayMemberBinding="{Binding NotAfter}"/>
+                                <GridViewColumn Header="剩余" Width="80" DisplayMemberBinding="{Binding DaysText}"/>
+                                <GridViewColumn Header="状态" Width="110" DisplayMemberBinding="{Binding Status}"/>
+                                <GridViewColumn Header="探测时间" Width="150" DisplayMemberBinding="{Binding ProbedAt}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </TabItem>
+            </TabControl>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Margin="16,0,16,10">
+            <ProgressBar Height="4" Minimum="0" Maximum="{Binding BatchTotal, Mode=OneWay}"
+                         Value="{Binding BatchProgress, Mode=OneWay}" Margin="0,0,0,5"/>
+            <TextBlock Text="{Binding BatchStatus}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding LastRefreshText, StringFormat=最近刷新：{0}}" Foreground="{DynamicResource AppTextTertiaryBrush}"
+                       FontSize="{DynamicResource AppFontSizeMicro}"/>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

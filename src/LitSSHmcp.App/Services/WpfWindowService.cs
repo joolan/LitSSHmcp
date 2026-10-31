@@ -28,22 +28,27 @@ public sealed class WpfWindowService : IWindowService
 
     public AuditWindow CreateAuditWindow() => new() { Topmost = false };
 
-    public BatchExecWindow CreateBatchExecWindow(object dataContext) =>
-        new() { DataContext = dataContext, Topmost = false };
+    public BatchExecWindow CreateBatchExecWindow(object dataContext) => new() { DataContext = dataContext, Topmost = false };
 
-    public ServerMonitorWindow CreateServerMonitorWindow(ServerMonitorViewModel viewModel) =>
-        new(viewModel) { Topmost = false };
+    public ServerMonitorWindow CreateServerMonitorWindow(ServerMonitorViewModel viewModel) => new(viewModel) { Topmost = false };
 
-    public DockerManagerWindow CreateDockerManagerWindow(DockerManagerViewModel viewModel) =>
-        new(viewModel) { Topmost = false };
+    public DockerManagerWindow CreateDockerManagerWindow(DockerManagerViewModel viewModel) => new(viewModel) { Topmost = false };
 
-    public FirewallManagerWindow CreateFirewallManagerWindow(FirewallManagerViewModel viewModel) =>
-        new(viewModel) { Topmost = false };
+    public FirewallManagerWindow CreateFirewallManagerWindow(FirewallManagerViewModel viewModel) => new(viewModel) { Topmost = false };
+
+    public SiteDiscoveryWindow CreateSiteDiscoveryWindow(SiteDiscoveryViewModel viewModel) => new(viewModel) { Topmost = false };
+
+    public SiteAssetDashboardWindow CreateSiteAssetDashboardWindow(SiteAssetDashboardViewModel viewModel) => new(viewModel) { Topmost = false };
+
+    public BatchProbeSelectionWindow CreateBatchProbeSelectionWindow(BatchProbeSelectionViewModel viewModel) => new(viewModel) { Topmost = false };
+
+    public UserManagerWindow CreateUserManagerWindow(UserManagerViewModel viewModel) => new(viewModel) { Topmost = false };
+
+    public DatabaseUserManagerWindow CreateDatabaseUserManagerWindow(DatabaseUserManagerViewModel viewModel) => new(viewModel) { Topmost = false };
 
     public TerminalLogWindow CreateTerminalLogWindow() => new() { Topmost = false };
 
-    public PortForwardWindow CreatePortForwardWindow(PortForwardViewModel viewModel) =>
-        new(viewModel) { Topmost = false };
+    public PortForwardWindow CreatePortForwardWindow(PortForwardViewModel viewModel) => new(viewModel) { Topmost = false };
 
     public SyncWindow CreateSyncWindow() => new(Services) { Topmost = false };
 
@@ -121,6 +126,5 @@ public sealed class WpfWindowService : IWindowService
         return window;
     }
 
-    public RemoteDesktopSessionWindow CreateRemoteDesktopSessionWindow(IConfigService configService) =>
-        new(configService) { Topmost = false };
+    public RemoteDesktopSessionWindow CreateRemoteDesktopSessionWindow(IConfigService configService) => new(configService) { Topmost = false };
 }

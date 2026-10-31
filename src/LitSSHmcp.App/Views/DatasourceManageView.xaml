@@ -70,6 +70,7 @@
                             <MenuItem Header="新建 AI 会话" Click="OnNewAiSessionClick"/>
                             <Separator/>
                             <MenuItem x:Name="WorkbenchMenuItem" Header="打开工作台" Click="OnWorkbenchClick"/>
+                            <MenuItem x:Name="UserManagerMenuItem" Header="用户管理" Click="OnUserManagerClick"/>
                                 <MenuItem Header="测试连接" Click="OnTestClick"/>
                                 <MenuItem Header="编辑" Click="OnEditClick"/>
                                 <Separator/>

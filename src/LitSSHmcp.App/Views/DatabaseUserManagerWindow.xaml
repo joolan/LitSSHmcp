@@ -1,0 +1,423 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.DatabaseUserManagerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="数据库用户管理" Height="780" Width="1220" MinHeight="560" MinWidth="960"
+        WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </ui:FluentWindow.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="数据库用户管理"/>
+
+        <Grid Grid.Row="1" Margin="16,8,16,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Padding="12,8" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSizeSubtitle}"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+                        <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                        <TextBlock Text="{Binding CurrentUserText, StringFormat=当前连接账号：{0}}"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,2,0,0"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding CurrentUserText}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:Button Content="新建用户/角色" Padding="12,4" Margin="0,0,6,0" Click="OnOpenCreateUser"/>
+                        <ui:Button Content="刷新" Padding="12,4" Command="{Binding RefreshCommand}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="270" MinWidth="210"/>
+                    <ColumnDefinition Width="7"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <DockPanel Grid.Column="0">
+                    <ui:TextBox DockPanel.Dock="Top" FontWeight="Normal" Margin="0,0,0,6"
+                                Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                PlaceholderText="搜索用户名 / Host"/>
+                    <ListView ItemsSource="{Binding UsersView}" SelectedItem="{Binding SelectedUser}"
+                              BorderThickness="0" Background="Transparent" Padding="2">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="用户" Width="180" DisplayMemberBinding="{Binding DisplayName}"/>
+                                <GridViewColumn Header="状态" Width="80" DisplayMemberBinding="{Binding AccountStatus}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </DockPanel>
+
+                <GridSplitter Grid.Column="1" Width="7" HorizontalAlignment="Stretch"
+                              Background="Transparent" ResizeBehavior="PreviousAndNext"/>
+
+                <TabControl Grid.Column="2">
+                    <TabItem Header="权限">
+                        <Grid Margin="6">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Margin="0,0,0,6">
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock Text="{Binding SelectedUser.DisplayName, TargetNullValue=请选择用户}"
+                                               FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                        <ui:Button Content="执行变更" Appearance="Primary" Padding="12,4"
+                                                   Command="{Binding ExecuteCommand}"/>
+                                    </StackPanel>
+                                </DockPanel>
+                                <WrapPanel>
+                                    <ComboBox Width="170" Margin="0,0,8,0" ItemsSource="{Binding PermissionScopes}"
+                                              SelectedItem="{Binding SelectedPermissionScope, Mode=TwoWay}"
+                                              ToolTip="按数据库 / Schema 筛选"/>
+                                    <ui:TextBox FontWeight="Normal" Width="200" Margin="0,0,8,0"
+                                                Text="{Binding PermissionSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                PlaceholderText="搜索数据库 / 表 / 对象"/>
+                                    <CheckBox Content="仅看有变更" IsChecked="{Binding ShowOnlyChangedPermissions, Mode=TwoWay}"
+                                              VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                    <TextBlock Text="{Binding PermissionFilterSummary}" VerticalAlignment="Center" Margin="0,0,10,0"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeMicro}"/>
+                                    <ui:Button Content="上一页" Padding="8,2" Margin="0,0,4,0"
+                                               Command="{Binding PermissionPrevPageCommand}"/>
+                                    <ui:Button Content="下一页" Padding="8,2" Margin="0,0,8,0"
+                                               Command="{Binding PermissionNextPageCommand}"/>
+                                    <TextBlock Text="{Binding PermissionPageText}" VerticalAlignment="Center"/>
+                                    <ui:Button Content="勾选筛选表" Padding="8,2" Margin="8,0,4,0"
+                                               Command="{Binding SelectAllVisibleTablesCommand}"/>
+                                    <ui:Button Content="清空筛选表" Padding="8,2"
+                                               Command="{Binding ClearVisibleTablesCommand}"/>
+                                </WrapPanel>
+                            </StackPanel>
+                            <ListView Grid.Row="1" ItemsSource="{Binding PagedPermissionRows}"
+                                      BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}"
+                                      Background="{DynamicResource AppSurfaceBrush}" Padding="2">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="对象" Width="260">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Label}"/>
+                                                        <TextBlock Text="{Binding InheritanceHint}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                                   Foreground="{DynamicResource AppWarningBrush}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="类型" Width="90" DisplayMemberBinding="{Binding Kind}"/>
+                                        <GridViewColumn Header="所有者" Width="130" DisplayMemberBinding="{Binding Owner}"/>
+                                        <GridViewColumn Header="权限" Width="620">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <ItemsControl ItemsSource="{Binding Toggles}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate>
+                                                                <WrapPanel/>
+                                                            </ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsGranted, Mode=TwoWay}"
+                                                                          IsEnabled="{Binding CanEdit}"
+                                                                          ToolTip="{Binding InheritanceTooltip}"
+                                                                          Margin="0,1,10,1"/>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                            <Border Grid.Row="2" Style="{DynamicResource CardBorderStyle}" Padding="8" Margin="0,6,0,0">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Left" Text="{Binding GrantSummary}" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeMicro}" MaxWidth="640"/>
+                                    <TextBlock DockPanel.Dock="Right" Text="权限变更执行前会二次确认"
+                                               Foreground="{DynamicResource AppTextTertiaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeMicro}"/>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+                    </TabItem>
+
+                    <TabItem Header="变更预览">
+                        <Grid Margin="6">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="权限变更差异" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding PreviewSummary}" Margin="12,0,0,0"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeMicro}"/>
+                                </StackPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <ui:Button Content="刷新预览" Padding="10,4" Margin="0,0,6,0"
+                                               Command="{Binding RefreshPreviewCommand}"/>
+                                    <ui:Button Content="执行变更" Appearance="Primary" Padding="12,4"
+                                               Command="{Binding ExecuteCommand}"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <ListView Grid.Row="1" ItemsSource="{Binding Diffs}" Margin="0,0,0,6"
+                                      BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}"
+                                      Background="{DynamicResource AppSurfaceBrush}" Padding="2">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="变化" Width="70" DisplayMemberBinding="{Binding Change}"/>
+                                        <GridViewColumn Header="对象" Width="260" DisplayMemberBinding="{Binding Object}"/>
+                                        <GridViewColumn Header="权限" Width="420" DisplayMemberBinding="{Binding Detail}"/>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                            <TextBox Grid.Row="2" Text="{Binding SqlPreview, Mode=OneWay}" IsReadOnly="True"
+                                     AcceptsReturn="True" TextWrapping="Wrap" Height="130"
+                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                     FontFamily="{DynamicResource AppFontMonoFamily}"
+                                     FontSize="{DynamicResource AppFontSizeMicro}"
+                                     BorderBrush="{DynamicResource AppBorderBrush}"/>
+                        </Grid>
+                    </TabItem>
+
+                    <TabItem Header="快照">
+                        <Grid Margin="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="280" MinWidth="220"/>
+                                <ColumnDefinition Width="7"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <DockPanel Grid.Column="0">
+                                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                    <ui:Button Content="刷新快照" Padding="10,3" Margin="0,0,6,6"
+                                               Command="{Binding RefreshSnapshotsCommand}"/>
+                                    <ui:Button Content="回滚选中" Padding="10,3" Margin="0,0,6,6"
+                                               Command="{Binding RollbackSnapshotCommand}"/>
+                                    <ui:Button Content="打开目录" Padding="10,3" Margin="0,0,6,6"
+                                               Command="{Binding OpenSnapshotFolderCommand}"/>
+                                    <ui:Button Content="删除快照" Padding="10,3" Margin="0,0,6,6"
+                                               Foreground="{DynamicResource AppDangerBrush}"
+                                               Command="{Binding DeleteSnapshotCommand}"/>
+                                </WrapPanel>
+                                <ListView ItemsSource="{Binding Snapshots}" SelectedItem="{Binding SelectedSnapshot}"
+                                          BorderThickness="0" Background="Transparent" Padding="2">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="时间" Width="150" DisplayMemberBinding="{Binding CreatedAtText}"/>
+                                            <GridViewColumn Header="对象数" Width="100" DisplayMemberBinding="{Binding Summary}"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </DockPanel>
+                            <GridSplitter Grid.Column="1" Width="7" HorizontalAlignment="Stretch"
+                                          Background="Transparent" ResizeBehavior="PreviousAndNext"/>
+                            <Border Grid.Column="2" Style="{DynamicResource CardBorderStyle}" Padding="12">
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                        <TextBlock Text="{Binding SelectedSnapshot.CreatedAtText, StringFormat=选中快照：{0}}"
+                                                   FontWeight="SemiBold"/>
+                                        <TextBlock Text="每次执行权限变更前会自动保存；回滚会先载入快照并生成差异，确认后再执行。"
+                                                   TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <ListView ItemsSource="{Binding SnapshotDetails}" BorderThickness="1"
+                                              BorderBrush="{DynamicResource AppBorderBrush}"
+                                              Background="{DynamicResource AppSurfaceBrush}" Padding="2">
+                                        <ListView.View>
+                                            <GridView>
+                                                <GridViewColumn Header="对象" Width="230" DisplayMemberBinding="{Binding Object}"/>
+                                                <GridViewColumn Header="类型" Width="90" DisplayMemberBinding="{Binding Kind}"/>
+                                                <GridViewColumn Header="所有者" Width="120" DisplayMemberBinding="{Binding Owner}"/>
+                                                <GridViewColumn Header="权限" Width="360" DisplayMemberBinding="{Binding Permissions}"/>
+                                            </GridView>
+                                        </ListView.View>
+                                    </ListView>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+                    </TabItem>
+
+                    <TabItem Header="账号操作">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="6">
+                                <TextBlock Text="{Binding SelectedUser.DisplayName, TargetNullValue=请选择用户}"
+                                           FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeSubtitle}"/>
+                                <TextBlock Text="{Binding SelectedUser.RoleAttributes, TargetNullValue=—}"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                           FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"/>
+                                <TextBlock Text="{Binding SelectedUser.PasswordStatus, StringFormat=密码状态：{0}}"
+                                           FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"/>
+                                <TextBlock Text="{Binding SelectedUser.GrantSummary, StringFormat=权限摘要：{0}}"
+                                           FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                <TextBlock Text="{Binding SelectedUser.IsCurrent, StringFormat=当前连接账号：{0}}"
+                                           FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"/>
+
+                                <Separator Margin="0,12,0,10"/>
+                                <TextBlock Text="修改密码" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                <PasswordBox x:Name="ChangePasswordBox" FontWeight="Normal" Margin="0,0,0,6" PasswordChar="●"/>
+                                <ui:Button Content="确认修改密码" Padding="12,4" HorizontalAlignment="Left"
+                                           Click="OnChangePassword"/>
+
+                                <StackPanel Margin="0,14,0,0"
+                                            Visibility="{Binding IsMySqlBackend, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="账号状态" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                    <WrapPanel>
+                                        <ui:Button Content="锁定账号" Padding="12,4" Margin="0,0,6,6"
+                                                   Command="{Binding LockAccountCommand}"/>
+                                        <ui:Button Content="解锁账号" Padding="12,4" Margin="0,0,6,6"
+                                                   Command="{Binding UnlockAccountCommand}"/>
+                                        <ui:Button Content="密码立即过期" Padding="12,4" Margin="0,0,6,6"
+                                                   Command="{Binding ExpirePasswordCommand}"/>
+                                        <ui:Button Content="取消密码过期" Padding="12,4" Margin="0,0,6,6"
+                                                   Command="{Binding ClearPasswordExpiryCommand}"/>
+                                    </WrapPanel>
+                                </StackPanel>
+
+                                <StackPanel Margin="0,14,0,0"
+                                            Visibility="{Binding IsPostgresBackend, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="角色属性" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                    <WrapPanel>
+                                        <ui:Button Content="{Binding LoginActionText}" Padding="12,4" Margin="0,0,6,6"
+                                                   Command="{Binding ToggleLoginCommand}"/>
+                                        <ui:Button Content="{Binding CreateDbActionText}" Padding="12,4" Margin="0,0,6,6"
+                                                   Command="{Binding ToggleCreateDbCommand}"/>
+                                        <ui:Button Content="{Binding CreateRoleActionText}" Padding="12,4" Margin="0,0,6,6"
+                                                   Command="{Binding ToggleCreateRoleCommand}"/>
+                                    </WrapPanel>
+                                    <TextBlock Text="SUPERUSER 保持只读，不在此处授予或撤销；当前连接账号和超级用户禁止修改。"
+                                               TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                </StackPanel>
+
+                                <Separator Margin="0,14,0,10"/>
+                                <TextBlock Text="危险操作" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                <ui:Button Content="删除选中用户" Padding="12,4" HorizontalAlignment="Left"
+                                           Foreground="{DynamicResource AppDangerBrush}"
+                                           Command="{Binding DeleteUserCommand}"/>
+
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <TabItem Header="PG 高级"
+                             IsSelected="{Binding IsPostgresAdvancedSelected, Mode=TwoWay}"
+                             Visibility="{Binding IsPostgresBackend, Converter={StaticResource BoolToVis}}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="6">
+                                <ui:Button Content="加载/刷新高级信息" Padding="10,3" HorizontalAlignment="Left"
+                                           Margin="0,0,0,8" Command="{Binding RefreshPostgresAdvancedCommand}"/>
+                                <TextBlock Text="角色成员关系" FontWeight="SemiBold"
+                                           FontSize="{DynamicResource AppFontSizeSubtitle}"/>
+                                <TextBlock Text="{Binding RoleMembershipSummary}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                           FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,3,0,6"/>
+                                <ListView Height="170" ItemsSource="{Binding RoleMemberships}"
+                                          SelectedItem="{Binding SelectedRoleMembership}"
+                                          BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}"
+                                          Background="{DynamicResource AppSurfaceBrush}" Padding="2">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="角色" Width="190" DisplayMemberBinding="{Binding RoleName}"/>
+                                            <GridViewColumn Header="成员" Width="190" DisplayMemberBinding="{Binding MemberName}"/>
+                                            <GridViewColumn Header="方向" Width="130" DisplayMemberBinding="{Binding Direction}"/>
+                                            <GridViewColumn Header="选项" Width="150" DisplayMemberBinding="{Binding AdminOption}"/>
+                                            <GridViewColumn Header="授予者" Width="130" DisplayMemberBinding="{Binding Grantor}"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                                <WrapPanel Margin="0,8,0,0">
+                                    <TextBlock Text="授予角色：" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <ComboBox Width="180" ItemsSource="{Binding GrantableRoles}"
+                                              SelectedItem="{Binding SelectedRoleToGrant, Mode=TwoWay}"
+                                              Margin="0,0,6,0"/>
+                                    <ui:Button Content="授予给当前账号" Padding="10,3" Margin="0,0,6,0"
+                                               Command="{Binding GrantRoleCommand}"/>
+                                    <ui:Button Content="撤销选中关系" Padding="10,3"
+                                               Command="{Binding RevokeRoleCommand}"/>
+                                </WrapPanel>
+                                <TextBlock Text="角色成员关系来自 pg_auth_members；PG 的有效权限还会通过嵌套角色继承。当前连接账号和超级用户受保护。"
+                                           TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,5,0,0"/>
+
+                                <Separator Margin="0,14,0,10"/>
+                                <TextBlock Text="默认权限" FontWeight="SemiBold"
+                                           FontSize="{DynamicResource AppFontSizeSubtitle}"/>
+                                <TextBlock Text="{Binding DefaultPrivilegeSummary}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                           FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,3,0,6"/>
+                                <ListView Height="180" ItemsSource="{Binding DefaultPrivileges}"
+                                          SelectedItem="{Binding SelectedDefaultPrivilege}"
+                                          BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}"
+                                          Background="{DynamicResource AppSurfaceBrush}" Padding="2">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Schema" Width="120" DisplayMemberBinding="{Binding Schema}"/>
+                                            <GridViewColumn Header="对象类型" Width="110" DisplayMemberBinding="{Binding ObjectType}"/>
+                                            <GridViewColumn Header="被授予者" Width="180" DisplayMemberBinding="{Binding Grantee}"/>
+                                            <GridViewColumn Header="权限" Width="130" DisplayMemberBinding="{Binding Privilege}"/>
+                                            <GridViewColumn Header="可转授" Width="90" DisplayMemberBinding="{Binding GrantableText}"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                                <WrapPanel Margin="0,8,0,0">
+                                    <ComboBox Width="110" ItemsSource="{Binding DefaultPrivilegeSchemas}"
+                                              SelectedItem="{Binding SelectedDefaultPrivilegeSchema, Mode=TwoWay}"
+                                              Margin="0,0,6,6" ToolTip="Schema（* 表示全局）"/>
+                                    <ComboBox Width="120" ItemsSource="{Binding DefaultPrivilegeObjectTypes}"
+                                              SelectedItem="{Binding SelectedDefaultPrivilegeObjectType, Mode=TwoWay}"
+                                              Margin="0,0,6,6"/>
+                                    <ComboBox Width="150" ItemsSource="{Binding DefaultPrivilegeGrantees}"
+                                              SelectedItem="{Binding SelectedDefaultPrivilegeGrantee, Mode=TwoWay}"
+                                              Margin="0,0,6,6"/>
+                                    <ComboBox Width="150" ItemsSource="{Binding DefaultPrivilegePrivileges}"
+                                              SelectedItem="{Binding SelectedDefaultPrivilegePrivilege, Mode=TwoWay}"
+                                              Margin="0,0,6,6"/>
+                                    <ui:Button Content="添加默认权限" Padding="10,3" Margin="0,0,6,6"
+                                               Command="{Binding AddDefaultPrivilegeCommand}"/>
+                                    <ui:Button Content="撤销选中规则" Padding="10,3" Margin="0,0,6,6"
+                                               Foreground="{DynamicResource AppDangerBrush}"
+                                               Command="{Binding RevokeDefaultPrivilegeCommand}"/>
+                                </WrapPanel>
+                                <TextBlock Text="默认权限按当前选中账号作为 FOR ROLE 所有者执行；使用 ALL PRIVILEGES 会展开为 PostgreSQL 支持的全部默认权限。所有变更需确认并写审计。"
+                                           TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+                </TabControl>
+            </Grid>
+        </Grid>
+
+        <TextBlock Grid.Row="2" Text="{Binding StatusText}" Margin="16,0,16,10"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"/>
+    </Grid>
+</ui:FluentWindow>

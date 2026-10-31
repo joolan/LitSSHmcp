@@ -5,6 +5,11 @@
     <ProjectReference Include="..\LitSSHmcp.Agent\LitSSHmcp.Agent.csproj" />
   </ItemGroup>
 
+  <!-- 应用图标资源：供窗口 Icon 与托盘图标在运行时加载 -->
+  <ItemGroup>
+    <Resource Include="Assets\LitSSH.ico" />
+  </ItemGroup>
+
   <!-- AI 运维助手内置技能(运维技能 markdown): 随 App 输出到 skills/litssh-mcp-ops-skill -->
   <ItemGroup>
     <None Include="..\..\docs\litssh-mcp-ops-skill\**\*" Link="skills\litssh-mcp-ops-skill\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
@@ -45,6 +50,8 @@
     <UseWPF>true</UseWPF>
     <!-- 应用版本（发布脚本会以 -p:Version=<tag> 覆盖）；「设置 → 关于」页面显示该值 -->
     <Version>1.5.1</Version>
+    <!-- 应用图标：exe 文件图标 + 窗口/托盘运行时图标来源 -->
+    <ApplicationIcon>Assets\LitSSH.ico</ApplicationIcon>
     <!-- ����������ͼ�� NotifyIcon���Ƴ� WinForms ��ʽ using�������� WPF ���ͣ�Button/TextBox/Application �ȣ����� -->
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>

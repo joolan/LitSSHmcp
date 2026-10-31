@@ -35,6 +35,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
         TestCommand = new RelayCommand(_ => Test(), _ => SelectedDataSource != null);
         WorkbenchCommand = new RelayCommand(_ => OpenWorkbench(SelectedDataSource));
         OpenWorkbenchItemCommand = new RelayCommand(p => OpenWorkbench(p as DataSourceConfig));
+        UserManagerItemCommand = new RelayCommand(p => OpenUserManager(p as DataSourceConfig));
         NewAiSessionItemCommand = new RelayCommand(p =>
         {
             var ds = p as DataSourceConfig ?? SelectedDataSource;
@@ -153,6 +154,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
     public ICommand TestCommand { get; }
     public ICommand WorkbenchCommand { get; }
     public ICommand OpenWorkbenchItemCommand { get; }
+    public ICommand UserManagerItemCommand { get; }
     public ICommand NewAiSessionItemCommand { get; }
 
     public event Action<DataSourceConfig>? NewAiSessionRequested;
@@ -180,6 +182,32 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
     public bool IsListView => !IsCardView;
 
     private readonly List<DbWorkbenchWindow> _workbenches = new();
+    private readonly Dictionary<string, DatabaseUserManagerWindow> _databaseUserManagers = new();
+
+    private void OpenUserManager(DataSourceConfig? target)
+    {
+        if (target is null)
+            return;
+        if (!target.Type.Equals("mysql", StringComparison.OrdinalIgnoreCase) &&
+            !target.Type.Equals("postgres", StringComparison.OrdinalIgnoreCase))
+        {
+            _dialogs.Warn("数据库用户管理第一版仅支持 MySQL / PostgreSQL。", "数据库用户管理");
+            return;
+        }
+        if (_databaseUserManagers.TryGetValue(target.Id, out var existing) && existing.IsLoaded)
+        {
+            existing.Activate();
+            return;
+        }
+
+        var registry = _services?.CreateWorkbenchDriverRegistry()
+                       ?? AppServiceFactory.CreateWorkbenchDriverRegistry(_configService);
+        var window = _windows.CreateDatabaseUserManagerWindow(new DatabaseUserManagerViewModel(
+            target, registry, _dialogs, _services?.CreateAuditLog()));
+        window.Closed += (_, _) => _databaseUserManagers.Remove(target.Id);
+        _databaseUserManagers[target.Id] = window;
+        window.Show();
+    }
 
     private void OpenWorkbench(DataSourceConfig? target)
     {

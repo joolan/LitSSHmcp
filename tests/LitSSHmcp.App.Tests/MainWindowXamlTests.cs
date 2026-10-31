@@ -123,6 +123,22 @@ public class MainWindowXamlTests
             _ = new ServerMonitorWindow(new LitSSHmcp.App.ViewModels.ServerMonitorViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
             _ = new DockerManagerWindow(new LitSSHmcp.App.ViewModels.DockerManagerViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
             _ = new FirewallManagerWindow(new LitSSHmcp.App.ViewModels.FirewallManagerViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
+            _ = new SiteDiscoveryWindow(new LitSSHmcp.App.ViewModels.SiteDiscoveryViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
+            _ = new SiteAssetDashboardWindow(new LitSSHmcp.App.ViewModels.SiteAssetDashboardViewModel());
+            _ = new BatchProbeSelectionWindow(new LitSSHmcp.App.ViewModels.BatchProbeSelectionViewModel(new[] { server }));
+            _ = new UserManagerWindow(new LitSSHmcp.App.ViewModels.UserManagerViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
+            var dataSource = new LitSSHmcp.Core.Models.DataSourceConfig
+            {
+                Id = "test-db",
+                Name = "demo",
+                Type = "mysql",
+                Host = "127.0.0.1",
+                Port = 3306
+            };
+            _ = new DatabaseUserManagerWindow(new LitSSHmcp.App.ViewModels.DatabaseUserManagerViewModel(
+                dataSource,
+                LitSSHmcp.App.Services.AppServiceFactory.CreateDriverRegistry(new ConfigService())));
+            _ = new DatabaseCreateUserWindow();
             _ = new ServerSnippetsWindow(server);
             _ = new SftpManagerWindow(new LitSSHmcp.App.ViewModels.SftpManagerViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
             _ = new ConflictDialog("a.txt");

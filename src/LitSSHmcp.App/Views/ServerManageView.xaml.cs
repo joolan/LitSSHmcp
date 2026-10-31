@@ -80,6 +80,8 @@ public partial class ServerManageView : UserControl
         Add("新建 AI 会话…", () => vm.NewAiSessionCommand.Execute(null));
         Add("打开代理浏览器 (SOCKS)…", () => vm.OpenProxiedBrowserCommand.Execute(null), enabled: !server.Disabled);
         Add("远程互传（服务器↔服务器）…", () => vm.OpenRemoteCopyCommand.Execute(null));
+        Add("HTTP站点探测…", () => vm.OpenSiteDiscoveryCommand.Execute(null));
+        Add("用户管理…", () => vm.OpenUserManagerCommand.Execute(null));
         Add("Docker 查看/管理…", () => vm.OpenDockerManagerCommand.Execute(null));
         Add("系统防火墙…", () => vm.OpenFirewallManagerCommand.Execute(null));
         menu.Items.Add(new Separator());
@@ -114,6 +116,10 @@ public partial class ServerManageView : UserControl
     private void OnSnapshotRefreshClick(object sender, RoutedEventArgs e) => ViewModel?.SnapshotRefreshCommand.Execute(null);
 
     private void OnSnapshotHistoryClick(object sender, RoutedEventArgs e) => ViewModel?.OpenSnapshotHistoryCommand.Execute(null);
+
+    private void OnSiteDiscoveryClick(object sender, RoutedEventArgs e) => ViewModel?.OpenSiteDiscoveryCommand.Execute(null);
+
+    private void OnUserManagerClick(object sender, RoutedEventArgs e) => ViewModel?.OpenUserManagerCommand.Execute(null);
 
     private void OnMonitorClick(object sender, RoutedEventArgs e) => ViewModel?.OpenMonitorCommand.Execute(null);
 

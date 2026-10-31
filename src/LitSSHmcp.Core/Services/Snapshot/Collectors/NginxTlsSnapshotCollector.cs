@@ -37,6 +37,8 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
         public List<string> ServerNames { get; } = new();
         public List<NginxListen> Listens { get; } = new();
         public List<string> CertPaths { get; } = new();
+        public List<string> RootPaths { get; } = new();
+        public List<string> ProxyTargets { get; } = new();
         public bool HasTls => CertPaths.Count > 0 || Listens.Any(l => l.Ssl);
     }
 
@@ -195,7 +197,9 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
             ["port"] = l.Port,
             ["ssl"] = l.Ssl
         }).ToList(),
-        ["certificatePaths"] = site.CertPaths
+        ["certificatePaths"] = site.CertPaths,
+        ["rootPaths"] = site.RootPaths,
+        ["proxyTargets"] = site.ProxyTargets
     };
 
     private static readonly Regex AnsiPattern = new(
@@ -284,8 +288,20 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
                 else if (line.StartsWith("ssl_certificate ", StringComparison.Ordinal))
                 {
                     var path = line["ssl_certificate".Length..].Trim().TrimEnd(';').Trim();
-                    if (path.Length > 0 && !path.Contains('$'))   // 含变量的证书路径无法静态读取
+                    if (path.Length > 0 && !path.Contains('$'))   // ��������֤��·���޷���̬��ȡ
                         current.CertPaths.Add(path);
+                }
+                else if (line.StartsWith("root ", StringComparison.Ordinal))
+                {
+                    var path = line["root".Length..].Trim().TrimEnd(';').Trim().Trim('"', '\'');
+                    if (path.Length > 0 && !path.Contains('$'))
+                        current.RootPaths.Add(path);
+                }
+                else if (line.StartsWith("proxy_pass ", StringComparison.Ordinal))
+                {
+                    var target = line["proxy_pass".Length..].Trim().TrimEnd(';').Trim().Trim('"', '\'');
+                    if (target.Length > 0 && !target.Contains('$'))
+                        current.ProxyTargets.Add(target);
                 }
             }
 

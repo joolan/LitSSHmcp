@@ -1,0 +1,192 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.UserManagerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="用户管理" Height="760" Width="1240" MinHeight="560" MinWidth="960"
+        WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="{Binding Title}"/>
+
+        <Grid Grid.Row="1" Margin="16,8,16,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Padding="12,8" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                        <WrapPanel>
+                            <TextBlock Text="{Binding ModeText}" FontWeight="SemiBold"
+                                       FontSize="{DynamicResource AppFontSizeSubtitle}"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <Border Background="{DynamicResource AppAccentSubtleBrush}" CornerRadius="4" Padding="7,2" Margin="8,0,0,0">
+                                <TextBlock Text="{Binding SummaryText}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                           Foreground="{DynamicResource AppAccentBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </Border>
+                        </WrapPanel>
+                        <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:Button Content="直接刷新" Padding="12,4" Margin="0,0,6,0" Command="{Binding RefreshCommand}"/>
+                        <ui:Button Content="提权刷新" Padding="12,4" Margin="0,0,6,0" Command="{Binding ElevatedRefreshCommand}"/>
+                        <ui:Button Content="导出 CSV" Padding="12,4" Command="{Binding ExportCommand}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <UniformGrid Grid.Row="1" Columns="4" Margin="0,0,0,8">
+                <Border Style="{DynamicResource CardBorderStyle}" Padding="12,6" Margin="0,0,6,0">
+                    <StackPanel>
+                        <TextBlock Text="系统账号" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding TotalUsers}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{DynamicResource CardBorderStyle}" Padding="12,6" Margin="0,0,6,0">
+                    <StackPanel>
+                        <TextBlock Text="可登录" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding LoginableUsers}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{DynamicResource CardBorderStyle}" Padding="12,6" Margin="0,0,6,0">
+                    <StackPanel>
+                        <TextBlock Text="特权账号" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding PrivilegedUsers}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AppWarningBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{DynamicResource CardBorderStyle}" Padding="12,6">
+                    <StackPanel>
+                        <TextBlock Text="风险账号" FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding RiskUsers}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AppDangerBrush}"/>
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <Grid Grid.Row="2" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="260"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <ui:TextBox Grid.Column="0" FontWeight="Normal" Margin="0,0,8,0"
+                            Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="搜索用户 / UID / 组 / Shell"/>
+                <CheckBox Grid.Column="1" Content="仅风险账号" IsChecked="{Binding ShowOnlyRisk, Mode=TwoWay}"
+                          VerticalAlignment="Center" Margin="0,0,16,0"/>
+                <TextBlock Grid.Column="2" Text="{Binding SshSettingsText}" VerticalAlignment="Center"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           FontSize="{DynamicResource AppFontSizeMicro}" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding SshSettingsText}"/>
+            </Grid>
+
+            <Grid Grid.Row="3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="7"/>
+                    <ColumnDefinition Width="330" MinWidth="280"/>
+                </Grid.ColumnDefinitions>
+
+                <ListView Grid.Column="0" ItemsSource="{Binding UsersView}" SelectedItem="{Binding SelectedUser}"
+                          BorderThickness="0" Background="Transparent" Padding="4">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="用户" Width="120" DisplayMemberBinding="{Binding UserName}"/>
+                            <GridViewColumn Header="UID" Width="60" DisplayMemberBinding="{Binding Uid}"/>
+                            <GridViewColumn Header="主组" Width="100" DisplayMemberBinding="{Binding PrimaryGroup}"/>
+                            <GridViewColumn Header="Shell" Width="150" DisplayMemberBinding="{Binding Shell}"/>
+                            <GridViewColumn Header="可登录" Width="150" DisplayMemberBinding="{Binding CanLogin}"/>
+                            <GridViewColumn Header="密码" Width="100" DisplayMemberBinding="{Binding PasswordStatus}"/>
+                            <GridViewColumn Header="特权" Width="60" DisplayMemberBinding="{Binding IsPrivileged}"/>
+                            <GridViewColumn Header="最后登录" Width="180" DisplayMemberBinding="{Binding LastLogin}"/>
+                            <GridViewColumn Header="风险" Width="80" DisplayMemberBinding="{Binding RiskLevel}"/>
+                            <GridViewColumn Header="说明" Width="280" DisplayMemberBinding="{Binding RiskNotes}"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+
+                <GridSplitter Grid.Column="1" Width="7" HorizontalAlignment="Stretch"
+                              Background="Transparent" ResizeBehavior="PreviousAndNext"/>
+
+                <Border Grid.Column="2" Style="{DynamicResource CardBorderStyle}" Padding="12">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Text="账号详情" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,0,8"/>
+                            <TextBlock Text="{Binding SelectedUser.UserName, TargetNullValue=请选择账号}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding SelectedUser.FullName}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,2,0,8"/>
+                            <TextBlock Text="{Binding SelectedUser.RiskNotes, TargetNullValue=—}" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource AppDangerBrush}" Margin="0,0,0,8"/>
+                            <TextBlock Text="{Binding SelectedUser.Home, StringFormat=主目录：{0}}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding SelectedUser.Groups, StringFormat=组：{0}}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding SelectedUser.LoginMethod, StringFormat=登录方式：{0}}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding SelectedUser.LastLogin, StringFormat=最后登录：{0}}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding SelectedUser.HashAlgorithm, StringFormat=密码哈希：{0}}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding SelectedUser.AccountStatus, StringFormat=账号状态：{0}}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding SelectedUser.PasswordAge, StringFormat=密码年龄：{0}}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding SelectedUser.AccountExpires, StringFormat=账号到期：{0}}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding SelectedUser.ActiveSessions, StringFormat=在线会话：{0}}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding SelectedUser.FailedLogins, StringFormat=失败登录次数：{0}}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding SelectedUser.SudoRules, StringFormat=sudo 规则：{0}}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <Separator Margin="0,10,0,8"/>
+                            <TextBlock Text="账号操作" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                            <WrapPanel>
+                                <ui:Button Content="锁定账号" Padding="10,3" Margin="0,0,6,6" Command="{Binding LockCommand}"/>
+                                <ui:Button Content="解锁账号" Padding="10,3" Margin="0,0,6,6" Command="{Binding UnlockCommand}"/>
+                                <ui:Button Content="禁止 Shell" Padding="10,3" Margin="0,0,6,6" Command="{Binding DisableShellCommand}"/>
+                                <ui:Button Content="恢复 Shell" Padding="10,3" Margin="0,0,6,6" Command="{Binding RestoreShellCommand}"/>
+                                <ui:Button Content="移除 sudo" Padding="10,3" Margin="0,0,6,6"
+                                           Foreground="{DynamicResource AppDangerBrush}" Command="{Binding RemoveSudoCommand}"/>
+                            </WrapPanel>
+                            <TextBlock Text="锁定仅影响密码认证；解锁不会自动恢复 Shell。Shell 为 nologin 时，可单独点击「恢复 Shell」。"
+                                       TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,8"/>
+                            <Separator Margin="0,8,0,8"/>
+                            <DockPanel Margin="0,0,0,4">
+                                <TextBlock DockPanel.Dock="Left" Text="授权密钥" FontWeight="SemiBold"/>
+                                <ui:Button DockPanel.Dock="Right" Content="删除选中密钥" Padding="8,2"
+                                           Foreground="{DynamicResource AppDangerBrush}" Command="{Binding DeleteKeyCommand}"/>
+                            </DockPanel>
+                            <ListView ItemsSource="{Binding SelectedUser.AuthorizedKeys}" SelectedItem="{Binding SelectedKey}"
+                                      Height="150" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}"
+                                      Background="{DynamicResource AppSurfaceBrush}" Margin="0,0,0,8">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="行" Width="38" DisplayMemberBinding="{Binding LineNumber}"/>
+                                        <GridViewColumn Header="指纹" Width="160" DisplayMemberBinding="{Binding Fingerprint}"/>
+                                        <GridViewColumn Header="类型" Width="70" DisplayMemberBinding="{Binding KeyType}"/>
+                                        <GridViewColumn Header="备注" Width="120" DisplayMemberBinding="{Binding Comment}"/>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                            <Separator Margin="0,4,0,8"/>
+                            <TextBlock Text="SSH 登录策略" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding SshSettingsText}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <TextBlock Grid.Row="2" Text="{Binding StatusTextWithMode}" Margin="16,0,16,10"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"/>
+    </Grid>
+</ui:FluentWindow>

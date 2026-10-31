@@ -49,15 +49,22 @@
             </controls:PageHeader.StatusContent>
         </controls:PageHeader>
 
-        <WrapPanel Grid.Row="1" Margin="0,0,0,10">
-            <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding LoadServersCommand}"/>
-                            <ui:Button Content="列" Padding="12,4" Margin="0,0,6,6" Click="OnChooseColumns" ToolTip="显示/隐藏列"/>
-            <ui:Button Content="批量执行" Icon="{ui:SymbolIcon Play24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenBatchExecCommand}"/>
-            <ui:Button Content="会话日志" Icon="{ui:SymbolIcon History24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenTerminalLogsCommand}"/>
-            <ui:Button Content="端口转发" Icon="{ui:SymbolIcon Share24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenPortForwardCommand}"/>
-            <ui:Button Content="文件/文件夹同步" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenSyncCommand}"/>
-            <ui:Button Content="触发事件" Icon="{ui:SymbolIcon Flash24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenTriggerCommand}"/>
-        </WrapPanel>
+        <DockPanel Grid.Row="1" Margin="0,0,0,10">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <Border Width="1" Height="22" Margin="8,0,10,0"
+                        Background="{DynamicResource AppBorderBrush}"/>
+                <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,0" Command="{Binding LoadServersCommand}"/>
+                <ui:Button Content="列" Padding="12,4" Click="OnChooseColumns" ToolTip="显示/隐藏列"/>
+            </StackPanel>
+            <WrapPanel VerticalAlignment="Center">
+                <ui:Button Content="站点资产" Icon="{ui:SymbolIcon Globe24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenSiteAssetsCommand}"/>
+                <ui:Button Content="批量执行" Icon="{ui:SymbolIcon Play24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenBatchExecCommand}"/>
+                <ui:Button Content="会话日志" Icon="{ui:SymbolIcon History24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenTerminalLogsCommand}"/>
+                <ui:Button Content="端口转发" Icon="{ui:SymbolIcon Share24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenPortForwardCommand}"/>
+                <ui:Button Content="文件/文件夹同步" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenSyncCommand}"/>
+                <ui:Button Content="触发事件" Icon="{ui:SymbolIcon Flash24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenTriggerCommand}"/>
+            </WrapPanel>
+        </DockPanel>
 
         <Border Grid.Row="2">
             <Grid>
@@ -85,6 +92,8 @@
                             <MenuItem Header="采集快照" Click="OnSnapshotRefreshClick"/>
                             <MenuItem Header="快照历史" Click="OnSnapshotHistoryClick"/>
                             <MenuItem Header="资源监控" Click="OnMonitorClick"/>
+                            <MenuItem Header="HTTP站点探测" Click="OnSiteDiscoveryClick"/>
+                            <MenuItem Header="用户管理" Click="OnUserManagerClick"/>
                             <MenuItem Header="Docker 查看/管理" Click="OnDockerManagerClick"/>
                             <MenuItem Header="系统防火墙" Click="OnFirewallManagerClick"/>
                             <Separator/>

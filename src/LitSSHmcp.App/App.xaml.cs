@@ -2,9 +2,13 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Win32;
+using ImageIcon = Wpf.Ui.Controls.ImageIcon;
+using TitleBar = Wpf.Ui.Controls.TitleBar;
 
 namespace LitSSHmcp.App;
 
@@ -22,6 +26,12 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, args) => SafeLog(args.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, args) => { SafeLog(args.Exception); args.SetObserved(); };
         ConfigConflictNotifier.ConflictDetected += OnConfigConflict;
+
+        // 所有窗口统一的标题栏/任务栏图标（窗口自身未显式设置 Icon 时）
+        EventManager.RegisterClassHandler(
+            typeof(Window),
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(OnWindowLoaded));
 
         // 异步读取配置并应用主题：**不能**在 UI 线程同步等待（GetAwaiter().GetResult() 会死锁，
         // 导致 OnStartup 不返回、主窗口永不创建——表现为"双击没反应"）。
@@ -139,6 +149,72 @@ public partial class App : Application
         MainWindow = mainWindow;
         mainWindow.Show();
         AppLockMonitor.Attach(this, mainWindow);   // 跟随 Windows 锁屏：回来时重新上锁
+    }
+
+    private static readonly Uri AppIconUri = new("pack://application:,,,/Assets/LitSSH.ico", UriKind.Absolute);
+    private static readonly Lazy<BitmapSource?> WindowIcon = new(() => LoadIconFrame(256));
+    private static readonly Lazy<BitmapSource?> TitleBarIcon = new(() => LoadIconFrame(32));
+
+    private static void OnWindowLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Window window)
+        {
+            return;
+        }
+
+        // 任务栏/系统标题栏：用 ico 中最大帧，避免 BitmapImage 默认取 16x16 导致图标过小。
+        if (window.Icon is null && WindowIcon.Value is { } windowIcon)
+        {
+            window.Icon = windowIcon;
+        }
+
+        // WPF-UI 自绘标题栏不读取 Window.Icon，需显式给 TitleBar.Icon 设置图标。
+        if (FindDescendant<TitleBar>(window) is { Icon: null } titleBar && TitleBarIcon.Value is { } titleBarIcon)
+        {
+            titleBar.Icon = new ImageIcon { Source = titleBarIcon };
+        }
+    }
+
+    private static BitmapSource? LoadIconFrame(int preferredSize)
+    {
+        try
+        {
+            var decoder = new IconBitmapDecoder(AppIconUri, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+            var frame = decoder.Frames
+                .OrderByDescending(f => f.PixelWidth)
+                .FirstOrDefault(f => f.PixelWidth <= preferredSize)
+                ?? decoder.Frames.OrderBy(f => f.PixelWidth).FirstOrDefault();
+            if (frame is { CanFreeze: true })
+            {
+                frame.Freeze();
+            }
+
+            return frame;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            if (FindDescendant<T>(child) is { } nested)
+            {
+                return nested;
+            }
+        }
+
+        return null;
     }
 
     private static readonly HashSet<string> _shownErrors = new();

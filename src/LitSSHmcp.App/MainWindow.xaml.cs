@@ -18,6 +18,7 @@ public partial class MainWindow : FluentWindow
     private MainViewModel ViewModel => (MainViewModel)DataContext;
 
     private System.Windows.Forms.NotifyIcon? _tray;
+    private System.Drawing.Icon? _trayIcon;
     private bool _allowClose;
     private HelpWindow? _helpWindow;
 
@@ -263,14 +264,35 @@ public partial class MainWindow : FluentWindow
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("退出程序", null, (_, _) => ExitFromTray());
 
+        _trayIcon = CreateTrayIcon();
         _tray = new System.Windows.Forms.NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = _trayIcon,
             Text = "LitSSH MCP Manager",
             Visible = true,
             ContextMenuStrip = menu
         };
         _tray.DoubleClick += (_, _) => RestoreFromTray();
+    }
+
+    private static System.Drawing.Icon CreateTrayIcon()
+    {
+        try
+        {
+            var resource = Application.GetResourceStream(
+                new Uri("pack://application:,,,/Assets/LitSSH.ico", UriKind.Absolute));
+            if (resource is not null)
+            {
+                using var stream = resource.Stream;
+                return new System.Drawing.Icon(stream);
+            }
+        }
+        catch
+        {
+            // 资源加载失败时回退到系统默认图标
+        }
+
+        return System.Drawing.SystemIcons.Application;
     }
 
     private void RestoreFromTray() => AsyncOperation.Run("从托盘恢复", async () =>
@@ -365,5 +387,7 @@ public partial class MainWindow : FluentWindow
             // 忽略
         }
         _tray = null;
+        _trayIcon?.Dispose();
+        _trayIcon = null;
     }
 }

@@ -62,6 +62,9 @@ public partial class DatasourceManageView : UserControl
 
     private void OnWorkbenchClick(object sender, RoutedEventArgs e) => ViewModel?.WorkbenchCommand.Execute(null);
 
+    private void OnUserManagerClick(object sender, RoutedEventArgs e)
+        => ViewModel?.UserManagerItemCommand.Execute(ViewModel.SelectedDataSource);
+
     private void OnNewAiSessionClick(object sender, RoutedEventArgs e)
         => ViewModel?.NewAiSessionItemCommand.Execute(ViewModel.SelectedDataSource);
 
@@ -104,6 +107,10 @@ public partial class DatasourceManageView : UserControl
              ds.Type.Equals("postgres", StringComparison.OrdinalIgnoreCase) ||
              ds.Type.Equals("redis", StringComparison.OrdinalIgnoreCase));
         WorkbenchMenuItem.Visibility = supported ? Visibility.Visible : Visibility.Collapsed;
+        var userManagementSupported = ds != null &&
+            (ds.Type.Equals("mysql", StringComparison.OrdinalIgnoreCase) ||
+             ds.Type.Equals("postgres", StringComparison.OrdinalIgnoreCase));
+        UserManagerMenuItem.Visibility = userManagementSupported ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject

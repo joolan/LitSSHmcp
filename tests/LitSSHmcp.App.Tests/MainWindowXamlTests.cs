@@ -121,6 +121,8 @@ public class MainWindowXamlTests
             _ = new BatchExecWindow();
             _ = new TerminalLogWindow();
             _ = new ServerMonitorWindow(new LitSSHmcp.App.ViewModels.ServerMonitorViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
+            _ = new DockerManagerWindow(new LitSSHmcp.App.ViewModels.DockerManagerViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
+            _ = new FirewallManagerWindow(new LitSSHmcp.App.ViewModels.FirewallManagerViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
             _ = new ServerSnippetsWindow(server);
             _ = new SftpManagerWindow(new LitSSHmcp.App.ViewModels.SftpManagerViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService()));
             _ = new ConflictDialog("a.txt");

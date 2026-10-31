@@ -17,6 +17,20 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <DataTemplate x:Key="RelatedTargetChip">
+            <Border Background="{DynamicResource AppSurfaceAltBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="5" Padding="8,4" Margin="0,0,6,6"
+                    Cursor="Hand" MouseLeftButtonUp="OnRelatedTargetClick" ToolTip="{Binding Subtitle}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding Glyph}" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding Title}" FontSize="{DynamicResource AppFontSizeMicro}"
+                               MaxWidth="220" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding CallsText}" FontSize="10" Margin="5,0,0,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
     </UserControl.Resources>
     <Grid AllowDrop="True" DragOver="OnComposerDragOver" Drop="OnComposerDrop" PreviewKeyDown="OnWindowPreviewKeyDown" Margin="10,0,10,10">
             <Grid.ColumnDefinitions>
@@ -462,6 +476,35 @@
                                             <controls:MarkdownBox Markdown="{Binding AssistantText}"/>
                                             <TextBlock Text="{Binding Note}" Foreground="{DynamicResource AppDangerBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeCaption}"
                                                        Margin="0,3,0,0" Visibility="{Binding NoteVisibility}"/>
+                                            <StackPanel Margin="0,10,0,0"
+                                                        Visibility="{Binding HasRelatedTargets, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="本轮关联" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                           Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,5"/>
+                                                <StackPanel Visibility="{Binding HasRelatedServers, Converter={StaticResource BoolToVis}}" Margin="0,0,0,2">
+                                                    <TextBlock Text="SSH 服务器" FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,4"/>
+                                                    <ItemsControl ItemsSource="{Binding RelatedServers}" ItemTemplate="{StaticResource RelatedTargetChip}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                                <StackPanel Visibility="{Binding HasRelatedDataSources, Converter={StaticResource BoolToVis}}" Margin="0,0,0,2">
+                                                    <TextBlock Text="数据源" FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,4"/>
+                                                    <ItemsControl ItemsSource="{Binding RelatedDataSources}" ItemTemplate="{StaticResource RelatedTargetChip}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                                <StackPanel Visibility="{Binding HasRelatedDocuments, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="文档产出" FontSize="10" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,4"/>
+                                                    <ItemsControl ItemsSource="{Binding RelatedDocuments}" ItemTemplate="{StaticResource RelatedTargetChip}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </StackPanel>
                                             <TextBlock Text="{Binding RunningText}" Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,2,0,0"
                                                        Visibility="{Binding RunningVisibility}"/>
                                             <!-- hover 显示：复制 + 用时（常占位） -->

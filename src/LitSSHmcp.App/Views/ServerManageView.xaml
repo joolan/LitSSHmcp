@@ -69,7 +69,7 @@
                 <Grid Grid.Column="0">
                 <ListView x:Name="ServerManageList" ItemsSource="{Binding GroupedServers}" SelectedItem="{Binding SelectedServer}"
                           Visibility="{Binding IsServerListView, Converter={StaticResource BoolToVis}}"
-                          Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Standard" VirtualizingPanel.IsVirtualizingWhenGrouping="False" ScrollViewer.CanContentScroll="True" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
+                          Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Standard" VirtualizingPanel.IsVirtualizingWhenGrouping="False" ScrollViewer.CanContentScroll="False" MouseDoubleClick="OnItemDoubleClick" PreviewMouseRightButtonDown="OnListPreviewRightClick"
                           ContextMenuOpening="OnListContextMenuOpening" controls:GridViewSort.Enabled="True"
                           controls:GroupExpanderBehavior.StorageKey="server.groups">
                     <ListView.ContextMenu>
@@ -83,6 +83,8 @@
                             <MenuItem Header="采集快照" Click="OnSnapshotRefreshClick"/>
                             <MenuItem Header="快照历史" Click="OnSnapshotHistoryClick"/>
                             <MenuItem Header="资源监控" Click="OnMonitorClick"/>
+                            <MenuItem Header="Docker 查看/管理" Click="OnDockerManagerClick"/>
+                            <MenuItem Header="系统防火墙" Click="OnFirewallManagerClick"/>
                             <Separator/>
                             <MenuItem Header="删除" Foreground="{DynamicResource AppDangerBrush}" Click="OnDeleteClick"/>
                         </ContextMenu>
@@ -156,9 +158,9 @@
                     </ListView.View>
                 </ListView>
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                               Visibility="{Binding IsServerCardView, Converter={StaticResource BoolToVis}}">
-                    <ItemsControl ItemsSource="{Binding FilteredServers}" MaxWidth="1000" HorizontalAlignment="Center">
+                    <ItemsControl ItemsSource="{Binding FilteredServers}" HorizontalAlignment="Stretch">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>

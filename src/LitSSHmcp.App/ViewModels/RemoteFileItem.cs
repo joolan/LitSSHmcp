@@ -12,7 +12,7 @@ public sealed class RemoteFileItem
     public string Permissions { get; init; } = string.Empty;
     public string Owner { get; init; } = string.Empty;
 
-    public string Glyph => IsDirectory ? "📁" : "📄";
+    public string Glyph => IsSymbolicLink ? "🔗" : IsDirectory ? "📁" : "📄";
 
     public string SizeText => IsDirectory ? string.Empty : FormatSize(Size);
 

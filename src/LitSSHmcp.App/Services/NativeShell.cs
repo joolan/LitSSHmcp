@@ -33,6 +33,16 @@ public static class NativeShell
         });
     }
 
+    /// <summary>用系统默认程序打开文件。</summary>
+    public static void OpenFile(string path)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = path,
+            UseShellExecute = true
+        });
+    }
+
     /// <summary>调起系统「打开方式」对话框，让用户选择程序。返回是否成功弹出。</summary>
     public static bool OpenWith(Window? owner, string path)
     {

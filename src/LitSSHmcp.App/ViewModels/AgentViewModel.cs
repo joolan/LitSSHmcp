@@ -1097,6 +1097,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             await _store.InitializeAsync();
             var config = await _configService.LoadConfigAsync();
+            _fullConfig = config;
             _agentConfig = config.Agent ?? new AgentConfig();
             _agentConfig.LocalTerminal ??= new LocalTerminalConfig();
             LocalTerminalSettings.ShellPath = string.IsNullOrWhiteSpace(_agentConfig.LocalTerminal.ShellPath)
@@ -1335,6 +1336,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         CollapseHistoricalTurns(turns); FinalizeHistoricalTurns(turns);
+        foreach (var loadedTurn in turns)
+            RebuildRelatedTargets(loadedTurn);
 
 
         var recentTurns = _agentConfig.ColdStartRecentTurns;
@@ -2595,6 +2598,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                     : turn.Steps.LastOrDefault(s => s.IsRunning && s.CallId == e.CallId)
                       ?? turn.Steps.LastOrDefault(s => s.IsRunning && s.Tool == (e.ToolName ?? "工具"));
                 pending?.Complete(e.ToolSuccess && !denied, denied ? "（审批未通过）\n" + body : body, e.DurationMs);
+                if (pending is not null)
+                    CollectRelatedTargets(turn, pending);
                 break;
 
             case AgentEventKind.MemoryRecall:
@@ -3053,6 +3058,7 @@ public partial class AgentTurn : INotifyPropertyChanged
         _startedLocal = timeUtc.ToLocalTime();
         _userTime = _startedLocal.ToString("HH:mm:ss");
         Steps.CollectionChanged += OnStepsChanged;
+        InitializeRelatedTargets();
     }
 
     private string _userText;
@@ -3193,6 +3199,7 @@ public partial class AgentTurn : INotifyPropertyChanged
         ReasoningText = string.Empty;
         Note = string.Empty;
         Steps.Clear();
+        ClearRelatedTargets();
         _endTime = string.Empty;
         _duration = string.Empty;
         ShowTools = true;

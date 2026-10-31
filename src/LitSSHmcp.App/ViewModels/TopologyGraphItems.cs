@@ -69,10 +69,13 @@ public class GraphEdgeVm : INotifyPropertyChanged
     private Geometry _dot = Geometry.Empty;
     private Geometry _arrow = Geometry.Empty;
     private Brush _stroke = Brushes.SteelBlue;
+    private DoubleCollection? _dashArray;
+    private double _thickness = 2;
     private string _label = string.Empty;
     private double _labelX;
     private double _labelY;
     private bool _isDiscovered;
+    private bool _isDerived;
     private bool _isDisputed;
     private bool _isDimmed;
 
@@ -87,6 +90,12 @@ public class GraphEdgeVm : INotifyPropertyChanged
 
     /// <summary>线条/圆点/箭头颜色（按关系类型，静态缓存同引用）。</summary>
     public Brush Stroke { get => _stroke; set => Set(ref _stroke, value); }
+
+    /// <summary>关系类型对应的虚线样式（null=实线）。</summary>
+    public DoubleCollection? DashArray { get => _dashArray; set => Set(ref _dashArray, value); }
+
+    /// <summary>关系类型对应的线宽。</summary>
+    public double Thickness { get => _thickness; set => Set(ref _thickness, value); }
 
     public string Type { get; set; } = string.Empty;
     public string Label { get => _label; set => Set(ref _label, value); }
@@ -105,6 +114,9 @@ public class GraphEdgeVm : INotifyPropertyChanged
     public double LabelX { get => _labelX; set => Set(ref _labelX, value); }
     public double LabelY { get => _labelY; set => Set(ref _labelY, value); }
     public bool IsDiscovered { get => _isDiscovered; set => Set(ref _isDiscovered, value); }
+
+    /// <summary>由运行环境/跳板/隧道配置推导的关系（不是人工 relation，不能在此删除）。</summary>
+    public bool IsDerived { get => _isDerived; set => Set(ref _isDerived, value); }
 
     /// <summary>人工配置与自动发现不一致：红色显示，确认后清除。</summary>
     public bool IsDisputed { get => _isDisputed; set => Set(ref _isDisputed, value); }

@@ -450,8 +450,11 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
     };
     public string SelectedEdgeSummary => _selectedEdge == null
         ? string.Empty
-        : $"{_selectedEdge.From}  →  {_selectedEdge.To}" + (_selectedEdge.IsDiscovered ? "（自动发现，仅可删除）" : "（手动）");
-    public bool SelectedEdgeEditable => _selectedEdge is { IsDiscovered: false };
+        : $"{_selectedEdge.From}  →  {_selectedEdge.To}" +
+          (_selectedEdge.IsDiscovered ? "（自动发现，仅可删除）" :
+              _selectedEdge.IsDerived ? "（配置推导，请在资产配置中修改）" : "（手动）");
+    public bool SelectedEdgeEditable => _selectedEdge is { IsDiscovered: false, IsDerived: false };
+    public bool SelectedEdgeDeletable => _selectedEdge is { IsDerived: false };
     public string SelectedEdgeType { get => _selEdgeType; set { _selEdgeType = value; OnPropertyChanged(); } }
     public string SelectedEdgeNote { get => _selEdgeNote; set { _selEdgeNote = value; OnPropertyChanged(); } }
     public string SelectedEdgeHint { get => _selEdgeHint; set { _selEdgeHint = value; OnPropertyChanged(); } }
@@ -582,6 +585,10 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
             .Where(e => e.Disputed)
             .Select(e => $"{e.From}|{e.Type}|{e.To}")
             .ToHashSet(StringComparer.Ordinal);
+        var derivedKeys = _graph.Edges
+            .Where(e => string.Equals(e.Source, "derived", StringComparison.OrdinalIgnoreCase))
+            .Select(e => $"{e.From}|{e.Type}|{e.To}")
+            .ToHashSet(StringComparer.Ordinal);
         var disputeReasons = _graph.Edges
             .Where(e => !string.IsNullOrWhiteSpace(e.DisputeReason))
             .GroupBy(e => $"{e.From}|{e.Type}|{e.To}")
@@ -626,6 +633,7 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
                 var key = $"{route.From}|{route.Type}|{route.To}";
                 var disputed = disputedKeys.Contains(key);
                 var stroke = disputed ? Brushes.IndianRed : TopologyRouteEngine.StrokeFor(route.Type, route.IsDiscovered);
+                var style = TopologyRouteEngine.StyleFor(route.Type, route.IsDiscovered);
                 var (labelX, labelY) = TopologyRouteEngine.LabelPoint(points, route.Horizontal);
                 var line = TopologyRouteEngine.BuildRoundedPolyline(points, 8);
                 var dot = TopologyRouteEngine.BuildDot(points[0], 4);
@@ -638,6 +646,8 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
                     Dot = dot,
                     Arrow = arrow,
                     Stroke = stroke,
+                    DashArray = style.DashArray,
+                    Thickness = style.Thickness,
                     Type = route.Type,
                     Label = disputed ? $"⚠ {route.Type}" :
                         route.Type is "canAccess" or "connectsTo" ? string.Empty : route.Type,
@@ -649,6 +659,7 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
                     LabelX = labelX,
                     LabelY = labelY,
                     IsDiscovered = route.IsDiscovered,
+                    IsDerived = derivedKeys.Contains(key),
                     IsDisputed = disputed
                 };
                 Edges.Add(vm);
@@ -966,6 +977,7 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
                 points = new List<Point> { route.S, new Point(route.S.X + 1, route.S.Y) };
 
             var stroke = TopologyRouteEngine.StrokeFor(route.Type, route.IsDiscovered);
+            var style = TopologyRouteEngine.StyleFor(route.Type, route.IsDiscovered);
             var (lx, ly) = TopologyRouteEngine.LabelPoint(points, route.Horizontal);
 
             // 路径未变则跳过几何重建（快/慢路由一致时零开销）
@@ -978,6 +990,8 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
             }
 
             e.Stroke = stroke;
+            e.DashArray = style.DashArray;
+            e.Thickness = style.Thickness;
             e.LabelX = lx;
             e.LabelY = ly;
         }
@@ -1769,17 +1783,50 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
                   ? $"\n该关系与人工配置冲突，请核实后确认或删除。" +
                     (string.IsNullOrWhiteSpace(edge.DisputeReason) ? string.Empty : $"\n{edge.DisputeReason}")
                   : string.Empty)
-            : string.Empty;
+            : edge.IsDerived
+                ? $"由服务器/数据源运行环境或跳板/隧道配置推导，请在对应资产配置中修改。" +
+                  (string.IsNullOrWhiteSpace(edge.Evidence) ? string.Empty : $"\n依据: {edge.Evidence}")
+                : string.Empty;
         SelectedEdgeLine = edge.Line;
         OnPropertyChanged(nameof(HasSelectedEdge));
         OnPropertyChanged(nameof(SelectedEdgeSummary));
         OnPropertyChanged(nameof(SelectedEdgeEditable));
+        OnPropertyChanged(nameof(SelectedEdgeDeletable));
         RebuildEdgeAnchors();
 
-        if (!edge.IsDiscovered)
+        if (!edge.IsDiscovered && !edge.IsDerived)
             LoadSelectedEdgeNote(edge);
 
-        StatusMessage = $"已选关系: {edge.From} --{edge.Type}--> {edge.To}" + (edge.IsDiscovered ? " (自动发现)" : " (手动)");
+        StatusMessage = $"已选关系: {edge.From} --{edge.Type}--> {edge.To}" +
+                        (edge.IsDiscovered ? " (自动发现)" : edge.IsDerived ? " (配置推导)" : " (手动)");
+    }
+
+    private static string EffectiveRelationType(string? type) =>
+        string.IsNullOrWhiteSpace(type) ? "relatedTo" : type;
+
+    /// <summary>
+    /// 在图边与配置 relation 之间做匹配：图边使用规范化节点 ID，配置里可能仍是原始 ID/别名，
+    /// 因此先经 AssetCanonicalizer 解析再比较（否则删除/编辑会找不到原关系）。
+    /// </summary>
+    private static int FindRelationIndex(AppConfig config, string from, string to, string? type)
+    {
+        var relations = config.Relations ?? Array.Empty<RelationConfig>();
+        var wantedType = EffectiveRelationType(type);
+        AssetCanonicalization? canonical = null;
+        try { canonical = AssetCanonicalizer.Build(config); }
+        catch { /* 规范化失败时退回原始 ID 精确匹配 */ }
+
+        for (var i = 0; i < relations.Length; i++)
+        {
+            var relation = relations[i];
+            var relationFrom = canonical?.ResolveNodeId(relation.From) ?? relation.From;
+            var relationTo = canonical?.ResolveNodeId(relation.To) ?? relation.To;
+            if (string.Equals(relationFrom, from, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(relationTo, to, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(EffectiveRelationType(relation.Type), wantedType, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+        return -1;
     }
 
     private void LoadSelectedEdgeNote(GraphEdgeVm edge) => AsyncOperation.Run("加载关系备注", async () =>
@@ -1787,9 +1834,9 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
         try
         {
             var config = await _configService.LoadConfigAsync();
-            var relation = config.Relations.FirstOrDefault(r => r.From == edge.From && r.To == edge.To && r.Type == edge.Type);
+            var index = FindRelationIndex(config, edge.From, edge.To, edge.Type);
             if (ReferenceEquals(_selectedEdge, edge))
-                SelectedEdgeNote = relation?.Note ?? string.Empty;
+                SelectedEdgeNote = index >= 0 ? config.Relations[index].Note ?? string.Empty : string.Empty;
         }
         catch
         {
@@ -1800,21 +1847,22 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
     /// <summary>保存选中关系的类型与备注（仅手动关系）。</summary>
     public void SaveSelectedEdge() => AsyncOperation.Run("保存关系属性", async () =>
     {
-        if (_selectedEdge is not { IsDiscovered: false } edge)
+        if (_selectedEdge is not { IsDiscovered: false, IsDerived: false } edge)
             return;
 
         try
         {
             var config = await _configService.LoadConfigAsync();
-            var index = Array.FindIndex(config.Relations, r => r.From == edge.From && r.To == edge.To && r.Type == _selEdgeOldType);
+            var index = FindRelationIndex(config, edge.From, edge.To, _selEdgeOldType);
             if (index < 0)
             {
                 SelectedEdgeHint = "原关系不存在，请刷新后重试。";
                 return;
             }
 
+            var relation = config.Relations[index];
             var others = config.Relations.Where((_, i) => i != index).ToArray();
-            if (!RelationRules.TryValidate(edge.From, edge.To, SelectedEdgeType, others, out var error))
+            if (!RelationRules.TryValidate(relation.From, relation.To, SelectedEdgeType, others, out var error))
             {
                 SelectedEdgeHint = $"不能保存: {error}";
                 return;
@@ -1822,8 +1870,8 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
 
             config.Relations[index] = new RelationConfig
             {
-                From = edge.From,
-                To = edge.To,
+                From = relation.From,
+                To = relation.To,
                 Type = SelectedEdgeType,
                 Note = string.IsNullOrWhiteSpace(SelectedEdgeNote) ? null : SelectedEdgeNote.Trim()
             };
@@ -1853,6 +1901,7 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
         OnPropertyChanged(nameof(HasSelectedEdge));
         OnPropertyChanged(nameof(SelectedEdgeSummary));
         OnPropertyChanged(nameof(SelectedEdgeEditable));
+        OnPropertyChanged(nameof(SelectedEdgeDeletable));
     }
 
     /// <summary>选中发现边是否存在冲突标记（供面板显示确认按钮）。</summary>
@@ -1942,12 +1991,25 @@ public partial class TopologyViewModel : INotifyPropertyChanged, IConfigReloadab
         if (_selectedEdge is not { } edge)
             return;
 
+        if (edge.IsDerived)
+        {
+            SelectedEdgeHint = "该关系由运行环境/跳板/隧道配置推导，不能作为人工关系删除；请到对应资产配置中修改。";
+            StatusMessage = "该关系为配置推导，未删除。";
+            return;
+        }
+
         try
         {
             var config = await _configService.LoadConfigAsync();
-            config.Relations = config.Relations
-                .Where(r => !(r.From == edge.From && r.To == edge.To && r.Type == edge.Type))
-                .ToArray();
+            var index = FindRelationIndex(config, edge.From, edge.To, edge.Type);
+            if (index < 0)
+            {
+                SelectedEdgeHint = "未在配置中找到对应的人工关系；该边可能由运行环境/跳板/隧道配置推导，请刷新后到资产配置中修改。";
+                StatusMessage = "未找到可删除的人工关系。";
+                return;
+            }
+
+            config.Relations = config.Relations.Where((_, i) => i != index).ToArray();
             await _configService.SaveConfigAsync(config);
 
             ClearEdgeSelection();

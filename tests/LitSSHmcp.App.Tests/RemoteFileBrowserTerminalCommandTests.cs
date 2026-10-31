@@ -27,6 +27,14 @@ public class RemoteFileBrowserTerminalCommandTests
     }
 
     [Fact]
+    public void Symlinks_use_a_distinct_glyph()
+    {
+        Assert.Equal("🔗", new RemoteFileItem { Name = "link", FullName = "/link", IsSymbolicLink = true, IsDirectory = true }.Glyph);
+        Assert.Equal("📁", new RemoteFileItem { Name = "dir", FullName = "/dir", IsDirectory = true }.Glyph);
+        Assert.Equal("📄", new RemoteFileItem { Name = "file", FullName = "/file" }.Glyph);
+    }
+
+    [Fact]
     public void SendTerminalCommand_does_not_raise_event_without_sender()
     {
         var vm = new RemoteFileBrowserViewModel(

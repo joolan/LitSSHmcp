@@ -63,6 +63,7 @@ public partial class MainViewModel
         view.ViewModel.SessionRemoved += CloseSessionTerminal;
         view.ViewModel.PropertyChanged += OnAgentViewModelPropertyChanged;
         view.DetachRequested += OnAgentDetachRequested;
+        view.RelatedTargetMenuRequested += OnRelatedTargetMenuRequested;
         _agentView = view;
         RaiseAgentPageStateChanged();
         RaiseAgentBadgeChanged();
@@ -198,6 +199,7 @@ public partial class MainViewModel
             view.ViewModel.SessionRemoved -= CloseSessionTerminal;
             view.ViewModel.PropertyChanged -= OnAgentViewModelPropertyChanged;
             view.DetachRequested -= OnAgentDetachRequested;
+            view.RelatedTargetMenuRequested -= OnRelatedTargetMenuRequested;
             AsyncOperation.Run("释放 AI 助手", () => view.DisposeAsync());
         }
 

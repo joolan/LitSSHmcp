@@ -23,6 +23,8 @@ public interface IWindowService
     BatchExecWindow CreateBatchExecWindow(object dataContext);
 
     ServerMonitorWindow CreateServerMonitorWindow(ServerMonitorViewModel viewModel);
+    DockerManagerWindow CreateDockerManagerWindow(DockerManagerViewModel viewModel);
+    FirewallManagerWindow CreateFirewallManagerWindow(FirewallManagerViewModel viewModel);
     TerminalLogWindow CreateTerminalLogWindow();
     PortForwardWindow CreatePortForwardWindow(PortForwardViewModel viewModel);
     SyncWindow CreateSyncWindow();

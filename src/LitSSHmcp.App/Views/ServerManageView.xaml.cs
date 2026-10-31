@@ -79,6 +79,8 @@ public partial class ServerManageView : UserControl
 
         Add("打开代理浏览器 (SOCKS)…", () => vm.OpenProxiedBrowserCommand.Execute(null), enabled: !server.Disabled);
         Add("远程互传（服务器↔服务器）…", () => vm.OpenRemoteCopyCommand.Execute(null));
+        Add("Docker 查看/管理…", () => vm.OpenDockerManagerCommand.Execute(null));
+        Add("系统防火墙…", () => vm.OpenFirewallManagerCommand.Execute(null));
         menu.Items.Add(new Separator());
         Add("采集快照", () => vm.SnapshotRefreshCommand.Execute(null));
         Add("快照历史", () => vm.OpenSnapshotHistoryCommand.Execute(null));
@@ -111,6 +113,10 @@ public partial class ServerManageView : UserControl
     private void OnSnapshotHistoryClick(object sender, RoutedEventArgs e) => ViewModel?.OpenSnapshotHistoryCommand.Execute(null);
 
     private void OnMonitorClick(object sender, RoutedEventArgs e) => ViewModel?.OpenMonitorCommand.Execute(null);
+
+    private void OnDockerManagerClick(object sender, RoutedEventArgs e) => ViewModel?.OpenDockerManagerCommand.Execute(null);
+
+    private void OnFirewallManagerClick(object sender, RoutedEventArgs e) => ViewModel?.OpenFirewallManagerCommand.Execute(null);
 
     private void OnItemDoubleClick(object sender, MouseButtonEventArgs e)
     {

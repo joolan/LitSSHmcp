@@ -9,6 +9,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type GroupItem}">
                     <Expander Margin="0,2,0,4" HorizontalAlignment="Stretch"
+                              controls:GroupExpanderBehavior.Track="True"
                               controls:GroupExpanderBehavior.GroupName="{Binding Name}">
                         <Expander.Header>
                             <DockPanel Margin="2,4,0,4">

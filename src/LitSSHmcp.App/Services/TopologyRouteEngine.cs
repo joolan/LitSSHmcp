@@ -269,18 +269,53 @@ public static class TopologyRouteEngine
     // 静态缓存：同组合返回同引用，WPF 可跳过描边失效（否则每次重算都强制 Path 重绘）
     private static readonly ConcurrentDictionary<(string Type, bool Discovered), Brush> StrokeCache = new();
 
+    private static readonly DoubleCollection DashLong = FreezeDash(8, 3);
+    private static readonly DoubleCollection DashMedium = FreezeDash(5, 3);
+    private static readonly DoubleCollection DashShort = FreezeDash(2, 2);
+    private static readonly DoubleCollection DashDotted = FreezeDash(1, 3);
+    private static readonly DoubleCollection DashDiscovered = FreezeDash(4, 3);
+
+    private static DoubleCollection FreezeDash(params double[] values)
+    {
+        var dash = new DoubleCollection(values);
+        dash.Freeze();
+        return dash;
+    }
+
     public static Brush StrokeFor(string type, bool discovered) =>
         StrokeCache.GetOrAdd((type, discovered), static key =>
         {
-            var color = key.Type == "canAccess"
-                ? Color.FromRgb(0x1E, 0x8E, 0x3E)
-                : Color.FromRgb(0x0A, 0x66, 0xC2);
+            var color = key.Type switch
+            {
+                "canAccess" => Color.FromRgb(0x1E, 0x8E, 0x3E),
+                "accessedVia" => Color.FromRgb(0x7C, 0x3A, 0xED),
+                "upstreamOf" => Color.FromRgb(0x0E, 0x74, 0x90),
+                "relatedTo" => Color.FromRgb(0x64, 0x74, 0x8B),
+                "runsIn" => Color.FromRgb(0x1D, 0x4E, 0xD8),
+                _ => Color.FromRgb(0x0A, 0x66, 0xC2)
+            };
             var brush = new SolidColorBrush(color);
             if (key.Discovered)
                 brush.Opacity = 0.7;
             brush.Freeze();
             return brush;
         });
+
+    /// <summary>
+    /// 关系线型：类型决定虚线节奏与粗细，自动发现且无专属线型时退回普通虚线。
+    /// </summary>
+    public static (double Thickness, DoubleCollection? DashArray) StyleFor(string type, bool discovered) =>
+        type switch
+        {
+            "connectsTo" => (2.0, discovered ? DashDiscovered : null),
+            "canAccess" => (2.4, discovered ? DashDiscovered : null),
+            "runsOn" => (2.0, discovered ? DashDiscovered : null),
+            "runsIn" => (2.0, DashLong),
+            "upstreamOf" => (2.0, DashMedium),
+            "accessedVia" => (1.2, DashShort),
+            "relatedTo" => (1.6, DashDotted),
+            _ => discovered ? (2.0, DashDiscovered) : (2.0, null)
+        };
 
     public static (double X, double Y) LabelPoint(IReadOnlyList<Point> points, bool horizontal)
     {

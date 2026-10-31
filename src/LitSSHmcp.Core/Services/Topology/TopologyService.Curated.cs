@@ -106,7 +106,7 @@ public partial class TopologyService
                 To = to,
                 Type = type,
                 Evidence = evidence,
-                Source = "manual",
+                Source = "derived",
                 Confidence = 1.0,
                 ValidFrom = DateTime.UtcNow,
                 LastVerifiedAt = DateTime.UtcNow

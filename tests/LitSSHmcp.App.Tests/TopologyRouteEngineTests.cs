@@ -1,6 +1,9 @@
+using System.Reflection;
 using System.Windows;
 using System.Windows.Media;
 using LitSSHmcp.App.Services;
+using LitSSHmcp.App.ViewModels;
+using LitSSHmcp.Core.Models;
 using Xunit;
 
 namespace LitSSHmcp.App.Tests;
@@ -58,6 +61,48 @@ public class TopologyRouteEngineTests
         var full = TopologyRouteEngine.BuildRoute(route, Array.Empty<Rect>(), fast: false);
 
         Assert.Equal(fast, full);
+    }
+
+    [Fact]
+    public void StyleFor_distinguishes_relation_types()
+    {
+        var access = TopologyRouteEngine.StyleFor("accessedVia", false);
+        Assert.NotNull(access.DashArray);
+        Assert.Equal(new[] { 2.0, 2.0 }, access.DashArray!.ToArray());
+        Assert.True(access.Thickness < 2);
+
+        var connects = TopologyRouteEngine.StyleFor("connectsTo", false);
+        Assert.Null(connects.DashArray);
+
+        var upstream = TopologyRouteEngine.StyleFor("upstreamOf", false);
+        Assert.NotNull(upstream.DashArray);
+        Assert.NotEqual(access.DashArray, upstream.DashArray);
+
+        Assert.NotNull(TopologyRouteEngine.StyleFor("relatedTo", false).DashArray);
+        Assert.NotNull(TopologyRouteEngine.StyleFor("connectsTo", true).DashArray);
+    }
+
+    [Fact]
+    public void Relation_lookup_resolves_raw_ids_and_default_type()
+    {
+        var config = new AppConfig
+        {
+            Applications = new[]
+            {
+                new ApplicationConfig { Id = "app1", Name = "A" },
+                new ApplicationConfig { Id = "app2", Name = "B" }
+            },
+            Relations = new[]
+            {
+                new RelationConfig { From = "app1", To = "app2", Type = string.Empty }
+            }
+        };
+        var method = typeof(TopologyViewModel).GetMethod(
+            "FindRelationIndex", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var index = (int)method.Invoke(null, new object?[] { config, "app:app1", "app:app2", "relatedTo" })!;
+
+        Assert.Equal(0, index);
     }
 
     [Fact]

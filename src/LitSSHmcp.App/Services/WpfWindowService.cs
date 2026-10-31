@@ -34,6 +34,12 @@ public sealed class WpfWindowService : IWindowService
     public ServerMonitorWindow CreateServerMonitorWindow(ServerMonitorViewModel viewModel) =>
         new(viewModel) { Topmost = false };
 
+    public DockerManagerWindow CreateDockerManagerWindow(DockerManagerViewModel viewModel) =>
+        new(viewModel) { Topmost = false };
+
+    public FirewallManagerWindow CreateFirewallManagerWindow(FirewallManagerViewModel viewModel) =>
+        new(viewModel) { Topmost = false };
+
     public TerminalLogWindow CreateTerminalLogWindow() => new() { Topmost = false };
 
     public PortForwardWindow CreatePortForwardWindow(PortForwardViewModel viewModel) =>

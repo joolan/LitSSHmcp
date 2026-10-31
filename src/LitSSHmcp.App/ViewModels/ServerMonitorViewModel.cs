@@ -57,12 +57,17 @@ public sealed class ServerMonitorViewModel : INotifyPropertyChanged
     private string _uptimeText = string.Empty;
     public string UptimeText { get => _uptimeText; private set { _uptimeText = value; OnPropertyChanged(); } }
 
+    private string _systemText = "系统信息采集中…";
+    public string SystemText { get => _systemText; private set { _systemText = value; OnPropertyChanged(); } }
+
     private string _statusMessage = "采集中…";
     public string StatusMessage { get => _statusMessage; private set { _statusMessage = value; OnPropertyChanged(); } }
 
     private const string Command =
-        "echo ==LOAD==; cat /proc/loadavg; echo ==STAT==; head -1 /proc/stat; echo ==MEM==; free -m; " +
-        "echo ==DISK==; df -P / | tail -1; echo ==UP==; cat /proc/uptime; echo ==CPU==; nproc";
+        "echo ==OS==; (cat /etc/os-release 2>/dev/null | grep '^PRETTY_NAME=' | head -1 | cut -d= -f2-); " +
+        "[ -s /etc/redhat-release ] && head -1 /etc/redhat-release; [ -s /etc/issue ] && head -1 /etc/issue; " +
+        "echo ==KERNEL==; uname -r; echo ==LOAD==; cat /proc/loadavg; echo ==STAT==; head -1 /proc/stat; " +
+        "echo ==MEM==; free -m; echo ==DISK==; df -P / | tail -1; echo ==UP==; cat /proc/uptime; echo ==CPU==; nproc";
 
     public async Task RefreshAsync()
     {
@@ -79,6 +84,7 @@ public sealed class ServerMonitorViewModel : INotifyPropertyChanged
             }
 
             var sections = ParseSections(result.Output);
+            UpdateSystem(sections);
             UpdateCpu(GetLine(sections, "STAT", 0));
             UpdateLoad(GetLine(sections, "LOAD", 0));
             UpdateMem(sections.TryGetValue("MEM", out var mem) ? mem : new List<string>());
@@ -118,6 +124,23 @@ public sealed class ServerMonitorViewModel : INotifyPropertyChanged
 
     private static string? GetLine(Dictionary<string, List<string>> sections, string key, int index)
         => sections.TryGetValue(key, out var lines) && index < lines.Count ? lines[index] : null;
+
+    private void UpdateSystem(Dictionary<string, List<string>> sections)
+    {
+        var os = sections.TryGetValue("OS", out var osLines)
+            ? osLines.Select(NormalizeOs).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))
+            : null;
+        var kernel = GetLine(sections, "KERNEL", 0)?.Trim();
+        var parts = new[] { os, kernel }.Where(v => !string.IsNullOrWhiteSpace(v)).ToArray();
+        SystemText = parts.Length == 0 ? "系统信息未知" : string.Join(" · ", parts);
+    }
+
+    private static string NormalizeOs(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+        return value.Trim().Trim('"').Replace("\\n", " ").Replace("\\l", " ").Trim();
+    }
 
     private void UpdateCpu(string? statLine)
     {

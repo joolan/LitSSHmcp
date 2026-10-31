@@ -6,6 +6,9 @@
         Title="编辑数据源" Height="760" Width="660" MinWidth="560"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
         ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -13,10 +16,11 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="编辑数据源"/>
+        <ui:TitleBar x:Name="WindowTitleBar" Grid.Row="0" Title="编辑数据源"/>
 
         <ScrollViewer Grid.Row="1" Margin="16,0,16,0" VerticalScrollBarVisibility="Auto">
-            <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
+            <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch"
+                    IsEnabled="{Binding CanEdit}">
                 <StackPanel>
                     <TextBlock Text="连接" Style="{DynamicResource SectionTitleStyle}"/>
 
@@ -175,10 +179,13 @@
 
         <DockPanel Grid.Row="2" Style="{DynamicResource DialogFooterPanelStyle}">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <ui:Button Content="保存" Appearance="Primary" MinWidth="88" Margin="0,0,8,0" IsDefault="True" Command="{Binding SaveCommand}"/>
-                <ui:Button Content="取消" MinWidth="88" IsCancel="True" Command="{Binding CancelCommand}"/>
+                <ui:Button Content="保存" Appearance="Primary" MinWidth="88" Margin="0,0,8,0" IsDefault="True"
+                           Command="{Binding SaveCommand}"
+                           Visibility="{Binding CanEdit, Converter={StaticResource BoolToVis}}"/>
+                <ui:Button Content="{Binding CancelButtonText}" MinWidth="88" IsCancel="True" Command="{Binding CancelCommand}"/>
             </StackPanel>
-            <ui:Button Content="测试连接" Padding="12,4" Margin="0,0,10,0" Command="{Binding TestConnectionCommand}"/>
+            <ui:Button Content="测试连接" Padding="12,4" Margin="0,0,10,0"
+                       Command="{Binding TestConnectionCommand}"/>
             <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"
                        TextWrapping="Wrap" Margin="0,0,10,0"/>
         </DockPanel>

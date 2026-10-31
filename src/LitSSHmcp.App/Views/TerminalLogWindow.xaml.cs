@@ -236,7 +236,7 @@ public partial class TerminalLogWindow : Wpf.Ui.Controls.FluentWindow
         try
         {
             Directory.CreateDirectory(_dir);
-            Process.Start(new ProcessStartInfo(_dir) { UseShellExecute = true });
+            NativeShell.OpenFolder(_dir);
         }
         catch
         {

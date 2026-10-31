@@ -89,6 +89,9 @@ public partial class AgentView : UserControl
 
     public event EventHandler? DetachRequested;
 
+    /// <summary>本轮关联目标被点击，由宿主（MainViewModel）弹出对应操作菜单。</summary>
+    public event Action<AgentRelatedTarget, FrameworkElement>? RelatedTargetMenuRequested;
+
     public bool IsDetached { get; private set; }
 
     public void SetDetached(bool detached)
@@ -814,6 +817,40 @@ public partial class AgentView : UserControl
         catch (Exception ex)
         {
             System.Windows.MessageBox.Show("打开工作目录失败: " + ex.Message, "AI 运维助手");
+        }
+    }
+
+    /// <summary>把一段提示词插入聊天输入框：有焦点时插到光标处，否则追加到末尾。</summary>
+    public void InsertTextAtCursor(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        var box = InputBox;
+        if (box.IsKeyboardFocusWithin)
+        {
+            var start = box.SelectionStart;
+            var current = box.Text ?? string.Empty;
+            var next = current.Remove(start, box.SelectionLength).Insert(start, text);
+            box.Text = next;
+            box.CaretIndex = start + text.Length;
+        }
+        else
+        {
+            var next = (_viewModel.Input ?? string.Empty) + text;
+            _viewModel.Input = next;
+            box.CaretIndex = next.Length;
+        }
+
+        box.Focus();
+    }
+
+    private void OnRelatedTargetClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.DataContext is AgentRelatedTarget target)
+        {
+            RelatedTargetMenuRequested?.Invoke(target, element);
+            e.Handled = true;
         }
     }
 

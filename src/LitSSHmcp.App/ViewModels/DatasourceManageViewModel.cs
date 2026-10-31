@@ -37,6 +37,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
         OpenWorkbenchItemCommand = new RelayCommand(p => OpenWorkbench(p as DataSourceConfig));
         EditItemCommand = new RelayCommand(p => { SelectedDataSource = p as DataSourceConfig; Edit(); });
         TestItemCommand = new RelayCommand(p => { SelectedDataSource = p as DataSourceConfig; Test(); });
+        ViewItemCommand = new RelayCommand(p => View(p as DataSourceConfig));
         DeleteItemCommand = new RelayCommand(p => { SelectedDataSource = p as DataSourceConfig; Delete(); });
 
         FilteredDataSources = System.Windows.Data.CollectionViewSource.GetDefaultView(DataSources);
@@ -148,6 +149,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
     public ICommand OpenWorkbenchItemCommand { get; }
     public ICommand EditItemCommand { get; }
     public ICommand TestItemCommand { get; }
+    public ICommand ViewItemCommand { get; }
     public ICommand DeleteItemCommand { get; }
 
     private bool _isCardView = string.Equals(
@@ -249,6 +251,33 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
             StatusMessage = $"打开添加窗口失败: {ex.Message}";
         }
     });
+
+    private void View(DataSourceConfig? source)
+    {
+        if (source is null)
+            return;
+
+        AsyncOperation.Run("查看数据源", async () =>
+        {
+            try
+            {
+                var config = await _configService.LoadConfigAsync();
+                var ds = config.DataSources.FirstOrDefault(d => d.Id == source.Id) ?? source;
+                var window = _windows.CreateDatasourceEditWindow(Application.Current.MainWindow);
+                window.SetViewOnly(true);
+                var vm = new DatasourceEditViewModel(
+                    _configService, window, config.Servers, ds, viewOnly: true);
+                window.DataContext = vm;
+                vm.DialogClosed += (_, _) => window.Close();
+
+                window.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"打开查看窗口失败: {ex.Message}";
+            }
+        });
+    }
 
     private void Edit() => AsyncOperation.Run("打开编辑数据源", async () =>
     {

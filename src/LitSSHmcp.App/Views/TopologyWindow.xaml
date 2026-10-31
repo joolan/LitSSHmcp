@@ -182,17 +182,9 @@
                                             </Style.Triggers>
                                         </Style>
                                     </Canvas.Style>
-                                    <Path Data="{Binding Line}" Stroke="{Binding Stroke}" StrokeThickness="2" StrokeLineJoin="Round">
-                                        <Path.Style>
-                                            <Style TargetType="Path">
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsDiscovered}" Value="True">
-                                                        <Setter Property="StrokeDashArray" Value="4 3"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Path.Style>
-                                    </Path>
+                                    <Path Data="{Binding Line}" Stroke="{Binding Stroke}"
+                                          StrokeThickness="{Binding Thickness}" StrokeDashArray="{Binding DashArray}"
+                                          StrokeLineJoin="Round"/>
                                     <Path Data="{Binding Dot}" Fill="{Binding Stroke}"/>
                                     <Path Data="{Binding Arrow}" Fill="{Binding Stroke}"/>
                                 </Canvas>
@@ -492,7 +484,9 @@
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                     <Button Content="保存" Width="72" Padding="6,4" Margin="0,0,6,0" Click="OnSaveEdge"
                                             IsEnabled="{Binding SelectedEdgeEditable}"/>
-                                    <Button Content="删除" Width="72" Padding="6,4" Click="OnDeleteEdge"/>
+                                    <Button Content="删除" Width="72" Padding="6,4" Click="OnDeleteEdge"
+                                IsEnabled="{Binding SelectedEdgeDeletable}"
+                                ToolTip="删除人工关系；由运行环境/跳板/隧道配置推导的连线需到对应资产配置中修改"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>

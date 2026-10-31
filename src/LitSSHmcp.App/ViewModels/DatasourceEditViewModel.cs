@@ -20,6 +20,7 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
     private readonly DataSourceConfig? _editingDs;
     private readonly SshServerConfig[] _servers;
     private readonly IUserDialogService _dialogs;
+    private readonly bool _viewOnly;
 
     private string _name = string.Empty;
     private int _typeIndex;
@@ -58,18 +59,20 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
         SshServerConfig[] servers,
         DataSourceConfig? datasource = null,
         DataSourceConfig? prefill = null,
-        IUserDialogService? dialogs = null)
+        IUserDialogService? dialogs = null,
+        bool viewOnly = false)
     {
         _configService = configService;
         _editWindow = editWindow;
         _editingDs = datasource;
         _servers = servers ?? Array.Empty<SshServerConfig>();
         _dialogs = dialogs ?? new UserDialogService();
+        _viewOnly = viewOnly;
         TunnelServerOptions = new[] { "(自动, 按关系推导)" }
             .Concat(_servers.Select(s => $"{s.Name} ({s.Host})"))
             .ToArray();
 
-        SaveCommand = new RelayCommand(_ => Save());
+        SaveCommand = new RelayCommand(_ => Save(), _ => !_viewOnly);
         CancelCommand = new RelayCommand(_ => Cancel());
         TestConnectionCommand = new RelayCommand(_ => TestConnection(), _ => !_isTestRunning);
 
@@ -111,8 +114,14 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
             PortText = prefill.Port.ToString();
         }
 
+        if (_viewOnly)
+            _statusMessage = "只读查看：不能修改或保存配置。";
+
         _ = LoadRuntimeOptionsAsync();
     }
+
+    public bool CanEdit => !_viewOnly;
+    public string CancelButtonText => _viewOnly ? "关闭" : "取消";
 
     public string[] TunnelServerOptions { get; }
 
@@ -426,6 +435,8 @@ public class DatasourceEditViewModel : INotifyPropertyChanged
 
     private void Save() => AsyncOperation.Run("保存数据源", async () =>
     {
+        if (_viewOnly)
+            return;
         try
         {
             if (string.IsNullOrWhiteSpace(Name) || string.IsNullOrWhiteSpace(Host))

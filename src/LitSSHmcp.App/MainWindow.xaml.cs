@@ -29,6 +29,7 @@ public partial class MainWindow : FluentWindow
     {
         InitializeComponent();
         DataContext = new MainViewModel();
+        ViewModel.BackgroundQueueCompleted += OnBackgroundQueueCompleted;
         WindowLayout.Attach(this, "main.v2");
         Closing += OnMainClosing;
         Closed += (_, _) => ViewModel.DisposeAgentPage();
@@ -42,6 +43,25 @@ public partial class MainWindow : FluentWindow
             if (e.PropertyName == nameof(MainViewModel.CurrentPage))
                 FocusHomeAsk();
         };
+    }
+
+    private void OnBackgroundQueueCompleted(string title, int count)
+    {
+        if (_tray is not { Visible: true })
+        {
+            return;
+        }
+
+        try
+        {
+            _tray.ShowBalloonTip(4000, "LitSSH",
+                $"后台会话「{title}」的 {count} 条排队任务已完成。",
+                System.Windows.Forms.ToolTipIcon.Info);
+        }
+        catch
+        {
+            // 托盘提示失败不影响会话
+        }
     }
 
     private void OnHomeNavClick(object sender, RoutedEventArgs e) => FocusHomeAsk();

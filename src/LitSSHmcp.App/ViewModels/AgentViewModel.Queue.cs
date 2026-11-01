@@ -33,6 +33,7 @@ public sealed class QueuedAgentMessage
 public partial class AgentViewModel
 {
     private readonly HashSet<long> _queueRestoredSessions = new();
+    private readonly HashSet<long> _completedQueueSessions = new();
     private RelayCommand? _queueCommand;
     private RelayCommand? _steerCommand;
     private RelayCommand? _clearQueueCommand;
@@ -53,6 +54,18 @@ public partial class AgentViewModel
     public ICommand ResumeQueueCommand => _resumeQueueCommand ??= new RelayCommand(
         _ => _ = ResumeQueueAsync(),
         _ => CanResumeQueue);
+
+    public event Action<string, int>? BackgroundQueueCompleted;
+
+    internal bool HasCompletedQueue(long sessionId) => _completedQueueSessions.Contains(sessionId);
+
+    internal void ClearCompletedQueue(long sessionId)
+    {
+        if (_completedQueueSessions.Remove(sessionId))
+        {
+            _sidebar.RefreshStates();
+        }
+    }
 
     public ObservableCollection<QueuedAgentMessage> QueuedMessages => CurrentContext.PendingMessages;
     public bool HasQueuedMessages => QueuedMessages.Count > 0;
@@ -244,6 +257,7 @@ public partial class AgentViewModel
         }
 
         context.QueuePumpActive = true;
+        var processed = 0;
         try
         {
             while (!context.IsBusy && !context.QueuePaused)
@@ -267,14 +281,27 @@ public partial class AgentViewModel
                 }
 
                 await RunQueuedMessageAsync(item, context);
+                processed++;
             }
         }
         finally
         {
             context.QueuePumpActive = false;
             NotifyQueueState();
+            if (processed > 0 && context.PendingMessages.Count == 0 &&
+                !ReferenceEquals(context, CurrentContext) && context.SessionId > 0)
+            {
+                _uiInvoke(() =>
+                {
+                    _completedQueueSessions.Add(context.SessionId);
+                    _sidebar.RefreshStates();
+                    var title = Sessions.FirstOrDefault(s => s.Id == context.SessionId)?.Title ?? "未命名会话";
+                    BackgroundQueueCompleted?.Invoke(title, processed);
+                });
+            }
         }
     }
+
     private async Task RunQueuedMessageAsync(QueuedAgentMessage item, SessionRunContext context)
     {
         var displayText = item.Text;

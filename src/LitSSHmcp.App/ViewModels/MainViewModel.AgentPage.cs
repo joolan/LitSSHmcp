@@ -6,6 +6,8 @@ namespace LitSSHmcp.App.ViewModels;
 
 public partial class MainViewModel
 {
+    public event Action<string, int>? BackgroundQueueCompleted;
+
     private AgentView? _agentView;
     private AgentWindow? _agentWindow;
     private bool _agentDetached;
@@ -61,6 +63,7 @@ public partial class MainViewModel
             AiTerminals,
             _services);
         view.ViewModel.SessionRemoved += CloseSessionTerminal;
+        view.ViewModel.BackgroundQueueCompleted += (title, count) => BackgroundQueueCompleted?.Invoke(title, count);
         view.ViewModel.PropertyChanged += OnAgentViewModelPropertyChanged;
         view.DetachRequested += OnAgentDetachRequested;
         view.RelatedTargetMenuRequested += OnRelatedTargetMenuRequested;

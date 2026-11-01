@@ -96,6 +96,8 @@ public class AgentQueueTests : IDisposable
         second.PendingMessages.Add(new QueuedAgentMessage("会话二：第一条", false));
 
         var executed = new ConcurrentBag<string>();
+        var completed = new ConcurrentBag<(string Title, int Count)>();
+        viewModel.BackgroundQueueCompleted += (title, count) => completed.Add((title, count));
         viewModel.QueueTurnRunnerForTest = (turn, _, _) =>
         {
             executed.Add(turn.UserText);
@@ -112,5 +114,9 @@ public class AgentQueueTests : IDisposable
         Assert.Contains("会话二：第一条", executed);
         Assert.Empty(first.PendingMessages);
         Assert.Empty(second.PendingMessages);
+        Assert.Equal(2, completed.Count);
+        Assert.Contains(completed, item => item.Count == 2);
+        Assert.True(viewModel.HasCompletedQueue(first.SessionId));
+        Assert.True(viewModel.HasCompletedQueue(second.SessionId));
     }
 }

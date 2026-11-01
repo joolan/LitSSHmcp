@@ -30,9 +30,10 @@ public partial class MainWindow : FluentWindow
         InitializeComponent();
         DataContext = new MainViewModel();
         ViewModel.BackgroundQueueCompleted += OnBackgroundQueueCompleted;
+        ViewModel.JenkinsBuildCompleted += OnJenkinsBuildCompleted;
         WindowLayout.Attach(this, "main.v2");
         Closing += OnMainClosing;
-        Closed += (_, _) => ViewModel.DisposeAgentPage();
+        Closed += (_, _) => { ViewModel.DisposeAgentPage(); ViewModel.DisposeJenkinsPage(); };
         if (Application.Current is { } app)
             app.Exit += (_, _) => DisposeTray();
 
@@ -61,6 +62,28 @@ public partial class MainWindow : FluentWindow
         catch
         {
             // 托盘提示失败不影响会话
+        }
+    }
+
+    private void OnJenkinsBuildCompleted(JenkinsBuildCompletedInfo info)
+    {
+        if (_tray is not { Visible: true })
+            return;
+
+        try
+        {
+            var icon = info.Result == "SUCCESS"
+                ? System.Windows.Forms.ToolTipIcon.Info
+                : info.Result == "ABORTED"
+                    ? System.Windows.Forms.ToolTipIcon.Warning
+                    : System.Windows.Forms.ToolTipIcon.Error;
+            _tray.ShowBalloonTip(4000, "Jenkins 构建完成",
+                $"{info.JobName} #{info.BuildNumber} · {info.ResultText}",
+                icon);
+        }
+        catch
+        {
+            // 托盘提示失败不影响构建页面
         }
     }
 

@@ -1,0 +1,112 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.JenkinsConnectionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
+        Title="{Binding WindowTitle}" Height="720" Width="560" MinWidth="500" MinHeight="620"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </ui:FluentWindow.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="{Binding WindowTitle}"/>
+
+        <ScrollViewer Grid.Row="1" Margin="16,0,16,0" VerticalScrollBarVisibility="Auto">
+            <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch">
+                <StackPanel>
+                    <controls:FormRow Label="连接名称" IsRequired="True" HelpText="例如：测试 Jenkins、生产 Jenkins、A 公司 Jenkins">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="环境类型" HelpText="只是展示/风险提示，不限制连接数量；同一类型可以配置多个 Jenkins">
+                        <ComboBox ItemsSource="{Binding EnvironmentOptions}" DisplayMemberPath="Label"
+                                  SelectedIndex="{Binding SelectedEnvironmentIndex}" VerticalContentAlignment="Center"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="环境标签" HelpText="可选；例如“北京生产”“A 公司第三方”。留空时显示环境类型">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding EnvironmentLabel, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="Jenkins 地址" IsRequired="True" HelpText="完整 URL，例如 https://jenkins.example.com 或反向代理子路径">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding BaseUrl, UpdateSourceTrigger=PropertyChanged}"
+                                    PlaceholderText="https://jenkins.example.com"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="SSH 隧道" HelpText="本机不能直连 Jenkins 时，选择一台已配置的 SSH 服务器；使用动态 SOCKS5 保留原主机名和 HTTPS SNI">
+                        <StackPanel>
+                            <CheckBox Content="通过 SSH 服务器访问 Jenkins"
+                                      IsChecked="{Binding UseSshTunnel, UpdateSourceTrigger=PropertyChanged}"/>
+                            <ComboBox ItemsSource="{Binding SshServers}" DisplayMemberPath="Name"
+                                      SelectedValuePath="Id" SelectedValue="{Binding TunnelSshServerId}"
+                                      IsEnabled="{Binding CanSelectSshServer}" Margin="0,6,0,0"
+                                      VerticalContentAlignment="Center"/>
+                        </StackPanel>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="用户名" IsRequired="True">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow x:Name="TokenRow" Label="API Token" IsRequired="True"
+                                      HelpText="{Binding TokenHint}">
+                        <PasswordBox FontWeight="Normal" PasswordChanged="OnTokenPasswordChanged"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="超时（秒）">
+                        <ui:TextBox FontWeight="Normal" Width="100" HorizontalAlignment="Left"
+                                    Text="{Binding TimeoutText, UpdateSourceTrigger=PropertyChanged}"/>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="操作策略">
+                        <StackPanel>
+                            <CheckBox Content="启用此连接" IsChecked="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"/>
+                            <CheckBox Content="只读连接（禁止构建、停止、取消）"
+                                      IsChecked="{Binding ReadOnly, UpdateSourceTrigger=PropertyChanged}"/>
+                            <CheckBox Content="执行操作前二次确认" Margin="0,6,0,0"
+                                      IsChecked="{Binding RequireConfirmation, UpdateSourceTrigger=PropertyChanged}"/>
+                            <CheckBox Content="忽略 TLS 证书错误" Margin="0,6,0,0"
+                                      IsChecked="{Binding IgnoreTlsErrors, UpdateSourceTrigger=PropertyChanged}"
+                                      ToolTip="仅用于明确信任的自签名内网实例；会降低传输安全性"/>
+                        </StackPanel>
+                    </controls:FormRow>
+
+                    <controls:FormRow Label="描述">
+                        <ui:TextBox FontWeight="Normal" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                                    AcceptsReturn="True" Height="56" TextWrapping="Wrap"
+                                    VerticalScrollBarVisibility="Auto"/>
+                    </controls:FormRow>
+
+                    <Border Padding="10,8" CornerRadius="6" Margin="0,8,0,0"
+                            Background="{DynamicResource AppSurfaceAltBrush}">
+                        <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   Visibility="{Binding HasStatus, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="2" LastChildFill="False" Style="{DynamicResource DialogFooterPanelStyle}">
+            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                <ui:Button Content="删除连接" Icon="{ui:SymbolIcon Delete24}" MinWidth="92"
+                           Foreground="{DynamicResource AppDangerBrush}"
+                           Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"
+                           Command="{Binding DeleteCommand}"/>
+            </StackPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="测试连接" MinWidth="92" Margin="0,0,8,0"
+                           Command="{Binding TestConnectionCommand}"/>
+                <ui:Button Content="保存" MinWidth="88" Appearance="Primary" Margin="0,0,8,0"
+                           IsDefault="True" Command="{Binding SaveCommand}"/>
+                <ui:Button Content="取消" MinWidth="88" IsCancel="True" Command="{Binding CancelCommand}"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

@@ -100,6 +100,8 @@ public class MainWindowXamlTests
             _ = new ServerManageView();
             _ = new DatasourceManageView();
             _ = new ApplicationManageView();
+            _ = new JenkinsView();
+            _ = new JenkinsConnectionWindow();
             _ = new SshSessionWindow();
             _ = new TopologyWindow();
             _ = new AuditWindow();

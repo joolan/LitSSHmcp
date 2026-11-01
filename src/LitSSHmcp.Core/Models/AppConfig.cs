@@ -1,10 +1,10 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace LitSSHmcp.Core.Models;
 
 public class AppConfig
 {
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     /// <summary>配置结构版本。缺失该字段的旧文件反序列化为 0，由 ConfigMigrator 迁移到当前版本。</summary>
     public int SchemaVersion { get; set; }
@@ -28,6 +28,9 @@ public class AppConfig
 
     /// <summary>远程桌面连接定义（RDP / VNC；可选经 SSH 隧道）。</summary>
     public RemoteDesktopConfig[] RemoteDesktops { get; set; } = Array.Empty<RemoteDesktopConfig>();
+
+    /// <summary>Jenkins 连接定义（可配置任意数量：测试、预发布、生产、第三方、自定义）</summary>
+    public JenkinsConfig Jenkins { get; set; } = new();
 
     /// <summary>界面外观（主题）。</summary>
     public UiConfig Ui { get; set; } = new();

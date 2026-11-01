@@ -59,6 +59,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     public ICommand NavigateDataSourcesCommand { get; }
     public ICommand NavigateApplicationsCommand { get; }
     public ICommand NavigateRemoteDesktopsCommand { get; }
+    public ICommand NavigateJenkinsCommand { get; }
     public ICommand OpenSettingsCommand { get; }
     public ICommand OpenSessionManagerCommand { get; }
     public ICommand OpenTerminalCommand { get; }
@@ -111,6 +112,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         NavigateDataSourcesCommand = new RelayCommand(_ => NavigateDataSources());
         NavigateApplicationsCommand = new RelayCommand(_ => NavigateApplications());
         NavigateRemoteDesktopsCommand = new RelayCommand(_ => NavigateRemoteDesktops());
+        NavigateJenkinsCommand = new RelayCommand(_ => NavigateJenkins());
         OpenSettingsCommand = new RelayCommand(_ => OpenSettings());
         OpenSessionManagerCommand = new RelayCommand(_ => ShowSessionWindow());
         OpenTerminalCommand = new RelayCommand(_ => ConnectTerminal(SelectedServer), _ => SelectedServer != null);
@@ -355,6 +357,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             _currentPage = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ShowAgentBadge));
+            OnPropertyChanged(nameof(ShowJenkinsBadge));
         }
     }
 
@@ -715,7 +718,11 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         StatusMessage = Sessions.Count == 0 ? "已关闭全部会话" : $"已关闭会话: {name}";
     }
 
-    public void ReloadConfig() => LoadServers();
+    public void ReloadConfig()
+    {
+        LoadServers();
+        JenkinsPage?.ReloadConfig();
+    }
 
     private void LoadServers()
     {
@@ -1112,6 +1119,32 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         CurrentPage = MainPage.RemoteDesktops;
     }
 
+    // Jenkins：主区域页面；连接数量不设上限，环境只是标签
+    private JenkinsViewModel? _jenkinsPage;
+    public JenkinsViewModel? JenkinsPage
+    {
+        get => _jenkinsPage;
+        private set { _jenkinsPage = value; OnPropertyChanged(); }
+    }
+
+    private void NavigateJenkins()
+    {
+        if (JenkinsPage is null)
+        {
+            JenkinsPage = new JenkinsViewModel(_configService, Application.Current.MainWindow, _dialogs, _windows, _services.CreateAuditLog());
+            JenkinsPage.BuildCompleted += OnJenkinsBuildCompleted;
+        }
+        else
+        {
+            JenkinsPage.RefreshCommand.Execute(null);
+        }
+
+        ClearJenkinsNotifications();
+        CurrentPage = MainPage.Jenkins;
+    }
+
+    public void DisposeJenkinsPage() => JenkinsPage?.Dispose();
+
     private void CloseSessionTerminal(long sessionId)
     {
         void Close()
@@ -1281,6 +1314,7 @@ public enum MainPage
     DataSources,
     Applications,
     RemoteDesktops,
+    Jenkins,
     Agent
 }
 

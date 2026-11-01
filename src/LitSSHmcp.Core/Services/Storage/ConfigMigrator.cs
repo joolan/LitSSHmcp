@@ -156,6 +156,19 @@ public static class ConfigMigrator
             changed = true;
         }
 
+        // v4→v5：新增 Jenkins 多连接配置；连接数量和环境类型均不固定。
+        if (config.Jenkins == null)
+        {
+            config.Jenkins = new JenkinsConfig();
+            changed = true;
+        }
+
+        if (config.Jenkins.Connections == null)
+        {
+            config.Jenkins.Connections = Array.Empty<JenkinsConnectionConfig>();
+            changed = true;
+        }
+
         if (config.Applications != null)
         {
             foreach (var application in config.Applications)

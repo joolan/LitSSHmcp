@@ -17,6 +17,7 @@
 - 数据源：MySQL、PostgreSQL、Redis，只读工作台与 SQL 查询。
 - 应用：配置运行环境（SSH 服务器 / Docker 应用 / 独立环境）、Docker 容器或 Compose service、AssetKey、别名，以及多条 URL 访问入口（URL / 角色 / 优先级 / 备注）；同一 URL 多后端视为负载均衡。
 - 远程桌面：RDP / VNC，支持通过 SSH 隧道访问内网桌面。
+- Jenkins：左侧导航「Jenkins」可配置任意数量连接（测试、预发布、生产、第三方、自定义，同类型可多个）；独立 API Token（DPAPI）、只读模式、二次确认、View 切换、任务搜索、参数类型编辑、增量日志、队列展开/逐项取消、5 秒自动刷新、状态、停止；收藏/最近访问、阶段/产物/测试报告、完成通知与审计；本机不能直连时可选择已配置的 SSH 服务器，通过动态 SOCKS5 隧道访问（保留原主机名和 HTTPS SNI）。
 
 ## 资产拓扑
 

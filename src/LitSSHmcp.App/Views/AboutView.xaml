@@ -18,11 +18,12 @@
                 </Border>
             </StackPanel>
             <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,12"
-                       Text="Windows 平台下的 SSH / 数据库运维 MCP 服务器，并配套桌面管理端（App）与浏览器端 Web 助手。让 AI 智能体安全地通过 SSH 管理远程服务器，贯通 MySQL / PostgreSQL / Redis 数据源与资产拓扑，并支持远程桌面（RDP / VNC），支撑跨服务器 / 应用 / 容器 / 数据库的全链路故障排查。"/>
+                       Text="Windows 平台下的 SSH / 数据库运维 MCP 服务器，并配套桌面管理端（App）与浏览器端 Web 助手。让 AI 智能体安全地通过 SSH 管理远程服务器，贯通 MySQL / PostgreSQL / Redis 数据源、Jenkins CI 与资产拓扑，并支持远程桌面（RDP / VNC），支撑跨服务器 / 应用 / 容器 / 数据库 / 构建任务的全链路故障排查。"/>
 
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
                     <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Jenkins 多连接与 CI 构建：支持测试、生产、第三方和自定义 Jenkins；View 切换、任务搜索、收藏/最近访问、参数构建、队列展开/逐项取消、增量日志、Pipeline 阶段、产物与测试报告；可选 SSH 动态 SOCKS5 隧道。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑统一人工主图：服务器 / 应用 / 数据源 / 域名与人工关系成为唯一主图来源；自动发现只提供证据、配置建议与配置体检，不再生成待确认节点。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 新版结构化拓扑：服务器泳道 / 应用链路 / 依赖矩阵 / 配置建议四个只读视图；应用与数据源支持 SSH / Docker / 独立运行环境及多 URL 访问入口解析。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 旧版拓扑画布精简：关系类型收敛为 7 种并中文展示，Docker runsIn 使用缩进两级展示，移除服务 / 容器 / 部署 / 域名 / 端口 / 证书图层与待确认节点 UI。"/>
@@ -72,6 +73,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 主页看板：快捷入口 + 服务器/数据源/应用统计，支持 AI 快捷提问（含附件）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器管理：表格增删改查与排序、右键菜单（连接/编辑/采集快照/快照历史/删除），独立「SSH 会话管理」窗口含交互式终端（同一服务器最多 4 个，内置 SFTP 文件可视化上传/下载）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器连接增强：跳板机（ProxyJump，经另一台已配置服务器中转）、SSH 密钥生成（ed25519 / rsa，公钥一键复制）、凭据轮换提醒。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Jenkins：多连接 CI 页面，支持 View、任务搜索、收藏/最近访问、参数构建、队列/状态/日志、阶段/产物/测试报告、SSH SOCKS5 隧道与操作审计。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程桌面：RDP / VNC 连接管理（密码仅本机 DPAPI 加密、可经 SSH 隧道访问内网桌面），内嵌多标签查看器（标签可分离 / 收回）与外部客户端打开。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机终端：ConPTY 真实本机 PowerShell 终端；AI 本地 CLI 在白名单内执行本机命令（人工审批、超时与进程树清理），单个 AI 会话最多并行管理 4 个独立终端。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 批量执行 / 快速命令：多台服务器并行下发命令；内置快速命令（一键巡检、磁盘/inode/内存/端口/进程/大目录/日志/容器/网络）与「一键巡检」，写操作执行前确认。"/>

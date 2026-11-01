@@ -246,6 +246,63 @@ public class ConfigServiceTests
             try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
         }
     }
+
+    [Fact]
+    public async Task Jenkins_api_tokens_are_encrypted_at_rest_and_round_trip()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "config.json");
+
+        try
+        {
+            var service = new ConfigService(path, new DpapiSecretProtector());
+            var config = await service.LoadConfigAsync();
+            config.Jenkins = new JenkinsConfig
+            {
+                Connections =
+                [
+                    new JenkinsConnectionConfig
+                    {
+                        Id = "jenkins-test",
+                        Name = "测试 Jenkins",
+                        EnvironmentKind = JenkinsEnvironmentKinds.Test,
+                        BaseUrl = "https://jenkins.example",
+                        Username = "ci",
+                        ApiToken = "s3cret-token"
+                    },
+                    new JenkinsConnectionConfig
+                    {
+                        Id = "jenkins-partner",
+                        Name = "A 公司 Jenkins",
+                        EnvironmentKind = JenkinsEnvironmentKinds.Partner,
+                        EnvironmentLabel = "A 公司",
+                        BaseUrl = "https://ci.partner.example",
+                        Username = "partner",
+                        ApiToken = "partner-token",
+                        ReadOnly = true
+                    }
+                ]
+            };
+
+            await service.SaveConfigAsync(config);
+
+            var raw = await File.ReadAllTextAsync(path);
+            Assert.DoesNotContain("s3cret-token", raw);
+            Assert.DoesNotContain("partner-token", raw);
+
+            var reloaded = await service.LoadConfigAsync();
+            Assert.Equal(2, reloaded.Jenkins.Connections.Length);
+            Assert.Equal("s3cret-token", reloaded.Jenkins.Connections[0].ApiToken);
+            Assert.Equal("partner-token", reloaded.Jenkins.Connections[1].ApiToken);
+            Assert.Equal("A 公司", reloaded.Jenkins.Connections[1].EnvironmentDisplay);
+            Assert.True(reloaded.Jenkins.Connections[1].ReadOnly);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
 }
 
 public class RemoteDesktopConfigTests

@@ -57,6 +57,7 @@ public interface IWindowService
 
     ServerEditWindow CreateServerEditWindow(Window? owner = null);
     ApplicationEditWindow CreateApplicationEditWindow(Window? owner = null);
+    JenkinsConnectionWindow CreateJenkinsConnectionWindow(Window? owner = null);
     DatasourceEditWindow CreateDatasourceEditWindow(Window? owner = null);
     RemoteDesktopEditWindow CreateRemoteDesktopEditWindow(Window? owner = null);
 

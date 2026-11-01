@@ -24,7 +24,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
                ┌───────────────────────────────────────────────────────────────────┐
                │                       LitSSHmcp.Core                              │
                │  Models: AppConfig/SshServerConfig/DataSourceConfig/TopologyModels│
-               │  Services: SSH | Datasource | Topology | Security | Storage       │
+               │  Services: SSH | Datasource | Topology | Jenkins | Security | Storage│
                └───────────────────────────────────────────────────────────────────┘
                                                  │
                                  ┌───────────────┼───────────────┐
@@ -39,7 +39,7 @@ LitSSH MCP 是一个运行在 Windows 本机的 MCP(Model Context Protocol) 服�
 |------|---------|------|---------|
 | `LitSSHmcp.Core` | net8.0 | 数据模型 + 全部业务服务（不含任何入口逻辑） | SSH.NET 2026.0.0、MySqlConnector 2.4.0、Npgsql 8.0.5、Microsoft.Data.Sqlite、System.Security.Cryptography.ProtectedData |
 | `LitSSHmcp.McpServer` | net8.0-windows | MCP 服务器入口（stdio 传输）、34 个常规工具 + 1 个宿主内部工具、授权确认弹窗（WinForms） | ModelContextProtocol 2.2.0、Microsoft.Extensions.Hosting、WinForms |
-| `LitSSHmcp.App` | net8.0-windows | WPF 管理界面（服务器/数据源/应用/资产拓扑可视化编辑/安全设置/审计/工具说明/工具分组） | WPF、Core |
+| `LitSSHmcp.App` | net8.0-windows | WPF 管理界面（服务器/数据源/应用/资产拓扑可视化编辑/Jenkins CI/安全设置/审计/工具说明/工具分组） | WPF、Core |
 | `LitSSHmcp.Cli` | net10.0 | 终端 SSH 工具（`litssh list/connect/run`） | Core |
 | `LitSSHmcp.Web` | net8.0 | 浏览器 Web 助手入口（Kestrel/静态 SPA/WebSocket 流式聊天：登录、每会话子进程宿主、审批桥、文件浏览） | ASP.NET Core、Core、Agent |
 | `LitSSHmcp.Tests` | net8.0 | Core 单元测试（安全过滤/路径策略/配置迁移/加密/驱动协议等） | Core、xunit |

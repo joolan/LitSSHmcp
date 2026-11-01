@@ -336,6 +336,27 @@
                                                             </DataTemplate>
                                                         </ItemsControl.ItemTemplate>
                                                     </ItemsControl>
+                                                    <ItemsControl ItemsSource="{Binding SteeringNotes}" Margin="0,6,0,0"
+                                                                  Visibility="{Binding HasSteeringNotes, Converter={StaticResource BoolToVis}}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Background="{DynamicResource AppAccentSubtleBrush}"
+                                                                        BorderBrush="{DynamicResource AppAccentBrush}"
+                                                                        BorderThickness="1" CornerRadius="6"
+                                                                        Padding="8,5" Margin="0,4,0,0">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="运行中补充"
+                                                                                   FontSize="{DynamicResource AppFontSizeMicro}"
+                                                                                   Foreground="{DynamicResource AppAccentBrush}"
+                                                                                   FontWeight="SemiBold"/>
+                                                                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                                                                   FontSize="{DynamicResource AppFontSizeCaption}"
+                                                                                   Margin="0,2,0,0"/>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
                                                 </StackPanel>
                                             </Border>
                                             <StackPanel Style="{StaticResource HoverRevealStyle}" Orientation="Horizontal"
@@ -633,6 +654,61 @@
                                 </WrapPanel>
                             </StackPanel>
                         </Border>
+
+                        <Border Margin="0,0,0,8" Padding="10,8" CornerRadius="8"
+                                Background="{DynamicResource AppSurfaceAltBrush}"
+                                BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                                Visibility="{Binding HasQueuedMessages, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <DockPanel LastChildFill="True">
+                                    <ui:Button DockPanel.Dock="Right" Content="清空" Padding="8,2" Margin="6,0,0,0"
+                                               Command="{Binding ClearQueueCommand}"/>
+                                    <ui:Button DockPanel.Dock="Right" Content="继续队列" Padding="8,2"
+                                               Command="{Binding ResumeQueueCommand}"
+                                               Visibility="{Binding CanResumeQueue, Converter={StaticResource BoolToVis}}"/>
+                                    <TextBlock Text="{Binding QueueHeader}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <ItemsControl ItemsSource="{Binding QueuedMessages}" Margin="0,6,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource AppCardBrush}"
+                                                    BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                                                    CornerRadius="6" Padding="6,3" Margin="0,0,6,6" MaxWidth="380">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Background="{DynamicResource AppAccentSubtleBrush}" CornerRadius="4"
+                                                            Padding="5,1" Margin="0,0,6,0">
+                                                        <TextBlock Text="{Binding KindText}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                                   Foreground="{DynamicResource AppAccentBrush}"/>
+                                                    </Border>
+                                                    <TextBlock Text="{Binding Preview}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                               MaxWidth="250"/>
+                                                    <Button Style="{DynamicResource ActionRowButton}" Content="编辑" Padding="4,1"
+                                                            Margin="6,0,0,0" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                            Click="OnEditQueued" ToolTip="载入输入框修改"/>
+                                                    <Button Style="{DynamicResource ActionRowButton}" Content="优先" Padding="4,1"
+                                                            Margin="6,0,0,0" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                            Click="OnPrioritizeQueued" ToolTip="置顶，下一条优先发送"/>
+                                                    <Button Style="{DynamicResource ActionRowButton}" Padding="2" Margin="6,0,0,0"
+                                                            Click="OnRemoveQueued" ToolTip="移除">
+                                                        <ui:SymbolIcon Symbol="Dismiss24" FontSize="{DynamicResource AppFontSizeCaption}"/>
+                                                    </Button>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="运行中：Enter 排队，Ctrl+Enter 插队，Shift+Enter 换行；停止会保留队列。"
+                                   Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"
+                                   Margin="0,0,0,8" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeMicro}"/>
                         </StackPanel>
 
                         <!-- 顶部拖拽把手：调整输入区高度 -->
@@ -737,7 +813,7 @@
                                     PreviewKeyDown="OnInputKeyDown"
                                     AllowDrop="True" PreviewDragOver="OnComposerDragOver" PreviewDrop="OnComposerDrop"
                                     PlaceholderText="今天帮你做些什么？"
-                                    ToolTip="Enter 发送；Shift+Enter 换行；可拖入图片/文档或 Ctrl+V 粘贴图片"/>
+                                    ToolTip="Enter 发送（运行中为排队）；Ctrl+Enter 运行中插队；Shift+Enter 换行；可拖入图片/文档或 Ctrl+V 粘贴图片"/>
 
                         <Grid Grid.Row="5" Margin="0,8,0,0">
                             <Grid.ColumnDefinitions>
@@ -782,6 +858,15 @@
                                     VerticalAlignment="Center" ToolTip="{Binding ContextInfoTooltip}">
                                 <controls:ContextRing Percent="{Binding ContextPercent}"/>
                             </Border>
+
+                            <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right"
+                                        VerticalAlignment="Center" Margin="0,0,8,0"
+                                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
+                                <ui:Button Content="排队" Padding="8,3" Command="{Binding QueueCommand}"
+                                           ToolTip="当前轮结束后发送（Enter）"/>
+                                <ui:Button Content="插队" Padding="8,3" Margin="6,0,0,0" Command="{Binding SteerCommand}"
+                                           ToolTip="在下一次模型/工具检查点插入当前轮（Ctrl+Enter）"/>
+                            </StackPanel>
 
                             <ui:Button Grid.Column="5" Content="取消编辑" Padding="10,4" Margin="0,0,8,0"
                                        Command="{Binding CancelEditCommand}" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}"/>

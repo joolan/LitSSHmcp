@@ -26,6 +26,9 @@ public sealed class AgentRuntime : IAsyncDisposable
     public long? FleetPlanSessionId { get; }
     public int ToolCount => Session.ToolCount;
 
+    /// <summary>运行中用户补充指令提供器；在模型调用/工具轮次之间消费。</summary>
+    public Func<CancellationToken, Task<IReadOnlyList<string>?>>? SteeringProvider { get; set; }
+
     /// <summary>后台 consolidation 最终失败（含自动重试后仍失败/异常）；供宿主记录告警，不阻断主流程。</summary>
     public event Action<string>? ConsolidationFailed;
 

@@ -953,7 +953,15 @@ public partial class AgentView : UserControl
         }
 
         if (_viewModel.IsBusy)
+        {
+            if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+                _viewModel.SteerCommand.Execute(null);
+            else
+                _viewModel.QueueCommand.Execute(null);
+            e.Handled = true;
             return;
+        }
+
         _autoFollow = true;
         _unseenMessages = 0;
         if (_viewModel.SendCommand.CanExecute(null))
@@ -1016,6 +1024,29 @@ public partial class AgentView : UserControl
 
         if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) != 0 && TryAttachFromClipboard())
             e.Handled = true;
+    }
+
+    private void OnEditQueued(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: QueuedAgentMessage item })
+        {
+            _viewModel.BeginEditQueuedMessage(item);
+        }
+    }
+
+    private void OnPrioritizeQueued(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: QueuedAgentMessage item })
+        {
+            AsyncOperation.Run("优先发送队列消息", () => _viewModel.PrioritizeQueuedMessageAsync(item));
+        }
+    }
+    private void OnRemoveQueued(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: QueuedAgentMessage item })
+        {
+            _viewModel.RemoveQueuedMessage(item);
+        }
     }
 
     private void OnSendOrStopClick(object sender, RoutedEventArgs e)

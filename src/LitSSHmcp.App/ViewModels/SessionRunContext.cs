@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Text;
 using LitSSHmcp.Agent;
@@ -97,4 +98,9 @@ public sealed class SessionRunContext
 
     /// <summary>该会话当前正在执行的一轮（用于把内联审批卡片挂到正确的轮次上）。</summary>
     public AgentTurn? ActiveTurn { get; set; }
+
+    public ObservableCollection<QueuedAgentMessage> PendingMessages { get; } = new();
+    public ConcurrentQueue<QueuedAgentMessage> SteeringQueue { get; } = new();
+    public bool QueuePaused { get; set; }
+    public bool QueuePumpActive { get; set; }
 }

@@ -1139,4 +1139,27 @@ public class AgentSessionTests
             try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
         }
     }
+    [Fact]
+    public async Task Steering_provider_injects_user_message_at_next_checkpoint()
+    {
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "first") }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "after steer") }));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig());
+
+        var calls = 0;
+        session.SetSteeringProvider(_ => Task.FromResult<IReadOnlyList<string>?>(
+            calls++ == 1 ? new[] { "补充：只看只读信息" } : null));
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Equal(2, client.Requests.Count);
+        Assert.Contains(client.Requests[1], m =>
+            m.Role == ChatRole.User &&
+            m.Contents.OfType<TextContent>().Any(t => t.Text.Contains("补充：只看只读信息")));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.UserSteering &&
+                                    e.Text!.Contains("补充：只看只读信息"));
+    }
 }

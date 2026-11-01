@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using LitSSHmcp.Core.Models;
@@ -32,6 +32,7 @@ public sealed class AgentSession
     private readonly int? _maxIterationsOverride;
     private Func<IReadOnlyList<PlanItem>>? _planProvider;
     private ToolLimitContinuation? _toolLimitContinuation;
+    private Func<CancellationToken, Task<IReadOnlyList<string>?>>? _steeringProvider;
     private readonly IAgentTool? _roundNotifier;
     private readonly Func<long, long, bool>? _budgetCheck;
     private readonly Action<long, long>? _onUsageDelta;
@@ -137,7 +138,57 @@ public sealed class AgentSession
     public void SetToolLimitContinuation(ToolLimitContinuation? continuation) =>
         _toolLimitContinuation = continuation;
 
+    /// <summary>设置运行中用户补充指令提供器；在模型调用/工具轮次之间消费。</summary>
+    public void SetSteeringProvider(Func<CancellationToken, Task<IReadOnlyList<string>?>>? provider) =>
+        _steeringProvider = provider;
+
     /// <summary>通报 MCP 服务端「新的对话轮次开始」（审批「本轮次内放行」授权的跨进程失效边界）。</summary>
+    private async Task<bool> DrainSteeringAsync(CancellationToken ct, IProgress<AgentEvent>? progress)
+    {
+        if (_steeringProvider is null)
+        {
+            return false;
+        }
+
+        IReadOnlyList<string>? items;
+        try
+        {
+            items = await _steeringProvider(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (items is null || items.Count == 0)
+        {
+            return false;
+        }
+
+        var inserted = 0;
+        foreach (var raw in items)
+        {
+            var text = raw?.Trim();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            Messages.Add(new ChatMessage(ChatRole.User, new AIContent[]
+            {
+                new TextContent("【用户运行中补充指令】\n" + text)
+            }));
+            inserted++;
+            progress?.Report(new AgentEvent(AgentEventKind.UserSteering, Text: text));
+        }
+
+        return inserted > 0;
+    }
+
     private async Task NotifyRoundStartAsync(string roundId, CancellationToken ct)
     {
         if (_roundNotifier is null)
@@ -324,6 +375,8 @@ public sealed class AgentSession
             }
 
             // 本轮请求发出前的估算值：消息 + 工具定义（provider 的 input 包含 tools，不含会让校准比值虚高）
+            await DrainSteeringAsync(ct, progress);
+
             var estimatedBeforeRequest = TokenEstimator.Estimate(Messages) + _toolDefinitionTokens;
 
             // 流式接收：逐段把文本增量推给 UI，同时累积为完整响应（含工具调用）。
@@ -382,6 +435,11 @@ public sealed class AgentSession
                     ReportIncomplete(progress, "模型声明了工具调用但未返回可解析的 tool_call，本轮未完成。");
                     return;
                 }
+                if (await DrainSteeringAsync(ct, progress))
+                {
+                    continue;
+                }
+
                 if (string.IsNullOrWhiteSpace(responseText))
                 {
                     ReportIncomplete(progress, "模型返回空响应，本轮未完成。");

@@ -49,6 +49,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (!_contexts.TryGetValue(sessionId, out var ctx))
         {
             ctx = new SessionRunContext(sessionId);
+            ctx.PendingMessages.CollectionChanged += (_, _) => NotifyQueueState();
             ctx.StateChanged += OnContextStateChanged;
             _contexts[sessionId] = ctx;
         }
@@ -82,7 +83,11 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             StateTextForSession,
             ApplySidebarSelection);
         _attachmentManager = new AgentAttachmentManager(message => StatusMessage = message);
-        _attachmentManager.Changed += () => OnPropertyChanged(nameof(HasAttachments));
+        _attachmentManager.Changed += () =>
+        {
+            OnPropertyChanged(nameof(HasAttachments));
+            RaiseQueueCommandStates();
+        };
         _skills = new AgentSkillState(name => OnPropertyChanged(name));
         SendCommand = new RelayCommand(_ => _ = SendAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(Input));
         StopCommand = new RelayCommand(_ => CurrentContext.Cts?.Cancel(), _ => IsBusy);
@@ -588,7 +593,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     /// <summary>合并的"发送/停止"按钮：空闲时发送、运行中停止。</summary>
     public ICommand SendOrStopCommand { get; }
 
-    public string SendButtonText => IsBusy ? "停止" : "发送";
+    public string SendButtonText => IsBusy ? "停止（队列会保留）" : "发送";
 
     /// <summary>
     /// 本会话工作目录（需求 D）：加载会话/新建会话时填充，首条消息分配后锁定，运行期代码层不再变更。
@@ -691,6 +696,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 (SendCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (SendOrStopCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                RaiseQueueCommandStates();
                 UpdateSlashPalette();
             }
         }
@@ -982,6 +988,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         OnPropertyChanged(nameof(HasPendingApprovalSessions));
         foreach (var cmd in new[] { SendCommand, StopCommand, SendOrStopCommand, NewSessionCommand, DeleteSessionCommand, ContinueCommand, RegenerateCommand, RetryStepCommand, TestConnectionCommand })
             (cmd as RelayCommand)?.RaiseCanExecuteChanged();
+        RaiseQueueCommandStates();
+        OnPropertyChanged(nameof(IsQueuePaused));
     }
 
     private void OnContextStateChanged(SessionRunContext ctx)
@@ -1185,6 +1193,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private async Task LoadSessionAsync(long id)
     {
         _sessionId = id;
+        RestoreQueueIfNeeded(CurrentContext);
+        NotifyQueueState();
         RaisePendingApprovalChanged();
         SyncLocalAuditSession();
         // 需求 D：先取会话工作目录（附件/历史解析与运行时装配都依赖它；空=旧会话回退共享区）
@@ -1308,6 +1318,12 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                     turns.Add(current);
                     break;
                 }
+                case "steering":
+                {
+                    EnsureCurrent(row.Timestamp);
+                    current!.AddSteeringNote(row.Content);
+                    break;
+                }
                 case "tool":
                 {
                     var step = AgentTranscript.Deserialize(row.Content);
@@ -1387,6 +1403,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 if (contents.Count == 0)
                     contents.Add(new TextContent(string.Empty));
                 history.Add(new ChatMessage(ChatRole.User, contents));
+                foreach (var note in turn.SteeringNotes)
+                    history.Add(new ChatMessage(ChatRole.User, "【用户运行中补充指令】\n" + note.Text));
             }
 
             var trace = AgentTranscript.BuildTrace(turn.Steps);
@@ -1493,6 +1511,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     public async Task DeleteSessionAsync(AgentSessionRow? session)
     {
         if (session is null) return;
+        AgentQueueStore.Delete(session.Id);
         SessionRemoved?.Invoke(session.Id);
         await RemoveContextAsync(session.Id);   // 池生命周期：删除即停即释放
         var wasCurrent = session.Id == _sessionId;
@@ -1726,6 +1745,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 ownerUserId: ownerUserId, enabledMcpIds: _sessionMcpSubset,
                 sessionId: ctx.SessionId > 0 ? ctx.SessionId : null, fleetPlanStore: FleetPlanStore, toolLimitContinuation: (used, limit, ct) => RequestToolLimitApprovalAsync(ctx, used, limit, ct));
             ctx.RuntimeVersion = _poolVersion;
+            ctx.Runtime.SteeringProvider = _ =>
+                Task.FromResult<IReadOnlyList<string>?>(DrainSteering(ctx));
             await RestoreSummaryFromStoreAsync();
             StatusMessage = $"已就绪 · {SelectedProvider.DisplayName} · {ctx.Runtime!.ToolCount} 个工具"
                             + (_agentConfig.ReadOnly ? " · 只读模式" : "")
@@ -2067,10 +2088,12 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private sealed record AttachmentBuild(string Display, string Persisted, string ModelText, List<AIContent> Images, List<string> ImagePaths);
 
     /// <summary>把附件落盘持久化并拼进本轮输入：返回(展示文本, 持久化文本, 模型文本, 图片内容块, 图片绝对路径)。</summary>
-    private async Task<AttachmentBuild> BuildAttachmentPrompt(string text, IReadOnlyList<AgentAttachment> attachments)
+    private async Task<AttachmentBuild> BuildAttachmentPrompt(string text, IReadOnlyList<AgentAttachment> attachments,
+        string? workspaceRootOverride = null, long? sessionId = null)
     {
         var vision = SelectedProvider?.SupportsVision == true;
-        var workspaceRoot = CurrentWorkspaceRoot;      // 需求 D：附件落盘随会话工作目录（未分配=共享区）
+        var workspaceRoot = workspaceRootOverride ?? CurrentWorkspaceRoot;
+        var effectiveSessionId = sessionId ?? _sessionId;      // 需求 D：附件落盘随会话工作目录（未分配=共享区）
         var display = new StringBuilder(text);
         var persisted = new StringBuilder(text);
         var model = new StringBuilder(text);
@@ -2084,7 +2107,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             // 附件落盘入审计（§10.A.1 本地工具补审计三类之一；FilePath=绝对路径, 供 M1-7 随会话删除追溯）
             await LocalAudit.LogAsync("attachment_persist", $"ATTACH: {attachment.Name} -> {relative}",
                 CommandStatus.Executed, filePath: absolute,
-                sessionId: _sessionId > 0 ? $"agent-{_sessionId}" : null);   // 显式归因（别的会话可能正在运行 §4.1）
+                sessionId: effectiveSessionId > 0 ? $"agent-{effectiveSessionId}" : null);   // 显式归因（别的会话可能正在运行 §4.1）
 
             if (attachment.IsImage)
             {
@@ -2310,13 +2333,13 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     /// <summary>会话成本预算检查：达到 agent.budget.maxSessionCost 上限时返回阻止原因（null=可继续；未配置/未填价格时放行）。</summary>
-    private string? SessionCostBudgetBlock()
+    private string? SessionCostBudgetBlock(AgentRuntime? runtime = null)
     {
         var limit = _agentConfig.Budget?.MaxSessionCost ?? 0;
         if (limit <= 0)
             return null;
-        var session = _runtime?.Session;
-        var provider = SelectedProvider;
+        var session = (runtime ?? _runtime)?.Session;
+        var provider = (runtime ?? _runtime)?.Provider ?? SelectedProvider;
         if (session is null || provider is null)
             return null;
         if (provider.InputPricePerMTok <= 0 && provider.OutputPricePerMTok <= 0)
@@ -2328,9 +2351,10 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             : null;
     }
 
-    private async Task RunTurnAsync(AgentTurn turn, IReadOnlyList<AIContent>? contents = null)
+    private async Task RunTurnAsync(AgentTurn turn, IReadOnlyList<AIContent>? contents = null,
+        SessionRunContext? runContext = null)
     {
-        var ctx = CurrentContext;
+        var ctx = runContext ?? CurrentContext;
         ctx.ActiveTurn = turn;
         RaisePendingApprovalChanged();
         if (ctx.Runtime is null)
@@ -2344,7 +2368,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         // 会话成本预算：达到上限后阻止新的发送（防止失控烧钱）
-        var budgetBlock = SessionCostBudgetBlock();
+        var budgetBlock = SessionCostBudgetBlock(ctx.Runtime);
         if (budgetBlock is not null)
         {
             turn.Note = budgetBlock;
@@ -2354,13 +2378,13 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         // 懒建会话：点“新建任务”不写库；首次真正发送消息时才落库并出现在侧栏。
-        if (_sessionId <= 0)
+        if (ctx.SessionId <= 0)
         {
             var title = BuildSessionTitle(turn.UserText, turn.Images.Count > 0, turn.UserText.Contains("📎"));
             await CreateSessionWithWorkspaceAsync(title, titled: true);
             ctx = CurrentContext;   // 草稿 → 落库会话：上下文可能已换
         }
-        else if (_sessionTitled is false)
+        else if (ReferenceEquals(ctx, CurrentContext) && _sessionTitled is false)
         {
             // 旧库中“有会话但尚未发过消息”的空会话：同样以首条消息命名。
             await _store.RenameSessionAsync(_sessionId, BuildSessionTitle(turn.UserText, turn.Images.Count > 0, turn.UserText.Contains("📎")));
@@ -2382,6 +2406,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         var assistantText = new StringBuilder();
         var progress = new SyncProgress(e => OnAgentEvent(e, turn, assistantText, ctx), _uiInvoke);
         var turnSucceeded = false;
+        var wasCancelled = false;
         // 归因作用域：本轮派生的工具线程/续延（本地工具审计）都挂到本会话，不随显示切换串号（§4.1）
         using var auditScope = LocalAudit.BeginRunScope(ctx.AuditId);
 
@@ -2411,8 +2436,9 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             FlushDelta(turn, ctx);
             FlushReasoning(turn, ctx);
             turn.MarkDone(DateTime.UtcNow);
+            wasCancelled = cts.IsCancellationRequested;
             ctx.SetState(turnSucceeded ? SessionRunState.Done
-                : (cts.IsCancellationRequested ? SessionRunState.Stopped : SessionRunState.Failed));
+                : (wasCancelled ? SessionRunState.Stopped : SessionRunState.Failed));
             if (ReferenceEquals(ctx.Cts, cts))
             {
                 ctx.Cts = null;
@@ -2469,6 +2495,15 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             // 终态（Done/Failed/Stopped）保留到下一轮开始：不占用闸门（IsBusy 只认排队/执行/待审批），
             // 同时让状态文案可见（“已停止/上轮失败”）。
             RaiseBusyChanged();
+        }
+
+        if (turnSucceeded && !wasCancelled && !ctx.QueuePaused)
+        {
+            await TryPumpQueueAsync(ctx);
+        }
+        else if (ctx.PendingMessages.Count > 0)
+        {
+            SetQueuePaused(ctx, true);
         }
     }
 
@@ -2620,6 +2655,11 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 turn.Steps.Add(graphStep);
                 break;
 
+            case AgentEventKind.UserSteering:
+                FlushDelta(turn, ctx);
+                FlushReasoning(turn, ctx);
+                turn.AddSteeringNote(e.Text ?? string.Empty);
+                break;
             case AgentEventKind.Incomplete: case AgentEventKind.Warning:
                 FlushDelta(turn, ctx);
                 FlushReasoning(turn, ctx);
@@ -2781,6 +2821,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             if (!string.IsNullOrEmpty(turn.UserText) || string.IsNullOrEmpty(turn.StorageText) is false)
                 messages.Add(("user", turn.StorageText ?? turn.UserText));
+            foreach (var note in turn.SteeringNotes)
+                messages.Add(("steering", note.Text));
             if (!string.IsNullOrEmpty(turn.ReasoningText))
                 messages.Add(("reasoning", turn.ReasoningText));
             foreach (var step in turn.Steps)

@@ -21,6 +21,7 @@ public partial class MainViewModel
                 menu.Items.Add(CreateRelatedMenuItem("资源监控", () => OpenMonitor(server)));
                 menu.Items.Add(CreateRelatedMenuItem("Docker 查看/管理", () => OpenDockerManager(server)));
                 menu.Items.Add(CreateRelatedMenuItem("系统防火墙", () => OpenFirewallManager(server)));
+                menu.Items.Add(CreateRelatedMenuItem("计划任务（cron / systemd）", () => OpenScheduledTasks(server)));
                 menu.Items.Add(new Separator());
                 menu.Items.Add(CreateRelatedMenuItem("采集快照", () => RefreshSnapshot(server)));
                 menu.Items.Add(CreateRelatedMenuItem("快照历史", () => OpenSnapshotHistory(server)));

@@ -63,6 +63,7 @@
                 <ui:Button Content="端口转发" Icon="{ui:SymbolIcon Share24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenPortForwardCommand}"/>
                 <ui:Button Content="文件/文件夹同步" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenSyncCommand}"/>
                 <ui:Button Content="触发事件" Icon="{ui:SymbolIcon Flash24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenTriggerCommand}"/>
+                <ui:Button Content="计划任务" Icon="{ui:SymbolIcon CalendarClock24}" Padding="12,4" Margin="0,0,6,6" Command="{Binding OpenScheduledTasksCommand}"/>
             </WrapPanel>
         </DockPanel>
 
@@ -96,6 +97,7 @@
                             <MenuItem Header="用户管理" Click="OnUserManagerClick"/>
                             <MenuItem Header="Docker 查看/管理" Click="OnDockerManagerClick"/>
                             <MenuItem Header="系统防火墙" Click="OnFirewallManagerClick"/>
+                            <MenuItem Header="计划任务（cron / systemd）" Click="OnScheduledTasksClick"/>
                             <Separator/>
                             <MenuItem Header="删除" Foreground="{DynamicResource AppDangerBrush}" Click="OnDeleteClick"/>
                         </ContextMenu>

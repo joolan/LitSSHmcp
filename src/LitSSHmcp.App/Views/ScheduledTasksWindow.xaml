@@ -1,0 +1,198 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.ScheduledTasksWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="{Binding Title}" Height="860" Width="1320" MinHeight="620" MinWidth="1000"
+        WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="{Binding Title}"/>
+
+        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}" Margin="16,8,16,0" Padding="12,8">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:Button Content="加载提权任务" Padding="12,4" Margin="0,0,8,0"
+                               Command="{Binding LoadElevatedCommand}"
+                               Visibility="{Binding CanElevate, Converter={StaticResource BoolToVis}}"/>
+                    <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4"
+                               Command="{Binding RefreshCommand}"/>
+                </StackPanel>
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="CalendarClock24" FontSize="18" Margin="0,0,8,0"
+                                       Foreground="{DynamicResource AppAccentBrush}"/>
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSizeSubtitle}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding ServerInfoText}" Margin="0,4,0,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}"/>
+                    <TextBlock Text="{Binding CronServiceText}" Margin="0,2,0,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}"/>
+                    <TextBlock Text="{Binding SudoText}" Margin="0,2,0,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <DockPanel Grid.Row="2" Margin="16,8,16,0">
+            <ui:TextBox DockPanel.Dock="Left" Width="320"
+                        Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="搜索计划、命令、用户、来源、脚本路径"/>
+            <CheckBox DockPanel.Dock="Left" Content="显示已暂停/已停止" Margin="12,0,0,0"
+                      VerticalAlignment="Center" IsChecked="{Binding ShowPaused}"/>
+            <TextBlock DockPanel.Dock="Right" Text="{Binding StatusMessage}" VerticalAlignment="Center"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       FontSize="{DynamicResource AppFontSizeMicro}"/>
+        </DockPanel>
+
+        <Grid Grid.Row="3" Margin="16,8,16,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="6"/>
+                <ColumnDefinition Width="430" MinWidth="360"/>
+            </Grid.ColumnDefinitions>
+
+            <ListView Grid.Column="0" ItemsSource="{Binding TasksView}" SelectedItem="{Binding SelectedTask}"
+                      BorderThickness="0" Background="Transparent" Padding="2">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="状态" Width="80" DisplayMemberBinding="{Binding StateText}"/>
+                        <GridViewColumn Header="计划" Width="180" DisplayMemberBinding="{Binding ScheduleDescription}"/>
+                        <GridViewColumn Header="表达式" Width="110" DisplayMemberBinding="{Binding ScheduleText}"/>
+                        <GridViewColumn Header="命令 / 脚本" Width="230" DisplayMemberBinding="{Binding Command}"/>
+                        <GridViewColumn Header="用户" Width="70" DisplayMemberBinding="{Binding Owner}"/>
+                        <GridViewColumn Header="来源" Width="170" DisplayMemberBinding="{Binding SourceDisplay}"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10">
+                        <StackPanel>
+                            <TextBlock Text="{Binding SelectedTitle}" FontWeight="SemiBold" TextWrapping="Wrap"
+                                       FontSize="{DynamicResource AppFontSizeSubtitle}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <TextBlock Text="{Binding SelectedKindText}"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                           FontSize="{DynamicResource AppFontSizeMicro}"/>
+                                <TextBlock Text=" · " Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                <TextBlock Text="{Binding SelectedStateText}"
+                                           Foreground="{DynamicResource AppAccentBrush}"
+                                           FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            </StackPanel>
+                            <WrapPanel Margin="0,10,0,0">
+                                <ui:Button Content="{Binding PauseResumeText}" Padding="10,4" Margin="0,0,6,6"
+                                           Command="{Binding PauseResumeCommand}"
+                                           Visibility="{Binding HasSelectedTask, Converter={StaticResource BoolToVis}}"/>
+                                <ui:Button Content="立即执行" Icon="{ui:SymbolIcon Play24}" Padding="10,4" Margin="0,0,6,6"
+                                           Command="{Binding RunNowCommand}"
+                                           Visibility="{Binding HasSelectedTask, Converter={StaticResource BoolToVis}}"/>
+                                <ui:Button Content="发 AI 分析" Icon="{ui:SymbolIcon Send24}" Padding="10,4" Margin="0,0,6,6"
+                                           Click="OnAiAnalyzeClick"
+                                           Visibility="{Binding HasSelectedTask, Converter={StaticResource BoolToVis}}"/>
+                                <ui:Button Content="复制命令" Icon="{ui:SymbolIcon Copy24}" Padding="10,4" Margin="0,0,6,6"
+                                           Click="OnCopyCommandClick"
+                                           Visibility="{Binding HasSelectedTask, Converter={StaticResource BoolToVis}}"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,8,0,0">
+                        <StackPanel>
+                            <TextBlock Text="执行计划" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding SelectedScheduleText}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                            <TextBlock Text="{Binding SelectedDescription}" Margin="0,4,0,0"
+                                       FontFamily="{DynamicResource AppFontMonoFamily}"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="运行用户：" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedOwner}"/>
+                                <TextBlock Grid.Row="1" Text="来源：" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,0"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedSource}" Margin="0,4,0,0"/>
+                                <TextBlock Grid.Row="2" Text="下次执行：" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,0"/>
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedNextRun}" Margin="0,4,0,0"/>
+                                <TextBlock Grid.Row="3" Text="上次执行：" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,0"/>
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedLastRun}" Margin="0,4,0,0"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,8,0,0">
+                        <StackPanel>
+                            <TextBlock Text="命令" FontWeight="SemiBold"/>
+                            <TextBox Text="{Binding SelectedCommand, Mode=OneWay}" IsReadOnly="True"
+                                     AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" MaxHeight="180"
+                                     Margin="0,6,0,0" BorderThickness="0" Background="Transparent"
+                                     FontFamily="{DynamicResource AppFontMonoFamily}"
+                                     FontSize="{DynamicResource AppFontSizeCaption}"
+                                     VerticalScrollBarVisibility="Auto"/>
+                            <TextBlock Text="{Binding PauseResumeHint}" Margin="0,8,0,0"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,8,0,0"
+                            Visibility="{Binding HasSelectedScript, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <ui:Button Content="查看/编辑脚本" Icon="{ui:SymbolIcon Edit24}" Padding="10,4"
+                                               Click="OnEditScriptClick"/>
+                                    <ui:Button Content="重新加载" Padding="10,4" Margin="6,0,0,0"
+                                               Command="{Binding ReloadScriptCommand}"/>
+                                </StackPanel>
+                                <TextBlock Text="关联脚本" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <TextBlock Text="{Binding SelectedTask.ScriptPath}" Margin="0,6,0,0"
+                                       FontFamily="{DynamicResource AppFontMonoFamily}" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding ScriptMetaText}" Margin="0,4,0,0"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBlock Text="{Binding ScriptInterpreterText}" Margin="0,2,0,0"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBlock Text="{Binding ScriptSyntaxText}" Margin="0,2,0,0"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox Text="{Binding ScriptPreview, Mode=OneWay}" IsReadOnly="True"
+                                     AcceptsReturn="True" TextWrapping="NoWrap" MinHeight="140" MaxHeight="300"
+                                     Margin="0,8,0,0" BorderThickness="0" Background="Transparent"
+                                     FontFamily="{DynamicResource AppFontMonoFamily}"
+                                     FontSize="{DynamicResource AppFontSizeCaption}"
+                                     HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <TextBlock Grid.Row="4" Text="{Binding StatusMessage}" Margin="16,8,16,10"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   FontSize="{DynamicResource AppFontSizeMicro}"/>
+    </Grid>
+</ui:FluentWindow>

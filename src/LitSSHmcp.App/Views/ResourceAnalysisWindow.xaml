@@ -1,0 +1,316 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.ResourceAnalysisWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="{Binding Title}" Height="860" Width="1280" MinHeight="620" MinWidth="980"
+        WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="{Binding Title}"/>
+
+        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}" Margin="16,8,16,0" Padding="12,8">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4" Margin="0,0,8,0"
+                               Command="{Binding RefreshCommand}"/>
+                    <ui:Button Content="AI 分析（当前）" Icon="{ui:SymbolIcon Send24}" Padding="12,4" Margin="0,0,8,0"
+                               Click="OnAiCurrent"/>
+                    <ui:Button Content="AI 分析（整体）" Padding="12,4" Click="OnAiOverview"/>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                               FontSize="{DynamicResource AppFontSizeSubtitle}"/>
+                    <TextBlock Text="{Binding Subtitle}" Margin="0,4,0,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}"/>
+                    <TextBlock Text="{Binding MetaText}" Margin="0,2,0,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding CollectedAtText}" Margin="0,2,0,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <TabControl x:Name="Tabs" Grid.Row="2" Margin="16,8,16,0" SelectionChanged="OnTabChanged">
+            <TabItem Header="概览">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10">
+                            <StackPanel>
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding OverviewSeverityText}"
+                                               Foreground="{DynamicResource AppAccentBrush}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding OverviewHeadline}" FontWeight="SemiBold"
+                                               FontSize="{DynamicResource AppFontSizeSubtitle}"/>
+                                </DockPanel>
+                                <TextBlock Text="{Binding OverviewDetail}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Style="{DynamicResource CardBorderStyle}" Padding="12,10">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding CpuSeverityText}"
+                                                   Foreground="{DynamicResource AppAccentBrush}"/>
+                                        <TextBlock Text="CPU" FontWeight="SemiBold"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding CpuHeadline}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding CpuDetail}" Margin="0,4,0,0"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Style="{DynamicResource CardBorderStyle}" Padding="12,10">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding MemorySeverityText}"
+                                                   Foreground="{DynamicResource AppAccentBrush}"/>
+                                        <TextBlock Text="内存" FontWeight="SemiBold"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding MemoryHeadline}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding MemoryDetail}" Margin="0,4,0,0"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="4" Style="{DynamicResource CardBorderStyle}" Padding="12,10">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding DiskSeverityText}"
+                                                   Foreground="{DynamicResource AppAccentBrush}"/>
+                                        <TextBlock Text="磁盘" FontWeight="SemiBold"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding DiskHeadline}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding DiskDetail}" Margin="0,4,0,0"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,8,0,0">
+                            <StackPanel>
+                                <TextBlock Text="告警与发现" FontWeight="SemiBold"/>
+                                <ListView ItemsSource="{Binding Findings}" BorderThickness="0" Background="Transparent"
+                                          MaxHeight="260" Margin="0,6,0,0">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="级别" Width="70" DisplayMemberBinding="{Binding SeverityText}"/>
+                                            <GridViewColumn Header="标题" Width="250" DisplayMemberBinding="{Binding Title}"/>
+                                            <GridViewColumn Header="说明" Width="700" DisplayMemberBinding="{Binding Detail}"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="CPU">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding CpuSeverityText}"
+                                           Foreground="{DynamicResource AppAccentBrush}" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding CpuHeadline}" FontWeight="SemiBold"/>
+                            </DockPanel>
+                            <TextBlock Text="{Binding CpuDetail}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="进程 CPU% 为 ps 统计的累计占比；整体 CPU 使用率为本次采样值。"
+                                       Margin="0,4,0,0" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       FontSize="{DynamicResource AppFontSizeMicro}"/>
+                        </StackPanel>
+                    </Border>
+                    <ListView Grid.Row="1" Margin="0,8,0,0" ItemsSource="{Binding TopCpuProcesses}"
+                              BorderThickness="0" Background="Transparent">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="PID" Width="70" DisplayMemberBinding="{Binding Pid}"/>
+                                <GridViewColumn Header="用户" Width="90" DisplayMemberBinding="{Binding User}"/>
+                                <GridViewColumn Header="服务/容器" Width="180" DisplayMemberBinding="{Binding OwnerText}"/>
+                                <GridViewColumn Header="CPU%" Width="80" DisplayMemberBinding="{Binding CpuText}"/>
+                                <GridViewColumn Header="内存%" Width="80" DisplayMemberBinding="{Binding MemText}"/>
+                                <GridViewColumn Header="RSS" Width="90" DisplayMemberBinding="{Binding RssText}"/>
+                                <GridViewColumn Header="运行时长" Width="110" DisplayMemberBinding="{Binding Elapsed}"/>
+                                <GridViewColumn Header="命令" Width="500" DisplayMemberBinding="{Binding Command}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="内存">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding MemorySeverityText}"
+                                           Foreground="{DynamicResource AppAccentBrush}" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding MemoryHeadline}" FontWeight="SemiBold"/>
+                            </DockPanel>
+                            <TextBlock Text="{Binding MemoryDetail}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding OomText}" Margin="0,6,0,0" TextWrapping="Wrap"
+                                       Visibility="{Binding HasOom, Converter={StaticResource BoolToVis}}"
+                                       FontFamily="{DynamicResource AppFontMonoFamily}"
+                                       Foreground="{DynamicResource AppDangerBrush}"/>
+                        </StackPanel>
+                    </Border>
+                    <ListView Grid.Row="1" Margin="0,8,0,0" ItemsSource="{Binding TopMemoryProcesses}"
+                              BorderThickness="0" Background="Transparent">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="PID" Width="70" DisplayMemberBinding="{Binding Pid}"/>
+                                <GridViewColumn Header="用户" Width="90" DisplayMemberBinding="{Binding User}"/>
+                                <GridViewColumn Header="服务/容器" Width="180" DisplayMemberBinding="{Binding OwnerText}"/>
+                                <GridViewColumn Header="RSS" Width="100" DisplayMemberBinding="{Binding RssText}"/>
+                                <GridViewColumn Header="Swap" Width="90" DisplayMemberBinding="{Binding SwapText}"/>
+                                <GridViewColumn Header="内存%" Width="80" DisplayMemberBinding="{Binding MemText}"/>
+                                <GridViewColumn Header="运行时长" Width="110" DisplayMemberBinding="{Binding Elapsed}"/>
+                                <GridViewColumn Header="命令" Width="480" DisplayMemberBinding="{Binding Command}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="磁盘">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <ui:Button Content="深度扫描" Icon="{ui:SymbolIcon Search24}" Padding="10,4"
+                                               Command="{Binding DeepScanCommand}"/>
+                                </StackPanel>
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding DiskSeverityText}"
+                                                   Foreground="{DynamicResource AppAccentBrush}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding DiskHeadline}" FontWeight="SemiBold"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding DiskDetail}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,8,0,0">
+                            <StackPanel>
+                                <TextBlock Text="挂载点" FontWeight="SemiBold"/>
+                                <ListView ItemsSource="{Binding Disks}" BorderThickness="0" Background="Transparent"
+                                          MaxHeight="220" Margin="0,6,0,0">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="挂载点" Width="180" DisplayMemberBinding="{Binding MountText}"/>
+                                            <GridViewColumn Header="文件系统" Width="150" DisplayMemberBinding="{Binding Filesystem}"/>
+                                            <GridViewColumn Header="容量" Width="80" DisplayMemberBinding="{Binding Size}"/>
+                                            <GridViewColumn Header="已用" Width="80" DisplayMemberBinding="{Binding Used}"/>
+                                            <GridViewColumn Header="可用" Width="80" DisplayMemberBinding="{Binding Available}"/>
+                                            <GridViewColumn Header="使用率" Width="80" DisplayMemberBinding="{Binding UsageText}"/>
+                                            <GridViewColumn Header="inode" Width="80" DisplayMemberBinding="{Binding InodeText}"/>
+                                            <GridViewColumn Header="状态" Width="70" DisplayMemberBinding="{Binding ReadOnlyText}"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,8,0,0"
+                                Visibility="{Binding HasDirectories, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <TextBlock Text="最大目录（深度扫描）" FontWeight="SemiBold"/>
+                                <ListView ItemsSource="{Binding TopDirectories}" BorderThickness="0" Background="Transparent"
+                                          MaxHeight="220" Margin="0,6,0,0">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="目录" Width="850" DisplayMemberBinding="{Binding Path}"/>
+                                            <GridViewColumn Header="大小" Width="120" DisplayMemberBinding="{Binding SizeText}"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,8,0,0"
+                                Visibility="{Binding HasLargeFiles, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <TextBlock Text="大文件（深度扫描）" FontWeight="SemiBold"/>
+                                <ListView ItemsSource="{Binding LargeFiles}" BorderThickness="0" Background="Transparent"
+                                          MaxHeight="220" Margin="0,6,0,0">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="文件" Width="850" DisplayMemberBinding="{Binding Path}"/>
+                                            <GridViewColumn Header="大小" Width="120" DisplayMemberBinding="{Binding SizeText}"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,8,0,0"
+                                Visibility="{Binding HasDeletedFiles, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <TextBlock Text="已删除但仍被占用的文件" FontWeight="SemiBold"/>
+                                <ListView ItemsSource="{Binding DeletedFiles}" BorderThickness="0" Background="Transparent"
+                                          MaxHeight="220" Margin="0,6,0,0">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="文件" Width="600" DisplayMemberBinding="{Binding Path}"/>
+                                            <GridViewColumn Header="大小" Width="100" DisplayMemberBinding="{Binding SizeText}"/>
+                                            <GridViewColumn Header="进程" Width="120" DisplayMemberBinding="{Binding Command}"/>
+                                            <GridViewColumn Header="PID" Width="80" DisplayMemberBinding="{Binding Pid}"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,8,0,0">
+                            <StackPanel>
+                                <TextBlock Text="日志 / Docker 占用" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding JournalUsage}" Margin="0,6,0,0"
+                                           FontFamily="{DynamicResource AppFontMonoFamily}" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding DockerUsage}" Margin="0,6,0,0"
+                                           FontFamily="{DynamicResource AppFontMonoFamily}" TextWrapping="Wrap"/>
+                                <TextBlock Text="磁盘 IO（iostat）" FontWeight="SemiBold" Margin="0,10,0,0"/>
+                                <TextBlock Text="{Binding DiskIoText}" Margin="0,6,0,0"
+                                           FontFamily="{DynamicResource AppFontMonoFamily}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Margin="16,8,16,10"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   FontSize="{DynamicResource AppFontSizeMicro}"/>
+    </Grid>
+</ui:FluentWindow>

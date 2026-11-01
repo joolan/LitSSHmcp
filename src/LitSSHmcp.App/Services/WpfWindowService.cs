@@ -13,7 +13,7 @@ namespace LitSSHmcp.App.Services;
 /// 默认实现：集中构造 WPF 窗口。所有 <c>new *Window()</c> 收敛到此文件，
 /// ViewModel 只依赖 <see cref="IWindowService"/>，便于测试替身与后续替换导航方式。
 /// </summary>
-public sealed class WpfWindowService : IWindowService
+public sealed partial class WpfWindowService : IWindowService
 {
     /// <summary>组合根（由 AppServices 注入）；用于给新窗口传递共享服务。</summary>
     public IAppServices? Services { get; set; }

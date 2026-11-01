@@ -1,0 +1,37 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.ScheduledTaskAiPromptWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="发 AI 分析" Height="720" Width="920" MinHeight="520" MinWidth="720"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" x:Name="Bar" Title="发 AI 分析"/>
+
+        <TextBlock x:Name="HintText" Grid.Row="1" Margin="16,8,16,0" TextWrapping="Wrap"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   Text="将把服务器信息和当前计划任务发送到 AI 运维助手。可先修改下面的内容，再点击“发送”。若当前 AI 会话已有内容，会先确认是否覆盖。"/>
+
+        <TextBox Grid.Row="2" x:Name="PromptBox" Margin="16,10,16,0" Padding="8"
+                 AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Auto" FontFamily="{DynamicResource AppFontMonoFamily}"
+                 FontSize="{DynamicResource AppFontSizeCaption}"/>
+
+        <DockPanel Grid.Row="3" Margin="16,10,16,14" LastChildFill="True">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="复制" Padding="14,5" Click="OnCopy"/>
+                <ui:Button Content="发送" Appearance="Primary" Padding="14,5" Margin="8,0,0,0" Click="OnSend"/>
+                <ui:Button Content="取消" Padding="14,5" Margin="8,0,0,0" Click="OnCancel"/>
+            </StackPanel>
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       FontSize="{DynamicResource AppFontSizeMicro}"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

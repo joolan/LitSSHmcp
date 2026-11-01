@@ -33,7 +33,7 @@
                         <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}"
                                    FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"/>
                     </StackPanel>
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
                         <ui:Button Content="直接探测" Padding="12,4" Margin="0,0,6,0" Command="{Binding StartDirectCommand}"/>
                         <ui:Button Content="提权探测" Padding="12,4" Margin="0,0,6,0" Command="{Binding StartElevatedCommand}"/>
                         <ui:Button Content="停止" Padding="12,4" Margin="0,0,6,0" Command="{Binding StopCommand}"/>

@@ -20,6 +20,8 @@ public partial class AgentView : UserControl
     private readonly IAppServices? _services;
     private bool _initialized;
     private bool _disposed;
+    private readonly TaskCompletionSource<bool> _ready =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public AgentView(IConfigService configService, IContextStore store, string skillsDir,
         Func<string, LocalTerminalSessionViewModel?>? localTerminalResolver = null,
@@ -59,16 +61,25 @@ public partial class AgentView : UserControl
             if (_initialized) return;
             _initialized = true;
 
-            // D1 收尾：先恢复桌面登录态（跨重启保持），再加载会话（新会话按登录用户归因）
-            await _desktopLogin.LoadAsync();
-            _desktopLogin.ApplyAttribution();
-            _viewModel.NotifyDesktopLoginChanged();
-            await _viewModel.InitializeAsync();
-            RequestScrollToEnd();
-            _ = Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()),
-                System.Windows.Threading.DispatcherPriority.Input);
+            try
+            {
+                // D1 收尾：先恢复桌面登录态（跨重启保持），再加载会话（新会话按登录用户归因）
+                await _desktopLogin.LoadAsync();
+                _desktopLogin.ApplyAttribution();
+                _viewModel.NotifyDesktopLoginChanged();
+                await _viewModel.InitializeAsync();
+                RequestScrollToEnd();
+                _ = Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()),
+                    System.Windows.Threading.DispatcherPriority.Input);
+            }
+            finally
+            {
+                _ready.TrySetResult(true);
+            }
         });
     }
+
+    public Task WaitUntilInitializedAsync() => _ready.Task;
 
     // ---- 对话流跟随 ----
 

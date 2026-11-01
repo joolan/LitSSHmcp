@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows.Input;
 using System.Windows.Threading;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Resource;
 using LitSSHmcp.Core.Services.SSH;
 
 namespace LitSSHmcp.App.ViewModels;
@@ -10,16 +12,26 @@ namespace LitSSHmcp.App.ViewModels;
 public sealed class ServerMonitorViewModel : INotifyPropertyChanged
 {
     private readonly ISshService _ssh;
+    private readonly Func<ResourceMetric, Task>? _openAnalysis;
+    private readonly Func<ResourceMetric, Task>? _aiAnalysis;
     private readonly DispatcherTimer _timer;
     private bool _busy;
     private long _prevIdle;
     private long _prevTotal;
     private bool _hasPrev;
 
-    public ServerMonitorViewModel(SshServerConfig server, ISshService ssh)
+    public ServerMonitorViewModel(
+        SshServerConfig server,
+        ISshService ssh,
+        Func<ResourceMetric, Task>? openAnalysis = null,
+        Func<ResourceMetric, Task>? aiAnalysis = null)
     {
         Server = server;
         _ssh = ssh;
+        _openAnalysis = openAnalysis;
+        _aiAnalysis = aiAnalysis;
+        AnalyzeCommand = new RelayCommand(p => _ = AnalyzeAsync(p), _ => _openAnalysis is not null);
+        AiAnalysisCommand = new RelayCommand(p => _ = AnalyzeAiAsync(p), _ => _aiAnalysis is not null);
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         _timer.Tick += (_, _) => _ = RefreshAsync();
     }
@@ -27,6 +39,9 @@ public sealed class ServerMonitorViewModel : INotifyPropertyChanged
     public SshServerConfig Server { get; }
     public string Title => $"资源监控 - {Server.Name}";
     public string Subtitle => $"{Server.Host}:{Server.Port}";
+
+    public ICommand AnalyzeCommand { get; }
+    public ICommand AiAnalysisCommand { get; }
 
     public void Start()
     {
@@ -68,6 +83,34 @@ public sealed class ServerMonitorViewModel : INotifyPropertyChanged
         "[ -s /etc/redhat-release ] && head -1 /etc/redhat-release; [ -s /etc/issue ] && head -1 /etc/issue; " +
         "echo ==KERNEL==; uname -r; echo ==LOAD==; cat /proc/loadavg; echo ==STAT==; head -1 /proc/stat; " +
         "echo ==MEM==; free -m; echo ==DISK==; df -P / | tail -1; echo ==UP==; cat /proc/uptime; echo ==CPU==; nproc";
+
+    private async Task AnalyzeAsync(object? parameter)
+    {
+        if (_openAnalysis is null)
+        {
+            return;
+        }
+
+        await _openAnalysis(ParseMetric(parameter));
+    }
+
+    private async Task AnalyzeAiAsync(object? parameter)
+    {
+        if (_aiAnalysis is null)
+        {
+            return;
+        }
+
+        await _aiAnalysis(ParseMetric(parameter));
+    }
+
+    private static ResourceMetric ParseMetric(object? parameter)
+        => parameter switch
+        {
+            ResourceMetric metric => metric,
+            string text when Enum.TryParse<ResourceMetric>(text, ignoreCase: true, out var metric) => metric,
+            _ => ResourceMetric.Overview
+        };
 
     public async Task RefreshAsync()
     {

@@ -84,6 +84,7 @@ public partial class ServerManageView : UserControl
         Add("用户管理…", () => vm.OpenUserManagerCommand.Execute(null));
         Add("Docker 查看/管理…", () => vm.OpenDockerManagerCommand.Execute(null));
         Add("系统防火墙…", () => vm.OpenFirewallManagerCommand.Execute(null));
+        Add("计划任务（cron / systemd）", () => vm.OpenScheduledTasksCommand.Execute(null));
         menu.Items.Add(new Separator());
         Add("采集快照", () => vm.SnapshotRefreshCommand.Execute(null));
         Add("快照历史", () => vm.OpenSnapshotHistoryCommand.Execute(null));
@@ -126,6 +127,8 @@ public partial class ServerManageView : UserControl
     private void OnDockerManagerClick(object sender, RoutedEventArgs e) => ViewModel?.OpenDockerManagerCommand.Execute(null);
 
     private void OnFirewallManagerClick(object sender, RoutedEventArgs e) => ViewModel?.OpenFirewallManagerCommand.Execute(null);
+
+    private void OnScheduledTasksClick(object sender, RoutedEventArgs e) => ViewModel?.OpenScheduledTasksCommand.Execute(null);
 
     private void OnItemDoubleClick(object sender, MouseButtonEventArgs e)
     {

@@ -834,7 +834,11 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             return;
         }
 
-        _monitorWindow = _windows.CreateServerMonitorWindow(new ServerMonitorViewModel(server, _sshService));
+        _monitorWindow = _windows.CreateServerMonitorWindow(new ServerMonitorViewModel(
+            server,
+            _sshService,
+            metric => OpenResourceAnalysisAsync(server, metric),
+            metric => OpenResourceAiAsync(server, metric)));
         _monitorWindow.Closed += (_, _) => _monitorWindow = null;
         _monitorWindow.Show();
     }

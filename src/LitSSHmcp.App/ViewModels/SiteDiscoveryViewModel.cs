@@ -143,6 +143,18 @@ public sealed class SiteProbeService
     public string Evidence { get; init; } = string.Empty;
 }
 
+public sealed class SiteProbeWebService
+{
+    public string Name { get; init; } = string.Empty;
+    public string Version { get; init; } = string.Empty;
+    public string BinaryPath { get; init; } = string.Empty;
+    public string Installed { get; init; } = string.Empty;
+    public string Active { get; init; } = string.Empty;
+    public string Enabled { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public string Detail { get; init; } = string.Empty;
+}
+
 public sealed class SiteProbeCertificate
 {
     public string Path { get; init; } = string.Empty;
@@ -184,6 +196,7 @@ public sealed class SiteProbeSnapshot
     public List<SiteProbePort> Ports { get; set; } = new();
     public List<SiteProbeCertificate> Certificates { get; set; } = new();
     public List<SiteProbeService> NonWebServices { get; set; } = new();
+    public List<SiteProbeWebService> WebServices { get; set; } = new();
 }
 
 public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
@@ -251,6 +264,7 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
     public ObservableCollection<SiteProbePort> Ports { get; } = new();
     public ObservableCollection<SiteProbeCertificate> Certificates { get; } = new();
     public ObservableCollection<SiteProbeService> NonWebServices { get; } = new();
+    public ObservableCollection<SiteProbeWebService> WebServices { get; } = new();
     public ObservableCollection<SiteProbeHistoryItem> History { get; } = new();
     public ObservableCollection<SiteProbeDiffItem> Diff { get; } = new();
     public ObservableCollection<string> LogLines { get; } = new();
@@ -321,6 +335,13 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
 
     public bool IsElevated => _elevated;
     public string ModeText => _elevated ? "提权探测" : "直接探测";
+
+    private bool _deepServiceCheck;
+    public bool DeepServiceCheck
+    {
+        get => _deepServiceCheck;
+        set { if (_deepServiceCheck == value) return; _deepServiceCheck = value; OnPropertyChanged(); }
+    }
     public bool CanSave => !IsRunning && Sites.Count > 0;
     public int ProgressMaximum => Steps.Count == 0 ? 1 : Steps.Count;
     public int ProgressValue => Steps.Count(step => step.State is not (SiteDiscoveryStepState.Pending or SiteDiscoveryStepState.Running));
@@ -441,6 +462,7 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
         Ports.Clear();
         Certificates.Clear();
         NonWebServices.Clear();
+        WebServices.Clear();
         _nginxSites.Clear();
         _nginxUpstreams.Clear();
         _extraSites.Clear();
@@ -566,6 +588,26 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
             "case \"$e\" in */apache2|*/httpd) AP=\"$e\"; break;; esac; done; " +
             "[ -z \"$AP\" ] && AP=$(command -v apache2 2>/dev/null || command -v httpd 2>/dev/null); " +
             "if [ -n \"$AP\" ]; then echo \"##APACHE_BIN $AP\"; \"$AP\" -v 2>&1; fi; true";
+
+        if (DeepServiceCheck)
+        {
+            command +=
+                " ; for p in /usr/sbin/nginx /usr/local/nginx/sbin/nginx /www/server/nginx/sbin/nginx; do " +
+                "[ -z \"$NGX\" ] && [ -x \"$p\" ] && NGX=\"$p\"; done; " +
+                "[ -z \"$NGX\" ] || { echo \"##NGINX_BIN $NGX\"; \"$NGX\" -v 2>&1; }; " +
+                "for p in /usr/sbin/apache2 /usr/sbin/httpd /www/server/apache/bin/httpd /usr/local/apache2/bin/httpd; do " +
+                "[ -z \"$AP\" ] && [ -x \"$p\" ] && AP=\"$p\"; done; " +
+                "[ -z \"$AP\" ] || { echo \"##APACHE_BIN $AP\"; \"$AP\" -v 2>&1; }; " +
+                "if command -v systemctl >/dev/null 2>&1; then " +
+                "for s in nginx apache2 httpd caddy traefik; do " +
+                "u=\"$s.service\"; " +
+                "if systemctl list-unit-files \"$u\" --no-legend 2>/dev/null | grep -q \"^$u\"; then " +
+                "echo \"##SVC:$s:$(systemctl is-active \"$u\" 2>/dev/null):$(systemctl is-enabled \"$u\" 2>/dev/null)\"; " +
+                "fi; done; fi; " +
+                "for p in /usr/bin/caddy /usr/local/bin/caddy; do if [ -x \"$p\" ]; then echo \"##CADDY_BIN $p\"; \"$p\" version 2>&1 | head -2; break; fi; done; " +
+                "for p in /usr/bin/traefik /usr/local/bin/traefik; do if [ -x \"$p\" ]; then echo \"##TRAEFIK_BIN $p\"; \"$p\" version 2>&1 | head -2; break; fi; done; true";
+        }
+
         var result = await RunAsync(command, step, 20);
         if (result is null) return;
 
@@ -587,17 +629,114 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
                 .Value.Trim();
         }
 
+        BuildWebServices(result.Output);
+
         var found = new List<string>();
         if (_nginxPath is not null) found.Add("Nginx " + _nginxVersion);
         if (_apachePath is not null) found.Add("Apache " + _apacheVersion);
-        if (found.Count == 0)
+        if (found.Count == 0 && WebServices.Count == 0)
         {
             step.State = SiteDiscoveryStepState.Skipped;
             step.Detail = "未检测到 Nginx / Apache 进程";
             return;
         }
-        step.Detail = string.Join("；", found);
+
+        step.Detail = found.Count > 0
+            ? string.Join("；", found)
+            : string.Join("；", WebServices.Select(item => $"{item.Name} {item.Status}"));
         AddLog("Web 服务", step.Detail);
+    }
+
+    private void BuildWebServices(string output)
+    {
+        WebServices.Clear();
+        var systemd = new Dictionary<string, (string Active, string Enabled)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in output.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (!trimmed.StartsWith("##SVC:", StringComparison.Ordinal))
+                continue;
+
+            var parts = trimmed[6..].Split(':');
+            if (parts.Length >= 3)
+                systemd[parts[0]] = (parts[1], parts[2]);
+        }
+
+        AddWebService("Nginx", "nginx", _nginxPath, _nginxVersion, systemd);
+        AddWebService("Apache", "apache2", _apachePath, _apacheVersion, systemd);
+        if (!systemd.ContainsKey("httpd"))
+            AddWebService("Apache", "httpd", null, string.Empty, systemd);
+        AddWebService("Caddy", "caddy", null, string.Empty, systemd);
+        AddWebService("Traefik", "traefik", null, string.Empty, systemd);
+
+        foreach (var entry in systemd)
+        {
+            if (WebServices.Any(item => string.Equals(item.Name, entry.Key, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var active = entry.Value.Active;
+            var enabled = entry.Value.Enabled;
+            WebServices.Add(new SiteProbeWebService
+            {
+                Name = entry.Key,
+                Installed = "是",
+                Active = string.IsNullOrWhiteSpace(active) ? "未知" : active,
+                Enabled = string.IsNullOrWhiteSpace(enabled) ? "未知" : enabled,
+                Status = BuildServiceStatus(active, enabled, true, null),
+                Detail = "systemd 检测"
+            });
+        }
+    }
+
+    private void AddWebService(
+        string displayName,
+        string serviceName,
+        string? binary,
+        string version,
+        IReadOnlyDictionary<string, (string Active, string Enabled)> systemd)
+    {
+        systemd.TryGetValue(serviceName, out var state);
+        var hasBinary = !string.IsNullOrWhiteSpace(binary);
+        var hasSystemd = !string.IsNullOrWhiteSpace(state.Active) || !string.IsNullOrWhiteSpace(state.Enabled);
+        if (!hasBinary && !hasSystemd)
+            return;
+
+        if (WebServices.Any(item => string.Equals(item.Name, displayName, StringComparison.OrdinalIgnoreCase) &&
+                                    string.Equals(item.BinaryPath, binary ?? string.Empty, StringComparison.Ordinal)))
+            return;
+
+        WebServices.Add(new SiteProbeWebService
+        {
+            Name = displayName,
+            Version = version,
+            BinaryPath = binary ?? string.Empty,
+            Installed = hasBinary || hasSystemd ? "是" : "否",
+            Active = string.IsNullOrWhiteSpace(state.Active) ? "未知" : state.Active,
+            Enabled = string.IsNullOrWhiteSpace(state.Enabled) ? "未知" : state.Enabled,
+            Status = hasSystemd
+                ? BuildServiceStatus(state.Active, state.Enabled, hasBinary, version)
+                : DeepServiceCheck ? "已安装，未发现 systemd 服务" : "已安装（未深度检测）",
+            Detail = hasSystemd ? "systemd + 可执行文件" : hasBinary ? "仅发现可执行文件" : "仅发现 systemd 服务"
+        });
+    }
+
+    private static string BuildServiceStatus(string? active, string? enabled, bool hasBinary, string? version)
+    {
+        var activeText = active switch
+        {
+            "active" => "运行中",
+            "inactive" => "已停止",
+            "failed" => "启动失败",
+            _ => string.IsNullOrWhiteSpace(active) ? "状态未知" : active
+        };
+        var enabledText = enabled switch
+        {
+            "enabled" => "开机启动",
+            "disabled" => "未设置开机启动",
+            _ => string.IsNullOrWhiteSpace(enabled) ? string.Empty : enabled
+        };
+        var suffix = enabledText.Length > 0 ? "，" + enabledText : string.Empty;
+        return hasBinary ? $"{activeText}{suffix}" : $"{activeText}{suffix}（未发现可执行文件）";
     }
 
     private async Task NginxStepAsync(SiteDiscoveryStep step)
@@ -1463,7 +1602,8 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
                 Sites = Sites.ToList(),
                 Ports = Ports.ToList(),
                 Certificates = Certificates.ToList(),
-                NonWebServices = NonWebServices.ToList()
+                NonWebServices = NonWebServices.ToList(),
+                WebServices = WebServices.ToList()
             };
             File.WriteAllText(file, JsonSerializer.Serialize(payload, JsonOptions));
             SavedPath = file;
@@ -1608,7 +1748,8 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
             Sites = Sites.ToList(),
             Ports = Ports.ToList(),
             Certificates = Certificates.ToList(),
-            NonWebServices = NonWebServices.ToList()
+            NonWebServices = NonWebServices.ToList(),
+                WebServices = WebServices.ToList()
         };
         var dialog = new Microsoft.Win32.SaveFileDialog
         {

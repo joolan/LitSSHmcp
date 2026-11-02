@@ -34,6 +34,8 @@
                                    FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"/>
                     </StackPanel>
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                        <CheckBox Content="深度检测已停止服务" IsChecked="{Binding DeepServiceCheck}" Margin="0,0,10,0"
+                                  VerticalAlignment="Center" ToolTip="额外检查已安装但未运行的 Nginx / Apache / Caddy / Traefik 及开机启动状态（只读）"/>
                         <ui:Button Content="直接探测" Padding="12,4" Margin="0,0,6,0" Command="{Binding StartDirectCommand}"/>
                         <ui:Button Content="提权探测" Padding="12,4" Margin="0,0,6,0" Command="{Binding StartElevatedCommand}"/>
                         <ui:Button Content="停止" Padding="12,4" Margin="0,0,6,0" Command="{Binding StopCommand}"/>
@@ -109,6 +111,22 @@
                                     <GridViewColumn Header="上游" Width="220" DisplayMemberBinding="{Binding Upstream}"/>
                                     <GridViewColumn Header="证书" Width="230" DisplayMemberBinding="{Binding CertificatePath}"/>
                                     <GridViewColumn Header="置信度" Width="130" DisplayMemberBinding="{Binding Confidence}"/>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </TabItem>
+                    <TabItem Header="服务">
+                        <ListView ItemsSource="{Binding WebServices}" BorderThickness="0" Background="Transparent" Padding="4">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="服务" Width="100" DisplayMemberBinding="{Binding Name}"/>
+                                    <GridViewColumn Header="版本" Width="150" DisplayMemberBinding="{Binding Version}"/>
+                                    <GridViewColumn Header="可执行文件" Width="260" DisplayMemberBinding="{Binding BinaryPath}"/>
+                                    <GridViewColumn Header="安装" Width="60" DisplayMemberBinding="{Binding Installed}"/>
+                                    <GridViewColumn Header="运行状态" Width="110" DisplayMemberBinding="{Binding Active}"/>
+                                    <GridViewColumn Header="开机启动" Width="110" DisplayMemberBinding="{Binding Enabled}"/>
+                                    <GridViewColumn Header="状态" Width="220" DisplayMemberBinding="{Binding Status}"/>
+                                    <GridViewColumn Header="说明" Width="180" DisplayMemberBinding="{Binding Detail}"/>
                                 </GridView>
                             </ListView.View>
                         </ListView>

@@ -472,11 +472,11 @@
                                 <StackPanel>
                                     <DockPanel Margin="0,0,0,8">
                                         <TextBlock Text="构建历史" Style="{DynamicResource SectionTitleStyle}" Margin="0"/>
-                                        <TextBlock DockPanel.Dock="Right" Text="{Binding Builds.Count}"
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding BuildCount}"
                                                    Foreground="{DynamicResource AppTextTertiaryBrush}"
                                                    VerticalAlignment="Center"/>
                                     </DockPanel>
-                                    <ListBox ItemsSource="{Binding Builds}" SelectedItem="{Binding SelectedBuild}"
+                                    <ListBox x:Name="BuildHistoryList" ItemsSource="{Binding Builds}" SelectedItem="{Binding SelectedBuild}"
                                              BorderThickness="0" Background="Transparent"
                                              ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled" PreviewMouseWheel="OnBuildHistoryPreviewMouseWheel"
                                              ItemContainerStyle="{StaticResource JenkinsBuildItem}">
@@ -540,6 +540,10 @@
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
+                                    <ui:Button Content="加载更多" Icon="{ui:SymbolIcon ChevronRight24}"
+                                               HorizontalAlignment="Center" Padding="12,4" Margin="0,6,0,0"
+                                               Visibility="{Binding HasMoreBuilds, Converter={StaticResource BoolToVis}}"
+                                               Command="{Binding LoadMoreBuildsCommand}"/>
                                     <TextBlock Text="暂无构建记录" Style="{DynamicResource MutedTextStyle}"
                                                Visibility="{Binding HasBuilds, Converter={StaticResource BoolNotToVis}}"/>
                                 </StackPanel>

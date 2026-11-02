@@ -1807,7 +1807,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
 
     // ---------- 工具 ----------
 
-    private static DataSourceConfig Effective(DataSourceConfig ds, string? database)
+    internal static DataSourceConfig Effective(DataSourceConfig ds, string? database)
     {
         if (string.IsNullOrWhiteSpace(database) || string.Equals(ds.DefaultDatabase, database, StringComparison.Ordinal))
             return ds;
@@ -1829,7 +1829,10 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
             TimeoutSeconds = ds.TimeoutSeconds,
             ReadOnly = ds.ReadOnly,
             WriteApproval = ds.WriteApproval,
-            UsePooling = ds.UsePooling
+            UsePooling = ds.UsePooling,
+            SslMode = ds.SslMode,
+            AllowPublicKeyRetrieval = ds.AllowPublicKeyRetrieval,
+            SslCaFile = ds.SslCaFile
         };
     }
 

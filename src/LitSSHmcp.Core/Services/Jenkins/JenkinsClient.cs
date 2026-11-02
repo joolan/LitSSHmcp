@@ -286,7 +286,7 @@ public sealed class JenkinsClient : IDisposable
     {
         var parent = string.IsNullOrWhiteSpace(folderUrl)
             ? _baseUri
-            : new Uri(EnsureTrailingSlash(folderUrl));
+            : new Uri(EnsureTrailingSlash(ResolveUrl(folderUrl, _baseUri).ToString()));
         return await ListJobsAtAsync(parent, ct).ConfigureAwait(false);
     }
 
@@ -334,10 +334,19 @@ public sealed class JenkinsClient : IDisposable
         return result;
     }
 
-    public async Task<JenkinsJobDetail> GetJobAsync(string jobUrl, CancellationToken ct = default)
+    public Task<JenkinsJobDetail> GetJobAsync(string jobUrl, CancellationToken ct = default)
+        => GetJobAsync(jobUrl, 0, 10, ct);
+
+    public async Task<JenkinsJobDetail> GetJobAsync(
+        string jobUrl,
+        int buildOffset,
+        int buildLimit,
+        CancellationToken ct = default)
     {
-        var uri = new Uri(new Uri(EnsureTrailingSlash(jobUrl)),
-            "api/json?tree=name,url,color,_class,description,buildable,property[parameterDefinitions[name,type,description,defaultValue,choices]],builds[number,url,result,building,timestamp,duration,displayName]");
+        var offset = Math.Max(0, buildOffset);
+        var limit = Math.Clamp(buildLimit, 1, 100);
+        var uri = new Uri(JobBaseUri(jobUrl),
+            $"api/json?tree=name,url,color,_class,description,buildable,property[parameterDefinitions[name,type,description,defaultValue,choices]],builds[number,url,result,building,timestamp,duration,displayName]{{{offset},{limit}}}");
         using var document = await GetJsonAsync(uri, ct).ConfigureAwait(false);
         var root = document.RootElement;
 
@@ -367,7 +376,7 @@ public sealed class JenkinsClient : IDisposable
     {
         var useParameters = parameters is { Count: > 0 };
         var endpoint = useParameters ? "buildWithParameters" : "build";
-        var uri = new Uri(new Uri(EnsureTrailingSlash(jobUrl)), endpoint);
+        var uri = new Uri(JobBaseUri(jobUrl), endpoint);
 
         Func<HttpContent?> contentFactory = useParameters
             ? () => new FormUrlEncodedContent(parameters!)
@@ -455,7 +464,7 @@ public sealed class JenkinsClient : IDisposable
         int buildNumber,
         CancellationToken ct = default)
     {
-        var uri = new Uri(new Uri(EnsureTrailingSlash(jobUrl)),
+        var uri = new Uri(JobBaseUri(jobUrl),
             $"{buildNumber.ToString(CultureInfo.InvariantCulture)}/api/json?tree=number,url,building,result,duration,estimatedDuration,timestamp");
         using var document = await GetJsonAsync(uri, ct).ConfigureAwait(false);
         var root = document.RootElement;
@@ -474,7 +483,7 @@ public sealed class JenkinsClient : IDisposable
         int buildNumber,
         CancellationToken ct = default)
     {
-        var buildUri = new Uri(new Uri(EnsureTrailingSlash(jobUrl)),
+        var buildUri = new Uri(JobBaseUri(jobUrl),
             $"{buildNumber.ToString(CultureInfo.InvariantCulture)}/");
         var artifacts = new List<JenkinsArtifact>();
 
@@ -582,7 +591,7 @@ public sealed class JenkinsClient : IDisposable
         int buildNumber,
         CancellationToken ct = default)
     {
-        var uri = new Uri(new Uri(EnsureTrailingSlash(jobUrl)),
+        var uri = new Uri(JobBaseUri(jobUrl),
             $"{buildNumber.ToString(CultureInfo.InvariantCulture)}/consoleText");
         using var response = await SendCoreAsync(
             HttpMethod.Get,
@@ -606,7 +615,7 @@ public sealed class JenkinsClient : IDisposable
         long start,
         CancellationToken ct = default)
     {
-        var uri = new Uri(new Uri(EnsureTrailingSlash(jobUrl)),
+        var uri = new Uri(JobBaseUri(jobUrl),
             $"{buildNumber.ToString(CultureInfo.InvariantCulture)}/logText/progressiveText?start={Math.Max(0, start).ToString(CultureInfo.InvariantCulture)}");
         using var response = await SendCoreAsync(
             HttpMethod.Get,
@@ -638,7 +647,7 @@ public sealed class JenkinsClient : IDisposable
 
     public async Task StopBuildAsync(string jobUrl, int buildNumber, CancellationToken ct = default)
     {
-        var uri = new Uri(new Uri(EnsureTrailingSlash(jobUrl)),
+        var uri = new Uri(JobBaseUri(jobUrl),
             $"{buildNumber.ToString(CultureInfo.InvariantCulture)}/stop");
         using var response = await SendCoreAsync(
             HttpMethod.Post,
@@ -891,8 +900,27 @@ public sealed class JenkinsClient : IDisposable
         return string.Join("/", segments);
     }
 
+    private Uri JobBaseUri(string jobUrl)
+        => new(EnsureTrailingSlash(ResolveUrl(jobUrl, _baseUri).ToString()));
+
     private static Uri ResolveUrl(string value, Uri baseUri)
-        => Uri.TryCreate(value, UriKind.Absolute, out var absolute) ? absolute : new Uri(baseUri, value);
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return baseUri;
+
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var absolute))
+            return new Uri(baseUri, value);
+
+        // Jenkins 可能返回由“Jenkins URL”配置生成的旧主机名；请求仍应经过当前连接
+        //（尤其通过 SSH 隧道访问时），只保留 API 路径。
+        var basePath = baseUri.AbsolutePath.TrimEnd('/');
+        var targetPath = absolute.AbsolutePath;
+        if (basePath.Length > 1 && targetPath.StartsWith(basePath + "/", StringComparison.OrdinalIgnoreCase))
+            targetPath = targetPath[(basePath.Length + 1)..];
+        else
+            targetPath = targetPath.TrimStart('/');
+        return new Uri(baseUri, targetPath + absolute.Query);
+    }
 
     private static string EnsureTrailingSlash(string url)
         => url.EndsWith("/", StringComparison.Ordinal) ? url : url + "/";

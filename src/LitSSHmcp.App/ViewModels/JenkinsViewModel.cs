@@ -246,6 +246,9 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
     private CancellationTokenSource? _buildWatchCts;
     private long _logOffset;
     private int? _logBuildNumber;
+    private int _buildOffset;
+    private bool _hasMoreBuilds;
+    private bool _isLoadingMoreBuilds;
     private bool _isLogFollow = true;
     private readonly DispatcherTimer _queueTimer;
     private readonly HashSet<string> _notifiedBuilds = new(StringComparer.OrdinalIgnoreCase);
@@ -282,6 +285,7 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         _queueTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _queueTimer.Tick += (_, _) => _ = RefreshStatusesAsync();
         _queueTimer.Start();
+        Builds.CollectionChanged += (_, _) => OnPropertyChanged(nameof(BuildCount));
 
         RefreshCommand = new RelayCommand(_ => AsyncOperation.Run("刷新 Jenkins", RefreshAsync), _ => !_isBusy);
         AddConnectionCommand = new RelayCommand(_ => AddConnection(), _ => !_isBusy);
@@ -298,6 +302,9 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
             row => row is JenkinsJobRow { IsFolder: true });
         ToggleQueueCommand = new RelayCommand(_ => IsQueueExpanded = !IsQueueExpanded, _ => HasQueueItems);
         ToggleFavoriteCommand = new RelayCommand(_ => ToggleFavorite(), _ => SelectedJob is not null);
+        LoadMoreBuildsCommand = new RelayCommand(
+            _ => AsyncOperation.Run("加载更多 Jenkins 构建", LoadMoreBuildsAsync),
+            _ => HasMoreBuilds && SelectedJob is not null && !IsLoadingMoreBuilds);
         OpenJobRefCommand = new RelayCommand(item => OpenJobRef(item as JenkinsJobRef), item => item is JenkinsJobRef);
         OpenArtifactCommand = new RelayCommand(item => OpenArtifact(item as JenkinsArtifact), item => item is JenkinsArtifact);
         RefreshQueueCommand = new RelayCommand(_ => AsyncOperation.Run("刷新 Jenkins 队列", RefreshQueueAsync), _ => SelectedConnection is not null && !IsBusy);
@@ -347,6 +354,7 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
     public ICommand RefreshQueueCommand { get; }
     public ICommand CancelQueueItemCommand { get; }
     public ICommand ToggleFavoriteCommand { get; }
+    public ICommand LoadMoreBuildsCommand { get; }
     public ICommand OpenJobRefCommand { get; }
     public ICommand OpenArtifactCommand { get; }
     public ICommand ClearSearchCommand { get; }
@@ -473,7 +481,29 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
     public string SelectedJobDescription => SelectedJobDetail?.Description ?? string.Empty;
     public bool HasJobDescription => !string.IsNullOrWhiteSpace(SelectedJobDescription);
     public bool HasParameters => Parameters.Count > 0;
+    public int BuildCount => Builds.Count;
     public bool HasBuilds => Builds.Count > 0;
+    public bool HasMoreBuilds
+    {
+        get => _hasMoreBuilds;
+        private set
+        {
+            if (!Set(ref _hasMoreBuilds, value))
+                return;
+            (LoadMoreBuildsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+    }
+
+    public bool IsLoadingMoreBuilds
+    {
+        get => _isLoadingMoreBuilds;
+        private set
+        {
+            if (!Set(ref _isLoadingMoreBuilds, value))
+                return;
+            (LoadMoreBuildsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+    }
 
     public string SearchText
     {
@@ -1055,6 +1085,8 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         SelectedJobDetail = null;
         Parameters.Clear();
         Builds.Clear();
+        _buildOffset = 0;
+        HasMoreBuilds = false;
         ClearBuildExtras();
         SelectedBuild = null;
         OnPropertyChanged(nameof(HasParameters));
@@ -1075,7 +1107,7 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         IsJobLoading = true;
         try
         {
-            var detail = await _client.GetJobAsync(node.Url, ct);
+            var detail = await _client.GetJobAsync(node.Url, 0, 10, ct);
             if (ct.IsCancellationRequested)
                 return;
 
@@ -1085,6 +1117,8 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
                 Parameters.Add(new JenkinsParameterField(parameter));
             foreach (var build in detail.Builds)
                 Builds.Add(build);
+            _buildOffset = detail.Builds.Count;
+            HasMoreBuilds = detail.Builds.Count >= 10;
             OnPropertyChanged(nameof(SelectedJobTypeLabel));
             OnPropertyChanged(nameof(SelectedJobDescription));
             OnPropertyChanged(nameof(HasJobDescription));
@@ -1207,6 +1241,67 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         {
             RaiseCommandStates();
         }
+    }
+
+    private async Task LoadMoreBuildsAsync()
+    {
+        if (_client is null || SelectedJob is null || !HasMoreBuilds || IsLoadingMoreBuilds)
+            return;
+
+        var client = _client;
+        var jobUrl = SelectedJob.Url;
+        var offset = _buildOffset;
+        IsLoadingMoreBuilds = true;
+        StatusMessage = "正在加载更多构建记录...";
+        try
+        {
+            var detail = await client.GetJobAsync(jobUrl, offset, 10);
+            if (!ReferenceEquals(_client, client))
+                return;
+
+            var added = MergeBuilds(detail.Builds);
+            if (added == 0 && offset > 0)
+            {
+                // 兼容部分 Jenkins/代理忽略 tree 范围参数的情况。
+                var fallback = await client.GetJobAsync(jobUrl, 0, 100);
+                if (!ReferenceEquals(_client, client))
+                    return;
+                added = MergeBuilds(fallback.Builds);
+                _buildOffset = Builds.Count;
+            }
+            else
+            {
+                _buildOffset = offset + detail.Builds.Count;
+            }
+
+            HasMoreBuilds = added > 0 && _buildOffset > 0 && _buildOffset < 1000;
+            OnPropertyChanged(nameof(BuildCount));
+            OnPropertyChanged(nameof(HasBuilds));
+            StatusMessage = added > 0 ? $"已加载更多构建记录（共 {Builds.Count} 条）。" : "没有更多构建记录了。";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = Describe(ex);
+            StatusMessage = $"加载更多失败：{ex.Message}";
+        }
+        finally
+        {
+            IsLoadingMoreBuilds = false;
+        }
+    }
+
+    private int MergeBuilds(IReadOnlyList<JenkinsBuildSummary> source)
+    {
+        var added = 0;
+        foreach (var build in source)
+        {
+            if (Builds.Any(item => item.Number == build.Number))
+                continue;
+            Builds.Add(build);
+            added++;
+        }
+
+        return added;
     }
 
     private async Task LoadBuildAsync(int buildNumber)
@@ -1710,6 +1805,8 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         SelectedJobDetail = null;
         Parameters.Clear();
         Builds.Clear();
+        _buildOffset = 0;
+        HasMoreBuilds = false;
         ClearBuildExtras();
         SelectedBuild = null;
         OnPropertyChanged(nameof(HasParameters));

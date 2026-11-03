@@ -181,6 +181,18 @@ public partial class SshSessionWindow : FluentWindow
         return null;
     }
 
+    private void OnCommandSyncAll(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm)
+            return;
+
+        var enable = vm.CommandSyncEnabledCount == 0;
+        vm.SetCommandSyncForAll(enable);
+        vm.StatusMessage = enable
+            ? $"已开启全部 SSH 会话命令同步（有效 {vm.CommandSyncEffectiveCount} 个）"
+            : "已关闭全部 SSH 会话命令同步";
+    }
+
     private void OnBatchExec(object sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel vm)

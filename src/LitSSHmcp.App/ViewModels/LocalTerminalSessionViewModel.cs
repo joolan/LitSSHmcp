@@ -104,6 +104,9 @@ public sealed class LocalTerminalSessionViewModel : INotifyPropertyChanged, IAsy
         private set { _statusMessage = value; OnPropertyChanged(); }
     }
 
+    /// <summary>本机 PowerShell 不参与命令同步（无开关，始终为 false）。</summary>
+    public bool IsSyncEnabled => false;
+
     public async Task EnsureStartedAsync(int cols, int rows)
     {
         if (_disposed)
@@ -194,6 +197,9 @@ public sealed class LocalTerminalSessionViewModel : INotifyPropertyChanged, IAsy
         _logger?.WriteInput(text);
         _pty?.Write(text);
     }
+
+    /// <summary>用户输入入口：本机终端不做命令同步，直接写入。</summary>
+    public void SendUserInput(string text) => SendInput(text);
 
     public void SendBytes(byte[] data)
     {

@@ -264,6 +264,42 @@
                 </StackPanel>
                 </Grid>
             </TabItem>
+            <TabItem Header="平台操作">
+                <Grid>
+                <ListView x:Name="PlatformList" ItemsSource="{Binding PlatformLogs}" Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
+                          SelectionChanged="OnAuditSelectionChanged"
+                          PreviewMouseRightButtonDown="OnListPreviewRightClick" controls:GridViewSort.Enabled="True">
+                    <ListView.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="复制整行" Click="OnCopyRow"/>
+                            <MenuItem Header="复制单元格" Click="OnCopyCell"/>
+                        </ContextMenu>
+                    </ListView.ContextMenu>
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="时间" Width="140" DisplayMemberBinding="{Binding Timestamp, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}"/>
+                            <GridViewColumn Header="会话" Width="180" DisplayMemberBinding="{Binding SessionId}"/>
+                            <GridViewColumn Header="用户" Width="100" DisplayMemberBinding="{Binding UserDisplay}"/>
+                            <GridViewColumn Header="工具" Width="130" DisplayMemberBinding="{Binding Tool}"/>
+                            <GridViewColumn Header="类型" Width="80" DisplayMemberBinding="{Binding Category}"/>
+                            <GridViewColumn Header="服务器/集群" Width="130" DisplayMemberBinding="{Binding ServerName}"/>
+                            <GridViewColumn Header="操作" Width="360" DisplayMemberBinding="{Binding Command}"/>
+                            <GridViewColumn Header="状态" Width="80" DisplayMemberBinding="{Binding Status}"/>
+                            <GridViewColumn Header="决策" Width="110" DisplayMemberBinding="{Binding Decision}"/>
+                            <GridViewColumn Header="退出码" Width="60" DisplayMemberBinding="{Binding ExitCode}"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
+                            Visibility="{Binding HasItems, ElementName=PlatformList, Converter={StaticResource BoolNotToVis}}">
+                    <ui:SymbolIcon Symbol="Cloud24" FontSize="34" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                    <TextBlock Text="暂无平台操作审计记录" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                    <TextBlock Text="Jenkins、Kubernetes 等平台操作会显示在这里。" Style="{DynamicResource EmptyStateHintStyle}"
+                               Margin="0,6,0,0"/>
+                </StackPanel>
+                </Grid>
+            </TabItem>
             <TabItem Header="SQL/Redis审计">
                 <Grid>
                 <ListView x:Name="SqlList" ItemsSource="{Binding SqlLogs}" Padding="3" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.IsVirtualizingWhenGrouping="True" ScrollViewer.CanContentScroll="True" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"

@@ -273,6 +273,9 @@ public class ConfigService : IConfigService, IStrictConfigService
         foreach (var jenkins in config.Jenkins?.Connections ?? Array.Empty<JenkinsConnectionConfig>())
             jenkins.ApiToken = _protector.Protect(jenkins.ApiToken) ?? string.Empty;
 
+        foreach (var kubernetes in config.Kubernetes?.Connections ?? Array.Empty<KubernetesConnectionConfig>())
+            kubernetes.KubeconfigContent = _protector.Protect(kubernetes.KubeconfigContent) ?? string.Empty;
+
         foreach (var provider in config.Agent?.Providers ?? Array.Empty<AgentProviderGroupConfig>())
             provider.ApiKey = _protector.Protect(provider.ApiKey);
 
@@ -317,6 +320,9 @@ public class ConfigService : IConfigService, IStrictConfigService
 
         foreach (var jenkins in config.Jenkins?.Connections ?? Array.Empty<JenkinsConnectionConfig>())
             jenkins.ApiToken = _protector.Unprotect(jenkins.ApiToken) ?? string.Empty;
+
+        foreach (var kubernetes in config.Kubernetes?.Connections ?? Array.Empty<KubernetesConnectionConfig>())
+            kubernetes.KubeconfigContent = _protector.Unprotect(kubernetes.KubeconfigContent) ?? string.Empty;
 
         foreach (var provider in config.Agent?.Providers ?? Array.Empty<AgentProviderGroupConfig>())
             provider.ApiKey = _protector.Unprotect(provider.ApiKey);
@@ -367,7 +373,8 @@ public class ConfigService : IConfigService, IStrictConfigService
                (config.Agent?.Memory is not null && HasPlaintext(config.Agent.Memory.ApiKey)) ||
                (config.Web?.Https is not null && HasPlaintext(config.Web.Https.CertificatePassword)) ||
                (config.Triggers ?? Array.Empty<TriggerConfig>()).Any(t => (t?.Actions ?? Array.Empty<TriggerAction>()).Any(a => HasPlaintext(a.Secret))) ||
-               (config.Jenkins?.Connections ?? Array.Empty<JenkinsConnectionConfig>()).Any(j => j is not null && HasPlaintext(j.ApiToken));
+               (config.Jenkins?.Connections ?? Array.Empty<JenkinsConnectionConfig>()).Any(j => j is not null && HasPlaintext(j.ApiToken)) ||
+               (config.Kubernetes?.Connections ?? Array.Empty<KubernetesConnectionConfig>()).Any(k => k is not null && HasPlaintext(k.KubeconfigContent));
     }
 
     private bool HasPlaintext(string? value) => !string.IsNullOrEmpty(value) && !_protector.IsProtected(value);

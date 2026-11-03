@@ -14,12 +14,55 @@ public partial class TerminalTabView : UserControl
     private const double MinPanelWidth = 120;
 
     private TerminalSessionViewModel? _hookedVm;
+    private MainViewModel? _mainVm;
 
     public TerminalTabView()
     {
         InitializeComponent();
-        Loaded += (_, _) => ApplyLayout();
+        Loaded += OnViewLoaded;
+        Unloaded += OnViewUnloaded;
         DataContextChanged += (_, _) => Hook();
+    }
+
+    private void OnViewLoaded(object sender, RoutedEventArgs e)
+    {
+        HookWindowViewModel();
+        ApplyLayout();
+        UpdateSyncVisibility();
+    }
+
+    private void OnViewUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (_mainVm is not null)
+            _mainVm.PropertyChanged -= OnMainVmPropertyChanged;
+        _mainVm = null;
+    }
+
+    private void HookWindowViewModel()
+    {
+        var main = Window.GetWindow(this)?.DataContext as MainViewModel;
+        if (ReferenceEquals(_mainVm, main))
+            return;
+        if (_mainVm is not null)
+            _mainVm.PropertyChanged -= OnMainVmPropertyChanged;
+        _mainVm = main;
+        if (_mainVm is not null)
+            _mainVm.PropertyChanged += OnMainVmPropertyChanged;
+    }
+
+    private void OnMainVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MainViewModel.IsSshTiled) or nameof(MainViewModel.SshLayout))
+            UpdateSyncVisibility();
+    }
+
+    /// <summary>命令同步开关只在平铺模式或独立会话窗口显示（本机终端不参与）。</summary>
+    private void UpdateSyncVisibility()
+    {
+        var window = Window.GetWindow(this);
+        var show = window is Views.SshSessionFloatWindow
+            || (window?.DataContext is MainViewModel main && main.IsSshTiled);
+        SyncPanel.Visibility = show && Vm is not null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private TerminalSessionViewModel? Vm => DataContext as TerminalSessionViewModel;
@@ -42,6 +85,7 @@ public partial class TerminalTabView : UserControl
             vm.FileBrowser.TerminalCommandSent += OnTerminalCommandSent;
         }
         ApplyLayout();
+        UpdateSyncVisibility();
     }
 
     private void OnTerminalCommandSent()
@@ -107,7 +151,7 @@ public partial class TerminalTabView : UserControl
             Header = string.IsNullOrWhiteSpace(snippet.Name) ? command : snippet.Name,
             ToolTip = command
         };
-        item.Click += (_, _) => Vm?.SendInput(command + "\r");
+        item.Click += (_, _) => Vm?.SendUserInput(command + "\r");
         menu.Items.Add(item);
     }
 
@@ -142,7 +186,7 @@ public partial class TerminalTabView : UserControl
             return;
         // 多行内容整段下发：统一换行为 \r，远端 shell 按行顺序执行（与粘贴脚本一致，保留跨行引号等结构）
         text = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Replace('\n', '\r');
-        Vm?.SendInput(text + "\r");
+        Vm?.SendUserInput(text + "\r");
         SendBox.Text = string.Empty;
     }
 

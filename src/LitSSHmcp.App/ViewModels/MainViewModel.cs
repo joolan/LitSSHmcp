@@ -60,6 +60,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     public ICommand NavigateApplicationsCommand { get; }
     public ICommand NavigateRemoteDesktopsCommand { get; }
     public ICommand NavigateJenkinsCommand { get; }
+    public ICommand NavigateKubernetesCommand { get; }
     public ICommand OpenSettingsCommand { get; }
     public ICommand OpenSessionManagerCommand { get; }
     public ICommand OpenTerminalCommand { get; }
@@ -113,6 +114,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         NavigateApplicationsCommand = new RelayCommand(_ => NavigateApplications());
         NavigateRemoteDesktopsCommand = new RelayCommand(_ => NavigateRemoteDesktops());
         NavigateJenkinsCommand = new RelayCommand(_ => NavigateJenkins());
+        NavigateKubernetesCommand = new RelayCommand(_ => NavigateKubernetes());
         OpenSettingsCommand = new RelayCommand(_ => OpenSettings());
         OpenSessionManagerCommand = new RelayCommand(_ => ShowSessionWindow());
         OpenTerminalCommand = new RelayCommand(_ => ConnectTerminal(SelectedServer), _ => SelectedServer != null);
@@ -140,6 +142,8 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             OnPropertyChanged(nameof(HasSessions));
             OnPropertyChanged(nameof(ActiveSessionCount));
         };
+
+        CommandSync = new CommandSyncService(Sessions, OnCommandSyncStateChanged);
 
         // 服务器列表按「分组」字段分组（连接管理器树形分组）
         GroupedServers = System.Windows.Data.CollectionViewSource.GetDefaultView(Servers);
@@ -450,7 +454,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
 
         var used = terminals.Select(t => t.Ordinal).ToHashSet();
         var ordinal = Enumerable.Range(1, MaxTerminalsPerServer).First(i => !used.Contains(i));
-        var vm = new TerminalSessionViewModel(server, _sshService, ordinal: ordinal);
+        var vm = new TerminalSessionViewModel(server, _sshService, ordinal: ordinal, commandSync: CommandSync);
         Sessions.Add(vm);
         SelectedSession = vm;
         ShowSessionWindow();
@@ -722,6 +726,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     {
         LoadServers();
         JenkinsPage?.ReloadConfig();
+        KubernetesPage?.ReloadConfig();
     }
 
     private void LoadServers()
@@ -1145,6 +1150,31 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
 
     public void DisposeJenkinsPage() => JenkinsPage?.Dispose();
 
+    private KubernetesViewModel? _kubernetesPage;
+    public KubernetesViewModel? KubernetesPage
+    {
+        get => _kubernetesPage;
+        private set { _kubernetesPage = value; OnPropertyChanged(); }
+    }
+
+    private void NavigateKubernetes()
+    {
+        if (KubernetesPage is null)
+        {
+            KubernetesPage = new KubernetesViewModel(
+                _configService, _windows, _sshService, _dialogs, Application.Current.MainWindow,
+                _services.CreateAuditLog());
+        }
+        else
+        {
+            KubernetesPage.ReloadConfig();
+        }
+
+        CurrentPage = MainPage.Kubernetes;
+    }
+
+    public void DisposeKubernetesPage() => KubernetesPage?.Dispose();
+
     private void CloseSessionTerminal(long sessionId)
     {
         void Close()
@@ -1315,6 +1345,7 @@ public enum MainPage
     Applications,
     RemoteDesktops,
     Jenkins,
+    Kubernetes,
     Agent
 }
 

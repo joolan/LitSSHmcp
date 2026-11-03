@@ -225,6 +225,22 @@
                                 </Border>
                             </Grid>
                         </ui:Button>
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                                   ToolTip="Kubernetes 多集群只读视图" AutomationProperties.Name="Kubernetes"
+                                   Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                   Command="{Binding NavigateKubernetesCommand}">
+                            <Grid Width="56" Height="54">
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Kubernetes}"/>
+                                <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
+                                        HorizontalAlignment="Left" Margin="4,10"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Kubernetes}"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Cloud24" FontSize="19" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="K8s" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </ui:Button>
                         <Separator Margin="10,4,10,6"/>
                         <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="资产拓扑（独立窗口）"
@@ -503,6 +519,11 @@
                 <Grid x:Name="JenkinsPage"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Jenkins}">
                     <views:JenkinsView DataContext="{Binding JenkinsPage}"/>
+                </Grid>
+
+                <Grid x:Name="KubernetesPage"
+                      Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Kubernetes}">
+                    <views:KubernetesView DataContext="{Binding KubernetesPage}"/>
                 </Grid>
 
                 <!-- AI 运维助手（常驻页面，切换导航不停止任务） -->

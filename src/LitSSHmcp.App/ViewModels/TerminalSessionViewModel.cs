@@ -2,15 +2,17 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using LitSSHmcp.App.Controls;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
 
 namespace LitSSHmcp.App.ViewModels;
 
 /// <summary>一个交互式 SSH 终端标签（PTY shell）。输出喂给 <see cref="TerminalModel"/>，键盘输入回写 shell。</summary>
-public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDisposable, ISshTab, ITerminalSession
+public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDisposable, ISshTab, ITerminalSession, ICommandSyncParticipant
 {
     private readonly ISshService _ssh;
+    private readonly CommandSyncService? _commandSync;
     private readonly object _gate = new();
     private SshShellSession? _shell;
     private CancellationTokenSource? _cts;
@@ -18,10 +20,12 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     private bool _disposed;
     private Services.SessionLogger? _logger;
 
-    public TerminalSessionViewModel(SshServerConfig server, ISshService ssh, int cols = 80, int rows = 24, int ordinal = 1)
+    public TerminalSessionViewModel(SshServerConfig server, ISshService ssh, int cols = 80, int rows = 24, int ordinal = 1,
+        CommandSyncService? commandSync = null)
     {
         Server = server;
         _ssh = ssh;
+        _commandSync = commandSync;
         Ordinal = ordinal;
         Model = new TerminalModel(cols, rows);
         FileBrowser = new RemoteFileBrowserViewModel(server, ssh);
@@ -160,6 +164,20 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         private set { _isConnected = value; OnPropertyChanged(); }
     }
 
+    private bool _isSyncEnabled;
+    /// <summary>是否参与命令同步（输入广播）。默认关闭；本机 PowerShell 无此开关。</summary>
+    public bool IsSyncEnabled
+    {
+        get => _isSyncEnabled;
+        set
+        {
+            if (_isSyncEnabled == value)
+                return;
+            _isSyncEnabled = value;
+            OnPropertyChanged();
+        }
+    }
+
     /// <summary>首次显示时按实际控件尺寸打开 shell；已启动则仅调整尺寸。</summary>
     public async Task EnsureStartedAsync(int cols, int rows)
     {
@@ -263,7 +281,22 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
             StatusMessage = "连接已断开";
     }
 
-    public void SendInput(string text)
+    /// <summary>程序化下发（文件浏览器 cd、重连、AI 等）：不参与命令同步广播。</summary>
+    public void SendInput(string text) => SendDirectInput(text);
+
+    /// <summary>用户输入（键盘 / IME / 粘贴 / 发送框）：先写入本会话，再广播给其他已开启同步的会话。</summary>
+    public void SendUserInput(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+        SendDirectInput(text);
+        _commandSync?.Broadcast(this, text);
+    }
+
+    /// <summary>命令同步目标写入：只写本会话，不再广播（避免递归）。</summary>
+    public void SendReplicatedInput(string text) => SendDirectInput(text);
+
+    private void SendDirectInput(string text)
     {
         if (string.IsNullOrEmpty(text))
             return;

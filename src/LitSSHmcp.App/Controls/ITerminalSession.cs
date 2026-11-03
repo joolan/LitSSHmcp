@@ -12,8 +12,11 @@ public interface ITerminalSession
     /// <summary>首次显示时按实际控件尺寸启动后端；已启动则仅同步尺寸。</summary>
     Task EnsureStartedAsync(int cols, int rows);
 
-    /// <summary>把用户键盘输入回写到后端。</summary>
+    /// <summary>把程序化输入回写到后端（不参与命令同步广播）。</summary>
     void SendInput(string text);
+
+    /// <summary>把用户输入（键盘 / IME / 粘贴 / 发送框）回写到后端；SSH 会话可据此广播到其他同步会话。</summary>
+    void SendUserInput(string text);
 
     /// <summary>通知后端终端尺寸变化。</summary>
     void Resize(int cols, int rows);

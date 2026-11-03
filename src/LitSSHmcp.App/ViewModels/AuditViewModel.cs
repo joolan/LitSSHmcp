@@ -17,6 +17,7 @@ public class AuditViewModel : INotifyPropertyChanged
     private string _statusMessage = string.Empty;
 
     public ObservableCollection<CommandAuditLog> CommandLogs { get; } = new();
+    public ObservableCollection<CommandAuditLog> PlatformLogs { get; } = new();
     public ObservableCollection<SqlAuditLog> SqlLogs { get; } = new();
     public ObservableCollection<AuditSession> Sessions { get; } = new();
 
@@ -77,7 +78,7 @@ public class AuditViewModel : INotifyPropertyChanged
         + SqlLogs.Count(l => l.Category == AuditCategory.Gate);
 
     public string SummaryText =>
-        $"命令 {CommandLogs.Count} · SQL {SqlLogs.Count} · 拦截 {GateCount} · 失败 {FailureCount} · 会话 {Sessions.Count}"
+        $"命令 {CommandLogs.Count} · 平台 {PlatformLogs.Count} · SQL {SqlLogs.Count} · 拦截 {GateCount} · 失败 {FailureCount} · 会话 {Sessions.Count}"
         + (IncludeHistory ? " · 含归档" : string.Empty);
 
     public void Load()
@@ -141,6 +142,20 @@ public class AuditViewModel : INotifyPropertyChanged
                 CommandLogs.Add(item);
             }
 
+            var platformItems = new List<CommandAuditLog>();
+            foreach (var tool in new[] { "jenkins", "kubernetes" })
+            {
+                var items = await _audit.GetLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, tool: tool, category: category, userIds: keywordUserIds);
+                platformItems.AddRange(items);
+            }
+            PlatformLogs.Clear();
+            foreach (var item in platformItems.OrderByDescending(item => item.Timestamp).ThenByDescending(item => item.Id).Take(limit))
+            {
+                if (idToName is not null && item.UserId is not null && idToName.TryGetValue(item.UserId, out var name))
+                    item.UserName = name;
+                PlatformLogs.Add(item);
+            }
+
             var sqls = await _audit.GetSqlLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category, userIds: keywordUserIds);
             SqlLogs.Clear();
             foreach (var item in sqls)
@@ -158,7 +173,7 @@ public class AuditViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(SummaryText));
             OnPropertyChanged(nameof(FailureCount));
             OnPropertyChanged(nameof(GateCount));
-            StatusMessage = $"命令审计 {commands.Length} 条, SQL审计 {sqls.Length} 条, 会话 {sessions.Length} 个" + (IncludeHistory ? "（含归档）" : "");
+            StatusMessage = $"命令审计 {commands.Length} 条, 平台操作 {PlatformLogs.Count} 条, SQL审计 {sqls.Length} 条, 会话 {sessions.Length} 个" + (IncludeHistory ? "（含归档）" : "");
         }
         catch (Exception ex)
         {
@@ -213,6 +228,27 @@ public class AuditViewModel : INotifyPropertyChanged
         return sb.ToString();
     }
 
+    public string BuildPlatformCsv()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("时间,会话,用户,工具,类型,服务器,命令,状态,决策,退出码,结果");
+        foreach (var log in PlatformLogs)
+        {
+            sb.AppendLine(string.Join(',',
+                Escape(log.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")),
+                Escape(log.SessionId ?? string.Empty),
+                Escape(log.UserDisplay),
+                Escape(log.Tool ?? string.Empty),
+                Escape(log.Category.ToString()),
+                Escape(log.ServerName),
+                Escape(log.Command),
+                Escape(log.Status.ToString()),
+                Escape(log.Decision ?? string.Empty),
+                Escape(log.ExitCode?.ToString() ?? string.Empty),
+                Escape(log.Result ?? string.Empty)));
+        }
+        return sb.ToString();
+    }
     public string BuildSqlCsv()
     {
         var sb = new StringBuilder();

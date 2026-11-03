@@ -4,7 +4,7 @@ namespace LitSSHmcp.Core.Models;
 
 public class AppConfig
 {
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
 
     /// <summary>配置结构版本。缺失该字段的旧文件反序列化为 0，由 ConfigMigrator 迁移到当前版本。</summary>
     public int SchemaVersion { get; set; }
@@ -31,6 +31,9 @@ public class AppConfig
 
     /// <summary>Jenkins 连接定义（可配置任意数量：测试、预发布、生产、第三方、自定义）</summary>
     public JenkinsConfig Jenkins { get; set; } = new();
+
+    /// <summary>Kubernetes 多集群连接定义（只读运维）</summary>
+    public KubernetesConfig Kubernetes { get; set; } = new();
 
     /// <summary>界面外观（主题）。</summary>
     public UiConfig Ui { get; set; } = new();

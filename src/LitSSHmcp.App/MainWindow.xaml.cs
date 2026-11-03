@@ -33,7 +33,7 @@ public partial class MainWindow : FluentWindow
         ViewModel.JenkinsBuildCompleted += OnJenkinsBuildCompleted;
         WindowLayout.Attach(this, "main.v2");
         Closing += OnMainClosing;
-        Closed += (_, _) => { ViewModel.DisposeAgentPage(); ViewModel.DisposeJenkinsPage(); };
+        Closed += (_, _) => { ViewModel.DisposeAgentPage(); ViewModel.DisposeJenkinsPage(); ViewModel.DisposeKubernetesPage(); };
         if (Application.Current is { } app)
             app.Exit += (_, _) => DisposeTray();
 

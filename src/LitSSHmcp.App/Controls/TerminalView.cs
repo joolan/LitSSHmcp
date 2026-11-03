@@ -610,7 +610,7 @@ public sealed class TerminalView : Grid
             && (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) == 0
             && string.IsNullOrEmpty(_ime.Text))
         {
-            _session?.SendInput(" ");
+            _session?.SendUserInput(" ");
             e.Handled = true;
             return;
         }
@@ -618,7 +618,7 @@ public sealed class TerminalView : Grid
         var seq = MapKey(e);
         if (seq is not null)
         {
-            _session?.SendInput(seq);
+            _session?.SendUserInput(seq);
             e.Handled = true;
         }
     }
@@ -628,7 +628,7 @@ public sealed class TerminalView : Grid
         try
         {
             if (Clipboard.ContainsText())
-                _session?.SendInput(Clipboard.GetText());
+                _session?.SendUserInput(Clipboard.GetText());
         }
         catch
         {
@@ -650,7 +650,7 @@ public sealed class TerminalView : Grid
         if (string.IsNullOrEmpty(text))
             return;
 
-        _session?.SendInput(text);
+        _session?.SendUserInput(text);
         _ime.Text = string.Empty;
     }
 

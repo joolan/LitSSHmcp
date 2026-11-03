@@ -169,6 +169,33 @@ public static class ConfigMigrator
             changed = true;
         }
 
+        if (config.Kubernetes == null)
+        {
+            config.Kubernetes = new KubernetesConfig();
+            changed = true;
+        }
+
+        if (config.Kubernetes.Connections == null)
+        {
+            config.Kubernetes.Connections = Array.Empty<KubernetesConnectionConfig>();
+            changed = true;
+        }
+
+        foreach (var connection in config.Kubernetes.Connections)
+        {
+            if (connection is null)
+                continue;
+            connection.EnvironmentKind = KubernetesEnvironmentKinds.Normalize(connection.EnvironmentKind);
+            connection.Provider = KubernetesProviders.Normalize(connection.Provider);
+            connection.AccessMode = KubernetesAccessModes.Normalize(connection.AccessMode);
+            if (string.IsNullOrWhiteSpace(connection.KubectlPath))
+                connection.KubectlPath = "kubectl";
+            if (string.IsNullOrWhiteSpace(connection.RemoteKubectlPath))
+                connection.RemoteKubectlPath = "kubectl";
+            if (connection.TimeoutSeconds <= 0)
+                connection.TimeoutSeconds = 30;
+        }
+
         if (config.Applications != null)
         {
             foreach (var application in config.Applications)

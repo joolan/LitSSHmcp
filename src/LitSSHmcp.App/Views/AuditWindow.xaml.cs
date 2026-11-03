@@ -70,6 +70,7 @@ public partial class AuditWindow : Wpf.Ui.Controls.FluentWindow
             return;
 
         CommandList.SelectedItem = null;
+        PlatformList.SelectedItem = null;
         SqlList.SelectedItem = null;
         SessionsList.SelectedItem = null;
         _viewModel.SelectedAuditItem = null;
@@ -145,11 +146,13 @@ public partial class AuditWindow : Wpf.Ui.Controls.FluentWindow
         if (dialog.ShowDialog() != true)
             return;
 
-        var csv = SqlList.IsVisible
-            ? _viewModel.BuildSqlCsv()
-            : SessionsList.IsVisible
-                ? _viewModel.BuildSessionsCsv()
-                : _viewModel.BuildCommandsCsv();
+        var csv = PlatformList.IsVisible
+            ? _viewModel.BuildPlatformCsv()
+            : SqlList.IsVisible
+                ? _viewModel.BuildSqlCsv()
+                : SessionsList.IsVisible
+                    ? _viewModel.BuildSessionsCsv()
+                    : _viewModel.BuildCommandsCsv();
 
         File.WriteAllText(dialog.FileName, csv, new System.Text.UTF8Encoding(true));
         _viewModel.StatusMessage = $"已导出: {dialog.FileName}";

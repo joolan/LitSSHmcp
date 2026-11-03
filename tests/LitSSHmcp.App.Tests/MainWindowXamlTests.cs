@@ -102,6 +102,8 @@ public class MainWindowXamlTests
             _ = new ApplicationManageView();
             _ = new JenkinsView();
             _ = new JenkinsConnectionWindow();
+            _ = new KubernetesView();
+            _ = new KubernetesConnectionWindow();
             _ = new SshSessionWindow();
             _ = new TopologyWindow();
             _ = new AuditWindow();

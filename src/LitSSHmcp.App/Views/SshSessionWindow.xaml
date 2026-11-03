@@ -87,6 +87,10 @@
                         <ui:Button Icon="{ui:SymbolIcon Eye24}" Appearance="Transparent" Padding="6,3" Margin="0,0,8,0"
                                    IsEnabled="{Binding HasSessions}" ToolTip="布局 / 显示方式"
                                    AutomationProperties.Name="切换会话布局" Click="OnLayoutMenu"/>
+                        <ui:Button Icon="{ui:SymbolIcon ArrowSync24}" Appearance="Transparent" Padding="6,3" Margin="0,0,8,0"
+                                   IsEnabled="{Binding HasCommandSyncSessions}" ToolTip="{Binding CommandSyncToolTip}"
+                                   Content="{Binding CommandSyncEffectiveCount, StringFormat=同步 {0}}"
+                                   AutomationProperties.Name="全部开启或关闭命令同步" Click="OnCommandSyncAll"/>
                         <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3"
                                    ToolTip="新建连接" AutomationProperties.Name="新建 SSH 连接" Click="OnNewConnection"/>
                     </StackPanel>
@@ -138,6 +142,19 @@
                                 </Ellipse.Style>
                             </Ellipse>
                             <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="同步" FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center"
+                                       Margin="0,0,6,0" Foreground="{DynamicResource AppAccentBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSyncEnabled}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                             <Button Content="✕"
                                     Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                     CommandParameter="{Binding}"
@@ -159,9 +176,21 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Margin="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                            <Border Margin="2"
                                     CornerRadius="{DynamicResource AppRadiusS}" ClipToBounds="True"
                                     Height="{Binding DataContext.SshTileCardHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
+                                        <Setter Property="BorderThickness" Value="1"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSyncEnabled}" Value="True">
+                                                <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
+                                                <Setter Property="BorderThickness" Value="2"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
                                 <DockPanel>
                                     <Border DockPanel.Dock="Top" Height="20" Background="{DynamicResource AppSurfaceAltBrush}"
                                             Cursor="SizeAll" ToolTip="按住拖动可分离为独立窗口"

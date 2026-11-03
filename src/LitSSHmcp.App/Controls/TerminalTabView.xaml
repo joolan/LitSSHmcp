@@ -52,6 +52,15 @@
                     CommandParameter="{Binding}"/>
             <TextBlock DockPanel.Dock="Right" Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}"
                        VerticalAlignment="Center" Margin="6,0" TextTrimming="CharacterEllipsis"/>
+            <StackPanel x:Name="SyncPanel" DockPanel.Dock="Right" Orientation="Horizontal"
+                        VerticalAlignment="Center" Margin="6,0" Visibility="Collapsed"
+                        ToolTip="{Binding DataContext.CommandSyncToolTip, RelativeSource={RelativeSource AncestorType=Window}}">
+                <ui:ToggleSwitch IsChecked="{Binding IsSyncEnabled, Mode=TwoWay}"
+                                 AutomationProperties.Name="开启命令同步"/>
+                <TextBlock Text="{Binding DataContext.CommandSyncEffectiveCount, RelativeSource={RelativeSource AncestorType=Window}, StringFormat=同步 {0}}"
+                           VerticalAlignment="Center" Margin="4,0,0,0"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            </StackPanel>
             <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         </DockPanel>

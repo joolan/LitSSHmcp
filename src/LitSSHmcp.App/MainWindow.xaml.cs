@@ -33,17 +33,10 @@ public partial class MainWindow : FluentWindow
         ViewModel.JenkinsBuildCompleted += OnJenkinsBuildCompleted;
         WindowLayout.Attach(this, "main.v2");
         Closing += OnMainClosing;
-        Closed += (_, _) => { ViewModel.DisposeAgentPage(); ViewModel.DisposeJenkinsPage(); ViewModel.DisposeKubernetesPage(); };
+        Closed += (_, _) => { ViewModel.DisposeHomeDashboard(); ViewModel.DisposeAgentPage(); ViewModel.DisposeJenkinsPage(); ViewModel.DisposeKubernetesPage(); };
         if (Application.Current is { } app)
             app.Exit += (_, _) => DisposeTray();
 
-        // 启动及切回「主页」时，默认聚焦到 AI 快捷提问输入框
-        Loaded += (_, _) => FocusHomeAsk();
-        ViewModel.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(MainViewModel.CurrentPage))
-                FocusHomeAsk();
-        };
     }
 
     private void OnBackgroundQueueCompleted(string title, int count)
@@ -87,7 +80,6 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void OnHomeNavClick(object sender, RoutedEventArgs e) => FocusHomeAsk();
 
     private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
@@ -99,17 +91,6 @@ public partial class MainWindow : FluentWindow
         palette.ShowDialog();
     }
 
-    private void FocusHomeAsk()
-    {
-        if (ViewModel.CurrentPage != MainPage.Home)
-            return;
-
-        Dispatcher.BeginInvoke(new Action(() =>
-        {
-            HomeAskBox.Focus();
-            Keyboard.Focus(HomeAskBox);
-        }), System.Windows.Threading.DispatcherPriority.Input);
-    }
 
     private void OnEditServerClick(object sender, RoutedEventArgs e) => ViewModel.EditServerCommand.Execute(null);
 
@@ -189,53 +170,6 @@ public partial class MainWindow : FluentWindow
         _helpWindow.Show();
     }
 
-    private void OnHomeAddImage(object sender, RoutedEventArgs e)
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "添加图片",
-            Filter = "图片|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|所有文件|*.*",
-            Multiselect = true
-        };
-        if (dialog.ShowDialog() == true)
-            ViewModel.AddHomeAttachmentPaths(dialog.FileNames);
-    }
-
-    private void OnHomeAddFile(object sender, RoutedEventArgs e)
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "添加文件",
-            Filter = "所有文件|*.*",
-            Multiselect = true
-        };
-        if (dialog.ShowDialog() == true)
-            ViewModel.AddHomeAttachmentPaths(dialog.FileNames);
-    }
-
-    private void OnHomeClearAttachments(object sender, RoutedEventArgs e) => ViewModel.ClearHomeAttachments();
-
-    private void OnHomeSend(object sender, RoutedEventArgs e) => ViewModel.SendHomeAsk();
-
-    private void OnHomeAskKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter && (Keyboard.Modifiers & (ModifierKeys.Shift | ModifierKeys.Control)) == 0)
-        {
-            ViewModel.HomeQuestion = HomeAskBox.Text;
-            ViewModel.SendHomeAsk();
-            e.Handled = true;
-        }
-    }
-
-    private void OnHomeMore(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement element && element.ContextMenu is { } menu)
-        {
-            menu.PlacementTarget = element;
-            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-            menu.IsOpen = true;
-        }
-    }
 
     // ---- 关闭主窗口：选择「最小化到托盘」或「退出程序」 ----
 
@@ -404,7 +338,6 @@ public partial class MainWindow : FluentWindow
         Show();
         WindowState = WindowState.Normal;
         Activate();
-        FocusHomeAsk();
     });
 
     private void ExitFromTray()

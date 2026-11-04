@@ -76,11 +76,25 @@
 
             <Border Grid.Column="2" Style="{DynamicResource CardBorderStyle}" Padding="0" ClipToBounds="True">
                 <Grid>
-                    <wv2:WebView2 x:Name="HelpWeb"/>
+                    <wv2:WebView2 x:Name="HelpWeb" NavigationCompleted="OnWebNavigationCompleted"/>
                     <ScrollViewer x:Name="FallbackScroll" Visibility="Collapsed"
                                   VerticalScrollBarVisibility="Auto" Padding="16">
                         <controls:MarkdownBox x:Name="FallbackMarkdown"/>
                     </ScrollViewer>
+                    <Border x:Name="LoadingOverlay" Panel.ZIndex="5"
+                            Background="{DynamicResource AppCardBrush}">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <ui:ProgressRing IsIndeterminate="True" Width="44" Height="44"
+                                             HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="LoadingText" Text="正在加载使用说明…"
+                                       HorizontalAlignment="Center" Margin="0,14,0,0"
+                                       FontSize="{DynamicResource AppFontSizeBody}" FontWeight="SemiBold"/>
+                            <TextBlock Text="首次打开需要启动文档渲染引擎，请稍候"
+                                       HorizontalAlignment="Center" Margin="0,6,0,0"
+                                       FontSize="{DynamicResource AppFontSizeMicro}"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </Border>
         </Grid>

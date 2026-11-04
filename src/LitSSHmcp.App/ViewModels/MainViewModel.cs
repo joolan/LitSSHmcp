@@ -144,6 +144,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         };
 
         CommandSync = new CommandSyncService(Sessions, OnCommandSyncStateChanged);
+        HomeDashboard = new HomeDashboardViewModel();
 
         // 服务器列表按「分组」字段分组（连接管理器树形分组）
         GroupedServers = System.Windows.Data.CollectionViewSource.GetDefaultView(Servers);

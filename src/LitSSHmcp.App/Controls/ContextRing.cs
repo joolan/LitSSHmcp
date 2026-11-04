@@ -14,10 +14,21 @@ public sealed class ContextRing : FrameworkElement
         nameof(Percent), typeof(double), typeof(ContextRing),
         new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
 
+    public static readonly DependencyProperty InvertScaleProperty = DependencyProperty.Register(
+        nameof(InvertScale), typeof(bool), typeof(ContextRing),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+
     public double Percent
     {
         get => (double)GetValue(PercentProperty);
         set => SetValue(PercentProperty, value);
+    }
+
+    /// <summary>高值代表健康（如健康分）：高值用绿色、低值用红色。</summary>
+    public bool InvertScale
+    {
+        get => (bool)GetValue(InvertScaleProperty);
+        set => SetValue(InvertScaleProperty, value);
     }
 
     public ContextRing()
@@ -38,9 +49,13 @@ public sealed class ContextRing : FrameworkElement
 
         var track = Resolve("AppBorderBrush", () => new SolidColorBrush(Color.FromArgb(0x55, 0x88, 0x88, 0x88)));
         var value = Math.Clamp(Percent, 0, 1);
-        var brush = value >= 0.85 ? Resolve("AppDangerBrush", () => Brushes.OrangeRed)
-            : value >= 0.6 ? Resolve("AppWarningBrush", () => Brushes.Goldenrod)
-            : Resolve("AppAccentBrush", () => Brushes.DodgerBlue);
+        var brush = InvertScale
+            ? value >= 0.85 ? Resolve("AppSuccessBrush", () => Brushes.SeaGreen)
+                : value >= 0.65 ? Resolve("AppWarningBrush", () => Brushes.Goldenrod)
+                : Resolve("AppDangerBrush", () => Brushes.OrangeRed)
+            : value >= 0.85 ? Resolve("AppDangerBrush", () => Brushes.OrangeRed)
+                : value >= 0.6 ? Resolve("AppWarningBrush", () => Brushes.Goldenrod)
+                : Resolve("AppAccentBrush", () => Brushes.DodgerBlue);
 
         dc.DrawEllipse(null, new Pen(track, thickness), center, radius, radius);
 

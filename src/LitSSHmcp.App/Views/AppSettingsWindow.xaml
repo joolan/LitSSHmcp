@@ -37,35 +37,36 @@
             </Border>
 
             <TabControl x:Name="SettingsTabs" Grid.Column="1" Margin="12,0,0,0"
-                        SelectedIndex="0" Background="Transparent" BorderThickness="0">
+                        SelectedIndex="0" Background="Transparent" BorderThickness="0"
+                        SelectionChanged="OnSettingsTabChanged">
                 <TabControl.Template>
                     <ControlTemplate TargetType="TabControl">
                         <ContentPresenter ContentSource="SelectedContent"/>
                     </ControlTemplate>
                 </TabControl.Template>
                 <TabItem Header="外观">
-                    <views:AppearanceSettingsView x:Name="AppearanceView"/>
+                    <ContentControl x:Name="AppearanceHost"/>
                 </TabItem>
                 <TabItem Header="终端">
-                    <views:TerminalSettingsView/>
+                    <ContentControl x:Name="TerminalHost"/>
                 </TabItem>
                 <TabItem Header="命令片段">
-                    <views:SnippetEditorView/>
+                    <ContentControl x:Name="SnippetHost"/>
                 </TabItem>
                 <TabItem Header="安全设置">
-                    <views:SecuritySettingsView x:Name="SecurityView"/>
+                    <ContentControl x:Name="SecurityHost"/>
                 </TabItem>
                 <TabItem Header="工具分组">
-                    <views:ToolGroupsView x:Name="ToolGroupsView"/>
+                    <ContentControl x:Name="ToolGroupsHost"/>
                 </TabItem>
                 <TabItem Header="导入 / 导出">
-                    <views:ConfigTransferView x:Name="TransferView"/>
+                    <ContentControl x:Name="TransferHost"/>
                 </TabItem>
-                <TabItem Header="存储维护">
-                    <views:StorageSettingsView x:Name="StorageView"/>
+                <TabItem x:Name="StorageTab" Header="存储维护">
+                    <ContentControl x:Name="StorageHost"/>
                 </TabItem>
                 <TabItem Header="关于">
-                    <views:AboutView/>
+                    <ContentControl x:Name="AboutHost"/>
                 </TabItem>
             </TabControl>
         </Grid>

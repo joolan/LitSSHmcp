@@ -88,7 +88,7 @@
                         <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="主页（快捷入口 / 数据看板）" AutomationProperties.Name="主页"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
-                                   Command="{Binding NavigateHomeCommand}" Click="OnHomeNavClick">
+                                   Command="{Binding NavigateHomeCommand}">
                             <Grid Width="56" Height="54">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Home}"/>
@@ -264,228 +264,37 @@
 
             <!-- 右侧主区域：页面宿主 -->
             <Grid Grid.Column="1">
-                <!-- 主页：服务器 + 会话 -->
-                <!-- 主页：快捷入口 + 数据看板 + AI 快捷提问 -->
-                <Grid x:Name="HomeView" Margin="16"
+                <!-- 主页：本机运行中心 + 资产概览 + 帮助入口 -->
+                <Grid x:Name="HomeView" Margin="16,12,16,12"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Home}">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel>
-                            <controls:PageHeader Icon="Home24" Title="主页"/>
+                            <views:HomeDashboardView DataContext="{Binding}"/>
 
-                            <TextBlock Text="AI 快捷提问" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                            <Border Style="{DynamicResource CardBorderStyle}" HorizontalAlignment="Stretch" VerticalAlignment="Top">
-                                <StackPanel>
-                                    <DockPanel Margin="0,0,0,6" LastChildFill="True"
-                                               Visibility="{Binding HasHomeAttachments, Converter={StaticResource BoolToVis}}">
-                                        <ui:Button DockPanel.Dock="Right" Style="{DynamicResource ActionRowButton}" Content="清除全部"
-                                                   Padding="8,2" Margin="8,0,0,0" VerticalAlignment="Top" Click="OnHomeClearAttachments"/>
-                                        <ItemsControl ItemsSource="{Binding HomeAttachments}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="{DynamicResource AppRadiusS}"
-                                                            Padding="8,3" Margin="0,0,6,6">
-                                                        <TextBlock Text="{Binding Name}" FontSize="{DynamicResource AppFontSizeMicro}" TextTrimming="CharacterEllipsis" MaxWidth="200"/>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </DockPanel>
-
-                                    <ui:TextBox x:Name="HomeAskBox" Text="{Binding HomeQuestion, UpdateSourceTrigger=PropertyChanged}"
-                                             AcceptsReturn="True" MinHeight="90" MaxHeight="220" TextWrapping="Wrap"
-                                             VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent"
-                                             VerticalContentAlignment="Top" Padding="2" PreviewKeyDown="OnHomeAskKeyDown"
-                                             PlaceholderText="描述你要排查的问题，例如：web-01 上 nginx 502 怎么排查？"
-                                             ToolTip="Enter 交给 AI 助手 / Shift+Enter 换行"/>
-
-                                    <DockPanel Margin="0,6,0,0">
-                                        <ui:Button DockPanel.Dock="Right" Content="交给 AI 助手" Icon="{ui:SymbolIcon Send24}" Appearance="Primary"
-                                                   Padding="16,5" Click="OnHomeSend"/>
-                                        <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="8,4" Click="OnHomeMore"
-                                                   ToolTip="添加图片 / 文件">
-                                            <ui:Button.ContextMenu>
-                                                <ContextMenu>
-                                                    <MenuItem Header="添加图片…" Click="OnHomeAddImage"/>
-                                                    <MenuItem Header="添加文件…" Click="OnHomeAddFile"/>
-                                                    <MenuItem Header="清除全部附件" Click="OnHomeClearAttachments"/>
-                                                </ContextMenu>
-                                            </ui:Button.ContextMenu>
-                                        </ui:Button>
-                                    </DockPanel>
-                                </StackPanel>
-                            </Border>
-                            <TextBlock Text="Enter 交给 AI 助手 / Shift+Enter 换行；只会填入助手输入区，不会自动发送（若助手输入区已有内容会先确认）。"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,6,0,0"/>
-                            <TextBlock Text="提示：Ctrl+K 打开命令面板，可搜索页面、工具与动作。"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"/>
-                            <TextBlock Text="{Binding HomeStatusMessage}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"
-                                       Visibility="{Binding HasHomeStatus, Converter={StaticResource BoolToVis}}">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding HomeStatusIsError}" Value="True">
-                                                <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-
-                            <TextBlock Text="资产概览" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,16,0,8"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                            <WrapPanel Margin="0,0,0,16">
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="250" Margin="0,0,12,12"
-                                        Cursor="Hand" ToolTip="打开 SSH 服务器管理" MouseLeftButtonUp="OnHomeServersClick">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding ServerCount}" FontSize="28" FontWeight="SemiBold"/>
-                                            <TextBlock Text="SSH 服务器" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0"/>
-                                            <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppAccentBrush}" Margin="0,4,0,0">
-                                                <Run Text="活跃会话 "/>
-                                                <Run Text="{Binding ActiveSessionCount, Mode=OneWay}"/>
-                                            </TextBlock>
-                                            <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppDangerBrush}"
-                                                       Visibility="{Binding HasDisabledServers, Converter={StaticResource BoolToVis}}">
-                                                <Run Text="已禁用 "/>
-                                                <Run Text="{Binding DisabledServerCount, Mode=OneWay}"/>
-                                            </TextBlock>
-                                        </StackPanel>
-                                        <ui:SymbolIcon Grid.Column="1" Symbol="Server24" FontSize="22" VerticalAlignment="Top"
-                                                       Foreground="{DynamicResource AppAccentBrush}" Opacity="0.85"/>
-                                    </Grid>
-                                </Border>
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="250" Margin="0,0,12,12"
-                                        Cursor="Hand" ToolTip="打开数据源管理" MouseLeftButtonUp="OnHomeDatasourcesClick">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding DatasourceCount}" FontSize="28" FontWeight="SemiBold"/>
-                                            <TextBlock Text="数据源" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0"/>
-                                            <TextBlock Text="MySQL / PostgreSQL / Redis" FontSize="{DynamicResource AppFontSizeMicro}"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                        <ui:SymbolIcon Grid.Column="1" Symbol="Database24" FontSize="22" VerticalAlignment="Top"
-                                                       Foreground="{DynamicResource AppAccentBrush}" Opacity="0.85"/>
-                                    </Grid>
-                                </Border>
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="250" Margin="0,0,12,12"
-                                        Cursor="Hand" ToolTip="打开应用管理" MouseLeftButtonUp="OnHomeApplicationsClick">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding ApplicationCount}" FontSize="28" FontWeight="SemiBold"/>
-                                            <TextBlock Text="应用" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0"/>
-                                            <TextBlock Text="拓扑节点与应用路径" FontSize="{DynamicResource AppFontSizeMicro}"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                        <ui:SymbolIcon Grid.Column="1" Symbol="Apps24" FontSize="22" VerticalAlignment="Top"
-                                                       Foreground="{DynamicResource AppAccentBrush}" Opacity="0.85"/>
-                                    </Grid>
-                                </Border>
-                                <Border Style="{DynamicResource CardBorderStyle}" Width="250" Margin="0,0,12,12"
-                                        Cursor="Hand" ToolTip="打开远程桌面（RDP / VNC）" MouseLeftButtonUp="OnHomeRemoteDesktopClick">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding RemoteDesktopCount}" FontSize="28" FontWeight="SemiBold"/>
-                                            <TextBlock Text="远程桌面" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0"/>
-                                            <TextBlock Text="RDP / VNC · 支持 SSH 隧道" FontSize="{DynamicResource AppFontSizeMicro}"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                        <ui:SymbolIcon Grid.Column="1" Symbol="Desktop24" FontSize="22" VerticalAlignment="Top"
-                                                       Foreground="{DynamicResource AppAccentBrush}" Opacity="0.85"/>
-                                    </Grid>
-                                </Border>
-                            </WrapPanel>
-
-                            <TextBlock Text="任务与工具" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                            <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,20">
-                                <WrapPanel>
-                                    <Border Width="230" Margin="0,0,12,8" Padding="6" Background="Transparent"
-                                            Cursor="Hand" ToolTip="打开端口转发" MouseLeftButtonUp="OnHomePortForwardClick">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:SymbolIcon Symbol="Share24" FontSize="20" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource AppAccentBrush}"/>
-                                            <StackPanel Margin="10,0,0,0">
-                                                <TextBlock FontWeight="SemiBold">
-                                                    <Run Text="端口转发 "/><Run Text="{Binding PortForwardCount, Mode=OneWay}"/>
-                                                </TextBlock>
-                                                <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppSuccessBrush}"
-                                                           Visibility="{Binding HasRunningPortForwards, Converter={StaticResource BoolToVis}}">
-                                                    <Run Text="运行中 "/><Run Text="{Binding PortForwardRunningCount, Mode=OneWay}"/>
-                                                </TextBlock>
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Width="230" Margin="0,0,12,8" Padding="6" Background="Transparent"
-                                            Cursor="Hand" ToolTip="打开文件/文件夹同步" MouseLeftButtonUp="OnHomeSyncClick">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:SymbolIcon Symbol="ArrowSync24" FontSize="20" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource AppAccentBrush}"/>
-                                            <StackPanel Margin="10,0,0,0">
-                                                <TextBlock FontWeight="SemiBold">
-                                                    <Run Text="同步任务 "/><Run Text="{Binding SyncTaskCount, Mode=OneWay}"/>
-                                                </TextBlock>
-                                                <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppSuccessBrush}"
-                                                           Visibility="{Binding HasEnabledSyncTasks, Converter={StaticResource BoolToVis}}">
-                                                    <Run Text="已启用 "/><Run Text="{Binding SyncTaskEnabledCount, Mode=OneWay}"/>
-                                                </TextBlock>
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Width="230" Margin="0,0,12,8" Padding="6" Background="Transparent"
-                                            Cursor="Hand" ToolTip="打开触发事件（git / webhook / 备份）" MouseLeftButtonUp="OnHomeTriggerClick">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:SymbolIcon Symbol="Flash24" FontSize="20" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource AppAccentBrush}"/>
-                                            <StackPanel Margin="10,0,0,0">
-                                                <TextBlock FontWeight="SemiBold">
-                                                    <Run Text="触发事件 "/><Run Text="{Binding TriggerCount, Mode=OneWay}"/>
-                                                </TextBlock>
-                                                <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppSuccessBrush}"
-                                                           Visibility="{Binding HasEnabledTriggers, Converter={StaticResource BoolToVis}}">
-                                                    <Run Text="已启用 "/><Run Text="{Binding TriggerEnabledCount, Mode=OneWay}"/>
-                                                </TextBlock>
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                </WrapPanel>
-                            </Border>
-
-                            <TextBlock Text="使用说明" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                            <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,20">
-                                <WrapPanel>
-                                    <ui:Button Content="快速上手" Icon="{ui:SymbolIcon Play24}" Tag="QuickStart"
-                                               Padding="12,5" Margin="0,0,8,8" Click="OnOpenHelp"/>
-                                    <ui:Button Content="功能说明" Icon="{ui:SymbolIcon Document24}" Tag="Features"
-                                               Padding="12,5" Margin="0,0,8,8" Click="OnOpenHelp"/>
-                                    <ui:Button Content="快捷键" Icon="{ui:SymbolIcon Code24}" Tag="Shortcuts"
-                                               Padding="12,5" Margin="0,0,8,8" Click="OnOpenHelp"/>
-                                    <ui:Button Content="安全与审批" Icon="{ui:SymbolIcon ShieldCheckmark24}" Tag="Security"
-                                               Padding="12,5" Margin="0,0,8,8" Click="OnOpenHelp"/>
-                                    <ui:Button Content="MCP 工具说明" Icon="{ui:SymbolIcon PlugConnected24}" Tag="McpTools"
-                                               Padding="12,5" Margin="0,0,8,8" Click="OnOpenHelp"/>
-                                </WrapPanel>
+                            <Border Style="{DynamicResource CardBorderStyle}" Padding="10,6" Margin="0,12,0,12">
+                                <DockPanel LastChildFill="False">
+                                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ui:SymbolIcon Symbol="Info24" FontSize="15"
+                                                       Foreground="{DynamicResource AppAccentBrush}"/>
+                                        <TextBlock Text="使用说明" FontWeight="SemiBold" VerticalAlignment="Center"
+                                                   Margin="8,0,14,0"/>
+                                    </StackPanel>
+                                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ui:Button Content="快速上手" Icon="{ui:SymbolIcon Play24}" Tag="QuickStart"
+                                                   Height="30" Padding="8,2" Appearance="Transparent" BorderThickness="0" Margin="0,0,6,0" Click="OnOpenHelp"/>
+                                        <ui:Button Content="功能说明" Icon="{ui:SymbolIcon Document24}" Tag="Features"
+                                                   Height="30" Padding="8,2" Appearance="Transparent" BorderThickness="0" Margin="0,0,6,0" Click="OnOpenHelp"/>
+                                        <ui:Button Content="快捷键" Icon="{ui:SymbolIcon Code24}" Tag="Shortcuts"
+                                                   Height="30" Padding="8,2" Appearance="Transparent" BorderThickness="0" Margin="0,0,6,0" Click="OnOpenHelp"/>
+                                        <ui:Button Content="安全与审批" Icon="{ui:SymbolIcon ShieldCheckmark24}" Tag="Security"
+                                                   Height="30" Padding="8,2" Appearance="Transparent" BorderThickness="0" Margin="0,0,6,0" Click="OnOpenHelp"/>
+                                        <ui:Button Content="MCP 工具说明" Icon="{ui:SymbolIcon PlugConnected24}" Tag="McpTools"
+                                                   Height="30" Padding="8,2" Appearance="Transparent" BorderThickness="0" Click="OnOpenHelp"/>
+                                    </StackPanel>
+                                    <TextBlock DockPanel.Dock="Right" Text="Ctrl+K 命令面板 · 可搜索页面 / 工具 / 动作"
+                                               VerticalAlignment="Center" FontSize="{DynamicResource AppFontSizeMicro}"
+                                               Foreground="{DynamicResource AppTextTertiaryBrush}"/>
+                                </DockPanel>
                             </Border>
                         </StackPanel>
                     </ScrollViewer>

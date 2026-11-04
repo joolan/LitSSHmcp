@@ -18,19 +18,17 @@
                 </Border>
             </StackPanel>
             <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,12"
-                       Text="Windows 平台下的 SSH / 数据库运维 MCP 服务器，并配套桌面管理端（App）与浏览器端 Web 助手。让 AI 智能体安全地通过 SSH 管理远程服务器，贯通 MySQL / PostgreSQL / Redis 数据源、Jenkins CI 与资产拓扑，并支持远程桌面（RDP / VNC），支撑跨服务器 / 应用 / 容器 / 数据库 / 构建任务的全链路故障排查。"/>
+                       Text="Windows 平台下的 SSH / 数据库运维 MCP 服务器，并配套桌面管理端（App）与浏览器端 Web 助手。让 AI 智能体安全地通过 SSH 管理远程服务器，贯通 MySQL / PostgreSQL / Redis 数据源、Jenkins CI、Kubernetes 多集群与资产拓扑，并支持远程桌面（RDP / VNC），支撑跨服务器 / 应用 / 容器 / 数据库 / 构建任务的全链路故障排查。"/>
 
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
                     <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Jenkins 多连接与 CI 构建：支持测试、生产、第三方和自定义 Jenkins；View 切换、任务搜索、收藏/最近访问、参数构建、队列展开/逐项取消、增量日志、Pipeline 阶段、产物与测试报告；可选 SSH 动态 SOCKS5 隧道。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑统一人工主图：服务器 / 应用 / 数据源 / 域名与人工关系成为唯一主图来源；自动发现只提供证据、配置建议与配置体检，不再生成待确认节点。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 新版结构化拓扑：服务器泳道 / 应用链路 / 依赖矩阵 / 配置建议四个只读视图；应用与数据源支持 SSH / Docker / 独立运行环境及多 URL 访问入口解析。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 旧版拓扑画布精简：关系类型收敛为 7 种并中文展示，Docker runsIn 使用缩进两级展示，移除服务 / 容器 / 部署 / 域名 / 端口 / 证书图层与待确认节点 UI。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 拓扑工具收敛：7 个减至 3 个（topology_query / topology_history / topology_discover）；overview、dependencies、resolve_url 并入统一查询，快照时间线与 Diff 合并为 topology_history。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 助手设置优化：快速切换 Tab 时防抖并取消上一轮读取，复用记忆存储实例，避免重复初始化 agent.db 导致的卡顿；只读模式工具说明与工具分组同步更新。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 质量门禁：全量测试与覆盖率分程序集阈值、七域风险门禁（工具目录 / 授权 / 路径 / 命令 / 脱敏 / Web / 结构预算）持续守住回归。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 运维与安全：审计 UserId / HMAC-SHA256 链、按会话隔离状态机、PathGuard 防越界、脚本永不免审、应用锁与 Windows Hello、本机 PowerShell 终端 + AI 本地 CLI、外部 MCP 接入、RDP / VNC、MCP Resources、资产拓扑与数据库工作台。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机运行中心主页：实时显示 CPU / 内存 / 磁盘 / 网络、健康评分、运行时长、1 / 5 / 15 分钟趋势、TOP 8 进程与资产概览，支持暂停 / 继续刷新。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 命令同步：平铺与独立窗口中的 SSH 终端可单独或批量开启同步，支持键盘、IME、粘贴、发送框与命令片段广播，并显示当前有效会话数。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Kubernetes 多集群视图：连接管理、集群概览、节点 / Pod / 工作负载、日志与事件、Service / Ingress 关系、版本对比与只读巡检。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 平台操作审计：审计窗口新增「平台操作」页签，聚合 Jenkins / Kubernetes 操作记录，支持筛选、复制与 CSV 导出。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 主页布局重构：移除冗余标题与 AI 快捷输入，压缩指标与帮助入口，让本机监控、进程和资产概览在一屏内展示。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 体验优化：使用说明 WebView2 增加加载动画与降级视图，终端同步、进程列表和指标趋势布局优化，并补充命令同步与本机指标测试。"/>
                 </StackPanel>
             </Border>
 
@@ -70,10 +68,12 @@
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
                     <TextBlock Text="桌面 App 核心功能" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 主页看板：快捷入口 + 服务器/数据源/应用统计，支持 AI 快捷提问（含附件）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机运行中心主页：CPU / 内存 / 磁盘 / 网络实时指标、健康评分、1 / 5 / 15 分钟趋势、TOP 8 进程与资产概览；本地指标只在主页可见时采样。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器管理：表格增删改查与排序、右键菜单（连接/编辑/采集快照/快照历史/删除），独立「SSH 会话管理」窗口含交互式终端（同一服务器最多 4 个，内置 SFTP 文件可视化上传/下载）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 命令同步：任一已开启同步的终端输入会广播到其他已开启且已连接的 SSH 终端；支持平铺 / 独立窗口开关、全量开关与有效会话计数，本机 PowerShell 不参与。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器连接增强：跳板机（ProxyJump，经另一台已配置服务器中转）、SSH 密钥生成（ed25519 / rsa，公钥一键复制）、凭据轮换提醒。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Jenkins：多连接 CI 页面，支持 View、任务搜索、收藏/最近访问、参数构建、队列/状态/日志、阶段/产物/测试报告、SSH SOCKS5 隧道与操作审计。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Kubernetes：多集群只读视图，支持集群概览、节点 / Pod / 工作负载、日志 / 事件、Service / Ingress 关系、版本对比与自动刷新。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程桌面：RDP / VNC 连接管理（密码仅本机 DPAPI 加密、可经 SSH 隧道访问内网桌面），内嵌多标签查看器（标签可分离 / 收回）与外部客户端打开。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机终端：ConPTY 真实本机 PowerShell 终端；AI 本地 CLI 在白名单内执行本机命令（人工审批、超时与进程树清理），单个 AI 会话最多并行管理 4 个独立终端。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 批量执行 / 快速命令：多台服务器并行下发命令；内置快速命令（一键巡检、磁盘/inode/内存/端口/进程/大目录/日志/容器/网络）与「一键巡检」，写操作执行前确认。"/>
@@ -82,7 +82,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 快照：整机态势采集 + 历史查看 + 趋势图（内存 / 磁盘 / Swap / 负载）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 终端录像：交互式终端会话以 asciicast 记录并支持倍速回放（合规/复盘）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 触发事件：本机/远程动作流水线（Git / Webhook / 目录与数据库备份），定时与同步事件触发，附「总览」编排可视化。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 审计日志：按服务器/数据源/会话/用户筛选与关键字检索、复制、导出 CSV、哈希链完整性校验（UserId 已纳入链）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 审计日志：按服务器 / 数据源 / 会话 / 用户筛选与关键字检索、复制、导出 CSV、哈希链完整性校验；新增平台操作页签，聚合 Jenkins / Kubernetes 操作记录。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维助手：内置大模型智能体，内嵌 MCP 客户端调用全部工具（审批/过滤/审计与第三方客户端一致），流式输出、多模型热切换、多会话、只读模式、Markdown 渲染、任务计划、长期记忆；思考过程展示、技能选择器、提示词模板、计划模式、工具级审批策略、用量/成本面板；智能体体系（通用聊天 / 运维专家 / 数据库分析，可自定义、按会话记忆）与系统提示软件变更护栏。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Web 助手（浏览器端）：独立账号库与登录限速、会话级子进程隔离、流式聊天与实时审批、文件浏览下载、图片附件与全屏预览、会话级模型切换，桌面与 Web 会话进度轻量对账。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 工具说明：集中查看工具参数与路由并一键复制到提示词，与 docs/TOOLS.md 双向同步。"/>
@@ -94,7 +94,7 @@
                 <StackPanel>
                     <TextBlock Text="技术栈" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                               Text=".NET 8（桌面 App、MCP 服务器与 Web 助手）· .NET 10（CLI）· WPF + WPF-UI（Fluent）· ASP.NET Core / Kestrel + WebSocket（Web 助手）· Microsoft.Extensions.AI + ModelContextProtocol SDK · OpenAI 兼容大模型（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等）· SSH.NET · MySQL / PostgreSQL / Redis 驱动 · SQLite（审计 / 快照 / 会话 / 记忆 / 账号 / 身份）· PBKDF2-SHA256 + DPAPI（密码 / 凭据加密）· AvalonEdit（SQL 编辑器）· RDP ActiveX / WebView2 + noVNC（远程桌面查看器）。"/>
+                               Text=".NET 8（桌面 App、MCP 服务器与 Web 助手）· .NET 10（CLI）· WPF + WPF-UI（Fluent）· ASP.NET Core / Kestrel + WebSocket（Web 助手）· Microsoft.Extensions.AI + ModelContextProtocol SDK · OpenAI 兼容大模型（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等）· SSH.NET · MySQL / PostgreSQL / Redis 驱动 · SQLite（审计 / 快照 / 会话 / 记忆 / 账号 / 身份）· PBKDF2-SHA256 + DPAPI（密码 / 凭据加密）· kubectl（Kubernetes 多集群视图）· AvalonEdit（SQL 编辑器）· RDP ActiveX / WebView2 + noVNC（远程桌面查看器）。"/>
                 </StackPanel>
             </Border>
 

@@ -60,6 +60,7 @@ public class StorageSettingsViewModel : INotifyPropertyChanged, IConfigReloadabl
         if (Busy)
             return;
         Busy = true;
+        StatusMessage = "正在统计本机数据占用…";
         try
         {
             var config = await _configService.LoadConfigAsync();
@@ -212,7 +213,8 @@ public class StorageSettingsViewModel : INotifyPropertyChanged, IConfigReloadabl
                 var options = new EnumerationOptions
                 {
                     RecurseSubdirectories = true,
-                    AttributesToSkip = FileAttributes.ReparsePoint
+                    AttributesToSkip = FileAttributes.ReparsePoint,
+                    IgnoreInaccessible = true
                 };
                 foreach (var file in Directory.EnumerateFiles(path, "*", options))
                 {

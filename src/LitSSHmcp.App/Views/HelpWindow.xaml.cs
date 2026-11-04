@@ -60,6 +60,8 @@ public partial class HelpWindow : FluentWindow
     {
         try
         {
+            ShowLoading("正在启动文档渲染引擎…");
+
             var userDataFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "LitSSH", "webview2-help");
@@ -74,6 +76,7 @@ public partial class HelpWindow : FluentWindow
             settings.IsStatusBarEnabled = false;
             settings.AreBrowserAcceleratorKeysEnabled = false;
 
+            LoadingText.Text = "正在渲染文档…";
             _webReady = true;
             HelpWeb.Visibility = Visibility.Visible;
             FallbackScroll.Visibility = Visibility.Collapsed;
@@ -88,6 +91,26 @@ public partial class HelpWindow : FluentWindow
             ShowFallback("使用说明渲染失败，已切换为简化视图：" + ex.Message);
         }
     }
+
+    private void OnWebNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess && e.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled)
+        {
+            ShowFallback("使用说明渲染失败，已切换为简化视图。");
+            return;
+        }
+
+        HideLoading();
+        HelpWeb.Visibility = Visibility.Visible;
+    }
+
+    private void ShowLoading(string text)
+    {
+        LoadingText.Text = text;
+        LoadingOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void HideLoading() => LoadingOverlay.Visibility = Visibility.Collapsed;
 
     private void OnTopicChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -119,6 +142,7 @@ public partial class HelpWindow : FluentWindow
     private void ShowFallback(string reason)
     {
         _webReady = false;
+        HideLoading();
         try { HelpWeb.Visibility = Visibility.Collapsed; } catch { /* ignore */ }
         FallbackScroll.Visibility = Visibility.Visible;
         SetFallbackMarkdown($"> {reason}\n\n{GetMarkdown(_currentTopic)}");

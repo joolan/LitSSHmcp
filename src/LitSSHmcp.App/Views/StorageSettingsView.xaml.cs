@@ -9,23 +9,35 @@ public partial class StorageSettingsView : UserControl
 {
     private StorageSettingsViewModel _viewModel = new();
     private readonly UserDialogService _dialogs = new();
+    private bool _statisticsRequested;
 
     public StorageSettingsView()
     {
         InitializeComponent();
         DataContext = _viewModel;
-        Loaded += (_, _) => AsyncOperation.Run("刷新存储统计", _viewModel.RefreshAsync);
     }
 
     public void Initialize(IAppServices? services)
     {
         _viewModel = new StorageSettingsViewModel(services?.Config);
         DataContext = _viewModel;
-        _ = _viewModel.RefreshAsync();
+        _statisticsRequested = false;
     }
 
-    private void OnRefresh(object sender, RoutedEventArgs e) =>
+
+    public void EnsureStatisticsLoaded()
+    {
+        if (_statisticsRequested)
+            return;
+        _statisticsRequested = true;
         AsyncOperation.Run("刷新存储统计", _viewModel.RefreshAsync);
+    }
+
+    private void OnRefresh(object sender, RoutedEventArgs e)
+    {
+        _statisticsRequested = true;
+        AsyncOperation.Run("刷新存储统计", _viewModel.RefreshAsync);
+    }
 
     private void OnPruneMemoryHistory(object sender, RoutedEventArgs e)
     {

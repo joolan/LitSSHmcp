@@ -33,10 +33,13 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         _server = server;
         _ssh = ssh;
         _dialogs = dialogs ?? new UserDialogService();
+        Trash = new RemoteTrashService(server, ssh);
         CurrentPath = ".";
     }
 
     public SshServerConfig Server => _server;
+    public ISshService SshService => _ssh;
+    public RemoteTrashService Trash { get; }
 
     public ObservableCollection<RemoteFileItem> Items { get; } = new();
 
@@ -176,13 +179,17 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         await LoadAsync();
     }
 
+    /// <summary>删除到远程回收站；回收站未清空前不会释放空间。</summary>
     public async Task DeleteAsync(IReadOnlyList<RemoteFileItem> items)
     {
         if (items.Count == 0)
             return;
-        var args = string.Join(' ', items.Select(i => Quote(i.FullName)));
-        await RunCommandAsync($"rm -rf -- {args}", $"已删除 {items.Count} 项");
+
+        var result = await Trash.MoveToTrashAsync(items);
         await LoadAsync();
+        StatusMessage = result.Errors.Count == 0
+            ? $"已将 {result.Moved} 项移到回收站；清空回收站前不会释放空间。"
+            : $"已移入回收站 {result.Moved} 项，失败 {result.Errors.Count} 项：" + string.Join("；", result.Errors);
     }
 
     /// <summary>上传本地文件/文件夹（递归）到当前目录。</summary>

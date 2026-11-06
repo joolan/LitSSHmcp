@@ -72,8 +72,18 @@ public partial class SftpManagerWindow : FluentWindow
     {
         if (_vm.Remote.SelectedItem is not { } item)
             return;
-        if (System.Windows.MessageBox.Show($"删除远程「{item.Name}」？此操作不可恢复。", "删除", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.Yes)
+        var message = $"将远程「{item.Name}」移到回收站？\n\n" +
+                      "文件会移动到 ~/.litssh-trash，可从回收站恢复。\n" +
+                      "回收站不会自动清理，清空前不会释放远程空间。";
+        if (System.Windows.MessageBox.Show(message, "删除（移到回收站）",
+                System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning)
+            == System.Windows.MessageBoxResult.Yes)
             _ = _vm.Remote.DeleteAsync(new[] { item });
+    }
+
+    private void OnOpenTrash(object sender, RoutedEventArgs e)
+    {
+        new RemoteTrashWindow(_vm.Remote.Server, _vm.Remote.SshService) { Owner = this }.ShowDialog();
     }
 
     private void OnRemoteDoubleClick(object sender, MouseButtonEventArgs e)

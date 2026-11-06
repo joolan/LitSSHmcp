@@ -5,6 +5,10 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using LitSSHmcp.App.Services;
+using LitSSHmcp.App.Services.Backup;
+using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.App.Services.Toolbox;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Win32;
 using ImageIcon = Wpf.Ui.Controls.ImageIcon;
@@ -19,7 +23,16 @@ public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (TryGetBackupPlanId(e.Args, out var backupPlanId))
+        {
+            base.OnStartup(e);
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = RunHeadlessBackupAsync(backupPlanId);
+            return;
+        }
+
         base.OnStartup(e);
+        PasswordVaultTempFiles.Cleanup();
 
         // 兜底：任何未处理异常都不应让整个 APP 直接退出（例如终端断开时的边界情况）
         DispatcherUnhandledException += OnDispatcherUnhandledException;
@@ -62,8 +75,12 @@ public partial class App : Application
             _syncScheduler.TaskCompleted += _triggerScheduler.OnSyncCompleted;
             _triggerScheduler.Start();
 
+            _backupScheduler = new BackupScheduler(AppServiceFactory.CreateConfigService());
+            _backupScheduler.Start();
+
             Exit += (_, _) =>
             {
+                _backupScheduler?.Dispose();
                 _triggerScheduler?.Dispose();
                 _syncScheduler?.Dispose();
             };
@@ -80,8 +97,65 @@ public partial class App : Application
         Exit += (_, _) => AppServiceFactory.DisposeRemoteDesktopService();
     }
 
+    private static bool TryGetBackupPlanId(string[] args, out string planId)
+    {
+        planId = string.Empty;
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (!string.Equals(args[i], "--run-backup", StringComparison.OrdinalIgnoreCase))
+                continue;
+            planId = args[i + 1];
+            return !string.IsNullOrWhiteSpace(planId);
+        }
+        return false;
+    }
+
+    private static async Task RunHeadlessBackupAsync(string planId)
+    {
+        var exitCode = 1;
+        using var mutex = new Mutex(false, "LitSSHmcp.Backup." + planId);
+        try
+        {
+            if (!mutex.WaitOne(0))
+            {
+                exitCode = 0;
+                return;
+            }
+            var config = await AppServiceFactory.CreateConfigService().LoadConfigAsync();
+            var plan = config.Backup.Plans.FirstOrDefault(item =>
+                string.Equals(item.Id, planId, StringComparison.Ordinal));
+            if (plan is null)
+            {
+                exitCode = 2;
+                return;
+            }
+            var service = new BackupService(new AliyunOssBackupUploader(), new DpapiSecretProtector());
+            var result = await service.RunAsync(plan, config);
+            BackupStateStore.Save(plan.Id, new BackupState
+            {
+                LastRunAt = DateTime.Now,
+                LastBackupFile = result.LocalPath,
+                LastUploadResult = result.UploadMessage,
+                LastResult = result.Success
+                    ? result.Uploaded ? "ok" : result.UploadMessage is null ? "ok" : "oss-fail"
+                    : "fail:" + result.Message
+            });
+            exitCode = result.Success ? 0 : 1;
+        }
+        catch
+        {
+            exitCode = 1;
+        }
+        finally
+        {
+            try { mutex.ReleaseMutex(); } catch { /* ignore */ }
+            Current.Shutdown(exitCode);
+        }
+    }
+
     private static SyncScheduler? _syncScheduler;
     private static TriggerScheduler? _triggerScheduler;
+    private static BackupScheduler? _backupScheduler;
 
     /// <summary>
     /// 启动门卫：未配置应用锁先弹「设置密码」窗口（可「暂不启用」跳过，下次启动仍会提示）；

@@ -258,6 +258,22 @@
                                 <TextBlock Text="审计" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                             </StackPanel>
                         </ui:Button>
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                                   ToolTip="工具箱（本地工具启动器）" AutomationProperties.Name="工具箱"
+                                   Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                   Command="{Binding NavigateToolboxCommand}">
+                            <Grid Width="56" Height="54">
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Toolbox}"/>
+                                <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
+                                        HorizontalAlignment="Left" Margin="4,10"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Toolbox}"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Toolbox24" FontSize="19" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="工具箱" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </ui:Button>
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -333,6 +349,11 @@
                 <Grid x:Name="KubernetesPage"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Kubernetes}">
                     <views:KubernetesView DataContext="{Binding KubernetesPage}"/>
+                </Grid>
+
+                <Grid x:Name="ToolboxPage" Margin="16,12,16,12"
+                      Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Toolbox}">
+                    <views:ToolboxView x:Name="ToolboxPageView" DataContext="{Binding Toolbox}"/>
                 </Grid>
 
                 <!-- AI 运维助手（常驻页面，切换导航不停止任务） -->

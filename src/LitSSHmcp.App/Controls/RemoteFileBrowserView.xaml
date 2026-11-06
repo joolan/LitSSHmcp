@@ -18,6 +18,7 @@
             <ui:Button Icon="{ui:SymbolIcon FolderAdd24}" Padding="6,3" Margin="0,0,4,4" ToolTip="新建文件夹" Click="OnNewFolder"/>
             <ui:Button Icon="{ui:SymbolIcon ArrowUpload24}" Padding="6,3" Margin="0,0,4,4" ToolTip="上传文件到当前目录（也可把文件/文件夹拖到此处上传）" Click="OnUpload"/>
             <ui:Button Icon="{ui:SymbolIcon Star24}" Padding="6,3" Margin="0,0,4,4" ToolTip="目录书签" Click="OnBookmarks"/>
+            <ui:Button Icon="{ui:SymbolIcon Delete24}" Padding="6,3" Margin="0,0,4,4" ToolTip="远程回收站" Click="OnOpenTrash"/>
         </WrapPanel>
 
         <TextBox Grid.Row="1" x:Name="PathBox" Margin="0,0,0,6" Padding="4,3"
@@ -71,7 +72,8 @@
                     <MenuItem Header="属性 / 权限…" Click="OnProperties"/>
                     <Separator/>
                     <MenuItem Header="重命名…" Click="OnRename"/>
-                    <MenuItem Header="删除" Click="OnDelete"/>
+                    <MenuItem Header="删除（移到回收站）" Click="OnDelete"/>
+                    <MenuItem Header="打开回收站…" Click="OnOpenTrash"/>
                 </ContextMenu>
             </ListView.ContextMenu>
             <ListView.View>

@@ -286,6 +286,13 @@ WPF 桌面管理端，主界面为**左侧图标导航栏 + 右侧页面**：顶
 - **SSH 隧道**：本机不能直连 Jenkins 时，可为连接选择已配置的 SSH 服务器；使用动态 SOCKS5，保留原始 Jenkins 主机名和 HTTPS SNI，API 返回的绝对 URL 不需要改写。
 - **认证**：优先使用 Jenkins API Token；连接测试会识别认证失败、HTML 登录页、CSRF 和权限不足。
 
+### 密码保管箱 / 远程回收站 / 定时备份
+
+- **密码保管箱**：工具箱内置独立密码箱，使用独立主密码；保存网站 / 应用 / 邮箱 / 银行 / API Key 账号、密码、安全手机、绑定邮箱、备注和附件；支持分组、标签、收藏、搜索、密码历史、TOTP / HOTP、二维码导入、密码生成器、自动锁定和剪贴板自动清理；支持加密备份与恢复。
+- **远程文件回收站**：远程文件管理器的可视删除改为移动到 `~/.litssh-trash`，不自动清理、清空前不释放空间；支持查看回收站、恢复、彻底删除和清空，远程文件和 SFTP 管理器共用同一回收站。
+- **存储维护定时备份**：设置 → 存储维护新增「定时备份」页签，可创建多个备份计划，多选存储项目，压缩到本地目录，可选加密为 `.lsbak` 并上传阿里云 OSS；支持启动兜底、Windows 计划任务、备份历史、完整性校验、恢复到指定目录或当前数据目录；DPAPI 加密配置项跨电脑恢复后需要重新填写。
+- **HTTP 站点探测增强**：站点探测与站点资产汇总支持识别 Tengine，包括进程、二进制路径、版本、HTTP Server 响应头、systemd 服务与 Docker 镜像。
+
 ### 资产拓扑（主图 + 结构化视图）
 
 拓扑主图**只来自人工配置**：服务器、应用、数据源、域名，加上 `config.json` 中的人工关系，以及由运行环境字段推导的 `runsOn/runsIn`、由跳板/隧道配置推导的 `accessedVia`。自动发现结果只作为**发现证据、配置建议、配置体检**展示，不再生成 `*:disc:*` 待确认节点，也不写入主图。
@@ -457,7 +464,7 @@ dotnet publish src/LitSSHmcp.Cli -c Release -r win-x64 --self-contained -o publi
 dotnet publish src/LitSSHmcp.Web -c Release -r win-x64 --self-contained -o publish-web
 ```
 
-> 也可使用一键脚本（一次产出 App/MCP/CLI/Web 四类产物）：`powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.5.1`
+> 也可使用一键脚本（一次产出 App/MCP/CLI/Web 四类产物）：`powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Version v1.6.0`
 
 ### 3. 配置 SSH 服务器
 

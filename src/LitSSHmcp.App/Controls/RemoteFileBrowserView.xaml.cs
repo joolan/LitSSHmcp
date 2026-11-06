@@ -169,10 +169,19 @@ public partial class RemoteFileBrowserView : UserControl
         if (ViewModel is not { } vm || vm.SelectedItem is not { } item)
             return;
         var result = MessageBox.Show(
-            $"确定删除远程「{item.Name}」？此操作不可恢复。",
-            "删除", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            $"将远程「{item.Name}」移到回收站？\n\n" +
+            "文件会移动到 ~/.litssh-trash，可从回收站恢复。\n" +
+            "回收站不会自动清理，清空前不会释放远程空间。",
+            "删除（移到回收站）", MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (result == MessageBoxResult.Yes)
             _ = vm.DeleteAsync(new[] { item });
+    }
+
+    private void OnOpenTrash(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+            return;
+        new Views.RemoteTrashWindow(vm.Server, vm.SshService) { Owner = Owner }.ShowDialog();
     }
 
     private void OnListPreviewRightClick(object sender, MouseButtonEventArgs e)

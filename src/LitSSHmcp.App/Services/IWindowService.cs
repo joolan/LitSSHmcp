@@ -39,6 +39,8 @@ public interface IWindowService
     RemoteCopyWindow CreateRemoteCopyWindow(SshServerConfig server);
 
     AppSettingsWindow CreateAppSettingsWindow(IConfigService configService);
+    ToolboxWindow CreateToolboxWindow(ToolboxViewModel viewModel);
+    ToolboxQuickLaunchWindow CreateToolboxQuickLaunchWindow(ToolboxQuickLaunchViewModel viewModel);
     AgentWindow CreateAgentWindow(
         IConfigService configService,
         IContextStore store,

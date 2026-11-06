@@ -171,8 +171,11 @@ LitSSHmcp/
 - `ConfigService`：读写 `%APPDATA%\LitSSH\config.json`；**读写双向迁移**——发现明文密码即加密为 `enc:` 形式，保证磁盘无明文。
 - `ConfigMigrator`：按 `AppConfig.schemaVersion` 迁移旧结构（当前版本 2：1→2 补 `syncTasks` 字段与 `agent`/`snapshot`/`connectionPool` 默认值）；缺失版本号的旧文件自动补写。
 - `ConfigPaths` / `AppConfigJson`：统一 `%APPDATA%\LitSSH` 下的路径（`config.json`/`audit.db`/`snapshots.db`/`known_hosts.json`/`logs`）与 JSON 序列化选项。
-- `DpapiSecretProtector`（`ISecretProtector.cs`）：`ProtectedData`，`LocalMachine`/`CurrentUser` 范围，前缀 `enc:` 标识。
-- 配置结构：`schemaVersion`、`servers[]`、`dataSources[]`、`applications[]`、`relations[]`、`syncTasks[]`、`tools{enabledGroups}`、`snapshot{}`、`connectionPool{}`、`ui{theme, accent}`、`agent{...}`、`security{commandFilter, sqlFilter, fileTransfer, sshHostKey, discovery, logs, limits, audit, masking, approval}`（完整示例见 `config/config.example.json` 与 README 快速开始）。
+- `DpapiSecretProtector`（`ISecretProtector.cs`）：`ProtectedData`，`LocalMachine`/`CurrentUser` 范围，前缀 `enc:` 标识。DPAPI 密文与当前 Windows 用户配置文件绑定，跨电脑恢复后需重新填写对应密钥。
+- `PasswordVaultService` / `PasswordVaultViewModel`：独立主密码密码保管箱，加密索引与附件，支持 TOTP/HOTP、密码历史、自动锁定和加密包备份；与文件柜互不共用主密码。
+- `BackupService` / `BackupScheduler`：存储维护定时备份，按计划多选存储项目，SQLite 使用 `BackupDatabase` 一致性备份，zip 可选 `.lsbak` 加密（PBKDF2-SHA256 + 分块 AES-GCM），本地完成后可上传阿里云 OSS；支持启动兜底、Windows 计划任务、历史、完整性校验与恢复向导。
+- `RemoteTrashService`：远程文件可视删除移动到 `~/.litssh-trash`，保留原始路径清单，支持恢复、彻底删除和清空；不修改终端 `rm` 等底层命令。
+- 配置结构：`schemaVersion`、`servers[]`、`dataSources[]`、`applications[]`、`relations[]`、`syncTasks[]`、`backup{plans[], oss{...}}`、`tools{enabledGroups}`、`snapshot{}`、`connectionPool{}`、`ui{theme, accent}`、`agent{...}`、`security{commandFilter, sqlFilter, fileTransfer, sshHostKey, discovery, logs, limits, audit, masking, approval}`（完整示例见 `config/config.example.json` 与 README 快速开始）。
 
 ### 4.6 服务器快照（`Services/Snapshot`）
 

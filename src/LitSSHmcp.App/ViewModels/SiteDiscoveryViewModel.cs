@@ -246,8 +246,8 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
         CopyDiffCommand = new RelayCommand(_ => CopyDiff(), _ => Diff.Count > 0);
         RetryStepCommand = new RelayCommand(_ => _ = RetrySelectedStepAsync(), _ => CanRetrySelectedStep);
         Steps.Add(new SiteDiscoveryStep { Name = "连接与系统信息", Description = "系统版本、内核、当前用户" });
-        Steps.Add(new SiteDiscoveryStep { Name = "Web 服务识别", Description = "Nginx / Apache / OpenResty 进程、路径与版本" });
-        Steps.Add(new SiteDiscoveryStep { Name = "Nginx 配置", Description = "解析 server_name、listen、SSL 证书" });
+        Steps.Add(new SiteDiscoveryStep { Name = "Web 服务识别", Description = "Nginx / Tengine / Apache / OpenResty 进程、路径与版本" });
+        Steps.Add(new SiteDiscoveryStep { Name = "Nginx / Tengine 配置", Description = "解析 server_name、listen、SSL 证书" });
         Steps.Add(new SiteDiscoveryStep { Name = "Apache 配置", Description = "解析 VirtualHost、监听端口、SSL 证书" });
         Steps.Add(new SiteDiscoveryStep { Name = "扩展 Web 服务", Description = "Docker / Caddy / Traefik 站点证据" });
         Steps.Add(new SiteDiscoveryStep { Name = "证书信息", Description = "读取证书主题、SAN、有效期" });
@@ -584,6 +584,10 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
             "case \"$e\" in */nginx) NGX=\"$e\"; break;; esac; done; " +
             "[ -z \"$NGX\" ] && NGX=$(command -v nginx 2>/dev/null); " +
             "if [ -n \"$NGX\" ]; then echo \"##NGINX_BIN $NGX\"; \"$NGX\" -v 2>&1; fi; " +
+            "TG=''; for p in $(pgrep -x tengine 2>/dev/null); do e=$(readlink /proc/$p/exe 2>/dev/null); " +
+            "case \"$e\" in */tengine|*/nginx) TG=\"$e\"; break;; esac; done; " +
+            "[ -z \"$TG\" ] && TG=$(command -v tengine 2>/dev/null); " +
+            "if [ -n \"$TG\" ]; then echo \"##TENGINE_BIN $TG\"; \"$TG\" -v 2>&1; fi; " +
             "AP=''; for p in $(pgrep -x apache2 2>/dev/null) $(pgrep -x httpd 2>/dev/null); do e=$(readlink /proc/$p/exe 2>/dev/null); " +
             "case \"$e\" in */apache2|*/httpd) AP=\"$e\"; break;; esac; done; " +
             "[ -z \"$AP\" ] && AP=$(command -v apache2 2>/dev/null || command -v httpd 2>/dev/null); " +
@@ -595,11 +599,14 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
                 " ; for p in /usr/sbin/nginx /usr/local/nginx/sbin/nginx /www/server/nginx/sbin/nginx; do " +
                 "[ -z \"$NGX\" ] && [ -x \"$p\" ] && NGX=\"$p\"; done; " +
                 "[ -z \"$NGX\" ] || { echo \"##NGINX_BIN $NGX\"; \"$NGX\" -v 2>&1; }; " +
+                "for p in /usr/sbin/tengine /usr/local/tengine/sbin/nginx /usr/local/tengine/sbin/tengine /www/server/tengine/sbin/nginx; do " +
+                "[ -z \"$TG\" ] && [ -x \"$p\" ] && TG=\"$p\"; done; " +
+                "[ -z \"$TG\" ] || { echo \"##TENGINE_BIN $TG\"; \"$TG\" -v 2>&1; }; " +
                 "for p in /usr/sbin/apache2 /usr/sbin/httpd /www/server/apache/bin/httpd /usr/local/apache2/bin/httpd; do " +
                 "[ -z \"$AP\" ] && [ -x \"$p\" ] && AP=\"$p\"; done; " +
                 "[ -z \"$AP\" ] || { echo \"##APACHE_BIN $AP\"; \"$AP\" -v 2>&1; }; " +
                 "if command -v systemctl >/dev/null 2>&1; then " +
-                "for s in nginx apache2 httpd caddy traefik; do " +
+                "for s in nginx tengine apache2 httpd caddy traefik; do " +
                 "u=\"$s.service\"; " +
                 "if systemctl list-unit-files \"$u\" --no-legend 2>/dev/null | grep -q \"^$u\"; then " +
                 "echo \"##SVC:$s:$(systemctl is-active \"$u\" 2>/dev/null):$(systemctl is-enabled \"$u\" 2>/dev/null)\"; " +
@@ -612,14 +619,35 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
         if (result is null) return;
 
         var nginxBin = Regex.Match(result.Output, @"^##NGINX_BIN\s+(.+)$", RegexOptions.Multiline);
+        var tengineBin = Regex.Match(result.Output, @"^##TENGINE_BIN\s+(.+)$", RegexOptions.Multiline);
+        var tengineVersion = Regex.Match(result.Output,
+            @"Tengine\s+version:\s*([^\r\n]+)", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
         if (nginxBin.Success)
         {
             _nginxPath = nginxBin.Groups[1].Value.Trim();
             _nginxVersion = Regex.Match(result.Output, @"nginx version:\s*([^\r\n]+)", RegexOptions.IgnoreCase)
                 .Groups[1].Value.Trim();
-            if (_nginxVersion.Contains("openresty", StringComparison.OrdinalIgnoreCase) ||
-                _nginxPath.Contains("openresty", StringComparison.OrdinalIgnoreCase))
+            if (_nginxVersion.Contains("tengine", StringComparison.OrdinalIgnoreCase) ||
+                _nginxPath.Contains("tengine", StringComparison.OrdinalIgnoreCase))
+            {
+                _nginxServerType = "Tengine";
+                if (tengineVersion.Length > 0)
+                    _nginxVersion = tengineVersion;
+            }
+            else if (_nginxVersion.Contains("openresty", StringComparison.OrdinalIgnoreCase) ||
+                     _nginxPath.Contains("openresty", StringComparison.OrdinalIgnoreCase))
+            {
                 _nginxServerType = "OpenResty";
+            }
+        }
+        if (tengineBin.Success)
+        {
+            _nginxPath = tengineBin.Groups[1].Value.Trim();
+            _nginxServerType = "Tengine";
+            _nginxVersion = tengineVersion.Length > 0
+                ? tengineVersion
+                : Regex.Match(result.Output, @"nginx version:\s*([^\r\n]+)", RegexOptions.IgnoreCase)
+                    .Groups[1].Value.Trim();
         }
         var apacheBin = Regex.Match(result.Output, @"^##APACHE_BIN\s+(.+)$", RegexOptions.Multiline);
         if (apacheBin.Success)
@@ -632,12 +660,12 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
         BuildWebServices(result.Output);
 
         var found = new List<string>();
-        if (_nginxPath is not null) found.Add("Nginx " + _nginxVersion);
+        if (_nginxPath is not null) found.Add(_nginxServerType + " " + _nginxVersion);
         if (_apachePath is not null) found.Add("Apache " + _apacheVersion);
         if (found.Count == 0 && WebServices.Count == 0)
         {
             step.State = SiteDiscoveryStepState.Skipped;
-            step.Detail = "未检测到 Nginx / Apache 进程";
+            step.Detail = "未检测到 Nginx / Tengine / Apache 进程";
             return;
         }
 
@@ -662,7 +690,15 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
                 systemd[parts[0]] = (parts[1], parts[2]);
         }
 
-        AddWebService("Nginx", "nginx", _nginxPath, _nginxVersion, systemd);
+        if (string.Equals(_nginxServerType, "Tengine", StringComparison.OrdinalIgnoreCase))
+        {
+            var serviceName = systemd.ContainsKey("tengine") ? "tengine" : "nginx";
+            AddWebService("Tengine", serviceName, _nginxPath, _nginxVersion, systemd);
+        }
+        else
+        {
+            AddWebService("Nginx", "nginx", _nginxPath, _nginxVersion, systemd);
+        }
         AddWebService("Apache", "apache2", _apachePath, _apacheVersion, systemd);
         if (!systemd.ContainsKey("httpd"))
             AddWebService("Apache", "httpd", null, string.Empty, systemd);
@@ -746,7 +782,7 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
         if (_nginxPath is null)
         {
             step.State = SiteDiscoveryStepState.Skipped;
-            step.Detail = "未检测到 Nginx，跳过";
+            step.Detail = "未检测到 Nginx / Tengine，跳过";
             return;
         }
         var command = $"{ShellQuote.Single(_nginxPath)} -T 2>&1 | head -3000";
@@ -756,14 +792,14 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
         if (text.Trim() == "##nginx_missing")
         {
             step.State = SiteDiscoveryStepState.Skipped;
-            step.Detail = "nginx -T 不可用";
+            step.Detail = _nginxServerType + " -T 不可用";
             return;
         }
         var (sites, truncated) = NginxTlsSnapshotCollector.ParseNginxConfig(text);
         _nginxSites.AddRange(sites);
         ParseNginxUpstreams(text);
         step.Detail = $"解析 {sites.Count} 个 server 块" + (truncated ? "（已截断）" : string.Empty);
-        AddLog("Nginx", step.Detail);
+        AddLog(_nginxServerType, step.Detail);
     }
 
     private async Task ApacheStepAsync(SiteDiscoveryStep step)
@@ -935,9 +971,11 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
             {
                 foreach (var port in hostPorts)
                 {
+                    var dockerServerType = image.Contains("tengine", StringComparison.OrdinalIgnoreCase)
+                        ? "Tengine"
+                        : labels.Contains("traefik", StringComparison.OrdinalIgnoreCase) ? "Traefik/Docker" : "Docker";
                     var row = BuildSite(host, new[] { port }, port is 443 or 8443,
-                        labels.Contains("traefik", StringComparison.OrdinalIgnoreCase) ? "Traefik/Docker" : "Docker",
-                        image, "docker ps", null);
+                        dockerServerType, image, "docker ps", null);
                     row.SiteType = labels.Contains("traefik", StringComparison.OrdinalIgnoreCase) ? "Traefik" : "Docker";
                     row.ProxyTarget = image;
                     row.Evidence = "docker ps" + (labels.Length > 0 ? " / labels" : string.Empty);
@@ -1241,7 +1279,7 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
                 continue;
             }
             var row = BuildSite($"{domain}:{port.Port}", new[] { port.Port }, port.Target == "https",
-                "HTTP", string.Empty, "端口探测", null);
+                ClassifyHttpServerHeader(port.ServerHeader), string.Empty, "端口探测", null);
             row.SiteType = "HTTP";
             row.Confidence = "低（仅端口）";
             row.Evidence = $"{port.Target} {port.HttpStatus}{port.HttpsStatus} {port.ServerHeader}".Trim();
@@ -1464,8 +1502,24 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
 
     private static bool IsWebProcess(string process) =>
         process.Contains("nginx", StringComparison.OrdinalIgnoreCase) ||
+        process.Contains("tengine", StringComparison.OrdinalIgnoreCase) ||
         process.Contains("apache", StringComparison.OrdinalIgnoreCase) ||
         process.Contains("httpd", StringComparison.OrdinalIgnoreCase);
+
+    private static string ClassifyHttpServerHeader(string serverHeader)
+    {
+        if (serverHeader.Contains("tengine", StringComparison.OrdinalIgnoreCase))
+            return "Tengine";
+        if (serverHeader.Contains("openresty", StringComparison.OrdinalIgnoreCase))
+            return "OpenResty";
+        if (serverHeader.Contains("nginx", StringComparison.OrdinalIgnoreCase))
+            return "Nginx";
+        if (serverHeader.Contains("apache", StringComparison.OrdinalIgnoreCase))
+            return "Apache";
+        if (serverHeader.Contains("caddy", StringComparison.OrdinalIgnoreCase))
+            return "Caddy";
+        return "HTTP";
+    }
 
     private static bool IsKnownNonWebImage(string image) =>
         new[] { "redis", "mysql", "mariadb", "postgres", "mongo", "memcached", "rabbitmq", "kafka", "zookeeper" }
@@ -1488,7 +1542,7 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
     private static bool IsLikelyWebImage(string image) =>
         new[]
         {
-            "nginx", "apache", "httpd", "caddy", "traefik", "openresty", "haproxy", "envoy",
+            "nginx", "tengine", "apache", "httpd", "caddy", "traefik", "openresty", "haproxy", "envoy",
             "node", "gunicorn", "uvicorn", "tomcat", "jetty", "wildfly", "jboss", "php",
             "wordpress", "drupal", "ghost", "nextcloud", "grafana", "kibana", "prometheus",
             "minio", "sonarqube", "gitlab", "jenkins", "harbor", "aspnet", "dotnet"

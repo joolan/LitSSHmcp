@@ -1,0 +1,58 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.Tools.HostsEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Hosts 修改工具" Height="720" Width="980" MinHeight="560" MinWidth="780"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="Hosts 修改工具"/>
+
+        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}" Margin="14,0,14,10" Padding="12,10">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:Button Content="备份" Padding="10,4" Margin="0,0,6,0" Click="OnBackup"/>
+                    <ui:Button Content="重新读取" Padding="10,4" Margin="0,0,6,0" Click="OnReload"/>
+                    <ui:Button Content="刷新 DNS" Padding="10,4" Margin="0,0,6,0" Click="OnFlushDns"/>
+                    <ui:Button Content="保存" Appearance="Primary" Padding="14,4" Click="OnSave"/>
+                </StackPanel>
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Wrench24" FontSize="18"
+                                       Foreground="{DynamicResource AppAccentBrush}"/>
+                        <TextBlock Text="Hosts 文件" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeSubtitle}"
+                                   VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding Path}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
+                               Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextTertiaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,3,0,0"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="2" Style="{DynamicResource CardBorderStyle}" Margin="14,0,14,10" Padding="0" ClipToBounds="True">
+            <TextBox x:Name="Editor" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                     TextChanged="OnEditorTextChanged"
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                     FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="13"
+                     Background="{DynamicResource AppCodeBgBrush}" Foreground="{DynamicResource AppTextPrimaryBrush}"
+                     BorderThickness="0" Padding="12"/>
+        </Border>
+
+        <DockPanel Grid.Row="3" Margin="14,0,14,12">
+            <TextBlock DockPanel.Dock="Left" Text="保存时会自动备份；修改 Hosts 需要管理员权限。"
+                       Foreground="{DynamicResource AppTextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"
+                       VerticalAlignment="Center"/>
+            <TextBlock DockPanel.Dock="Right" Text="{Binding LineCountText}"
+                       Foreground="{DynamicResource AppTextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"
+                       VerticalAlignment="Center"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

@@ -23,12 +23,12 @@
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
                     <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机运行中心主页：实时显示 CPU / 内存 / 磁盘 / 网络、健康评分、运行时长、1 / 5 / 15 分钟趋势、TOP 8 进程与资产概览，支持暂停 / 继续刷新。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 命令同步：平铺与独立窗口中的 SSH 终端可单独或批量开启同步，支持键盘、IME、粘贴、发送框与命令片段广播，并显示当前有效会话数。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Kubernetes 多集群视图：连接管理、集群概览、节点 / Pod / 工作负载、日志与事件、Service / Ingress 关系、版本对比与只读巡检。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 平台操作审计：审计窗口新增「平台操作」页签，聚合 Jenkins / Kubernetes 操作记录，支持筛选、复制与 CSV 导出。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 主页布局重构：移除冗余标题与 AI 快捷输入，压缩指标与帮助入口，让本机监控、进程和资产概览在一屏内展示。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 体验优化：使用说明 WebView2 增加加载动画与降级视图，终端同步、进程列表和指标趋势布局优化，并补充命令同步与本机指标测试。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 密码保管箱：独立主密码、账号密码、TOTP / HOTP、附件、密码历史、自动锁定、剪贴板清理、加密备份与恢复。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 存储维护定时备份：多备份计划、存储项目多选、加密 .lsbak、本地压缩、阿里云 OSS、启动兜底、Windows 计划任务、历史与完整性校验。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程文件回收站：删除改为移动到 ~/.litssh-trash，支持恢复、彻底删除和清空，未清空前不释放远程空间。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• HTTP 站点探测：新增 Tengine 识别，支持进程、路径、版本、Server 响应头、systemd 和 Docker 镜像识别。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 加密文件柜：AvalonEdit 大文件编辑、搜索全部匹配高亮、未保存关闭提示、临时打开、加密备份和恢复。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 工具箱与密码箱：内置工具支持设置分组，隐藏不适用的编辑 / 删除 / 打开位置操作；密码箱支持二维码导入与安全生成选项。"/>
                 </StackPanel>
             </Border>
 
@@ -70,6 +70,9 @@
                     <TextBlock Text="桌面 App 核心功能" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机运行中心主页：CPU / 内存 / 磁盘 / 网络实时指标、健康评分、1 / 5 / 15 分钟趋势、TOP 8 进程与资产概览；本地指标只在主页可见时采样。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器管理：表格增删改查与排序、右键菜单（连接/编辑/采集快照/快照历史/删除），独立「SSH 会话管理」窗口含交互式终端（同一服务器最多 4 个，内置 SFTP 文件可视化上传/下载）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程文件回收站：SFTP 与远程文件面板删除移到 ~/.litssh-trash，支持恢复、彻底删除、清空和大小提示。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 密码保管箱：独立主密码、账号密码与附属信息、TOTP / HOTP、附件、密码历史、TOTP 二维码导入、自动锁定和加密备份。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 存储维护定时备份：多计划、存储项目多选、加密 .lsbak、本地压缩、阿里云 OSS、启动兜底、Windows 计划任务、备份历史、完整性校验和恢复向导。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 命令同步：任一已开启同步的终端输入会广播到其他已开启且已连接的 SSH 终端；支持平铺 / 独立窗口开关、全量开关与有效会话计数，本机 PowerShell 不参与。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器连接增强：跳板机（ProxyJump，经另一台已配置服务器中转）、SSH 密钥生成（ed25519 / rsa，公钥一键复制）、凭据轮换提醒。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Jenkins：多连接 CI 页面，支持 View、任务搜索、收藏/最近访问、参数构建、队列/状态/日志、阶段/产物/测试报告、SSH SOCKS5 隧道与操作审计。"/>

@@ -1,0 +1,95 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.ToolboxQuickLaunchWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="快速启动" Height="520" Width="660" MinHeight="420" MinWidth="560"
+        WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica"
+        ShowInTaskbar="False" Topmost="True">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="快速启动"/>
+
+        <Border Grid.Row="1" Margin="14,0,14,10" Style="{DynamicResource CardBorderStyle}" Padding="10">
+            <DockPanel>
+                <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Search24" FontSize="16"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,8,0"/>
+                <ui:TextBox x:Name="SearchBox" Height="32" BorderThickness="0" Background="Transparent"
+                            PlaceholderText="搜索工具、程序、URL、脚本…"
+                            Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                            PreviewKeyDown="OnSearchKeyDown"/>
+            </DockPanel>
+        </Border>
+
+        <ListBox x:Name="ResultsList" Grid.Row="2" Margin="14,0,14,0"
+                 ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                 Background="Transparent" BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 MouseDoubleClick="OnResultsDoubleClick">
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="8,6"/>
+                    <Setter Property="Margin" Value="0,0,0,2"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Width="32" Height="32" CornerRadius="7"
+                                Background="{DynamicResource AppSurfaceAltBrush}">
+                            <Grid>
+                                <Image Source="{Binding Icon}" Width="22" Height="22" Stretch="Uniform"
+                                       Visibility="{Binding HasIcon, Converter={StaticResource BoolToVis}}"/>
+                                <ui:SymbolIcon Symbol="{Binding FallbackSymbol}" FontSize="18"
+                                               Foreground="{DynamicResource AppAccentBrush}">
+                                    <ui:SymbolIcon.Style>
+                                        <Style TargetType="ui:SymbolIcon">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasIcon}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:SymbolIcon.Style>
+                                </ui:SymbolIcon>
+                            </Grid>
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="9,0,8,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Model.Target}" Margin="0,2,0,0"
+                                       Foreground="{DynamicResource AppTextTertiaryBrush}"
+                                       FontFamily="{DynamicResource AppFontMonoFamily}"
+                                       FontSize="9" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Text="{Binding TypeText}" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource AppFontSizeMicro}"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <DockPanel Grid.Row="3" Margin="16,8,16,12">
+            <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center"/>
+            <TextBlock DockPanel.Dock="Right" Text="↑↓ 选择 · Enter 启动 · Esc 关闭"
+                       Foreground="{DynamicResource AppTextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"
+                       VerticalAlignment="Center"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

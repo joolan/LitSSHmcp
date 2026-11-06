@@ -70,6 +70,21 @@ public class MainWindowXamlTests
         Assert.Null(ex);
     }
 
+    [Fact]
+    public void Encrypted_vault_window_can_show()
+    {
+        var ex = RunSta(() =>
+        {
+            var window = new LitSSHmcp.App.Views.Tools.EncryptedVaultWindow();
+            window.Show();
+            window.UpdateLayout();
+            Pump(window);
+            Assert.True(window.IsVisible);
+            window.Close();
+        });
+        Assert.Null(ex);
+    }
+
     private static void Pump(System.Windows.Window window)
         => window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.DataBind);
 
@@ -120,6 +135,17 @@ public class MainWindowXamlTests
             _ = new LitSSHmcp.App.Controls.RemoteFileBrowserView();
             _ = new LitSSHmcp.App.Controls.TerminalTabView();
             _ = new LitSSHmcp.App.Views.HomeDashboardView();
+            _ = new LitSSHmcp.App.Views.ToolboxView();
+            _ = new LitSSHmcp.App.Views.ToolboxItemEditWindow();
+            _ = new LitSSHmcp.App.Views.Tools.HostsEditorWindow();
+            _ = new LitSSHmcp.App.Views.Tools.EncryptedVaultWindow();
+            _ = new LitSSHmcp.App.Views.Tools.VaultCreateWindow();
+            _ = new LitSSHmcp.App.Views.Tools.VaultChangePasswordWindow("test");
+            _ = new LitSSHmcp.App.Views.Tools.VaultPasswordPromptWindow("test");
+            var quickToolbox = new LitSSHmcp.App.ViewModels.ToolboxQuickLaunchViewModel(
+                new LitSSHmcp.App.Services.Toolbox.ToolboxService(new LitSSHmcp.App.Services.UserDialogService()),
+                new LitSSHmcp.App.Services.UserDialogService());
+            _ = new LitSSHmcp.App.Views.ToolboxQuickLaunchWindow(quickToolbox);
             var server = new LitSSHmcp.Core.Models.SshServerConfig { Name = "t", Host = "127.0.0.1" };
             var vm = new LitSSHmcp.App.ViewModels.RemoteFileBrowserViewModel(server, new LitSSHmcp.Core.Services.SSH.SshService());
             _ = new RemoteFilePropertiesWindow(vm, new LitSSHmcp.App.ViewModels.RemoteFileItem { Name = "a.txt", FullName = "/home/u/a.txt" });

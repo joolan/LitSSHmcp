@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Interop;
+using System.Runtime.InteropServices;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.App.Views;
 using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
@@ -21,6 +23,15 @@ public partial class MainWindow : FluentWindow
     private System.Drawing.Icon? _trayIcon;
     private bool _allowClose;
     private HelpWindow? _helpWindow;
+    private HwndSource? _hotkeySource;
+    private bool _toolboxHotkeyRegistered;
+
+    private const int ToolboxHotkeyId = 0x4C53;
+    private const int WmHotkey = 0x0312;
+    private const uint ModAlt = 0x0001;
+    private const uint ModControl = 0x0002;
+    private const uint ModNoRepeat = 0x4000;
+    private const uint VkSpace = 0x20;
 
     /// <summary>最小化到托盘时被隐藏的独立窗口快照（恢复时按快照再显示；托盘期间新弹出的窗口不受影响）。</summary>
     private readonly List<Window> _trayHiddenWindows = new();
@@ -32,12 +43,101 @@ public partial class MainWindow : FluentWindow
         ViewModel.BackgroundQueueCompleted += OnBackgroundQueueCompleted;
         ViewModel.JenkinsBuildCompleted += OnJenkinsBuildCompleted;
         WindowLayout.Attach(this, "main.v2");
+        SourceInitialized += (_, _) => RegisterToolboxHotkey();
         Closing += OnMainClosing;
-        Closed += (_, _) => { ViewModel.DisposeHomeDashboard(); ViewModel.DisposeAgentPage(); ViewModel.DisposeJenkinsPage(); ViewModel.DisposeKubernetesPage(); };
+        Closed += (_, _) =>
+        {
+            UnregisterToolboxHotkey();
+            ViewModel.DisposeHomeDashboard();
+            ViewModel.DisposeAgentPage();
+            ViewModel.DisposeJenkinsPage();
+            ViewModel.DisposeKubernetesPage();
+        };
         if (Application.Current is { } app)
             app.Exit += (_, _) => DisposeTray();
 
+        ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.CurrentPage) &&
+                ViewModel.CurrentPage == MainPage.Toolbox)
+            {
+                Dispatcher.BeginInvoke(new Action(() => ToolboxPageView.FocusSearch()),
+                    System.Windows.Threading.DispatcherPriority.Input);
+            }
+        };
     }
+
+    private void RegisterToolboxHotkey()
+    {
+        try
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            _hotkeySource = HwndSource.FromHwnd(handle);
+            _hotkeySource?.AddHook(WndProc);
+            _toolboxHotkeyRegistered = RegisterHotKey(handle, ToolboxHotkeyId,
+                ModControl | ModAlt | ModNoRepeat, VkSpace);
+
+            if (!_toolboxHotkeyRegistered)
+                ViewModel.StatusMessage = "工具箱快捷键 Ctrl+Alt+Space 注册失败，可能已被其他程序占用。";
+        }
+        catch
+        {
+            _toolboxHotkeyRegistered = false;
+        }
+    }
+
+    private void UnregisterToolboxHotkey()
+    {
+        if (_toolboxHotkeyRegistered)
+        {
+            try
+            {
+                var handle = new WindowInteropHelper(this).Handle;
+                UnregisterHotKey(handle, ToolboxHotkeyId);
+            }
+            catch
+            {
+                // ignore
+            }
+            _toolboxHotkeyRegistered = false;
+        }
+
+        _hotkeySource?.RemoveHook(WndProc);
+        _hotkeySource = null;
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WmHotkey && wParam.ToInt32() == ToolboxHotkeyId)
+        {
+            handled = true;
+            OpenToolboxFromHotkey();
+        }
+        return IntPtr.Zero;
+    }
+
+    private void OpenToolboxFromHotkey()
+    {
+        void Open() => ViewModel.ShowToolboxQuickLaunch();
+
+        if (!IsVisible)
+        {
+            RestoreFromTray(Open);
+            return;
+        }
+
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        Show();
+        Activate();
+        Open();
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
     private void OnBackgroundQueueCompleted(string title, int count)
     {
@@ -272,12 +372,13 @@ public partial class MainWindow : FluentWindow
         return System.Drawing.SystemIcons.Application;
     }
 
-    private void RestoreFromTray() => AsyncOperation.Run("从托盘恢复", async () =>
+    private void RestoreFromTray(Action? afterRestore = null) => AsyncOperation.Run("从托盘恢复", async () =>
     {
         // 主界面本来就可见（仅最小化到任务栏等）：只激活，不解锁也不做窗口恢复
         if (IsVisible)
         {
             Activate();
+            afterRestore?.Invoke();
             return;
         }
 
@@ -338,6 +439,7 @@ public partial class MainWindow : FluentWindow
         Show();
         WindowState = WindowState.Normal;
         Activate();
+        afterRestore?.Invoke();
     });
 
     private void ExitFromTray()

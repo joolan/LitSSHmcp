@@ -23,10 +23,12 @@ public static class NativeShell
     private static extern int SHOpenWithDialog(IntPtr hwndParent, ref OPENASINFO poainfo);
 
     /// <summary>在资源管理器中打开目录（不存在时自动创建）。</summary>
+    public static Process? Start(ProcessStartInfo info) => Process.Start(info);
+
     public static void OpenFolder(string path)
     {
         Directory.CreateDirectory(path);
-        Process.Start(new ProcessStartInfo
+        Start(new ProcessStartInfo
         {
             FileName = path,
             UseShellExecute = true
@@ -36,7 +38,7 @@ public static class NativeShell
     /// <summary>用系统默认程序打开文件。</summary>
     public static void OpenFile(string path)
     {
-        Process.Start(new ProcessStartInfo
+        Start(new ProcessStartInfo
         {
             FileName = path,
             UseShellExecute = true
@@ -44,6 +46,14 @@ public static class NativeShell
     }
 
     /// <summary>调起系统「打开方式」对话框，让用户选择程序。返回是否成功弹出。</summary>
+    public static void RevealInExplorer(string path)
+    {
+        Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"")
+        {
+            UseShellExecute = true
+        });
+    }
+
     public static bool OpenWith(Window? owner, string path)
     {
         try

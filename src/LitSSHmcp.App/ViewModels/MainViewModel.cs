@@ -1347,6 +1347,7 @@ public enum MainPage
     RemoteDesktops,
     Jenkins,
     Kubernetes,
+    Toolbox,
     Agent
 }
 

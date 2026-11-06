@@ -67,7 +67,8 @@
                     <Button Content="上级" Padding="8,3" Margin="0,0,4,0" Click="OnRemoteUp"/>
                     <Button Content="刷新" Padding="8,3" Margin="0,0,4,0" Click="OnRemoteRefresh"/>
                     <Button Content="新建文件夹" Padding="8,3" Margin="0,0,4,0" Click="OnRemoteNewFolder"/>
-                    <Button Content="删除" Padding="8,3" Margin="0,0,4,0" Click="OnRemoteDelete"/>
+                    <Button Content="删除（回收站）" Padding="8,3" Margin="0,0,4,0" Click="OnRemoteDelete"/>
+                    <Button Content="回收站" Padding="8,3" Margin="0,0,4,0" Click="OnOpenTrash"/>
                     <Button Content="书签" Padding="8,3" Click="OnBookmarks"/>
                 </WrapPanel>
                 <TextBox DockPanel.Dock="Top" Text="{Binding Remote.CurrentPath, UpdateSourceTrigger=PropertyChanged}"

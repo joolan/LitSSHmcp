@@ -1,0 +1,28 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.Tools.VaultImagePreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="图片预览" Height="760" Width="980" MinHeight="480" MinWidth="640"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="图片预览"/>
+        <Border Grid.Row="1" Margin="14,0,14,8" Background="{DynamicResource AppTerminalBgBrush}"
+                BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                CornerRadius="{DynamicResource AppRadiusM}" ClipToBounds="True">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                <Image x:Name="PreviewImage" Stretch="Uniform" Margin="12"/>
+            </ScrollViewer>
+        </Border>
+        <DockPanel Grid.Row="2" Margin="16,0,16,12">
+            <TextBlock x:Name="FileNameText" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <TextBlock DockPanel.Dock="Right" Text="仅在内存中解密，未写入磁盘"
+                       Foreground="{DynamicResource AppTextTertiaryBrush}"
+                       FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

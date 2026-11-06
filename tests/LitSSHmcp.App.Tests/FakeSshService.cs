@@ -9,6 +9,7 @@ internal sealed class FakeSshService : ISshService
     public Func<string, string>? OutputResolver { get; set; }
     public Func<string, string>? SudoOutputResolver { get; set; }
     public List<string> Commands { get; } = new();
+    public List<string> CommandLines { get; } = new();
     public string? UploadedRemotePath { get; private set; }
     public byte[]? UploadedBytes { get; private set; }
 
@@ -23,13 +24,13 @@ internal sealed class FakeSshService : ISshService
         string command,
         CancellationToken ct = default,
         int timeoutSeconds = 60)
-        => Task.FromResult(Result(OutputResolver?.Invoke(command) ?? string.Empty));
+        => ExecuteRecordedAsync(command);
 
     public Task<CommandResult> ExecuteWithSudoAsync(
         SshServerConfig server,
         string command,
         CancellationToken ct = default)
-        => Task.FromResult(Result((SudoOutputResolver ?? OutputResolver)?.Invoke(command) ?? string.Empty));
+        => ExecuteRecordedAsync(command, SudoOutputResolver ?? OutputResolver);
 
     public Task<SshShellSession> OpenShellAsync(
         SshServerConfig server,
@@ -109,6 +110,12 @@ internal sealed class FakeSshService : ISshService
         IProgress<FileTransferProgress>? progress = null,
         CancellationToken ct = default)
         => Task.FromResult(new RemoteCopyResult { Success = false, Error = "not supported" });
+
+    private Task<CommandResult> ExecuteRecordedAsync(string command, Func<string, string>? resolver = null)
+    {
+        CommandLines.Add(command);
+        return Task.FromResult(Result((resolver ?? OutputResolver)?.Invoke(command) ?? string.Empty));
+    }
 
     private CommandResult Result(string output)
     {

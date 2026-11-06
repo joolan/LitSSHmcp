@@ -1,0 +1,94 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.BackupRestoreWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
+        Title="恢复备份" Height="700" Width="760" MinHeight="540" MinWidth="600"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="恢复备份"/>
+
+        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}" Padding="14,12" Margin="12,4,12,8">
+            <StackPanel>
+                <TextBlock Text="备份文件" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBox x:Name="ArchivePathBox" Grid.Column="0"
+                                PlaceholderText="选择 .lsbak 或 .zip 备份文件"/>
+                    <ui:Button Grid.Column="1" Content="浏览…" Margin="8,0,0,0" Padding="12,4" Click="OnBrowse"/>
+                </Grid>
+                <TextBlock Text="备份密码（加密备份必填）" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                <PasswordBox x:Name="PasswordBoxInput" Height="34" Padding="8,4" PasswordChar="●" Margin="0,0,0,8"/>
+                <DockPanel>
+                    <ui:Button Content="读取备份信息" Appearance="Primary" Padding="12,4" Click="OnInspect"/>
+                    <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="12,0,0,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+                </DockPanel>
+                <TextBlock x:Name="WarningText" Foreground="{DynamicResource AppWarningBrush}"
+                           FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="12,0,12,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                <TextBlock Text="备份内容" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock x:Name="ArchiveInfoText" DockPanel.Dock="Right"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center"/>
+            </DockPanel>
+            <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}">
+                <ItemsControl x:Name="ItemsList" Margin="6">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="{DynamicResource AppRadiusS}"
+                                    Padding="10,7" Margin="0,0,0,5">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Size, StringFormat={}{0:N0} 字节}"
+                                               Foreground="{DynamicResource AppTextTertiaryBrush}"
+                                               VerticalAlignment="Center"/>
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center">
+                                        <StackPanel Margin="6,0,0,0">
+                                            <TextBlock Text="{Binding Name}"/>
+                                            <TextBlock Text="{Binding Id}" Foreground="{DynamicResource AppTextTertiaryBrush}"
+                                                       FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </CheckBox>
+                                </DockPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+        </Grid>
+
+        <StackPanel Grid.Row="3" Margin="12,0,12,12">
+            <CheckBox x:Name="RestoreToDataCheckBox"
+                      Content="直接恢复到当前数据目录（会先创建安全备份，建议重启 App）"
+                      Click="OnRestoreModeChanged"/>
+            <TextBlock Text="直接恢复会覆盖当前配置和数据库；恢复前会保存安全备份。数据库被占用时可能失败并自动回滚。"
+                       Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSizeMicro}"
+                       TextWrapping="Wrap" Margin="0,4,0,8"/>
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <ui:Button Content="恢复" Appearance="Primary" Padding="12,4" Click="OnRestore"/>
+                </StackPanel>
+                <controls:PathPicker x:Name="RestoreDirectoryPicker" PickFolder="True"
+                                     Title="选择恢复目录" Placeholder="选择恢复到的目录"
+                                     ButtonText="选择目录" Margin="0,0,10,0"/>
+            </DockPanel>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

@@ -6,7 +6,6 @@ using LitSSHmcp.Agent;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
-
 namespace LitSSHmcp.App.ViewModels;
 
 /// <summary>
@@ -17,7 +16,6 @@ public class StorageSettingsViewModel : INotifyPropertyChanged, IConfigReloadabl
 {
     private readonly IConfigService _configService;
     private readonly string _dataDir;
-
     private string _statusMessage = string.Empty;
     private string _migrationStatus = string.Empty;
     private bool _busy;
@@ -83,7 +81,9 @@ public class StorageSettingsViewModel : INotifyPropertyChanged, IConfigReloadabl
                 Stat("大结果 spill", spillDir),
                 Stat("工作区 jobs", jobsDir),
                 Stat("日志", Path.Combine(_dataDir, "logs")),
-                Stat("技能", Path.Combine(_dataDir, "skills"))
+                Stat("技能", Path.Combine(_dataDir, "skills")),
+                Stat("加密文件柜", Path.Combine(_dataDir, "vaults")),
+                Stat("密码保管箱", Path.Combine(_dataDir, "password-vault"))
             });
 
             Stats.Clear();

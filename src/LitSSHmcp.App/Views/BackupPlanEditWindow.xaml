@@ -1,0 +1,142 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.BackupPlanEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
+        Title="备份计划" Height="720" Width="620" MinHeight="560" MinWidth="520"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar x:Name="TitleBarControl" Grid.Row="0" Title="备份计划"/>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="18,4,18,0">
+            <StackPanel>
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="计划名称" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                        <ui:TextBox x:Name="NameBox" PlaceholderText="例如：每日本机备份"/>
+                    </StackPanel>
+                    <CheckBox x:Name="EnabledBox" Grid.Column="2" Content="启用" IsChecked="True"
+                              VerticalAlignment="Bottom" Margin="0,0,0,8"/>
+                </Grid>
+
+                <TextBlock Text="调度方式" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                <ComboBox x:Name="ScheduleBox" Height="36" Padding="8,0" VerticalContentAlignment="Center"
+                          SelectionChanged="OnScheduleChanged" Margin="0,0,0,8">
+                    <ComboBoxItem Content="固定间隔"/>
+                    <ComboBoxItem Content="每天"/>
+                    <ComboBoxItem Content="每周"/>
+                    <ComboBoxItem Content="每月"/>
+                </ComboBox>
+
+                <Grid x:Name="IntervalPanel" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="间隔分钟" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                        <ui:TextBox x:Name="IntervalBox" Text="1440"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" Text="App 运行期间执行" VerticalAlignment="Bottom"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,8"/>
+                </Grid>
+
+                <Grid x:Name="TimePanel" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="执行时刻 HH:mm" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                        <ui:TextBox x:Name="TimeBox" Text="03:00"/>
+                    </StackPanel>
+                    <StackPanel x:Name="WeekDaysPanel" Grid.Column="2">
+                        <TextBlock Text="星期（0=周日，1=周一）" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                        <ui:TextBox x:Name="WeekDaysBox" Text="1,2,3,4,5"/>
+                    </StackPanel>
+                </Grid>
+
+                <Grid x:Name="MonthDaysPanel" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="每月日期（1-28，逗号分隔）" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                        <ui:TextBox x:Name="MonthDaysBox" Text="1"/>
+                    </StackPanel>
+                </Grid>
+
+                <CheckBox x:Name="FallbackBox" Content="启动兜底：当天计划时间已过且没有成功备份时立即执行" Margin="0,0,0,10"/>
+                <TextBlock Text="本地备份目录" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                <controls:PathPicker x:Name="TargetPicker" PickFolder="True" Title="选择本地备份目录"
+                                     Placeholder="选择压缩备份保存目录" Margin="0,0,0,10"/>
+
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="保留本地份数（0=不自动清理）" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                        <ui:TextBox x:Name="KeepBox" Text="7"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="失败重试次数" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                        <ui:TextBox x:Name="RetryBox" Text="1"/>
+                    </StackPanel>
+                </Grid>
+
+                <CheckBox x:Name="EncryptBox" Content="加密备份（推荐）" Margin="0,0,0,6"/>
+                <TextBlock Text="备份密码（留空保持原密码；新计划必须设置）" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                <PasswordBox x:Name="BackupPasswordBox" Height="34" Padding="8,4" PasswordChar="●" Margin="0,0,0,4"/>
+                <TextBlock Text="备份密码丢失后无法恢复。配置中的部分密钥使用 DPAPI 本地用户加密，迁移到其他电脑后需要重新填写。" Foreground="{DynamicResource AppTextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                <CheckBox x:Name="UploadOssBox" Content="本地备份完成后上传阿里云 OSS" Margin="0,0,0,6"/>
+                <ui:TextBox x:Name="OssPrefixBox" PlaceholderText="OSS 路径前缀（留空使用全局配置）" Margin="0,0,0,10"/>
+
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="备份项目" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Text="（可多选）" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}" Margin="6,0,0,0"
+                               VerticalAlignment="Center"/>
+                </DockPanel>
+                <ItemsControl x:Name="ItemsList" Margin="0,0,0,8">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="{DynamicResource AppRadiusS}"
+                                    Padding="10,7" Margin="0,0,0,5">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding SizeText}"
+                                               Foreground="{DynamicResource AppTextTertiaryBrush}"
+                                               VerticalAlignment="Center"/>
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center">
+                                        <StackPanel Margin="6,0,0,0">
+                                            <TextBlock Text="{Binding Name}"/>
+                                            <TextBlock Text="{Binding Description}" Foreground="{DynamicResource AppTextTertiaryBrush}"
+                                                       FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </CheckBox>
+                                </DockPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock x:Name="ErrorText" Foreground="{DynamicResource AppDangerBrush}"
+                           FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            </StackPanel>
+        </ScrollViewer>
+        <DockPanel Grid.Row="2" Margin="18,10,18,14" LastChildFill="False">
+            <ui:Button DockPanel.Dock="Right" Content="保存" Appearance="Primary" Padding="20,5"
+                       Margin="8,0,0,0" Click="OnSave"/>
+            <ui:Button DockPanel.Dock="Right" Content="取消" Padding="20,5" Click="OnCancel"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

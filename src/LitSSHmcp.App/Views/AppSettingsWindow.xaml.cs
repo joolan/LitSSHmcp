@@ -88,9 +88,19 @@ public partial class AppSettingsWindow : FluentWindow
                 view.Initialize(_services);
                 return view;
             }
+            case 7:
+                return new PetSettingsView();
             default:
                 return new AboutView();
         }
+    }
+
+    public void SelectTab(int index)
+    {
+        if (index < 0 || index >= SettingsTabs.Items.Count)
+            return;
+        SettingsTabs.SelectedIndex = index;
+        EnsureTabContent(index);
     }
 
     private ContentControl? HostFor(int index) => index switch
@@ -102,7 +112,8 @@ public partial class AppSettingsWindow : FluentWindow
         4 => ToolGroupsHost,
         5 => TransferHost,
         6 => StorageHost,
-        7 => AboutHost,
+        7 => PetHost,
+        8 => AboutHost,
         _ => null
     };
 }

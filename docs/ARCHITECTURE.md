@@ -175,6 +175,7 @@ LitSSHmcp/
 - `PasswordVaultService` / `PasswordVaultViewModel`：独立主密码密码保管箱，加密索引与附件，支持 TOTP/HOTP、密码历史、自动锁定和加密包备份；与文件柜互不共用主密码。
 - `BackupService` / `BackupScheduler`：存储维护定时备份，按计划多选存储项目，SQLite 使用 `BackupDatabase` 一致性备份，zip 可选 `.lsbak` 加密（PBKDF2-SHA256 + 分块 AES-GCM），本地完成后可上传阿里云 OSS；支持启动兜底、Windows 计划任务、历史、完整性校验与恢复向导。
 - `RemoteTrashService`：远程文件可视删除移动到 `~/.litssh-trash`，保留原始路径清单，支持恢复、彻底删除和清空；不修改终端 `rm` 等底层命令。
+- `PetService` / `PetWindow` / `PetAssetService`：独立透明置顶桌面宠物，占位动画与 PNG / GIF 素材包，支持自动移动、拖动、托盘显示/隐藏/重置、AI 工作动画与审批提醒、全屏/锁屏隐藏、低电量/远程桌面降帧、减少动态效果、多显示器位置恢复和按显示器 DPI 校准；动画 tick 按帧延迟动态调整；审批气泡可携带会话 Id 直达对应 AI 会话；`PetAssetService` 支持编辑已有素材、撤销/重做、复制/重命名、精灵图切分、逐帧延迟、来源/许可证和 ZIP 导入导出，并提供异步素材索引、弱引用缓存、解码像素预算和缓存命中/内存统计；主窗口最小化时跳过宠物窗口，点击宠物复用应用锁恢复流程并打开 AI 运维助手。
 - 配置结构：`schemaVersion`、`servers[]`、`dataSources[]`、`applications[]`、`relations[]`、`syncTasks[]`、`backup{plans[], oss{...}}`、`tools{enabledGroups}`、`snapshot{}`、`connectionPool{}`、`ui{theme, accent}`、`agent{...}`、`security{commandFilter, sqlFilter, fileTransfer, sshHostKey, discovery, logs, limits, audit, masking, approval}`（完整示例见 `config/config.example.json` 与 README 快速开始）。
 
 ### 4.6 服务器快照（`Services/Snapshot`）

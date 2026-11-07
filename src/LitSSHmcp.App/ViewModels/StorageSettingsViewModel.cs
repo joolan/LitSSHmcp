@@ -83,7 +83,8 @@ public class StorageSettingsViewModel : INotifyPropertyChanged, IConfigReloadabl
                 Stat("日志", Path.Combine(_dataDir, "logs")),
                 Stat("技能", Path.Combine(_dataDir, "skills")),
                 Stat("加密文件柜", Path.Combine(_dataDir, "vaults")),
-                Stat("密码保管箱", Path.Combine(_dataDir, "password-vault"))
+                Stat("密码保管箱", Path.Combine(_dataDir, "password-vault")),
+                Stat("桌面宠物素材", Path.Combine(_dataDir, "pet-assets"))
             });
 
             Stats.Clear();
@@ -248,7 +249,6 @@ public class StorageSettingsViewModel : INotifyPropertyChanged, IConfigReloadabl
     };
 
     public event PropertyChangedEventHandler? PropertyChanged;
-
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

@@ -48,6 +48,9 @@ public sealed class SessionRunContext
     /// <summary>运行状态机当前值。</summary>
     public SessionRunState State { get; private set; } = SessionRunState.Idle;
 
+    /// <summary>最近一次状态变化时间，用于多会话时选择提醒对象。</summary>
+    public DateTime StateChangedUtc { get; private set; } = DateTime.UtcNow;
+
     /// <summary>状态是否占用会话闸门（排队/执行/待审批均视为“任务进行中”）。</summary>
     public bool IsBusy => State is SessionRunState.Queued or SessionRunState.Running or SessionRunState.WaitingApproval;
 
@@ -59,6 +62,7 @@ public sealed class SessionRunContext
         if (State == state)
             return;
         State = state;
+        StateChangedUtc = DateTime.UtcNow;
         StateChanged?.Invoke(this);
     }
 

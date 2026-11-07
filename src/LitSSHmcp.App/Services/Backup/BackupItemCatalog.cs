@@ -56,6 +56,7 @@ public static class BackupItemCatalog
         DirItem("logs", "日志 logs", "应用运行日志", "logs"),
         DirItem("vaults", "加密文件柜", "加密文件柜目录", "vaults"),
         DirItem("password-vault", "密码保管箱", "密码保管箱目录", "password-vault"),
+        DirItem("pet-assets", "桌面宠物素材", "自定义宠物素材包、动画与许可证文件", "pet-assets"),
         new BackupItemDescriptor
         {
             Id = "spills",

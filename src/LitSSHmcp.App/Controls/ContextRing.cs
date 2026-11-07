@@ -62,6 +62,13 @@ public sealed class ContextRing : FrameworkElement
         if (value <= 0.0001)
             return;
 
+        // 100% 时圆弧起点和终点重合，ArcSegment 会退化成圆点；直接画完整圆环。
+        if (value >= 0.9999)
+        {
+            dc.DrawEllipse(null, new Pen(brush, thickness), center, radius, radius);
+            return;
+        }
+
         var startAngle = -90.0;
         var sweep = 360.0 * value;
         var start = PointOnCircle(center, radius, startAngle);

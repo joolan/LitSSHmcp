@@ -32,6 +32,7 @@
                     <ListBoxItem Content="工具分组" Padding="12,10"/>
                     <ListBoxItem Content="导入 / 导出" Padding="12,10"/>
                     <ListBoxItem Content="存储维护" Padding="12,10"/>
+                    <ListBoxItem Content="桌面宠物" Padding="12,10"/>
                     <ListBoxItem Content="关于" Padding="12,10"/>
                 </ListBox>
             </Border>
@@ -64,6 +65,9 @@
                 </TabItem>
                 <TabItem x:Name="StorageTab" Header="存储维护">
                     <ContentControl x:Name="StorageHost"/>
+                </TabItem>
+                <TabItem Header="桌面宠物">
+                    <ContentControl x:Name="PetHost"/>
                 </TabItem>
                 <TabItem Header="关于">
                     <ContentControl x:Name="AboutHost"/>

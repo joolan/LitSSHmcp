@@ -1,0 +1,140 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.PetAssetEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="素材包制作" Height="720" Width="980" MinHeight="600" MinWidth="800"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica"
+        Closing="OnClosing" PreviewKeyDown="OnPreviewKeyDown">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar x:Name="EditorTitleBar" Grid.Row="0" Title="素材包制作"/>
+
+        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}" Padding="14,10" Margin="12,4,12,8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="150"/>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                    <TextBlock Text="素材包名称" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                    <ui:TextBox x:Name="NameBox" Text="我的宠物" TextChanged="OnMetadataChanged"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Margin="0,0,10,0">
+                    <TextBlock Text="默认 FPS" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                    <ui:TextBox x:Name="GlobalFpsBox" Text="10" TextChanged="OnMetadataChanged"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Margin="0,0,10,0">
+                    <TextBlock Text="动作" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                    <ComboBox x:Name="ActionBox" Height="34" Padding="8,0" VerticalContentAlignment="Center"
+                              SelectionChanged="OnActionChanged"/>
+                </StackPanel>
+                <StackPanel Grid.Column="3" Margin="0,0,10,0">
+                    <TextBlock Text="动作 FPS" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                    <ui:TextBox x:Name="ActionFpsBox" Text="10" TextChanged="OnActionFpsChanged"/>
+                </StackPanel>
+                <CheckBox x:Name="LoopBox" Grid.Column="4" Content="循环" IsChecked="True"
+                          VerticalAlignment="Bottom" Margin="0,0,0,8" Checked="OnLoopChanged" Unchecked="OnLoopChanged"/>
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="5" Orientation="Horizontal" Margin="0,10,0,0">
+                    <StackPanel Width="360" Margin="0,0,10,0">
+                        <TextBlock Text="来源 / 作者" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                        <ui:TextBox x:Name="SourceBox" TextChanged="OnMetadataChanged"/>
+                    </StackPanel>
+                    <StackPanel Width="220">
+                        <TextBlock Text="许可证" FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,0,0,4"/>
+                        <ui:TextBox x:Name="LicenseBox" TextChanged="OnMetadataChanged"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="12,0,12,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Style="{DynamicResource CardBorderStyle}" Padding="10">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="当前动作预览" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                    <TextBlock x:Name="PreviewInfo" DockPanel.Dock="Bottom" TextWrapping="Wrap"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,8,0,0"/>
+                    <Border Background="{DynamicResource AppSurfaceAltBrush}" CornerRadius="{DynamicResource AppRadiusS}">
+                        <Image x:Name="PreviewImage" Width="160" Height="160" Stretch="Uniform" Margin="8"/>
+                    </Border>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="2" Style="{DynamicResource CardBorderStyle}" Padding="10">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top">
+                        <DockPanel Margin="0,0,0,8">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <ui:Button x:Name="UndoButton" Content="撤销" Padding="10,4" Margin="0,0,6,0" Click="OnUndo" IsEnabled="False"/>
+                                <ui:Button x:Name="RedoButton" Content="重做" Padding="10,4" Margin="0,0,6,0" Click="OnRedo" IsEnabled="False"/>
+                                <ui:Button Content="导入图片 / GIF…" Padding="12,4" Margin="0,0,6,0" Click="OnImportFrames"/>
+                                <ui:Button Content="精灵图…" Padding="10,4" Margin="0,0,6,0" Click="OnImportSpriteSheet"/>
+                                <ui:Button Content="上移" Padding="10,4" Margin="0,0,6,0" Click="OnMoveUp"/>
+                                <ui:Button Content="下移" Padding="10,4" Margin="0,0,6,0" Click="OnMoveDown"/>
+                                <ui:Button Content="删除帧" Padding="10,4" Margin="0,0,6,0" Click="OnDeleteFrame"/>
+                                <ui:Button Content="清空动作" Padding="10,4" Margin="0,0,6,0" Click="OnClearAction"/>
+                                <TextBlock Text="帧延迟 ms" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ui:TextBox x:Name="FrameDelayBox" Width="72" TextChanged="OnFrameDelayChanged"/>
+                            </StackPanel>
+                            <TextBlock Text="帧序列（可导入多张图片或一个 GIF）" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                        </DockPanel>
+                    </StackPanel>
+                    <ListBox x:Name="FramesList" BorderThickness="0" Background="Transparent"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             SelectionChanged="OnFrameSelectionChanged"
+                             AllowDrop="True"
+                             PreviewMouseLeftButtonDown="OnFramesMouseDown"
+                             PreviewMouseMove="OnFramesMouseMove"
+                             Drop="OnFramesDrop">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Width="140" Margin="4" Background="{DynamicResource AppSurfaceAltBrush}"
+                                        CornerRadius="{DynamicResource AppRadiusS}" Padding="6">
+                                    <StackPanel>
+                                        <Image Source="{Binding Image}" Width="120" Height="100" Stretch="Uniform"/>
+                                        <TextBlock Text="{Binding Label}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                   TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <DockPanel Grid.Row="3" Margin="12,0,12,12">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="保存并使用" Appearance="Primary" Padding="14,5" Margin="0,0,8,0" Click="OnSave"/>
+                <ui:Button Content="取消" Padding="14,5" Click="OnCancel"/>
+            </StackPanel>
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

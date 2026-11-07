@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Services.Backup;
+using LitSSHmcp.App.Services.Pet;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.App.Services.Toolbox;
@@ -91,6 +92,7 @@ public partial class App : Application
         }
 
         // 端口转发：退出时统一停止活动隧道并断开 SSH 连接
+        Exit += (_, _) => PetService.Close();
         Exit += (_, _) => AppServiceFactory.DisposePortForwardService();
 
         // 远程桌面：退出时拆除活动隧道（查看器进程由用户自行关闭）

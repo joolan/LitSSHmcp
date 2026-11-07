@@ -73,6 +73,14 @@ public partial class MainViewModel
         return view;
     }
 
+    public void OpenAgentFromPet(long? sessionId = null)
+    {
+        var view = EnsureAgentPage();
+        NavigateAgent();
+        if (sessionId is > 0)
+            _ = view.ViewModel.OpenSessionAsync(sessionId.Value);
+    }
+
     private void NavigateAgent()
     {
         EnsureAgentPage();

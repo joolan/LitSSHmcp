@@ -1063,6 +1063,12 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     // 设置：整合「安全设置 / 工具分组 / 导入导出 / MCP 工具说明」为多 Tab 独立窗口
     private AppSettingsWindow? _settingsWindow;
 
+    public void OpenPetSettings()
+    {
+        OpenSettings();
+        _settingsWindow?.SelectTab(7);
+    }
+
     private void OpenSettings()
     {
         if (_settingsWindow is { IsLoaded: true })

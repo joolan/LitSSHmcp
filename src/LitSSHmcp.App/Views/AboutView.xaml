@@ -24,6 +24,7 @@
                 <StackPanel>
                     <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 密码保管箱：独立主密码、账号密码、TOTP / HOTP、附件、密码历史、自动锁定、剪贴板清理、加密备份与恢复。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 桌面宠物：独立透明置顶窗口，支持占位动画 / PNG / GIF 素材、可视化素材包制作、自动移动、拖动、托盘控制；最小化后仍显示，点击宠物打开 AI 运维助手。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 存储维护定时备份：多备份计划、存储项目多选、加密 .lsbak、本地压缩、阿里云 OSS、启动兜底、Windows 计划任务、历史与完整性校验。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程文件回收站：删除改为移动到 ~/.litssh-trash，支持恢复、彻底删除和清空，未清空前不释放远程空间。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• HTTP 站点探测：新增 Tengine 识别，支持进程、路径、版本、Server 响应头、systemd 和 Docker 镜像识别。"/>

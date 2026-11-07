@@ -80,6 +80,7 @@ staging/
 out/
 *.zip
 *.7z
+!samples/pet-assets/*.zip
 
 # Test results
 [Tt]est[Rr]esult*/

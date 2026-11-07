@@ -8,6 +8,7 @@ using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.App.Views;
 using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using LitSSHmcp.App.Services;
+using LitSSHmcp.App.Services.Pet;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using Wpf.Ui.Controls;
@@ -39,6 +40,7 @@ public partial class MainWindow : FluentWindow
     public MainWindow()
     {
         InitializeComponent();
+        _ = PetService.ApplyAsync(AppServiceFactory.CreateConfigService());
         DataContext = new MainViewModel();
         ViewModel.BackgroundQueueCompleted += OnBackgroundQueueCompleted;
         ViewModel.JenkinsBuildCompleted += OnJenkinsBuildCompleted;
@@ -310,7 +312,7 @@ public partial class MainWindow : FluentWindow
         _trayHiddenWindows.Clear();
         foreach (Window window in Application.Current.Windows)
         {
-            if (ReferenceEquals(window, this) || !window.IsVisible)
+            if (ReferenceEquals(window, this) || !window.IsVisible || window is PetWindow)
                 continue;
             _trayHiddenWindows.Add(window);
             try { window.Hide(); } catch { /* 个别窗口隐藏失败不影响整体 */ }
@@ -339,7 +341,15 @@ public partial class MainWindow : FluentWindow
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("显示主界面", null, (_, _) => RestoreFromTray());
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        var petToggle = new System.Windows.Forms.ToolStripMenuItem("隐藏桌面宠物");
+        petToggle.Click += (_, _) => PetService.ToggleVisibility();
+        menu.Items.Add(petToggle);
+        menu.Items.Add("打开桌面宠物设置", null, (_, _) => RestoreFromTray(() => ViewModel.OpenPetSettings()));
+        menu.Items.Add("暂停 / 继续宠物移动", null, (_, _) => PetService.ToggleMovement());
+        menu.Items.Add("重置宠物位置", null, (_, _) => PetService.ResetPosition());
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("退出程序", null, (_, _) => ExitFromTray());
+        menu.Opening += (_, _) => petToggle.Text = PetService.IsVisible ? "隐藏桌面宠物" : "显示桌面宠物";
 
         _trayIcon = CreateTrayIcon();
         _tray = new System.Windows.Forms.NotifyIcon
@@ -372,11 +382,22 @@ public partial class MainWindow : FluentWindow
         return System.Drawing.SystemIcons.Application;
     }
 
+    public void OpenAiAssistantFromPet(long? sessionId = null) => RestoreFromTray(() =>
+    {
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        ViewModel.OpenAgentFromPet(sessionId);
+        Activate();
+    });
+
     private void RestoreFromTray(Action? afterRestore = null) => AsyncOperation.Run("从托盘恢复", async () =>
     {
         // 主界面本来就可见（仅最小化到任务栏等）：只激活，不解锁也不做窗口恢复
         if (IsVisible)
         {
+            if (WindowState == WindowState.Minimized)
+                WindowState = WindowState.Normal;
+            Show();
             Activate();
             afterRestore?.Invoke();
             return;

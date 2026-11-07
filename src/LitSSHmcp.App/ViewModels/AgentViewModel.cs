@@ -12,6 +12,7 @@ using System.Windows.Media;
 using LitSSHmcp.Agent;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Services.LocalTerminal;
+using LitSSHmcp.App.Services.Pet;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
@@ -1006,7 +1007,32 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 OnPropertyChanged(nameof(SessionStateText));
                 RaisePendingApprovalChanged();
             }
+            NotifyPetState(ctx);
         });
+    }
+
+    private void NotifyPetState(SessionRunContext changed)
+    {
+        var pending = _contexts.Values
+            .Where(context => context.State == SessionRunState.WaitingApproval)
+            .OrderByDescending(context => context.StateChangedUtc)
+            .FirstOrDefault();
+        var running = _contexts.Values
+            .Where(context => context.State is SessionRunState.Running or SessionRunState.Queued)
+            .OrderByDescending(context => context.StateChangedUtc)
+            .FirstOrDefault();
+        var session = pending ?? running;
+        var state = pending is not null
+            ? PetAiState.WaitingApproval
+            : running is not null
+                ? PetAiState.Running
+                : changed.State switch
+                {
+                    SessionRunState.Failed => PetAiState.Failed,
+                    SessionRunState.Done => PetAiState.Completed,
+                    _ => PetAiState.Idle
+                };
+        PetService.SetAiState(state, session?.SessionId ?? changed.SessionId);
     }
 
     /// <summary>会话状态机 → 徽章文案（Idle/Done=空）。</summary>
@@ -1590,6 +1616,18 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     /// <summary>当前显示的会话 Id。</summary>
     public long CurrentSessionId => _sessionId;
+
+    /// <summary>按 Id 打开会话，用于宠物审批提醒等跨页面跳转。</summary>
+    public async Task OpenSessionAsync(long sessionId)
+    {
+        if (Sessions.All(session => session.Id != sessionId))
+            await ReloadSessionsAsync();
+        var row = Sessions.FirstOrDefault(session => session.Id == sessionId);
+        if (row is null || ReferenceEquals(row, _selectedSession))
+            return;
+        SelectedSession = row;
+        SyncSidebarSelection();
+    }
 
     /// <summary>读取某会话的持久化消息（用于对非当前会话导出）。</summary>
     public Task<List<AgentMessageRow>> GetMessagesAsync(long sessionId) => _store.GetMessagesAsync(sessionId);

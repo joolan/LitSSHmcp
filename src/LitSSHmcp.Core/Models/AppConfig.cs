@@ -47,6 +47,9 @@ public class AppConfig
     /// <summary>本机定时备份计划与 OSS 配置。</summary>
     public BackupConfig Backup { get; set; } = new();
 
+    /// <summary>桌面宠物设置。</summary>
+    public PetConfig Pet { get; set; } = new();
+
     /// <summary>触发事件（手动/定时/同步完成后按动作流水线执行 git、webhook、备份；App 运行期内生效）。</summary>
     public TriggerConfig[] Triggers { get; set; } = Array.Empty<TriggerConfig>();
 

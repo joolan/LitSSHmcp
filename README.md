@@ -6,7 +6,7 @@
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-6E56CF.svg)](https://modelcontextprotocol.io/)
 [![AI Assistant](https://img.shields.io/badge/AI%20Assistant-Opencode-blue.svg)](https://opencode.ai/)
 
-> **让 AI 安全地运维你的服务器。** Windows 下的 SSH / 数据库运维 MCP 服务器与 WPF 桌面管理端：统一 SSH、MySQL / PostgreSQL / Redis、资产拓扑、远程桌面、Jenkins 与 AI 运维助手。
+> **让 AI 安全地运维你的服务器。** Windows 下的 SSH / 数据库运维 MCP 服务器与 WPF 桌面管理端：统一 SSH、MySQL / PostgreSQL / Redis、资产拓扑、远程桌面、Jenkins、Kubernetes 与 AI 运维助手。
 
 <p align="center">
   <img src="docs/images/readme/01-home.png" alt="LitSSH MCP 桌面端 · 首页看板" width="960">
@@ -30,9 +30,28 @@
 
 <table>
 <tr>
-<td width="33%"><img src="docs/images/readme/06-datasource.png" alt="数据源工作台"><br><b>数据源工作台</b></td>
-<td width="33%"><img src="docs/images/readme/09-pet-editor.png" alt="桌面宠物素材编辑器"><br><b>桌面宠物素材编辑器</b></td>
-<td width="33%"><img src="docs/images/readme/10-backup.png" alt="存储维护与定时备份"><br><b>存储维护与定时备份</b></td>
+<td width="50%"><img src="docs/images/readme/02-servers.png" alt="SSH 服务器管理"><br><b>SSH 服务器管理</b></td>
+<td width="50%"><img src="docs/images/readme/03-terminal.png" alt="SSH 会话与 SFTP"><br><b>SSH 会话与 SFTP</b></td>
+</tr>
+<tr>
+<td><img src="docs/images/readme/04-topology.png" alt="资产拓扑"><br><b>资产拓扑与影响面</b></td>
+<td><img src="docs/images/readme/05-agent.png" alt="AI 运维助手"><br><b>AI 运维助手</b></td>
+</tr>
+<tr>
+<td><img src="docs/images/readme/06-datasource.png" alt="数据源工作台"><br><b>数据源工作台</b></td>
+<td><img src="docs/images/readme/07-remote-desktop.png" alt="远程桌面"><br><b>远程桌面 RDP / VNC</b></td>
+</tr>
+<tr>
+<td><img src="docs/images/readme/08-jenkins.png" alt="Jenkins"><br><b>Jenkins 多连接</b></td>
+<td><img src="docs/images/readme/09-pet-editor.png" alt="桌面宠物素材编辑器"><br><b>桌面宠物素材编辑器</b></td>
+</tr>
+<tr>
+<td><img src="docs/images/readme/10-backup.png" alt="存储维护与定时备份"><br><b>存储维护与定时备份</b></td>
+<td><img src="docs/images/readme/11-audit.png" alt="审计日志"><br><b>审计日志</b></td>
+</tr>
+<tr>
+<td><img src="docs/images/readme/12-web-agent.png" alt="Web 助手"><br><b>Web 运维助手</b></td>
+<td><img src="docs/images/readme/13-password-vault.png" alt="密码保管箱"><br><b>密码保管箱</b></td>
 </tr>
 </table>
 
@@ -41,7 +60,7 @@
 | 组成 | 项目 | 说明 |
 |------|------|------|
 | **MCP 服务** | `LitSSHmcp.McpServer` | stdio MCP 服务器，向 Claude Desktop / Cursor / Cline / CodeBuddy / opencode 等客户端暴露运维工具。 |
-| **桌面 App** | `LitSSHmcp.App` | WPF 管理端：服务器、数据源、应用、拓扑、远程桌面、Jenkins、审计、桌面宠物和内置 AI 助手。 |
+| **桌面 App** | `LitSSHmcp.App` | WPF 管理端：服务器、数据源、应用、拓扑、远程桌面、Jenkins、Kubernetes、审计、桌面宠物和内置 AI 助手。 |
 | **Web 助手** | `LitSSHmcp.Web` | 浏览器 AI 运维助手：独立账号、每会话独立子进程、流式聊天、Web 审批与文件下载。 |
 
 ## 核心能力

@@ -41,6 +41,23 @@ public class TargetLimiterTests
     }
 
     [Fact]
+    public void Capacity_change_does_not_dispose_semaphore_held_by_active_lease()
+    {
+        var options = new FakeSecurityOptions
+        {
+            Limits = new LimitsConfig { MaxConcurrentPerTarget = 1, MaxCallsPerMinutePerTarget = 0 }
+        };
+        var limiter = new TargetLimiter(options);
+
+        Assert.True(limiter.TryAcquire("ssh:a", out var lease1, out _));
+        options.Limits = new LimitsConfig { MaxConcurrentPerTarget = 4, MaxCallsPerMinutePerTarget = 0 };
+
+        Assert.True(limiter.TryAcquire("ssh:a", out var lease2, out _));
+        lease1!.Dispose();
+        lease2!.Dispose();
+    }
+
+    [Fact]
     public void Different_targets_are_independent()
     {
         var options = new FakeSecurityOptions

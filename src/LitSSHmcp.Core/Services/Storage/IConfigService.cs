@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -66,6 +67,8 @@ public class ConfigService : IConfigService, IStrictConfigService
     private static readonly SemaphoreSlim SaveGate = new(1, 1);
     private static readonly ConditionalWeakTable<AppConfig, ConfigSnapshot> Snapshots = new();
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(5);
+    private static readonly ConcurrentDictionary<string, PathCache> LoadCache =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private readonly string _configPath;
     private readonly ISecretProtector _protector;
@@ -75,6 +78,17 @@ public class ConfigService : IConfigService, IStrictConfigService
         public AppConfig Config { get; } = config;
         public string Fingerprint { get; } = fingerprint;
     }
+
+    private sealed class PathCache
+    {
+        public object Gate { get; } = new();
+        public AppConfig? Cached { get; set; }
+        public AppConfig? Persisted { get; set; }
+        public DateTime LastWriteUtc { get; set; }
+        public long Length { get; set; }
+    }
+
+    private readonly record struct FileStamp(DateTime LastWriteUtc, long Length);
 
     public ConfigService() : this(ConfigPaths.ConfigFile, new DpapiSecretProtector())
     {
@@ -102,6 +116,13 @@ public class ConfigService : IConfigService, IStrictConfigService
             return defaultConfig;
         }
 
+        var stamp = GetFileStamp();
+        if (TryGetCached(stamp, out var cached))
+        {
+            ServerConfigCache.Update(cached.Servers);
+            return cached;
+        }
+
         try
         {
             var json = await File.ReadAllTextAsync(_configPath);
@@ -114,6 +135,7 @@ public class ConfigService : IConfigService, IStrictConfigService
                 await SaveConfigAsync(config);
 
             Remember(config: config, persisted: config);
+            StoreCache(config);
             ServerConfigCache.Update(config.Servers);
             return config;
         }
@@ -124,7 +146,66 @@ public class ConfigService : IConfigService, IStrictConfigService
         }
         catch
         {
+            // 读盘/解析瞬时失败：返回上次成功快照，避免把进程当成"空配置"而 fail-open/误判。
+            if (TryGetCached(stamp, out var lastGood))
+            {
+                ServerConfigCache.Update(lastGood.Servers);
+                return lastGood;
+            }
             return new AppConfig();
+        }
+    }
+
+    private string CacheKey => Path.GetFullPath(_configPath);
+
+    private FileStamp GetFileStamp()
+    {
+        try
+        {
+            var info = new FileInfo(_configPath);
+            return info.Exists
+                ? new FileStamp(info.LastWriteTimeUtc, info.Length)
+                : new FileStamp(DateTime.MinValue, -1);
+        }
+        catch
+        {
+            return new FileStamp(DateTime.MinValue, -1);
+        }
+    }
+
+    private bool TryGetCached(FileStamp stamp, out AppConfig config)
+    {
+        config = new AppConfig();
+        if (!LoadCache.TryGetValue(CacheKey, out var entry))
+            return false;
+
+        AppConfig? cached = null;
+        AppConfig? persisted = null;
+        lock (entry.Gate)
+        {
+            if (entry.Cached is null || entry.Persisted is null ||
+                entry.LastWriteUtc != stamp.LastWriteUtc || entry.Length != stamp.Length)
+                return false;
+            cached = entry.Cached;
+            persisted = entry.Persisted;
+        }
+
+        config = Clone(cached!);
+        Remember(config, persisted!);
+        return true;
+    }
+
+    private void StoreCache(AppConfig config)
+    {
+        var snapshot = Clone(config);
+        var entry = LoadCache.GetOrAdd(CacheKey, _ => new PathCache());
+        var stamp = GetFileStamp();
+        lock (entry.Gate)
+        {
+            entry.Cached = snapshot;
+            entry.Persisted = snapshot;
+            entry.LastWriteUtc = stamp.LastWriteUtc;
+            entry.Length = stamp.Length;
         }
     }
 
@@ -167,6 +248,7 @@ public class ConfigService : IConfigService, IStrictConfigService
             // 刷新跳板机解析用的服务器快照（明文配置，连接工厂同步读取）。
             ServerConfigCache.Update(merged.Servers);
             Remember(config, merged);
+            StoreCache(merged);
         }
         finally
         {

@@ -52,30 +52,32 @@ public sealed class TargetLimiter : ITargetLimiter
                 return false;
             }
 
-            if (!state.Semaphore.Wait(0))
+            var semaphore = state.Semaphore;
+            if (!semaphore.Wait(0))
             {
                 reason = "concurrency_limit_exceeded";
                 return false;
             }
+            state.RegisterLease();
 
             // 进程内记账刻意放在跨进程闸门成功之后（见下）：被跨进程层拒绝的调用不计入本进程窗口。
-            // 代价是极端并发下进程内窗口可能短暂多计 ≤ 同时在途的线程数 —— 速率本是粗粒度节流，可接受；
+            // 代价是极端并发下进程内窗口可能短暂多 1~2 个同时在途的线程——速率本是粗粒度节流，可接受；
             // 真正的并发精确性由信号量（进程内）与槽位文件（跨进程）保证。
             if (!TryGlobalSlot(targetKey, maxConcurrent, out var slot, out reason))
             {
-                state.Semaphore.Release();
+                state.ReleaseLease(semaphore);
                 return false;
             }
 
             if (!TryGlobalRate(targetKey, maxPerMinute, out reason))
             {
                 slot?.Dispose();
-                state.Semaphore.Release();
+                state.ReleaseLease(semaphore);
                 return false;
             }
 
             state.CallTimes.Enqueue(now);
-            lease = new Lease(state.Semaphore, slot);
+            lease = new Lease(state, semaphore, slot);
             return true;
         }
     }
@@ -214,6 +216,9 @@ public sealed class TargetLimiter : ITargetLimiter
 
     private sealed class TargetState
     {
+        private readonly List<SemaphoreSlim> _retired = new();
+        private int _activeLeases;
+
         public TargetState(int capacity)
         {
             Semaphore = new SemaphoreSlim(capacity, capacity);
@@ -233,17 +238,43 @@ public sealed class TargetLimiter : ITargetLimiter
             var old = Semaphore;
             Semaphore = new SemaphoreSlim(capacity, capacity);
             Capacity = capacity;
-            old.Dispose();
+
+            // 旧信号量可能仍有持有者：先退休，等所有 lease 归还后再释放，避免 Dispose 后 Release 抛异常。
+            if (_activeLeases > 0)
+                _retired.Add(old);
+            else
+                old.Dispose();
+        }
+
+        public void RegisterLease() => _activeLeases++;
+
+        public void ReleaseLease(SemaphoreSlim semaphore)
+        {
+            semaphore.Release();
+            lock (Gate)
+            {
+                if (_activeLeases > 0)
+                    _activeLeases--;
+
+                if (_activeLeases == 0 && _retired.Count > 0)
+                {
+                    foreach (var retired in _retired)
+                        retired.Dispose();
+                    _retired.Clear();
+                }
+            }
         }
     }
 
     private sealed class Lease : IDisposable
     {
+        private readonly TargetState _state;
         private SemaphoreSlim? _semaphore;
         private FileStream? _slot;
 
-        public Lease(SemaphoreSlim semaphore, FileStream? slot)
+        public Lease(TargetState state, SemaphoreSlim semaphore, FileStream? slot)
         {
+            _state = state;
             _semaphore = semaphore;
             _slot = slot;
         }
@@ -251,7 +282,8 @@ public sealed class TargetLimiter : ITargetLimiter
         public void Dispose()
         {
             var semaphore = Interlocked.Exchange(ref _semaphore, null);
-            semaphore?.Release();
+            if (semaphore is not null)
+                _state.ReleaseLease(semaphore);
             Interlocked.Exchange(ref _slot, null)?.Dispose();
         }
     }

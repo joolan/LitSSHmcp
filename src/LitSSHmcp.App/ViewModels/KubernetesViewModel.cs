@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
+using LitSSHmcp.App.Controls;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Models;
@@ -74,6 +75,14 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
     private string _compareStatusMessage = string.Empty;
     private bool _suppressSelectionRefresh;
     private bool _disposed;
+    private bool _isActive;
+    private bool _activationBusy;
+    private bool _connectionsLoaded;
+    private bool _connectionsStale = true;
+    private DateTime _lastDashboardUtc = DateTime.MinValue;
+    private CancellationTokenSource? _refreshCts;
+    private static readonly TimeSpan PageRefreshTtl = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan PageRefreshTimeout = TimeSpan.FromSeconds(20);
     private readonly DispatcherTimer _autoRefreshTimer;
     private bool _isAutoRefreshEnabled;
     private int _autoRefreshSeconds = 30;
@@ -97,12 +106,12 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         _autoRefreshTimer = new DispatcherTimer();
         _autoRefreshTimer.Tick += (_, _) =>
         {
-            if (SelectedConnection is not null && !IsBusy && !IsWriteBusy)
-                _ = RefreshAsync();
+            if (_isActive && SelectedConnection is not null && !IsBusy && !IsWriteBusy)
+                _ = RefreshAsync(PageRefreshTimeout);
         };
 
         RefreshCommand = new RelayCommand(
-            _ => AsyncOperation.Run("刷新 K8s 集群", RefreshAsync),
+            _ => AsyncOperation.Run("刷新 K8s 集群", () => RefreshAsync()),
             _ => SelectedConnection is not null && !IsBusy);
         AddConnectionCommand = new RelayCommand(_ => AddConnection(), _ => !IsBusy);
         EditConnectionCommand = new RelayCommand(_ => EditConnection(), _ => SelectedConnection is not null && !IsBusy);
@@ -144,34 +153,82 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
             _ => CanWrite && SelectedNode is not null && !IsWriteBusy);
 
         LoadAutoRefreshPrefs();
-        _ = LoadConnectionsAsync();
+    }
+
+    /// <summary>页面是否可见：不可见时停止自动刷新并取消在途刷新，避免切走后台仍持续打网络。</summary>
+    public void SetActive(bool active)
+    {
+        if (_isActive == active)
+            return;
+        _isActive = active;
+        if (active)
+        {
+            if (_isAutoRefreshEnabled)
+            {
+                _autoRefreshTimer.Interval = TimeSpan.FromSeconds(AutoRefreshSeconds);
+                _autoRefreshTimer.Start();
+            }
+        }
+        else
+        {
+            _autoRefreshTimer.Stop();
+            _refreshCts?.Cancel();
+        }
+    }
+
+    /// <summary>页面激活：首次加载连接；已加载过则仅在数据过期时刷新，避免来回切菜单重复拉全量资源。</summary>
+    public async Task ActivateAsync()
+    {
+        using var perf = PerfLog.Scope("kubernetes.activate", () => SelectedConnection?.DisplayName ?? "-");
+        SetActive(true);
+        if (_activationBusy)
+            return;
+
+        _activationBusy = true;
+        try
+        {
+            if (!_connectionsLoaded || _connectionsStale)
+            {
+                await LoadConnectionsAsync();
+                return;
+            }
+
+            if (SelectedConnection is null || DateTime.UtcNow - _lastDashboardUtc < PageRefreshTtl)
+                return;
+
+            await ShowCacheThenRefreshAsync(SelectedConnection);
+        }
+        finally
+        {
+            _activationBusy = false;
+        }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<KubernetesConnectionConfig> Connections { get; } = new();
-    public ObservableCollection<KubernetesNodeInfo> Nodes { get; } = new();
-    public ObservableCollection<KubernetesNamespaceInfo> Namespaces { get; } = new();
-    public ObservableCollection<KubernetesWorkloadInfo> Workloads { get; } = new();
-    public ObservableCollection<KubernetesPodInfo> Pods { get; } = new();
-    public ObservableCollection<KubernetesPodInfo> RelatedPods { get; } = new();
-    public ObservableCollection<KubernetesServiceInfo> RelatedServices { get; } = new();
-    public ObservableCollection<KubernetesIngressInfo> RelatedIngresses { get; } = new();
+    public RangeObservableCollection<KubernetesNodeInfo> Nodes { get; } = new();
+    public RangeObservableCollection<KubernetesNamespaceInfo> Namespaces { get; } = new();
+    public RangeObservableCollection<KubernetesWorkloadInfo> Workloads { get; } = new();
+    public RangeObservableCollection<KubernetesPodInfo> Pods { get; } = new();
+    public RangeObservableCollection<KubernetesPodInfo> RelatedPods { get; } = new();
+    public RangeObservableCollection<KubernetesServiceInfo> RelatedServices { get; } = new();
+    public RangeObservableCollection<KubernetesIngressInfo> RelatedIngresses { get; } = new();
     public ObservableCollection<string> PodContainers { get; } = new();
     public ObservableCollection<KubernetesServiceInfo> PodRelatedServices { get; } = new();
     public ObservableCollection<KubernetesIngressInfo> PodRelatedIngresses { get; } = new();
     public ObservableCollection<KubernetesEventInfo> PodEvents { get; } = new();
     public ObservableCollection<KubernetesPodInfo> ServiceRelatedPods { get; } = new();
     public ObservableCollection<KubernetesIngressInfo> ServiceRelatedIngresses { get; } = new();
-    public ObservableCollection<KubernetesHealthIssue> HealthIssues { get; } = new();
+    public RangeObservableCollection<KubernetesHealthIssue> HealthIssues { get; } = new();
     public ObservableCollection<KubernetesReleaseDifference> ComparisonRows { get; } = new();
     public ObservableCollection<KubernetesIngressDifference> IngressComparisonRows { get; } = new();
-    public ObservableCollection<KubernetesEventInfo> Events { get; } = new();
-    public ObservableCollection<KubernetesServiceInfo> Services { get; } = new();
-    public ObservableCollection<KubernetesIngressInfo> Ingresses { get; } = new();
-    public ObservableCollection<KubernetesPvcInfo> Pvcs { get; } = new();
-    public ObservableCollection<KubernetesStorageClassInfo> StorageClasses { get; } = new();
-    public ObservableCollection<string> NamespaceFilters { get; } = new();
+    public RangeObservableCollection<KubernetesEventInfo> Events { get; } = new();
+    public RangeObservableCollection<KubernetesServiceInfo> Services { get; } = new();
+    public RangeObservableCollection<KubernetesIngressInfo> Ingresses { get; } = new();
+    public RangeObservableCollection<KubernetesPvcInfo> Pvcs { get; } = new();
+    public RangeObservableCollection<KubernetesStorageClassInfo> StorageClasses { get; } = new();
+    public RangeObservableCollection<string> NamespaceFilters { get; } = new();
 
     public ICommand RefreshCommand { get; }
     public ICommand AddConnectionCommand { get; }
@@ -217,8 +274,9 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
             if (value is not null)
                 UiPrefs.SetString("kubernetes.lastConnectionId", value.Id);
 
-            if (!_suppressSelectionRefresh)
-                _ = RefreshAsync();
+            _lastDashboardUtc = DateTime.MinValue;
+            if (!_suppressSelectionRefresh && _isActive && value is not null)
+                _ = ShowCacheThenRefreshAsync(value);
             RaiseCommandStates();
         }
     }
@@ -285,7 +343,7 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         {
             if (!Set(ref _isAutoRefreshEnabled, value))
                 return;
-            if (value)
+            if (value && _isActive)
             {
                 _autoRefreshTimer.Interval = TimeSpan.FromSeconds(AutoRefreshSeconds);
                 _autoRefreshTimer.Start();
@@ -700,7 +758,12 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public void ReloadConfig() => _ = LoadConnectionsAsync();
+    public void ReloadConfig()
+    {
+        _connectionsStale = true;
+        if (_isActive)
+            _ = LoadConnectionsAsync();
+    }
 
     public async Task LoadConnectionsAsync()
     {
@@ -725,19 +788,22 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
             NotifySelectionChanged();
             SelectedConnection = selected;
             _suppressSelectionRefresh = false;
+            _connectionsLoaded = true;
+            _connectionsStale = false;
 
             if (selected is null)
             {
                 ClearData();
                 StatusMessage = "还没有可用的 K8s 连接，请先添加连接。";
             }
-            else
+            else if (_isActive)
             {
-                _ = RefreshAsync();
+                _ = ShowCacheThenRefreshAsync(selected);
             }
         }
         catch (Exception ex)
         {
+            _connectionsStale = true;
             ErrorMessage = $"加载 K8s 连接失败：{ex.Message}";
             StatusMessage = "无法读取 K8s 连接配置。";
         }
@@ -747,8 +813,90 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    private async Task RefreshAsync()
+    private async Task ShowCacheThenRefreshAsync(KubernetesConnectionConfig? connection)
     {
+        if (connection is null)
+        {
+            ClearData();
+            return;
+        }
+
+        await TryShowCachedDashboardAsync(connection.Id);
+        if (!_isActive || !ReferenceEquals(SelectedConnection, connection))
+            return;
+
+        await RefreshAsync(PageRefreshTimeout);
+    }
+
+    private async Task TryShowCachedDashboardAsync(string connectionId)
+    {
+        if (!_isActive || DateTime.UtcNow - _lastDashboardUtc < PageRefreshTtl)
+            return;
+
+        var cached = await PageDiskCache.TryLoadAsync<KubernetesDashboard>("kubernetes", connectionId);
+        if (!cached.Found || cached.Value is not { } dashboard)
+            return;
+        if (!_isActive || !string.Equals(SelectedConnection?.Id, connectionId, StringComparison.Ordinal))
+            return;
+
+        ApplyDashboard(dashboard, fromCache: true);
+        StatusMessage = $"已显示 {cached.SavedUtc.ToLocalTime():MM-dd HH:mm} 的缓存，正在刷新…";
+    }
+
+    private void ApplyDashboard(KubernetesDashboard dashboard, bool fromCache)
+    {
+        Version = dashboard.Version;
+        Distribution = dashboard.Distribution;
+        NodeCount = dashboard.NodeCount;
+        ReadyNodeCount = dashboard.ReadyNodeCount;
+        NamespaceCount = dashboard.NamespaceCount;
+        PodCount = dashboard.PodCount;
+        RunningPodCount = dashboard.RunningPodCount;
+        WarningEventCount = dashboard.WarningEventCount;
+
+        Replace(Nodes, dashboard.Nodes);
+        Replace(Namespaces, dashboard.Namespaces);
+        _allWorkloads.Clear();
+        _allWorkloads.AddRange(dashboard.Workloads);
+        _allPods.Clear();
+        _allPods.AddRange(dashboard.Pods);
+        _allEvents.Clear();
+        _allEvents.AddRange(dashboard.Events);
+        _allServices.Clear();
+        _allServices.AddRange(dashboard.Services);
+        _allIngresses.Clear();
+        _allIngresses.AddRange(dashboard.Ingresses);
+        _allPvcs.Clear();
+        _allPvcs.AddRange(dashboard.Pvcs);
+        Replace(StorageClasses, dashboard.StorageClasses);
+
+        RebuildNamespaceFilters();
+        ApplyFilters();
+        ApplyMetrics(dashboard.Metrics);
+        BuildHealth(dashboard);
+        OnPropertyChanged(nameof(NodeHealth));
+        OnPropertyChanged(nameof(PodHealth));
+        OnPropertyChanged(nameof(WarningHealth));
+        OnPropertyChanged(nameof(HasNodes));
+        OnPropertyChanged(nameof(HasWorkloads));
+        OnPropertyChanged(nameof(HasPods));
+        OnPropertyChanged(nameof(HasEvents));
+        OnPropertyChanged(nameof(HasServices));
+        OnPropertyChanged(nameof(HasIngresses));
+        OnPropertyChanged(nameof(HasPvcs));
+        OnPropertyChanged(nameof(HasStorageClasses));
+
+        if (!fromCache)
+        {
+            StatusMessage = dashboard.WarningEventCount > 0
+                ? $"已加载 {dashboard.PodCount} 个 Pod，{dashboard.WarningEventCount} 条 Warning 事件。{MetricsStatus}"
+                : $"已加载 {dashboard.PodCount} 个 Pod，集群状态正常。{MetricsStatus}";
+        }
+    }
+
+    private async Task RefreshAsync(TimeSpan? timeout = null)
+    {
+        using var perf = PerfLog.Scope("kubernetes.refresh", () => SelectedConnection?.DisplayName ?? "-");
         if (IsBusy)
             return;
         var connection = SelectedConnection;
@@ -757,6 +905,14 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
             ClearData();
             return;
         }
+
+        _refreshCts?.Cancel();
+        _refreshCts?.Dispose();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        if (timeout is { } limit)
+            cts.CancelAfter(limit);
+        _refreshCts = cts;
+        var ct = cts.Token;
 
         var server = FindSshServer(connection);
         SelectedWorkload = null;
@@ -767,58 +923,18 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         StatusMessage = $"正在读取 {connection.DisplayName}…";
         try
         {
-            var dashboard = await _service.LoadDashboardAsync(connection, server, _lifetime.Token);
-            if (!ReferenceEquals(SelectedConnection, connection))
+            var dashboard = await _service.LoadDashboardAsync(connection, server, ct);
+            if (!_isActive || !ReferenceEquals(SelectedConnection, connection))
                 return;
 
-            Version = dashboard.Version;
-            Distribution = dashboard.Distribution;
-            NodeCount = dashboard.NodeCount;
-            ReadyNodeCount = dashboard.ReadyNodeCount;
-            NamespaceCount = dashboard.NamespaceCount;
-            PodCount = dashboard.PodCount;
-            RunningPodCount = dashboard.RunningPodCount;
-            WarningEventCount = dashboard.WarningEventCount;
-
-            Replace(Nodes, dashboard.Nodes);
-            Replace(Namespaces, dashboard.Namespaces);
-            _allWorkloads.Clear();
-            _allWorkloads.AddRange(dashboard.Workloads);
-            _allPods.Clear();
-            _allPods.AddRange(dashboard.Pods);
-            _allEvents.Clear();
-            _allEvents.AddRange(dashboard.Events);
-            _allServices.Clear();
-            _allServices.AddRange(dashboard.Services);
-            _allIngresses.Clear();
-            _allIngresses.AddRange(dashboard.Ingresses);
-            _allPvcs.Clear();
-            _allPvcs.AddRange(dashboard.Pvcs);
-            Replace(StorageClasses, dashboard.StorageClasses);
-
-            RebuildNamespaceFilters();
-            ApplyFilters();
-            ApplyMetrics(dashboard.Metrics);
-            BuildHealth(dashboard);
-            OnPropertyChanged(nameof(NodeHealth));
-            OnPropertyChanged(nameof(PodHealth));
-            OnPropertyChanged(nameof(WarningHealth));
-            OnPropertyChanged(nameof(HasNodes));
-            OnPropertyChanged(nameof(HasWorkloads));
-            OnPropertyChanged(nameof(HasPods));
-            OnPropertyChanged(nameof(HasEvents));
-            OnPropertyChanged(nameof(HasServices));
-            OnPropertyChanged(nameof(HasIngresses));
-            OnPropertyChanged(nameof(HasPvcs));
-            OnPropertyChanged(nameof(HasStorageClasses));
-
-            StatusMessage = dashboard.WarningEventCount > 0
-                ? $"已加载 {dashboard.PodCount} 个 Pod，{dashboard.WarningEventCount} 条 Warning 事件。{MetricsStatus}"
-                : $"已加载 {dashboard.PodCount} 个 Pod，集群状态正常。{MetricsStatus}";
+            ApplyDashboard(dashboard, fromCache: false);
+            _lastDashboardUtc = DateTime.UtcNow;
+            _ = PageDiskCache.SaveAsync("kubernetes", connection.Id, dashboard);
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = "已取消刷新。";
+            if (_isActive)
+                StatusMessage = "已取消刷新。";
         }
         catch (Exception ex)
         {
@@ -828,6 +944,9 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         finally
         {
             IsBusy = false;
+            if (ReferenceEquals(_refreshCts, cts))
+                _refreshCts = null;
+            cts.Dispose();
         }
     }
 
@@ -1365,10 +1484,10 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
     }
     private void BuildHealth(KubernetesDashboard dashboard)
     {
-        HealthIssues.Clear();
+        var issues = new List<KubernetesHealthIssue>();
 
         foreach (var node in dashboard.Nodes.Where(node => node.Status != "Ready"))
-            HealthIssues.Add(new KubernetesHealthIssue
+            issues.Add(new KubernetesHealthIssue
             {
                 Severity = "严重",
                 Category = "节点",
@@ -1381,7 +1500,7 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         {
             var background = pod.Containers.Count == 0 ? string.Empty : string.Join(", ", pod.Containers);
             if (IsProblemPodStatus(pod.Status))
-                HealthIssues.Add(new KubernetesHealthIssue
+                issues.Add(new KubernetesHealthIssue
                 {
                     Severity = "严重",
                     Category = "Pod",
@@ -1390,7 +1509,7 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
                     Message = $"状态 {pod.Status}，重启 {pod.Restarts} 次{DescribeContainers(background)}"
                 });
             else if (pod.Restarts >= 5)
-                HealthIssues.Add(new KubernetesHealthIssue
+                issues.Add(new KubernetesHealthIssue
                 {
                     Severity = "警告",
                     Category = "Pod",
@@ -1402,7 +1521,7 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
 
         foreach (var workload in dashboard.Workloads.Where(workload =>
                      workload.Status is "进度中" or "失败" || workload.Status.Contains("失败", StringComparison.Ordinal)))
-            HealthIssues.Add(new KubernetesHealthIssue
+            issues.Add(new KubernetesHealthIssue
             {
                 Severity = "警告",
                 Category = "工作负载",
@@ -1412,7 +1531,7 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
             });
 
         foreach (var pvc in dashboard.Pvcs.Where(pvc => pvc.Status is not ("Bound" or "—")))
-            HealthIssues.Add(new KubernetesHealthIssue
+            issues.Add(new KubernetesHealthIssue
             {
                 Severity = "警告",
                 Category = "存储",
@@ -1422,7 +1541,7 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
             });
 
         foreach (var evt in dashboard.Events.Where(evt => evt.Type == "Warning"))
-            HealthIssues.Add(new KubernetesHealthIssue
+            issues.Add(new KubernetesHealthIssue
             {
                 Severity = "警告",
                 Category = "事件",
@@ -1431,14 +1550,12 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
                 Message = $"{evt.Reason}：{evt.Message}"
             });
 
-        var ordered = HealthIssues
+        var ordered = issues
             .OrderBy(item => item.Severity == "严重" ? 0 : 1)
             .ThenBy(item => item.Category, StringComparer.Ordinal)
             .ThenBy(item => item.Object, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        HealthIssues.Clear();
-        foreach (var item in ordered)
-            HealthIssues.Add(item);
+        HealthIssues.ReplaceRange(ordered);
 
         OnPropertyChanged(nameof(HasHealthIssues));
         OnPropertyChanged(nameof(HealthIssueCount));
@@ -1722,10 +1839,9 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
 
     private void RebuildNamespaceFilters()
     {
-        NamespaceFilters.Clear();
-        NamespaceFilters.Add("全部命名空间");
-        foreach (var item in Namespaces.Select(item => item.Name).Where(name => !string.IsNullOrWhiteSpace(name)))
-            NamespaceFilters.Add(item);
+        var filters = new List<string> { "全部命名空间" };
+        filters.AddRange(Namespaces.Select(item => item.Name).Where(name => !string.IsNullOrWhiteSpace(name)));
+        NamespaceFilters.ReplaceRange(filters);
 
         if (!NamespaceFilters.Contains(SelectedNamespace))
             _selectedNamespace = "全部命名空间";
@@ -1744,57 +1860,42 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
 
     private void ApplyWorkloadFilter()
     {
-        Workloads.Clear();
-        foreach (var item in _allWorkloads.Where(MatchesNamespace))
-            Workloads.Add(item);
+        Workloads.ReplaceRange(_allWorkloads.Where(MatchesNamespace));
         OnPropertyChanged(nameof(HasWorkloads));
     }
 
     private void ApplyPodFilter()
     {
-        Pods.Clear();
         var search = PodSearchText.Trim();
-        foreach (var item in _allPods.Where(MatchesNamespace))
-        {
-            if (search.Length > 0 &&
-                !item.Name.Contains(search, StringComparison.OrdinalIgnoreCase) &&
-                !item.Namespace.Contains(search, StringComparison.OrdinalIgnoreCase) &&
-                !item.Status.Contains(search, StringComparison.OrdinalIgnoreCase))
-                continue;
-            Pods.Add(item);
-        }
+        Pods.ReplaceRange(_allPods.Where(MatchesNamespace).Where(item =>
+            search.Length == 0 ||
+            item.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+            item.Namespace.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+            item.Status.Contains(search, StringComparison.OrdinalIgnoreCase)));
         OnPropertyChanged(nameof(HasPods));
     }
 
     private void ApplyEventFilter()
     {
-        Events.Clear();
-        foreach (var item in _allEvents.Where(MatchesNamespace))
-            Events.Add(item);
+        Events.ReplaceRange(_allEvents.Where(MatchesNamespace));
         OnPropertyChanged(nameof(HasEvents));
     }
 
     private void ApplyServiceFilter()
     {
-        Services.Clear();
-        foreach (var item in _allServices.Where(MatchesNamespace))
-            Services.Add(item);
+        Services.ReplaceRange(_allServices.Where(MatchesNamespace));
         OnPropertyChanged(nameof(HasServices));
     }
 
     private void ApplyIngressFilter()
     {
-        Ingresses.Clear();
-        foreach (var item in _allIngresses.Where(MatchesNamespace))
-            Ingresses.Add(item);
+        Ingresses.ReplaceRange(_allIngresses.Where(MatchesNamespace));
         OnPropertyChanged(nameof(HasIngresses));
     }
 
     private void ApplyPvcFilter()
     {
-        Pvcs.Clear();
-        foreach (var item in _allPvcs.Where(MatchesNamespace))
-            Pvcs.Add(item);
+        Pvcs.ReplaceRange(_allPvcs.Where(MatchesNamespace));
         OnPropertyChanged(nameof(HasPvcs));
     }
 
@@ -1882,12 +1983,8 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(HealthStatusText));
     }
 
-    private static void Replace<T>(ObservableCollection<T> target, IEnumerable<T> values)
-    {
-        target.Clear();
-        foreach (var value in values)
-            target.Add(value);
-    }
+    private static void Replace<T>(RangeObservableCollection<T> target, IEnumerable<T> values)
+        => target.ReplaceRange(values);
 
     private void NotifySelectionChanged()
     {
@@ -1932,7 +2029,7 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         _autoRefreshTimer.Interval = TimeSpan.FromSeconds(_autoRefreshSeconds);
         _isAutoRefreshEnabled = enabled;
         OnPropertyChanged(nameof(IsAutoRefreshEnabled));
-        if (enabled)
+        if (enabled && _isActive)
             _autoRefreshTimer.Start();
     }
     public void Dispose()
@@ -1941,6 +2038,9 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
             return;
         _disposed = true;
         _autoRefreshTimer.Stop();
+        _refreshCts?.Cancel();
+        _refreshCts?.Dispose();
+        _refreshCts = null;
         _lifetime.Cancel();
         _lifetime.Dispose();
     }

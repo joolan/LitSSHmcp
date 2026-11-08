@@ -223,33 +223,35 @@ public sealed class KubernetesService
         SshServerConfig? sshServer,
         CancellationToken ct = default)
     {
+        // 合并查询：把 10 条 kubectl 请求降为 2 条（集群级 + 命名空间级），
+        // 在远端串行 SSH 模式下可显著减少弱网等待。
         var versionTask = RunAsync(config, sshServer, new[] { "version", "-o", "json" }, ct);
-        var nodesTask = RunAsync(config, sshServer, new[] { "get", "nodes", "-o", "json" }, ct);
-        var namespacesTask = RunAsync(config, sshServer, new[] { "get", "namespaces", "-o", "json" }, ct);
-        var podsTask = RunAsync(config, sshServer, new[] { "get", "pods", "-A", "-o", "json" }, ct);
-        var workloadsTask = RunAsync(config, sshServer,
-            new[] { "get", "deployments,statefulsets,daemonsets,cronjobs", "-A", "-o", "json" }, ct);
-        var eventsTask = RunAsync(config, sshServer, new[] { "get", "events", "-A", "-o", "json" }, ct);
-        var servicesTask = RunAsync(config, sshServer, new[] { "get", "services", "-A", "-o", "json" }, ct);
-        var ingressesTask = RunAsync(config, sshServer, new[] { "get", "ingresses", "-A", "-o", "json" }, ct);
-        var pvcsTask = RunAsync(config, sshServer, new[] { "get", "persistentvolumeclaims", "-A", "-o", "json" }, ct);
-        var storageClassesTask = RunAsync(config, sshServer, new[] { "get", "storageclasses", "-o", "json" }, ct);
+        var clusterTask = RunAsync(config, sshServer,
+            new[] { "get", "nodes,namespaces,storageclasses", "-o", "json" }, ct);
+        var namespacedTask = RunAsync(config, sshServer,
+            new[]
+            {
+                "get",
+                "pods,deployments,statefulsets,daemonsets,cronjobs,events,services,ingresses,persistentvolumeclaims",
+                "-A", "-o", "json"
+            }, ct);
 
         var metricsTask = TryLoadMetricsAsync(config, sshServer, ct);
-        await Task.WhenAll(versionTask, nodesTask, namespacesTask, podsTask, workloadsTask, eventsTask,
-                servicesTask, ingressesTask, pvcsTask, storageClassesTask)
-            .ConfigureAwait(false);
+        await Task.WhenAll(versionTask, clusterTask, namespacedTask).ConfigureAwait(false);
 
         var metrics = await metricsTask.ConfigureAwait(false);
-        var pods = ParsePods(await podsTask.ConfigureAwait(false));
-        var nodes = ParseNodes(await nodesTask.ConfigureAwait(false), pods);
-        var namespaces = ParseNamespaces(await namespacesTask.ConfigureAwait(false));
-        var workloads = ParseWorkloads(await workloadsTask.ConfigureAwait(false));
-        var events = ParseEvents(await eventsTask.ConfigureAwait(false));
-        var services = ParseServices(await servicesTask.ConfigureAwait(false));
-        var ingresses = ParseIngresses(await ingressesTask.ConfigureAwait(false));
-        var pvcs = ParsePvcs(await pvcsTask.ConfigureAwait(false));
-        var storageClasses = ParseStorageClasses(await storageClassesTask.ConfigureAwait(false));
+        var clusterJson = await clusterTask.ConfigureAwait(false);
+        var namespacedJson = await namespacedTask.ConfigureAwait(false);
+        var pods = ParsePods(FilterItemsByKind(namespacedJson, "Pod"));
+        var nodes = ParseNodes(FilterItemsByKind(clusterJson, "Node"), pods);
+        var namespaces = ParseNamespaces(FilterItemsByKind(clusterJson, "Namespace"));
+        var workloads = ParseWorkloads(FilterItemsByKind(namespacedJson,
+            "Deployment", "StatefulSet", "DaemonSet", "CronJob"));
+        var events = ParseEvents(FilterItemsByKind(namespacedJson, "Event"));
+        var services = ParseServices(FilterItemsByKind(namespacedJson, "Service"));
+        var ingresses = ParseIngresses(FilterItemsByKind(namespacedJson, "Ingress"));
+        var pvcs = ParsePvcs(FilterItemsByKind(namespacedJson, "PersistentVolumeClaim"));
+        var storageClasses = ParseStorageClasses(FilterItemsByKind(clusterJson, "StorageClass"));
         var versionJson = await versionTask.ConfigureAwait(false);
 
         return new KubernetesDashboard
@@ -669,6 +671,36 @@ public sealed class KubernetesService
     {
         using var document = JsonDocument.Parse(json);
         return GetItems(document.RootElement).Count();
+    }
+
+    /// <summary>从合并查询的 List 结果中按 kind 过滤出子集，保持原有解析器不变。</summary>
+    private static string FilterItemsByKind(string json, params string[] kinds)
+    {
+        if (kinds.Length == 0)
+            return json;
+
+        using var document = JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty("items", out var items) ||
+            items.ValueKind != JsonValueKind.Array)
+            return json;
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("kind", "List");
+            writer.WriteStartArray("items");
+            foreach (var item in items.EnumerateArray())
+            {
+                var kind = GetString(item, "kind");
+                if (kinds.Any(candidate => string.Equals(candidate, kind, StringComparison.OrdinalIgnoreCase)))
+                    item.WriteTo(writer);
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private static List<KubernetesNodeInfo> ParseNodes(string json, IReadOnlyList<KubernetesPodInfo> pods)

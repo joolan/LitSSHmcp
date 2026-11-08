@@ -101,13 +101,32 @@ public sealed class WebSessionManager : IAsyncDisposable
 
     private sealed class SessionSlot
     {
+        private int _cleanupStarted;
+
         public IWebRuntime? Runtime;
         public string OwnerUserId = string.Empty;
         public string OwnerUsername = string.Empty;
         public string WorkspaceDir = string.Empty;
         public readonly SemaphoreSlim TurnGate = new(1, 1);
         public readonly SemaphoreSlim RuntimeGate = new(1, 1);
+        public readonly object Gate = new();
         public CancellationTokenSource? TurnCts;
+        public TaskCompletionSource<bool>? TurnCompletion;
+        public bool Deleting;
+
+        /// <summary>释放 runtime；多次调用只执行一次。不 Dispose TurnGate：可能仍有等待者，交给 GC 更安全。</summary>
+        public async Task DisposeRuntimeAsync()
+        {
+            if (Interlocked.Exchange(ref _cleanupStarted, 1) != 0)
+                return;
+
+            var runtime = Runtime;
+            Runtime = null;
+            if (runtime is not null)
+            {
+                try { await runtime.DisposeAsync(); } catch { /* 释放失败忽略 */ }
+            }
+        }
     }
 
     /// <summary>IProgress 同步转发器：Report 直接回调，不排队到线程池，保持事件顺序。</summary>
@@ -173,16 +192,28 @@ public sealed class WebSessionManager : IAsyncDisposable
         await EnsureOwnerAsync(owner, sessionId, ct);
         if (_slots.TryRemove(sessionId, out var slot))
         {
-            try { slot.TurnCts?.Cancel(); } catch { /* 停轮失败忽略 */ }
+            TaskCompletionSource<bool>? completion;
+            CancellationTokenSource? turnCts;
+            lock (slot.Gate)
+            {
+                slot.Deleting = true;
+                completion = slot.TurnCompletion;
+                turnCts = slot.TurnCts;
+            }
+            try { turnCts?.Cancel(); } catch { /* 停轮失败忽略 */ }
             if (_fleetCts.TryRemove(sessionId, out var fleetCts))
             {
                 try { fleetCts.Cancel(); } catch { /* 已结束 */ }
             }
-            if (slot.Runtime is not null)
+
+            if (completion is not null)
             {
-                try { await slot.Runtime.DisposeAsync(); } catch { /* 释放失败忽略 */ }
+                try { await completion.Task.WaitAsync(TimeSpan.FromSeconds(10), ct); }
+                catch { /* 回合未在时限内结束：由回合 finally 在 Deleting 状态下清理 */ }
             }
-            slot.TurnGate.Dispose();
+
+            if (completion is null || completion.Task.IsCompleted)
+                await slot.DisposeRuntimeAsync();
         }
         if (_fleetPlans is not null)
         {
@@ -220,7 +251,18 @@ public sealed class WebSessionManager : IAsyncDisposable
         }
 
         var turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        slot.TurnCts = turnCts;
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (slot.Gate)
+        {
+            if (slot.Deleting)
+            {
+                turnCts.Dispose();
+                slot.TurnGate.Release();
+                throw new WebSessionNotFoundException();
+            }
+            slot.TurnCts = turnCts;
+            slot.TurnCompletion = completion;
+        }
         try
         {
             await EnsureRuntimeAsync(owner, sessionId, slot, turnCts.Token);
@@ -277,6 +319,15 @@ public sealed class WebSessionManager : IAsyncDisposable
                 slot.TurnCts = null;
             turnCts.Dispose();
             slot.TurnGate.Release();
+            completion.TrySetResult(true);
+            lock (slot.Gate)
+            {
+                if (ReferenceEquals(slot.TurnCompletion, completion))
+                    slot.TurnCompletion = null;
+            }
+
+            if (slot.Deleting)
+                await slot.DisposeRuntimeAsync();
         }
     }
 
@@ -288,6 +339,16 @@ public sealed class WebSessionManager : IAsyncDisposable
         var slot = _slots.GetOrAdd(sessionId, _ => new SessionSlot());
         if (!await slot.TurnGate.WaitAsync(0, ct))
             throw new WebSessionBusyException();
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (slot.Gate)
+        {
+            if (slot.Deleting)
+            {
+                slot.TurnGate.Release();
+                throw new WebSessionNotFoundException();
+            }
+            slot.TurnCompletion = completion;
+        }
         CancellationTokenSource? fleetCts = null;
         try
         {
@@ -312,6 +373,15 @@ public sealed class WebSessionManager : IAsyncDisposable
                 fleetCts.Dispose();
             }
             slot.TurnGate.Release();
+            completion.TrySetResult(true);
+            lock (slot.Gate)
+            {
+                if (ReferenceEquals(slot.TurnCompletion, completion))
+                    slot.TurnCompletion = null;
+            }
+
+            if (slot.Deleting)
+                await slot.DisposeRuntimeAsync();
         }
     }
 
@@ -752,11 +822,7 @@ public sealed class WebSessionManager : IAsyncDisposable
         foreach (var (id, slot) in _slots)
         {
             try { slot.TurnCts?.Cancel(); } catch { /* 忽略 */ }
-            if (slot.Runtime is not null)
-            {
-                try { await slot.Runtime.DisposeAsync(); } catch { /* 忽略 */ }
-            }
-            slot.TurnGate.Dispose();
+            await slot.DisposeRuntimeAsync();
             _slots.TryRemove(id, out _);
         }
     }

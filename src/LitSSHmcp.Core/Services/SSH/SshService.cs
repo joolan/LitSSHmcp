@@ -12,6 +12,7 @@ public class SshService : ISshService
 {
     private readonly string _logDir;
     private readonly object _logLock = new();
+    private DateTime _lastLogCleanupDate = DateTime.MinValue;
     private readonly ISshKnownHostsStore? _knownHosts;
     private readonly ISecurityOptionsProvider? _securityOptions;
     private readonly ITargetLimiter? _targetLimiter;
@@ -120,16 +121,41 @@ public class SshService : ISshService
     {
         try
         {
+            var safeMessage = SecretRedactor.Redact(message);
             var logFile = Path.Combine(_logDir, $"ssh_{DateTime.Now:yyyyMMdd}.log");
             var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-            var logEntry = $"[{timestamp}] [{level}] {message}{Environment.NewLine}";
+            var logEntry = $"[{timestamp}] [{level}] {safeMessage}{Environment.NewLine}";
 
             lock (_logLock)
             {
+                CleanupOldLogs();
                 File.AppendAllText(logFile, logEntry, Encoding.UTF8);
             }
         }
         catch { }
+    }
+
+    /// <summary>SSH 日志保留 7 天，避免无限增长并减少敏感信息长期留存。</summary>
+    private void CleanupOldLogs()
+    {
+        if (_lastLogCleanupDate.Date == DateTime.Today)
+            return;
+
+        _lastLogCleanupDate = DateTime.Today;
+        try
+        {
+            var cutoff = DateTime.Now.AddDays(-7);
+            foreach (var file in Directory.EnumerateFiles(_logDir, "ssh_*.log"))
+            {
+                try
+                {
+                    if (File.GetLastWriteTime(file) < cutoff)
+                        File.Delete(file);
+                }
+                catch { /* 单个日志删除失败忽略 */ }
+            }
+        }
+        catch { /* 日志目录不可用时忽略 */ }
     }
 
     public async Task<bool> TestConnectionAsync(SshServerConfig server, CancellationToken ct = default)
@@ -217,8 +243,8 @@ public class SshService : ISshService
             var sw = Stopwatch.StartNew();
             try
             {
-                Log($"Executing command on {server.Host}:{server.Port}: {command}");
-                return ExecuteCommandWithRetry(server, command, timeoutSeconds, sw);
+                Log($"Executing command on {server.Host}:{server.Port}: {RedactSecrets(command, server)}");
+                return ExecuteCommandWithRetry(server, command, timeoutSeconds, sw, ct);
             }
             catch (Exception ex)
             {
@@ -228,7 +254,7 @@ public class SshService : ISshService
                 {
                     Success = false,
                     Error = ex.Message,
-                    ErrorKind = ClassifySshException(ex),
+                    ErrorKind = ct.IsCancellationRequested ? "cancelled" : ClassifySshException(ex),
                     ExitCode = -1,
                     Duration = sw.Elapsed
                 }, server);
@@ -240,12 +266,13 @@ public class SshService : ISshService
         }, ct);
     }
 
-    private CommandResult ExecuteCommandWithRetry(SshServerConfig server, string command, int timeoutSeconds, Stopwatch sw)
+    private CommandResult ExecuteCommandWithRetry(SshServerConfig server, string command, int timeoutSeconds, Stopwatch sw,
+        CancellationToken ct)
     {
         using var conn = OpenConnection(server);
         try
         {
-            return ExecuteCommandOnClient(conn.Client, server, command, timeoutSeconds, sw);
+            return ExecuteCommandOnClient(conn.Client, server, command, timeoutSeconds, sw, ct);
         }
         catch (Exception ex) when (IsSafeChannelFailure(ex))
         {
@@ -256,7 +283,7 @@ public class SshService : ISshService
             using var retry = OpenConnection(server);
             try
             {
-                return ExecuteCommandOnClient(retry.Client, server, command, timeoutSeconds, sw);
+                return ExecuteCommandOnClient(retry.Client, server, command, timeoutSeconds, sw, ct);
             }
             catch
             {
@@ -272,16 +299,17 @@ public class SshService : ISshService
     }
 
     private CommandResult ExecuteCommandOnClient(SshClient client, SshServerConfig server, string command,
-        int timeoutSeconds, Stopwatch sw)
+        int timeoutSeconds, Stopwatch sw, CancellationToken ct)
     {
         using var cmd = client.CreateCommand(command);
         cmd.CommandTimeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 3600));
-        var result = cmd.Execute();
+        cmd.ExecuteAsync(ct).GetAwaiter().GetResult();
+        var result = cmd.Result ?? string.Empty;
         sw.Stop();
 
         Log($"Command executed, exit code: {cmd.ExitStatus}, duration: {sw.ElapsedMilliseconds}ms");
         if (!string.IsNullOrEmpty(result))
-            Log($"Command output: {result.Substring(0, Math.Min(result.Length, 500))}");
+            Log($"Command output: {RedactSecrets(result.Substring(0, Math.Min(result.Length, 500)), server)}");
 
         return RedactResult(new CommandResult
         {

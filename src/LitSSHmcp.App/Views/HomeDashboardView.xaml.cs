@@ -26,6 +26,9 @@ public partial class HomeDashboardView : UserControl
 
     private void OnViewUnloaded(object sender, RoutedEventArgs e) => _dashboard?.Stop();
 
+    private void OnOnboardingBackup(object sender, RoutedEventArgs e) =>
+        (DataContext as MainViewModel)?.OpenSettingsTab(6);
+
     private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (IsVisible)

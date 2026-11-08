@@ -16,6 +16,9 @@ Environment.SetEnvironmentVariable("LITSSH_APPROVAL_CHANNELS", "cli");
 // 桌面进程不注入此变量（D1 桌面仅归因不限权）。进程级变量同样由子进程继承。
 Environment.SetEnvironmentVariable(HostEnv.AuthzMode, HostEnv.Enforce);
 
+// 宿主退出时回收 MCP/终端等子进程，避免 Web 重启后残留。
+LitSSHmcp.Core.Services.Security.ProcessJob.EnsureKillOnClose();
+
 // 账号管理命令行（M3-1 账号体系 / §3.2）：--create-user <用户名> [--role …]（密码走 LITSSH_NEW_PASSWORD
 // 环境变量）、--list-users；未命中则继续起 Web 服务（其余参数照常透传给宿主）。
 if (await WebBootstrap.RunCliAsync(args) is { } cliExitCode)
@@ -72,6 +75,9 @@ builder.Services.AddSingleton<WebDownloadPolicy>();
 builder.Services.AddSingleton<WebDownloadLimiter>();
 
 var app = builder.Build();
+
+// 最外层异常边界：记录日志并返回稳定 500，避免未处理异常直接断开连接。
+app.UseMiddleware<WebExceptionMiddleware>();
 
 await app.Services.GetRequiredService<WebAccountsStore>().InitializeAsync();
 var webStore = app.Services.GetRequiredService<IContextStore>();

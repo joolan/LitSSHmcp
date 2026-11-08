@@ -47,6 +47,7 @@ public partial class PetAssetEditorWindow : FluentWindow
         GlobalFpsBox.Text = _draft.Fps.ToString();
         SourceBox.Text = _draft.Source;
         LicenseBox.Text = _draft.License;
+        FacingBox.SelectedIndex = _draft.Facing == PetFacing.Left ? 1 : 0;
         ActionBox.ItemsSource = Enum.GetValues<PetAction>().Select(action => new ActionItem(action, ActionLabel(action))).ToArray();
         ActionBox.SelectedIndex = 0;
         _previewTimer.Tick += (_, _) => PreviewTick();
@@ -131,6 +132,14 @@ public partial class PetAssetEditorWindow : FluentWindow
         PushUndo();
         frame.DelayMs = Math.Clamp(delay, 10, 5000);
         _previewAccumulator = 0;
+        MarkDirty();
+    }
+
+    private void OnFacingChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncing)
+            return;
+        _draft.Facing = FacingBox.SelectedIndex == 1 ? PetFacing.Left : PetFacing.Right;
         MarkDirty();
     }
 

@@ -426,7 +426,7 @@ public sealed class AssetGraphQueryService : IAssetGraphQueryService
         }
 
         var cappedLimit = Math.Clamp(limit, 1, MaxTimelinePoints);
-        var snapshots = await _snapshotStore.GetRecentAsync(server.Id, cappedLimit, ct);
+        var snapshots = await _snapshotStore.GetRecentWithDataAsync(server.Id, cappedLimit, ct);
         if (snapshots.Count == 0)
         {
             result.Error = $"服务器 {server.Name} 还没有快照";
@@ -504,7 +504,7 @@ public sealed class AssetGraphQueryService : IAssetGraphQueryService
             return result;
         }
 
-        var snapshots = await _snapshotStore.GetRecentAsync(server.Id, 100, ct);
+        var snapshots = await _snapshotStore.GetRecentWithDataAsync(server.Id, 100, ct);
         if (snapshots.Count == 0)
         {
             result.Error = $"服务器 {server.Name} 还没有快照";

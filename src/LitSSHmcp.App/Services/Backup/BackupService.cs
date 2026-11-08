@@ -174,6 +174,30 @@ public sealed class BackupService
         }
     }
 
+    /// <summary>把已有本地备份重新上传到 OSS（用于 OSS 上传失败后的重试）。</summary>
+    public async Task<BackupRunResult> UploadExistingAsync(BackupPlanConfig plan, AppConfig config,
+        string localPath, CancellationToken ct = default)
+    {
+        if (!plan.UploadToOss)
+            return new BackupRunResult(false, "该计划未启用 OSS 上传。", localPath);
+        if (!File.Exists(localPath))
+            return new BackupRunResult(false, "本地备份文件不存在。", localPath);
+
+        try
+        {
+            var secret = _protector.Unprotect(config.Backup.Oss.AccessKeySecretProtected) ?? string.Empty;
+            await _uploader.UploadAsync(config.Backup.Oss, secret, localPath,
+                BuildObjectKey(config.Backup.Oss, plan, Path.GetFileName(localPath)), ct);
+            return new BackupRunResult(true, "OSS 上传成功。", localPath, true,
+                "OSS 上传成功。", new FileInfo(localPath).Length);
+        }
+        catch (Exception ex)
+        {
+            return new BackupRunResult(false, "OSS 上传失败：" + ex.Message, localPath, false,
+                "OSS 上传失败：" + ex.Message);
+        }
+    }
+
     public static string BuildObjectKey(BackupOssConfig oss, BackupPlanConfig plan, string fileName)
     {
         var prefix = string.IsNullOrWhiteSpace(plan.OssPrefixOverride)

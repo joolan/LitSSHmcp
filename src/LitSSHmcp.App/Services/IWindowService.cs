@@ -20,6 +20,7 @@ public interface IWindowService
 
     TopologyWindow CreateTopologyWindow();
     AuditWindow CreateAuditWindow();
+    NotificationCenterWindow CreateNotificationCenterWindow();
     BatchExecWindow CreateBatchExecWindow(object dataContext);
 
     ServerMonitorWindow CreateServerMonitorWindow(ServerMonitorViewModel viewModel);
@@ -39,7 +40,7 @@ public interface IWindowService
     RemoteCopyWindow CreateRemoteCopyWindow(SshServerConfig server);
 
     AppSettingsWindow CreateAppSettingsWindow(IConfigService configService);
-    ToolboxWindow CreateToolboxWindow(ToolboxViewModel viewModel);
+    ToolboxWindow CreateToolboxWindow(ToolboxView view);
     ToolboxQuickLaunchWindow CreateToolboxQuickLaunchWindow(ToolboxQuickLaunchViewModel viewModel);
     AgentWindow CreateAgentWindow(
         IConfigService configService,

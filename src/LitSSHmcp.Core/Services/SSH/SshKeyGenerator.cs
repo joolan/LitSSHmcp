@@ -37,21 +37,51 @@ public static class SshKeyGenerator
     {
         publicKey = string.Empty;
         var type = string.Equals(keyType, "rsa", StringComparison.OrdinalIgnoreCase) ? "rsa" : "ed25519";
+        string? askpassDir = null;
         try
         {
-            var args = type == "rsa"
-                ? $"-t rsa -b 4096 -f \"{privatePath}\" -N \"{passphrase ?? string.Empty}\" -C \"{comment}\""
-                : $"-t ed25519 -f \"{privatePath}\" -N \"{passphrase ?? string.Empty}\" -C \"{comment}\"";
             var psi = new ProcessStartInfo
             {
                 FileName = "ssh-keygen",
-                Arguments = args,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 RedirectStandardInput = true
             };
+            psi.ArgumentList.Add("-t");
+            psi.ArgumentList.Add(type);
+            if (type == "rsa")
+            {
+                psi.ArgumentList.Add("-b");
+                psi.ArgumentList.Add("4096");
+            }
+            psi.ArgumentList.Add("-f");
+            psi.ArgumentList.Add(privatePath);
+            psi.ArgumentList.Add("-C");
+            psi.ArgumentList.Add(comment);
+
+            if (string.IsNullOrEmpty(passphrase))
+            {
+                psi.ArgumentList.Add("-N");
+                psi.ArgumentList.Add(string.Empty);
+            }
+            else
+            {
+                // 不把口令放进 argv：用 SSH_ASKPASS 临时脚本从环境变量读取（base64 以兼容换行/特殊字符）。
+                askpassDir = Path.Combine(Path.GetTempPath(), "litssh-askpass-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(askpassDir);
+                var askpassPath = Path.Combine(askpassDir, "askpass.cmd");
+                File.WriteAllText(askpassPath,
+                    "@echo off\r\npowershell -NoProfile -NonInteractive -Command \"$b=[Convert]::FromBase64String($env:LITSSH_ASKPASS_B64);[Console]::Out.Write([Text.Encoding]::UTF8.GetString($b))\"\r\n",
+                    new UTF8Encoding(false));
+                psi.Environment["SSH_ASKPASS"] = askpassPath;
+                psi.Environment["SSH_ASKPASS_REQUIRE"] = "force";
+                psi.Environment["DISPLAY"] = ":0";
+                psi.Environment["LITSSH_ASKPASS_B64"] =
+                    Convert.ToBase64String(Encoding.UTF8.GetBytes(passphrase));
+            }
+
             using var process = Process.Start(psi);
             if (process is null)
                 return false;
@@ -73,6 +103,13 @@ public static class SshKeyGenerator
         {
             // ssh-keygen 不存在或执行失败 → 回退
             return false;
+        }
+        finally
+        {
+            if (askpassDir is not null)
+            {
+                try { Directory.Delete(askpassDir, recursive: true); } catch { /* ignore */ }
+            }
         }
     }
 

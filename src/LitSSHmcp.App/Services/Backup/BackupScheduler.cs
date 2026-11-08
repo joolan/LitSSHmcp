@@ -21,6 +21,7 @@ public sealed class BackupScheduler : IDisposable
     }
 
     public event Action<string, bool>? RunningChanged;
+    public event Action<BackupPlanConfig, BackupRunResult>? Completed;
 
     public void Start() => _ = StartAsync();
 
@@ -164,6 +165,8 @@ public sealed class BackupScheduler : IDisposable
                     : "fail:" + final.Message
             };
             BackupStateStore.Save(plan.Id, state);
+            try { Completed?.Invoke(plan, final); }
+            catch { /* 通知失败不影响备份结果 */ }
         }
         finally
         {

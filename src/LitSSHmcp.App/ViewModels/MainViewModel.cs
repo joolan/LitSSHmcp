@@ -145,6 +145,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
 
         CommandSync = new CommandSyncService(Sessions, OnCommandSyncStateChanged);
         HomeDashboard = new HomeDashboardViewModel();
+        Services.Notifications.NotificationCenterService.Changed += RefreshNotificationState;
 
         // 服务器列表按「分组」字段分组（连接管理器树形分组）
         GroupedServers = System.Windows.Data.CollectionViewSource.GetDefaultView(Servers);
@@ -359,10 +360,12 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         set
         {
             if (_currentPage == value) return;
+            var previous = _currentPage;
             _currentPage = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ShowAgentBadge));
             OnPropertyChanged(nameof(ShowJenkinsBadge));
+            DeactivatePage(previous);
         }
     }
 
@@ -1086,102 +1089,6 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         _settingsWindow.Show();
     }
 
-    // 数据源管理：主区域页面
-    private DatasourceManageViewModel? _datasourcePage;
-    public DatasourceManageViewModel? DatasourcePage
-    {
-        get => _datasourcePage;
-        private set { _datasourcePage = value; OnPropertyChanged(); }
-    }
-
-    private void NavigateDataSources()
-    {
-        DatasourcePage ??= CreateDatasourcePage();
-        DatasourcePage.RefreshCommand.Execute(null);
-        CurrentPage = MainPage.DataSources;
-    }
-
-    // 应用管理：主区域页面
-    private ApplicationManageViewModel? _applicationPage;
-    public ApplicationManageViewModel? ApplicationPage
-    {
-        get => _applicationPage;
-        private set { _applicationPage = value; OnPropertyChanged(); }
-    }
-
-    private void NavigateApplications()
-    {
-        ApplicationPage ??= new ApplicationManageViewModel(_configService, Application.Current.MainWindow);
-        ApplicationPage.RefreshCommand.Execute(null);
-        CurrentPage = MainPage.Applications;
-    }
-
-    // 远程桌面（RDP / VNC）：主区域页面
-    private RemoteDesktopManageViewModel? _remoteDesktopPage;
-    public RemoteDesktopManageViewModel? RemoteDesktopPage
-    {
-        get => _remoteDesktopPage;
-        private set { _remoteDesktopPage = value; OnPropertyChanged(); }
-    }
-
-    private void NavigateRemoteDesktops()
-    {
-        RemoteDesktopPage ??= new RemoteDesktopManageViewModel(_configService, services: _services);
-        RemoteDesktopPage.RefreshCommand.Execute(null);
-        CurrentPage = MainPage.RemoteDesktops;
-    }
-
-    // Jenkins：主区域页面；连接数量不设上限，环境只是标签
-    private JenkinsViewModel? _jenkinsPage;
-    public JenkinsViewModel? JenkinsPage
-    {
-        get => _jenkinsPage;
-        private set { _jenkinsPage = value; OnPropertyChanged(); }
-    }
-
-    private void NavigateJenkins()
-    {
-        if (JenkinsPage is null)
-        {
-            JenkinsPage = new JenkinsViewModel(_configService, Application.Current.MainWindow, _dialogs, _windows, _services.CreateAuditLog());
-            JenkinsPage.BuildCompleted += OnJenkinsBuildCompleted;
-        }
-        else
-        {
-            JenkinsPage.RefreshCommand.Execute(null);
-        }
-
-        ClearJenkinsNotifications();
-        CurrentPage = MainPage.Jenkins;
-    }
-
-    public void DisposeJenkinsPage() => JenkinsPage?.Dispose();
-
-    private KubernetesViewModel? _kubernetesPage;
-    public KubernetesViewModel? KubernetesPage
-    {
-        get => _kubernetesPage;
-        private set { _kubernetesPage = value; OnPropertyChanged(); }
-    }
-
-    private void NavigateKubernetes()
-    {
-        if (KubernetesPage is null)
-        {
-            KubernetesPage = new KubernetesViewModel(
-                _configService, _windows, _sshService, _dialogs, Application.Current.MainWindow,
-                _services.CreateAuditLog());
-        }
-        else
-        {
-            KubernetesPage.ReloadConfig();
-        }
-
-        CurrentPage = MainPage.Kubernetes;
-    }
-
-    public void DisposeKubernetesPage() => KubernetesPage?.Dispose();
-
     private void CloseSessionTerminal(long sessionId)
     {
         void Close()
@@ -1224,8 +1131,8 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             return;
         }
 
-        var view = EnsureAgentPage();
         CurrentPage = MainPage.Agent;
+        var view = EnsureAgentPage();
         if (IsAgentDetached)
             ActivateAgent();
         var vm = view.ViewModel;
@@ -1313,6 +1220,13 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
                 "snapshot_in_progress" => result.Error ?? "该服务器已有快照在采集中",
                 _ => $"快照采集失败: {result.Error}"
             };
+            if (result.Status is not ("succeeded" or "snapshot_in_progress"))
+            {
+                Services.Notifications.NotificationCenterService.Add(
+                    "快照", $"{server.Name} 快照采集失败",
+                    result.Error ?? result.Status,
+                    Services.Notifications.NotificationSeverity.Warning);
+            }
         }
         catch (Exception ex)
         {

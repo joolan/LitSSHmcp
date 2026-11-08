@@ -1,3 +1,6 @@
+using System.Windows.Input;
+using LitSSHmcp.App.Services;
+
 namespace LitSSHmcp.App.ViewModels;
 
 public partial class MainViewModel
@@ -6,4 +9,20 @@ public partial class MainViewModel
     public HomeDashboardViewModel HomeDashboard { get; }
 
     public void DisposeHomeDashboard() => HomeDashboard.Dispose();
+
+    private bool _showOnboarding =
+        !bool.TryParse(UiPrefs.GetString("home.onboardingDismissed", "false"), out var dismissed) || !dismissed;
+
+    public bool ShowOnboarding => _showOnboarding;
+
+    private RelayCommand? _dismissOnboardingCommand;
+    public ICommand DismissOnboardingCommand =>
+        _dismissOnboardingCommand ??= new RelayCommand(_ => DismissOnboarding());
+
+    private void DismissOnboarding()
+    {
+        _showOnboarding = false;
+        UiPrefs.SetString("home.onboardingDismissed", "true");
+        OnPropertyChanged(nameof(ShowOnboarding));
+    }
 }

@@ -60,6 +60,7 @@ public partial class AgentView : UserControl
         {
             if (_initialized) return;
             _initialized = true;
+            using var perf = PerfLog.Scope("agent.initialize");
 
             try
             {

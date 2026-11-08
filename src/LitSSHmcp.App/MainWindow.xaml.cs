@@ -40,18 +40,24 @@ public partial class MainWindow : FluentWindow
     public MainWindow()
     {
         InitializeComponent();
+        ClampInitialSizeToWorkArea();
         _ = PetService.ApplyAsync(AppServiceFactory.CreateConfigService());
         DataContext = new MainViewModel();
         ViewModel.BackgroundQueueCompleted += OnBackgroundQueueCompleted;
         ViewModel.JenkinsBuildCompleted += OnJenkinsBuildCompleted;
+        NetworkStatus.EnsureStarted();
+        NetworkStatus.AvailabilityChanged += OnNetworkAvailabilityChanged;
         WindowLayout.Attach(this, "main.v2");
         SourceInitialized += (_, _) => RegisterToolboxHotkey();
         Closing += OnMainClosing;
         Closed += (_, _) =>
         {
+            NetworkStatus.AvailabilityChanged -= OnNetworkAvailabilityChanged;
             UnregisterToolboxHotkey();
+            ViewModel.DetachNotifications();
             ViewModel.DisposeHomeDashboard();
             ViewModel.DisposeAgentPage();
+            ViewModel.DisposeToolboxPage();
             ViewModel.DisposeJenkinsPage();
             ViewModel.DisposeKubernetesPage();
         };
@@ -63,10 +69,17 @@ public partial class MainWindow : FluentWindow
             if (e.PropertyName == nameof(MainViewModel.CurrentPage) &&
                 ViewModel.CurrentPage == MainPage.Toolbox)
             {
-                Dispatcher.BeginInvoke(new Action(() => ToolboxPageView.FocusSearch()),
+                Dispatcher.BeginInvoke(new Action(() => ViewModel.FocusToolboxSearch()),
                     System.Windows.Threading.DispatcherPriority.Input);
             }
         };
+    }
+
+    private void ClampInitialSizeToWorkArea()
+    {
+        var workArea = SystemParameters.WorkArea;
+        Width = Math.Min(Width, Math.Max(MinWidth, workArea.Width - 24));
+        Height = Math.Min(Height, Math.Max(MinHeight, workArea.Height - 24));
     }
 
     private void RegisterToolboxHotkey()
@@ -162,6 +175,14 @@ public partial class MainWindow : FluentWindow
 
     private void OnJenkinsBuildCompleted(JenkinsBuildCompletedInfo info)
     {
+        Services.Notifications.NotificationCenterService.Add(
+            "Jenkins",
+            $"{info.JobName} #{info.BuildNumber} {info.ResultText}",
+            $"{info.ConnectionName} · {info.Environment}",
+            string.Equals(info.Result, "SUCCESS", StringComparison.OrdinalIgnoreCase)
+                ? Services.Notifications.NotificationSeverity.Success
+                : Services.Notifications.NotificationSeverity.Warning);
+
         if (_tray is not { Visible: true })
             return;
 
@@ -183,14 +204,59 @@ public partial class MainWindow : FluentWindow
     }
 
 
+    private void OnNetworkAvailabilityChanged(bool available)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(() => ViewModel.ApplyNetworkAvailability(available)));
+            return;
+        }
+
+        ViewModel.ApplyNetworkAvailability(available);
+    }
+
     private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.K || (Keyboard.Modifiers & ModifierKeys.Control) == 0)
-            return;
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            if (e.Key == Key.K)
+            {
+                e.Handled = true;
+                var palette = new CommandPaletteWindow(ViewModel) { Owner = this };
+                palette.ShowDialog();
+                return;
+            }
 
-        e.Handled = true;
-        var palette = new CommandPaletteWindow(ViewModel) { Owner = this };
-        palette.ShowDialog();
+            if (e.Key == Key.OemComma)
+            {
+                e.Handled = true;
+                ViewModel.OpenSettingsCommand.Execute(null);
+                return;
+            }
+
+            var digit = (int)e.Key - (int)Key.D1;
+            if (digit is >= 0 and <= 8 &&
+                Keyboard.FocusedElement is not TextBox &&
+                Keyboard.FocusedElement is not LitSSHmcp.App.Controls.TerminalView)
+            {
+                var commands = new[]
+                {
+                    ViewModel.NavigateHomeCommand,
+                    ViewModel.NavigateServersCommand,
+                    ViewModel.NavigateDataSourcesCommand,
+                    ViewModel.NavigateApplicationsCommand,
+                    ViewModel.NavigateRemoteDesktopsCommand,
+                    ViewModel.NavigateJenkinsCommand,
+                    ViewModel.NavigateKubernetesCommand,
+                    ViewModel.NavigateToolboxCommand,
+                    ViewModel.OpenAgentCommand
+                };
+                e.Handled = true;
+                commands[digit].Execute(null);
+                return;
+            }
+        }
+
     }
 
 

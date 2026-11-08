@@ -4,6 +4,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
     <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <Style x:Key="MetricCardStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource AppCardBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
@@ -143,7 +144,33 @@
     </UserControl.Resources>
 
     <StackPanel>
-        <!-- 顶部状态：机器、健康评分、运行时长 -->
+        <!-- 首次使用引导：可关闭，不阻塞主界面 -->
+        <Border Style="{DynamicResource CardBorderStyle}" Padding="16,12" Margin="0,0,0,10"
+                Visibility="{Binding ShowOnboarding, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="开始使用 LitSSH" FontSize="{DynamicResource AppFontSizeSubtitle}" FontWeight="SemiBold"/>
+                    <TextBlock Text="按下面顺序完成基础配置；也可以稍后从左侧菜单逐项进入。"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,4,0,10"/>
+                    <WrapPanel>
+                        <ui:Button Content="1. 添加服务器" Padding="12,4" Margin="0,0,8,6"
+                                   Command="{Binding NavigateServersCommand}"/>
+                        <ui:Button Content="2. 打开 AI 助手并配置模型" Padding="12,4" Margin="0,0,8,6"
+                                   Command="{Binding OpenAgentCommand}"/>
+                        <ui:Button Content="3. 配置定时备份" Padding="12,4" Margin="0,0,8,6"
+                                   Click="OnOnboardingBackup"/>
+                        <ui:Button Content="不再显示" Padding="12,4" Margin="0,0,0,6"
+                                   Appearance="Transparent" Command="{Binding DismissOnboardingCommand}"/>
+                    </WrapPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 顶部状态：机器、健康评分、运行时�?-->
         <Border Style="{DynamicResource CardBorderStyle}" Padding="16,12" DataContext="{Binding HomeDashboard}">
             <Grid>
                 <Grid.ColumnDefinitions>

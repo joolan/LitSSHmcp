@@ -292,5 +292,13 @@ public class BackupServiceTests : IDisposable
 
         public Task TestAsync(BackupOssConfig config, string accessKeySecret, CancellationToken ct = default)
             => Task.CompletedTask;
+
+        public Task<IReadOnlyList<OssBackupItem>> ListAsync(BackupOssConfig config,
+            string accessKeySecret, string prefix, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<OssBackupItem>>(Array.Empty<OssBackupItem>());
+
+        public Task DownloadAsync(BackupOssConfig config, string accessKeySecret,
+            string objectKey, string localPath, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 }

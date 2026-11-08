@@ -190,6 +190,7 @@ public sealed class PetAssetService
             Name = ReadString(root, "name", "未命名宠物"),
             Source = ReadString(root, "source", string.Empty),
             License = ReadString(root, "license", string.Empty),
+            Facing = ReadFacing(root),
             Fps = fps
         };
         if (!root.TryGetProperty("actions", out var actions) || actions.ValueKind != JsonValueKind.Object)
@@ -302,7 +303,8 @@ public sealed class PetAssetService
             Frames = new PetFrameSet(
                 new Dictionary<PetAction, IReadOnlyList<BitmapSource>> { [PetAction.Idle] = frames },
                 fps,
-                new Dictionary<PetAction, IReadOnlyList<int>> { [PetAction.Idle] = delays })
+                new Dictionary<PetAction, IReadOnlyList<int>> { [PetAction.Idle] = delays },
+                ReadFacing(root))
         };
     }
 
@@ -337,6 +339,7 @@ public sealed class PetAssetService
         var name = ReadString(root, "name", "未命名宠物");
         var source = ReadString(root, "source", string.Empty);
         var license = ReadString(root, "license", string.Empty);
+        var facing = ReadFacing(root);
         var fps = ReadFps(root, 10);
         if (root.TryGetProperty("version", out var versionElement) &&
             versionElement.TryGetInt32(out var version) && version > CurrentVersion)
@@ -377,7 +380,7 @@ public sealed class PetAssetService
         {
             Id = assetId,
             Name = name,
-            Frames = new PetFrameSet(frames, fps, delays),
+            Frames = new PetFrameSet(frames, fps, delays, facing),
             Source = source,
             License = license
         };
@@ -476,6 +479,7 @@ public sealed class PetAssetService
             name = draft.Name.Trim(),
             source = draft.Source.Trim(),
             license = draft.License.Trim(),
+            facing = draft.Facing == PetFacing.Left ? "left" : "right",
             version = CurrentVersion,
             fps = Math.Clamp(draft.Fps, 1, 24),
             actions
@@ -779,6 +783,14 @@ public sealed class PetAssetService
            root.TryGetProperty("fps", out var element) && element.TryGetInt32(out var fps)
             ? Math.Clamp(fps, 1, 24)
             : fallback;
+
+    private static PetFacing ReadFacing(JsonElement root)
+        => root.ValueKind == JsonValueKind.Object &&
+           root.TryGetProperty("facing", out var element) &&
+           element.ValueKind == JsonValueKind.String &&
+           string.Equals(element.GetString(), "left", StringComparison.OrdinalIgnoreCase)
+            ? PetFacing.Left
+            : PetFacing.Right;
 
     private static bool ReadLoop(JsonElement root, bool fallback)
         => root.ValueKind == JsonValueKind.Object &&

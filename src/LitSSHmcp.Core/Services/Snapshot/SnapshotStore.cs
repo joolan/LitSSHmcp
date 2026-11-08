@@ -34,6 +34,9 @@ public interface ISnapshotStore
     /// <summary>轻量最近列表（不含 DataJson），默认 10 条，供 get 一眼看到历史与趋势。</summary>
     Task<List<ServerSnapshot>> GetRecentAsync(string serverId, int limit = 10, CancellationToken ct = default);
 
+    /// <summary>最近快照（含 DataJson，供时间线/差异使用；GetRecentAsync 为轻量列表，不含数据）。</summary>
+    Task<List<ServerSnapshot>> GetRecentWithDataAsync(string serverId, int limit = 10, CancellationToken ct = default);
+
     Task<List<SnapshotEvent>> GetEventsAsync(long snapshotId, int limit = 50, CancellationToken ct = default);
 
     /// <summary>裁剪到只保留最近 keepPerServer 份（事件级联删除）；keepPerServer&lt;=0 不限制。返回删除的快照数。</summary>
@@ -307,6 +310,23 @@ ORDER BY Id DESC LIMIT 1;";
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = @"SELECT Id, ServerId, ServerName, CreatedAt, CompletedAt, Status, DurationMs, Error, Escalation, CollectorVersion
 FROM Snapshots WHERE ServerId = @ServerId
+ORDER BY CreatedAt DESC, Id DESC LIMIT @Limit;";
+        cmd.Parameters.AddWithValue("@ServerId", serverId);
+        cmd.Parameters.AddWithValue("@Limit", Math.Clamp(limit, 1, 100));
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            result.Add(ReadRow(reader));
+        return result;
+    }
+
+    public async Task<List<ServerSnapshot>> GetRecentWithDataAsync(string serverId, int limit = 10, CancellationToken ct = default)
+    {
+        await EnsureSchemaAsync(ct);
+        var result = new List<ServerSnapshot>();
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"SELECT * FROM Snapshots WHERE ServerId = @ServerId
 ORDER BY CreatedAt DESC, Id DESC LIMIT @Limit;";
         cmd.Parameters.AddWithValue("@ServerId", serverId);
         cmd.Parameters.AddWithValue("@Limit", Math.Clamp(limit, 1, 100));

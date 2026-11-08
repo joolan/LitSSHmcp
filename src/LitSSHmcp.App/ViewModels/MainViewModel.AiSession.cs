@@ -30,8 +30,8 @@ public partial class MainViewModel
 
     private void StartNewAiSession(string prompt)
     {
-        var view = EnsureAgentPage();
         CurrentPage = MainPage.Agent;
+        var view = EnsureAgentPage();
         if (IsAgentDetached)
             ActivateAgent();
 

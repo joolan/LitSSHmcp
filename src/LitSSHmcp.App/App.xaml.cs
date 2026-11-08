@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Services.Backup;
+using LitSSHmcp.App.Services.Notifications;
 using LitSSHmcp.App.Services.Pet;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
@@ -24,6 +25,7 @@ public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
+        ProcessJob.EnsureKillOnClose();
         if (TryGetBackupPlanId(e.Args, out var backupPlanId))
         {
             base.OnStartup(e);
@@ -77,6 +79,16 @@ public partial class App : Application
             _triggerScheduler.Start();
 
             _backupScheduler = new BackupScheduler(AppServiceFactory.CreateConfigService());
+            _backupScheduler.Completed += (plan, result) =>
+            {
+                var severity = result.Success
+                    ? (result.UploadMessage is null || result.Uploaded
+                        ? NotificationSeverity.Success
+                        : NotificationSeverity.Warning)
+                    : NotificationSeverity.Error;
+                NotificationCenterService.Add("备份", plan.Name,
+                    result.Success ? result.Message : result.Message, severity);
+            };
             _backupScheduler.Start();
 
             Exit += (_, _) =>
@@ -190,6 +202,15 @@ public partial class App : Application
             return;
         }
 
+        // 首次启动选择“暂不启用”后记住该选择；后续仍可从设置页启用。
+        if (!configured &&
+            bool.TryParse(UiPrefs.GetString("applock.setupSkipped", "false"), out var skipped) &&
+            skipped)
+        {
+            await Dispatcher.InvokeAsync(CreateMainWindow);
+            return;
+        }
+
         var tcs = new TaskCompletionSource<bool>();
         await Dispatcher.InvokeAsync(() =>
         {
@@ -198,7 +219,11 @@ public partial class App : Application
                 : Views.AppLockWindowMode.SetPassword;
             var lockWindow = new Views.AppLockWindow(new Core.Services.Security.AppLockService(configService), mode, relock: false);
             lockWindow.Unlocked += (_, _) => tcs.TrySetResult(true);    // 解锁 / 设置成功 → 进入
-            lockWindow.Skipped += (_, _) => tcs.TrySetResult(false);    // 暂不启用 → 也进入（保持未锁定）
+            lockWindow.Skipped += (_, _) =>
+            {
+                UiPrefs.SetString("applock.setupSkipped", "true");
+                tcs.TrySetResult(false);                                 // 暂不启用 → 进入（保持未锁定）
+            };
             lockWindow.Closed += (_, _) => tcs.TrySetCanceled();        // 直接关闭 → 退出
             lockWindow.Show();
         });
@@ -324,6 +349,9 @@ public partial class App : Application
 
         if (!show)
             return;
+
+        NotificationCenterService.Add("应用错误", operation ?? "未处理异常", ex.Message,
+            NotificationSeverity.Error);
 
         void Show()
         {

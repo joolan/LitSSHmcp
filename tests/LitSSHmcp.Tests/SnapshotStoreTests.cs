@@ -33,6 +33,23 @@ public class SnapshotStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Recent_light_list_omits_data_but_recent_with_data_includes_it()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = (await store.BeginAsync("s1", "web01"))!.Value;
+        await store.CompleteAsync(id, "{\"sections\":{\"systemd\":{\"status\":\"ok\"}}}", 123, "direct", 1);
+
+        var light = await store.GetRecentAsync("s1");
+        Assert.Single(light);
+        Assert.Null(light[0].DataJson);
+
+        var withData = await store.GetRecentWithDataAsync("s1");
+        Assert.Single(withData);
+        Assert.Contains("systemd", withData[0].DataJson);
+    }
+
+    [Fact]
     public async Task Methods_lazily_create_schema_without_explicit_initialize()
     {
         // 回归: 桌面 App 未调用 InitializeAsync 就直接查询, 此前报 "no such table: Snapshots"。

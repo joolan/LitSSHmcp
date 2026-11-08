@@ -14,6 +14,19 @@
         <Grid.ContextMenu>
             <ContextMenu>
                 <MenuItem Header="打开 AI 运维助手" Click="OnOpenAi"/>
+                <MenuItem Header="展示动作">
+                    <MenuItem Header="展示全部动作" Click="OnShowcaseAll"/>
+                    <MenuItem Header="停止展示" Click="OnStopShowcase"/>
+                    <Separator/>
+                    <MenuItem Header="待机 idle" Tag="Idle" Click="OnShowcaseAction"/>
+                    <MenuItem Header="行走 walk" Tag="Walk" Click="OnShowcaseAction"/>
+                    <MenuItem Header="拖动 drag" Tag="Drag" Click="OnShowcaseAction"/>
+                    <MenuItem Header="点击 click" Tag="Click" Click="OnShowcaseAction"/>
+                    <MenuItem Header="睡觉 sleep" Tag="Sleep" Click="OnShowcaseAction"/>
+                    <MenuItem Header="伸懒腰 stretch" Tag="Stretch" Click="OnShowcaseAction"/>
+                    <MenuItem Header="左右看 look" Tag="Look" Click="OnShowcaseAction"/>
+                    <MenuItem Header="工作 work" Tag="Work" Click="OnShowcaseAction"/>
+                </MenuItem>
                 <MenuItem Header="隐藏宠物" Click="OnHidePet"/>
             </ContextMenu>
         </Grid.ContextMenu>

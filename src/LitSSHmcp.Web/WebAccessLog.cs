@@ -11,6 +11,7 @@ public sealed class WebAccessLog
 {
     private readonly string _dir;
     private readonly object _gate = new();
+    private DateTime _lastCleanupDate = DateTime.MinValue;
 
     public WebAccessLog(string? dir = null)
     {
@@ -31,6 +32,7 @@ public sealed class WebAccessLog
             var path = Path.Combine(_dir, $"web-access-{DateTime.UtcNow:yyyyMMdd}.log");
             lock (_gate)
             {
+                CleanupOldLogs();
                 File.AppendAllText(path, line + Environment.NewLine);
             }
         }
@@ -38,6 +40,28 @@ public sealed class WebAccessLog
         {
             // 访问日志失败不影响主流程（与 FileLoggerProvider 先例一致）
         }
+    }
+
+    private void CleanupOldLogs()
+    {
+        if (_lastCleanupDate.Date == DateTime.UtcNow.Date)
+            return;
+
+        _lastCleanupDate = DateTime.UtcNow.Date;
+        try
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-7);
+            foreach (var file in Directory.EnumerateFiles(_dir, "web-access-*.log"))
+            {
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(file) < cutoff)
+                        File.Delete(file);
+                }
+                catch { /* 单个日志删除失败忽略 */ }
+            }
+        }
+        catch { /* 日志目录不可用忽略 */ }
     }
 
     private static string? Clean(string? s)

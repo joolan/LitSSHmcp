@@ -22,7 +22,13 @@ public class SqlFilterConfig
         @"\binto\s+(outfile|dumpfile)\b",
         @"\bload\s+file\s*\(",
         @"\bdelete\s+from\b(?![^;]*\bwhere\b)",
-        @"\bupdate\b(?![^;]*\bwhere\b)"
+        @"\bupdate\b(?![^;]*\bwhere\b)",
+        @"\breplace\s+into\b",
+        @"\bmerge\s+into\b",
+        @"\bcopy\b[\s\S]*\b(from|to)\s+program\b",
+        @"^\s*do\b",
+        @"^\s*prepare\b",
+        @"^\s*execute\b"
     };
 
     public string[] SensitivePatterns { get; set; } =
@@ -40,7 +46,8 @@ public class SqlFilterConfig
         @"\block\s+tables?\b",
         @"\bunlock\s+tables?\b",
         @"\btruncate\b",
-        @"\bdrop\b"
+        @"\bdrop\b",
+        @"\bcopy\b"
     };
 
     private Regex[]? _compiledBlocked;

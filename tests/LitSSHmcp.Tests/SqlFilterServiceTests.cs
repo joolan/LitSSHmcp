@@ -87,4 +87,23 @@ public class SqlFilterServiceTests
     {
         Assert.Equal(SqlFilterResult.Blocked, Create().CheckWrite("UPDATE users SET a=1 WHERE id=1; DROP TABLE users"));
     }
+
+    [Theory]
+    [InlineData("REPLACE INTO users (id) VALUES (1)")]
+    [InlineData("MERGE INTO users USING source ON users.id = source.id WHEN MATCHED THEN UPDATE SET name = source.name")]
+    [InlineData("COPY users FROM PROGRAM 'cmd /c whoami'")]
+    [InlineData("COPY users TO PROGRAM 'cmd /c whoami'")]
+    [InlineData("DO $$ BEGIN PERFORM 1; END $$")]
+    [InlineData("PREPARE p AS SELECT 1")]
+    [InlineData("EXECUTE p")]
+    public void Dangerous_write_statements_are_blocked(string sql)
+    {
+        Assert.Equal(SqlFilterResult.Blocked, Create().CheckWrite(sql));
+    }
+
+    [Fact]
+    public void Copy_from_stdin_is_sensitive()
+    {
+        Assert.Equal(SqlFilterResult.Sensitive, Create().CheckWrite("COPY users FROM STDIN"));
+    }
 }

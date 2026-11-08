@@ -8,4 +8,10 @@ public interface IBackupUploader
         string objectKey, CancellationToken ct = default);
 
     Task TestAsync(BackupOssConfig config, string accessKeySecret, CancellationToken ct = default);
+
+    Task<IReadOnlyList<OssBackupItem>> ListAsync(BackupOssConfig config, string accessKeySecret,
+        string prefix, CancellationToken ct = default);
+
+    Task DownloadAsync(BackupOssConfig config, string accessKeySecret, string objectKey,
+        string localPath, CancellationToken ct = default);
 }

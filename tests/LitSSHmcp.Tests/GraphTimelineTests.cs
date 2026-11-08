@@ -139,6 +139,9 @@ public class GraphTimelineTests
         public Task<List<ServerSnapshot>> GetRecentAsync(string serverId, int limit = 10, CancellationToken ct = default) =>
             Task.FromResult(Items.Where(s => s.ServerId == serverId).OrderByDescending(s => s.CreatedAt).Take(limit).ToList());
 
+        public Task<List<ServerSnapshot>> GetRecentWithDataAsync(string serverId, int limit = 10, CancellationToken ct = default) =>
+            GetRecentAsync(serverId, limit, ct);
+
         public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task<long?> BeginAsync(string serverId, string serverName, CancellationToken ct = default) => throw new NotSupportedException();
         public Task AppendEventAsync(long snapshotId, string serverId, string kind, string? collector = null, string? message = null, CancellationToken ct = default) => throw new NotSupportedException();

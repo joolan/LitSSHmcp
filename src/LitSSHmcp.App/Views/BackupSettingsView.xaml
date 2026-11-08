@@ -78,6 +78,7 @@
 
         <DockPanel Grid.Row="1" Margin="0,0,0,8">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="OSS 备份…" Padding="12,4" Margin="0,0,6,0" Click="OnOssBackups"/>
                 <ui:Button Content="恢复向导" Padding="12,4" Margin="0,0,6,0" Click="OnRestore"/>
                 <ui:Button Content="立即备份" Padding="12,4" Margin="0,0,6,0" Click="OnRunNow"/>
                 <ui:Button Content="新建计划" Appearance="Primary" Padding="12,4" Click="OnAdd"/>

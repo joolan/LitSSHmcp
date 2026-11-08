@@ -11,6 +11,6 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         <ui:TitleBar Grid.Row="0" Title="工具箱"/>
-        <views:ToolboxView Grid.Row="1" Margin="12,0,12,12"/>
+        <ContentControl x:Name="ToolboxHost" Grid.Row="1" Margin="12,0,12,12"/>
     </Grid>
 </ui:FluentWindow>

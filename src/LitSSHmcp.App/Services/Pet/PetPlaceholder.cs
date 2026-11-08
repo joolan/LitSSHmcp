@@ -16,20 +16,30 @@ public enum PetAction
     Work
 }
 
+public enum PetFacing
+{
+    Right,
+    Left
+}
+
 public sealed class PetFrameSet
 {
     private readonly Dictionary<PetAction, IReadOnlyList<BitmapSource>> _frames;
     private readonly Dictionary<PetAction, IReadOnlyList<int>> _delays;
 
     public PetFrameSet(Dictionary<PetAction, IReadOnlyList<BitmapSource>> frames, int fps = 10,
-        Dictionary<PetAction, IReadOnlyList<int>>? delays = null)
+        Dictionary<PetAction, IReadOnlyList<int>>? delays = null, PetFacing facing = PetFacing.Right)
     {
         _frames = frames;
         _delays = delays ?? new();
         Fps = Math.Clamp(fps, 1, 24);
+        Facing = facing;
     }
 
     public int Fps { get; }
+
+    /// <summary>素材原始朝向；运行时据此决定是否水平翻转。</summary>
+    public PetFacing Facing { get; }
 
     public long EstimatedBytes
     {

@@ -75,18 +75,35 @@ public partial class MainViewModel
 
     public void OpenAgentFromPet(long? sessionId = null)
     {
+        CurrentPage = MainPage.Agent;
         var view = EnsureAgentPage();
-        NavigateAgent();
+        if (_agentDetached)
+            ActivateAgent();
         if (sessionId is > 0)
             _ = view.ViewModel.OpenSessionAsync(sessionId.Value);
     }
 
     private void NavigateAgent()
     {
-        EnsureAgentPage();
-        CurrentPage = MainPage.Agent;
+        CurrentPage = MainPage.Agent;   // 先切页
+
         if (_agentDetached)
+        {
             ActivateAgent();
+            return;
+        }
+
+        if (_agentView is not null)
+            return;
+
+        // 首次进入：页面先渲染，再在后台创建较重的 AgentView（85KB XAML + 会话初始化）。
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (CurrentPage != MainPage.Agent || _agentDetached || _agentView is not null)
+                return;
+
+            EnsureAgentPage();
+        }), System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private void OnAgentDetachRequested(object? sender, EventArgs e) => DetachAgent();

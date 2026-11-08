@@ -35,6 +35,7 @@
 
         <DockPanel Grid.Row="3" Margin="12,0,12,12">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="重试 OSS 上传" Padding="12,4" Margin="0,0,6,0" Click="OnRetryOss"/>
                 <ui:Button Content="校验完整性" Padding="12,4" Margin="0,0,6,0" Click="OnVerify"/>
                 <ui:Button Content="恢复…" Padding="12,4" Margin="0,0,6,0" Click="OnRestore"/>
                 <ui:Button Content="删除" Padding="12,4" Click="OnDelete"/>

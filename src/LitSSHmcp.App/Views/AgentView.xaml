@@ -575,6 +575,15 @@
                 <Border x:Name="Composer" Grid.Row="2" Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                         BorderThickness="1" CornerRadius="{DynamicResource AppRadiusL}" Padding="10" Margin="0,10,0,0"
                         AllowDrop="True" PreviewDragOver="OnComposerDragOver" PreviewDrop="OnComposerDrop">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                    <Setter Property="IsEnabled" Value="False"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -871,21 +880,16 @@
                             <ui:Button Grid.Column="5" Content="取消编辑" Padding="10,4" Margin="0,0,8,0"
                                        Command="{Binding CancelEditCommand}" Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}"/>
 
-                            <!-- 模型连接状态点 -->
+                            <!-- 仅在连接大模型失败/网络异常时显示告警点；正常状态不占用视觉噪音 -->
                             <Ellipse Grid.Column="6" Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,8,0"
                                      ToolTip="{Binding StatusMessage}">
                                 <Ellipse.Style>
                                     <Style TargetType="Ellipse">
-                                        <Setter Property="Fill" Value="{DynamicResource AppTextSecondaryBrush}"/>
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Setter Property="Fill" Value="{DynamicResource AppDangerBrush}"/>
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding ModelStatus}" Value="ready">
-                                                <Setter Property="Fill" Value="{DynamicResource AppSuccessBrush}"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding ModelStatus}" Value="connecting">
-                                                <Setter Property="Fill" Value="{DynamicResource AppWarningBrush}"/>
-                                            </DataTrigger>
                                             <DataTrigger Binding="{Binding ModelStatus}" Value="error">
-                                                <Setter Property="Fill" Value="{DynamicResource AppDangerBrush}"/>
+                                                <Setter Property="Visibility" Value="Visible"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -946,15 +950,187 @@
                     </Grid>
                 </Border>
 
-                <!-- 加载遮罩：初始化 / 切换会话 / 连接模型时 -->
-                <Border Grid.Row="0" Grid.RowSpan="3" Panel.ZIndex="20" Background="{DynamicResource AppCardBrush}"
+                <!-- 会话区骨架屏：初始化 / 切换会话时只覆盖对话区，不再挡住输入区与计划卡片 -->
+                <Border Grid.Row="1" Panel.ZIndex="20" Background="{DynamicResource AppCardBrush}"
                         Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <ui:ProgressRing IsIndeterminate="True" Width="46" Height="46" HorizontalAlignment="Center"
-                                         Foreground="{DynamicResource AppAccentBrush}"/>
-                        <TextBlock Text="{Binding LoadingText}" Margin="0,12,0,0" HorizontalAlignment="Center"
-                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                    </StackPanel>
+                    <Grid>
+                        <Grid Margin="18,32,18,18" VerticalAlignment="Top" IsHitTestVisible="False">
+                            <Grid.Style>
+                                <Style TargetType="Grid">
+                                    <Setter Property="Opacity" Value="0.7"/>
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsLoading}" Value="True"/>
+                                                <Condition Binding="{Binding AnimationsEnabled}" Value="True"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <MultiDataTrigger.EnterActions>
+                                                <BeginStoryboard x:Name="SkeletonPulseStory">
+                                                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         From="0.42" To="0.82" Duration="0:0:1.2"/>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </MultiDataTrigger.EnterActions>
+                                            <MultiDataTrigger.ExitActions>
+                                                <StopStoryboard BeginStoryboardName="SkeletonPulseStory"/>
+                                            </MultiDataTrigger.ExitActions>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Grid.Style>
+                            <StackPanel>
+                                <Border Height="14" Width="180" HorizontalAlignment="Left" CornerRadius="7"
+                                        Background="{DynamicResource AppSurfaceAltBrush}"/>
+                                <Border Height="12" Margin="0,10,40,0" CornerRadius="6"
+                                        Background="{DynamicResource AppSurfaceAltBrush}"/>
+                                <Border Height="12" Margin="0,8,120,0" CornerRadius="6"
+                                        Background="{DynamicResource AppSurfaceAltBrush}"/>
+                                <Border Height="52" Margin="0,24,0,0" CornerRadius="8"
+                                        Background="{DynamicResource AppSurfaceAltBrush}"/>
+                                <Border Height="14" Width="120" Margin="0,24,0,0" HorizontalAlignment="Left"
+                                        CornerRadius="7" Background="{DynamicResource AppSurfaceAltBrush}"/>
+                                <Border Height="12" Margin="0,10,70,0" CornerRadius="6"
+                                        Background="{DynamicResource AppSurfaceAltBrush}"/>
+                                <Border Height="52" Margin="0,24,0,0" CornerRadius="8"
+                                        Background="{DynamicResource AppSurfaceAltBrush}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Grid Width="96" Height="96" HorizontalAlignment="Center">
+                            <Ellipse Width="88" Height="88" Fill="{DynamicResource AppAccentBrush}"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Ellipse.RenderTransform>
+                                    <ScaleTransform CenterX="44" CenterY="44"/>
+                                </Ellipse.RenderTransform>
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Opacity" Value="0.10"/>
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding IsLoading}" Value="True"/>
+                                                    <Condition Binding="{Binding AnimationsEnabled}" Value="True"/>
+                                                </MultiDataTrigger.Conditions>
+                                                <MultiDataTrigger.EnterActions>
+                                                    <BeginStoryboard x:Name="LoadingHaloStory">
+                                                        <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                             From="0.08" To="0.24" Duration="0:0:0.9"/>
+                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                                             From="0.94" To="1.06" Duration="0:0:0.9"/>
+                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                             From="0.94" To="1.06" Duration="0:0:0.9"/>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </MultiDataTrigger.EnterActions>
+                                                <MultiDataTrigger.ExitActions>
+                                                    <StopStoryboard BeginStoryboardName="LoadingHaloStory"/>
+                                                </MultiDataTrigger.ExitActions>
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                            <ui:ProgressRing IsIndeterminate="{Binding AnimationsEnabled}" Width="46" Height="46"
+                                             HorizontalAlignment="Center" VerticalAlignment="Center"
+                                             Foreground="{DynamicResource AppAccentBrush}"/>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                            <TextBlock Text="{Binding LoadingText}"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
+                            <StackPanel Orientation="Horizontal" Margin="2,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="·" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Opacity" Value="0.2"/>
+                                            <Style.Triggers>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding IsLoading}" Value="True"/>
+                                                        <Condition Binding="{Binding AnimationsEnabled}" Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <MultiDataTrigger.EnterActions>
+                                                        <BeginStoryboard x:Name="LoadingDot1Story">
+                                                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                                 From="0.2" To="1" Duration="0:0:0.45"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </MultiDataTrigger.EnterActions>
+                                                    <MultiDataTrigger.ExitActions>
+                                                        <StopStoryboard BeginStoryboardName="LoadingDot1Story"/>
+                                                    </MultiDataTrigger.ExitActions>
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock Text="·" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Opacity" Value="0.2"/>
+                                            <Style.Triggers>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding IsLoading}" Value="True"/>
+                                                        <Condition Binding="{Binding AnimationsEnabled}" Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <MultiDataTrigger.EnterActions>
+                                                        <BeginStoryboard x:Name="LoadingDot2Story">
+                                                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                                 From="0.2" To="1" Duration="0:0:0.45"
+                                                                                 BeginTime="0:0:0.15"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </MultiDataTrigger.EnterActions>
+                                                    <MultiDataTrigger.ExitActions>
+                                                        <StopStoryboard BeginStoryboardName="LoadingDot2Story"/>
+                                                    </MultiDataTrigger.ExitActions>
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock Text="·" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Opacity" Value="0.2"/>
+                                            <Style.Triggers>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding IsLoading}" Value="True"/>
+                                                        <Condition Binding="{Binding AnimationsEnabled}" Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <MultiDataTrigger.EnterActions>
+                                                        <BeginStoryboard x:Name="LoadingDot3Story">
+                                                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                                 From="0.2" To="1" Duration="0:0:0.45"
+                                                                                 BeginTime="0:0:0.3"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </MultiDataTrigger.EnterActions>
+                                                    <MultiDataTrigger.ExitActions>
+                                                        <StopStoryboard BeginStoryboardName="LoadingDot3Story"/>
+                                                    </MultiDataTrigger.ExitActions>
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </StackPanel>
+                        <TextBlock Text="{Binding LoadingDetail}" Margin="0,6,0,0" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource AppTextTertiaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeMicro}"/>
+                        <ui:Button Content="取消加载" Margin="0,12,0,0" HorizontalAlignment="Center"
+                                   Appearance="Secondary" Padding="14,4"
+                                   Command="{Binding CancelLoadingCommand}"/>
+                        </StackPanel>
+                    </Grid>
                 </Border>
             </Grid>
 

@@ -53,7 +53,7 @@ public static class BackupItemCatalog
         SqliteItem("audit-db", "审计 audit.db", "命令审计与哈希链", "audit.db"),
         SqliteItem("snapshot-db", "快照 snapshots.db", "服务器快照与历史", "snapshots.db"),
         DirItem("skills", "技能 skills", "本机技能文件", "skills"),
-        DirItem("logs", "日志 logs", "应用运行日志", "logs"),
+        DirItem("logs", "日志 logs", "应用运行日志（可能含敏感信息，默认不选）", "logs"),
         DirItem("vaults", "加密文件柜", "加密文件柜目录", "vaults"),
         DirItem("password-vault", "密码保管箱", "密码保管箱目录", "password-vault"),
         DirItem("pet-assets", "桌面宠物素材", "自定义宠物素材包、动画与许可证文件", "pet-assets"),

@@ -41,6 +41,7 @@ public sealed class PetAssetDraft
     public string Name { get; set; } = "我的宠物";
     public string Source { get; set; } = string.Empty;
     public string License { get; set; } = string.Empty;
+    public PetFacing Facing { get; set; } = PetFacing.Right;
     public int Fps { get; set; } = 10;
     public Dictionary<PetAction, PetAssetDraftAction> Actions { get; } = new();
 

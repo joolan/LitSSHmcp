@@ -97,6 +97,17 @@ public class PetAssetServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Saves_and_loads_asset_facing()
+    {
+        var draft = new PetAssetDraft { Name = "LeftFacing", Facing = PetFacing.Left };
+        draft.Actions[PetAction.Idle].Frames.Add(new PetAssetDraftFrame { Image = CreateBitmap(), DelayMs = 100 });
+        var service = new PetAssetService(Path.Combine(_root, "store"));
+        var info = await service.SaveDraftAsync(draft);
+        Assert.Equal(PetFacing.Left, (await service.LoadAsync(info.Id)).Frames.Facing);
+        Assert.Equal(PetFacing.Left, (await service.LoadDraftAsync(info.Id)).Facing);
+    }
+
+    [Fact]
     public async Task Loads_preview_with_metadata_and_idle_frames()
     {
         var draft = new PetAssetDraft { Name = "PreviewPet", Source = "Preview source", License = "CC0" };

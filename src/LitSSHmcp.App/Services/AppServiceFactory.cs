@@ -73,7 +73,18 @@ public static class AppServiceFactory
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
         var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
-        return new SshService(knownHosts, security, limiter);
+        return CreateSshService(security, knownHosts, limiter);
+    }
+
+    /// <summary>App 端统一构建 SSH 服务：与 MCP 一样启用连接池，避免每次命令/快照新建登录。</summary>
+    private static SshService CreateSshService(
+        SecurityOptionsProvider security, ISshKnownHostsStore knownHosts, ITargetLimiter limiter)
+    {
+        var pool = new SshConnectionPool(
+            knownHosts,
+            () => security.SshHostKey.Mode,
+            () => security.ConnectionPool);
+        return new SshService(knownHosts, security, limiter, pool);
     }
 
     /// <summary>快照库（供历史/详情窗口读取）。单飞约束在库内（Running 唯一部分索引）, 跨窗口/进程一致。</summary>
@@ -106,7 +117,7 @@ public static class AppServiceFactory
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
         var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
-        var ssh = new SshService(knownHosts, security, limiter);
+        var ssh = CreateSshService(security, knownHosts, limiter);
         var store = new SnapshotStore();
         var configService = new ConfigService();
         var mysqlProvider = new MySqlConnectionProvider(configService, knownHosts, security, limiter);
@@ -156,7 +167,7 @@ public static class AppServiceFactory
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
         var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
-        var ssh = new SshService(knownHosts, security, limiter);
+        var ssh = CreateSshService(security, knownHosts, limiter);
         var registry = CreateDriverRegistry(configService);
         return new TopologyService(configService, ssh, registry,
             new CommandFilterService(security), new AuditLogService(security), new SnapshotStore(),
@@ -173,7 +184,7 @@ public static class AppServiceFactory
         var security = new SecurityOptionsProvider();
         var knownHosts = new FileSshKnownHostsStore();
         var limiter = new TargetLimiter(security, ConfigPaths.TargetStateDir);
-        var ssh = new SshService(knownHosts, security, limiter);
+        var ssh = CreateSshService(security, knownHosts, limiter);
         return new SyncService(knownHosts, security.SshHostKey.Mode, ssh);
     }
 }

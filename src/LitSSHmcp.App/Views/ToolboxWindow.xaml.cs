@@ -1,15 +1,26 @@
+using System.Windows;
 using LitSSHmcp.App.Services;
-using LitSSHmcp.App.ViewModels;
 using Wpf.Ui.Controls;
 
 namespace LitSSHmcp.App.Views;
 
 public partial class ToolboxWindow : FluentWindow
 {
-    public ToolboxWindow(ToolboxViewModel viewModel)
+    private readonly ToolboxView _view;
+
+    public ToolboxWindow(ToolboxView view)
     {
         InitializeComponent();
-        DataContext = viewModel;
+        _view = view;
+        DataContext = view.DataContext;
         WindowLayout.Attach(this, "toolbox.window");
+        ToolboxHost.Content = view;
+        Closed += OnToolboxClosed;
+    }
+
+    private void OnToolboxClosed(object? sender, EventArgs e)
+    {
+        Closed -= OnToolboxClosed;
+        ToolboxHost.Content = null;
     }
 }

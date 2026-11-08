@@ -4,13 +4,21 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:views="clr-namespace:LitSSHmcp.App.Views"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
-        Title="LitSSH MCP Manager" Height="950" Width="1400" MinWidth="1100" MinHeight="720"
+        xmlns:vm="clr-namespace:LitSSHmcp.App.ViewModels"
+        Title="LitSSH MCP Manager" Height="1000" Width="1400" MinWidth="1100" MinHeight="720"
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica"
         PreviewKeyDown="OnWindowPreviewKeyDown">
     <Window.Resources>
         <controls:MainPageVisibilityConverter x:Key="PageVis"/>
         <controls:MainPageAppearanceConverter x:Key="PageAppearance"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <!-- 重页面按需创建：只有首次导航到 Jenkins/K8s 时才实例化对应视图 -->
+        <DataTemplate DataType="{x:Type vm:JenkinsViewModel}">
+            <views:JenkinsView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:KubernetesViewModel}">
+            <views:KubernetesView/>
+        </DataTemplate>
         <Style x:Key="SideNavButtonStyle" TargetType="{x:Type ui:Button}">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
@@ -56,6 +64,37 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="SideNavScrollBarStyle" TargetType="{x:Type ScrollBar}">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="MinWidth" Value="8"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollBar}">
+                        <Grid Width="8" Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Focusable="False" Opacity="0"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="{x:Type Thumb}">
+                                                <Border Background="{DynamicResource AppTextSecondaryBrush}"
+                                                        Opacity="0.45" CornerRadius="3" Margin="2,1"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Focusable="False" Opacity="0"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
@@ -84,6 +123,11 @@
                             </StackPanel>
                         </ui:Button>
                     </StackPanel>
+                    <ScrollViewer x:Name="SideNavScroll" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly" Focusable="False">
+                        <ScrollViewer.Resources>
+                            <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource SideNavScrollBarStyle}"/>
+                        </ScrollViewer.Resources>
                     <StackPanel>
                         <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="主页（快捷入口 / 数据看板）" AutomationProperties.Name="主页"
@@ -124,6 +168,23 @@
                                     <TextBlock Text="{Binding AgentBadgeText}" FontSize="9" FontWeight="Bold"
                                                Foreground="{DynamicResource AppAccentTextBrush}"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
+                        </ui:Button>
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                                   HorizontalAlignment="Center" ToolTip="通知中心"
+                                   AutomationProperties.Name="通知中心" Command="{Binding OpenNotificationCenterCommand}">
+                            <Grid Width="56" Height="54">
+                                <StackPanel VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Alert24" FontSize="19" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="通知" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0"
+                                        MinWidth="14" Height="14" CornerRadius="7" Padding="3,0"
+                                        Background="{DynamicResource AppDangerBrush}"
+                                        Visibility="{Binding HasUnreadNotifications, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding NotificationUnreadCount}" FontSize="9" FontWeight="Bold"
+                                               Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                             </Grid>
                         </ui:Button>
@@ -275,6 +336,7 @@
                             </Grid>
                         </ui:Button>
                     </StackPanel>
+                    </ScrollViewer>
                 </DockPanel>
             </Border>
 
@@ -343,17 +405,32 @@
                 <!-- Jenkins 多连接 -->
                 <Grid x:Name="JenkinsPage"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Jenkins}">
-                    <views:JenkinsView DataContext="{Binding JenkinsPage}"/>
+                    <ContentControl Content="{Binding JenkinsPage}"/>
                 </Grid>
 
                 <Grid x:Name="KubernetesPage"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Kubernetes}">
-                    <views:KubernetesView DataContext="{Binding KubernetesPage}"/>
+                    <ContentControl Content="{Binding KubernetesPage}"/>
                 </Grid>
 
                 <Grid x:Name="ToolboxPage" Margin="16,12,16,12"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Toolbox}">
-                    <views:ToolboxView x:Name="ToolboxPageView" DataContext="{Binding Toolbox}"/>
+                    <ContentControl Content="{Binding ToolboxPageView}"/>
+
+                    <StackPanel Panel.ZIndex="1" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
+                                Visibility="{Binding IsToolboxDetached, Converter={StaticResource BoolToVis}}">
+                        <ui:SymbolIcon Symbol="Toolbox24" FontSize="44" HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="工具箱正在独立窗口运行" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                        <TextBlock Text="可以激活独立窗口，或收回主界面继续操作。"
+                                   Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,16"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <ui:Button Content="激活独立窗口" Appearance="Primary" Padding="14,5" Margin="0,0,8,0"
+                                       Command="{Binding ActivateToolboxCommand}"/>
+                            <ui:Button Content="收回主界面" Padding="14,5"
+                                       Command="{Binding DockToolboxCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
                 </Grid>
 
                 <!-- AI 运维助手（常驻页面，切换导航不停止任务） -->

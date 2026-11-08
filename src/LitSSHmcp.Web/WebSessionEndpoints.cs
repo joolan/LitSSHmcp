@@ -495,29 +495,61 @@ public static class WebSessionEndpoints
             }
         }, CancellationToken.None);
         var progress = new FrameProgress(frames.Writer);
+        using var flushCts = new CancellationTokenSource();
+        var flushTask = Task.Run(async () =>
+        {
+            try
+            {
+                while (!flushCts.IsCancellationRequested)
+                {
+                    await Task.Delay(75, flushCts.Token);
+                    progress.FlushPending();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // 回合结束
+            }
+        }, CancellationToken.None);
+
+        var droppedWarningSent = false;
+        async Task WriteTerminalAsync(object frame)
+        {
+            progress.FlushPending();
+            if (progress.Dropped && !droppedWarningSent)
+            {
+                droppedWarningSent = true;
+                await WriteTerminalFrameAsync(frames.Writer,
+                    new { type = "warning", message = "网络较慢，部分实时消息已合并或丢弃" });
+            }
+            await WriteTerminalFrameAsync(frames.Writer, frame);
+        }
+
         try
         {
             await manager.RunTurnAsync(principal, id, text, attachments, progress, ct);
-            await WriteTerminalFrameAsync(frames.Writer, new { type = "done", incomplete = progress.Incomplete });
+            await WriteTerminalAsync(new { type = "done", incomplete = progress.Incomplete });
         }
         catch (WebSessionBusyException)
         {
-            await WriteTerminalFrameAsync(frames.Writer, new { type = "busy", message = "上一轮仍在进行中" });
+            await WriteTerminalAsync(new { type = "busy", message = "上一轮仍在进行中" });
         }
         catch (WebSessionNotFoundException)
         {
-            await WriteTerminalFrameAsync(frames.Writer, new { type = "error", message = "会话不存在" });
+            await WriteTerminalAsync(new { type = "error", message = "会话不存在" });
         }
         catch (OperationCanceledException)
         {
-            await WriteTerminalFrameAsync(frames.Writer, new { type = "done", stopped = true });
+            await WriteTerminalAsync(new { type = "done", stopped = true });
         }
         catch (Exception ex)
         {
-            await WriteTerminalFrameAsync(frames.Writer, new { type = "error", message = ex.Message });
+            await WriteTerminalAsync(new { type = "error", message = ex.Message });
         }
         finally
         {
+            flushCts.Cancel();
+            try { await flushTask; } catch { /* ignore */ }
             frames.Writer.TryComplete();
             await pump;
         }
@@ -556,41 +588,97 @@ public static class WebSessionEndpoints
     }
 
     /// <summary>
-    /// 事件 → 协议帧的同步转换器：队列未满时直接入队；满时同步等待泵腾出空间（背压），
-    /// 连接断开队列关闭后静默丢弃，避免生产线程永久阻塞。
+    /// 事件 → 协议帧的非阻塞转换器：文本增量合并后约 75ms 批量发送；
+    /// 队列满时丢弃非关键帧并标记，绝不在 Agent 流线程上同步等待。
     /// </summary>
     private sealed class FrameProgress(ChannelWriter<object> writer) : IProgress<AgentEvent>
     {
+        private const int MaxPendingChars = 16 * 1024;
+        private readonly object _gate = new();
+        private readonly StringBuilder _text = new();
+        private readonly StringBuilder _reasoning = new();
+
         public bool Incomplete { get; private set; }
+        public bool Dropped { get; private set; }
 
         public void Report(AgentEvent e)
         {
-            if (e.Kind == AgentEventKind.Incomplete)
-                Incomplete = true;
-            object frame = e.Kind switch
+            lock (_gate)
             {
-                AgentEventKind.AssistantText => new { type = "assistant_text", text = e.Text },
-                AgentEventKind.AssistantReasoning => new { type = "reasoning", text = e.Text },
-                AgentEventKind.ToolCall => new { type = "tool", tool = e.ToolName, args = e.ArgumentsJson },
-                AgentEventKind.ToolResult => new { type = "tool_result", tool = e.ToolName, ok = e.ToolSuccess, ms = e.DurationMs },
-                AgentEventKind.MemoryRecall => new { type = "memory_recall", text = e.Text },
-                AgentEventKind.AssetGraphContext => new { type = "asset_graph_context", text = e.Text },
-                AgentEventKind.Incomplete => new { type = "warning", message = e.Text },
-                AgentEventKind.Warning => new { type = "warning", message = e.Text },
-                AgentEventKind.Error => new { type = "error", message = e.Text },
-                _ => new { type = "event", kind = e.Kind.ToString() }
-            };
+                if (e.Kind == AgentEventKind.Incomplete)
+                    Incomplete = true;
 
+                switch (e.Kind)
+                {
+                    case AgentEventKind.AssistantText:
+                        _text.Append(e.Text);
+                        if (_text.Length >= MaxPendingChars)
+                            FlushTextLocked();
+                        return;
+                    case AgentEventKind.AssistantReasoning:
+                        _reasoning.Append(e.Text);
+                        if (_reasoning.Length >= MaxPendingChars)
+                            FlushReasoningLocked();
+                        return;
+                }
+
+                FlushTextLocked();
+                FlushReasoningLocked();
+                WriteLocked(FrameFor(e));
+            }
+        }
+
+        public void FlushPending()
+        {
+            lock (_gate)
+            {
+                FlushTextLocked();
+                FlushReasoningLocked();
+            }
+        }
+
+        private void FlushTextLocked()
+        {
+            if (_text.Length == 0)
+                return;
+            WriteLocked(new { type = "assistant_text", text = _text.ToString() });
+            _text.Clear();
+        }
+
+        private void FlushReasoningLocked()
+        {
+            if (_reasoning.Length == 0)
+                return;
+            WriteLocked(new { type = "reasoning", text = _reasoning.ToString() });
+            _reasoning.Clear();
+        }
+
+        private void WriteLocked(object frame)
+        {
             try
             {
                 if (!writer.TryWrite(frame))
-                    writer.WriteAsync(frame).AsTask().GetAwaiter().GetResult();
+                    Dropped = true;
             }
             catch (ChannelClosedException)
             {
-                // 连接已断开：后续事件直接丢弃
+                // 连接已断开：后续事件直接丢弃。
             }
         }
+
+        private static object FrameFor(AgentEvent e) => e.Kind switch
+        {
+            AgentEventKind.AssistantText => new { type = "assistant_text", text = e.Text },
+            AgentEventKind.AssistantReasoning => new { type = "reasoning", text = e.Text },
+            AgentEventKind.ToolCall => new { type = "tool", tool = e.ToolName, args = e.ArgumentsJson },
+            AgentEventKind.ToolResult => new { type = "tool_result", tool = e.ToolName, ok = e.ToolSuccess, ms = e.DurationMs },
+            AgentEventKind.MemoryRecall => new { type = "memory_recall", text = e.Text },
+            AgentEventKind.AssetGraphContext => new { type = "asset_graph_context", text = e.Text },
+            AgentEventKind.Incomplete => new { type = "warning", message = e.Text },
+            AgentEventKind.Warning => new { type = "warning", message = e.Text },
+            AgentEventKind.Error => new { type = "error", message = e.Text },
+            _ => new { type = "event", kind = e.Kind.ToString() }
+        };
     }
 
     internal static async Task<bool> SendJsonAsync(WebSocket socket, SemaphoreSlim gate, object frame, CancellationToken ct)

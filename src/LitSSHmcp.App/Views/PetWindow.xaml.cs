@@ -39,7 +39,7 @@ public partial class PetWindow : Window
     private int _waitTicks;
     private int _idleTicks;
     private int _actionTicks;
-    private bool _facingLeft;
+    private bool _flipped;
     private Point? _target;
     private bool _movementEnabled;
     private bool _reduceMotion;
@@ -51,6 +51,10 @@ public partial class PetWindow : Window
     private bool _dragMoved;
     private Point _dragStartScreen;
     private Point _dragStartWindow;
+    private bool _showcaseActive;
+    private IReadOnlyList<PetAction> _showcaseActions = Array.Empty<PetAction>();
+    private int _showcaseIndex;
+    private double _showcaseRemainingMs;
 
     public PetWindow(PetConfig config, PetFrameSet? frames = null)
     {
@@ -123,28 +127,34 @@ public partial class PetWindow : Window
         }
         _aiSessionId = sessionId;
         _aiState = state is PetAiState.Running or PetAiState.WaitingApproval ? state : PetAiState.Idle;
+        var applyAction = !_showcaseActive;
         switch (state)
         {
             case PetAiState.Running:
-                SetAction(PetAction.Work);
+                if (applyAction)
+                    SetAction(PetAction.Work);
                 ShowBubble("AI 正在执行…", autoHide: false);
                 break;
             case PetAiState.WaitingApproval:
-                SetAction(PetAction.Look);
+                if (applyAction)
+                    SetAction(PetAction.Look);
                 ShowBubble("等待审批 · 请处理", autoHide: false, warning: true);
                 break;
             case PetAiState.Completed:
-                SetAction(PetAction.Click);
+                if (applyAction)
+                    SetAction(PetAction.Click);
                 ShowBubble("AI 任务完成", autoHide: true);
                 break;
             case PetAiState.Failed:
-                SetAction(PetAction.Sleep);
+                if (applyAction)
+                    SetAction(PetAction.Sleep);
                 ShowBubble("AI 任务失败", autoHide: true);
                 break;
             default:
                 BubblePopup.IsOpen = false;
                 _bubbleTimer.Stop();
-                SetAction(PetAction.Idle);
+                if (applyAction)
+                    SetAction(PetAction.Idle);
                 break;
         }
     }
@@ -271,7 +281,16 @@ public partial class PetWindow : Window
 
     private void Tick()
     {
-        if (_systemHidden || _reduceMotion)
+        if (_systemHidden)
+            return;
+
+        if (_showcaseActive)
+        {
+            TickShowcase();
+            return;
+        }
+
+        if (_reduceMotion)
             return;
 
         if (_dragging)
@@ -393,12 +412,13 @@ public partial class PetWindow : Window
     {
         if (Math.Abs(dx) < 0.5)
             return;
-        var left = dx < 0;
-        if (left == _facingLeft)
+        var baseFacesLeft = _frames.Facing == PetFacing.Left;
+        var flip = (dx < 0) != baseFacesLeft;
+        if (flip == _flipped)
             return;
-        _facingLeft = left;
+        _flipped = flip;
         PetImage.RenderTransformOrigin = new Point(0.5, 0.5);
-        PetImage.RenderTransform = new ScaleTransform(left ? -1 : 1, 1);
+        PetImage.RenderTransform = new ScaleTransform(flip ? -1 : 1, 1);
     }
 
     private void AdvanceAnimation()
@@ -420,6 +440,68 @@ public partial class PetWindow : Window
             return;
         _frameIndex = (_frameIndex + 1) % frames.Count;
         PetImage.Source = frames[_frameIndex];
+    }
+
+    private void OnShowcaseAll(object sender, RoutedEventArgs e) =>
+        StartShowcase(Enum.GetValues<PetAction>());
+
+    private void OnShowcaseAction(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string value } &&
+            Enum.TryParse<PetAction>(value, out var action))
+            StartShowcase(new[] { action });
+    }
+
+    private void OnStopShowcase(object sender, RoutedEventArgs e) => StopShowcase();
+
+    private void StartShowcase(IReadOnlyList<PetAction> actions)
+    {
+        if (actions.Count == 0)
+            return;
+        _showcaseActive = true;
+        _showcaseActions = actions;
+        _showcaseIndex = 0;
+        _target = null;
+        if (!_timer.IsEnabled && IsVisible)
+            _timer.Start();
+        ShowShowcaseStep();
+    }
+
+    private void ShowShowcaseStep()
+    {
+        SetAction(_showcaseActions[_showcaseIndex]);
+        _showcaseRemainingMs = _random.Next(1000, 2001);
+    }
+
+    private void TickShowcase()
+    {
+        _showcaseRemainingMs -= _timer.Interval.TotalMilliseconds;
+        if (_showcaseRemainingMs > 0)
+        {
+            AdvanceAnimation();
+            return;
+        }
+        _showcaseIndex++;
+        if (_showcaseIndex >= _showcaseActions.Count)
+        {
+            StopShowcase();
+            return;
+        }
+        ShowShowcaseStep();
+        AdvanceAnimation();
+    }
+
+    private void StopShowcase()
+    {
+        if (!_showcaseActive)
+            return;
+        _showcaseActive = false;
+        _showcaseRemainingMs = 0;
+        _target = null;
+        _waitTicks = NextWaitTicks();
+        SetAction(PetAction.Idle);
+        if (_reduceMotion)
+            _timer.Stop();
     }
 
     private void SetAction(PetAction action)

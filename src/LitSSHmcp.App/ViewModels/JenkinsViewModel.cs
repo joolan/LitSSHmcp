@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
+using LitSSHmcp.App.Controls;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Jenkins;
@@ -250,6 +251,13 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
     private bool _hasMoreBuilds;
     private bool _isLoadingMoreBuilds;
     private bool _isLogFollow = true;
+    private bool _isActive;
+    private bool _activationBusy;
+    private bool _connectionLoading;
+    private bool _connectionsLoaded;
+    private bool _connectionsStale = true;
+    private DateTime _lastRefreshUtc = DateTime.MinValue;
+    private static readonly TimeSpan PageRefreshTtl = TimeSpan.FromSeconds(30);
     private readonly DispatcherTimer _queueTimer;
     private readonly HashSet<string> _notifiedBuilds = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _pendingBuildNotifications = new(StringComparer.OrdinalIgnoreCase);
@@ -283,8 +291,12 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         _windows = windows ?? new WpfWindowService();
         _audit = audit;
         _queueTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _queueTimer.Tick += (_, _) => _ = RefreshStatusesAsync();
-        _queueTimer.Start();
+        _queueTimer.Tick += (_, _) =>
+        {
+            if (!_isActive)
+                return;
+            _ = RefreshStatusesAsync();
+        };
         Builds.CollectionChanged += (_, _) => OnPropertyChanged(nameof(BuildCount));
 
         RefreshCommand = new RelayCommand(_ => AsyncOperation.Run("刷新 Jenkins", RefreshAsync), _ => !_isBusy);
@@ -313,7 +325,54 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
             item => item is JenkinsQueueEntry && SelectedConnection is { ReadOnly: false, Enabled: true });
         ClearSearchCommand = new RelayCommand(_ => SearchText = string.Empty);
 
-        _ = LoadConnectionsAsync();
+    }
+
+    /// <summary>页面是否可见：只有可见时才启动 5 秒队列/状态轮询，切走立即停止并取消在途请求。</summary>
+    public void SetActive(bool active)
+    {
+        if (_isActive == active)
+            return;
+        _isActive = active;
+        if (active)
+        {
+            _queueTimer.Start();
+        }
+        else
+        {
+            _queueTimer.Stop();
+            CancelPending();
+        }
+    }
+
+    /// <summary>页面激活：首次加载连接；已加载过则仅在数据过期时刷新，避免来回切菜单重复拉网络。</summary>
+    public async Task ActivateAsync()
+    {
+        using var perf = PerfLog.Scope("jenkins.activate", () => SelectedConnection?.DisplayName ?? "-");
+        SetActive(true);
+        if (_activationBusy)
+            return;
+
+        _activationBusy = true;
+        try
+        {
+            if (_connectionLoading)
+                return;
+
+            if (!_connectionsLoaded || _connectionsStale)
+            {
+                await LoadConnectionsAsync();
+                return;
+            }
+
+            if (DateTime.UtcNow - _lastRefreshUtc < PageRefreshTtl)
+                return;
+
+            await RefreshAsync();
+        }
+        finally
+        {
+            _activationBusy = false;
+        }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -321,8 +380,8 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
 
     public ObservableCollection<JenkinsConnectionConfig> Connections { get; } = new();
     public ObservableCollection<JenkinsView> Views { get; } = new();
-    public ObservableCollection<JenkinsJobNode> JobRoots { get; } = new();
-    public ObservableCollection<JenkinsJobRow> JobRows { get; } = new();
+    public RangeObservableCollection<JenkinsJobNode> JobRoots { get; } = new();
+    public RangeObservableCollection<JenkinsJobRow> JobRows { get; } = new();
     public ObservableCollection<JenkinsParameterField> Parameters { get; } = new();
     public ObservableCollection<JenkinsBuildSummary> Builds { get; } = new();
     public ObservableCollection<JenkinsJobRow> SearchResults { get; } = new();
@@ -697,6 +756,7 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
 
     public async Task RefreshAsync()
     {
+        using var perf = PerfLog.Scope("jenkins.refresh", () => SelectedConnection?.DisplayName ?? "-");
         if (SelectedConnection is null)
         {
             await LoadConnectionsAsync();
@@ -705,11 +765,16 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
 
         await LoadViewsAsync();
         await LoadJobsAsync();
+
+        if (string.IsNullOrEmpty(ErrorMessage))
+            _lastRefreshUtc = DateTime.UtcNow;
     }
 
     public void ReloadConfig()
     {
-        _ = LoadConnectionsAsync();
+        _connectionsStale = true;
+        if (_isActive)
+            _ = LoadConnectionsAsync();
     }
 
     public async Task LoadConnectionsAsync()
@@ -730,6 +795,8 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
             if (Connections.Count == 0)
             {
                 SelectedConnection = null;
+                _connectionsLoaded = true;
+                _connectionsStale = false;
                 StatusMessage = "还没有 Jenkins 连接，请先添加连接。";
                 return;
             }
@@ -741,11 +808,41 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
                            ?? Connections.FirstOrDefault(item => item.Enabled)
                            ?? Connections[0];
             SelectedConnection = selected;
+            _connectionsLoaded = true;
+            _connectionsStale = false;
         }
         catch (Exception ex)
         {
+            _connectionsStale = true;
             ErrorMessage = $"加载 Jenkins 连接失败：{ex.Message}";
         }
+    }
+
+    /// <summary>先显示上次成功缓存，再走网络刷新；断网/弱网时页面不再是空白。</summary>
+    private async Task TryShowCachedAsync(string connectionId)
+    {
+        if (!_isActive)
+            return;
+
+        var cached = await PageDiskCache.TryLoadAsync<JenkinsCacheSnapshot>("jenkins", connectionId);
+        if (!cached.Found || cached.Value is not { } snapshot || !_isActive)
+            return;
+
+        Views.Clear();
+        if (snapshot.Views.Count == 0)
+            Views.Add(new JenkinsView("全部任务", string.Empty, "当前连接的全部顶层任务"));
+        else
+            foreach (var view in snapshot.Views)
+                Views.Add(view);
+        _selectedView = Views[0];
+        OnPropertyChanged(nameof(SelectedView));
+        OnPropertyChanged(nameof(SelectedViewDescription));
+
+        JobRoots.ReplaceRange(snapshot.Jobs.Select(CreateNode));
+        RebuildJobRows();
+        RebuildSearchResults();
+        OnPropertyChanged(nameof(HasJobs));
+        StatusMessage = $"已显示 {cached.SavedUtc.ToLocalTime():MM-dd HH:mm} 的缓存，正在刷新…";
     }
 
     private async Task SelectConnectionAsync(JenkinsConnectionConfig? connection)
@@ -769,6 +866,8 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
             return;
         }
 
+        _connectionLoading = true;
+        await TryShowCachedAsync(connection.Id);
         JenkinsSshTunnel? tunnel = null;
         try
         {
@@ -804,12 +903,21 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
             StatusMessage = $"已连接：{connection.DisplayName}";
             LoadSavedJobs(connection.Id);
             await LoadViewsAsync(preserveSelection: false);
+            if (!_isActive)
+                return;
+
             await LoadJobsAsync();
+            if (string.IsNullOrEmpty(ErrorMessage))
+                _lastRefreshUtc = DateTime.UtcNow;
         }
         catch (Exception ex)
         {
             tunnel?.Dispose();
             ErrorMessage = $"创建 Jenkins 客户端失败：{ex.Message}";
+        }
+        finally
+        {
+            _connectionLoading = false;
         }
     }
 
@@ -822,6 +930,9 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         try
         {
             var views = await _client.ListViewsAsync();
+            if (!_isActive)
+                return;
+
             Views.Clear();
             Views.Add(new JenkinsView("全部任务", string.Empty, "当前连接的全部顶层任务"));
             foreach (var view in views)
@@ -891,20 +1002,21 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
     private void RebuildJobRows()
     {
         var selectedNode = SelectedJob;
-        JobRows.Clear();
-        AddJobRows(JobRoots, 0);
+        var rows = new List<JenkinsJobRow>();
+        AddJobRows(JobRoots, 0, rows);
+        JobRows.ReplaceRange(rows);
         _selectedRow = JobRows.FirstOrDefault(row => ReferenceEquals(row.Node, selectedNode));
         OnPropertyChanged(nameof(SelectedRow));
         OnPropertyChanged(nameof(HasJobs));
     }
 
-    private void AddJobRows(IEnumerable<JenkinsJobNode> nodes, int depth)
+    private void AddJobRows(IEnumerable<JenkinsJobNode> nodes, int depth, List<JenkinsJobRow> rows)
     {
         foreach (var node in nodes)
         {
-            JobRows.Add(CreateJobRow(node, depth));
+            rows.Add(CreateJobRow(node, depth));
             if (node.IsExpanded && node.Children.Count > 0)
-                AddJobRows(node.Children, depth + 1);
+                AddJobRows(node.Children, depth + 1, rows);
         }
     }
 
@@ -1020,7 +1132,7 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
 
     private async Task LoadJobsAsync()
     {
-        if (_client is null)
+        if (_client is null || !_isActive)
             return;
 
         CancelLoad();
@@ -1034,12 +1146,14 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
             var jobs = SelectedView is { IsAll: false } view
                 ? await _client.ListJobsInViewAsync(view.Url, ct)
                 : await _client.ListJobsAsync(ct: ct);
-            foreach (var job in jobs)
-                JobRoots.Add(CreateNode(job));
+            JobRoots.ReplaceRange(jobs.Select(CreateNode));
             OnPropertyChanged(nameof(HasJobs));
             RebuildJobRows();
             RebuildSearchResults();
             StatusMessage = $"已加载 {jobs.Count} 个任务。";
+            if (SelectedConnection is { } connection)
+                _ = PageDiskCache.SaveAsync("jenkins", connection.Id,
+                    new JenkinsCacheSnapshot(Views.ToList(), jobs.ToList()));
             await RefreshQueueAsync();
         }
         catch (OperationCanceledException)
@@ -1665,6 +1779,9 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         try
         {
             var items = await _client.ListQueueItemsAsync();
+            if (!_isActive)
+                return;
+
             QueueItems.Clear();
             foreach (var item in items)
                 QueueItems.Add(item);
@@ -1712,11 +1829,14 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
             var jobs = SelectedView is { IsAll: false } view
                 ? await client.ListJobsInViewAsync(view.Url)
                 : await client.ListJobsAsync();
-            if (!ReferenceEquals(_client, client))
+            if (!_isActive || !ReferenceEquals(_client, client))
                 return;
 
             UpdateJobs(JobRoots, jobs);
             await RefreshLoadedChildrenAsync(client, JobRoots);
+            if (!_isActive || !ReferenceEquals(_client, client))
+                return;
+
             RebuildJobRows();
             if (HasSearch)
                 RebuildSearchResults();
@@ -1736,8 +1856,11 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
     {
         foreach (var node in nodes.Where(item => item.IsFolder && item.IsLoaded).ToArray())
         {
+            if (!_isActive)
+                return;
+
             var children = await client.ListJobsAsync(node.Url);
-            if (!ReferenceEquals(_client, client))
+            if (!_isActive || !ReferenceEquals(_client, client))
                 return;
 
             UpdateJobs(node.Children, children);
@@ -2079,3 +2202,5 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         _client = null;
     }
 }
+
+internal sealed record JenkinsCacheSnapshot(List<JenkinsView> Views, List<JenkinsJob> Jobs);

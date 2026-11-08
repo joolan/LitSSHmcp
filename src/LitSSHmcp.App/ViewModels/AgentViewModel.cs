@@ -54,6 +54,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             ctx.StateChanged += OnContextStateChanged;
             _contexts[sessionId] = ctx;
         }
+        ctx.LastUsedUtc = DateTime.UtcNow;
         return ctx;
     }
 
@@ -1008,6 +1009,9 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 RaisePendingApprovalChanged();
             }
             NotifyPetState(ctx);
+            ctx.LastUsedUtc = DateTime.UtcNow;
+            if (!ctx.IsBusy)
+                _ = TrimRuntimePoolAsync();
         });
     }
 
@@ -1076,13 +1080,6 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string _statusMessage = "加载中…";
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
 
-    /// <summary>是否处于初始加载/切换会话的加载中状态（用于显示加载遮罩）。初始为 true，避免开窗瞬间空白。</summary>
-    private bool _isLoading = true;
-    public bool IsLoading { get => _isLoading; set => Set(ref _isLoading, value); }
-
-    private string _loadingText = "正在加载…";
-    public string LoadingText { get => _loadingText; set => Set(ref _loadingText, value); }
-
     private string _noticeText = string.Empty;
     public string NoticeText
     {
@@ -1123,69 +1120,6 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool IsEditing => _editingTurn != null;
 
-    public async Task InitializeAsync()
-    {
-        IsLoading = true;
-        LoadingText = "正在加载…";
-        try
-        {
-            await _store.InitializeAsync();
-            var config = await _configService.LoadConfigAsync();
-            _fullConfig = config;
-            _agentConfig = config.Agent ?? new AgentConfig();
-            _agentConfig.LocalTerminal ??= new LocalTerminalConfig();
-            LocalTerminalSettings.ShellPath = string.IsNullOrWhiteSpace(_agentConfig.LocalTerminal.ShellPath)
-                ? null : _agentConfig.LocalTerminal.ShellPath;
-            LocalTerminalSettings.WorkingDirectory = string.IsNullOrWhiteSpace(_agentConfig.LocalTerminal.WorkingDirectory)
-                ? null : _agentConfig.LocalTerminal.WorkingDirectory;
-            ReloadPromptTemplates();
-            _sidebar.LoadCollapsed();
-            // 裁剪放到后台，不阻塞首屏（避免历史库较大时卡在启动）。
-            _ = PruneInBackgroundAsync();
-
-            _suppressSelection = true;
-            Providers.Clear();
-            foreach (var p in AgentProviderGroupConfig.Flatten(_agentConfig.Providers))
-                Providers.Add(p);
-            RebuildComboProviders();
-            SelectedProvider = PickProvider(_agentConfig.ActiveProviderId);
-            RebuildComboAgents();
-            SelectedAgent = PickAgent(_agentConfig.ActiveAgentId);
-
-            LoadingText = "正在加载会话…";
-            await ReloadGroupsAsync();
-            await ReloadSessionsAsync();
-            _suppressSelection = false;
-            var target = Sessions.FirstOrDefault();
-            if (target is not null)
-            {
-                _suppressSelection = true;
-                SelectedSession = target;
-                _suppressSelection = false;
-                SyncSidebarSelection();
-                await LoadSessionAsync(target.Id);
-            }
-            else
-            {
-                // 没有任何历史会话：进入“新任务”态（不建空会话，首次发送消息才落库）。
-                StartNewTask();
-                await ResetRuntimeAsync(null);
-            }
-
-            if (Providers.Count == 0)
-                StatusMessage = "未配置大模型：请点「AI 助手设置」添加并启用一个 OpenAI 兼容模型。";
-            StartAutoRefresh();
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "初始化失败: " + ex.Message;
-        }
-        finally
-        {
-            IsLoading = false;
-        }
-    }
-
     /// <summary>后台按保留策略裁剪历史（失败忽略，不影响启动）。</summary>
     private async Task PruneInBackgroundAsync()
     {
@@ -1216,8 +1150,11 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         RebuildSidebar();
     }
 
-    private async Task LoadSessionAsync(long id)
+    private async Task LoadSessionCoreAsync(long id, CancellationToken ct)
     {
+        if (ct.IsCancellationRequested)
+            return;
+
         _sessionId = id;
         RestoreQueueIfNeeded(CurrentContext);
         NotifyQueueState();
@@ -1230,8 +1167,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         var ctx = CurrentContext;
         ctx.WorkspaceDir = _sessionWorkspaceDir;
         _editingTurn = null;
-        IsLoading = true;
-        LoadingText = "正在加载会话…";
+        SetLoadingStage("正在加载会话", "读取会话记录…");
 
         try
         {
@@ -1290,7 +1226,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             // 对话内容已上屏：先撤遮罩，再后台连接/重建运行时（状态点会显示"连接中…"）。
             IsLoading = false;
-            await ResetRuntimeAsync(history);
+            await ResetRuntimeAsync(history, ct);
         }
         finally
         {
@@ -1301,6 +1237,25 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             RaiseBusyChanged();
             OnPropertyChanged(nameof(SessionStateText));
             OnPropertyChanged(nameof(SessionSubsetLocked));   // 启用层锁定随会话工作目录/轮次重算（D8）
+            _ = TrimRuntimePoolAsync();
+        }
+    }
+
+    /// <summary>用户切换会话：管理加载态与取消令牌，内部复用 <see cref="LoadSessionCoreAsync"/>。</summary>
+    public async Task LoadSessionAsync(long id)
+    {
+        var (cts, ct) = BeginLoading("正在加载会话", "读取会话记录…");
+        try
+        {
+            await LoadSessionCoreAsync(id, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "已取消加载";
+        }
+        finally
+        {
+            EndLoading(cts);
         }
     }
 
@@ -1733,7 +1688,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         return reason is null ? string.Empty : $" · ⚠ 记忆未生效({reason})";
     }
 
-    private async Task EnsureRuntimeAsync(IEnumerable<ChatMessage>? history)
+    private async Task EnsureRuntimeAsync(IEnumerable<ChatMessage>? history, CancellationToken ct = default)
     {
         if (SelectedProvider is null)
             return;
@@ -1778,6 +1733,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             ctx.Runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history,
                 items => UpdatePlanFor(ctx, items),
                 _skills.ActiveIdsOrNull, _planMode, SelectedAgent?.ToPromptContext(),
+                ct: ct,
                 extraTools: localTools, assetGraph: assetGraph,
                 sessionWorkspaceDir: string.IsNullOrWhiteSpace(ctx.WorkspaceDir) ? null : ctx.WorkspaceDir,
                 ownerUserId: ownerUserId, enabledMcpIds: _sessionMcpSubset,
@@ -1794,6 +1750,11 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             RefreshContextInfo();
             ReloadSkillCatalog();
             ctx.Runtime!.SetToolPolicy(_toolPolicy);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            ModelStatus = "idle";
+            StatusMessage = "已取消连接";
         }
         catch (Exception ex)
         {
@@ -1859,7 +1820,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     /// <summary>切换会话/模型：复用该会话已连接的 MCP 宿主，仅重建对话会话（不重连 MCP）。</summary>
-    private async Task ResetRuntimeAsync(IEnumerable<ChatMessage>? history)
+    private async Task ResetRuntimeAsync(IEnumerable<ChatMessage>? history, CancellationToken ct = default)
     {
         if (SelectedProvider is null)
             return;
@@ -1869,7 +1830,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
         // + 配置代际未变（设置/连接器重载后旧池元素须重建）
         if (ctx.Runtime is null || RuntimeRootMismatched || ctx.RuntimeVersion != _poolVersion)
         {
-            await EnsureRuntimeAsync(history);
+            await EnsureRuntimeAsync(history, ct);
             return;
         }
 
@@ -1890,6 +1851,11 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             RefreshContextInfo();
             ReloadSkillCatalog();
             await Task.CompletedTask;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            ModelStatus = "idle";
+            StatusMessage = "已取消连接";
         }
         catch (Exception ex)
         {
@@ -2455,7 +2421,10 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             await runtime.Session.SendAsync(contents ?? new AIContent[] { new TextContent(turn.UserText) }, progress, cts.Token);
             turnSucceeded = true;
             if (ReferenceEquals(ctx, CurrentContext))
+            {
                 StatusMessage = "完成";
+                ModelStatus = "ready";
+            }
         }
         catch (OperationCanceledException)
         {
@@ -2466,7 +2435,11 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             var reason = ChatErrorClassifier.Describe(ex);
             turn.Note = reason;
             if (ReferenceEquals(ctx, CurrentContext))
+            {
                 StatusMessage = reason;
+                if (ChatErrorClassifier.IsTransient(ex))
+                    ModelStatus = "error";
+            }
         }
         finally
         {

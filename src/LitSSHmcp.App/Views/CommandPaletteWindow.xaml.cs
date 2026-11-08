@@ -31,6 +31,10 @@ public partial class CommandPaletteWindow : FluentWindow
         new("数据源", "页面 · MySQL / PostgreSQL / Redis", SymbolRegular.Database24, () => vm.NavigateDataSourcesCommand.Execute(null)),
         new("应用", "页面 · app: 拓扑节点", SymbolRegular.Apps24, () => vm.NavigateApplicationsCommand.Execute(null)),
         new("远程桌面", "页面 · RDP / VNC", SymbolRegular.Desktop24, () => vm.NavigateRemoteDesktopsCommand.Execute(null)),
+        new("Jenkins", "页面 · 多连接构建与队列", SymbolRegular.Play24, () => vm.NavigateJenkinsCommand.Execute(null)),
+        new("Kubernetes", "页面 · 多集群只读视图", SymbolRegular.Cloud24, () => vm.NavigateKubernetesCommand.Execute(null)),
+        new("工具箱", "页面 · 本地工具启动器", SymbolRegular.Toolbox24, () => vm.NavigateToolboxCommand.Execute(null)),
+        new("通知中心", "工具 · 应用内通知与告警", SymbolRegular.Alert24, () => vm.OpenNotificationCenterCommand.Execute(null)),
         new("SSH 会话管理", "工具 · 打开 / 切换终端", SymbolRegular.Server24, () => vm.OpenSessionManagerCommand.Execute(null)),
         new("资产拓扑", "工具 · 查看资产关系", SymbolRegular.Share24, () => vm.OpenTopologyCommand.Execute(null)),
         new("审计日志", "工具 · 查询操作审计", SymbolRegular.History24, () => vm.OpenAuditCommand.Execute(null)),
@@ -39,6 +43,8 @@ public partial class CommandPaletteWindow : FluentWindow
         new("文件 / 文件夹同步", "工具 · 同步任务", SymbolRegular.ArrowSync24, () => vm.OpenSyncCommand.Execute(null)),
         new("触发事件", "工具 · Git / Webhook / 备份", SymbolRegular.Flash24, () => vm.OpenTriggerCommand.Execute(null)),
         new("设置", "应用 · 安全 / 工具 / 导入导出", SymbolRegular.Settings24, () => vm.OpenSettingsCommand.Execute(null)),
+        new("存储维护 / 备份", "设置 · 存储统计与定时备份", SymbolRegular.HardDrive24, () => vm.OpenSettingsTab(6)),
+        new("桌面宠物设置", "设置 · 宠物素材、动画与移动", SymbolRegular.Heart24, () => vm.OpenPetSettings()),
         new("打开选中服务器终端", "SSH · 先在服务器页选中服务器", SymbolRegular.Play24, () => vm.OpenTerminalCommand.Execute(null)),
         new("批量执行", "SSH · 向多台服务器发送命令", SymbolRegular.Play24, () => vm.OpenBatchExecCommand.Execute(null))
     };

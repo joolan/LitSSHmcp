@@ -33,6 +33,18 @@ public class MainWindowXamlTests
     }
 
     [Fact]
+    public void Main_window_side_nav_can_scroll()
+    {
+        var ex = RunSta(() =>
+        {
+            var window = new MainWindow();
+            var scroll = (System.Windows.Controls.ScrollViewer)window.FindName("SideNavScroll")!;
+            Assert.Equal(System.Windows.Controls.ScrollBarVisibility.Auto, scroll.VerticalScrollBarVisibility);
+        });
+        Assert.Null(ex);
+    }
+
+    [Fact]
     public void Main_window_pages_do_not_overlap()
     {
         var ex = RunSta(() =>
@@ -97,6 +109,40 @@ public class MainWindowXamlTests
             var cancel = (System.Windows.Controls.Button)dialog.FindName("CancelButton")!;
             Assert.True(cancel.IsCancel);
         });
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void Agent_view_parses_xaml()
+    {
+        var ex = RunSta(() =>
+        {
+            var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                "litssh-agentview-" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            try
+            {
+                var configService = new ConfigService(
+                    System.IO.Path.Combine(dir, "config.json"),
+                    new LitSSHmcp.Core.Services.Security.DpapiSecretProtector());
+                var store = new LitSSHmcp.Agent.ContextStore(System.IO.Path.Combine(dir, "agent.db"));
+                var view = new AgentView(configService, store, System.IO.Path.Combine(dir, "skills"));
+                view.Measure(new System.Windows.Size(1200, 800));
+                view.Arrange(new System.Windows.Rect(0, 0, 1200, 800));
+                view.UpdateLayout();
+            }
+            finally
+            {
+                try { System.IO.Directory.Delete(dir, recursive: true); } catch { /* 忽略 */ }
+            }
+        });
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void Notification_center_window_parses_xaml()
+    {
+        var ex = RunSta(() => _ = new NotificationCenterWindow());
         Assert.Null(ex);
     }
 

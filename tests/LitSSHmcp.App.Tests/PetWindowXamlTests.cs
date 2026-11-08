@@ -1,6 +1,7 @@
 using System.Threading;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using LitSSHmcp.App.Controls;
 using LitSSHmcp.App.Services.Pet;
@@ -69,6 +70,9 @@ public class PetWindowXamlTests
         var ex = RunSta(() =>
         {
             var window = new PetWindow(new PetConfig { Enabled = true, ReduceMotion = true });
+            var grid = Assert.IsType<Grid>(window.Content);
+            Assert.Contains(grid.ContextMenu!.Items.OfType<MenuItem>(),
+                item => (string)item.Header == "展示动作");
             window.SetAiState(PetAiState.Running);
             window.SetAiState(PetAiState.WaitingApproval);
             window.SetAiState(PetAiState.Completed);

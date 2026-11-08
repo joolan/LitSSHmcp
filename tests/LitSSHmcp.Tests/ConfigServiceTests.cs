@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
@@ -76,6 +77,58 @@ public class ConfigServiceTests
 
             Assert.Equal(AppConfig.CurrentSchemaVersion, config.SchemaVersion);
             Assert.True(File.Exists(path));
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public async Task Cached_load_returns_independent_copies()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "config.json");
+        try
+        {
+            var service = new ConfigService(path, new DpapiSecretProtector());
+            var first = await service.LoadConfigAsync();
+            first.Ui ??= new UiConfig();
+            first.Ui.Theme = "dark";
+
+            var second = await service.LoadConfigAsync();
+            Assert.NotSame(first, second);
+            Assert.NotEqual("dark", second.Ui?.Theme);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public async Task External_file_change_invalidates_cache()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "litssh-cfg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "config.json");
+        try
+        {
+            var service = new ConfigService(path, new DpapiSecretProtector());
+            var initial = await service.LoadConfigAsync();
+            initial.Ui ??= new UiConfig();
+            initial.Ui.Theme = "dark";
+            await service.SaveConfigAsync(initial);
+
+            var text = await File.ReadAllTextAsync(path);
+            var external = JsonSerializer.Deserialize<AppConfig>(text, AppConfigJson.Options)!;
+            external.Ui ??= new UiConfig();
+            external.Ui.Theme = "light";
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(external, AppConfigJson.Options));
+
+            var reloaded = await service.LoadConfigAsync();
+            Assert.Equal("light", reloaded.Ui?.Theme);
         }
         finally
         {

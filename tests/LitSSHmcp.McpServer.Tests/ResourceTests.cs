@@ -124,6 +124,7 @@ public class ResourceTests
         public Task<ServerSnapshot?> GetByIdAsync(long id, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<ServerSnapshot?> GetRunningAsync(string serverId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<List<ServerSnapshot>> GetRecentAsync(string serverId, int limit = 10, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<List<ServerSnapshot>> GetRecentWithDataAsync(string serverId, int limit = 10, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<List<SnapshotEvent>> GetEventsAsync(long snapshotId, int limit = 50, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<int> PruneAsync(string serverId, int keepPerServer, CancellationToken ct = default) => throw new NotImplementedException();
     }

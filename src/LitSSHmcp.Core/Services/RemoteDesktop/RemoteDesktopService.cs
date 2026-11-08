@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
@@ -207,8 +208,8 @@ public sealed class RemoteDesktopService : IDisposable
         var rdpFile = Path.Combine(baseDir, "session.rdp");
         File.WriteAllText(rdpFile, BuildRdp(cfg, host, port), new UTF8Encoding(false));
 
-        // 需要自动登录时，把凭据暂存到 Windows 凭据管理器（mstsc 会按 TERMSRV/<host> 取用）。
-        // 注意：密码会短暂出现在 cmdkey 命令行参数中（本机当前用户进程）；不写入 .rdp 明文文件。
+        // 需要自动登录时，把凭据写入 Windows 凭据管理器（mstsc 会按 TERMSRV/<host> 取用）。
+        // 使用 CredWrite，密码不出现在进程命令行，也不写入 .rdp 明文文件。
         if (cfg.UseLoginCredentials && !string.IsNullOrEmpty(cfg.Username))
             StoreCredential(cfg, host);
 
@@ -265,28 +266,74 @@ public sealed class RemoteDesktopService : IDisposable
         return sb.ToString();
     }
 
+    private const uint CredTypeGeneric = 1;
+    private const uint CredPersistLocalMachine = 2;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct NativeCredential
+    {
+        public uint Flags;
+        public uint Type;
+        public IntPtr TargetName;
+        public IntPtr Comment;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
+        public uint CredentialBlobSize;
+        public IntPtr CredentialBlob;
+        public uint Persist;
+        public uint AttributeCount;
+        public IntPtr Attributes;
+        public IntPtr TargetAlias;
+        public IntPtr UserName;
+    }
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CredWriteW(ref NativeCredential credential, uint flags);
+
     /// <summary>
-    /// 把连接的用户名/密码暂存到 Windows 凭据管理器（mstsc / RDP ActiveX 会按 <c>TERMSRV/&lt;host&gt;</c> 取用）。
-    /// 注意：密码会短暂出现在本机 cmdkey 命令行参数中；不写入 .rdp 明文文件。失败不抛出。
+    /// 把连接的用户名/密码写入 Windows 凭据管理器（mstsc / RDP ActiveX 会按 <c>TERMSRV/&lt;host&gt;</c> 取用）。
+    /// 使用 CredWrite 而不是 cmdkey，避免密码出现在进程命令行；不写入 .rdp 明文文件。失败不抛出。
     /// </summary>
     public static void StoreCredential(RemoteDesktopConfig cfg, string host)
     {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var password = cfg.Password ?? string.Empty;
+        if (password.Length == 0)
+            return;
+
         try
         {
             var user = cfg.Username ?? string.Empty;
-            // 用户名字段可能已含 "域\用户"；否则在配置了域时补上域前缀
+            // 用户名字段可能已是 "域\用户"；否则在配置了域时补上域前缀
             if (!user.Contains('\\') && !string.IsNullOrWhiteSpace(cfg.Domain))
                 user = cfg.Domain + "\\" + user;
-            var psi = new ProcessStartInfo("cmdkey")
+
+            var targetPtr = Marshal.StringToCoTaskMemUni($"TERMSRV/{host}");
+            var userPtr = Marshal.StringToCoTaskMemUni(user);
+            var commentPtr = Marshal.StringToCoTaskMemUni("LitSSH remote desktop");
+            var blobPtr = Marshal.StringToCoTaskMemUni(password);
+            try
             {
-                Arguments = $"/generic:TERMSRV/{host} /user:\"{user}\" /pass:\"{cfg.Password ?? string.Empty}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            using var p = Process.Start(psi);
-            p?.WaitForExit(5000);
+                var credential = new NativeCredential
+                {
+                    Type = CredTypeGeneric,
+                    TargetName = targetPtr,
+                    Comment = commentPtr,
+                    CredentialBlobSize = (uint)(password.Length * sizeof(char)),
+                    CredentialBlob = blobPtr,
+                    Persist = CredPersistLocalMachine,
+                    UserName = userPtr
+                };
+                CredWriteW(ref credential, 0);
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(targetPtr);
+                Marshal.FreeCoTaskMem(userPtr);
+                Marshal.FreeCoTaskMem(commentPtr);
+                Marshal.FreeCoTaskMem(blobPtr);
+            }
         }
         catch
         {

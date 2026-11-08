@@ -3,9 +3,9 @@ using System.Text.Json;
 using LitSSHmcp.Agent;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Approval;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
-using Renci.SshNet;
 
 namespace LitSSHmcp.Cli;
 
@@ -81,6 +81,7 @@ class Program
   litssh list                    列出所有已配置的服务器
   litssh connect <服务器名称>     连接到服务器(交互式)
   litssh run <服务器名称> <命令>  在服务器上执行命令
+                                 （敏感命令/交互式连接需要先审批）
   litssh approvals               列出待审批的敏感操作(带外审批)
   litssh approve <审批ID>        批准某个待审批操作
   litssh deny <审批ID>           拒绝某个待审批操作
@@ -275,47 +276,51 @@ class Program
 
         Console.WriteLine($"正在连接到 {server.Name} ({server.Host}:{server.Port})...");
 
+        var security = CliSecurity.CreateSecurity();
+        var audit = await CliSecurity.CreateAuditAsync();
+        if (!await CliSecurity.RequireApprovalAsync(security, audit, server, "ssh_interactive_shell", "interactive shell"))
+            return 3;
+
         try
         {
-            using var client = CreateSshClient(server);
-            client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(10);
-            client.Connect();
+            var ssh = CliSecurity.CreateSshService(security);
+            await using var session = await ssh.OpenShellAsync(server, "xterm-256color", 80, 24);
 
             Console.WriteLine("连接成功!");
             Console.WriteLine("输入命令执行，输入 'exit' 退出");
             Console.WriteLine(new string('-', 40));
 
-            using var shellStream = client.CreateShellStream("xterm-256color", 80, 24, 800, 600, 1024);
-
-            var inputTask = Task.Run(() =>
+            _ = Task.Run(() =>
             {
                 while (true)
                 {
                     var line = Console.ReadLine();
                     if (line?.ToLower() == "exit")
                     {
-                        shellStream.Close();
+                        session.Stream.Close();
                         break;
                     }
                     if (line != null)
-                        shellStream.WriteLine(line);
+                        session.Write(line + "\n");
                 }
             });
 
-            shellStream.DataReceived += (sender, e) =>
+            session.Stream.DataReceived += (_, e) =>
             {
                 Console.Write(System.Text.Encoding.UTF8.GetString(e.Data));
             };
 
-            while (shellStream.Length > 0 || client.IsConnected)
-            {
+            while (session.IsConnected)
                 await Task.Delay(100);
-            }
 
+            await CliSecurity.AuditExecutionAsync(audit, server, "interactive shell",
+                CommandStatus.Executed, "opened");
             return 0;
         }
         catch (Exception ex)
         {
+            await CliSecurity.AuditExecutionAsync(audit, server, "interactive shell",
+                CommandStatus.Failed, ex.Message);
             Console.WriteLine($"连接失败: {ex.Message}");
             return 1;
         }
@@ -336,37 +341,51 @@ class Program
             return 1;
         }
 
-        Console.WriteLine($"在 {server.Name} 上执行: {command}");
+        var security = CliSecurity.CreateSecurity();
+        var audit = await CliSecurity.CreateAuditAsync();
+        var filter = new CommandFilterService(security);
+        var filterResult = filter.CheckCommand(command);
+
+        if (filterResult == CommandFilterResult.Blocked)
+        {
+            await CliSecurity.AuditGateAsync(audit, server, command, CommandStatus.Blocked, "blocked");
+            Console.WriteLine("命令被安全策略拦截。");
+            return 2;
+        }
+
+        if (filterResult == CommandFilterResult.Sensitive &&
+            !await CliSecurity.RequireApprovalAsync(security, audit, server, "ssh_execute_command", command))
+            return 3;
+
+        Console.WriteLine($"在 {server.Name} 上执行: {SecretRedactor.Redact(command)}");
 
         var sw = Stopwatch.StartNew();
         try
         {
-            using var client = CreateSshClient(server);
-            client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(10);
-            client.Connect();
-
-            using var cmd = client.CreateCommand(command);
-            cmd.CommandTimeout = TimeSpan.FromSeconds(60);
-            var result = cmd.Execute();
+            var ssh = CliSecurity.CreateSshService(security);
+            var result = await ssh.ExecuteCommandAsync(server, command, timeoutSeconds: 60);
             sw.Stop();
 
-            if (!string.IsNullOrEmpty(result))
-                Console.Write(result);
+            if (!string.IsNullOrEmpty(result.Output))
+                Console.Write(result.Output);
 
-            if (!string.IsNullOrEmpty(cmd.Error))
-                Console.Error.Write(cmd.Error);
+            if (!string.IsNullOrEmpty(result.Error))
+                Console.Error.Write(result.Error);
 
-            return cmd.ExitStatus ?? 0;
+            var auditResult = result.Output + (string.IsNullOrEmpty(result.Error) ? string.Empty : "\n" + result.Error);
+            if (auditResult.Length > 16000)
+                auditResult = auditResult[..16000];
+            await CliSecurity.AuditExecutionAsync(audit, server, command,
+                result.Success ? CommandStatus.Executed : CommandStatus.Failed, auditResult);
+
+            return result.ExitCode;
         }
         catch (Exception ex)
         {
             sw.Stop();
+            await CliSecurity.AuditExecutionAsync(audit, server, command, CommandStatus.Failed, ex.Message);
             Console.WriteLine($"执行失败: {ex.Message}");
             return 1;
         }
     }
-
-    static SshClient CreateSshClient(SshServerConfig server) =>
-        // 复用连接工厂：自动支持 ProxyJump（跳板机）；CLI 不做主机密钥校验（保持原有行为）。
-        LitSSHmcp.Core.Services.SSH.SshClientFactory.Create(server, knownHosts: null, hostKeyMode: SshHostKeyMode.Off);
 }

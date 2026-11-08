@@ -323,29 +323,33 @@ public sealed class AgentRuntime : IAsyncDisposable
                     serverInstructions.Add(host.ServerInstructions!.Trim());
             }
 
-            // 2) 外部 MCP：单个连接失败只降级为警告（不阻断会话启动）
-            foreach (var server in servers.Where(s => s is { Builtin: false, Enabled: true }))
+            // 2) 外部 MCP：并行连接 + 单台 10 秒超时；单个失败只降级为警告（不阻断会话启动）
+            var externalServers = servers.Where(s => s is { Builtin: false, Enabled: true }).ToArray();
+            if (externalServers.Length > 0)
             {
-                McpToolHost? host = null;
-                try
+                var externalResults = await Task.WhenAll(
+                    externalServers.Select(server => ConnectExternalMcpAsync(server, ct)));
+
+                foreach (var result in externalResults)
                 {
-                    host = McpToolHost.Create(server);
-                    await host.ConnectAsync(ct);
-                    hosts.Add(host);
-                    externalHosts.Add((server, host));
-                    if (!string.IsNullOrWhiteSpace(host.ServerInstructions))
-                        serverInstructions.Add($"[{server.Name}] {host.ServerInstructions!.Trim()}");
-                }
-                catch (Exception ex)
-                {
-                    if (ct.IsCancellationRequested)
-                        throw;
-                    try { if (host is not null) await host.DisposeAsync(); } catch { /* 忽略关停失败 */ }
-                    var error = Shorten(ex.Message);
-                    mcpWarnings.Add($"{server.Name}: {error}");
-                    infoById[server.Id] = new ExternalMcpServerInfo(server.Name, 0, Array.Empty<string>(), error);
+                    if (result.Host is not null)
+                    {
+                        hosts.Add(result.Host);
+                        externalHosts.Add((result.Server, result.Host));
+                        if (!string.IsNullOrWhiteSpace(result.Host.ServerInstructions))
+                            serverInstructions.Add($"[{result.Server.Name}] {result.Host.ServerInstructions!.Trim()}");
+                    }
+                    else
+                    {
+                        var error = result.Error ?? "连接失败";
+                        mcpWarnings.Add($"{result.Server.Name}: {error}");
+                        infoById[result.Server.Id] = new ExternalMcpServerInfo(
+                            result.Server.Name, 0, Array.Empty<string>(), error);
+                    }
                 }
             }
+
+            ct.ThrowIfCancellationRequested();
         }
         catch
         {
@@ -788,6 +792,33 @@ public sealed class AgentRuntime : IAsyncDisposable
         if (text.Length == 0)
             text = "连接失败";
         return text.Length > 200 ? text[..200] + "…" : text;
+    }
+
+    private sealed record ExternalMcpConnectResult(AgentMcpServerConfig Server, McpToolHost? Host, string? Error);
+
+    private const int ExternalMcpConnectTimeoutSeconds = 10;
+
+    /// <summary>
+    /// 外部 MCP 单台独立超时连接。弱网/断网时不等待每个服务器的默认长超时，
+    /// 失败只记为该连接器未连接，不影响内置 MCP 与本地会话加载。
+    /// </summary>
+    private static async Task<ExternalMcpConnectResult> ConnectExternalMcpAsync(
+        AgentMcpServerConfig server, CancellationToken ct)
+    {
+        McpToolHost? host = null;
+        try
+        {
+            host = McpToolHost.Create(server);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(ExternalMcpConnectTimeoutSeconds));
+            await host.ConnectAsync(timeout.Token);
+            return new ExternalMcpConnectResult(server, host, null);
+        }
+        catch (Exception ex)
+        {
+            try { if (host is not null) await host.DisposeAsync(); } catch { /* 忽略关停失败 */ }
+            return new ExternalMcpConnectResult(server, null, Shorten(ex.Message));
+        }
     }
 
     public async ValueTask DisposeAsync()

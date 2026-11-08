@@ -108,6 +108,21 @@ public partial class BackupSettingsView : UserControl
         new BackupHistoryWindow(row.Plan) { Owner = Window.GetWindow(this) }.ShowDialog();
     }
 
+    private void OnOssBackups(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("打开 OSS 备份", async () =>
+        {
+            var config = await _viewModel.GetConfigAsync();
+            if (config is null)
+            {
+                _dialogs.Error("无法读取配置。", "OSS 备份");
+                return;
+            }
+            new OssBackupBrowserWindow(config)
+            {
+                Owner = Window.GetWindow(this)
+            }.ShowDialog();
+        });
+
     private void OnRestore(object sender, RoutedEventArgs e) =>
         new BackupRestoreWindow { Owner = Window.GetWindow(this) }.ShowDialog();
 

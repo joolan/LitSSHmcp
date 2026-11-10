@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.SSH;
@@ -19,14 +21,6 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
     private const int MaxCertificates = 15;
     public const int ExpiringSoonDays = 30;
 
-    // 优先用"正在运行的 nginx 进程"的实际可执行路径执行 -T（如宝塔在 /www/server/nginx/sbin/nginx，
-    // 与 PATH 里的系统 nginx 是两套配置），拿不到再回退 PATH。set -e 不启用，失败可继续。
-    private const string ConfigCommand =
-        "NGX=''; for p in $(pgrep -x nginx 2>/dev/null); do e=$(readlink /proc/$p/exe 2>/dev/null); " +
-        "case \"$e\" in */nginx) NGX=$e; break;; esac; done; " +
-        "[ -z \"$NGX\" ] && NGX=$(command -v nginx 2>/dev/null); " +
-        "if [ -z \"$NGX\" ]; then echo '##nginx_missing'; else \"$NGX\" -T 2>&1 | head -2000; fi";
-
     private static readonly Regex ServerBlockPattern = new(@"^server\s*\{?\s*$", RegexOptions.Compiled);
     private static readonly Regex CommonNamePattern = new(@"CN\s*=\s*([^,/]+)", RegexOptions.Compiled);
 
@@ -46,17 +40,50 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
-        var configResult = await context.ExecuteAsync(ConfigCommand, context.Elevate, ct);
+        var detect = await context.ExecuteAsync(NginxConfigProbe.DetectCommand, context.Elevate, ct);
+        if (!detect.Success && detect.ErrorKind is not null)
+            return CollectorResult.FromCommandFailure(detect) with { DurationMs = sw.Elapsed.TotalMilliseconds };
+
+        var detected = NginxConfigProbe.ParseDetect(detect.Output);
+        if (detected is null)
+            return CollectorResult.Skip("未检测到 nginx / tengine(进程与 PATH 均无)")
+                with { DurationMs = sw.Elapsed.TotalMilliseconds };
+
+        var bin = detected.Bin;
+        var serverType = detected.ServerType;
+        var version = detected.Version;
+
+        var configCommand = NginxConfigProbe.BuildConfigCommand(bin);
+        var configResult = await context.ExecuteAsync(configCommand, context.Elevate, ct);
         if (!configResult.Success && configResult.ErrorKind is not null)
             return CollectorResult.FromCommandFailure(configResult) with { DurationMs = sw.Elapsed.TotalMilliseconds };
 
         var configOutput = SanitizeNginxConfig(configResult.Output);
-        // 整行精确匹配哨兵: 交互式 PTY 会回显命令行(其中含 '##nginx_missing' 字面量),
-        // 用 Contains 会在 su 提权时把"其实已采集到配置"误判为"未安装"。
-        if (configOutput.Replace("\r\n", "\n").Split('\n').Any(l => l.Trim() == "##nginx_missing"))
-            return CollectorResult.Skip("未检测到 nginx(进程与 PATH 均无)") with { DurationMs = sw.Elapsed.TotalMilliseconds };
+        var (sites, truncated) = ParseNginxConfig(configOutput,
+            truncationLineLimit: NginxConfigProbe.MaxConfigLines);
+        var configFallback = false;
 
-        var (sites, truncated) = ParseNginxConfig(configOutput);
+        // Tengine/不支持 -T 的构建：解析不到 server 块或输出被截断时，按 --conf-path/常见目录读取配置文件。
+        if (sites.Count == 0 || truncated)
+        {
+            var fallback = await context.ExecuteAsync(NginxConfigProbe.BuildFallbackConfigCommand(bin),
+                context.Elevate, ct);
+            if (fallback.Success || !string.IsNullOrWhiteSpace(fallback.Output))
+            {
+                var fallbackText = SanitizeNginxConfig(fallback.Output);
+                var (fallbackSites, fallbackTruncated) =
+                    ParseNginxConfig(fallbackText,
+                        truncationLineLimit: NginxConfigProbe.MaxConfigLines);
+                if (fallbackSites.Count > 0)
+                {
+                    configOutput = fallbackText;
+                    sites = fallbackSites;
+                    truncated = fallbackTruncated;
+                    configFallback = true;
+                }
+            }
+        }
+
         if (sites.Count == 0)
         {
             // 空输出或 nginx 自身报错(nginx: [emerg] ...)都算失败——"没解析出站点"必须区分于"环境不具备"
@@ -70,6 +97,9 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
                 return CollectorResult.Fail("nginx -T 输出为空(配置错误或权限不足), 无法提取证书", configResult.ErrorKind)
                     with { DurationMs = sw.Elapsed.TotalMilliseconds };
         }
+
+        var configHash = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(configOutput)))[..16].ToLowerInvariant();
 
         // phase2: 批量读证书（一次往返）；证书目录常为 root-only, 跟随整体提权决策
         var certPaths = sites.SelectMany(s => s.CertPaths).Distinct().Take(MaxCertificates).ToList();
@@ -97,6 +127,10 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
         var data = new Dictionary<string, object?>
         {
             ["available"] = true,
+            ["serverType"] = serverType,
+            ["version"] = version,
+            ["configHash"] = configHash,
+            ["configFallback"] = configFallback,
             ["serverCount"] = sites.Count,
             ["sites"] = sites.Select(ToSiteDto).ToList(),
             // 域名列表: 所有 server_name; 启用 SSL 的域名挂上对应证书信息(便于"哪些域名有证书/何时过期")
@@ -110,6 +144,10 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
             ["certificateCount"] = certificates.Count,
             // nginx -T 校验后的完整有效配置(含 include 展开)
             ["effectiveConfig"] = configOutput,
+            ["configChars"] = configOutput.Length,
+            ["configPreview"] = configOutput.Length <= 8000
+                ? configOutput
+                : configOutput[..8000] + "\n...(预览截断，完整配置用 detail=full)",
             ["configTruncated"] = truncated
         };
 
@@ -234,11 +272,12 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
     /// 解析 nginx -T 全量输出为 server 块（含 include 展开后的内容）。
     /// 括号深度跟踪定位 server{} 边界；截断（head -2000）返回 truncated=true。
     /// </summary>
-    public static (List<NginxSite> Sites, bool Truncated) ParseNginxConfig(string output)
+    public static (List<NginxSite> Sites, bool Truncated) ParseNginxConfig(string output,
+        int truncationLineLimit = 2000)
     {
         var sites = new List<NginxSite>();
         var lines = output.Replace("\r\n", "\n").Split('\n');
-        var truncated = lines.Length >= 2000;
+        var truncated = lines.Length >= Math.Max(1, truncationLineLimit);
 
         NginxSite? current = null;
         var serverDepth = 0;
@@ -247,7 +286,9 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
 
         foreach (var rawLine in lines)
         {
-            var line = rawLine.Trim();
+            // 去掉行内注释（如 "server { # foo" / "server_name a.com; # bar"），
+            // 否则 server 块识别和 server_name/listen 等指令都会漏掉。
+            var line = StripInlineComment(rawLine.Trim());
             if (line.Length == 0 || line.StartsWith('#'))
                 continue;
 
@@ -273,31 +314,31 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
             // server 块内部(已进入花括号): 提取字段
             if (entered)
             {
-                if (line.StartsWith("server_name ", StringComparison.Ordinal))
+                if (IsDirective(line, "server_name"))
                 {
                     var names = line["server_name".Length..].Trim().TrimEnd(';')
-                        .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        .Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                     current.ServerNames.AddRange(names.Where(n => n != "_"));
                 }
-                else if (line.StartsWith("listen ", StringComparison.Ordinal))
+                else if (IsDirective(line, "listen"))
                 {
                     var listen = ParseListen(line["listen".Length..].Trim().TrimEnd(';'));
                     if (listen is not null)
                         current.Listens.Add(listen);
                 }
-                else if (line.StartsWith("ssl_certificate ", StringComparison.Ordinal))
+                else if (IsDirective(line, "ssl_certificate"))
                 {
                     var path = line["ssl_certificate".Length..].Trim().TrimEnd(';').Trim();
                     if (path.Length > 0 && !path.Contains('$'))   // ��������֤��·���޷���̬��ȡ
                         current.CertPaths.Add(path);
                 }
-                else if (line.StartsWith("root ", StringComparison.Ordinal))
+                else if (IsDirective(line, "root"))
                 {
                     var path = line["root".Length..].Trim().TrimEnd(';').Trim().Trim('"', '\'');
                     if (path.Length > 0 && !path.Contains('$'))
                         current.RootPaths.Add(path);
                 }
-                else if (line.StartsWith("proxy_pass ", StringComparison.Ordinal))
+                else if (IsDirective(line, "proxy_pass"))
                 {
                     var target = line["proxy_pass".Length..].Trim().TrimEnd(';').Trim().Trim('"', '\'');
                     if (target.Length > 0 && !target.Contains('$'))
@@ -319,7 +360,19 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
             }
         }
 
-        return (sites.Take(50).ToList(), truncated || sites.Count > 50);
+        return (sites.Take(500).ToList(), truncated || sites.Count > 500);
+    }
+
+    /// <summary>指令名后允许空格或 Tab（Tengine/宝塔配置常见 Tab 缩进）。</summary>
+    private static bool IsDirective(string line, string name) =>
+        line.StartsWith(name + " ", StringComparison.Ordinal) ||
+        line.StartsWith(name + "\t", StringComparison.Ordinal);
+
+    /// <summary>去掉行内注释；server_name/listen 等简单指令值通常不含 #。</summary>
+    private static string StripInlineComment(string line)
+    {
+        var index = line.IndexOf('#');
+        return index >= 0 ? line[..index].TrimEnd() : line;
     }
 
     /// <summary>"443 ssl" / "[::]:443 ssl http2" / "80" → listen 记录；无法解析端口时返回 null。</summary>

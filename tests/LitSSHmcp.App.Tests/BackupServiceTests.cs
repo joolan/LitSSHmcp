@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Compression;
+using System.Text.Json;
 using LitSSHmcp.App.Services.Backup;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
@@ -45,6 +46,23 @@ public class BackupServiceTests : IDisposable
         Assert.Contains(archive.Entries, entry => entry.FullName == "manifest.json");
         Assert.Contains(archive.Entries, entry => entry.FullName == "items/config/config.json");
         Assert.Contains(archive.Entries, entry => entry.FullName == "items/skills/a.md");
+
+        using var manifestStream = archive.GetEntry("manifest.json")!.Open();
+        var manifest = JsonSerializer.Deserialize<BackupManifest>(manifestStream)!;
+        Assert.False(string.IsNullOrWhiteSpace(manifest.AppVersion));
+    }
+
+    [Fact]
+    public void Backup_file_name_includes_app_version()
+    {
+        var plan = new BackupPlanConfig { Name = "每日" };
+        var name = BackupService.BuildFileName(plan);
+
+        Assert.Matches(@"^LitSSH-backup-.+-v[^-]+-\d{8}-\d{6}\.zip$", name);
+        Assert.Contains("v" + BackupService.AppVersion, name);
+
+        plan.EncryptBackup = true;
+        Assert.EndsWith(".lsbak", BackupService.BuildFileName(plan));
     }
 
     [Fact]

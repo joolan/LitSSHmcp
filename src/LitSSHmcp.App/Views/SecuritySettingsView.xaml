@@ -189,6 +189,12 @@
                 <TextBlock Text="服务器快照 (ssh_snapshot_get / ssh_snapshot_refresh)" FontWeight="Bold" Margin="0,8,0,4"/>
                 <CheckBox Content="采集快照时使用提权 (sudo, 以便拿到 root 端口/进程/证书视图)" IsChecked="{Binding SnapshotUseSudo}" Margin="0,0,0,6"
                           ToolTip="仅当该服务器配置了 SudoType 时生效；采集命令均为内置固定只读命令、不逐次弹审批；关闭则自动降级采集(端口进程属主等字段缺失)"/>
+                <CheckBox Content="采集 accounts 账号维度 (用户/密码状态/特权组/风险)" IsChecked="{Binding SnapshotCollectAccounts}" Margin="0,0,0,4"
+                          ToolTip="关闭后 ssh_snapshot_get(section=accounts) 为 skipped；不影响 security 的端口/防火墙/MySQL 检查"/>
+                <CheckBox Content="采集 authorized_keys (仅指纹/注释，不存完整公钥)" IsChecked="{Binding SnapshotCollectAuthorizedKeys}"
+                          IsEnabled="{Binding SnapshotCollectAccounts}" Margin="0,0,0,4"/>
+                <CheckBox Content="采集 last/lastlog/lastb 登录历史" IsChecked="{Binding SnapshotCollectLoginHistory}"
+                          IsEnabled="{Binding SnapshotCollectAccounts}" Margin="0,0,0,6"/>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                     <TextBlock Text="每服务器保留份数:" VerticalAlignment="Center"/>
                     <TextBox Text="{Binding SnapshotRetention, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,4,0"/>

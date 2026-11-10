@@ -31,6 +31,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     private readonly ISnapshotService _snapshotService;
     private readonly ISnapshotStore _snapshotStore;
     private bool _snapshotBusy;
+    private CancellationTokenSource? _snapshotCts;
 
     private SshServerConfig? _selectedServer;
     private object? _selectedSession;
@@ -75,6 +76,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     public ICommand OpenProxiedBrowserCommand { get; }
     public ICommand AskAgentCommand { get; }
     public ICommand SnapshotRefreshCommand { get; }
+    public ICommand SnapshotCancelCommand { get; }
     public ICommand OpenSnapshotHistoryCommand { get; }
 
     public MainViewModel(IUserDialogService? dialogs = null, IWindowService? windows = null,
@@ -129,6 +131,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         OpenProxiedBrowserCommand = new RelayCommand(_ => OpenProxiedBrowser(SelectedServer), _ => SelectedServer is { Disabled: false });
         AskAgentCommand = new RelayCommand(_ => AskAgent());
         SnapshotRefreshCommand = new RelayCommand(_ => RefreshSnapshot(SelectedServer), _ => SelectedServer != null && !_snapshotBusy);
+        SnapshotCancelCommand = new RelayCommand(_ => CancelSnapshot(), _ => _snapshotBusy);
         OpenSnapshotHistoryCommand = new RelayCommand(_ => OpenSnapshotHistory(SelectedServer), _ => SelectedServer != null);
 
         // 看板：后台隧道起停（含自动重连）实时刷新"运行中"计数（事件在线程池触发 → 调度到 UI 线程）
@@ -1207,20 +1210,29 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
 
         _snapshotBusy = true;
         (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (SnapshotCancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
         StatusMessage = $"正在采集 {server.Name} 的快照…(典型 10~30 秒, 弱网更久)";
         long? snapshotId = null;
+        using var cts = new CancellationTokenSource();
+        _snapshotCts = cts;
         try
         {
             var config = await _configService.LoadConfigAsync();
-            var result = await _snapshotService.RefreshAsync(server, config.Snapshot ?? new SnapshotConfig(), CancellationToken.None);
+            // 桌面手动采集始终强制刷新；节流/复用缓存只用于 MCP 的定时/重复调用。
+            var result = await _snapshotService.RefreshAsync(server, config.Snapshot ?? new SnapshotConfig(),
+                sectionNames: null, force: true, cts.Token);
             snapshotId = result.SnapshotId;
-            StatusMessage = result.Status switch
-            {
-                "succeeded" => $"快照采集完成: {server.Name} (#{result.SnapshotId}, {result.Snapshot?.DurationMs:F0}ms)",
-                "snapshot_in_progress" => result.Error ?? "该服务器已有快照在采集中",
-                _ => $"快照采集失败: {result.Error}"
-            };
-            if (result.Status is not ("succeeded" or "snapshot_in_progress"))
+            StatusMessage = cts.IsCancellationRequested
+                ? "快照采集已取消（本次快照会记为 failed/interrupted）"
+                : result.Status switch
+                {
+                    "succeeded" => $"快照采集完成: {server.Name} (#{result.SnapshotId}, {result.Snapshot?.DurationMs:F0}ms)",
+                    "fresh" => $"快照较新，已复用最近快照 (#{result.SnapshotId})",
+                    "snapshot_in_progress" => result.Error ?? "该服务器已有快照在采集中",
+                    _ => $"快照采集失败: {result.Error}"
+                };
+            if (!cts.IsCancellationRequested &&
+                result.Status is not ("succeeded" or "snapshot_in_progress" or "fresh"))
             {
                 Services.Notifications.NotificationCenterService.Add(
                     "快照", $"{server.Name} 快照采集失败",
@@ -1228,18 +1240,32 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
                     Services.Notifications.NotificationSeverity.Warning);
             }
         }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "快照采集已取消。";
+        }
         catch (Exception ex)
         {
             StatusMessage = $"快照采集异常: {ex.Message}";
         }
         finally
         {
+            if (ReferenceEquals(_snapshotCts, cts))
+                _snapshotCts = null;
             _snapshotBusy = false;
             (SnapshotRefreshCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (SnapshotCancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         OpenSnapshotHistory(server, snapshotId);
     });
+
+    private void CancelSnapshot()
+    {
+        try { _snapshotCts?.Cancel(); } catch { /* 已结束 */ }
+        if (_snapshotBusy)
+            StatusMessage = "正在取消快照采集…";
+    }
 
     // 历史快照窗口: 可切换服务器, 列表→点详情; 直接复用同一查看页面。
     private void OpenSnapshotHistory(SshServerConfig? server, long? initialSnapshotId = null)

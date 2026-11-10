@@ -23,6 +23,22 @@ public class ToolProfileFilterTests
     }
 
     [Fact]
+    public void ReadOnly_filter_allows_local_cache_probes_only()
+    {
+        // 只读模式放行：写本地缓存但远端只读的探测（快照刷新/拓扑发现）
+        Assert.True(ToolProfileFilter.IsProfileReadOnly(new FakeTool("ssh_snapshot_refresh", "ssh", false)));
+        Assert.True(ToolProfileFilter.IsProfileReadOnly(new FakeTool("topology_discover", "topology", false)));
+        // 普通只读工具自然放行
+        Assert.True(ToolProfileFilter.IsProfileReadOnly(new FakeTool("ssh_snapshot_get", "ssh", true)));
+        // 真实变更/任意命令工具仍被挡住
+        Assert.False(ToolProfileFilter.IsProfileReadOnly(new FakeTool("ssh_execute_command", "command", false)));
+        Assert.False(ToolProfileFilter.IsProfileReadOnly(new FakeTool("service_restart", "service", false)));
+        Assert.True(ToolProfileFilter.IsSafeLocalCacheProbe("ssh_snapshot_refresh"));
+        Assert.True(ToolProfileFilter.IsSafeLocalCacheProbe("topology_discover"));
+        Assert.False(ToolProfileFilter.IsSafeLocalCacheProbe("ssh_execute_command"));
+    }
+
+    [Fact]
     public void Assets_keeps_inventory_tools_and_docs_but_excludes_java_runtime()
     {
         Assert.True(ToolProfileFilter.AllowsRemote(new FakeTool("topology_query", "topology", true), AgentToolProfile.Assets));

@@ -801,7 +801,8 @@ public class SshService : ISshService
 
                     sftp.UploadFile(fileStream, remotePath, (uploadedBytes) =>
                     {
-                        uploaded += (long)uploadedBytes;
+                        // SSH.NET 回调参数是“累计已上传字节数”，不是本次增量；直接覆盖避免二次累加。
+                        uploaded = (long)uploadedBytes;
                         progress?.Report(new FileTransferProgress
                         {
                             BytesTransferred = uploaded,
@@ -883,7 +884,8 @@ public class SshService : ISshService
 
                         sftp.DownloadFile(remotePath, fileStream, (downloadedBytes) =>
                         {
-                            downloaded += (long)downloadedBytes;
+                            // 同上：SSH.NET 回调是累计已下载字节数，直接覆盖。
+                            downloaded = (long)downloadedBytes;
                             progress?.Report(new FileTransferProgress
                             {
                                 BytesTransferred = downloaded,

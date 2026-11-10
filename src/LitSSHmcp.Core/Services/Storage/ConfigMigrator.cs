@@ -266,6 +266,14 @@ public static class ConfigMigrator
         }
 
         // 旧版本（无 schemaVersion）视为 0，补写为当前版本
+        // v7：消息保留上限从 200 提升到 2000。200 对含工具轨迹的会话太小，
+        // 一轮 199 个工具步骤就会把本轮 user 提示词挤出保留窗口。
+        if (config.Agent is { RetentionMaxMessages: 200 } && config.SchemaVersion < 7)
+        {
+            config.Agent.RetentionMaxMessages = 2000;
+            changed = true;
+        }
+
         if (config.SchemaVersion < AppConfig.CurrentSchemaVersion)
         {
             config.SchemaVersion = AppConfig.CurrentSchemaVersion;

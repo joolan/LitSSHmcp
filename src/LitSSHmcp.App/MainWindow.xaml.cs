@@ -43,6 +43,8 @@ public partial class MainWindow : FluentWindow
         ClampInitialSizeToWorkArea();
         _ = PetService.ApplyAsync(AppServiceFactory.CreateConfigService());
         DataContext = new MainViewModel();
+        // 托盘图标随主窗口启动常驻，而不是等用户关闭窗口并选择“最小化到托盘”才创建。
+        Loaded += (_, _) => EnsureTray();
         ViewModel.BackgroundQueueCompleted += OnBackgroundQueueCompleted;
         ViewModel.JenkinsBuildCompleted += OnJenkinsBuildCompleted;
         NetworkStatus.EnsureStarted();

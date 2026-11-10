@@ -104,3 +104,28 @@
 ```
 
 > 所有明文密码在保存 / 加载时会自动迁移为 **DPAPI 密文**（`enc:` 前缀），仅当前 Windows 用户可解密。访问模式、拓扑关系类型、审批弹窗样式等含义详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## 近期新增字段
+
+```json
+{
+  "schemaVersion": 7,
+  "snapshot": {
+    "useSudo": true,
+    "retentionPerServer": 30,
+    "timeoutSeconds": 180,
+    "minRefreshIntervalSeconds": 60,
+    "collectAccounts": true,
+    "collectAuthorizedKeys": true,
+    "collectLoginHistory": true,
+    "storeEffectiveConfig": false
+  },
+  "agent": {
+    "retentionMaxMessages": 2000
+  }
+}
+```
+
+- `snapshot.collectAccounts` / `collectAuthorizedKeys` / `collectLoginHistory`：账号安全维度与公钥/登录历史采集开关。
+- `snapshot.storeEffectiveConfig`：默认 `false`，完整 `nginx -T` 存入 `snapshots.db` 的 `NginxConfigs` 表，`detail="full"` 时回填。
+- `agent.retentionMaxMessages`：默认 2000；按整轮裁剪，被裁消息归档到 `agent_messages_deleted`，不会单独丢掉 user 提示词。

@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器代码注册 **35 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **34 个常规工具**，宿主会话看到 **35 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；各工具 `[Description]` 只保留 1~2 句能力与关键互斥提示，完整的"意图→工具"路由由 `mcp_usage_guide` 提供（见下方路由表）。
+MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **35 个常规工具**，宿主会话看到 **36 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；各工具 `[Description]` 只保留 1~2 句能力与关键互斥提示，完整的"意图→工具"路由由 `mcp_usage_guide` 提供（见下方路由表）。
 
 > **目标 ID 规范化**：服务器/数据源/应用参数优先按裸 ID 精确匹配（也支持名称或主机名），并兼容 `ssh:` / `ssh://`、`ds:`、`app:` 资产前缀；工具会自动去除前缀，同时保留歧义与禁用校验。
 
@@ -182,6 +182,7 @@ MCP 服务器代码注册 **35 个工具**，按用途分为 14 组；其中 `mc
 - 命令输出超过 2 万字符会被截断并置 `truncated: true`、`outputChars` 记录原始长度；审计库中单条结果截断到 4000 字符；
 - 敏感操作（敏感命令、敏感 SQL、Redis 写命令、文件传输）需人工确认，默认同时启用**桌面弹窗 + CLI 带外审批**两条通道（`security.approval.channels`，默认 `["desktop","cli"]`，超时默认 45 秒）；AI 侧表现为 `status: "rejected"` / `"approval_timeout"` / `"approval_unavailable"`；桌面弹窗可勾选放行范围（默认仅本次；「本轮次内放行该工具」到下一条用户消息自动失效、恢复正常审批；「整个会话放行该工具（不建议）」到连接断开为止）；第一期 Redis 写命令**一律**确认（不按敏感度分级）；**审批模式**（`security.approval.mode`）：`manual`（默认，所有触发审批的操作都需人工确认）、`auto-approve`（危险：所有触发审批的操作自动放行）、`auto-reject`（触发审批时直接拒绝），可在桌面 App「安全设置 → 审批模式」切换；三种模式都**不影响**被命令过滤器硬拒绝（`blocked`）的操作；
 - 每个工具带 MCP 注解 `ReadOnly` / `Destructive` / `Idempotent` / `OpenWorld`，只读工具与破坏性工具易于在客户端区分；
+- **只读模式**（`agent.readOnly`）除 `ReadOnly=true` 的工具外，额外放行 `ssh_snapshot_refresh` / `topology_discover` 这类**只写本地缓存、远端仅执行固定只读命令**的安全探测；任意命令（`ssh_execute_*`）、服务/Docker 变更、上传下载等仍被隐藏；
 - 工具名遵循「工具命名约定」（`<域>_<动作>[_<对象>]`）；
 - 任何工具的入参、出参都**不包含密码**；
 - 所有操作都会写入本机审计库 `%APPDATA%\LitSSH\audit.db`（既是**操作日志**也是**审计日志**）：命令/SQL 执行、审批与拦截、只读探测（连接测试/列目录）、列表元数据（列服务器/数据源/拓扑）、文件传输。每条记录带 `sessionId`（哪个客户端/哪次连接）、`tool`（哪个 MCP 工具产生）、`category`（`exec`/`gate`/`probe`/`meta`/`transfer`）与 `decision`（Gate 类的审批决策：`manual-approved`/`manual-rejected`/`auto-approve`/`auto-reject`/`timeout`/`unavailable`/`blocked`），这些字段都**参与哈希链防篡改**（改动会导致完整性校验失败）；当前会话 ID 可用 `mcp_self_check` 查看，历史工具支持 `sessionId` / `tool` / `category` 过滤；MCP 运行日志在 `%APPDATA%\LitSSH\logs`。
@@ -199,20 +200,38 @@ MCP 服务器代码注册 **35 个工具**，按用途分为 14 组；其中 `mc
 - **说明**：只测 SSH 连通性并区分失败根因（`auth_failed`/`host_key_mismatch`/`timeout`/`connection_error`）；测数据库请用 `datasource_test_connection`
 
 ### `ssh_snapshot_get`
-- **参数**：`serverId`（服务器标识）、`snapshotId`（可选，取某一份历史快照；不传取该服务器**最新一份**）、`section`（可选，只取某维度完整数据：`resource`/`portmap`/`docker`/`nginx_tls`/`systemd`/`security`；不传返回概览）、`detail`（可选，`summary` 默认 / `full` 取全部完整数据）
+
+> 新增 `accounts` 维度：账号、密码状态、authorized_keys 指纹、最近登录、失败登录与风险发现。`nginx_tls` 新增 `serverType`/`version`/`configHash`/`configFallback`。
+>
+> `section="accounts"` 默认返回 `summary` + `riskyUsers`/`privilegedUsers`/`loginUsers`/`keyUsers` + 风险 findings；完整 `users`/`authorizedKeys` 用 `detail="full"`。大结果落盘后，`spill(action="grep")` 对单行 JSON 返回匹配点前后上下文窗口。
+- **参数**：`serverId`（服务器标识）、`snapshotId`（可选，取某一份历史快照；不传取该服务器**最新一份**）、`section`（可选，只取某维度完整数据：`resource`/`portmap`/`docker`/`nginx_tls`/`systemd`/`accounts`/`security`；不传返回概览）、`detail`（可选，`summary` 默认 / `full` 取全部完整数据）
 - **返回**：`{ success, status, hint, serverId, serverName, host, snapshotId, state, createdAt, completedAt, durationMs, escalation, collectorVersion, data, events, recent }`
   - **视图（重要）**：`data.view` = `summary`（默认）/`section`/`full`。**默认 `summary` 不返回各维度完整 `data`**，只给每个 section 的 `status`/`durationMs`/`error`/`note`/`dataChars` 与 `headline`（关键指标，如 resource 的负载/内存/磁盘/top 进程/告警、portmap 的计数、docker/nginx/systemd/security 的概要），并附 `hint` 提示按需拉取——这样避免把 >15 万字符一次性塞进上下文。**需要某维度完整数据用 `section="portmap"` 等**（含该维度完整 `data`，超长数组/字符串仍会压缩并提示）；**`detail="full"` 才返回全部完整数据**（较大）。
-  - `data`：`{ view, collectorVersion, elevated, sections }`，`sections` 按采集维度分组：`resource`（资源态势：负载/内存/磁盘/CPU/OS/内核/主机名/IP + **阈值告警 `warnings`/`riskLevel`**（内存/swap/磁盘/负载）+ **`topByCpu`/`topByMemory`** top 进程 含 pid/用户/CPU%/内存%/RSS/命令行）、`portmap`（端口↔进程↔用户↔服务三元组 + **程序路径 `exe`** + **完整启动命令行 `cmdline`**，含 TCP/UDP、双栈；Unix socket 分 `unixSockets`(系统级) 与 `unixSocketsDesktop`(桌面/用户会话，默认折叠)）、`docker`（守护进程概览：版本/容器与镜像数/存储驱动 + 容器清单 名称/镜像/状态/端口 + 运行容器资源 CPU/内存/网络/块IO/PIDs；未装 docker 为 `skipped`）、`nginx_tls`（**完整有效配置 `effectiveConfig`（`nginx -T` 展开 include）+ 域名列表 `domains`（每个域名是否 `ssl`、监听端口、关联证书到期/SAN）+ 站点/证书明细**）、`systemd`（单元健康聚合/失败清单）、`security`（安全巡检：`ssh` 有效配置、`firewall`（ufw/firewalld/iptables）、`fail2ban`、`mysql` 匿名账户/远程 root/**可远程登录的高权账户（`SHOW GRANTS` 判定）**、`exposedHighRiskPorts`、系统空口令账户、sudoers NOPASSWD，并汇总为 `findings[]`（severity/id/title/detail/evidence）与 `summary` 计数。**MySQL 账户核查优先用"与该服务器匹配的已配置 MySQL 数据源凭据"查询 `mysql.user`**（匹配规则：数据源 Host 为回环且其 SSH 隧道服务器 == 本服务器，或数据源 Host == 本服务器 host/本机 IP）；该账号需拥有 `mysql.*` 的 SELECT 权限（不要求是 root），否则 `mysql.checked=false` 并在 `reason` 说明（不会误判为安全）；无匹配数据源时回退到免密 best-effort）；每个 section 含 `status`（`ok`/`degraded`/`skipped`/`failed`）、`durationMs`、`error`、`note`、`data`
+  - `data`：`{ view, collectorVersion, elevated, sections }`，`sections` 按采集维度分组：`resource`（资源态势：负载/内存/磁盘/CPU/OS/内核/主机名/IP + **阈值告警 `warnings`/`riskLevel`**（内存/swap/磁盘/负载）+ **`topByCpu`/`topByMemory`** top 进程 含 pid/用户/CPU%/内存%/RSS/命令行）、`portmap`（端口↔进程↔用户↔服务三元组 + **程序路径 `exe`** + **完整启动命令行 `cmdline`**，含 TCP/UDP、双栈；Unix socket 分 `unixSockets`(系统级) 与 `unixSocketsDesktop`(桌面/用户会话，默认折叠)）、`docker`（守护进程概览：版本/容器与镜像数/存储驱动 + 容器清单 名称/镜像/状态/端口 + 运行容器资源 CPU/内存/网络/块IO/PIDs；未装 docker 为 `skipped`）、`nginx_tls`（**完整有效配置 `effectiveConfig`（`nginx -T` 展开 include）+ 域名列表 `domains`（每个域名是否 `ssl`、监听端口、关联证书到期/SAN）+ 站点/证书明细**）、`systemd`（单元健康聚合/失败清单）、`accounts`（账号/密码状态/特权组/authorized_keys 指纹/最近登录/失败登录/风险发现；默认摘要，`detail="full"` 取完整用户与公钥清单）、`security`（安全巡检：`ssh` 有效配置、`firewall`（ufw/firewalld/iptables）、`fail2ban`、`mysql` 匿名账户/远程 root/**可远程登录的高权账户（`SHOW GRANTS` 判定）**、`exposedHighRiskPorts`、系统空口令账户、sudoers NOPASSWD，并汇总为 `findings[]`（severity/id/title/detail/evidence）与 `summary` 计数。**MySQL 账户核查优先用"与该服务器匹配的已配置 MySQL 数据源凭据"查询 `mysql.user`**（匹配规则：数据源 Host 为回环且其 SSH 隧道服务器 == 本服务器，或数据源 Host == 本服务器 host/本机 IP）；该账号需拥有 `mysql.*` 的 SELECT 权限（不要求是 root），否则 `mysql.checked=false` 并在 `reason` 说明（不会误判为安全）；无匹配数据源时回退到免密 best-effort）；每个 section 含 `status`（`ok`/`degraded`/`skipped`/`failed`）、`durationMs`、`error`、`note`、`data`
   - `events`：该份快照的采集事件流水（`started`/`collector_started`/`collector_completed`/`collector_failed`/`collector_skipped`/`completed`/`failed`，含每步耗时与失败原因）
   - `recent`：该服务器最近 10 份快照的轻量摘要（`id`/`state`/`createdAt`/`durationMs`/`error`），用于一眼看历史与后续趋势
 - **说明**：快照持久化在本机独立库 `%APPDATA%\LitSSH\snapshots.db`（与审计库分离，便于独立备份/清理）。**默认只读本地已存快照，不连服务器**；从未生成过返回 `status=snapshot_not_found` 并提示用 `ssh_snapshot_refresh` 生成首份。**降级采集**（section `status=degraded` 并给 `note`）：未提权或缺权限时 `portmap` 的属主/服务归属、`security` 的系统空口令/MySQL 账户可能缺失；`docker`/`nginx_tls`/`systemd` 环境不具备时对应 section `status=skipped`。**排查服务器问题优先用本工具**（一次拿全整机态势，比逐条拼命令全面稳定）。
 
 ### `ssh_snapshot_refresh`
-- **参数**：`serverId` — 服务器标识；`section` / `detail`（可选，同 `ssh_snapshot_get`，默认返回概览）；`force`（可选，默认 false）
+- **参数**：`serverId` — 服务器标识；`section` / `detail`（可选，同 `ssh_snapshot_get`，默认返回概览）；`force`（可选，默认 false）；`profile`（可选，`quick` = resource+portmap+systemd+security，`full` = 全部，默认 full）；`sections`（可选，逗号分隔，显式指定采集维度并覆盖 profile）
 - **返回**：同 `ssh_snapshot_get` 的结构（默认 `data.view=summary` 概览，可用 `section`/`detail="full"` 取完整）；成功 `status=succeeded`，失败 `status=failed`（并保留已采集到的部分 section 与失败事件，便于排障）；**节流**：距上次**成功**快照小于 `snapshot.minRefreshIntervalSeconds`（默认 60s）且未传 `force=true` 时，**直接返回已有快照**并置 `status=fresh`（`hint` 说明剩余间隔），不重新采集——避免同一任务内反复全量刷新。
 - **说明**：**重新采集**整机快照（与 `ssh_snapshot_get` 同一套 data 结构）。**耗时较长**（典型 10~30 秒，弱网更久），工具描述已明确提示。**单飞限流**：同一服务器同时只允许一个快照在采集中，重复调用立即返回 `status=snapshot_in_progress`（含进行中的 `snapshotId`），不会排队或重复采集——此时应改用 `ssh_snapshot_get` 稍后查询。**失败也落库**：连接失败/超时/取消都会把该份快照记为 `failed` 并写入 `error` 与事件；`security` 兼容性上，采集命令均为**内置固定只读命令**，但仍受命令过滤器 `Blocked` 规则约束。
 - **提权**：由 `config.json` 的 `snapshot.useSudo`（默认 `true`）与该服务器 `SudoType` 共同决定；开启且已配置提权时自动以 sudo/su 执行（`portmap` 可见 root 进程属主与 systemd 服务名、`nginx_tls` 可读 root-only 证书目录），**不逐次弹审批**；未配置/关闭时自动降级，不报错。设置 `snapshot.useSudo=false` 可完全禁止快照提权。
 - **保留**：每台服务器保留最近 `snapshot.retentionPerServer` 份（默认 30，`0`=不限），超出时按时间裁剪并级联清理其事件。
+- **accounts 隐私**：`snapshot.collectAccounts` / `snapshot.collectAuthorizedKeys` / `snapshot.collectLoginHistory` 默认均 `true`；关闭公钥或登录历史可减少敏感数据与快照体积。
+- **按需取配置**：`section="nginx_tls"` 默认省略完整 `effectiveConfig`，保留 `configHash`/`configPreview`/sites/domains/certificates；完整配置用 `detail="full"`。
+- **nginx 配置外置**：`snapshot.storeEffectiveConfig` 默认 `false`，完整 `nginx -T` 写入 `snapshots.db` 的 `NginxConfigs` 表（按 `serverId` + `configHash` 去重）；`detail="full"` 时按 hash 自动回填，不再重复占用每份快照的 DataJson。
+
+### `ssh_snapshot_diff`
+- **参数**：`serverId`、`fromSnapshotId`（可选，起始快照）、`toSnapshotId`（可选，目标快照）；都不传时自动取最近两条成功快照。
+- **返回**：`{ success, status, error, serverId, serverName, fromSnapshotId, toSnapshotId, fromCreatedAt, toCreatedAt, changes }`
+- **changes**：
+  - `accounts`：`addedUsers` / `removedUsers` / `passwordStatusChanged` / `riskChanged` / `addedAuthorizedKeys` / `removedAuthorizedKeys`
+  - `ports`：`added` / `removed`
+  - `services`：`newlyFailed` / `recovered`
+  - `docker`：`added` / `removed` / `stateChanged`
+  - `nginx`：`configChanged` / `fromConfigHash` / `toConfigHash` / `addedDomains` / `removedDomains`
+- **说明**：只读；用于“对比上次巡检/发布前后有什么变化”，不重新采集。
 
 ## 命令执行组（command）
 
@@ -227,6 +246,7 @@ MCP 服务器代码注册 **35 个工具**，按用途分为 14 组；其中 `mc
 - **参数**：`serverIds`（逗号/空格分隔，最多 maxTargets 台）、`command`（单条非脚本命令）、`concurrency`（1-8，默认 4）、`maxTargets`（1-100，默认 20）、`timeoutSeconds`（单台命令超时 1-3600，默认 60）、`riskNote`（可选，展示在审批弹窗）
 - **返回**：`{ success, status, error, command, summary, total, succeeded, failed, items: [{ serverId, serverName, host, success, status, error, output, truncated, exitCode, durationMs }] }`
 - **说明**：一次人工审批后在多台服务器执行同一条命令；命令过滤/审批/审计/写互斥仍生效；**不支持脚本文件**（`bash x.sh`/`python3 x.py`/`./x.sh`）和交互/常驻命令；建议先做只读预检并先用 1 台 canary。执行中通过 MCP progress 通知逐台报告 `progress/total` 与 `serverId/serverName/success/error`，供 Agent/桌面面板展示实时进度（Web 入口暂时隐藏）。
+- **内置 AI 助手可见性**：桌面/Web 内置 AI 助手默认**隐藏**该工具，批量写请走 `fleet_change`（plan → dry_run → canary → apply → rollback）；外部 MCP 客户端（Claude Desktop / Cursor / Cline 等）仍可直接调用本工具。
 
 ### `ssh_execute_sudo`
 - **参数**：`serverId`、`command`

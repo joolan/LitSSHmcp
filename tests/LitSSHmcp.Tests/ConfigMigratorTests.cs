@@ -85,6 +85,20 @@ public class ConfigMigratorTests
     }
 
     [Fact]
+    public void Legacy_200_message_retention_is_raised_to_2000()
+    {
+        var config = new AppConfig
+        {
+            SchemaVersion = 6,
+            Agent = new AgentConfig { RetentionMaxMessages = 200 }
+        };
+
+        Assert.True(ConfigMigrator.Migrate(config));
+        Assert.Equal(2000, config.Agent.RetentionMaxMessages);
+        Assert.Equal(AppConfig.CurrentSchemaVersion, config.SchemaVersion);
+    }
+
+    [Fact]
     public void V2_single_model_provider_is_split_into_models()
     {
         // v2 配置：一个 provider 只有一个 model 字段（反序列化落到遗留 Model 上）

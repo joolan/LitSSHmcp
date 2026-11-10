@@ -81,6 +81,7 @@ builder.Services.AddSingleton<ISnapshotCollector, DockerSnapshotCollector>();
 builder.Services.AddSingleton<ISnapshotCollector, NginxTlsSnapshotCollector>();
 builder.Services.AddSingleton<ISnapshotCollector, SystemdHealthSnapshotCollector>();
 builder.Services.AddSingleton<ISnapshotCollector, SecurityAuditSnapshotCollector>();
+builder.Services.AddSingleton<ISnapshotCollector, AccountsSnapshotCollector>();
 builder.Services.AddSingleton<ISecurityOptionsProvider, SecurityOptionsProvider>();
         builder.Services.AddSingleton<ICommandFilterService, CommandFilterService>();
         // 脚本内容风险扫描(服务端权威): 上传/执行脚本前的规则分析, 报告附在审批弹窗
@@ -137,7 +138,7 @@ var mcp = builder.Services
     })
     .WithStdioServerTransport();
 
-if (enabledToolGroups.Contains(ToolGroups.Ssh)) mcp = mcp.WithTools<ServerTools>().WithTools<SnapshotTools>();
+if (enabledToolGroups.Contains(ToolGroups.Ssh)) mcp = mcp.WithTools<ServerTools>().WithTools<SnapshotTools>().WithTools<SnapshotDiffTools>();
 if (enabledToolGroups.Contains(ToolGroups.Command)) mcp = mcp.WithTools<CommandTools>().WithTools<SudoTools>();
 if (enabledToolGroups.Contains(ToolGroups.FileTransfer)) mcp = mcp.WithTools<FileTransferTools>();
 if (enabledToolGroups.Contains(ToolGroups.Datasource)) mcp = mcp.WithTools<DatasourceTools>();

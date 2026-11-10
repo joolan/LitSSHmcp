@@ -74,6 +74,7 @@ public sealed class AgentRuntime : IAsyncDisposable
 
     private const string ReadOnlyNote =
         "\n\n【只读模式（全局配置）】仅可调用只读工具；禁止任何写操作（命令/SQL/文件写入/重启等）。"
+        + "允许调用 ssh_snapshot_refresh / topology_discover 刷新本地快照与拓扑缓存（远端仅执行固定只读命令，不改远端系统）。"
         + "如用户要求写操作，说明当前处于只读模式并给出替代建议。";
 
     private AgentRuntime(
@@ -368,7 +369,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         IAgentTool? roundNotifier = roundTool is null ? null : new McpAgentTool(roundTool);
         if (builtinHost is not null)
         {
-            foreach (var tool in ToolFilter.Apply(builtinHost.Tools, config))
+            foreach (var tool in ToolFilter.Apply(builtinHost.Tools, config, allowLocalCacheProbes: true))
                 builtinTools.Add(new McpAgentTool(tool, config.CompactToolDescriptions));
         }
         // 会话 profile 先裁剪远程工具；后续技能索引/能力边界/Graph-RAG 都基于裁剪后的工具集。
@@ -592,10 +593,13 @@ public sealed class AgentRuntime : IAsyncDisposable
         subTools = subTools.Where(t => t.ToolGroup is not null ||
                                        ToolProfileFilter.AllowsLocal(t.Name, config.Profile)).ToList();
         // 全局只读：MCP 工具已由 ToolFilter 过滤，这里再过滤本地工具（写文档工具等），保证运行时工具集一次性恒定。
+        // 放行“只写本地缓存、不改远端”的安全探测（快照刷新/拓扑发现）：
+        // 这类工具注解是 ReadOnly=false（会写本地 snapshots.db / 拓扑缓存），但远端只执行固定只读命令，
+        // 若在这里一并挡掉，只读巡检就只能读旧快照，无法刷新磁盘/拓扑数据。
         if (config.ReadOnly)
         {
-            baseTools = baseTools.Where(t => t.ReadOnly).ToList();
-            subTools = subTools.Where(t => t.ReadOnly).ToList();
+            baseTools = baseTools.Where(ToolProfileFilter.IsProfileReadOnly).ToList();
+            subTools = subTools.Where(ToolProfileFilter.IsProfileReadOnly).ToList();
         }
 
         // 连接器状态快照：内置 + 启用的外部（按配置顺序），供会话窗口「连接器」列表展示工具数/错误

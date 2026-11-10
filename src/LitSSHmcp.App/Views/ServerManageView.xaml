@@ -91,6 +91,7 @@
                             <MenuItem Header="编辑" Click="OnEditClick"/>
                             <Separator/>
                             <MenuItem Header="采集快照" Click="OnSnapshotRefreshClick"/>
+                            <MenuItem Header="取消采集" Click="OnSnapshotCancelClick"/>
                             <MenuItem Header="快照历史" Click="OnSnapshotHistoryClick"/>
                             <MenuItem Header="资源监控" Click="OnMonitorClick"/>
                             <MenuItem Header="HTTP站点探测" Click="OnSiteDiscoveryClick"/>

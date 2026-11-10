@@ -71,7 +71,8 @@ public static class FleetTools
         if (toolName.Length == 0)
             return "(缺少 tool)";
         if (!TargetParameters.TryGetValue(toolName, out var targetParam) || !tools.TryGetValue(toolName, out var tool))
-            return $"不支持或不可用的工具: {toolName}。当前可用: {string.Join(", ", tools.Keys)}";
+            return $"不支持或不可用的工具: {toolName}。当前可用: {string.Join(", ", tools.Keys)}。" +
+                   "fleet_query 只支持只读目标工具；批量执行命令请用 fleet_change（plan → dry_run → canary → apply → rollback），单机命令用 ssh_execute_command。";
         if (isDenied?.Invoke(toolName) == true)
             return $"(工具 {toolName} 已被会话策略禁用，未执行批量查询)";
 

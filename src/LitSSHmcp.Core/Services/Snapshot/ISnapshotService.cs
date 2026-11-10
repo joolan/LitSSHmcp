@@ -17,15 +17,23 @@ public interface ISnapshotService
     /// 并发调用返回 status=snapshot_in_progress（含进行中的快照 Id），不排队、不重复采集。
     /// </summary>
     Task<SnapshotRefreshResult> RefreshAsync(SshServerConfig server, SnapshotConfig options, CancellationToken ct = default);
+
+    /// <summary>
+    /// 同上，但只采集指定 section（如 ["resource","portmap","systemd","security"]）；null/空=全部。
+    /// 用于 profile=quick / 按需采集，减少耗时与快照体积。
+    /// </summary>
+    Task<SnapshotRefreshResult> RefreshAsync(SshServerConfig server, SnapshotConfig options,
+        IReadOnlyCollection<string>? sectionNames, bool force = false, CancellationToken ct = default);
 }
 
 public sealed class SnapshotRefreshResult
 {
-    /// <summary>succeeded / failed / snapshot_in_progress。</summary>
+    /// <summary>succeeded / failed / snapshot_in_progress / fresh（节流命中，复用最近成功快照）。</summary>
     public string Status { get; set; } = "failed";
 
     public long? SnapshotId { get; set; }
     public string? Error { get; set; }
+    public string? Hint { get; set; }
 
     /// <summary>最终落库的快照（succeeded/failed 时非空；in_progress 时为进行中的记录）。</summary>
     public ServerSnapshot? Snapshot { get; set; }
@@ -78,8 +86,44 @@ public class SnapshotService : ISnapshotService
         public string? Value;
     }
 
-    public async Task<SnapshotRefreshResult> RefreshAsync(SshServerConfig server, SnapshotConfig options, CancellationToken ct = default)
+    public Task<SnapshotRefreshResult> RefreshAsync(SshServerConfig server, SnapshotConfig options,
+        CancellationToken ct = default)
+        => RefreshAsync(server, options, sectionNames: null, force: false, ct);
+
+    public async Task<SnapshotRefreshResult> RefreshAsync(SshServerConfig server, SnapshotConfig options,
+        IReadOnlyCollection<string>? sectionNames, bool force = false, CancellationToken ct = default)
     {
+        // 节流下沉到服务层：桌面/MCP 共用同一规则；显式指定 section 或 force=true 时跳过。
+        if (!force && sectionNames is not { Count: > 0 } && options.MinRefreshIntervalSeconds > 0)
+        {
+            var latest = await _store.GetLatestAsync(server.Id, ct);
+            if (latest is { Status: SnapshotStatus.Succeeded } &&
+                TryAgeSeconds(latest.CompletedAt, out var age) &&
+                age < options.MinRefreshIntervalSeconds)
+            {
+                return new SnapshotRefreshResult
+                {
+                    Status = "fresh",
+                    SnapshotId = latest.Id,
+                    Snapshot = latest,
+                    Hint = $"距上次快照仅 {age:F0}s (< {options.MinRefreshIntervalSeconds}s)，已返回缓存；force=true 可强制重采"
+                };
+            }
+        }
+
+        var collectorFilter = sectionNames is { Count: > 0 }
+            ? new HashSet<string>(sectionNames, StringComparer.OrdinalIgnoreCase)
+            : null;
+        var collectors = collectorFilter is null
+            ? _collectors
+            : _collectors.Where(c => collectorFilter.Contains(c.Name)).ToList();
+        if (collectors.Count == 0)
+            return new SnapshotRefreshResult
+            {
+                Status = "failed",
+                Error = "未匹配到任何采集器: " + string.Join(", ", sectionNames ?? Array.Empty<string>())
+            };
+
         if (!_active.TryAdd(server.Id, 0))
             return await InProgressAsync(server.Id, ct);
 
@@ -123,6 +167,7 @@ public class SnapshotService : ISnapshotService
             {
                 Server = server,
                 Elevate = elevate,
+                Options = options,
                 ExecuteAsync = (command, useSudo, token) => ExecuteCoreAsync(server, command, useSudo, escalationRef, token),
                 QueryMysqlAccountsAsync = appConfig is not null && _mysqlProvider is not null
                     ? token => ProbeMysqlAccountsAsync(appConfig, server, sections, token)
@@ -139,7 +184,7 @@ public class SnapshotService : ISnapshotService
             var valid = 0;        // 产出有效数据的采集器(ok/degraded)
             var firstError = default(string?);
 
-            foreach (var collector in _collectors)
+            foreach (var collector in collectors)
             {
                 // 已中止(致命错误/超时/取消)：剩余采集器记 skipped 事件后跳过，不留黑盒
                 if (abortedReason is not null || token.IsCancellationRequested)
@@ -175,6 +220,28 @@ public class SnapshotService : ISnapshotService
                         valid++;
                     else
                         firstError ??= result.Error;
+                }
+
+                // nginx 完整配置外置：DataJson 只保留 hash/预览，正文写入 NginxConfigs 表，
+                // detail=full 时由工具按 hash 取回。写入失败则保留正文，避免丢失。
+                if (result.Success && !options.StoreEffectiveConfig &&
+                    string.Equals(collector.Name, "nginx_tls", StringComparison.Ordinal) &&
+                    result.Data is Dictionary<string, object?> nginxData &&
+                    nginxData.TryGetValue("effectiveConfig", out var effectiveObj) &&
+                    effectiveObj is string effectiveConfig &&
+                    nginxData.TryGetValue("configHash", out var hashObj) &&
+                    hashObj is string configHash && !string.IsNullOrWhiteSpace(configHash))
+                {
+                    try
+                    {
+                        await _store.SaveNginxConfigAsync(server.Id, configHash, effectiveConfig, token);
+                        nginxData.Remove("effectiveConfig");
+                        nginxData["configStored"] = true;
+                    }
+                    catch
+                    {
+                        // 外置失败：保留正文
+                    }
                 }
 
                 var status = result.Skipped ? "skipped" : result.Success ? (result.Degraded ? "degraded" : "ok") : "failed";
@@ -277,6 +344,18 @@ public class SnapshotService : ISnapshotService
     };
 
     /// <summary>库里的 Running 行是否已陈旧（上次进程崩溃遗留）：超过整体超时 + 90s 宽限即视为可回收。</summary>
+    private static bool TryAgeSeconds(string? completedAt, out double ageSeconds)
+    {
+        ageSeconds = 0;
+        if (string.IsNullOrWhiteSpace(completedAt))
+            return false;
+        if (!DateTime.TryParse(completedAt, CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind, out var when))
+            return false;
+        ageSeconds = (DateTime.UtcNow - when.ToUniversalTime()).TotalSeconds;
+        return ageSeconds >= 0;
+    }
+
     private static bool IsStale(ServerSnapshot running, SnapshotConfig options)
     {
         if (!DateTime.TryParse(running.CreatedAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var created))
@@ -416,9 +495,31 @@ public class SnapshotService : ISnapshotService
 
         try
         {
-            var result = elevate
-                ? await _ssh.ExecuteWithSudoAsync(server, command, ct)
-                : await _ssh.ExecuteCommandAsync(server, command, ct, 60);
+            if (elevate)
+            {
+                var elevated = await _ssh.ExecuteWithSudoAsync(server, command, ct);
+                if (elevated.Success)
+                {
+                    if (elevated.Escalation is not null && elevated.Escalation != "direct")
+                        escalationRef.Value ??= elevated.Escalation;
+                    return elevated;
+                }
+
+                // sudo/su 失败（未配置/认证/权限）不等于 SSH 不可用：用普通账号再试一次只读命令，
+                // 能采集多少算多少；root 账号本身可读的文件也不应因 SudoType 未配置而丢失。
+                if (ShouldFallbackToDirect(elevated))
+                {
+                    var direct = await _ssh.ExecuteCommandAsync(server, command, ct, 60);
+                    if (direct.Success)
+                    {
+                        escalationRef.Value ??= "direct-fallback";
+                        return direct;
+                    }
+                }
+                return elevated;
+            }
+
+            var result = await _ssh.ExecuteCommandAsync(server, command, ct, 60);
             if (result.Escalation is not null && result.Escalation != "direct")
                 escalationRef.Value ??= result.Escalation;
             return result;
@@ -431,6 +532,23 @@ public class SnapshotService : ISnapshotService
         {
             return new CommandResult { Success = false, Error = ex.Message, ErrorKind = "unknown" };
         }
+    }
+
+    /// <summary>sudo/su 失败是否值得用普通 SSH 账号重试（网络/超时类不重试，避免重复等待）。</summary>
+    private static bool ShouldFallbackToDirect(CommandResult result)
+    {
+        if (result.Success)
+            return false;
+        if (result.ErrorKind is "sudo_not_configured" or "auth" or "permission" or "sudo_failed")
+            return true;
+
+        var text = (result.Error ?? string.Empty).ToLowerInvariant();
+        return text.Contains("sudo") ||
+               text.Contains("su:") ||
+               text.Contains("sudoers") ||
+               text.Contains("permission denied") ||
+               text.Contains("operation not permitted") ||
+               text.Contains("authentication failure");
     }
 
     private static Dictionary<string, object?> BuildAccessRouteSection(AppConfig config, SshServerConfig server)
@@ -500,6 +618,8 @@ public class SnapshotService : ISnapshotService
         try
         {
             await _store.PruneAsync(serverId, retentionPerServer, CancellationToken.None);
+            await _store.PruneNginxConfigsAsync(serverId, Math.Max(20, retentionPerServer),
+                CancellationToken.None);
         }
         catch
         {

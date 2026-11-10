@@ -9,7 +9,7 @@ namespace LitSSHmcp.Core.Services.Snapshot;
 /// </summary>
 public static class SnapshotMeta
 {
-    public const int CollectorVersion = 1;
+    public const int CollectorVersion = 2;
 }
 
 /// <summary>
@@ -35,8 +35,17 @@ public sealed class SnapshotContext
     /// <summary>本次快照是否允许提权（snapshot.useSudo && 服务器配置了 SudoType）。采集器按需选用。</summary>
     public required bool Elevate { get; init; }
 
+    /// <summary>本次快照配置（accounts 隐私开关等）；测试/独立调用可为 null。</summary>
+    public SnapshotConfig? Options { get; init; }
+
     /// <summary>执行远程命令（elevate=true 走 sudo/su 通道）。结果已脱敏。</summary>
     public required Func<string, bool, CancellationToken, Task<CommandResult>> ExecuteAsync { get; init; }
+
+    /// <summary>
+    /// 采集器之间的共享缓存（如 portmap 解析后的 listeners 供 security 复用），
+    /// 仅本次快照有效，避免重复执行同一命令。
+    /// </summary>
+    public Dictionary<string, object?> Shared { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
     /// 可选：用"与该服务器匹配的已配置 MySQL 数据源凭据"查询 mysql.user（安全巡检用）。

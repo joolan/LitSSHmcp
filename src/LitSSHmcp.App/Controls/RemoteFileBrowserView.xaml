@@ -4,6 +4,9 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:LitSSHmcp.App.Controls"
         AllowDrop="True" DragOver="OnDragOver" Drop="OnDrop">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -49,7 +52,8 @@
                     <MenuItem Header="复制到远程服务器…" Click="OnCopyToRemote"/>
                     <Separator/>
                     <MenuItem Header="切换到所在目录（终端 cd）" Click="OnCd"/>
-                    <MenuItem x:Name="TerminalOpsMenuItem" Header="终端操作">
+                    <MenuItem x:Name="TerminalOpsMenuItem" Header="终端操作"
+                              Style="{DynamicResource FixedSubmenuHeaderStyle}">
                         <MenuItem Header="搜索最近 1 小时日志…" Click="OnLogSearchLastHour"
                                   ToolTip="按远端时间过滤行首 ISO 时间戳，再按关键字/正则搜索"/>
                         <MenuItem Header="搜索指定时间范围…" Click="OnLogSearchRange"
@@ -95,9 +99,21 @@
             </ListView.View>
         </ListView>
 
-        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Margin="0,6,0,0"
-                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
-                   ToolTip="{Binding StatusMessage}" ToolTipService.ShowDuration="120000"
-                   Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"/>
+        <Grid Grid.Row="3" Margin="0,6,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="{Binding StatusMessage}"
+                       TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding StatusMessage}" ToolTipService.ShowDuration="120000"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"/>
+            <ProgressBar Grid.Column="1" Width="120" Height="4" Margin="8,0,0,0"
+                         VerticalAlignment="Center"
+                         Minimum="0" Maximum="100"
+                         Value="{Binding TransferProgress}"
+                         IsIndeterminate="{Binding IsTransferIndeterminate}"
+                         Visibility="{Binding IsTransferring, Converter={StaticResource BoolToVis}}"/>
+        </Grid>
     </Grid>
 </UserControl>

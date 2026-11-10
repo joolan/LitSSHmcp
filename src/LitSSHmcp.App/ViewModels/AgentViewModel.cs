@@ -10,6 +10,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.Agent;
+using LitSSHmcp.Agent.Scheduling;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Services.LocalTerminal;
 using LitSSHmcp.App.Services.Pet;
@@ -1210,6 +1211,9 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 return;
 
             var (turns, history, hasUser) = await BuildTranscriptAsync(id);
+            // 非缓存路径必须清空旧会话的轮次，否则切换会话会把上一个会话的内容拼进来；
+            // 之后“加载更早记录”就会翻出跨会话的历史。
+            Turns.Clear();
             foreach (var turn in turns)
                 Turns.Add(turn);
             ctx.LiveTurns = Turns.ToList();   // 权威镜像与可见集合对齐（运行期间以此为准）
@@ -1329,6 +1333,13 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                     current.SetTimes(LocalHms(row.Timestamp), string.Empty);
                     break;
                 }
+                case "turn_note":
+                {
+                    EnsureCurrent(row.Timestamp);
+                    current!.Failed = true;
+                    current.Note = row.Content;
+                    break;
+                }
             }
         }
 
@@ -1394,6 +1405,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             if (!string.IsNullOrEmpty(turn.AssistantText))
                 history.Add(new ChatMessage(ChatRole.Assistant, turn.AssistantText));
+            if (turn.Failed && !string.IsNullOrWhiteSpace(turn.Note))
+                history.Add(new ChatMessage(ChatRole.System, "[上一轮未完成] " + turn.Note));
         }
 
         return history;
@@ -1716,6 +1729,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 () => WorkspaceTools.ResolveDir(_agentConfig.WorkspaceDir),
                 (cmd, dir, ct) => RequestLocalApprovalAsync(ctx, cmd, dir, ct),
                 () => ctx.SessionKey));
+            // AI 定时任务工具：创建/查询/启停/删除/立即运行。创建前走桌面确认。
+            extra.AddRange(AiTaskTools.Create(AiTaskStore.Default, ConfirmAiTaskAsync));
             var localTools = extra.Count > 0 ? extra.ToArray() : null;
             // 资产图谱快照注入系统提示（仅 topology 工具组启用时；由 AgentRuntime 按 availableGroups 再过滤）
             string? assetGraph = null;
@@ -1761,6 +1776,29 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             ModelStatus = "error";
             StatusMessage = "连接失败: " + ChatErrorClassifier.Describe(ex);
         }
+    }
+
+    /// <summary>
+    /// AI 创建/修改/删除定时任务前的人工确认（在 UI 线程弹原生确认框）。
+    /// 后台定时任务运行时不注入该工具，因此不会在无人值守场景下创建新任务。
+    /// </summary>
+    private Task<bool> ConfirmAiTaskAsync(AiTaskConfig task, string summary, CancellationToken ct)
+    {
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _uiBeginInvoke(() =>
+        {
+            try
+            {
+                var confirmed = new UserDialogService().Confirm(summary, "AI 定时任务",
+                    warning: false, defaultNo: true);
+                completion.TrySetResult(confirmed);
+            }
+            catch
+            {
+                completion.TrySetResult(false);
+            }
+        });
+        return completion.Task;
     }
 
     private IReadOnlyList<IAgentTool> BuildLocalTerminalTools(SessionRunContext ctx)
@@ -2446,6 +2484,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             auditScope.Dispose();
             FlushDelta(turn, ctx);
             FlushReasoning(turn, ctx);
+            turn.Failed |= !turnSucceeded;
             turn.MarkDone(DateTime.UtcNow);
             wasCancelled = cts.IsCancellationRequested;
             ctx.SetState(turnSucceeded ? SessionRunState.Done
@@ -2676,12 +2715,15 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 FlushReasoning(turn, ctx);
                 var warning = "⚠ " + (e.Text ?? "警告");
                 turn.Note = string.IsNullOrWhiteSpace(turn.Note) ? warning : turn.Note + "\n" + warning;
+                if (e.Kind == AgentEventKind.Incomplete)
+                    turn.Failed = true;
                 break;
 
             case AgentEventKind.Error:
                 FlushDelta(turn, ctx);
                 FlushReasoning(turn, ctx);
                 turn.Note = e.Text ?? "错误";
+                turn.Failed = true;
                 break;
 
             case AgentEventKind.Done:
@@ -2840,6 +2882,8 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 messages.Add(("tool", AgentTranscript.Serialize(step)));   // IsInfo 随行落库，仅展示、不进模型轨迹
             if (!string.IsNullOrEmpty(turn.AssistantText))
                 messages.Add(("assistant", turn.AssistantText));
+            if (turn.Failed && !string.IsNullOrWhiteSpace(turn.Note))
+                messages.Add(("turn_note", turn.Note));
         }
         await _store.ReplaceMessagesAsync(ctx.SessionId, messages);
     }
@@ -3100,179 +3144,6 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
 
 }
 
-/// <summary>一轮对话：用户指令 + 该轮的工具调用过程 + 助手回答（含时间与耗时）。</summary>
-public partial class AgentTurn : INotifyPropertyChanged
-{
-    private DateTime _startedLocal;
-
-    public AgentTurn(string userText, DateTime timeUtc)
-    {
-        _userText = userText;
-        _startedLocal = timeUtc.ToLocalTime();
-        _userTime = _startedLocal.ToString("HH:mm:ss");
-        Steps.CollectionChanged += OnStepsChanged;
-        InitializeRelatedTargets();
-    }
-
-    private string _userText;
-    public string UserText { get => _userText; set => SetField(ref _userText, value); }
-
-    /// <summary>持久化用的原始文本（含附件标记与工作区相对路径）；无则用 UserText。</summary>
-    public string? StorageText { get; set; }
-
-    /// <summary>在会话 Turns 中的序号（0 起，用于转录分页过滤）。</summary>
-    public int UiOrdinal { get; set; }
-
-    private string _userTime;
-    public string UserTime { get => _userTime; private set => SetField(ref _userTime, value); }
-
-    public ObservableCollection<AgentStep> Steps { get; } = new();
-
-    /// <summary>本轮附带的图片文件路径（用于气泡内缩略图预览）。</summary>
-    public ObservableCollection<string> Images { get; } = new();
-
-    public bool HasSteps => Steps.Count > 0;
-    public int FailedToolCount => Steps.Count(s => !s.IsRunning && !s.Success);
-    public bool HasFailedTools => FailedToolCount > 0;
-    public bool HasDestructiveTools => Steps.Any(s => s.Destructive);
-    public Visibility ToolsVisibility => HasSteps ? Visibility.Visible : Visibility.Collapsed;
-
-    public string ToolHeader
-    {
-        get
-        {
-            if (Steps.Count == 0)
-                return string.Empty;
-
-            var text = $"工具过程 · {Steps.Count} 个";
-            if (FailedToolCount > 0)
-                text += $" · {FailedToolCount} 失败";
-            if (HasDestructiveTools)
-                text += " · 含写操作";
-            return text;
-        }
-    }
-
-    private bool _showTools = true;
-    public bool ShowTools { get => _showTools; set => SetField(ref _showTools, value); }
-
-    private string _assistantText = string.Empty;
-    public string AssistantText
-    {
-        get => _assistantText;
-        set
-        {
-            if (!SetField(ref _assistantText, value)) return;
-            OnPropertyChanged(nameof(AssistantVisibility));
-            OnPropertyChanged(nameof(RunningText));
-        }
-    }
-
-    private string _reasoningText = string.Empty;
-    /// <summary>本轮模型输出的思考过程（仅展示，不回喂上下文、不计入回答）。</summary>
-    public string ReasoningText
-    {
-        get => _reasoningText;
-        set
-        {
-            if (!SetField(ref _reasoningText, value)) return;
-            OnPropertyChanged(nameof(HasReasoning));
-            OnPropertyChanged(nameof(ReasoningVisibility));
-            OnPropertyChanged(nameof(RunningText));
-        }
-    }
-
-    public bool HasReasoning => _reasoningText.Length > 0;
-    public Visibility ReasoningVisibility => _reasoningText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-
-    private bool _showReasoning = true;
-    /// <summary>思考过程展开/折叠：运行中默认展开，完成后自动折叠（可手动展开）。</summary>
-    public bool ShowReasoning { get => _showReasoning; set => SetField(ref _showReasoning, value); }
-
-    private bool _isRunning = true;
-    public bool IsRunning
-    {
-        get => _isRunning;
-        set
-        {
-            if (!SetField(ref _isRunning, value)) return;
-            OnPropertyChanged(nameof(Footer));
-            OnPropertyChanged(nameof(RunningVisibility));
-            OnPropertyChanged(nameof(RunningText));
-            OnPropertyChanged(nameof(AssistantVisibility));
-        }
-    }
-    public Visibility RunningVisibility => _isRunning ? Visibility.Visible : Visibility.Collapsed;
-
-    /// <summary>运行占位文案：正在输出思考过程时显示"思考中…"，否则"运行中…"。</summary>
-    public string RunningText => HasReasoning && string.IsNullOrEmpty(_assistantText) ? "思考中…" : "运行中…";
-
-    private string _note = string.Empty;
-    public string Note
-    {
-        get => _note;
-        set { if (SetField(ref _note, value)) { OnPropertyChanged(nameof(NoteVisibility)); OnPropertyChanged(nameof(AssistantVisibility)); } }
-    }
-    public Visibility NoteVisibility => string.IsNullOrEmpty(_note) ? Visibility.Collapsed : Visibility.Visible;
-
-    public Visibility AssistantVisibility =>
-        (_isRunning || _assistantText.Length > 0 || !string.IsNullOrEmpty(_note)) ? Visibility.Visible : Visibility.Collapsed;
-
-    private string _endTime = string.Empty;
-    private string _duration = string.Empty;
-    public string Footer => _isRunning
-        ? "处理中…"
-        : (_endTime.Length == 0 ? string.Empty : _endTime + (_duration.Length > 0 ? $" · 用时 {_duration}" : string.Empty));
-
-    public void MarkDone(DateTime endUtc)
-    {
-        var end = endUtc.ToLocalTime();
-        _endTime = end.ToString("HH:mm:ss");
-        var secs = (end - _startedLocal).TotalSeconds;
-        _duration = secs >= 60 ? $"{secs / 60:F1} 分" : $"{secs:F1} 秒";
-        IsRunning = false;
-        ShowTools = HasFailedTools;
-        ShowReasoning = false;
-        OnPropertyChanged(nameof(Footer));
-    }
-
-    public void SetTimes(string endTime, string duration)
-    {
-        _endTime = endTime;
-        _duration = duration;
-        OnPropertyChanged(nameof(Footer));
-    }
-
-    public void ResetForRerun(string newText)
-    {
-        UserText = newText;
-        _startedLocal = DateTime.Now;
-        UserTime = _startedLocal.ToString("HH:mm:ss");
-        AssistantText = string.Empty;
-        ReasoningText = string.Empty;
-        Note = string.Empty;
-        Steps.Clear();
-        ClearRelatedTargets();
-        _endTime = string.Empty;
-        _duration = string.Empty;
-        ShowTools = true;
-        ShowReasoning = true;
-        IsRunning = true;
-        OnPropertyChanged(nameof(Footer));
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-    private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
-        field = value;
-        OnPropertyChanged(name);
-        return true;
-    }
-
-    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-}
 
 /// <summary>一次工具调用（可展开看完整入参/结果，带耗时与重试）。</summary>
 public sealed class AgentStep : INotifyPropertyChanged

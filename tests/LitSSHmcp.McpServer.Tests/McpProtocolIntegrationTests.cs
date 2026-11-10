@@ -41,7 +41,7 @@ public class McpProtocolIntegrationTests
             var tools = list.GetProperty("result").GetProperty("tools").EnumerateArray().ToList();
             var names = tools.Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
 
-            Assert.Equal(34, tools.Count);
+            Assert.Equal(35, tools.Count);
             Assert.DoesNotContain("mcp_approval_round", names);
             Assert.Contains("ssh_upload", names);
             Assert.Contains("ssh_download", names);
@@ -150,7 +150,7 @@ public class McpProtocolIntegrationTests
                 var list = await external.RequestAsync("tools/list", new { });
                 var names = list.GetProperty("result").GetProperty("tools").EnumerateArray()
                     .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
-                Assert.Equal(34, names.Count);
+                Assert.Equal(35, names.Count);
                 Assert.DoesNotContain("mcp_approval_round", names);
             }
 
@@ -165,7 +165,7 @@ public class McpProtocolIntegrationTests
             var hostList = await host.RequestAsync("tools/list", new { });
             var hostNames = hostList.GetProperty("result").GetProperty("tools").EnumerateArray()
                 .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
-            Assert.Equal(35, hostNames.Count);
+            Assert.Equal(36, hostNames.Count);
             Assert.Contains("mcp_approval_round", hostNames);
         }
         finally
@@ -201,7 +201,7 @@ public class McpProtocolIntegrationTests
 
             // 工具仍会列出（外部客户端不含内部工具）
             var list = await client.RequestAsync("tools/list", new { });
-            Assert.Equal(34, list.GetProperty("result").GetProperty("tools").GetArrayLength());
+            Assert.Equal(35, list.GetProperty("result").GetProperty("tools").GetArrayLength());
 
             // 但任何调用都被拒绝
             var call = await client.RequestAsync("tools/call", new { name = "mcp_self_check", arguments = new { } });

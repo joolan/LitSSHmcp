@@ -36,6 +36,8 @@ public sealed class PortMapSnapshotCollector : ISnapshotCollector
         // 一次输出里按行特征分类（proto 传 null 表示由状态推断）：
         var listeners = ParseSsListeners(ssResult.Output, proto: null);
         var unixAll = ParseSsUnix(ssResult.Output);
+        // 供 security 采集器复用，避免再执行一次 ss。
+        context.Shared["portmap.listeners"] = listeners;
 
         // phase2: 批量取属主与 cgroup 服务名（一次往返；pid 上限防超长命令行）。
         // cgroup 只取 systemd 控制器行（v2: 0::/...；v1: N:name=systemd:/...），避免 v1 每 pid 多行被 head 截断。

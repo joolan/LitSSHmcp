@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Compression;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using LitSSHmcp.Core.Models;
@@ -90,6 +91,7 @@ public sealed class BackupService
                 PlanId = plan.Id,
                 PlanName = plan.Name,
                 CreatedAt = DateTimeOffset.Now,
+                AppVersion = AppVersion,
                 DataDir = _dataDir,
                 Encrypted = plan.EncryptBackup,
                 Warning = "配置中的 DPAPI 加密项只能在原 Windows 用户下解密；迁移到其他电脑后需要重新填写。",
@@ -211,7 +213,25 @@ public sealed class BackupService
     }
 
     public static string BuildFileName(BackupPlanConfig plan) =>
-        PlanPrefix(plan) + DateTime.Now.ToString("yyyyMMdd-HHmmss") + (plan.EncryptBackup ? ".lsbak" : ".zip");
+        PlanPrefix(plan) + "v" + SafeName(AppVersion) + "-" +
+        DateTime.Now.ToString("yyyyMMdd-HHmmss") + (plan.EncryptBackup ? ".lsbak" : ".zip");
+
+    /// <summary>当前 App 版本（优先 InformationalVersion，去掉 +build 元数据；回退三段版本号）。</summary>
+    public static string AppVersion
+    {
+        get
+        {
+            var assembly = typeof(BackupService).Assembly;
+            var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            if (!string.IsNullOrWhiteSpace(informational))
+            {
+                var plus = informational.IndexOf('+');
+                return (plus >= 0 ? informational[..plus] : informational).Trim();
+            }
+            var version = assembly.GetName().Version;
+            return version is null ? "unknown" : $"{version.Major}.{version.Minor}.{version.Build}";
+        }
+    }
 
     private static string PlanPrefix(BackupPlanConfig plan) =>
         "LitSSH-backup-" + SafeName(plan.Name) + "-" + plan.Id[..Math.Min(8, plan.Id.Length)] + "-";

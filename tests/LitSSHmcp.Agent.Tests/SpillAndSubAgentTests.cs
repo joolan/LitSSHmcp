@@ -41,6 +41,25 @@ public class SpillAndSubAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task Spill_grep_returns_context_windows_for_single_line_json()
+    {
+        var store = new SpillStore(_dir, 7);
+        var json = "{\"users\":[" + string.Join(",", Enumerable.Range(1, 300)
+            .Select(i => $"{{\"name\":\"u{i}\",\"riskLevel\":\"高风险\"}}")) + "]}";
+        var handle = store.Save("snapshot_accounts", json);
+        var spill = Tool(SpillTools.Create(store), "spill");
+
+        var grep = await spill.InvokeAsync(
+            Args(("action", "grep"), ("handle", handle), ("pattern", "高风险"), ("max", 5)), default);
+        var text = (string)grep!;
+
+        Assert.Contains("高风险", text);
+        Assert.Contains("...", text);
+        Assert.DoesNotContain(json, text);              // 不整行返回
+        Assert.True(text.Split('\n').Length <= 5);      // max 生效
+    }
+
+    [Fact]
     public void Spill_store_isolates_owners()
     {
         var alice = new SpillStore(_dir, 7, "1");

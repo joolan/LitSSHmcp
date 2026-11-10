@@ -44,8 +44,10 @@ public class SnapshotTools
     public async Task<SnapshotDto> GetSnapshot(
         [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("可选: 指定快照ID取某一份历史; 不传则取该服务器最新一份")] long? snapshotId = null,
-        [Description("可选: 只取某维度完整数据, 取值 resource/portmap/docker/nginx_tls/systemd/security; 不传则返回概览")] string? section = null,
+        [Description("可选: 只取某维度完整数据, 取值 resource/portmap/docker/nginx_tls/systemd/security/accounts; 不传则返回概览")] string? section = null,
         [Description("可选: summary(默认,各维度概览)/full(全部完整数据,较大)")] string? detail = null,
+        [Description("可选: accounts 维度按用户名过滤（精确或包含，忽略大小写）")] string? account = null,
+        [Description("可选: accounts 维度按风险过滤 high/medium/normal（也接受 高/中/正常）")] string? riskLevel = null,
         CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
@@ -75,17 +77,23 @@ public class SnapshotTools
         await LogAuditAsync(server.Id, server.Name, $"GET_SNAPSHOT #{snapshot.Id}",
             snapshot.Status.ToString(), CommandStatus.Executed, AuditCategory.Meta);
 
-        return BuildDto(server, snapshot, events, recent, success: true, status: "ok",
-            section: section, full: IsFull(detail));
+        var resultDto = BuildDto(server, snapshot, events, recent, success: true, status: "ok",
+            section: section, full: IsFull(detail), account: account, riskLevel: riskLevel);
+        if (IsFull(detail) && (string.IsNullOrWhiteSpace(section) ||
+                               string.Equals(section.Trim(), "nginx_tls", StringComparison.OrdinalIgnoreCase)))
+            await TryInjectNginxConfigAsync(server, snapshot, resultDto.Data, cancellationToken);
+        return resultDto;
     }
 
     [McpServerTool(Name = "ssh_snapshot_refresh", UseStructuredContent = true, OutputSchemaType = typeof(SnapshotDto), ReadOnly = false, Idempotent = false, Destructive = false, OpenWorld = true)]
     [Description("重新采集服务器整机快照(典型10-30秒，同一服务器单飞)。距上次成功快照不足60s且未传 force=true 时返回已有快照(status=fresh)；默认仅返回概览，可用 section/detail 取完整数据")]
     public async Task<SnapshotDto> RefreshSnapshot(
         [Description("服务器 ID/名称/主机名")] string serverId,
-        [Description("可选: 只取某维度完整数据, 取值 resource/portmap/docker/nginx_tls/systemd/security; 不传则返回概览")] string? section = null,
+        [Description("可选: 返回某维度完整数据, 取值 resource/portmap/docker/nginx_tls/systemd/security/accounts; 不传则返回概览")] string? section = null,
         [Description("可选: summary(默认,各维度概览)/full(全部完整数据,较大)")] string? detail = null,
         [Description("可选: 忽略最短刷新间隔强制重采(默认 false)")] bool force = false,
+        [Description("可选: quick=resource+portmap+systemd+security；full=全部（默认）")] string? profile = null,
+        [Description("可选: 只采集指定维度，逗号分隔，覆盖 profile；如 resource,portmap,security")] string? sections = null,
         CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
@@ -95,23 +103,26 @@ public class SnapshotTools
 
         var options = config.Snapshot ?? new SnapshotConfig();
 
-        // 节流：距上次成功快照小于最短间隔时直接返回已有快照，避免短时间内重复全量采集
-        if (!force && options.MinRefreshIntervalSeconds > 0)
+        var collectSections = ParseCollectSections(profile, sections);
+        var result = await _snapshotService.RefreshAsync(server, options, collectSections, force, cancellationToken);
+
+        if (result.Status == "fresh")
         {
-            var latest = await _snapshotStore.GetLatestAsync(server.Id, cancellationToken);
-            if (latest is { Status: SnapshotStatus.Succeeded } &&
-                TryAgeSeconds(latest.CompletedAt, out var age) && age < options.MinRefreshIntervalSeconds)
+            var cachedSnapshot = result.Snapshot
+                ?? await _snapshotStore.GetLatestAsync(server.Id, cancellationToken);
+            if (cachedSnapshot is not null)
             {
-                var cachedEvents = await _snapshotStore.GetEventsAsync(latest.Id, 50, cancellationToken);
+                var cachedEvents = await _snapshotStore.GetEventsAsync(cachedSnapshot.Id, 50, cancellationToken);
                 var cachedRecent = await _snapshotStore.GetRecentAsync(server.Id, 10, cancellationToken);
-                var cached = BuildDto(server, latest, cachedEvents, cachedRecent, success: true, status: "fresh",
-                    section: section, full: IsFull(detail));
-                cached.Hint = $"距上次快照仅 {age:F0}s (< {options.MinRefreshIntervalSeconds}s)，已返回缓存; 如需强制重采请传 force=true";
+                var cached = BuildDto(server, cachedSnapshot, cachedEvents, cachedRecent, success: true,
+                    status: "fresh", section: section, full: IsFull(detail));
+                if (IsFull(detail) && (string.IsNullOrWhiteSpace(section) ||
+                                       string.Equals(section.Trim(), "nginx_tls", StringComparison.OrdinalIgnoreCase)))
+                    await TryInjectNginxConfigAsync(server, cachedSnapshot, cached.Data, cancellationToken);
+                cached.Hint = result.Hint;
                 return cached;
             }
         }
-
-        var result = await _snapshotService.RefreshAsync(server, options, cancellationToken);
 
         if (result.Status == "snapshot_in_progress")
         {
@@ -150,10 +161,34 @@ public class SnapshotTools
             status: succeeded ? "succeeded" : "failed",
             error: succeeded ? null : result.Error,
             section: section, full: IsFull(detail));
+        if (snapshot is not null && IsFull(detail) &&
+            (string.IsNullOrWhiteSpace(section) ||
+             string.Equals(section.Trim(), "nginx_tls", StringComparison.OrdinalIgnoreCase)))
+            await TryInjectNginxConfigAsync(server, snapshot, response.Data, cancellationToken);
         response.SnapshotId ??= result.SnapshotId;
         if (!succeeded)
             response.Hint = "快照失败原因见 events 与各 section 的 status/error; 可稍后重试 ssh_snapshot_refresh";
         return response;
+    }
+
+    /// <summary>profile=quick 只采集轻量只读维度；sections 显式列表优先于 profile。</summary>
+    private static IReadOnlyCollection<string>? ParseCollectSections(string? profile, string? sections)
+    {
+        if (!string.IsNullOrWhiteSpace(sections))
+        {
+            var list = sections.Split(new[] { ',', '，', ' ', ';' },
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(s => s.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return list.Length > 0 ? list : null;
+        }
+
+        return (profile ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "quick" => new[] { "resource", "portmap", "systemd", "security" },
+            _ => null
+        };
     }
 
     private static bool IsFull(string? detail) =>
@@ -170,6 +205,40 @@ public class SnapshotTools
         return ageSeconds >= 0;
     }
 
+    /// <summary>detail=full 时从 NginxConfigs 表按 configHash 回填完整 effectiveConfig。</summary>
+    private async Task TryInjectNginxConfigAsync(SshServerConfig server, ServerSnapshot snapshot,
+        Dictionary<string, object?>? data, CancellationToken ct)
+    {
+        if (data is null || string.IsNullOrWhiteSpace(snapshot.DataJson))
+            return;
+        try
+        {
+            using var doc = JsonDocument.Parse(snapshot.DataJson);
+            if (!doc.RootElement.TryGetProperty("sections", out var sections) ||
+                !sections.TryGetProperty("nginx_tls", out var nginx) ||
+                !nginx.TryGetProperty("data", out var nginxData) ||
+                !nginxData.TryGetProperty("configHash", out var hashNode) ||
+                hashNode.GetString() is not { Length: > 0 } hash)
+                return;
+
+            var content = await _snapshotStore.GetNginxConfigAsync(server.Id, hash, ct);
+            if (string.IsNullOrWhiteSpace(content))
+                return;
+
+            if (data.TryGetValue("sections", out var sectionsObj) &&
+                sectionsObj is Dictionary<string, object?> sectionMap &&
+                sectionMap.TryGetValue("nginx_tls", out var nginxObj) &&
+                nginxObj is Dictionary<string, object?> nginxMap &&
+                nginxMap.TryGetValue("data", out var dataObj) &&
+                dataObj is Dictionary<string, object?> target)
+                target["effectiveConfig"] = content;
+        }
+        catch
+        {
+            // 回填失败不影响快照查询
+        }
+    }
+
     private static SnapshotDto BuildDto(
         SshServerConfig server,
         ServerSnapshot? snapshot,
@@ -179,7 +248,9 @@ public class SnapshotTools
         string status,
         string? error = null,
         string? section = null,
-        bool full = false)
+        bool full = false,
+        string? account = null,
+        string? riskLevel = null)
     {
         var dto = new SnapshotDto
         {
@@ -211,7 +282,7 @@ public class SnapshotTools
         dto.DurationMs = snapshot.DurationMs;
         dto.Escalation = snapshot.Escalation;
         dto.CollectorVersion = snapshot.CollectorVersion;
-        dto.Data = BuildDataView(snapshot.DataJson, section, full);
+        dto.Data = BuildDataView(snapshot.DataJson, section, full, account, riskLevel);
         return dto;
     }
 
@@ -228,12 +299,14 @@ public class SnapshotTools
         ["resource"] = new[] { "load", "memory", "disks", "cpu", "cores", "os", "hostname", "ips", "topByCpu", "topByMemory", "warnings", "riskLevel" },
         ["portmap"] = new[] { "counts", "truncated", "elevated" },
         ["docker"] = new[] { "available", "daemonRunning", "serverVersion", "counts" },
-        ["nginx_tls"] = new[] { "available", "serverCount", "certificateCount", "expiringSoonDays", "expiringSoon", "domains" },
+        ["nginx_tls"] = new[] { "available", "serverType", "version", "configHash", "configFallback", "serverCount", "certificateCount", "expiringSoonDays", "expiringSoon", "domains" },
         ["systemd"] = new[] { "systemState", "total", "counts", "failed" },
-        ["security"] = new[] { "summary", "findings", "exposedHighRiskPorts", "emptyPasswordAccounts", "nopasswdSudo" }
+        ["security"] = new[] { "summary", "findings", "exposedHighRiskPorts", "emptyPasswordAccounts", "nopasswdSudo" },
+        ["accounts"] = new[] { "summary", "findings", "shadowReadable" }
     };
 
-    internal static Dictionary<string, object?>? BuildDataView(string? dataJson, string? section, bool full)
+    internal static Dictionary<string, object?>? BuildDataView(string? dataJson, string? section, bool full,
+        string? account = null, string? riskLevel = null)
     {
         if (string.IsNullOrWhiteSpace(dataJson))
             return null;
@@ -261,7 +334,7 @@ public class SnapshotTools
             {
                 result["sections"] = new JsonObject
                 {
-                    [key] = Compact(sections![key], SectionMaxString, SectionMaxArray)
+                    [key] = CompactSection(key, sections![key], full, account, riskLevel)
                 };
             }
             return ToDictionary(result);
@@ -277,7 +350,7 @@ public class SnapshotTools
 
         var summary = BaseMeta(root);
         summary["view"] = "summary";
-        summary["hint"] = "默认仅返回各维度概览; 需要某维度完整数据用 section=resource|portmap|docker|nginx_tls|systemd|security, 或 detail=\"full\" 取全部";
+        summary["hint"] = "默认仅返回各维度概览; 需要某维度完整数据用 section=resource|portmap|docker|nginx_tls|systemd|security|accounts, 或 detail=\"full\" 取全部";
         var summarySections = new JsonObject();
         if (sections != null)
         {
@@ -327,6 +400,226 @@ public class SnapshotTools
             if (string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase))
                 return kv.Key;
         return null;
+    }
+
+    private static JsonNode? CompactSection(string key, JsonNode? node, bool full,
+        string? account = null, string? riskLevel = null)
+    {
+        if (full)
+            return Compact(node, FullMaxString, FullMaxArray);
+        if (string.Equals(key, "accounts", StringComparison.OrdinalIgnoreCase))
+            return CompactAccountsSection(node, account, riskLevel);
+        if (string.Equals(key, "nginx_tls", StringComparison.OrdinalIgnoreCase))
+            return CompactNginxSection(node);
+        if (string.Equals(key, "portmap", StringComparison.OrdinalIgnoreCase))
+            return CompactLimitedSection(node, 50, "端口/Unix socket 默认最多 50 条；完整数据用 detail=\"full\"");
+        if (string.Equals(key, "systemd", StringComparison.OrdinalIgnoreCase))
+            return CompactLimitedSection(node, 100, "service 单元默认最多 100 条；完整数据用 detail=\"full\"");
+        if (string.Equals(key, "docker", StringComparison.OrdinalIgnoreCase))
+            return CompactLimitedSection(node, 50, "容器默认最多 50 条；完整数据用 detail=\"full\"");
+        return Compact(node, SectionMaxString, SectionMaxArray);
+    }
+
+    private static JsonObject CompactLimitedSection(JsonNode? sectionNode, int arrayCap, string hint)
+    {
+        var section = sectionNode as JsonObject;
+        var output = new JsonObject();
+        if (section is not null)
+        {
+            foreach (var key in new[] { "status", "durationMs", "error", "note" })
+                if (section.TryGetPropertyValue(key, out var value))
+                    output[key] = value?.DeepClone();
+        }
+
+        if (section?["data"] is JsonObject data)
+        {
+            output["data"] = Compact(data, SectionMaxString, arrayCap);
+            if (output["data"] is JsonObject compactData)
+                compactData["hint"] = hint;
+        }
+        return output;
+    }
+
+    /// <summary>nginx_tls 默认省略完整 effectiveConfig，只保留 hash/预览/站点/证书；全文用 detail=full。</summary>
+    private static JsonObject CompactNginxSection(JsonNode? sectionNode)
+    {
+        var section = sectionNode as JsonObject;
+        var output = new JsonObject();
+        if (section is not null)
+        {
+            foreach (var key in new[] { "status", "durationMs", "error", "note" })
+                if (section.TryGetPropertyValue(key, out var value))
+                    output[key] = value?.DeepClone();
+        }
+
+        if (section?["data"] is JsonObject data)
+        {
+            var copy = (JsonObject)data.DeepClone();
+            copy.Remove("effectiveConfig");
+            output["data"] = Compact(copy, SectionMaxString, SectionMaxArray);
+            if (output["data"] is JsonObject compactData)
+                compactData["hint"] = "effectiveConfig 已省略（默认只返回 configHash/configPreview）；完整配置用 detail=\"full\"";
+        }
+        return output;
+    }
+
+    /// <summary>
+    /// accounts 默认只返回摘要 + 风险/特权/可登录/有公钥用户，避免 50k+ 的单行 JSON；
+    /// 完整 users/authorizedKeys 用 detail="full"。
+    /// </summary>
+    private static JsonObject CompactAccountsSection(JsonNode? sectionNode,
+        string? account = null, string? riskLevel = null)
+    {
+        var filterAccount = string.IsNullOrWhiteSpace(account) ? null : account.Trim();
+        var filterRisk = NormalizeRisk(riskLevel);
+        var filtered = filterAccount is not null || filterRisk is not null;
+        var section = sectionNode as JsonObject;
+        var output = new JsonObject();
+        if (section is not null)
+        {
+            foreach (var key in new[] { "status", "durationMs", "error", "note" })
+                if (section.TryGetPropertyValue(key, out var value))
+                    output[key] = value?.DeepClone();
+        }
+
+        var data = section?["data"] as JsonObject;
+        var compact = new JsonObject();
+        if (data is not null)
+        {
+            foreach (var key in new[] { "summary", "shadowReadable" })
+                if (data.TryGetPropertyValue(key, out var value))
+                    compact[key] = value?.DeepClone();
+
+            if (data["findings"] is JsonArray findings)
+                compact["findings"] = Compact(findings, SectionMaxString, 20);
+
+            if (data["users"] is JsonArray users)
+            {
+                if (filtered)
+                {
+                    var matched = new JsonArray();
+                    foreach (var node in users)
+                    {
+                        if (node is not JsonObject user || !MatchesAccount(user, filterAccount, filterRisk))
+                            continue;
+                        matched.Add(ProjectAccountUser(user).DeepClone());
+                    }
+                    compact["users"] = Take(matched, 50);
+                }
+                else
+                {
+                    var risky = new JsonArray();
+                    var privileged = new JsonArray();
+                    var login = new JsonArray();
+                    foreach (var node in users)
+                    {
+                        if (node is not JsonObject user)
+                            continue;
+                        var projected = ProjectAccountUser(user);
+                        var risk = (string?)user["riskLevel"];
+                        if (!string.Equals(risk, "正常", StringComparison.Ordinal) &&
+                            !string.IsNullOrWhiteSpace(risk))
+                            risky.Add(projected.DeepClone());
+                        if ((bool?)user["isPrivileged"] == true)
+                            privileged.Add(projected.DeepClone());
+                        if (((string?)user["canLogin"])?.StartsWith("可能", StringComparison.Ordinal) == true)
+                            login.Add(projected.DeepClone());
+                    }
+                    compact["riskyUsers"] = Take(risky, 20);
+                    compact["privilegedUsers"] = Take(privileged, 20);
+                    compact["loginUsers"] = Take(login, 20);
+                }
+            }
+
+            if (data["authorizedKeys"] is JsonArray keys)
+            {
+                if (filtered)
+                {
+                    var matchedKeys = new JsonArray();
+                    foreach (var node in keys)
+                    {
+                        if (node is not JsonObject key || (int?)key["keyCount"] is not > 0)
+                            continue;
+                        if (filterAccount is not null &&
+                            !AccountMatches((string?)key["user"], filterAccount))
+                            continue;
+                        matchedKeys.Add(key.DeepClone());
+                    }
+                    compact["authorizedKeys"] = Take(matchedKeys, 20);
+                }
+                else
+                {
+                    var keyUsers = new JsonArray();
+                    foreach (var node in keys)
+                    {
+                        if (node is not JsonObject key || (int?)key["keyCount"] is not > 0)
+                            continue;
+                        keyUsers.Add(new JsonObject
+                        {
+                            ["user"] = key["user"]?.DeepClone(),
+                            ["path"] = key["path"]?.DeepClone(),
+                            ["keyCount"] = key["keyCount"]?.DeepClone(),
+                            ["modifiedAt"] = key["modifiedAt"]?.DeepClone(),
+                            ["mode"] = key["mode"]?.DeepClone()
+                        });
+                    }
+                    compact["keyUsers"] = Take(keyUsers, 20);
+                }
+            }
+
+            compact["hint"] = filtered
+                ? "accounts 已按 account/riskLevel 过滤；完整明细用 detail=\"full\""
+                : "accounts 默认返回摘要/风险用户；完整 users/authorizedKeys 用 detail=\"full\"";
+        }
+
+        output["data"] = compact;
+        return output;
+    }
+
+    private static string? NormalizeRisk(string? value) => (value ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        "high" or "高" or "高风险" => "高风险",
+        "medium" or "中" or "中风险" => "中风险",
+        "normal" or "low" or "正常" => "正常",
+        _ => null
+    };
+
+    private static bool MatchesAccount(JsonObject user, string? account, string? risk)
+    {
+        if (account is not null && !AccountMatches((string?)user["name"], account))
+            return false;
+        if (risk is not null && !string.Equals((string?)user["riskLevel"], risk, StringComparison.Ordinal))
+            return false;
+        return true;
+    }
+
+    private static bool AccountMatches(string? name, string filter) =>
+        !string.IsNullOrWhiteSpace(name) &&
+        (string.Equals(name, filter, StringComparison.OrdinalIgnoreCase) ||
+         name.Contains(filter, StringComparison.OrdinalIgnoreCase));
+
+    private static JsonObject ProjectAccountUser(JsonObject user) => new()
+    {
+        ["name"] = user["name"]?.DeepClone(),
+        ["uid"] = user["uid"]?.DeepClone(),
+        ["shell"] = user["shell"]?.DeepClone(),
+        ["riskLevel"] = user["riskLevel"]?.DeepClone(),
+        ["riskNotes"] = user["riskNotes"]?.DeepClone(),
+        ["isPrivileged"] = user["isPrivileged"]?.DeepClone(),
+        ["canLogin"] = user["canLogin"]?.DeepClone(),
+        ["lastLogin"] = user["lastLogin"]?.DeepClone(),
+        ["authorizedKeyCount"] = user["authorizedKeyCount"]?.DeepClone()
+    };
+
+    private static JsonArray Take(JsonArray source, int max)
+    {
+        var result = new JsonArray();
+        var count = Math.Min(source.Count, max);
+        for (var i = 0; i < count; i++)
+            result.Add(source[i]?.DeepClone());
+        if (source.Count > count)
+            result.Add($"（仅显示前 {count} 条，共 {source.Count} 条；如需全部用 detail=\"full\"）");
+        return result;
     }
 
     private static JsonNode? BuildHeadline(string sectionName, JsonNode? dataNode)

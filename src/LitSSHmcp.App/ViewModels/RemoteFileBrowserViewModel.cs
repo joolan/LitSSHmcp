@@ -80,6 +80,30 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
         set { _isBusy = value; OnPropertyChanged(); }
     }
 
+    private bool _isTransferring;
+    /// <summary>上传/下载进行中（用于进度条显示）。</summary>
+    public bool IsTransferring
+    {
+        get => _isTransferring;
+        set { _isTransferring = value; OnPropertyChanged(); }
+    }
+
+    private bool _isTransferIndeterminate;
+    /// <summary>批量/目录传输没有单文件进度时显示不确定进度。</summary>
+    public bool IsTransferIndeterminate
+    {
+        get => _isTransferIndeterminate;
+        set { _isTransferIndeterminate = value; OnPropertyChanged(); }
+    }
+
+    private double _transferProgress;
+    /// <summary>单文件传输进度 0-100。</summary>
+    public double TransferProgress
+    {
+        get => _transferProgress;
+        set { _transferProgress = value; OnPropertyChanged(); }
+    }
+
     private string PathKey => "ssh.files.lastdir." + _server.Id;
 
     /// <summary>首次打开：优先上次目录，其次用户 home（避免因权限打不开根目录）。</summary>
@@ -192,7 +216,11 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
             : $"已移入回收站 {result.Moved} 项，失败 {result.Errors.Count} 项：" + string.Join("；", result.Errors);
     }
 
-    /// <summary>上传本地文件/文件夹（递归）到当前目录。</summary>
+    /// <summary>
+    /// 上传本地文件/文件夹（递归）到当前目录。
+    /// 单个大文件走 UploadFileAsync（带进度、无 512MB 单文件限制，与 SFTP 文件管理一致）；
+    /// 多文件/目录走 UploadBatchAsync（有单文件/总量保护），失败时给出具体原因。
+    /// </summary>
     public async Task UploadPathsAsync(IEnumerable<string> localPaths)
     {
         var paths = localPaths.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
@@ -202,25 +230,82 @@ public sealed class RemoteFileBrowserViewModel : INotifyPropertyChanged
             return;
 
         IsBusy = true;
-        StatusMessage = "上传中…";
+        IsTransferring = true;
+        TransferProgress = 0;
+        IsTransferIndeterminate = false;
+        string? resultMessage = null;
         try
         {
+            if (paths.Count == 1 && File.Exists(paths[0]))
+            {
+                resultMessage = await UploadSingleFileAsync(paths[0]);
+                return;
+            }
+
+            IsTransferIndeterminate = true;
+            StatusMessage = $"上传中（{paths.Count} 项，文件夹会递归）…";
             var result = await _ssh.UploadBatchAsync(_server, paths, CurrentPath,
                 recursive: true, maxFiles: 5000, maxFileBytes: 512L * 1024 * 1024, maxTotalBytes: 2L * 1024 * 1024 * 1024);
-            StatusMessage = result.Success
-                ? $"已上传 {result.Succeeded} 项" + (result.Failed > 0 ? $"，失败 {result.Failed}" : string.Empty)
-                : "上传失败: " + result.Error;
+
+            var firstError = result.Files.FirstOrDefault(f => !f.Success)?.Error;
+            var reason = firstError ?? result.Error;
+            resultMessage = result.Success
+                ? $"已上传 {result.Succeeded} 项"
+                  + (result.Failed > 0 ? $"，失败 {result.Failed} 项" + (reason is null ? string.Empty : $"（{reason}）") : string.Empty)
+                  + (result.Truncated ? "；文件数/总量达到上限" : string.Empty)
+                : "上传失败：" + (reason ?? "未知错误");
         }
         catch (Exception ex)
         {
-            StatusMessage = "上传失败: " + ex.Message;
+            resultMessage = "上传失败: " + ex.Message;
         }
         finally
         {
+            IsTransferring = false;
+            IsTransferIndeterminate = false;
+            TransferProgress = 0;
             IsBusy = false;
             await LoadAsync();
+            // LoadAsync 会把状态改成“N 项”，这里恢复上传结果，避免失败原因被刷新覆盖。
+            if (!string.IsNullOrWhiteSpace(resultMessage))
+                StatusMessage = resultMessage;
         }
     }
+
+    /// <summary>单文件上传：带进度，避免大文件看起来“没反应”；不施加 512MB 单文件上限。</summary>
+    private async Task<string> UploadSingleFileAsync(string localPath)
+    {
+        var info = new FileInfo(localPath);
+        var remote = JoinPath(CurrentPath, info.Name);
+        IsTransferIndeterminate = false;
+        TransferProgress = 0;
+        StatusMessage = $"上传中: {info.Name}（{FormatSize(info.Length)}）…";
+
+        long lastReportTicks = 0;
+        var progress = new Progress<FileTransferProgress>(p =>
+        {
+            TransferProgress = p.Percentage;
+            var now = DateTime.UtcNow.Ticks;
+            if (now - lastReportTicks < TimeSpan.FromMilliseconds(200).Ticks && p.Percentage < 100)
+                return;
+            lastReportTicks = now;
+            SetStatus($"上传中: {info.Name} {p.Percentage:F0}%（{FormatSize(p.BytesTransferred)} / {FormatSize(p.TotalBytes)}）");
+        });
+
+        var result = await _ssh.UploadFileAsync(_server, localPath, remote, progress);
+        TransferProgress = result.Success ? 100 : 0;
+        return result.Success
+            ? $"已上传: {info.Name}（{FormatSize(result.BytesTransferred)}）"
+            : "上传失败: " + result.Message;
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024L * 1024 => $"{bytes / 1024.0:F1} KB",
+        < 1024L * 1024 * 1024 => $"{bytes / 1024.0 / 1024:F1} MB",
+        _ => $"{bytes / 1024.0 / 1024 / 1024:F2} GB"
+    };
 
     public async Task DownloadAsync(RemoteFileItem item, string localPath)
     {

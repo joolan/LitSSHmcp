@@ -627,7 +627,10 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
             _nginxPath = nginxBin.Groups[1].Value.Trim();
             _nginxVersion = Regex.Match(result.Output, @"nginx version:\s*([^\r\n]+)", RegexOptions.IgnoreCase)
                 .Groups[1].Value.Trim();
-            if (_nginxVersion.Contains("tengine", StringComparison.OrdinalIgnoreCase) ||
+            // Tengine 的进程名/路径经常仍是 nginx（如 /www/server/nginx/sbin/nginx），
+            // 但 -v 会输出 "Tengine version: ..."；不能只看 nginx version 或路径。
+            if (tengineVersion.Length > 0 ||
+                _nginxVersion.Contains("tengine", StringComparison.OrdinalIgnoreCase) ||
                 _nginxPath.Contains("tengine", StringComparison.OrdinalIgnoreCase))
             {
                 _nginxServerType = "Tengine";
@@ -785,7 +788,7 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
             step.Detail = "未检测到 Nginx / Tengine，跳过";
             return;
         }
-        var command = $"{ShellQuote.Single(_nginxPath)} -T 2>&1 | head -3000";
+        var command = NginxConfigProbe.BuildConfigCommand(_nginxPath);
         var result = await RunAsync(command, step, 60);
         if (result is null) return;
         var text = NginxTlsSnapshotCollector.SanitizeNginxConfig(result.Output);
@@ -795,7 +798,29 @@ public sealed class SiteDiscoveryViewModel : INotifyPropertyChanged
             step.Detail = _nginxServerType + " -T 不可用";
             return;
         }
-        var (sites, truncated) = NginxTlsSnapshotCollector.ParseNginxConfig(text);
+        var (sites, truncated) = NginxTlsSnapshotCollector.ParseNginxConfig(text,
+            truncationLineLimit: NginxConfigProbe.MaxConfigLines);
+
+        // Tengine 或不支持 -T 的构建：改为按 --conf-path / 常见目录直接读取配置文件（含 conf.d/sites-enabled/vhost）。
+        // 解析到 0 个 server 块、或输出被 head 截断时都补一次文件读取，避免遗漏后面的域名站点。
+        if (sites.Count == 0 || truncated)
+        {
+            var fallback = await RunAsync(NginxConfigProbe.BuildFallbackConfigCommand(_nginxPath), step, 90);
+            if (fallback is not null)
+            {
+                var fallbackText = NginxTlsSnapshotCollector.SanitizeNginxConfig(fallback.Output);
+                var (fallbackSites, fallbackTruncated) =
+                    NginxTlsSnapshotCollector.ParseNginxConfig(fallbackText,
+                        truncationLineLimit: NginxConfigProbe.MaxConfigLines);
+                if (fallbackSites.Count > 0)
+                {
+                    text = fallbackText;
+                    sites = fallbackSites;
+                    truncated = fallbackTruncated;
+                }
+            }
+        }
+
         _nginxSites.AddRange(sites);
         ParseNginxUpstreams(text);
         step.Detail = $"解析 {sites.Count} 个 server 块" + (truncated ? "（已截断）" : string.Empty);

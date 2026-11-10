@@ -9,15 +9,16 @@ public static class ToolFilter
     /// <summary>内部工具名：审批轮次边界（Agent 每条用户消息开始时调用，不暴露给模型）。</summary>
     public const string InternalRoundTool = "mcp_approval_round";
 
-    public static List<McpClientTool> Apply(IEnumerable<McpClientTool> tools, AgentConfig config)
+    public static List<McpClientTool> Apply(IEnumerable<McpClientTool> tools, AgentConfig config,
+        bool allowLocalCacheProbes = false)
     {
-        // 内部工具一律不给模型（Agent 在工具过滤前单独捕获引用做轮次通知）
+        // 内部工具一律不给模型（Agent 在工具过滤前单独捕获引用做轮次通知）...
         var result = tools
             .Where(t => !string.Equals(t.Name, InternalRoundTool, StringComparison.Ordinal))
             .ToList();
 
         if (config.ReadOnly)
-            result = result.Where(IsReadOnly).ToList();
+            result = result.Where(t => IsReadOnlyAllowed(t.Name, IsReadOnly(t), allowLocalCacheProbes)).ToList();
 
         if (config.AllowedToolGroups is { Length: > 0 })
         {
@@ -30,6 +31,13 @@ public static class ToolFilter
 
     /// <summary>依据 MCP 工具注解判断是否只读（annotations.readOnlyHint == true）。</summary>
     public static bool IsReadOnly(McpClientTool tool) => tool.ProtocolTool.Annotations?.ReadOnlyHint == true;
+
+    /// <summary>
+    /// 只读模式是否保留该工具：只读注解为真，或（仅内置 MCP）属于“只写本地缓存、
+    /// 远端只读”的安全探测白名单。外部 MCP 不传 allowLocalCacheProbes，避免同名绕过。
+    /// </summary>
+    public static bool IsReadOnlyAllowed(string name, bool readOnlyHint, bool allowLocalCacheProbes) =>
+        readOnlyHint || (allowLocalCacheProbes && ToolProfileFilter.IsSafeLocalCacheProbe(name));
 
     /// <summary>由工具名推断所属工具分组（与 docs/TOOLS.md / config.tools.enabledGroups 的分组键一致）；未知返回 null。</summary>
     public static string? GroupOf(string toolName) => ToolGroups.GroupOf(toolName);

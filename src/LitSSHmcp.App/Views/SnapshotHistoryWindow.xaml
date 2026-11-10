@@ -27,6 +27,9 @@
             <Button Content="刷新" Width="70" Padding="6,4" Margin="10,0,0,0" Click="OnRefresh"/>
             <Button Content="趋势图" Width="70" Padding="6,4" Margin="6,0,0,0" Click="OnTrend"
                     ToolTip="用历史快照画内存/磁盘/Swap/负载趋势"/>
+            <Button Content="对比上一份" Width="90" Padding="6,4" Margin="6,0,0,0"
+                    Command="{Binding CompareCommand}"
+                    ToolTip="与更早一份快照比较账号/公钥/端口/服务/容器/域名变化"/>
             <TextBlock Text="左列选择某次快照 → 右侧查看该次的采集维度/事件/原始数据"
                        VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="14,0,0,0"/>
         </StackPanel>
@@ -82,6 +85,18 @@
                                 </GridView>
                             </ListView.View>
                         </ListView>
+                    </TabItem>
+                    <TabItem Header="账号摘要">
+                        <TextBox Text="{Binding AccountsSummary, Mode=OneWay}" IsReadOnly="True"
+                                 FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                 TextWrapping="Wrap" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                    </TabItem>
+                    <TabItem Header="对比上一份">
+                        <TextBox Text="{Binding DiffText, Mode=OneWay}" IsReadOnly="True"
+                                 FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                 TextWrapping="NoWrap" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
                     </TabItem>
                     <TabItem Header="原始数据(JSON)">
                         <TextBox Text="{Binding RawJson, Mode=OneWay}" IsReadOnly="True" FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"

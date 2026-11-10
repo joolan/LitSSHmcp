@@ -328,6 +328,15 @@ public sealed class AgentSession
         var turnBudgetSeconds = _config.Budget?.MaxTurnSeconds ?? 0;
         var turnSw = System.Diagnostics.Stopwatch.StartNew();
         var iteration = 0;
+        // 本地工具不计入远程工具上限，但必须防止模型对相同入参/同一 spill 结果无限空转。
+        const int sameLocalNudgeAfter = 10;
+        const int maxSameLocalRounds = 40;
+        const int maxSameSpillTargetRounds = 24;
+        var lastLocalSignature = string.Empty;
+        var sameLocalRounds = 0;
+        var lastSpillTarget = string.Empty;
+        var sameSpillTargetRounds = 0;
+        var localLoopNudged = false;
         while (true)
         {
             if (iteration >= maxIterations)
@@ -415,6 +424,72 @@ public sealed class AgentSession
             var calls = contents.OfType<FunctionCallContent>().ToList();
             // 仅本地工具（文档读写等）的轮次不占用「最大工具轮数」；同一轮只要含远程工具就计 1 次。
             var countsTowardToolLimit = calls.Any(c => !IsLocalTool(c.Name));
+
+            if (calls.Count > 0)
+            {
+                var localOnly = calls.All(c => IsLocalTool(c.Name));
+                if (localOnly)
+                {
+                    var signature = BuildLocalCallSignature(calls);
+                    if (string.Equals(signature, lastLocalSignature, StringComparison.Ordinal))
+                    {
+                        sameLocalRounds++;
+                    }
+                    else
+                    {
+                        lastLocalSignature = signature;
+                        sameLocalRounds = 1;
+                    }
+                }
+                else
+                {
+                    lastLocalSignature = string.Empty;
+                    sameLocalRounds = 0;
+                }
+
+                var allSpill = calls.All(c => string.Equals(c.Name, "spill", StringComparison.OrdinalIgnoreCase));
+                if (allSpill)
+                {
+                    var target = string.Join('|', calls.Select(c => BuildSpillTarget(c.Arguments)));
+                    if (string.Equals(target, lastSpillTarget, StringComparison.Ordinal))
+                    {
+                        sameSpillTargetRounds++;
+                    }
+                    else
+                    {
+                        lastSpillTarget = target;
+                        sameSpillTargetRounds = 1;
+                    }
+                }
+                else
+                {
+                    lastSpillTarget = string.Empty;
+                    sameSpillTargetRounds = 0;
+                }
+
+                if ((sameLocalRounds >= sameLocalNudgeAfter || sameSpillTargetRounds >= sameLocalNudgeAfter)
+                    && !localLoopNudged)
+                {
+                    localLoopNudged = true;
+                    var nudge = new ChatMessage(ChatRole.User,
+                        "检测到连续多轮相同本地工具入参（或同一 spill 句柄/动作）。不要继续重复 spill read/grep 同一个结果；" +
+                        "请直接基于已有预览/片段回答，或改用工具的结构化参数（如 section/detail）一次取回所需数据。");
+                    Messages.Add(nudge);
+                    transientContext.Add(nudge);
+                    progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                        Text: $"本地工具连续相同调用 {Math.Max(sameLocalRounds, sameSpillTargetRounds)} 轮，" +
+                              "已提示模型停止反复读取（spill 同一目标 24 次将强制停止）。"));
+                }
+
+                if (sameLocalRounds >= maxSameLocalRounds || sameSpillTargetRounds >= maxSameSpillTargetRounds)
+                {
+                    progress?.Report(new AgentEvent(AgentEventKind.Error,
+                        Text: $"本地工具连续重复调用过多（相同入参 {sameLocalRounds} 轮，同一 spill 目标 {sameSpillTargetRounds} 轮），" +
+                              "已停止本轮以避免空转；请直接基于已有结果回答，或用 section/detail 精确取数。"));
+                    return;
+                }
+            }
+
             if (calls.Count == 0)
             {
                 var responseText = string.Concat(contents.OfType<TextContent>().Select(t => t.Text));
@@ -1243,27 +1318,60 @@ public sealed class AgentSession
             if (Messages[i].Role == ChatRole.Tool)
                 toolIndices.Add(i);
 
-        // 保留最近 2 个工具结果完整，从最旧的开始压缩。
-        const int protectRecent = 2;
-        foreach (var index in toolIndices.Take(Math.Max(0, toolIndices.Count - protectRecent)))
+        // 当前用户轮次从最后一条 User 消息开始；先压缩更早轮次，尽量保留本轮完整取证。
+        var lastUserIndex = -1;
+        for (var i = Messages.Count - 1; i >= 0; i--)
+        {
+            if (Messages[i].Role == ChatRole.User)
+            {
+                lastUserIndex = i;
+                break;
+            }
+        }
+
+        foreach (var index in toolIndices.Where(i => i < lastUserIndex))
         {
             if (!OverLimits())
                 return;
-
-            var result = Messages[index].Contents.OfType<FunctionResultContent>().FirstOrDefault();
-            var resultText = result?.Result?.ToString();
-            if (result is null || resultText == ToolResultOmitted)
-                continue;
-
-            var handle = ExtractSpillHandle(resultText);
-            var replacement = handle is null
-                ? ToolResultOmitted
-                : $"[较早的大结果已压缩; 完整内容仍在 spill://{handle}, 需要时用 spill(action=\"read\", handle=\"spill://{handle}\", offset, limit) 分段读取]";
-            Messages[index] = new ChatMessage(ChatRole.Tool, new AIContent[]
-            {
-                new FunctionResultContent(result.CallId, replacement)
-            });
+            CompactToolResultAt(index);
         }
+
+        // 仍超限时才压缩本轮较早的工具结果；保留最近 2 个完整。
+        const int protectRecent = 2;
+        var currentRound = toolIndices.Where(i => i >= lastUserIndex).ToList();
+        foreach (var index in currentRound.Take(Math.Max(0, currentRound.Count - protectRecent)))
+        {
+            if (!OverLimits())
+                return;
+            CompactToolResultAt(index);
+        }
+    }
+
+    /// <summary>
+    /// 压缩单个工具结果：若有 spill 句柄则保留句柄；否则把完整内容写入 spill 存储，
+    /// 再把上下文替换为可回读的句柄（避免“省略后只能重新执行命令”）。
+    /// </summary>
+    private void CompactToolResultAt(int index)
+    {
+        var result = Messages[index].Contents.OfType<FunctionResultContent>().FirstOrDefault();
+        var resultText = result?.Result?.ToString();
+        if (result is null || string.IsNullOrEmpty(resultText) || resultText == ToolResultOmitted)
+            return;
+
+        var handle = ExtractSpillHandle(resultText);
+        if (handle is null && _spill is not null)
+        {
+            try { handle = _spill.Save("tool-result", resultText); }
+            catch { handle = null; }
+        }
+
+        var replacement = handle is null
+            ? ToolResultOmitted
+            : $"[较早的工具结果已压缩; 完整内容已写入 spill://{handle}; 需要时用 spill(action=\"read\", handle=\"spill://{handle}\", offset, limit) 分段读取，不要重复执行原命令]";
+        Messages[index] = new ChatMessage(ChatRole.Tool, new AIContent[]
+        {
+            new FunctionResultContent(result.CallId, replacement)
+        });
     }
 
     private static string? ExtractSpillHandle(string? text)
@@ -1400,10 +1508,24 @@ public sealed class AgentSession
     {
         if (arguments is null || arguments.Count == 0)
             return null;
-        // 不转义非 ASCII（否则中文入参会被序列化成 \uXXXX，界面/模型都难读）。
+        // ��ת��� ASCII������������λᱻ���л��� \uXXXX������/ģ�Ͷ��Ѷ�����
         try { return JsonSerializer.Serialize(arguments, JsonOptions); }
         catch { return null; }
     }
+
+    private static string BuildLocalCallSignature(IReadOnlyList<FunctionCallContent> calls) =>
+        string.Join('\n', calls.Select(c => c.Name + ":" + (SerializeArgs(c.Arguments) ?? string.Empty)));
+
+    /// <summary>spill 的“同一目标”：action + handle。pattern/offset/limit 变化仍视为同一结果空转。</summary>
+    private static string BuildSpillTarget(IDictionary<string, object?>? args)
+    {
+        var action = ReadArgText(args, "action")?.Trim().ToLowerInvariant() ?? "read";
+        var handle = ReadArgText(args, "handle")?.Trim() ?? string.Empty;
+        return action + ":" + handle;
+    }
+
+    private static string? ReadArgText(IDictionary<string, object?>? args, string key) =>
+        args is not null && args.TryGetValue(key, out var value) ? value?.ToString() : null;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

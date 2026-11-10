@@ -38,7 +38,7 @@ public class AgentWindowXamlTests
     {
         var ex = RunSta(() =>
         {
-            foreach (var dict in new[] { "Tokens.Dark", "Tokens.Light", "Controls" })
+            foreach (var dict in new[] { "Tokens.Dark", "Tokens.Light", "Controls", "MenuFix" })
             {
                 var uri = new Uri($"pack://application:,,,/LitSSHmcp.App;component/Themes/{dict}.xaml", UriKind.Absolute);
                 _ = new System.Windows.ResourceDictionary { Source = uri };

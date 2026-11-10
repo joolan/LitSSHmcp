@@ -48,6 +48,55 @@ public class SnapshotServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Nginx_config_is_externalized_by_default()
+    {
+        var collector = new TestCollector("nginx_tls", 30, (_, _) =>
+            Task.FromResult(CollectorResult.Ok(new Dictionary<string, object?>
+            {
+                ["configHash"] = "abc123",
+                ["configPreview"] = "preview",
+                ["effectiveConfig"] = "full-config-body"
+            })));
+        var (service, store) = await NewAsync(collector);
+
+        var result = await service.RefreshAsync(Server(), new SnapshotConfig());
+
+        Assert.Equal("succeeded", result.Status);
+        var latest = await store.GetLatestAsync("s1");
+        using var doc = JsonDocument.Parse(latest!.DataJson!);
+        var data = doc.RootElement.GetProperty("sections").GetProperty("nginx_tls").GetProperty("data");
+        Assert.False(data.TryGetProperty("effectiveConfig", out _));
+        Assert.Equal("full-config-body", await store.GetNginxConfigAsync("s1", "abc123"));
+    }
+
+    [Fact]
+    public async Task Throttle_returns_fresh_until_force()
+    {
+        var (service, _) = await NewAsync(Ok("resource", 10));
+        var options = new SnapshotConfig { MinRefreshIntervalSeconds = 60 };
+
+        Assert.Equal("succeeded", (await service.RefreshAsync(Server(), options)).Status);
+        Assert.Equal("fresh", (await service.RefreshAsync(Server(), options)).Status);
+        Assert.Equal("succeeded",
+            (await service.RefreshAsync(Server(), options, sectionNames: null, force: true)).Status);
+    }
+
+    [Fact]
+    public async Task Section_selection_only_runs_selected_collectors()
+    {
+        var (service, store) = await NewAsync(Ok("resource", 10), Ok("systemd", 40));
+
+        var result = await service.RefreshAsync(Server(), new SnapshotConfig(), new[] { "systemd" });
+
+        Assert.Equal("succeeded", result.Status);
+        var latest = await store.GetLatestAsync("s1");
+        using var doc = JsonDocument.Parse(latest!.DataJson!);
+        var sections = doc.RootElement.GetProperty("sections");
+        Assert.True(sections.TryGetProperty("systemd", out _));
+        Assert.False(sections.TryGetProperty("resource", out _));
+    }
+
+    [Fact]
     public async Task Concurrent_refresh_returns_in_progress()
     {
         var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);

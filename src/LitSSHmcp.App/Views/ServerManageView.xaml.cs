@@ -87,6 +87,7 @@ public partial class ServerManageView : UserControl
         Add("计划任务（cron / systemd）", () => vm.OpenScheduledTasksCommand.Execute(null));
         menu.Items.Add(new Separator());
         Add("采集快照", () => vm.SnapshotRefreshCommand.Execute(null));
+        Add("取消采集", () => vm.SnapshotCancelCommand.Execute(null), enabled: vm.SnapshotCancelCommand.CanExecute(null));
         Add("快照历史", () => vm.OpenSnapshotHistoryCommand.Execute(null));
         menu.Items.Add(new Separator());
         Add("删除", () => vm.DeleteServerCommand.Execute(null));
@@ -115,6 +116,8 @@ public partial class ServerManageView : UserControl
     private void OnDeleteClick(object sender, RoutedEventArgs e) => ViewModel?.DeleteServerCommand.Execute(null);
 
     private void OnSnapshotRefreshClick(object sender, RoutedEventArgs e) => ViewModel?.SnapshotRefreshCommand.Execute(null);
+
+    private void OnSnapshotCancelClick(object sender, RoutedEventArgs e) => ViewModel?.SnapshotCancelCommand.Execute(null);
 
     private void OnSnapshotHistoryClick(object sender, RoutedEventArgs e) => ViewModel?.OpenSnapshotHistoryCommand.Execute(null);
 

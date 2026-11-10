@@ -77,6 +77,14 @@
                     </StackPanel>
                 </Button>
                 <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
+                        Margin="0,0,0,2" Click="OnAiTasksClick"
+                        ToolTip="查看/启停/立即运行/删除 AI 定时任务（任务由对话创建）">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="History24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,10,0"/>
+                        <TextBlock Text="AI 定时任务" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
                         Margin="0,0,0,14" Click="OnOpenSharedWorkspace"
                         ToolTip="打开共享工作区根目录（不随当前会话切换；会话工作目录请在会话上右键打开）">
                     <StackPanel Orientation="Horizontal">
@@ -261,7 +269,8 @@
                         <ContextMenu Opened="OnSessionMenuOpened" Closed="OnSessionMenuClosed">
                             <MenuItem x:Name="StopSessionMenu" Header="停止任务" Click="OnStopSession"/>
                             <Separator/>
-                            <MenuItem x:Name="MoveGroupMenu" Header="移动到分组"/>
+                            <MenuItem x:Name="MoveGroupMenu" Header="移动到分组"
+                                      Style="{DynamicResource FixedSubmenuHeaderStyle}"/>
                             <Separator/>
                             <MenuItem Header="重命名" Click="OnRenameSession"/>
                             <MenuItem Header="归档" Click="OnArchiveSession"/>
@@ -399,6 +408,7 @@
                                                 </TextBlock>
                                             </StackPanel>
                                         </Expander.Header>
+                                        <StackPanel>
                                         <ItemsControl ItemsSource="{Binding Steps}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
@@ -472,6 +482,11 @@
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
+                                        <ui:Button Content="收起工具过程" HorizontalAlignment="Left"
+                                                   Margin="0,6,0,0" Padding="10,3"
+                                                   Click="OnCollapseTools"
+                                                   Visibility="{Binding ShowTools, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
                                     </Expander>
 
                                     <!-- 助手回答卡片 -->
@@ -492,7 +507,13 @@
                                                     <TextBlock Text="思考过程" FontSize="{DynamicResource AppFontSizeMicro}"
                                                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                                 </Expander.Header>
-                                                <controls:MarkdownBox Markdown="{Binding ReasoningText}"/>
+                                                <StackPanel>
+                                                    <controls:MarkdownBox Markdown="{Binding ReasoningText}"/>
+                                                    <ui:Button Content="收起思考" HorizontalAlignment="Left"
+                                                               Margin="0,6,0,0" Padding="10,3"
+                                                               Click="OnCollapseReasoning"
+                                                               Visibility="{Binding ShowReasoning, Converter={StaticResource BoolToVis}}"/>
+                                                </StackPanel>
                                             </Expander>
                                             <controls:MarkdownBox Markdown="{Binding AssistantText}"/>
                                             <TextBlock Text="{Binding Note}" Foreground="{DynamicResource AppDangerBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeCaption}"

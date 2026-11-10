@@ -300,6 +300,35 @@ public class SnapshotCollectorTests
     }
 
     [Fact]
+    public void Nginx_parses_tengine_tabs_and_inline_comments()
+    {
+        // Tengine/宝塔配置常见 Tab 缩进与行内注释
+        var config = string.Join("\n", new[]
+        {
+            "# configuration file /usr/local/tengine/conf/nginx.conf:",
+            "server { # tengine",
+            "\tlisten\t443 ssl; # tls",
+            "\tserver_name\texample.com\twww.example.com; # domains",
+            "\tssl_certificate\t/usr/local/tengine/conf/cert/a.pem;",
+            "}",
+            "server {",
+            "\tserver_name\tapi.example.com;",
+            "\tlisten\t80;",
+            "}"
+        });
+
+        var (sites, _) = NginxTlsSnapshotCollector.ParseNginxConfig(config);
+
+        Assert.Equal(2, sites.Count);
+        Assert.Contains("example.com", sites[0].ServerNames);
+        Assert.Contains("www.example.com", sites[0].ServerNames);
+        Assert.Equal(443, sites[0].Listens[0].Port);
+        Assert.True(sites[0].HasTls);
+        Assert.Contains("/usr/local/tengine/conf/cert/a.pem", sites[0].CertPaths);
+        Assert.Contains("api.example.com", sites[1].ServerNames);
+    }
+
+    [Fact]
     public void Nginx_parses_certificate_expiry_and_san()
     {
         var output = "##CERT:/etc/nginx/cert/a.pem\n" +
@@ -405,7 +434,13 @@ public class SnapshotCollectorTests
         {
             Server = new SshServerConfig { Id = "s1", Name = "n", Host = "h" },
             Elevate = false,
-            ExecuteAsync = (_, _, _) => Task.FromResult(new CommandResult { Success = true, Output = config })
+            ExecuteAsync = (command, _, _) => Task.FromResult(new CommandResult
+            {
+                Success = true,
+                Output = command.Contains("##BIN", StringComparison.Ordinal)
+                    ? "##BIN /usr/sbin/nginx\nnginx version: nginx/1.24.0"
+                    : config
+            })
         };
 
         var result = await new NginxTlsSnapshotCollector().CollectAsync(context, default);
@@ -779,5 +814,70 @@ public class SnapshotCollectorTests
     {
         var row = new Dictionary<string, object?> { ["path"] = path, ["process"] = process };
         Assert.Equal(desktop ? "desktop" : "system", PortMapSnapshotCollector.ClassifyUnixSocket(row));
+    }
+
+    [Fact]
+    public async Task Accounts_respects_privacy_flags_and_skips_when_disabled()
+    {
+        var commands = new List<string>();
+        var context = new SnapshotContext
+        {
+            Server = new SshServerConfig { Id = "s1", Name = "n", Host = "h" },
+            Elevate = false,
+            Options = new SnapshotConfig
+            {
+                CollectAccounts = true,
+                CollectAuthorizedKeys = false,
+                CollectLoginHistory = false
+            },
+            ExecuteAsync = (command, _, _) =>
+            {
+                commands.Add(command);
+                return Task.FromResult(new CommandResult { Success = true, Output = string.Empty });
+            }
+        };
+
+        var result = await new AccountsSnapshotCollector().CollectAsync(context, default);
+        Assert.True(result.Success);
+        var command = Assert.Single(commands);
+        Assert.Contains("##PASSWD", command);
+        Assert.DoesNotContain("##KEYS", command);
+        Assert.DoesNotContain("##LASTLOG", command);
+
+        var disabled = new SnapshotContext
+        {
+            Server = context.Server,
+            Elevate = false,
+            Options = new SnapshotConfig { CollectAccounts = false },
+            ExecuteAsync = context.ExecuteAsync
+        };
+        var skipped = await new AccountsSnapshotCollector().CollectAsync(disabled, default);
+        Assert.True(skipped.Skipped);
+    }
+
+    [Fact]
+    public async Task Security_reuses_portmap_and_accounts_shared_results()
+    {
+        var commands = new List<string>();
+        var context = new SnapshotContext
+        {
+            Server = new SshServerConfig { Id = "s1", Name = "n", Host = "h" },
+            Elevate = false,
+            ExecuteAsync = (command, _, _) =>
+            {
+                commands.Add(command);
+                return Task.FromResult(new CommandResult { Success = true, Output = string.Empty });
+            }
+        };
+        context.Shared["portmap.listeners"] = new List<Dictionary<string, object?>>();
+        context.Shared["accounts.emptyPassword"] = new List<string> { "alice" };
+        context.Shared["accounts.nopasswd"] = new List<string>();
+
+        var result = await new SecurityAuditSnapshotCollector().CollectAsync(context, default);
+
+        Assert.True(result.Success, result.Error);
+        Assert.DoesNotContain(commands, c => c.Contains("ss -H -tlnp", StringComparison.Ordinal));
+        Assert.DoesNotContain(commands, c => c.Contains("/etc/shadow", StringComparison.Ordinal));
+        Assert.Contains(commands, c => c.Contains("mysql", StringComparison.Ordinal));
     }
 }

@@ -126,6 +126,69 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public async Task Local_spill_loop_is_stopped_instead_of_running_forever()
+    {
+        static ChatResponse Call(string id, int i) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent(id, "spill", new Dictionary<string, object?>
+                {
+                    ["action"] = "grep",
+                    ["handle"] = "snapshot.txt",
+                    ["pattern"] = "section" + i
+                })
+            })
+        });
+
+        // 实际循环里 pattern 一直在变，但 handle/action 不变；必须按“同一 spill 目标”熔断。
+        var responses = Enumerable.Range(1, 30).Select(i => Call($"c{i}", i)).ToArray();
+        var client = new FakeChatClient(responses);
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { new FakeTool("spill", "ok", readOnly: true, isLocal: true) }, "sys",
+            new AgentConfig { MaxToolIterations = 100, ContextLimit = 0, ContextTokenLimit = 0, AutoSummarize = false });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Warning && e.Text!.Contains("连续相同调用 10 轮"));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Error && e.Text!.Contains("同一 spill 目标 24 轮"));
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Done);
+        Assert.Equal(23, session.Messages.Count(m => m.Role == ChatRole.Tool));
+    }
+
+    [Fact]
+    public async Task Different_local_tool_inputs_do_not_trigger_local_loop_guard()
+    {
+        static ChatResponse Call(string id, int i) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent(id, "ops_doc_read", new Dictionary<string, object?>
+                {
+                    ["path"] = "doc" + i + ".md"
+                })
+            })
+        });
+
+        var responses = Enumerable.Range(1, 12)
+            .Select(i => Call($"c{i}", i))
+            .Append(new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }))
+            .ToArray();
+        var client = new FakeChatClient(responses);
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { new FakeTool("ops_doc_read", "ok", readOnly: true, isLocal: true) }, "sys",
+            new AgentConfig { MaxToolIterations = 2, ContextLimit = 0, ContextTokenLimit = 0, AutoSummarize = false });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Done);
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Error);
+        Assert.Equal(12, session.Messages.Count(m => m.Role == ChatRole.Tool));
+    }
+
+    [Fact]
     public async Task Tool_limit_can_be_stopped_by_host_confirmation()
     {
         static ChatResponse Call(string id) => new(new List<ChatMessage>

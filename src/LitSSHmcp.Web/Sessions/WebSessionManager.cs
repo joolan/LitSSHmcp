@@ -263,6 +263,7 @@ public sealed class WebSessionManager : IAsyncDisposable
             slot.TurnCts = turnCts;
             slot.TurnCompletion = completion;
         }
+        var failureRecorded = false;
         try
         {
             await EnsureRuntimeAsync(owner, sessionId, slot, turnCts.Token);
@@ -275,11 +276,15 @@ public sealed class WebSessionManager : IAsyncDisposable
 
             var assistantText = new StringBuilder();
             var turnFailed = false;
+            string? errorText = null;
             // 同步转发（不经过 Progress<T> 线程池派发），保持事件到达顺序。
             var sink = new SyncProgress(e =>
             {
                 if (e.Kind == AgentEventKind.Error)
+                {
                     turnFailed = true;
+                    errorText = e.Text;
+                }
                 if (e.Kind == AgentEventKind.AssistantText && e.Text is not null)
                     assistantText.Append(e.Text);
                 progress.Report(e);
@@ -295,12 +300,20 @@ public sealed class WebSessionManager : IAsyncDisposable
                 slot.Runtime.IndexTurnInBackground(sessionId.ToString(), userText, assistantText.ToString());
                 slot.Runtime.ConsolidateInBackground();
             }
+            else
+            {
+                // 失败轮次也落库，避免下次“继续”时模型误以为只接在上一个成功轮之后。
+                await TryAppendFailureAsync(sessionId, assistantText.ToString(), errorText ?? "AI 运行失败");
+                failureRecorded = true;
+            }
             try { await _store.SetSessionSummaryAsync(sessionId, slot.Runtime.Summary, CancellationToken.None); } catch { /* 摘要失败不阻断 */ }
             try { await _store.TouchSessionAsync(sessionId, CancellationToken.None); } catch { /* 触达失败忽略 */ }
             _accessLog.Write("turn_done", owner.Username, null, $"session={sessionId}");
         }
         catch (OperationCanceledException)
         {
+            if (!failureRecorded)
+                await TryAppendFailureAsync(sessionId, null, "已取消");
             _accessLog.Write("turn_cancelled", owner.Username, null, $"session={sessionId}");
             throw;
         }
@@ -310,6 +323,8 @@ public sealed class WebSessionManager : IAsyncDisposable
         }
         catch (Exception ex)
         {
+            if (!failureRecorded)
+                await TryAppendFailureAsync(sessionId, null, ex.Message);
             _accessLog.Write("turn_error", owner.Username, null, $"session={sessionId}: {ex.GetType().Name}");
             throw;
         }
@@ -808,6 +823,21 @@ public sealed class WebSessionManager : IAsyncDisposable
     {
         await EnsureOwnerAsync(owner, sessionId, ct);
         return await _store.GetRecentMessagesAsync(sessionId, beforeId, limit ?? 120, ct);
+    }
+
+    /// <summary>失败/取消轮次也写入一条带标记的 assistant 消息，供下一轮模型正确衔接上下文。</summary>
+    private async Task TryAppendFailureAsync(long sessionId, string? partial, string reason)
+    {
+        try
+        {
+            var note = "[本轮未完成] " + reason;
+            var content = string.IsNullOrWhiteSpace(partial) ? note : partial.TrimEnd() + "\n\n" + note;
+            await _store.AppendMessageAsync(sessionId, "assistant", content, CancellationToken.None);
+        }
+        catch
+        {
+            // 失败落库不能影响原始异常/取消
+        }
     }
 
     private async Task EnsureOwnerAsync(WebPrincipal owner, long sessionId, CancellationToken ct)

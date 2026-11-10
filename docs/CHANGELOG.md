@@ -2,6 +2,28 @@
 
 本项目的所有重要变更都记录在此文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.6.3] - 2026-11-10
+
+### 新增
+
+- **AI 定时任务**：桌面 App 内维护无人值守任务（指令、模型/智能体、只读、最大轮数、超时、token 预算、一次性/间隔/每日/每周/每月），支持启动补跑、运行历史与关联会话；可注册 Windows 计划任务，通过 `LitSSHmcp.App.exe --run-ai-task <任务Id>` 在 App 未运行时无界面执行。
+- **快照账号与差异**：新增 `accounts` 采集维度（账号、密码状态、特权组、authorized_keys 指纹、最近/失败登录、风险发现）和 `ssh_snapshot_diff`（账号、公钥、端口、服务、容器、域名变化）；桌面快照历史新增「账号摘要」与「对比上一份」。
+- **nginx 配置外置**：完整 `nginx -T` 配置按 `serverId + configHash` 写入 `NginxConfigs` 表，`detail="full"` 时回填；新增共享 `NginxConfigProbe`，快照采集与 HTTP 站点探测共用检测、`-T` 与 Tengine 兜底逻辑。
+
+### 优化
+
+- **快照查询成本**：`portmap/systemd/docker` 默认返回摘要，`detail="full"` 取完整；新增 `profile=quick|full`、`sections` 采集选择、60s 刷新节流与 `status=fresh`；桌面采集支持取消。
+- **远程文件上传**：单文件上传显示进度条与大文件进度，批量/目录上传显示不确定进度和具体失败原因。
+- **备份文件名**：备份 zip/`.lsbak` 文件名写入当前 App 版本，便于区分来源版本。
+- **界面细节**：修复 WPF-UI 子菜单在高 DPI 下的透明间隙/错位；桌面宠物「展示动作」改为子菜单。
+
+### 修复
+
+- **AI 工具循环保护**：连续相同本地工具入参 10 轮提示、40 轮停止；同一 spill `action + handle` 10 轮提示、24 轮停止，避免同一落盘结果被无限 grep/read。
+- **会话记录与裁剪**：按整轮保留 user 提示，避免 200 条上限把提示词挤出保留窗口；裁剪/删除消息和会话先归档到 `agent_messages_deleted` / `agent_sessions_deleted`，默认消息保留上限提升到 2000。
+- **托盘常驻**：主窗口启动后托盘图标即存在，不再需要先关闭窗口并选择「最小化到托盘」。
+- **版本显示**：App 默认版本更新为 1.6.3，Debug 构建与发布包的「关于」页版本保持一致。
+
 ## [1.6.1] - 2026-11-08
 
 ### 安全

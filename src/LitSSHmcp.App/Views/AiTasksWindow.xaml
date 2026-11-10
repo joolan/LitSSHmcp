@@ -1,0 +1,77 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.AiTasksWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="AI 定时任务" Height="640" Width="1040" MinHeight="480" MinWidth="820"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="AI 定时任务"/>
+
+        <Grid Grid.Row="1" Margin="12,8,12,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                <ui:Button Content="刷新" Click="OnRefreshClick" Padding="12,5" Margin="0,0,8,0"/>
+                <ui:Button Content="立即运行" Click="OnRunNowClick" Padding="12,5" Margin="0,0,8,0"/>
+                <ui:Button Content="启用 / 停用" Click="OnToggleClick" Padding="12,5" Margin="0,0,8,0"/>
+                <ui:Button Content="删除" Click="OnDeleteClick" Padding="12,5" Margin="0,0,8,0"/>
+                <ui:Button Content="安装计划任务" Click="OnInstallWindowsTaskClick" Padding="12,5" Margin="0,0,8,0"
+                           ToolTip="App 未运行时由 Windows 计划任务拉起 headless 执行（使用当前 Windows 用户）"/>
+                <ui:Button Content="移除计划任务" Click="OnRemoveWindowsTaskClick" Padding="12,5" Margin="0,0,8,0"/>
+                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="8,0,0,0"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            </StackPanel>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <DataGrid x:Name="TaskGrid" Grid.Column="0" AutoGenerateColumns="False" IsReadOnly="True"
+                          SelectionMode="Single" SelectionChanged="OnTaskSelectionChanged"
+                          HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                          CanUserAddRows="False" CanUserDeleteRows="False" RowHeight="30">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="启用" Binding="{Binding EnabledText}" Width="50"/>
+                        <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*"/>
+                        <DataGridTextColumn Header="调度" Binding="{Binding Schedule}" Width="150"/>
+                        <DataGridTextColumn Header="下次运行" Binding="{Binding NextRun}" Width="110"/>
+                        <DataGridTextColumn Header="上次运行" Binding="{Binding LastRun}" Width="110"/>
+                        <DataGridTextColumn Header="上次结果" Binding="{Binding LastResult}" Width="100"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <DataGrid x:Name="RunGrid" Grid.Column="2" AutoGenerateColumns="False" IsReadOnly="True"
+                          HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                          CanUserAddRows="False" CanUserDeleteRows="False" RowHeight="28">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="开始" Binding="{Binding StartedAt}" Width="110"/>
+                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="70"/>
+                        <DataGridTextColumn Header="触发" Binding="{Binding Trigger}" Width="70"/>
+                        <DataGridTextColumn Header="耗时" Binding="{Binding Duration}" Width="60"/>
+                        <DataGridTextColumn Header="Token" Binding="{Binding Tokens}" Width="70"/>
+                        <DataGridTextColumn Header="摘要" Binding="{Binding Summary}" Width="*"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="2" Padding="12,6" Background="{DynamicResource AppSurfaceAltBrush}">
+            <TextBlock Text="任务由 AI 在对话中创建（例如：每天 8 点巡检所有服务器磁盘并给出结论）。此窗口可查看、启停、立即运行或删除。"
+                       FontSize="{DynamicResource AppFontSizeMicro}"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       TextWrapping="Wrap"/>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

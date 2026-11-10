@@ -4,7 +4,9 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using LitSSHmcp.Agent.Scheduling;
 using LitSSHmcp.App.Services;
+using LitSSHmcp.App.Services.AiTasks;
 using LitSSHmcp.App.Services.Backup;
 using LitSSHmcp.App.Services.Notifications;
 using LitSSHmcp.App.Services.Pet;
@@ -31,6 +33,13 @@ public partial class App : Application
             base.OnStartup(e);
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             _ = RunHeadlessBackupAsync(backupPlanId);
+            return;
+        }
+        if (TryGetAiTaskId(e.Args, out var aiTaskId))
+        {
+            base.OnStartup(e);
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = RunHeadlessAiTaskAsync(aiTaskId);
             return;
         }
 
@@ -91,8 +100,12 @@ public partial class App : Application
             };
             _backupScheduler.Start();
 
+            // AI 定时任务调度器：桌面 App 为主宿主；启动时自然补跑到期任务。
+            _ = StartAiTaskSchedulerAsync();
+
             Exit += (_, _) =>
             {
+                _aiTaskScheduler?.Dispose();
                 _backupScheduler?.Dispose();
                 _triggerScheduler?.Dispose();
                 _syncScheduler?.Dispose();
@@ -170,6 +183,100 @@ public partial class App : Application
     private static SyncScheduler? _syncScheduler;
     private static TriggerScheduler? _triggerScheduler;
     private static BackupScheduler? _backupScheduler;
+    private static AiTaskScheduler? _aiTaskScheduler;
+
+    private static bool TryGetAiTaskId(string[] args, out string taskId)
+    {
+        taskId = string.Empty;
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (!string.Equals(args[i], "--run-ai-task", StringComparison.OrdinalIgnoreCase))
+                continue;
+            taskId = args[i + 1];
+            return !string.IsNullOrWhiteSpace(taskId);
+        }
+        return false;
+    }
+
+    private static async Task StartAiTaskSchedulerAsync()
+    {
+        try
+        {
+            var store = AiTaskStore.Default;
+            await store.InitializeAsync();
+            var runner = new HeadlessAgentRunner(
+                AppServiceFactory.CreateConfigService(),
+                AppServiceFactory.CreateAgentContextStore(),
+                AppServiceFactory.BundledSkillsDir);
+            _aiTaskScheduler = new AiTaskScheduler(store, runner);
+            _aiTaskScheduler.Start();
+        }
+        catch
+        {
+            // 调度器启动失败不影响 App 其他功能
+        }
+    }
+
+    private static async Task RunHeadlessAiTaskAsync(string taskId)
+    {
+        var exitCode = 1;
+        var leaseOwner = "headless:" + Environment.ProcessId;
+        try
+        {
+            var store = AiTaskStore.Default;
+            await store.InitializeAsync();
+            var task = await store.GetAsync(taskId);
+            if (task is null)
+            {
+                exitCode = 2;
+                return;
+            }
+
+            var leaseDuration = TimeSpan.FromSeconds(Math.Max(300, task.TimeoutSeconds + 120));
+            if (!await store.TryAcquireLeaseAsync(task.Id, leaseOwner, leaseDuration))
+            {
+                exitCode = 0;   // 已有其他宿主在执行
+                return;
+            }
+
+            try
+            {
+                var runId = await store.BeginRunAsync(task.Id, AiTaskTrigger.Headless);
+                var runner = new HeadlessAgentRunner(
+                    AppServiceFactory.CreateConfigService(),
+                    AppServiceFactory.CreateAgentContextStore(),
+                    AppServiceFactory.BundledSkillsDir);
+                var result = await runner.RunAsync(task, AiTaskTrigger.Headless);
+
+                var status = result.Cancelled
+                    ? AiTaskRunStatus.Cancelled
+                    : result.Success ? AiTaskRunStatus.Succeeded : AiTaskRunStatus.Failed;
+                var sessionId = long.TryParse(result.SessionId, out var parsed) ? parsed : (long?)null;
+                await store.CompleteRunAsync(runId, status, sessionId, result.Summary, result.Error,
+                    result.InputTokens, result.OutputTokens);
+
+                task.LastRunAt = DateTime.Now;
+                var nextRun = AiTaskSchedule.ComputeNextRun(task, task.LastRunAt.Value);
+                await store.UpdateAfterRunAsync(task.Id, nextRun,
+                    result.Success ? "ok" : "fail: " + (result.Error ?? "unknown"),
+                    sessionId, task.ScheduleType == AiTaskScheduleType.Once);
+
+                exitCode = result.Success ? 0 : 1;
+            }
+            finally
+            {
+                await store.ReleaseLeaseAsync(task.Id, leaseOwner);
+            }
+        }
+        catch
+        {
+            exitCode = 1;
+        }
+        finally
+        {
+            Current.Shutdown(exitCode);
+        }
+    }
 
     /// <summary>
     /// 启动门卫：未配置应用锁先弹「设置密码」窗口（可「暂不启用」跳过，下次启动仍会提示）；

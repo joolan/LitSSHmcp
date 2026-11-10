@@ -4,7 +4,7 @@ namespace LitSSHmcp.Core.Models;
 
 public class AppConfig
 {
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 7;
 
     /// <summary>配置结构版本。缺失该字段的旧文件反序列化为 0，由 ConfigMigrator 迁移到当前版本。</summary>
     public int SchemaVersion { get; set; }
@@ -237,7 +237,7 @@ public class AgentConfig
     public int RetentionMaxSessions { get; set; } = 50;
 
     /// <summary>会话保留：每个会话最多保留的消息条数（0=不限）。</summary>
-    public int RetentionMaxMessages { get; set; } = 200;
+    public int RetentionMaxMessages { get; set; } = 2000;
 
     /// <summary>会话保留：超过该天数的会话自动清理（0=不限）。</summary>
     public int RetentionDays { get; set; } = 90;
@@ -562,7 +562,21 @@ public class SnapshotConfig
     /// </summary>
     public bool UseSudo { get; set; } = true;
 
-    /// <summary>每台服务器保留的最近快照份数（含其事件级联清理）；0 = 不限制。</summary>
+    /// <summary>是否采集 accounts 维度（账号/密码状态/公钥/登录）。关闭后 accounts section 记为 skipped。</summary>
+    public bool CollectAccounts { get; set; } = true;
+
+    /// <summary>accounts：是否采集 authorized_keys（默认只输出指纹/注释，不输出完整公钥）。</summary>
+    public bool CollectAuthorizedKeys { get; set; } = true;
+
+    /// <summary>accounts：是否采集 last/lastlog/lastb 登录历史。</summary>
+    public bool CollectLoginHistory { get; set; } = true;
+
+    /// <summary>
+    /// 是否把完整 nginx -T 配置写入快照 DataJson（默认 false：写入独立 NginxConfigs 表，按 hash 按需读取）。
+    /// </summary>
+    public bool StoreEffectiveConfig { get; set; }
+
+    /// <summary>每台服务器保留的最近快照份数（含其事件级清理）；0 = 不限制。</summary>
     public int RetentionPerServer { get; set; } = 30;
 
     /// <summary>单次快照整体超时（秒），超时后剩余采集器标记为跳过并落库为失败。</summary>

@@ -49,6 +49,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
     private string _snapshotRetention = "30";
     private string _snapshotTimeout = "180";
     private string _snapshotMinRefresh = "60";
+    private bool _snapshotCollectAccounts = true;
+    private bool _snapshotCollectAuthorizedKeys = true;
+    private bool _snapshotCollectLoginHistory = true;
     private bool _connectionPoolEnabled = true;
     private string _connectionPoolIdle = "300";
     private string _connectionPoolKeepAlive = "30";
@@ -104,6 +107,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
     public string SnapshotRetention { get => _snapshotRetention; set => Set(ref _snapshotRetention, value); }
     public string SnapshotTimeout { get => _snapshotTimeout; set => Set(ref _snapshotTimeout, value); }
     public string SnapshotMinRefresh { get => _snapshotMinRefresh; set => Set(ref _snapshotMinRefresh, value); }
+    public bool SnapshotCollectAccounts { get => _snapshotCollectAccounts; set => Set(ref _snapshotCollectAccounts, value); }
+    public bool SnapshotCollectAuthorizedKeys { get => _snapshotCollectAuthorizedKeys; set => Set(ref _snapshotCollectAuthorizedKeys, value); }
+    public bool SnapshotCollectLoginHistory { get => _snapshotCollectLoginHistory; set => Set(ref _snapshotCollectLoginHistory, value); }
     public bool ConnectionPoolEnabled { get => _connectionPoolEnabled; set => Set(ref _connectionPoolEnabled, value); }
     public string ConnectionPoolIdle { get => _connectionPoolIdle; set => Set(ref _connectionPoolIdle, value); }
     public string ConnectionPoolKeepAlive { get => _connectionPoolKeepAlive; set => Set(ref _connectionPoolKeepAlive, value); }
@@ -177,6 +183,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
             SnapshotRetention = config.Snapshot.RetentionPerServer.ToString();
             SnapshotTimeout = config.Snapshot.TimeoutSeconds.ToString();
             SnapshotMinRefresh = config.Snapshot.MinRefreshIntervalSeconds.ToString();
+            SnapshotCollectAccounts = config.Snapshot.CollectAccounts;
+            SnapshotCollectAuthorizedKeys = config.Snapshot.CollectAuthorizedKeys;
+            SnapshotCollectLoginHistory = config.Snapshot.CollectLoginHistory;
 
             var pool = config.ConnectionPool ?? new ConnectionPoolConfig();
             ConnectionPoolEnabled = pool.Enabled;
@@ -274,6 +283,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
             config.Snapshot.RetentionPerServer = (int)Math.Max(0, ParseLong(SnapshotRetention, 30));
             config.Snapshot.TimeoutSeconds = (int)Math.Max(1, ParseLong(SnapshotTimeout, 180));
             config.Snapshot.MinRefreshIntervalSeconds = (int)Math.Max(0, ParseLong(SnapshotMinRefresh, 60));
+            config.Snapshot.CollectAccounts = SnapshotCollectAccounts;
+            config.Snapshot.CollectAuthorizedKeys = SnapshotCollectAuthorizedKeys;
+            config.Snapshot.CollectLoginHistory = SnapshotCollectLoginHistory;
 
             config.ConnectionPool ??= new ConnectionPoolConfig();
             config.ConnectionPool.Enabled = ConnectionPoolEnabled;

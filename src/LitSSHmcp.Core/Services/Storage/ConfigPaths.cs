@@ -20,6 +20,9 @@ public static class ConfigPaths
     /// <summary>AI 运维助手的会话/消息库（与审计库/快照库分离）。</summary>
     public static string AgentDb => Path.Combine(AppDataDir, "agent.db");
 
+    /// <summary>AI 定时任务与运行历史库（与 agent.db 分离，便于独立备份/清理）。</summary>
+    public static string AiTaskDb => Path.Combine(AppDataDir, "ai-tasks.db");
+
     /// <summary>Web 账号体系库（评估报告 §3.2 M3-1：自建账号/令牌/登录锁定）。</summary>
     public static string WebDb => Path.Combine(AppDataDir, "web.db");
 

@@ -3,7 +3,9 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Windows.Input;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Snapshot;
 using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.ViewModels;
@@ -21,11 +23,14 @@ public class SnapshotHistoryViewModel : INotifyPropertyChanged
     private string _summary = string.Empty;
     private string _rawJson = string.Empty;
     private string _statusMessage = string.Empty;
+    private string _accountsSummary = string.Empty;
+    private string _diffText = string.Empty;
 
     public SnapshotHistoryViewModel(ISnapshotStore store, IConfigService configService)
     {
         _store = store;
         _configService = configService;
+        CompareCommand = new RelayCommand(_ => _ = CompareWithPreviousAsync(), _ => SelectedRow != null);
     }
 
     public ObservableCollection<SshServerConfig> Servers { get; } = new();
@@ -48,6 +53,9 @@ public class SnapshotHistoryViewModel : INotifyPropertyChanged
     public string Summary { get => _summary; set => Set(ref _summary, value); }
     public string RawJson { get => _rawJson; set => Set(ref _rawJson, value); }
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
+    public string AccountsSummary { get => _accountsSummary; set => Set(ref _accountsSummary, value); }
+    public string DiffText { get => _diffText; set => Set(ref _diffText, value); }
+    public ICommand CompareCommand { get; }
 
     public async Task InitializeAsync(string? initialServerId)
     {
@@ -115,6 +123,9 @@ public class SnapshotHistoryViewModel : INotifyPropertyChanged
                   + (string.IsNullOrWhiteSpace(snapshot.Error) ? string.Empty : $"\n错误: {snapshot.Error}");
 
         RawJson = Pretty(snapshot.DataJson);
+        AccountsSummary = BuildAccountsSummary(snapshot.DataJson);
+        DiffText = string.Empty;
+        (CompareCommand as RelayCommand)?.RaiseCanExecuteChanged();
         ParseSections(snapshot.DataJson);
 
         try
@@ -135,6 +146,9 @@ public class SnapshotHistoryViewModel : INotifyPropertyChanged
         Events.Clear();
         Summary = string.Empty;
         RawJson = string.Empty;
+        AccountsSummary = string.Empty;
+        DiffText = string.Empty;
+        (CompareCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     private void ParseSections(string? dataJson)
@@ -164,6 +178,121 @@ public class SnapshotHistoryViewModel : INotifyPropertyChanged
             // 数据损坏时仅保留原始 JSON 供人工查看
         }
     }
+
+    private async Task CompareWithPreviousAsync()
+    {
+        if (SelectedRow is null)
+            return;
+        var index = Snapshots.IndexOf(SelectedRow);
+        if (index < 0 || index + 1 >= Snapshots.Count)
+        {
+            StatusMessage = "没有更早的快照可对比。";
+            return;
+        }
+
+        try
+        {
+            var currentRow = Snapshots[index];
+            var previousRow = Snapshots[index + 1];
+            var current = await _store.GetByIdAsync(currentRow.Id) ?? currentRow.Snapshot;
+            var previous = await _store.GetByIdAsync(previousRow.Id) ?? previousRow.Snapshot;
+            if (string.IsNullOrWhiteSpace(current.DataJson) || string.IsNullOrWhiteSpace(previous.DataJson))
+            {
+                StatusMessage = "所选快照缺少数据，无法对比。";
+                return;
+            }
+
+            var diff = SnapshotDiffService.Compare(previous.DataJson, current.DataJson);
+            DiffText = JsonSerializer.Serialize(diff, new JsonSerializerOptions { WriteIndented = true });
+            StatusMessage = $"对比 #{previous.Id} → #{current.Id}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "对比失败: " + ex.Message;
+        }
+    }
+
+    private static string BuildAccountsSummary(string? dataJson)
+    {
+        if (string.IsNullOrWhiteSpace(dataJson))
+            return "(本次快照无数据)";
+        try
+        {
+            using var doc = JsonDocument.Parse(dataJson);
+            if (!doc.RootElement.TryGetProperty("sections", out var sections) ||
+                !sections.TryGetProperty("accounts", out var accounts))
+                return "本次快照未采集 accounts 维度（可能已关闭或旧版本）。";
+
+            var status = accounts.TryGetProperty("status", out var st) ? st.GetString() : null;
+            if (string.Equals(status, "skipped", StringComparison.OrdinalIgnoreCase))
+            {
+                var note = accounts.TryGetProperty("note", out var nt) ? nt.GetString() : null;
+                return "accounts 已跳过: " + (note ?? "未采集");
+            }
+
+            if (!accounts.TryGetProperty("data", out var data))
+                return "accounts 无数据。";
+
+            var lines = new List<string>();
+            if (data.TryGetProperty("summary", out var summary))
+            {
+                lines.Add($"用户 {ReadInt(summary, "users")}，风险用户 {ReadInt(summary, "riskyUsers")}，" +
+                          $"公钥 {ReadInt(summary, "authorizedKeys")}，失败登录用户 {ReadInt(summary, "failedUsers")}，" +
+                          $"findings {ReadInt(summary, "findings")}（high {ReadInt(summary, "high")} / medium {ReadInt(summary, "medium")}）");
+            }
+            lines.Add("shadow 可读: " + (data.TryGetProperty("shadowReadable", out var sr) && sr.ValueKind == JsonValueKind.True ? "是" : "否"));
+
+            if (data.TryGetProperty("users", out var users) && users.ValueKind == JsonValueKind.Array)
+            {
+                var risky = users.EnumerateArray()
+                    .Where(u => u.TryGetProperty("riskLevel", out var r) &&
+                                !string.Equals(r.GetString(), "正常", StringComparison.Ordinal))
+                    .Take(20)
+                    .Select(u =>
+                    {
+                        var name = u.TryGetProperty("name", out var n) ? n.GetString() : "?";
+                        var risk = u.TryGetProperty("riskLevel", out var r) ? r.GetString() : "?";
+                        var notes = u.TryGetProperty("riskNotes", out var notesNode) && notesNode.ValueKind == JsonValueKind.Array
+                            ? string.Join("；", notesNode.EnumerateArray().Select(x => x.GetString()).Where(x => !string.IsNullOrWhiteSpace(x)))
+                            : string.Empty;
+                        return $"{name} [{risk}] {(string.IsNullOrWhiteSpace(notes) ? string.Empty : notes)}";
+                    })
+                    .ToList();
+                if (risky.Count > 0)
+                {
+                    lines.Add(string.Empty);
+                    lines.Add("风险账号:");
+                    lines.AddRange(risky);
+                }
+            }
+
+            if (data.TryGetProperty("findings", out var findings) && findings.ValueKind == JsonValueKind.Array)
+            {
+                var top = findings.EnumerateArray().Take(10).Select(f =>
+                {
+                    var severity = f.TryGetProperty("severity", out var s) ? s.GetString() : "?";
+                    var title = f.TryGetProperty("title", out var t) ? t.GetString() : "?";
+                    return $"- [{severity}] {title}";
+                }).ToList();
+                if (top.Count > 0)
+                {
+                    lines.Add(string.Empty);
+                    lines.Add("主要发现:");
+                    lines.AddRange(top);
+                }
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+        catch (JsonException)
+        {
+            return "accounts 数据解析失败。";
+        }
+    }
+
+    private static int ReadInt(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number &&
+        value.TryGetInt32(out var number) ? number : 0;
 
     private static string Pretty(string? json)
     {

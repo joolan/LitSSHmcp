@@ -21,7 +21,7 @@ public class ToolGroupsViewModel : INotifyPropertyChanged, IConfigReloadable
     {
         _configService = configService ?? AppServiceFactory.CreateConfigService();
         Add(ToolGroups.Ssh, "SSH 服务器", "ssh_list_servers / ssh_test_connection");
-        Add(ToolGroups.Command, "命令执行", "ssh_execute_command / ssh_execute_sudo / ssh_get_sudo_status");
+        Add(ToolGroups.Command, "命令执行", "ssh_execute_command / ssh_execute_sudo / ssh_get_sudo_status；ssh_execute_fleet 为批量底层（内置 AI 通过 fleet_change 编排，不直接暴露）");
         Add(ToolGroups.FileTransfer, "文件传输", "ssh_upload / ssh_download / ssh_list_files");
         Add(ToolGroups.Datasource, "数据源", "datasource_list / datasource_test_connection");
         Add(ToolGroups.Mysql, "MySQL", "mysql_query / mysql_execute");

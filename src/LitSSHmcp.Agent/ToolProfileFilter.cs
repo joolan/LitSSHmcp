@@ -30,12 +30,21 @@ public static class ToolProfileFilter
     public static bool IsProfileReadOnly(IAgentTool tool) =>
         tool.ReadOnly || ProfileSafeNonMutating.Contains(tool.Name);
 
+    /// <summary>
+    /// 是否为“只写本地缓存、远端仅执行固定只读命令”的安全探测工具
+    /// （如 ssh_snapshot_refresh / topology_discover）。只读模式允许它们，
+    /// 但只应对内置 MCP 放行，避免外部 MCP 用同名工具绕过只读限制。
+    /// </summary>
+    public static bool IsSafeLocalCacheProbe(string name) =>
+        ProfileSafeNonMutating.Contains(name);
+
     private static readonly HashSet<string> DiagnoseLocal = new(StringComparer.Ordinal)
     {
         "ops_doc_read", "ops_memory_list", "ops_memory_write",
         "ops_incident_list", "ops_incident_write", "ops_diagnosis_write", "ops_insight",
         "skill", "spill",
-        "update_plan", "run_subagent", "fleet_query"
+        "update_plan", "run_subagent", "fleet_query",
+        "ai_task_list", "ai_task_runs"
     };
 
     private static readonly HashSet<string> AssetsLocal = new(StringComparer.Ordinal)
@@ -43,7 +52,8 @@ public static class ToolProfileFilter
         "ops_doc_read", "ops_doc_write", "ops_memory_list", "ops_memory_write",
         "ops_incident_list", "ops_incident_write", "ops_diagnosis_write", "ops_insight",
         "skill",
-        "spill", "update_plan", "run_subagent", "fleet_query", "ops_script_register"
+        "spill", "update_plan", "run_subagent", "fleet_query", "ops_script_register",
+        "ai_task_list", "ai_task_runs"
     };
 
     private static readonly HashSet<string> ChatLocal = new(StringComparer.Ordinal)

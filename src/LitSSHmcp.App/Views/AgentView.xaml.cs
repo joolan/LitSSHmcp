@@ -289,6 +289,25 @@ public partial class AgentView : UserControl
         window.ShowDialog();
     }
 
+    private void OnAiTasksClick(object sender, RoutedEventArgs e)
+    {
+        new AiTasksWindow { Owner = Window.GetWindow(this) }.Show();
+    }
+
+    /// <summary>思考过程底部的“收起思考”：不必滚回 Expander 头部。</summary>
+    private void OnCollapseReasoning(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: AgentTurn turn })
+            turn.ShowReasoning = false;
+    }
+
+    /// <summary>工具过程底部的“收起工具过程”：长过程滚到底后可直接折叠。</summary>
+    private void OnCollapseTools(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: AgentTurn turn })
+            turn.ShowTools = false;
+    }
+
     private void OnOpenSettings(object sender, RoutedEventArgs e) => OpenSettings(null);
 
     /// <summary>桌面登录 / 注销（评估报告 D1 收尾，仅归因：新会话 owner 与审计 UserId）。</summary>

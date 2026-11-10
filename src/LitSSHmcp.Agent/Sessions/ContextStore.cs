@@ -161,7 +161,8 @@ public class ContextStore : IContextStore
     /// v6：会话表新增 EnabledMcp（会话级连接器子集，D8 启用层；''=继承全局默认集合）。
     /// 仅追加列（非破坏性），版本仅用于后续迁移分支判断。
     /// </summary>
-    private const int AgentDbFormatVersion = 6;
+    // v7：新增 agent_messages_deleted / agent_sessions_deleted 删除表（裁剪/删除前归档）。
+    private const int AgentDbFormatVersion = 7;
 
     private readonly string _dbPath;
 
@@ -211,7 +212,44 @@ CREATE TABLE IF NOT EXISTS agent_messages (
     Content TEXT NOT NULL,
     Timestamp TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(SessionId, Id);";
+CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(SessionId, Id);
+
+-- 删除表：与 agent_messages 保持同构，额外记录删除时间/原因。
+-- 【维护约定】修改 agent_messages / agent_sessions 表结构时，必须同步修改这里及归档 INSERT 列表。
+CREATE TABLE IF NOT EXISTS agent_messages_deleted (
+    Id INTEGER PRIMARY KEY,
+    SessionId INTEGER NOT NULL,
+    Role TEXT NOT NULL,
+    Content TEXT NOT NULL,
+    Timestamp TEXT NOT NULL,
+    DeletedAt TEXT NOT NULL,
+    Reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS IX_agent_messages_deleted_SessionId ON agent_messages_deleted(SessionId, Id);
+CREATE INDEX IF NOT EXISTS IX_agent_messages_deleted_DeletedAt ON agent_messages_deleted(DeletedAt);
+
+CREATE TABLE IF NOT EXISTS agent_sessions_deleted (
+    Id INTEGER PRIMARY KEY,
+    Title TEXT NOT NULL DEFAULT '',
+    CreatedAt TEXT NOT NULL,
+    UpdatedAt TEXT NOT NULL,
+    ProviderId TEXT,
+    Archived INTEGER NOT NULL DEFAULT 0,
+    Summary TEXT NOT NULL DEFAULT '',
+    Plan TEXT NOT NULL DEFAULT '',
+    ActiveSkills TEXT NOT NULL DEFAULT '',
+    PlanMode INTEGER NOT NULL DEFAULT 0,
+    ToolPolicy TEXT NOT NULL DEFAULT '',
+    ""Group"" TEXT NOT NULL DEFAULT '',
+    SortOrder REAL NOT NULL DEFAULT 0,
+    AgentId TEXT NOT NULL DEFAULT '',
+    WorkspaceDir TEXT NOT NULL DEFAULT '',
+    OwnerUserId TEXT NOT NULL DEFAULT 'local',
+    EnabledMcp TEXT NOT NULL DEFAULT '',
+    DeletedAt TEXT NOT NULL,
+    Reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS IX_agent_sessions_deleted_DeletedAt ON agent_sessions_deleted(DeletedAt);";
         await cmd.ExecuteNonQueryAsync(ct);
 
         // 兼容旧库：补 ProviderId 列（已存在则忽略）
@@ -464,9 +502,15 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
         ExecAsync("UPDATE agent_sessions SET ProviderId=@v WHERE Id=@id;",
             new() { ["@v"] = providerId ?? string.Empty, ["@id"] = id }, ct);
 
-    public Task DeleteSessionAsync(long id, CancellationToken ct = default) =>
-        ExecAsync("DELETE FROM agent_messages WHERE SessionId=@id; DELETE FROM agent_sessions WHERE Id=@id;",
-            new() { ["@id"] = id }, ct);
+    public async Task DeleteSessionAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
+        var args = new Dictionary<string, object> { ["@id"] = id };
+        await ArchiveAndDeleteMessagesAsync(connection, tx, "m.SessionId=@id", args, "session_deleted", ct);
+        await ArchiveAndDeleteSessionsAsync(connection, tx, "s.Id=@id", args, "session_deleted", ct);
+        await tx.CommitAsync(ct);
+    }
 
     public Task ArchiveSessionAsync(long id, CancellationToken ct = default) =>
         ExecAsync("UPDATE agent_sessions SET Archived=1 WHERE Id=@id;", new() { ["@id"] = id }, ct);
@@ -705,27 +749,62 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
 
     public async Task ReplaceMessagesAsync(long sessionId, IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default)
     {
+        var list = messages.ToList();
         await using var connection = await OpenConnectionAsync(ct);
         await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
 
-        await using (var del = connection.CreateCommand())
+        var existing = new List<(long Id, string Role, string Content)>();
+        await using (var read = connection.CreateCommand())
         {
-            del.Transaction = tx;
-            del.CommandText = "DELETE FROM agent_messages WHERE SessionId=@s;";
-            del.Parameters.AddWithValue("@s", sessionId);
-            await del.ExecuteNonQueryAsync(ct);
+            read.Transaction = tx;
+            read.CommandText = "SELECT Id, Role, Content FROM agent_messages WHERE SessionId=@s ORDER BY Id;";
+            read.Parameters.AddWithValue("@s", sessionId);
+            await using var reader = await read.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                existing.Add((reader.GetInt64(0), reader.GetString(1), reader.GetString(2)));
         }
 
-        foreach (var (role, content) in messages)
+        var now = DateTime.UtcNow.ToString("O");
+        for (var i = 0; i < list.Count; i++)
         {
-            await using var insert = connection.CreateCommand();
-            insert.Transaction = tx;
-            insert.CommandText = "INSERT INTO agent_messages(SessionId, Role, Content, Timestamp) VALUES (@s, @r, @c, @now);";
-            insert.Parameters.AddWithValue("@s", sessionId);
-            insert.Parameters.AddWithValue("@r", role);
-            insert.Parameters.AddWithValue("@c", content);
-            insert.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
-            await insert.ExecuteNonQueryAsync(ct);
+            var (role, content) = list[i];
+            if (i < existing.Count)
+            {
+                var old = existing[i];
+                if (string.Equals(old.Role, role, StringComparison.Ordinal) &&
+                    string.Equals(old.Content, content, StringComparison.Ordinal))
+                    continue;
+
+                await using var update = connection.CreateCommand();
+                update.Transaction = tx;
+                update.CommandText = "UPDATE agent_messages SET Role=@r, Content=@c, Timestamp=@now WHERE Id=@id;";
+                update.Parameters.AddWithValue("@r", role);
+                update.Parameters.AddWithValue("@c", content);
+                update.Parameters.AddWithValue("@now", now);
+                update.Parameters.AddWithValue("@id", old.Id);
+                await update.ExecuteNonQueryAsync(ct);
+            }
+            else
+            {
+                await using var insert = connection.CreateCommand();
+                insert.Transaction = tx;
+                insert.CommandText = "INSERT INTO agent_messages(SessionId, Role, Content, Timestamp) VALUES (@s, @r, @c, @now);";
+                insert.Parameters.AddWithValue("@s", sessionId);
+                insert.Parameters.AddWithValue("@r", role);
+                insert.Parameters.AddWithValue("@c", content);
+                insert.Parameters.AddWithValue("@now", now);
+                await insert.ExecuteNonQueryAsync(ct);
+            }
+        }
+
+        // 新转录比旧记录短：只把被移除的尾部消息归档，不重写保留行。
+        if (existing.Count > list.Count)
+        {
+            var keepId = list.Count == 0 ? 0L : existing[list.Count - 1].Id;
+            await ArchiveAndDeleteMessagesAsync(connection, tx,
+                "m.SessionId=@s AND m.Id > @keepId",
+                new Dictionary<string, object> { ["@s"] = sessionId, ["@keepId"] = keepId },
+                "transcript_replaced", ct);
         }
 
         await tx.CommitAsync(ct);
@@ -767,51 +846,126 @@ CREATE INDEX IF NOT EXISTS IX_agent_messages_SessionId ON agent_messages(Session
     public async Task<int> PruneAsync(int maxSessions, int maxMessagesPerSession, int retentionDays, CancellationToken ct = default)
     {
         await using var connection = await OpenConnectionAsync(ct);
-
-        async Task<int> RunAsync(string sql, Dictionary<string, object> args)
-        {
-            await using var cmd = connection.CreateCommand();
-            cmd.CommandText = sql;
-            foreach (var (k, v) in args)
-                cmd.Parameters.AddWithValue(k, v);
-            return await cmd.ExecuteNonQueryAsync(ct);
-        }
-
+        await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
         var deleted = 0;
 
         // 1) 每会话消息上限（保留最新 N 条）
         if (maxMessagesPerSession > 0)
         {
-            deleted += await RunAsync(
-                @"DELETE FROM agent_messages WHERE Id IN (
-                    SELECT Id FROM (SELECT Id, ROW_NUMBER() OVER (PARTITION BY SessionId ORDER BY Id DESC) AS rn FROM agent_messages)
-                    WHERE rn > @n);",
-                new() { ["@n"] = maxMessagesPerSession });
+            // 按“整轮”裁剪：保留最近 N 条，但把裁剪边界回退到该轮的 user 消息，
+            // 避免只剩工具轨迹、用户提示词被裁掉的“无头轮次”。
+            deleted += await ArchiveAndDeleteMessagesAsync(connection, tx,
+                @"m.Id IN (
+                    SELECT m2.Id FROM agent_messages m2
+                    JOIN (
+                        SELECT r.SessionId,
+                               COALESCE((
+                                   SELECT MAX(u.Id) FROM agent_messages u
+                                   WHERE u.SessionId = r.SessionId AND u.Role = 'user' AND u.Id <= r.Id
+                               ), r.Id) AS CutId
+                        FROM (
+                            SELECT Id, SessionId, ROW_NUMBER() OVER (PARTITION BY SessionId ORDER BY Id DESC) AS rn
+                            FROM agent_messages
+                        ) r
+                        WHERE r.rn = @n
+                    ) c ON c.SessionId = m2.SessionId
+                    WHERE m2.Id < c.CutId)",
+                new Dictionary<string, object> { ["@n"] = maxMessagesPerSession }, "max_messages_per_session", ct);
         }
 
         // 2) 过期会话（按天数）及其消息（已归档会话受保护，不参与裁剪）
         if (retentionDays > 0)
         {
             var cutoff = DateTime.UtcNow.AddDays(-retentionDays).ToString("O");
-            await RunAsync("DELETE FROM agent_messages WHERE SessionId IN (SELECT Id FROM agent_sessions WHERE UpdatedAt < @cutoff AND Archived=0);",
-                new() { ["@cutoff"] = cutoff });
-            await RunAsync("DELETE FROM agent_sessions WHERE UpdatedAt < @cutoff AND Archived=0;", new() { ["@cutoff"] = cutoff });
+            var args = new Dictionary<string, object> { ["@cutoff"] = cutoff };
+            deleted += await ArchiveAndDeleteMessagesAsync(connection, tx,
+                "m.SessionId IN (SELECT Id FROM agent_sessions WHERE UpdatedAt < @cutoff AND Archived=0)",
+                args, "retention_days", ct);
+            await ArchiveAndDeleteSessionsAsync(connection, tx,
+                "s.UpdatedAt < @cutoff AND s.Archived=0", args, "retention_days", ct);
         }
 
         // 3) 会话数上限（保留最新 N 个；已归档会话受保护）
         if (maxSessions > 0)
         {
-            await RunAsync(
-                @"DELETE FROM agent_messages WHERE SessionId IN (SELECT Id FROM agent_sessions WHERE Archived=0)
-                    AND SessionId NOT IN (SELECT Id FROM (SELECT Id FROM agent_sessions WHERE Archived=0 ORDER BY UpdatedAt DESC LIMIT @n));",
-                new() { ["@n"] = maxSessions });
-            await RunAsync(
-                @"DELETE FROM agent_sessions WHERE Archived=0
-                    AND Id NOT IN (SELECT Id FROM (SELECT Id FROM agent_sessions WHERE Archived=0 ORDER BY UpdatedAt DESC LIMIT @n));",
-                new() { ["@n"] = maxSessions });
+            var args = new Dictionary<string, object> { ["@n"] = maxSessions };
+            deleted += await ArchiveAndDeleteMessagesAsync(connection, tx,
+                @"m.SessionId IN (SELECT Id FROM agent_sessions WHERE Archived=0)
+                    AND m.SessionId NOT IN (SELECT Id FROM (SELECT Id FROM agent_sessions WHERE Archived=0 ORDER BY UpdatedAt DESC LIMIT @n))",
+                args, "max_sessions", ct);
+            await ArchiveAndDeleteSessionsAsync(connection, tx,
+                @"s.Archived=0
+                    AND s.Id NOT IN (SELECT Id FROM (SELECT Id FROM agent_sessions WHERE Archived=0 ORDER BY UpdatedAt DESC LIMIT @n))",
+                args, "max_sessions", ct);
         }
 
+        await tx.CommitAsync(ct);
         return deleted;
+    }
+
+    /// <summary>把匹配的消息复制到 agent_messages_deleted，再从活动表删除；调用方负责事务。</summary>
+    private static async Task<int> ArchiveAndDeleteMessagesAsync(SqliteConnection connection, SqliteTransaction tx,
+        string where, IReadOnlyDictionary<string, object> args, string reason, CancellationToken ct)
+    {
+        var allArgs = new Dictionary<string, object>(args)
+        {
+            ["@deletedAt"] = DateTime.UtcNow.ToString("O"),
+            ["@reason"] = reason
+        };
+
+        await using (var archive = connection.CreateCommand())
+        {
+            archive.Transaction = tx;
+            archive.CommandText =
+                "INSERT OR IGNORE INTO agent_messages_deleted" +
+                "(Id, SessionId, Role, Content, Timestamp, DeletedAt, Reason) " +
+                "SELECT m.Id, m.SessionId, m.Role, m.Content, m.Timestamp, @deletedAt, @reason " +
+                "FROM agent_messages m WHERE " + where + ";";
+            foreach (var (name, value) in allArgs)
+                archive.Parameters.AddWithValue(name, value);
+            await archive.ExecuteNonQueryAsync(ct);
+        }
+
+        await using var delete = connection.CreateCommand();
+        delete.Transaction = tx;
+        delete.CommandText = "DELETE FROM agent_messages WHERE Id IN (SELECT m.Id FROM agent_messages m WHERE " + where + ");";
+        foreach (var (name, value) in allArgs)
+            delete.Parameters.AddWithValue(name, value);
+        return await delete.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>把匹配的会话复制到 agent_sessions_deleted，再从活动表删除；调用方负责事务。</summary>
+    private static async Task<int> ArchiveAndDeleteSessionsAsync(SqliteConnection connection, SqliteTransaction tx,
+        string where, IReadOnlyDictionary<string, object> args, string reason, CancellationToken ct)
+    {
+        var allArgs = new Dictionary<string, object>(args)
+        {
+            ["@deletedAt"] = DateTime.UtcNow.ToString("O"),
+            ["@reason"] = reason
+        };
+
+        await using (var archive = connection.CreateCommand())
+        {
+            archive.Transaction = tx;
+            archive.CommandText =
+                "INSERT OR IGNORE INTO agent_sessions_deleted" +
+                "(Id, Title, CreatedAt, UpdatedAt, ProviderId, Archived, Summary, Plan, ActiveSkills, PlanMode, " +
+                "ToolPolicy, \"Group\", SortOrder, AgentId, WorkspaceDir, OwnerUserId, EnabledMcp, DeletedAt, Reason) " +
+                "SELECT s.Id, s.Title, s.CreatedAt, s.UpdatedAt, s.ProviderId, s.Archived, s.Summary, s.Plan, " +
+                "s.ActiveSkills, s.PlanMode, s.ToolPolicy, s.\"Group\", s.SortOrder, s.AgentId, s.WorkspaceDir, " +
+                "s.OwnerUserId, s.EnabledMcp, @deletedAt, @reason " +
+                "FROM agent_sessions s WHERE " + where + ";";
+            foreach (var (name, value) in allArgs)
+                archive.Parameters.AddWithValue(name, value);
+            await archive.ExecuteNonQueryAsync(ct);
+        }
+
+        await using var delete = connection.CreateCommand();
+        delete.Transaction = tx;
+        delete.CommandText = "DELETE FROM agent_sessions WHERE Id IN (SELECT s.Id FROM agent_sessions s WHERE " + where + ");";
+        foreach (var (name, value) in allArgs)
+            delete.Parameters.AddWithValue(name, value);
+        return await delete.ExecuteNonQueryAsync(ct);
     }
 
     private async Task ExecAsync(string sql, Dictionary<string, object> args, CancellationToken ct)

@@ -41,6 +41,18 @@ public interface ISnapshotStore
 
     /// <summary>裁剪到只保留最近 keepPerServer 份（事件级联删除）；keepPerServer&lt;=0 不限制。返回删除的快照数。</summary>
     Task<int> PruneAsync(string serverId, int keepPerServer, CancellationToken ct = default);
+
+    /// <summary>保存/更新完整 nginx -T 配置（按 serverId + configHash 去重）。</summary>
+    Task SaveNginxConfigAsync(string serverId, string hash, string content, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    /// <summary>按 serverId + configHash 读取完整 nginx 配置；不存在返回 null。</summary>
+    Task<string?> GetNginxConfigAsync(string serverId, string hash, CancellationToken ct = default)
+        => Task.FromResult<string?>(null);
+
+    /// <summary>每台服务器保留最近 keep 份 nginx 配置正文，返回删除条数。</summary>
+    Task<int> PruneNginxConfigsAsync(string serverId, int keep, CancellationToken ct = default)
+        => Task.FromResult(0);
 }
 
 public class SnapshotStore : ISnapshotStore
@@ -152,7 +164,16 @@ CREATE TABLE IF NOT EXISTS SnapshotEvents (
     Collector   TEXT,
     Message     TEXT
 );
-CREATE INDEX IF NOT EXISTS IX_SnapshotEvents_SnapshotId ON SnapshotEvents(SnapshotId, Id);";
+CREATE INDEX IF NOT EXISTS IX_SnapshotEvents_SnapshotId ON SnapshotEvents(SnapshotId, Id);
+
+CREATE TABLE IF NOT EXISTS NginxConfigs (
+    ServerId    TEXT NOT NULL,
+    Hash        TEXT NOT NULL,
+    Content     TEXT NOT NULL,
+    CreatedAt   TEXT NOT NULL,
+    PRIMARY KEY (ServerId, Hash)
+);
+CREATE INDEX IF NOT EXISTS IX_NginxConfigs_Server ON NginxConfigs(ServerId, CreatedAt DESC);";
                 await create.ExecuteNonQueryAsync(ct);
             }
 
@@ -395,6 +416,55 @@ AND Id NOT IN (SELECT Id FROM Snapshots WHERE ServerId = @ServerId
         del.Parameters.AddWithValue("@ServerId", serverId);
         del.Parameters.AddWithValue("@Keep", keepPerServer);
         return await del.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task SaveNginxConfigAsync(string serverId, string hash, string content,
+        CancellationToken ct = default)
+    {
+        await EnsureSchemaAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+INSERT INTO NginxConfigs(ServerId, Hash, Content, CreatedAt)
+VALUES (@ServerId, @Hash, @Content, @Now)
+ON CONFLICT(ServerId, Hash) DO UPDATE SET
+    Content = excluded.Content, CreatedAt = excluded.CreatedAt;";
+        cmd.Parameters.AddWithValue("@ServerId", serverId);
+        cmd.Parameters.AddWithValue("@Hash", hash);
+        cmd.Parameters.AddWithValue("@Content", content);
+        cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<string?> GetNginxConfigAsync(string serverId, string hash,
+        CancellationToken ct = default)
+    {
+        await EnsureSchemaAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Content FROM NginxConfigs WHERE ServerId = @ServerId AND Hash = @Hash;";
+        cmd.Parameters.AddWithValue("@ServerId", serverId);
+        cmd.Parameters.AddWithValue("@Hash", hash);
+        return await cmd.ExecuteScalarAsync(ct) as string;
+    }
+
+    public async Task<int> PruneNginxConfigsAsync(string serverId, int keep, CancellationToken ct = default)
+    {
+        if (keep <= 0)
+            return 0;
+        await EnsureSchemaAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+DELETE FROM NginxConfigs WHERE ServerId = @ServerId AND Hash NOT IN (
+    SELECT Hash FROM NginxConfigs WHERE ServerId = @ServerId
+    ORDER BY CreatedAt DESC, Hash DESC LIMIT @Keep);";
+        cmd.Parameters.AddWithValue("@ServerId", serverId);
+        cmd.Parameters.AddWithValue("@Keep", keep);
+        return await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private static ServerSnapshot ReadRow(SqliteDataReader reader)

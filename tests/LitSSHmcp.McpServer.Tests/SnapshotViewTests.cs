@@ -53,6 +53,147 @@ public class SnapshotViewTests
         JsonNode.Parse(JsonSerializer.Serialize(
             SnapshotTools.BuildDataView(SampleJson(), section, full)))!;
 
+    private static string AccountsJson()
+    {
+        var users = new JsonArray();
+        for (var i = 0; i < 60; i++)
+        {
+            users.Add(new JsonObject
+            {
+                ["name"] = $"u{i}",
+                ["uid"] = i,
+                ["shell"] = "/bin/bash",
+                ["riskLevel"] = i % 10 == 0 ? "高风险" : "正常",
+                ["riskNotes"] = i % 10 == 0 ? "UID=0 但不是 root" : "",
+                ["isPrivileged"] = i % 10 == 0,
+                ["canLogin"] = "可能（Shell 登录）",
+                ["lastLogin"] = "2026-11-10",
+                ["authorizedKeyCount"] = i % 3
+            });
+        }
+
+        var keys = new JsonArray();
+        for (var i = 0; i < 30; i++)
+        {
+            keys.Add(new JsonObject
+            {
+                ["user"] = $"u{i}",
+                ["path"] = $"/home/u{i}/.ssh/authorized_keys",
+                ["keyCount"] = 2,
+                ["modifiedAt"] = "2026-11-10T00:00:00Z",
+                ["mode"] = "600",
+                ["keys"] = new JsonArray { new JsonObject { ["fingerprint"] = $"SHA256:{i}" } }
+            });
+        }
+
+        var findings = new JsonArray();
+        for (var i = 0; i < 30; i++)
+            findings.Add(new JsonObject { ["severity"] = "high", ["id"] = $"f{i}", ["title"] = "risk" });
+
+        return new JsonObject
+        {
+            ["collectorVersion"] = 2,
+            ["sections"] = new JsonObject
+            {
+                ["accounts"] = new JsonObject
+                {
+                    ["status"] = "ok",
+                    ["durationMs"] = 10,
+                    ["data"] = new JsonObject
+                    {
+                        ["summary"] = new JsonObject { ["users"] = 60, ["riskyUsers"] = 6 },
+                        ["shadowReadable"] = true,
+                        ["users"] = users,
+                        ["authorizedKeys"] = keys,
+                        ["findings"] = findings
+                    }
+                }
+            }
+        }.ToJsonString();
+    }
+
+    private static JsonNode AccountsView(bool full, string? account = null, string? riskLevel = null) =>
+        JsonNode.Parse(JsonSerializer.Serialize(
+            SnapshotTools.BuildDataView(AccountsJson(), "accounts", full, account, riskLevel)))!;
+
+    [Fact]
+    public void Accounts_section_default_returns_compact_summary_not_all_users()
+    {
+        var data = AccountsView(false)["sections"]!["accounts"]!["data"]!;
+        Assert.NotNull(data["summary"]);
+        Assert.Null(data["users"]);
+        Assert.Null(data["authorizedKeys"]);
+        Assert.True(((JsonArray)data["riskyUsers"]!).Count <= 21);
+        Assert.True(((JsonArray)data["keyUsers"]!).Count <= 21);
+        Assert.Contains("detail", (string?)data["hint"]);
+    }
+
+    [Fact]
+    public void Accounts_section_full_contains_full_lists()
+    {
+        var data = AccountsView(true)["sections"]!["accounts"]!["data"]!;
+        Assert.Equal(60, ((JsonArray)data["users"]!).Count);
+        Assert.Equal(30, ((JsonArray)data["authorizedKeys"]!).Count);
+    }
+
+    [Fact]
+    public void Accounts_filter_by_user_returns_only_matching_user()
+    {
+        var data = AccountsView(false, account: "u0")["sections"]!["accounts"]!["data"]!;
+        var users = (JsonArray)data["users"]!;
+        Assert.Single(users);
+        Assert.Equal("u0", (string?)users[0]!["name"]);
+        Assert.Null(data["riskyUsers"]);
+    }
+
+    private static JsonNode NginxView(bool full) =>
+        JsonNode.Parse(JsonSerializer.Serialize(SnapshotTools.BuildDataView(
+            new JsonObject
+            {
+                ["collectorVersion"] = 2,
+                ["sections"] = new JsonObject
+                {
+                    ["nginx_tls"] = new JsonObject
+                    {
+                        ["status"] = "ok",
+                        ["data"] = new JsonObject
+                        {
+                            ["serverType"] = "Tengine",
+                            ["configHash"] = "abc",
+                            ["configPreview"] = "preview",
+                            ["effectiveConfig"] = "full-config",
+                            ["domains"] = new JsonArray()
+                        }
+                    }
+                }
+            }.ToJsonString(), "nginx_tls", full)))!;
+
+    [Fact]
+    public void Nginx_section_default_omits_full_effective_config()
+    {
+        var data = NginxView(false)["sections"]!["nginx_tls"]!["data"]!;
+        Assert.Null(data["effectiveConfig"]);
+        Assert.Equal("abc", (string?)data["configHash"]);
+        Assert.Equal("preview", (string?)data["configPreview"]);
+        Assert.Contains("detail", (string?)data["hint"]);
+    }
+
+    [Fact]
+    public void Nginx_section_full_keeps_effective_config()
+    {
+        var data = NginxView(true)["sections"]!["nginx_tls"]!["data"]!;
+        Assert.Equal("full-config", (string?)data["effectiveConfig"]);
+    }
+
+    [Fact]
+    public void Accounts_filter_by_high_risk_returns_only_high_risk()
+    {
+        var data = AccountsView(false, riskLevel: "high")["sections"]!["accounts"]!["data"]!;
+        var users = (JsonArray)data["users"]!;
+        Assert.Equal(6, users.Count);
+        Assert.All(users, u => Assert.Equal("高风险", (string?)u!["riskLevel"]));
+    }
+
     [Fact]
     public void Summary_returns_headline_not_full_data()
     {
@@ -94,8 +235,9 @@ public class SnapshotViewTests
         var portmap = root["sections"]!["portmap"]!;
         Assert.NotNull(portmap["data"]);                                 // 单维度含完整 data
         var listeners = (JsonArray)portmap["data"]!["listeners"]!;
-        Assert.Equal(201, listeners.Count);                             // 200 条 + 1 条省略提示
-        Assert.Contains("省略", (string?)listeners[200]);
+        Assert.Equal(51, listeners.Count);                              // 默认摘要 50 条 + 1 条省略提示
+        Assert.Contains("省略", (string?)listeners[50]);
+        Assert.Contains("detail", (string?)portmap["data"]!["hint"]);
     }
 
     [Fact]

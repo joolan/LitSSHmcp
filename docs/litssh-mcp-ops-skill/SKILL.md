@@ -54,7 +54,7 @@ description: Use when operating or troubleshooting servers and applications thro
 
 ### 服务器快照（整机态势，优先用）
 
-`ssh_snapshot_get(serverId)` 拿到该服务器**整机态势概览**（本机持久化，默认只读本地、不连服务器）。**默认只回各维度概览（关键指标 + 数据大小），不含完整数据**：需要某维度完整数据用 `section="resource|portmap|docker|nginx_tls|systemd|security"`，需要全部才用 `detail="full"`（较大）。无快照或要最新数据用 `ssh_snapshot_refresh`（较慢、同机单飞，参数同上）。
+`ssh_snapshot_get(serverId)` 拿到该服务器**整机态势概览**（本机持久化，默认只读本地、不连服务器）。**默认只回各维度概览（关键指标 + 数据大小），不含完整数据**：需要某维度完整数据用 `section="resource|portmap|docker|nginx_tls|systemd|accounts|security"`，需要全部才用 `detail="full"`（较大）。无快照或要最新数据用 `ssh_snapshot_refresh`（较慢、同机单飞，参数同上）。
 
 - `resource`：CPU/内存/磁盘/负载/系统信息；含**阈值告警 `warnings`/`riskLevel`**（内存/swap/磁盘/负载）与 **top5 进程 `topByCpu`/`topByMemory`**（谁在吃 CPU/内存）。
 - `portmap`：端口↔进程名/PID/用户↔systemd 服务三元组，含**程序路径 `exe`** 与**完整启动命令 `cmdline`**（凭据参数已脱敏），区分 TCP/UDP、双栈；Unix socket 分系统级(`unixSockets`)与**桌面/用户会话(`unixSocketsDesktop`，默认折叠**，如 gnome/pipewire/dbus/X11)。

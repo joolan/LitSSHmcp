@@ -36,6 +36,12 @@ public sealed class SecurityAuditSnapshotCollector : ISnapshotCollector
         "awk -F: '($2==\"\" && $1!=\"\"){print \"EMPTY_PW:\"$1}' /etc/shadow 2>/dev/null; " +
         "grep -rhE '^[^#]*NOPASSWD' /etc/sudoers /etc/sudoers.d/ 2>/dev/null";
 
+    // accounts 采集器已提供 shadow/sudoers 结果时，只保留 MySQL 探测，避免重复读取敏感文件。
+    private const string MysqlCommand =
+        "command -v mysql 2>/dev/null; " +
+        "mysql -N -e \"SELECT user,host FROM mysql.user;\" 2>/dev/null; " +
+        "mysql --defaults-file=/etc/mysql/debian.cnf -N -e \"SELECT user,host FROM mysql.user;\" 2>/dev/null";
+
     private const string PortsCommand = "ss -H -tlnp 2>/dev/null";
 
     /// <summary>高危端口 → (服务名, 风险级别)。仅在公网绑定(0.0.0.0/::/* 或非回环具体地址)时告警。</summary>
@@ -82,18 +88,40 @@ public sealed class SecurityAuditSnapshotCollector : ISnapshotCollector
         if (!fwResult.Success && fwResult.ErrorKind is not null)
             return CollectorResult.FromCommandFailure(fwResult) with { DurationMs = sw.Elapsed.TotalMilliseconds };
 
-        var accResult = await context.ExecuteAsync(AccountsCommand, context.Elevate, ct);
+        var accountCommand = context.Shared.ContainsKey("accounts.emptyPassword")
+            ? MysqlCommand
+            : AccountsCommand;
+        var accResult = await context.ExecuteAsync(accountCommand, context.Elevate, ct);
         if (!accResult.Success && accResult.ErrorKind is not null)
             return CollectorResult.FromCommandFailure(accResult) with { DurationMs = sw.Elapsed.TotalMilliseconds };
 
-        var portsResult = await context.ExecuteAsync(PortsCommand, context.Elevate, ct);
-        if (!portsResult.Success && portsResult.ErrorKind is not null)
-            return CollectorResult.FromCommandFailure(portsResult) with { DurationMs = sw.Elapsed.TotalMilliseconds };
+        // 端口优先复用 portmap 采集器的解析结果（Order 20 在本采集器之前）；
+        // 单测/独立调用没有缓存时再执行一次 ss 兜底。
+        List<Dictionary<string, object?>> listeners;
+        if (context.Shared.TryGetValue("portmap.listeners", out var cached) &&
+            cached is List<Dictionary<string, object?>> cachedListeners)
+        {
+            listeners = cachedListeners;
+        }
+        else
+        {
+            var portsResult = await context.ExecuteAsync(PortsCommand, context.Elevate, ct);
+            if (!portsResult.Success && portsResult.ErrorKind is not null)
+                return CollectorResult.FromCommandFailure(portsResult) with { DurationMs = sw.Elapsed.TotalMilliseconds };
+            listeners = PortMapSnapshotCollector.ParseSsListeners(portsResult.Output, proto: null);
+        }
 
         var ssh = ParseSshConfig(sshResult.Output);
         var firewall = ParseFirewall(fwResult.Output);
         var fail2ban = ParseFail2ban(fwResult.Output);
         var (emptyPw, nopasswd, onHostMysql) = ParseAccounts(accResult.Output);
+        // 复用 accounts 采集器的解析结果（Order 44 先执行），避免重复读 /etc/shadow 与 sudoers。
+        if (context.Shared.TryGetValue("accounts.emptyPassword", out var sharedEmptyPw) &&
+            sharedEmptyPw is List<string> emptyPwList)
+            emptyPw = emptyPwList;
+        if (context.Shared.TryGetValue("accounts.nopasswd", out var sharedNopasswd) &&
+            sharedNopasswd is List<string> nopasswdList)
+            nopasswd = nopasswdList;
 
         // MySQL 账户：优先用"匹配该服务器的已配置 MySQL 数据源凭据"精确查询；否则用免密 best-effort 结果
         var mysql = onHostMysql;
@@ -108,7 +136,6 @@ public sealed class SecurityAuditSnapshotCollector : ISnapshotCollector
             }
         }
 
-        var listeners = PortMapSnapshotCollector.ParseSsListeners(portsResult.Output, proto: null);
         var exposedPorts = FindExposedPorts(listeners);
 
         var findings = BuildFindings(ssh, firewall, fail2ban, mysql, exposedPorts, emptyPw, nopasswd, remoteGrants);

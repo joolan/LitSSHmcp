@@ -14,7 +14,8 @@
         <Grid.ContextMenu>
             <ContextMenu>
                 <MenuItem Header="打开 AI 运维助手" Click="OnOpenAi"/>
-                <MenuItem Header="展示动作">
+                <MenuItem Header="展示动作"
+                          Style="{DynamicResource FixedSubmenuHeaderStyle}">
                     <MenuItem Header="展示全部动作" Click="OnShowcaseAll"/>
                     <MenuItem Header="停止展示" Click="OnStopShowcase"/>
                     <Separator/>

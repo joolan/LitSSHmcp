@@ -115,6 +115,7 @@ public static class ToolSecurityCatalog
         GlobalRead("ssh_list_servers", selfScoped: true);
         ServerRead("ssh_test_connection");
         ServerRead("ssh_snapshot_get");
+        ServerRead("ssh_snapshot_diff");
         ServerExec("ssh_snapshot_refresh");
         ServerRead("ssh_list_files");
         ServerRead("ssh_download");

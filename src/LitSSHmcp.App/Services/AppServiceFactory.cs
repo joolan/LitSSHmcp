@@ -128,7 +128,8 @@ public static class AppServiceFactory
             new DockerSnapshotCollector(),
             new NginxTlsSnapshotCollector(),
             new SystemdHealthSnapshotCollector(),
-            new SecurityAuditSnapshotCollector()
+            new SecurityAuditSnapshotCollector(),
+            new AccountsSnapshotCollector()
         };
         return new SnapshotService(store, ssh, new CommandFilterService(security), collectors, configService, mysqlProvider);
     }

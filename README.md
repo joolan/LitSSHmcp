@@ -60,7 +60,7 @@
 | 组成 | 项目 | 说明 |
 |------|------|------|
 | **MCP 服务** | `LitSSHmcp.McpServer` | stdio MCP 服务器，向 Claude Desktop / Cursor / Cline / CodeBuddy / opencode 等客户端暴露运维工具。 |
-| **桌面 App** | `LitSSHmcp.App` | WPF 管理端：服务器、数据源、应用、拓扑、远程桌面、Jenkins、Kubernetes、审计、桌面宠物和内置 AI 助手。 |
+| **桌面 App** | `LitSSHmcp.App` | WPF 管理端：服务器、数据源、应用、拓扑、远程桌面、Jenkins、Kubernetes、审计、桌面宠物、托盘常驻和内置 AI 助手（含 AI 定时任务）。 |
 | **Web 助手** | `LitSSHmcp.Web` | 浏览器 AI 运维助手：独立账号、每会话独立子进程、流式聊天、Web 审批与文件下载。 |
 
 ## 核心能力
@@ -73,14 +73,14 @@
 | 容器与服务 | Docker 容器 / 镜像 / 日志 / inspect / stats；systemd 状态与日志 |
 | 日志与 Java | 日志检索、文件发现；Java 进程、线程栈、堆内存、JVM 信息 |
 | 拓扑与体检 | 资产拓扑、上下游依赖、影响面、URL 落地、应用聚合体检 |
-| 自动化 | 文件同步、触发事件、定时备份、Jenkins 构建与日志 |
+| 自动化 | 文件同步、触发事件、定时备份、AI 定时任务、Jenkins 构建与日志 |
 | 安全审计 | 命令 / SQL 审计、审批链、哈希链完整性校验、Web 授权矩阵 |
 
 详细桌面端能力见 [docs/APP_GUIDE.md](docs/APP_GUIDE.md)，Web 端见 [docs/WEB_GUIDE.md](docs/WEB_GUIDE.md)。
 
 ## MCP 工具
 
-MCP 服务默认暴露 **34 个外部工具 + 1 个宿主内部审批工具**，覆盖 SSH、数据源、Docker、systemd、日志、Java、拓扑、应用体检和自检。完整参数、返回结构与“用户意图 → 工具”路由见 **[docs/TOOLS.md](docs/TOOLS.md)**。
+MCP 服务默认暴露 **35 个外部工具 + 1 个宿主内部审批工具**，覆盖 SSH、数据源、Docker、systemd、日志、Java、拓扑、应用体检和自检。完整参数、返回结构与“用户意图 → 工具”路由见 **[docs/TOOLS.md](docs/TOOLS.md)**。
 
 可在 App 的“设置 → 工具分组”或 `config.json` 的 `tools.enabledGroups` 中裁剪工具分组：
 
@@ -203,7 +203,7 @@ litssh deny <审批ID>               # 拒绝
 | [docs/APP_GUIDE.md](docs/APP_GUIDE.md) | 桌面 App 使用指南：页面、终端、数据源、拓扑、AI 助手、设置 |
 | [docs/WEB_GUIDE.md](docs/WEB_GUIDE.md) | Web 助手：启动、账号、安全边界 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计：分层、模块、安全、拓扑、线程模型、扩展点 |
-| [docs/TOOLS.md](docs/TOOLS.md) | 34 个常规工具 + 1 个宿主内部工具完整参考 |
+| [docs/TOOLS.md](docs/TOOLS.md) | 35 个常规工具 + 1 个宿主内部工具完整参考 |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | `config.json` 配置字段与示例 |
 | [docs/MCP_CLIENT_SETUP.md](docs/MCP_CLIENT_SETUP.md) | Claude Desktop / Cursor / Cline / CodeBuddy / 开发模式配置 |
 | [docs/SECURITY.md](docs/SECURITY.md) | 安全模型、审批、Web 安全与 sudo 提权 |

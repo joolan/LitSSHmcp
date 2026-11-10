@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 7,
   "servers": [
     {
       "id": "web-server-01",
@@ -118,7 +118,11 @@
     "useSudo": true,
     "retentionPerServer": 30,
     "timeoutSeconds": 180,
-    "minRefreshIntervalSeconds": 60
+    "minRefreshIntervalSeconds": 60,
+    "collectAccounts": true,
+    "collectAuthorizedKeys": true,
+    "collectLoginHistory": true,
+    "storeEffectiveConfig": false
   },
   "connectionPool": {
     "enabled": true,
@@ -172,7 +176,7 @@
       "maxSessionCost": 0
     },
     "retentionMaxSessions": 50,
-    "retentionMaxMessages": 200,
+    "retentionMaxMessages": 2000,
     "retentionDays": 90,
     "memory": {
       "enabled": false,

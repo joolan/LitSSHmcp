@@ -29,4 +29,18 @@ public class ToolFilterTests
     {
         Assert.Equal(expected, ToolFilter.GroupOf(tool));
     }
+
+    [Theory]
+    [InlineData("ssh_snapshot_get", true, true, true)]
+    [InlineData("ssh_snapshot_refresh", false, true, true)]
+    [InlineData("topology_discover", false, true, true)]
+    [InlineData("ssh_snapshot_refresh", false, false, false)]   // 外部 MCP 不放行同名工具
+    [InlineData("ssh_execute_command", false, true, false)]
+    [InlineData("service_restart", false, true, false)]
+    public void IsReadOnlyAllowed_only_exempts_builtin_local_cache_probes(
+        string name, bool readOnlyHint, bool allowLocalCacheProbes, bool expected)
+    {
+        Assert.Equal(expected,
+            ToolFilter.IsReadOnlyAllowed(name, readOnlyHint, allowLocalCacheProbes));
+    }
 }

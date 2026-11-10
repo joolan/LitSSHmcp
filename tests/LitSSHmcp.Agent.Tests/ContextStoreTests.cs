@@ -1,5 +1,6 @@
 using System.Linq;
 using LitSSHmcp.Agent;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace LitSSHmcp.Agent.Tests;
@@ -157,6 +158,26 @@ public class ContextStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ReplaceMessages_shorter_transcript_archives_removed_tail()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("s");
+        await store.AppendMessageAsync(id, "user", "u");
+        await store.AppendMessageAsync(id, "assistant", "a");
+        await store.AppendMessageAsync(id, "tool", "t");
+
+        await store.ReplaceMessagesAsync(id, new[] { ("user", "u2") });
+
+        var active = await store.GetMessagesAsync(id);
+        Assert.Single(active);
+        Assert.Equal("u2", active[0].Content);
+        var archived = await QueryDeletedMessagesAsync(id);
+        Assert.Equal(2, archived.Count);
+        Assert.All(archived, m => Assert.Equal("transcript_replaced", m.Reason));
+    }
+
+    [Fact]
     public async Task Prune_caps_messages_and_sessions()
     {
         var store = NewStore();
@@ -287,17 +308,96 @@ public class ContextStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Schema_v6_is_stamped_and_reinit_is_idempotent()
+    public async Task Prune_keeps_whole_turn_and_never_orphans_tool_rows()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("long-turn");
+
+        await store.AppendMessageAsync(id, "user", "刷新快照并查看内容");
+        for (var i = 0; i < 12; i++)
+            await store.AppendMessageAsync(id, "tool", "{\"Tool\":\"spill\",\"n\":" + i + "}");
+        await store.AppendMessageAsync(id, "turn_note", "已停止。");
+
+        await store.PruneAsync(maxSessions: 0, maxMessagesPerSession: 3, retentionDays: 0);
+
+        var messages = await store.GetMessagesAsync(id);
+        Assert.Equal("user", messages[0].Role);
+        Assert.Equal("刷新快照并查看内容", messages[0].Content);
+        Assert.Equal(14, messages.Count);
+    }
+
+    [Fact]
+    public async Task Prune_moves_removed_messages_to_deleted_table()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("old-turn");
+
+        await store.AppendMessageAsync(id, "user", "旧提示");
+        await store.AppendMessageAsync(id, "assistant", "旧回答");
+        await store.AppendMessageAsync(id, "user", "新提示");
+        await store.AppendMessageAsync(id, "assistant", "新回答");
+
+        await store.PruneAsync(maxSessions: 0, maxMessagesPerSession: 2, retentionDays: 0);
+
+        var active = await store.GetMessagesAsync(id);
+        Assert.Equal(new[] { "新提示", "新回答" }, active.Select(m => m.Content));
+        var archived = await QueryDeletedMessagesAsync(id);
+        Assert.Equal(2, archived.Count);
+        Assert.Contains(archived, m => m.Role == "user" && m.Content == "旧提示");
+        Assert.Contains(archived, m => m.Role == "assistant" && m.Content == "旧回答");
+        Assert.All(archived, m => Assert.Equal("max_messages_per_session", m.Reason));
+    }
+
+    [Fact]
+    public async Task Delete_session_archives_session_and_messages()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("要删除的会话");
+        await store.AppendMessageAsync(id, "user", "问题");
+        await store.AppendMessageAsync(id, "assistant", "回答");
+
+        await store.DeleteSessionAsync(id);
+
+        Assert.Empty(await store.GetMessagesAsync(id));
+        Assert.Empty(await store.ListSessionsAsync());
+        Assert.Equal(2, (await QueryDeletedMessagesAsync(id)).Count);
+        Assert.Equal(1, await QueryDeletedSessionCountAsync(id));
+    }
+
+    [Fact]
+    public async Task Archive_tables_mirror_active_columns()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+
+        var activeMessages = await QueryColumnsAsync("agent_messages");
+        var deletedMessages = await QueryColumnsAsync("agent_messages_deleted");
+        Assert.All(activeMessages, column => Assert.Contains(column, deletedMessages));
+        Assert.Contains("DeletedAt", deletedMessages);
+        Assert.Contains("Reason", deletedMessages);
+
+        var activeSessions = await QueryColumnsAsync("agent_sessions");
+        var deletedSessions = await QueryColumnsAsync("agent_sessions_deleted");
+        Assert.All(activeSessions, column => Assert.Contains(column, deletedSessions));
+        Assert.Contains("DeletedAt", deletedSessions);
+        Assert.Contains("Reason", deletedSessions);
+    }
+
+    [Fact]
+    public async Task Schema_v7_is_stamped_and_reinit_is_idempotent()
     {
         var store = NewStore();
         await store.InitializeAsync();
         var id = await store.CreateSessionAsync("s");
 
-        Assert.Equal(6, await ReadUserVersionAsync());
+        Assert.Equal(7, await ReadUserVersionAsync());
 
         // 重复初始化：列已存在、版本已盖章，不应抛错且数据保留
         await store.InitializeAsync();
-        Assert.Equal(6, await ReadUserVersionAsync());
+        Assert.Equal(7, await ReadUserVersionAsync());
         Assert.Single(await store.ListSessionsAsync());
 
         await store.SetSessionWorkspaceDirAsync(id, @"D:\ws");
@@ -305,6 +405,46 @@ public class ContextStoreTests : IDisposable
         await store.InitializeAsync();
         Assert.Equal(@"D:\ws", await store.GetSessionWorkspaceDirAsync(id));
         Assert.Equal(@"[""litssh""]", await store.GetSessionEnabledMcpAsync(id));
+    }
+
+    private sealed record DeletedMessage(string Role, string Content, string Reason);
+
+    private async Task<List<DeletedMessage>> QueryDeletedMessagesAsync(long sessionId)
+    {
+        var list = new List<DeletedMessage>();
+        await using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Role, Content, Reason FROM agent_messages_deleted WHERE SessionId=@s ORDER BY Id;";
+        cmd.Parameters.AddWithValue("@s", sessionId);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            list.Add(new DeletedMessage(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+        return list;
+    }
+
+    private async Task<int> QueryDeletedSessionCountAsync(long id)
+    {
+        await using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM agent_sessions_deleted WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    private async Task<List<string>> QueryColumnsAsync(string table)
+    {
+        var columns = new List<string>();
+        await using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT name FROM pragma_table_info(@t);";
+        cmd.Parameters.AddWithValue("@t", table);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(0));
+        return columns;
     }
 
     private async Task<long> ReadUserVersionAsync()

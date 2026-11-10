@@ -12,6 +12,8 @@
                 <ResourceDictionary Source="Themes/Controls.xaml" />
                 <!-- 会话内容模板（SSH 会话窗口与独立会话窗口共用） -->
                 <ResourceDictionary Source="Themes/SessionTemplates.xaml" />
+                <!-- 修复 WPF-UI 子菜单在跨 DPI 显示器上的透明间隙/错位（鼠标经过间隙关闭） -->
+                <ResourceDictionary Source="Themes/MenuFix.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

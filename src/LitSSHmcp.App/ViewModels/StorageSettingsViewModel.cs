@@ -30,7 +30,6 @@ public class StorageSettingsViewModel : INotifyPropertyChanged, IConfigReloadabl
     public string DataDir => _dataDir;
 
     public ObservableCollection<StorageStat> Stats { get; } = new();
-
     public string StatusMessage
     {
         get => _statusMessage;
@@ -78,6 +77,7 @@ public class StorageSettingsViewModel : INotifyPropertyChanged, IConfigReloadabl
                 Stat("AI 会话/记忆 agent.db", Path.Combine(_dataDir, "agent.db"), includeSidecars: true),
                 Stat("审计 audit.db", Path.Combine(_dataDir, "audit.db"), includeSidecars: true),
                 Stat("快照 snapshots.db", Path.Combine(_dataDir, "snapshots.db"), includeSidecars: true),
+                Stat("通知中心 notifications.json", Path.Combine(_dataDir, "notifications.json")), Stat("通知投递 notifications.db", Path.Combine(_dataDir, "notifications.db"), includeSidecars: true),
                 Stat("大结果 spill", spillDir),
                 Stat("工作区 jobs", jobsDir),
                 Stat("日志", Path.Combine(_dataDir, "logs")),

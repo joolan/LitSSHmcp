@@ -147,6 +147,10 @@ public partial class SshSessionWindow : FluentWindow
 
     private void FocusActiveInput()
     {
+        // AI 首次打开时会以最小化窗口创建，避免聚焦把窗口重新激活到前台。
+        if (WindowState == WindowState.Minimized)
+            return;
+
         var host = Tabs.Template?.FindName("PART_SelectedContentHost", Tabs) as DependencyObject ?? Tabs;
         var terminal = FindDescendant<TerminalTabView>(host);
         if (terminal is not null)

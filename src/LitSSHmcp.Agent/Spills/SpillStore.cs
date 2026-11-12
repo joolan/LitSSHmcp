@@ -1,4 +1,7 @@
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace LitSSHmcp.Agent;
 
@@ -29,8 +32,31 @@ public sealed class SpillStore
     public string Save(string toolName, string content)
     {
         var id = $"{DateTime.Now:yyyyMMdd-HHmmss}-{Sanitize(toolName)}-{Guid.NewGuid():N}.txt";
-        File.WriteAllText(Path.Combine(_dir, id), content, Encoding.UTF8);
+        File.WriteAllText(Path.Combine(_dir, id), FormatForStorage(content), Encoding.UTF8);
         return id;
+    }
+
+    private static readonly JsonSerializerOptions PrettyJson = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        WriteIndented = true
+    };
+
+    /// <summary>单行 JSON 落盘前格式化，避免 spill read 只能读到超长单行。</summary>
+    private static string FormatForStorage(string content)
+    {
+        var trimmed = content.TrimStart();
+        if (trimmed.Length == 0 || (trimmed[0] != '{' && trimmed[0] != '['))
+            return content;
+        try
+        {
+            var node = JsonNode.Parse(content);
+            return node is null ? content : node.ToJsonString(PrettyJson);
+        }
+        catch (JsonException)
+        {
+            return content;
+        }
     }
 
     /// <summary>把句柄解析为落盘文件路径（限制在目录内，防越界）。</summary>

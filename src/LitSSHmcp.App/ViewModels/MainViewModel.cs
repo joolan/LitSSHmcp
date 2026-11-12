@@ -98,7 +98,8 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             terminal =>
             {
                 SelectedSession = terminal;
-                ShowSessionWindow();
+                // AI 首次打开本机 PowerShell 时只创建最小化窗口，不抢焦点遮挡 AI 对话区。
+                ShowSessionWindow(activate: false);
             });
 
         LoadServersCommand = new RelayCommand(_ => LoadServers());
@@ -543,7 +544,8 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         var created = CreateLocalTerminal(isAi: true);
         _aiTerminals[key] = created;
         SelectedSession = created;
-        ShowSessionWindow();
+        // AI 复用/首次创建本地终端时同样不能抢焦点，避免遮挡 AI 对话窗口。
+        ShowSessionWindow(activate: false);
         return created;
     }
 
@@ -569,11 +571,16 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
     // SSH 会话管理窗口（独立非模态窗口：多标签，同一服务器最多 4 个终端；不设 Owner/不置顶）
     private SshSessionWindow? _sessionWindow;
 
-    private void ShowSessionWindow()
+    private void ShowSessionWindow(bool activate = true)
     {
         if (_sessionWindow is { IsLoaded: true })
         {
-            _sessionWindow.Activate();
+            if (activate)
+            {
+                if (_sessionWindow.WindowState == WindowState.Minimized)
+                    _sessionWindow.WindowState = WindowState.Normal;
+                _sessionWindow.Activate();
+            }
             return;
         }
 
@@ -596,7 +603,26 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
             _aiTerminals.Clear();
             SelectedSession = null;
         };
+        if (!activate)
+        {
+            _sessionWindow.ShowActivated = false;
+            _sessionWindow.WindowState = WindowState.Minimized;
+        }
         _sessionWindow.Show();
+
+        if (!activate)
+        {
+            var window = _sessionWindow;
+            // 窗口布局恢复发生在 SourceInitialized，可能在 Show 时把最小化改回普通/最大化；
+            // 因此显示后再确保一次最小化，但不主动激活任何窗口，避免抢走 AI 窗口焦点。
+            window.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!window.IsLoaded)
+                    return;
+                if (window.IsActive || window.WindowState != WindowState.Minimized)
+                    window.WindowState = WindowState.Minimized;
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
     }
 
     // ---- 会话分离为独立窗口（拖出会话窗口 / 右键「分离为独立窗口」） ----
@@ -1237,7 +1263,23 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
                 Services.Notifications.NotificationCenterService.Add(
                     "快照", $"{server.Name} 快照采集失败",
                     result.Error ?? result.Status,
-                    Services.Notifications.NotificationSeverity.Warning);
+                    Services.Notifications.NotificationSeverity.Warning,
+                    LitSSHmcp.Core.Models.NotificationTypes.SnapshotFailed);
+            }
+            else if (!cts.IsCancellationRequested && result.Snapshot?.DataJson is { Length: > 0 } healthJson)
+            {
+                var health = ServerHealthService.Evaluate(healthJson, server.Name);
+                if (health.Score < 90 || health.Findings.Any(f => f.Severity == "high"))
+                {
+                    var severity = health.Score < 70
+                        ? Services.Notifications.NotificationSeverity.Error
+                        : Services.Notifications.NotificationSeverity.Warning;
+                    Services.Notifications.NotificationCenterService.Add(
+                        "健康巡检", $"{server.Name} 健康分 {health.Score}", health.Summary, severity,
+                        health.Score < 70
+                            ? LitSSHmcp.Core.Models.NotificationTypes.HealthCritical
+                            : LitSSHmcp.Core.Models.NotificationTypes.HealthWarning);
+                }
             }
         }
         catch (OperationCanceledException)

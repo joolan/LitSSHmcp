@@ -86,6 +86,12 @@
                             </ListView.View>
                         </ListView>
                     </TabItem>
+                    <TabItem Header="健康评分">
+                        <TextBox Text="{Binding HealthText, Mode=OneWay}" IsReadOnly="True"
+                                 FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                 TextWrapping="Wrap" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                    </TabItem>
                     <TabItem Header="账号摘要">
                         <TextBox Text="{Binding AccountsSummary, Mode=OneWay}" IsReadOnly="True"
                                  FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeMicro}"

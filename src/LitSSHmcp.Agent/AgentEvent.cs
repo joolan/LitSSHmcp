@@ -10,6 +10,8 @@ public enum AgentEventKind
     ToolCall,
     /// <summary>工具返回（结果文本）。</summary>
     ToolResult,
+    /// <summary>工具运行中的进度/心跳（Text 为阶段或已耗时；不写入历史）。</summary>
+    ToolProgress,
     /// <summary>本轮自动召回的记忆（注入上下文前推送给 UI 展示；Text 为召回文本）。</summary>
     MemoryRecall,
     /// <summary>本轮自动检索的资产图谱上下文（命中资产 + 邻域）。</summary>

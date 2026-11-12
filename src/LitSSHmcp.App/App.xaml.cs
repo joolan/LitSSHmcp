@@ -44,6 +44,16 @@ public partial class App : Application
         }
 
         base.OnStartup(e);
+
+        // 普通 GUI 只允许一个实例；备份 / AI 定时任务的无头模式已在上面提前返回，
+        // 仍可与桌面实例并行运行。
+        if (!TryAcquireSingleInstance())
+        {
+            SignalExistingInstance();
+            Shutdown(0);
+            return;
+        }
+
         PasswordVaultTempFiles.Cleanup();
 
         // 兜底：任何未处理异常都不应让整个 APP 直接退出（例如终端断开时的边界情况）
@@ -51,6 +61,8 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, args) => SafeLog(args.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, args) => { SafeLog(args.Exception); args.SetObserved(); };
         ConfigConflictNotifier.ConflictDetected += OnConfigConflict;
+        _ = NotificationCenterService.InitializeAsync();
+        NotificationHub.Default.StartDispatcher();
 
         // 所有窗口统一的标题栏/任务栏图标（窗口自身未显式设置 Icon 时）
         EventManager.RegisterClassHandler(
@@ -95,8 +107,11 @@ public partial class App : Application
                         ? NotificationSeverity.Success
                         : NotificationSeverity.Warning)
                     : NotificationSeverity.Error;
+                var type = result.Success && (result.UploadMessage is null || result.Uploaded)
+                    ? LitSSHmcp.Core.Models.NotificationTypes.BackupSucceeded
+                    : LitSSHmcp.Core.Models.NotificationTypes.BackupFailed;
                 NotificationCenterService.Add("备份", plan.Name,
-                    result.Success ? result.Message : result.Message, severity);
+                    result.Success ? result.Message : result.Message, severity, type);
             };
             _backupScheduler.Start();
 
@@ -122,6 +137,118 @@ public partial class App : Application
 
         // 远程桌面：退出时拆除活动隧道（查看器进程由用户自行关闭）
         Exit += (_, _) => AppServiceFactory.DisposeRemoteDesktopService();
+    }
+
+    private const string SingleInstanceMutexName = @"Local\LitSSHmcp.App.SingleInstance.v1";
+    private const string SingleInstanceActivateEventName = @"Local\LitSSHmcp.App.Activate.v1";
+    private Mutex? _singleInstanceMutex;
+    private EventWaitHandle? _singleInstanceActivateEvent;
+    private CancellationTokenSource? _singleInstanceCts;
+
+    /// <summary>
+    /// 桌面 GUI 单实例：拿到命名互斥锁的进程继续启动；其他进程信号已有实例后退出。
+    /// 启动失败时 fail-open，避免因权限/命名对象异常导致 App 完全无法打开。
+    /// </summary>
+    private bool TryAcquireSingleInstance()
+    {
+        try
+        {
+            // 先建/打开激活事件，确保第二个实例即使抢在监听线程前也能发出信号。
+            _singleInstanceActivateEvent = new EventWaitHandle(
+                false, EventResetMode.AutoReset, SingleInstanceActivateEventName);
+            _singleInstanceMutex = new Mutex(
+                initiallyOwned: true, SingleInstanceMutexName, out var createdNew);
+
+            if (!createdNew)
+            {
+                _singleInstanceMutex.Dispose();
+                _singleInstanceMutex = null;
+                _singleInstanceActivateEvent.Dispose();
+                _singleInstanceActivateEvent = null;
+                return false;
+            }
+
+            _singleInstanceCts = new CancellationTokenSource();
+            var token = _singleInstanceCts.Token;
+            var activateEvent = _singleInstanceActivateEvent;
+
+            _ = Task.Run(() =>
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        if (!activateEvent.WaitOne(250))
+                            continue;
+
+                        if (Dispatcher.HasShutdownStarted)
+                            return;
+                        Dispatcher.BeginInvoke(new Action(ActivateExistingInstance));
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        return;
+                    }
+                    catch
+                    {
+                        // 单实例唤前失败不应影响 App 主流程
+                    }
+                }
+            }, token);
+
+            Exit += (_, _) => DisposeSingleInstance();
+            return true;
+        }
+        catch
+        {
+            DisposeSingleInstance();
+            return true;   // fail-open
+        }
+    }
+
+    private static void SignalExistingInstance()
+    {
+        try
+        {
+            using var activateEvent = EventWaitHandle.OpenExisting(SingleInstanceActivateEventName);
+            activateEvent.Set();
+        }
+        catch
+        {
+            // 已有实例可能正在退出，或命名对象不可用；直接退出当前实例即可。
+        }
+    }
+
+    private void ActivateExistingInstance()
+    {
+        if (MainWindow is MainWindow main)
+        {
+            main.ActivateFromSecondInstance();
+            return;
+        }
+
+        var window = Windows.OfType<Window>().FirstOrDefault(w => w.IsVisible);
+        if (window is null)
+            return;
+
+        if (window.WindowState == WindowState.Minimized)
+            window.WindowState = WindowState.Normal;
+        window.Show();
+        window.Activate();
+    }
+
+    private void DisposeSingleInstance()
+    {
+        try { _singleInstanceCts?.Cancel(); } catch { /* ignore */ }
+        _singleInstanceCts?.Dispose();
+        _singleInstanceCts = null;
+
+        _singleInstanceActivateEvent?.Dispose();
+        _singleInstanceActivateEvent = null;
+
+        try { _singleInstanceMutex?.ReleaseMutex(); } catch { /* ignore */ }
+        _singleInstanceMutex?.Dispose();
+        _singleInstanceMutex = null;
     }
 
     private static bool TryGetBackupPlanId(string[] args, out string planId)
@@ -254,6 +381,7 @@ public partial class App : Application
                 var sessionId = long.TryParse(result.SessionId, out var parsed) ? parsed : (long?)null;
                 await store.CompleteRunAsync(runId, status, sessionId, result.Summary, result.Error,
                     result.InputTokens, result.OutputTokens);
+                try { await AiTaskReportStore.SaveAsync(task, runId, result); } catch { /* 报告落盘失败不影响无头任务 */ }
 
                 task.LastRunAt = DateTime.Now;
                 var nextRun = AiTaskSchedule.ComputeNextRun(task, task.LastRunAt.Value);

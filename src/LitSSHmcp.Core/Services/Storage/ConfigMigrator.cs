@@ -21,6 +21,8 @@ public static class ConfigMigrator
             changed = true;
         }
 
+        config.Notifications ??= new NotificationConfig();
+
         if (config.Security.CommandFilter == null)
         {
             config.Security.CommandFilter = new CommandFilterConfig();

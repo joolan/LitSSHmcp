@@ -1745,6 +1745,16 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
             // 需求 D/D1：会话工作目录与归属用户随运行时装配（根与提示词在装配期烧定；归因经 spawn 注入 MCP 子进程）
             var ownerUserId = ctx.SessionId > 0 ? await _store.GetSessionOwnerUserIdAsync(ctx.SessionId) : "local";
+            string? workingMemoryJson = null;
+            try
+            {
+                if (ctx.SessionId > 0)
+                    workingMemoryJson = await _store.GetSessionWorkingMemoryAsync(ctx.SessionId);
+            }
+            catch
+            {
+                // 工作记忆读取失败不阻塞会话
+            }
             ctx.Runtime = await AgentRuntime.StartAsync(_agentConfig, SelectedProvider, _bundledSkillsDir, history,
                 items => UpdatePlanFor(ctx, items),
                 _skills.ActiveIdsOrNull, _planMode, SelectedAgent?.ToPromptContext(),
@@ -1752,7 +1762,7 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 extraTools: localTools, assetGraph: assetGraph,
                 sessionWorkspaceDir: string.IsNullOrWhiteSpace(ctx.WorkspaceDir) ? null : ctx.WorkspaceDir,
                 ownerUserId: ownerUserId, enabledMcpIds: _sessionMcpSubset,
-                sessionId: ctx.SessionId > 0 ? ctx.SessionId : null, fleetPlanStore: FleetPlanStore, toolLimitContinuation: (used, limit, ct) => RequestToolLimitApprovalAsync(ctx, used, limit, ct));
+                sessionId: ctx.SessionId > 0 ? ctx.SessionId : null, fleetPlanStore: FleetPlanStore, toolLimitContinuation: (used, limit, ct) => RequestToolLimitApprovalAsync(ctx, used, limit, ct), workingMemoryJson: workingMemoryJson);
             ctx.RuntimeVersion = _poolVersion;
             ctx.Runtime.SteeringProvider = _ =>
                 Task.FromResult<IReadOnlyList<string>?>(DrainSteering(ctx));
@@ -2673,6 +2683,13 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 turn.Steps.Add(new AgentStep(e.ToolName ?? "工具", e.ArgumentsJson ?? string.Empty, e.Destructive, e.CallId));
                 break;
 
+            case AgentEventKind.ToolProgress:
+                var progressStep = e.CallId is null
+                    ? turn.Steps.LastOrDefault(s => s.IsRunning && s.Tool == (e.ToolName ?? "工具"))
+                    : turn.Steps.LastOrDefault(s => s.IsRunning && s.CallId == e.CallId);
+                progressStep?.SetProgress(e.Text ?? string.Empty);
+                break;
+
             case AgentEventKind.ToolResult:
                 FlushDelta(turn, ctx);
                 FlushReasoning(turn, ctx);
@@ -2886,6 +2903,18 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 messages.Add(("turn_note", turn.Note));
         }
         await _store.ReplaceMessagesAsync(ctx.SessionId, messages);
+
+        if (ctx.SessionId > 0 && ctx.Runtime?.Session is { } session)
+        {
+            try
+            {
+                await _store.SetSessionWorkingMemoryAsync(ctx.SessionId, session.WorkingMemory.ExportJson());
+            }
+            catch
+            {
+                // 工作记忆保存失败不影响对话落库
+            }
+        }
     }
 
     private void RefreshContextInfo()
@@ -3195,10 +3224,22 @@ public sealed class AgentStep : INotifyPropertyChanged
     private long _durationMs;
     public long DurationMs { get => _durationMs; private set { _durationMs = value; Raise(); Raise(nameof(Tail)); } }
 
+    private string _progressText = string.Empty;
+
     public string Label => IsInfo ? Tool : $"调用 {Tool}";
     public string Tail => IsRunning
-        ? (Destructive ? "调用中…（可能等待人工审批）" : "调用中…")
+        ? (string.IsNullOrWhiteSpace(_progressText)
+            ? (Destructive ? "调用中…（可能等待人工审批）" : "调用中…")
+            : (_progressText.StartsWith("已运行", StringComparison.Ordinal)
+                ? _progressText
+                : "调用中… · " + _progressText))
         : (IsInfo ? "已注入本轮上下文" : $"{DurationMs} ms");
+
+    public void SetProgress(string text)
+    {
+        _progressText = text ?? string.Empty;
+        Raise(nameof(Tail));
+    }
     public string Detail => (_displayArgs.Length == 0 ? string.Empty : "入参: " + _displayArgs + "\n\n") + (_displayResult.Length > 0 ? "结果:\n" + _displayResult : string.Empty);
     public Visibility RetryVisibility => !IsRunning && !Success ? Visibility.Visible : Visibility.Collapsed;
     public Visibility DestructiveVisibility => Destructive ? Visibility.Visible : Visibility.Collapsed;
@@ -3227,10 +3268,12 @@ public sealed class AgentStep : INotifyPropertyChanged
         Result = result;
         _displayResult = ToolResultFormatter.Format(result, pretty: true);
         DurationMs = durationMs;
+        _progressText = string.Empty;
         IsRunning = false;
         ShowDetail = !success;
         Raise(nameof(Detail));
         Raise(nameof(RetryVisibility));
+        Raise(nameof(Tail));
     }
 
     public void Restart()
@@ -3238,6 +3281,7 @@ public sealed class AgentStep : INotifyPropertyChanged
         IsRunning = true;
         Result = string.Empty;
         _displayResult = string.Empty;
+        _progressText = string.Empty;
         DurationMs = 0;
         ShowDetail = false;
         Raise(nameof(Detail));

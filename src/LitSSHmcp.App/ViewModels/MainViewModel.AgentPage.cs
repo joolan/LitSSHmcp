@@ -130,6 +130,7 @@ public partial class MainViewModel
                 _agentWindow = null;
         };
         window.Show();
+        window.Activate();
         view.RestoreViewState(_agentViewState.ScrollOffset, _agentViewState.CaretIndex);
     }
 

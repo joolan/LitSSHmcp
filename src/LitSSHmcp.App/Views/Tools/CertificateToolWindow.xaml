@@ -1,0 +1,150 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.Tools.CertificateToolWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="证书 / TLS 检测" Height="820" Width="1280" MinHeight="620" MinWidth="980"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="证书 / TLS 检测"/>
+
+        <Grid Grid.Row="1" Margin="12,4,12,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Padding="12,10">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                            <TextBlock Text="目标地址" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <TextBlock Text="每行一个 URL / 主机名，支持批量导入；裸主机默认 HTTPS 443"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       FontSize="{DynamicResource AppFontSizeMicro}" Margin="10,0,0,0"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock DockPanel.Dock="Right" Text="并发检测 · 单目标超时 10s"
+                                   Foreground="{DynamicResource AppTextTertiaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeMicro}" VerticalAlignment="Center"/>
+                    </DockPanel>
+
+                    <TextBox x:Name="UrlInput" Grid.Row="1" Height="112" AcceptsReturn="True"
+                             TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto"
+                             FontFamily="{DynamicResource AppFontMonoFamily}"
+                             FontSize="{DynamicResource AppFontSizeCaption}"
+                             Padding="8" SpellCheck.IsEnabled="False"
+                             TextChanged="OnInputChanged"
+                             AllowDrop="True" PreviewDragOver="OnInputDragOver" PreviewDrop="OnInputDrop"
+                             ToolTip="例如：https://example.com&#x0a;https://jenkins.example.com:8443&#x0a;example.com:443"/>
+
+                    <DockPanel Grid.Row="2" Margin="0,8,0,0" LastChildFill="False">
+                        <ui:Button DockPanel.Dock="Left" Content="导入文件" Padding="12,4" Margin="0,0,6,0"
+                                   Click="OnImportFile" ToolTip="导入 .txt / .csv 文件（每行一个 URL，CSV 取第一列）"/>
+                        <ui:Button x:Name="CheckButton" DockPanel.Dock="Left" Content="开始检测"
+                                   Appearance="Primary" Padding="12,4" Margin="0,0,6,0" Click="OnCheckAll"/>
+                        <ui:Button x:Name="StopButton" DockPanel.Dock="Left" Content="停止"
+                                   Padding="12,4" Margin="0,0,6,0" IsEnabled="False" Click="OnStop"/>
+                        <ui:Button DockPanel.Dock="Left" Content="清空" Padding="12,4" Margin="0,0,6,0"
+                                   Click="OnClear"/>
+                        <ui:Button DockPanel.Dock="Left" Content="导出 CSV" Padding="12,4"
+                                   Click="OnExportCsv"/>
+                        <TextBlock x:Name="InputHint" DockPanel.Dock="Right"
+                                   Foreground="{DynamicResource AppTextTertiaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeMicro}"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                </Grid>
+            </Border>
+
+            <DockPanel Grid.Row="1" Margin="2,8,2,6" LastChildFill="False">
+                <TextBlock x:Name="SummaryText" DockPanel.Dock="Left" FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+                <TextBlock x:Name="StatusText" DockPanel.Dock="Right"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           VerticalAlignment="Center"/>
+            </DockPanel>
+
+            <Grid Grid.Row="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="160"/>
+                </Grid.RowDefinitions>
+
+                <DataGrid x:Name="ResultsGrid" Grid.Row="0" AutoGenerateColumns="False" IsReadOnly="True"
+                          SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal" CanUserAddRows="False" CanUserDeleteRows="False"
+                          RowHeight="30" SelectionChanged="OnSelectionChanged">
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Severity}" Value="Error">
+                                    <Setter Property="Background" Value="{DynamicResource AppDangerSubtleBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                                    <Setter Property="Background" Value="{DynamicResource AppWarningSubtleBrush}"/>
+                                </DataTrigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource AppAccentSubtleBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
+                                    <Setter Property="BorderThickness" Value="1,0,1,0"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="96"/>
+                        <DataGridTextColumn Header="目标" Binding="{Binding TargetText}" Width="220"/>
+                        <DataGridTextColumn Header="IP" Binding="{Binding IpAddress}" Width="126"/>
+                        <DataGridTextColumn Header="到期时间" Binding="{Binding ExpiryText}" Width="138"/>
+                        <DataGridTextColumn Header="剩余" Binding="{Binding DaysText}" Width="86"/>
+                        <DataGridTextColumn Header="主题" Binding="{Binding Subject}" Width="*"/>
+                        <DataGridTextColumn Header="颁发者" Binding="{Binding Issuer}" Width="*"/>
+                        <DataGridTextColumn Header="TLS" Binding="{Binding TlsProtocol}" Width="78"/>
+                        <DataGridTextColumn Header="错误" Binding="{Binding Error}" Width="190"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}" Padding="10,8" Margin="0,8,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Grid.Row="0" Margin="0,0,0,5">
+                            <TextBlock Text="详情" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <ui:Button DockPanel.Dock="Right" Content="复制详情" Padding="9,3"
+                                       Click="OnCopyDetails"/>
+                        </DockPanel>
+                        <TextBox x:Name="DetailBox" Grid.Row="1" IsReadOnly="True"
+                                 TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 FontFamily="{DynamicResource AppFontMonoFamily}"
+                                 FontSize="{DynamicResource AppFontSizeMicro}"
+                                 Padding="6"/>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="2" Padding="12,6" Background="{DynamicResource AppSurfaceAltBrush}">
+            <TextBlock Text="仅检测用户明确输入的目标；不修改系统证书、不保存 URL，也不会自动信任异常证书。证书链/主机名校验失败会标记为错误。"
+                       FontSize="{DynamicResource AppFontSizeMicro}"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       TextWrapping="Wrap"/>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

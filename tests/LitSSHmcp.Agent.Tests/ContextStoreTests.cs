@@ -387,17 +387,30 @@ public class ContextStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Schema_v7_is_stamped_and_reinit_is_idempotent()
+    public async Task Session_working_memory_roundtrip()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("wm");
+        Assert.Equal(string.Empty, await store.GetSessionWorkingMemoryAsync(id));
+
+        const string json = """{"goal":"巡检","facts":["resource=ok"]}""";
+        await store.SetSessionWorkingMemoryAsync(id, json);
+        Assert.Equal(json, await store.GetSessionWorkingMemoryAsync(id));
+    }
+
+    [Fact]
+    public async Task Schema_v8_is_stamped_and_reinit_is_idempotent()
     {
         var store = NewStore();
         await store.InitializeAsync();
         var id = await store.CreateSessionAsync("s");
 
-        Assert.Equal(7, await ReadUserVersionAsync());
+        Assert.Equal(8, await ReadUserVersionAsync());
 
         // 重复初始化：列已存在、版本已盖章，不应抛错且数据保留
         await store.InitializeAsync();
-        Assert.Equal(7, await ReadUserVersionAsync());
+        Assert.Equal(8, await ReadUserVersionAsync());
         Assert.Single(await store.ListSessionsAsync());
 
         await store.SetSessionWorkspaceDirAsync(id, @"D:\ws");

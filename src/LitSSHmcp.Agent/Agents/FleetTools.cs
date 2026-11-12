@@ -171,13 +171,8 @@ public static class FleetTools
 
     private static string Normalize(object? result)
     {
-        var text = result switch
-        {
-            null => "(空结果)",
-            string s => s,
-            JsonElement je => je.GetRawText(),
-            _ => JsonSerializer.Serialize(result)
-        };
+        var normalized = McpToolResultNormalizer.Normalize(result);
+        var text = string.IsNullOrEmpty(normalized.Text) ? "(空结果)" : normalized.Text;
         return ToolResultFormatter.Normalize(text);
     }
 

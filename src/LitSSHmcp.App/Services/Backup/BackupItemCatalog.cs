@@ -52,6 +52,8 @@ public static class BackupItemCatalog
         SqliteItem("agent-db", "AI 会话 / 记忆 agent.db", "会话、消息、记忆与队列", "agent.db"),
         SqliteItem("audit-db", "审计 audit.db", "命令审计与哈希链", "audit.db"),
         SqliteItem("snapshot-db", "快照 snapshots.db", "服务器快照与历史", "snapshots.db"),
+        FileItem("notifications-inbox", "通知中心 notifications.json", "通知收件箱、已读状态与消息类型", "notifications.json"),
+        SqliteItem("notifications-outbox", "通知投递 notifications.db", "通知渠道投递队列、重试与历史", "notifications.db"),
         DirItem("skills", "技能 skills", "本机技能文件", "skills"),
         DirItem("logs", "日志 logs", "应用运行日志（可能含敏感信息，默认不选）", "logs"),
         DirItem("vaults", "加密文件柜", "加密文件柜目录", "vaults"),

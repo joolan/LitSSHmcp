@@ -10,6 +10,10 @@ public sealed class ToolboxService
     private static readonly Guid PasswordBuiltinId = Guid.Parse("7A8D42D7-6E4B-46C9-91FE-8A0B67D5C221");
     private static readonly Guid VaultBuiltinId = Guid.Parse("8B917E9D-5B7C-4B1B-B98D-4A2E62A0D4C3");
     private static readonly Guid PasswordVaultBuiltinId = Guid.Parse("A1D6C4B8-3E5F-4A7B-8C9D-0E1F2A3B4C5D");
+    private static readonly Guid CertificateBuiltinId = Guid.Parse("C4E8A2F1-9B3D-4F6A-8C2E-7D1B5A9F0E63");
+    private static readonly Guid TextCodecBuiltinId = Guid.Parse("D5F9B3A2-0C4E-4B7F-9D3A-8E2C6B0F1A74");
+    private static readonly Guid SshKeyBuiltinId = Guid.Parse("E6A0C4B3-1D5F-4C8A-9E4B-8F3D7C1A2B85");
+    private static readonly Guid LocalPortBuiltinId = Guid.Parse("F7B1D5C4-2E6A-4D9B-8F5C-9A4E8D2B3C96");
 
     private readonly ToolboxStore _store;
     private readonly ToolboxLauncher _launcher;
@@ -57,6 +61,14 @@ public sealed class ToolboxService
             "本机加密保存敏感文件，解锁后可导入导出", order + 20);
         changed |= EnsureBuiltin("password-vault", PasswordVaultBuiltinId, "密码保管箱",
             "加密保存账号密码、TOTP 验证码和附件", order + 30);
+        changed |= EnsureBuiltin("certificate", CertificateBuiltinId, "证书 / TLS 检测",
+            "批量检测 URL 证书、有效期、证书链、SAN 与 TLS 版本", order + 40);
+        changed |= EnsureBuiltin("text-codec", TextCodecBuiltinId, "文本 / 编码转换",
+            "JSON/XML 格式化、Base64/URL/HTML、JWT、时间戳、哈希与 UUID", order + 50);
+        changed |= EnsureBuiltin("ssh-key", SshKeyBuiltinId, "SSH 密钥助手",
+            "生成 OpenSSH 密钥、查看公钥类型、注释与 SHA256 指纹", order + 60);
+        changed |= EnsureBuiltin("local-port", LocalPortBuiltinId, "本地端口 / 进程检查",
+            "查看本机监听端口、活动连接、PID、进程与路径", order + 70);
 
         if (changed)
             await PersistAsync();

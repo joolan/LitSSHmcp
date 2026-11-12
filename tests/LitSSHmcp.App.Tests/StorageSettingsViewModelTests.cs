@@ -39,7 +39,7 @@ public class StorageSettingsViewModelTests : IDisposable
         var vm = CreateVm(new AgentConfig { WorkspaceDir = ws });
         await vm.RefreshAsync();
 
-        Assert.Equal(12, vm.Stats.Count);
+        Assert.Equal(14, vm.Stats.Count);
         Assert.Equal(10, vm.Stats.Single(s => s.Name.Contains("config.json")).Bytes);
         Assert.Equal(20, vm.Stats.Single(s => s.Name.Contains("agent.db")).Bytes);
         Assert.Equal(40, vm.Stats.Single(s => s.Name.Contains("spill")).Bytes);

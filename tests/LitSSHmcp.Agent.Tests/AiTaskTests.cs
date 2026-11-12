@@ -103,6 +103,23 @@ public class AiTaskScheduleTests
     }
 }
 
+public class AiTaskTemplateTests
+{
+    [Fact]
+    public void Templates_are_valid_and_read_only()
+    {
+        Assert.NotEmpty(AiTaskTemplates.All);
+        foreach (var template in AiTaskTemplates.All)
+        {
+            var task = AiTaskTemplates.CreateTask(template);
+            Assert.True(task.ReadOnly);
+            Assert.Equal("Template", task.Source);
+            Assert.Contains(template.Name, task.Name);
+            Assert.Empty(task.Validate());
+        }
+    }
+}
+
 public class AiTaskStoreTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(),

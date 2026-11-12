@@ -6,6 +6,10 @@
 
 ### 新增
 
+- **证书 / TLS 检测（工具箱）**：支持批量粘贴或导入 `.txt/.csv` URL，并发检测 HTTPS/WSS 证书有效期、剩余天数、主题、颁发者、SAN、证书链、TLS 版本和校验错误；支持停止、详情复制和 CSV 导出。
+- **文本 / 编码转换（工具箱）**：JSON/XML 格式化、Base64/URL/HTML 编解码、JWT 解码、Unix 时间戳、SHA-256/SHA-512/MD5 与 UUID；支持文件导入、拖拽、交换输入输出和字符/行/UTF-8 字节统计。
+- **SSH 密钥助手（工具箱）**：生成 Ed25519 / RSA / ECDSA OpenSSH 密钥，支持口令、注释、公钥复制、SHA256 指纹与已有公钥解析。
+- **本地端口 / 进程检查（工具箱）**：查看 TCP/UDP 监听与活动连接、PID/进程路径，支持筛选、自动刷新、复制、CSV 导出和确认后结束进程。
 - **AI 定时任务**：桌面 App 内维护无人值守任务（指令、模型/智能体、只读、最大轮数、超时、token 预算、一次性/间隔/每日/每周/每月），支持启动补跑、运行历史与关联会话；可注册 Windows 计划任务，通过 `LitSSHmcp.App.exe --run-ai-task <任务Id>` 在 App 未运行时无界面执行。
 - **快照账号与差异**：新增 `accounts` 采集维度（账号、密码状态、特权组、authorized_keys 指纹、最近/失败登录、风险发现）和 `ssh_snapshot_diff`（账号、公钥、端口、服务、容器、域名变化）；桌面快照历史新增「账号摘要」与「对比上一份」。
 - **nginx 配置外置**：完整 `nginx -T` 配置按 `serverId + configHash` 写入 `NginxConfigs` 表，`detail="full"` 时回填；新增共享 `NginxConfigProbe`，快照采集与 HTTP 站点探测共用检测、`-T` 与 Tengine 兜底逻辑。
@@ -13,6 +17,13 @@
 ### 优化
 
 - **快照查询成本**：`portmap/systemd/docker` 默认返回摘要，`detail="full"` 取完整；新增 `profile=quick|full`、`sections` 采集选择、60s 刷新节流与 `status=fresh`；桌面采集支持取消。
+- **MCP/运维 harness**：MCP `structuredContent` 与 `content` 只向模型注入一份归一化结果；快照 summary 默认压缩 events/recent，spill 预览附 section 索引；工具步骤新增运行中进度与已耗时。
+- **提示与上下文**：核心系统提示新增 10~15 行短工具路由表（按启用分组动态生成）；新增任务工作记忆（目标/计划/已确认事实/未完成项，临时注入并同步 `agent_sessions.WorkingMemory`）；按快照/日志/批量/拓扑设置工具结果预算，超限先摘要再落盘；`SystemPromptBuilder.Build` 拆为 `SystemPromptContext` + `PromptComposer`，安全/工作区/记忆/脚本/工作日志/诊断等段落去重压缩，技能索引与资产清单设上限。
+- **巡检模板与报告**：AI 定时任务内置每日整机、磁盘、证书、安全基线、服务容器、变更对比 6 个只读模板；任务窗口支持从模板新建，每次运行生成 Markdown 报告并可打开，通知中心同步提示。
+- **通知数据纳入存储/备份**：存储统计新增 `notifications.json` / `notifications.db`，定时备份可勾选通知收件箱和投递记录。\n- **通知中心升级**：新增 `NotificationMessage`/`NotificationTypes`、渠道与路由配置（`notifications.channels/routes`）、收件箱持久化 `notifications.json`、消息类型路由、基础限频/去重和 App/Webhook 渠道；旧 `NotificationCenterService.Add` 保留为适配器。通知窗口新增「通知设置」页，可编辑渠道/规则并测试发送；Webhook 类渠道改为 SQLite Outbox 异步投递，失败按 30s/1m/5m/15m/30m 退避重试，5 次后进入死信；通知中心新增消息筛选和「投递记录」页，可查看状态并手动重试。
+- **AI 任务 UI**：工具栏收敛为「新建 / 立即运行 / 更多 / 刷新」，启停、报告、Windows 计划任务、删除移入「更多」和任务右键菜单，新增搜索筛选。
+- **健康评分与告警**：新增 `ServerHealthService`，基于快照资源/失败服务/安全/账号/nginx 证书计算 0-100 健康分；快照历史新增健康评分页签，快照完成后低于阈值或存在高风险时写入通知中心。
+- **大结果读取与失败恢复**：spill JSON 自动 pretty-print，新增 `spill(action="json", path=...)`；只读工具瞬时失败自动重试 1 次，常见失败附替代策略提示；复杂只读取证可按 `agent.autoSubAgentRouting` 自动预委派 `run_subagent`。
 - **远程文件上传**：单文件上传显示进度条与大文件进度，批量/目录上传显示不确定进度和具体失败原因。
 - **备份文件名**：备份 zip/`.lsbak` 文件名写入当前 App 版本，便于区分来源版本。
 - **界面细节**：修复 WPF-UI 子菜单在高 DPI 下的透明间隙/错位；桌面宠物「展示动作」改为子菜单。

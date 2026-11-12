@@ -436,7 +436,19 @@
                 <!-- AI 运维助手（常驻页面，切换导航不停止任务） -->
                 <Grid x:Name="AgentPage"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Agent}">
-                    <ContentControl Content="{Binding AgentPageView}"/>
+                    <ContentControl Content="{Binding AgentPageView}">
+                        <ContentControl.Style>
+                            <Style TargetType="ContentControl">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsAgentDetached}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Setter Property="IsHitTestVisible" Value="False"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ContentControl.Style>
+                    </ContentControl>
 
                     <StackPanel Panel.ZIndex="1" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440"
                                 Visibility="{Binding IsAgentDetached, Converter={StaticResource BoolToVis}}">

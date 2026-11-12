@@ -450,6 +450,9 @@ public partial class MainWindow : FluentWindow
         return System.Drawing.SystemIcons.Application;
     }
 
+    /// <summary>第二个 App 实例启动时唤起已有实例（含托盘/最小化/应用锁场景）。</summary>
+    public void ActivateFromSecondInstance() => RestoreFromTray();
+
     public void OpenAiAssistantFromPet(long? sessionId = null) => RestoreFromTray(() =>
     {
         if (WindowState == WindowState.Minimized)

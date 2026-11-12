@@ -114,7 +114,24 @@
       "guide"
     ]
   },
-  "snapshot": {
+  "notifications": {
+    "channels": [
+      { "id": "app", "name": "应用内", "type": "app", "enabled": true }
+    ],
+    "routes": [
+      {
+        "id": "critical-alerts",
+        "name": "高风险告警",
+        "enabled": true,
+        "types": ["health.critical", "security.alert", "snapshot.failed", "ai_task.failed", "backup.failed", "sync.failed", "web.login_failed"],
+        "channels": ["app"],
+        "minSeverity": "warning",
+        "rateLimitCount": 5,
+        "rateLimitWindowSeconds": 300,
+        "dedupeSeconds": 600
+      }
+    ]
+  },  "snapshot": {
     "useSudo": true,
     "retentionPerServer": 30,
     "timeoutSeconds": 180,
@@ -157,6 +174,7 @@
     "spillDir": "",
     "spillRetentionDays": 7,
     "enableSubAgent": true,
+    "autoSubAgentRouting": true,
     "subAgentMaxIterations": 8,
     "subAgentTimeoutSeconds": 240,
     "subAgentSummaryMaxChars": 2000,

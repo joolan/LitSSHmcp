@@ -141,7 +141,15 @@ public sealed class SyncScheduler : IDisposable
             }
 
             if (final is not null)
+            {
+                if (!final.Success)
+                {
+                    Notifications.NotificationCenterService.Add("同步", task.Name, final.Message,
+                        Notifications.NotificationSeverity.Error,
+                        LitSSHmcp.Core.Models.NotificationTypes.SyncFailed);
+                }
                 TaskCompleted?.Invoke(task.Id, final);
+            }
         }
         finally
         {

@@ -21,13 +21,14 @@
 
             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                 <ui:Button Content="刷新" Click="OnRefreshClick" Padding="12,5" Margin="0,0,8,0"/>
+                <ui:Button Content="新建" Click="OnNewFromTemplateClick" Padding="12,5" Margin="0,0,8,0"
+                           ToolTip="从预置巡检模板创建每日任务"/>
                 <ui:Button Content="立即运行" Click="OnRunNowClick" Padding="12,5" Margin="0,0,8,0"/>
-                <ui:Button Content="启用 / 停用" Click="OnToggleClick" Padding="12,5" Margin="0,0,8,0"/>
-                <ui:Button Content="删除" Click="OnDeleteClick" Padding="12,5" Margin="0,0,8,0"/>
-                <ui:Button Content="安装计划任务" Click="OnInstallWindowsTaskClick" Padding="12,5" Margin="0,0,8,0"
-                           ToolTip="App 未运行时由 Windows 计划任务拉起 headless 执行（使用当前 Windows 用户）"/>
-                <ui:Button Content="移除计划任务" Click="OnRemoveWindowsTaskClick" Padding="12,5" Margin="0,0,8,0"/>
-                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="8,0,0,0"
+                <ui:Button Content="更多" Click="OnMoreClick" Padding="12,5" Margin="0,0,8,0"
+                           ToolTip="启停、查看报告、Windows 计划任务、删除"/>
+                <TextBox x:Name="SearchBox" Width="180" Margin="8,0,0,0" VerticalContentAlignment="Center"
+                         ToolTip="按名称/调度筛选任务" TextChanged="OnSearchChanged"/>
+                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="10,0,0,0"
                            Foreground="{DynamicResource AppTextSecondaryBrush}"/>
             </StackPanel>
 
@@ -40,8 +41,20 @@
 
                 <DataGrid x:Name="TaskGrid" Grid.Column="0" AutoGenerateColumns="False" IsReadOnly="True"
                           SelectionMode="Single" SelectionChanged="OnTaskSelectionChanged"
+                          PreviewMouseRightButtonDown="OnTaskRightButtonDown"
                           HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                           CanUserAddRows="False" CanUserDeleteRows="False" RowHeight="30">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="立即运行" Click="OnRunNowClick"/>
+                            <MenuItem Header="启用 / 停用" Click="OnToggleClick"/>
+                            <MenuItem Header="查看报告" Click="OnOpenReportClick"/>
+                            <MenuItem Header="安装计划任务" Click="OnInstallWindowsTaskClick"/>
+                            <MenuItem Header="移除计划任务" Click="OnRemoveWindowsTaskClick"/>
+                            <Separator/>
+                            <MenuItem Header="删除" Click="OnDeleteClick"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="启用" Binding="{Binding EnabledText}" Width="50"/>
                         <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*"/>

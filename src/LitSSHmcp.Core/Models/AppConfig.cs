@@ -53,6 +53,9 @@ public class AppConfig
     /// <summary>触发事件（手动/定时/同步完成后按动作流水线执行 git、webhook、备份；App 运行期内生效）。</summary>
     public TriggerConfig[] Triggers { get; set; } = Array.Empty<TriggerConfig>();
 
+    /// <summary>通知中心：渠道与消息类型路由规则。</summary>
+    public NotificationConfig Notifications { get; set; } = new();
+
     /// <summary>应用锁（启动密码门卫）：防止他人拿到电脑后直接打开本程序操作。</summary>
     public AppLockConfig AppLock { get; set; } = new();
 
@@ -202,6 +205,9 @@ public class AgentConfig
 
     /// <summary>子代理返回给主上下文的摘要字符上限（500-8000，默认 2000）。</summary>
     public int SubAgentSummaryMaxChars { get; set; } = 2000;
+
+    /// <summary>复杂只读取证自动预委派给子代理（默认开；仅关键词/长度命中时触发，不改变写操作路径）。</summary>
+    public bool AutoSubAgentRouting { get; set; } = true;
 
     /// <summary>回答风格：concise(默认, 只讲重点) / standard / detailed；影响系统提示的长度与展开要求。</summary>
     public string ResponseStyle { get; set; } = "concise";

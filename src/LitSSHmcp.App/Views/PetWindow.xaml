@@ -35,7 +35,7 @@
                SnapsToDevicePixels="False"/>
         <Popup x:Name="BubblePopup"
                PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
-               Placement="Top" AllowsTransparency="True" StaysOpen="False" IsHitTestVisible="True">
+               Placement="Top" AllowsTransparency="True" StaysOpen="True" IsHitTestVisible="True">
             <Border x:Name="BubbleBorder" Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                     BorderThickness="1" CornerRadius="10" Padding="10,7" MaxWidth="220">
                 <TextBlock x:Name="BubbleText" TextWrapping="Wrap"

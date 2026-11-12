@@ -25,6 +25,7 @@ public class SnapshotHistoryViewModel : INotifyPropertyChanged
     private string _statusMessage = string.Empty;
     private string _accountsSummary = string.Empty;
     private string _diffText = string.Empty;
+    private string _healthText = string.Empty;
 
     public SnapshotHistoryViewModel(ISnapshotStore store, IConfigService configService)
     {
@@ -55,6 +56,7 @@ public class SnapshotHistoryViewModel : INotifyPropertyChanged
     public string StatusMessage { get => _statusMessage; set => Set(ref _statusMessage, value); }
     public string AccountsSummary { get => _accountsSummary; set => Set(ref _accountsSummary, value); }
     public string DiffText { get => _diffText; set => Set(ref _diffText, value); }
+    public string HealthText { get => _healthText; set => Set(ref _healthText, value); }
     public ICommand CompareCommand { get; }
 
     public async Task InitializeAsync(string? initialServerId)
@@ -124,6 +126,7 @@ public class SnapshotHistoryViewModel : INotifyPropertyChanged
 
         RawJson = Pretty(snapshot.DataJson);
         AccountsSummary = BuildAccountsSummary(snapshot.DataJson);
+        HealthText = BuildHealthSummary(SelectedServer?.Name, snapshot.DataJson);
         DiffText = string.Empty;
         (CompareCommand as RelayCommand)?.RaiseCanExecuteChanged();
         ParseSections(snapshot.DataJson);
@@ -147,6 +150,7 @@ public class SnapshotHistoryViewModel : INotifyPropertyChanged
         Summary = string.Empty;
         RawJson = string.Empty;
         AccountsSummary = string.Empty;
+        HealthText = string.Empty;
         DiffText = string.Empty;
         (CompareCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
@@ -210,6 +214,19 @@ public class SnapshotHistoryViewModel : INotifyPropertyChanged
         {
             StatusMessage = "对比失败: " + ex.Message;
         }
+    }
+
+    private static string BuildHealthSummary(string? serverName, string? dataJson)
+    {
+        var health = ServerHealthService.Evaluate(dataJson, serverName);
+        var lines = new List<string> { health.Summary };
+        if (health.Findings.Count > 0)
+        {
+            lines.Add(string.Empty);
+            lines.Add("主要发现:");
+            lines.AddRange(health.Findings.Take(12).Select(f => $"- [{f.Severity}] {f.Title}: {f.Detail}"));
+        }
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static string BuildAccountsSummary(string? dataJson)

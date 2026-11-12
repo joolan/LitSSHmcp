@@ -158,6 +158,21 @@ app.MapPost("/api/login", async (LoginRequest req, WebAuthService auth, WebAcces
         });
     }
     log.Write(outcome.Status == WebLoginStatus.Locked ? "login_locked" : "login_failure", req.Username, ip, detail: outcome.Status.ToString());
+    try
+    {
+        await new LitSSHmcp.Core.Services.Notifications.NotificationInboundStore().EnqueueAsync(
+            LitSSHmcp.Core.Models.NotificationTypes.WebLoginFailed,
+            "Web 助手",
+            $"Web 登录失败: {(string.IsNullOrWhiteSpace(username) ? "（空用户名）" : username)}",
+            $"来源 IP: {ip ?? "-"}；状态: {outcome.Status}；时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+            "warning",
+            $"web-login:{accountKey}:{ip}:{DateTime.UtcNow:yyyyMMddHHmm}",
+            ctx.RequestAborted);
+    }
+    catch
+    {
+        // 通知入队失败不影响登录响应
+    }
     if (outcome.Status == WebLoginStatus.Locked)
     {
         return Results.Json(

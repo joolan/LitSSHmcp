@@ -374,6 +374,9 @@ public class ConfigService : IConfigService, IStrictConfigService
         foreach (var action in (config.Triggers ?? Array.Empty<TriggerConfig>()).SelectMany(t => t?.Actions ?? Array.Empty<TriggerAction>()))
             action.Secret = _protector.Protect(action.Secret);
 
+        foreach (var channel in config.Notifications?.Channels ?? Array.Empty<NotificationChannelConfig>())
+            channel.Secret = _protector.Protect(channel.Secret);
+
         if (config.AppLock is not null)
         {
             config.AppLock.PasswordHash = _protector.Protect(config.AppLock.PasswordHash);
@@ -422,6 +425,9 @@ public class ConfigService : IConfigService, IStrictConfigService
         foreach (var action in (config.Triggers ?? Array.Empty<TriggerConfig>()).SelectMany(t => t?.Actions ?? Array.Empty<TriggerAction>()))
             action.Secret = _protector.Unprotect(action.Secret);
 
+        foreach (var channel in config.Notifications?.Channels ?? Array.Empty<NotificationChannelConfig>())
+            channel.Secret = _protector.Unprotect(channel.Secret);
+
         if (config.AppLock is not null)
         {
             config.AppLock.PasswordHash = _protector.Unprotect(config.AppLock.PasswordHash);
@@ -448,6 +454,9 @@ public class ConfigService : IConfigService, IStrictConfigService
             if (HasPlaintextLine(mcp.Env, '=')) return true;
             if (HasPlaintextLine(mcp.Headers, ':')) return true;
         }
+
+        foreach (var channel in config.Notifications?.Channels ?? Array.Empty<NotificationChannelConfig>())
+            if (HasPlaintext(channel.Secret)) return true;
 
         return config.DataSources.Any(ds => HasPlaintext(ds.Password)) ||
                (config.RemoteDesktops ?? Array.Empty<RemoteDesktopConfig>()).Any(rd => HasPlaintext(rd.Password)) ||

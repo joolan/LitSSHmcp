@@ -239,7 +239,10 @@ public class SnapshotTools
         }
     }
 
-    private static SnapshotDto BuildDto(
+    private static bool IsSummaryEvent(SnapshotEvent evt) =>
+        evt.Kind is "started" or "completed" or "failed" or "collector_failed";
+
+    internal static SnapshotDto BuildDto(
         SshServerConfig server,
         ServerSnapshot? snapshot,
         List<SnapshotEvent> events,
@@ -252,6 +255,11 @@ public class SnapshotTools
         string? account = null,
         string? riskLevel = null)
     {
+        var summaryView = !full && string.IsNullOrWhiteSpace(section);
+        var visibleEvents = summaryView
+            ? events.Where(IsSummaryEvent).TakeLast(8).ToList()
+            : events;
+        var visibleRecent = summaryView ? recent.Take(5).ToList() : recent;
         var dto = new SnapshotDto
         {
             Success = success,
@@ -260,8 +268,8 @@ public class SnapshotTools
             ServerId = server.Id,
             ServerName = server.Name,
             Host = server.Host,
-            Events = events.Select(ToEventDto).ToList(),
-            Recent = recent.Select(r => new SnapshotSummaryDto
+            Events = visibleEvents.Select(ToEventDto).ToList(),
+            Recent = visibleRecent.Select(r => new SnapshotSummaryDto
             {
                 Id = r.Id,
                 State = r.Status.ToString().ToLowerInvariant(),
@@ -283,6 +291,8 @@ public class SnapshotTools
         dto.Escalation = snapshot.Escalation;
         dto.CollectorVersion = snapshot.CollectorVersion;
         dto.Data = BuildDataView(snapshot.DataJson, section, full, account, riskLevel);
+        if (summaryView)
+            dto.Hint = "summary 已压缩 events/recent；需要完整事件或全部数据用 detail=\"full\"，单维度用 section=...";
         return dto;
     }
 

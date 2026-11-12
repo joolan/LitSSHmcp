@@ -64,9 +64,11 @@ public partial class BackupHistoryWindow : FluentWindow
         var result = await service.UploadExistingAsync(plan, config, item.Path);
         StatusText.Text = result.Message;
         if (result.Success)
-            NotificationCenterService.Add("备份", plan.Name, "OSS 上传成功。", NotificationSeverity.Success);
+            NotificationCenterService.Add("备份", plan.Name, "OSS 上传成功。", NotificationSeverity.Success,
+                LitSSHmcp.Core.Models.NotificationTypes.BackupSucceeded);
         else
-            NotificationCenterService.Add("备份", plan.Name, result.Message, NotificationSeverity.Error);
+            NotificationCenterService.Add("备份", plan.Name, result.Message, NotificationSeverity.Error,
+                LitSSHmcp.Core.Models.NotificationTypes.BackupFailed);
         if (!result.Success)
             _dialogs.Error(result.Message, "重试 OSS 上传失败");
     });

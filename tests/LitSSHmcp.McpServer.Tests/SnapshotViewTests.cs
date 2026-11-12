@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using LitSSHmcp.Core.Models;
 using LitSSHmcp.McpServer.Tools;
 using Xunit;
 
@@ -247,6 +248,38 @@ public class SnapshotViewTests
         Assert.Equal("full", (string?)root["view"]);
         Assert.NotNull(root["sections"]!["resource"]!["data"]);
         Assert.NotNull(root["sections"]!["portmap"]!["data"]);
+    }
+
+    [Fact]
+    public void Summary_build_dto_limits_events_and_recent_history()
+    {
+        var server = new SshServerConfig { Id = "s", Name = "srv", Host = "host" };
+        var snapshot = new ServerSnapshot
+        {
+            Id = 1,
+            ServerId = "s",
+            Status = SnapshotStatus.Succeeded,
+            DataJson = """{"sections":{}}"""
+        };
+        var events = new List<SnapshotEvent>
+        {
+            new() { Kind = "started" },
+            new() { Kind = "collector_started" },
+            new() { Kind = "collector_completed" },
+            new() { Kind = "completed" }
+        };
+        for (var i = 0; i < 20; i++)
+            events.Add(new SnapshotEvent { Kind = "collector_started" });
+        var recent = Enumerable.Range(1, 10)
+            .Select(i => new ServerSnapshot { Id = i, Status = SnapshotStatus.Succeeded })
+            .ToList();
+
+        var dto = SnapshotTools.BuildDto(server, snapshot, events, recent, true, "ok");
+
+        Assert.True(dto.Events!.Count <= 8);
+        Assert.DoesNotContain(dto.Events!, e => e.Kind == "collector_started");
+        Assert.Equal(5, dto.Recent!.Count);
+        Assert.Contains("summary", dto.Hint!);
     }
 
     [Fact]

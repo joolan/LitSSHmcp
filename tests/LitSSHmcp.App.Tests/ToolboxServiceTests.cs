@@ -34,6 +34,10 @@ public class ToolboxServiceTests : IDisposable
         Assert.Contains(service.Items, i => i.Type == ToolboxItemType.Script && i.Target == script && i.ScriptShell == "cmd");
         Assert.Contains(service.Items, i => i.Type == ToolboxItemType.Folder && i.Target == folder);
         Assert.Contains(service.Items, i => i.Type == ToolboxItemType.Builtin && i.BuiltinId == "hosts");
+        Assert.Contains(service.Items, i => i.Type == ToolboxItemType.Builtin && i.BuiltinId == "certificate");
+        Assert.Contains(service.Items, i => i.Type == ToolboxItemType.Builtin && i.BuiltinId == "text-codec");
+        Assert.Contains(service.Items, i => i.Type == ToolboxItemType.Builtin && i.BuiltinId == "ssh-key");
+        Assert.Contains(service.Items, i => i.Type == ToolboxItemType.Builtin && i.BuiltinId == "local-port");
 
         Assert.Equal(0, service.AddFromPaths(new[] { exe, text, script, folder }));
     }

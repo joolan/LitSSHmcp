@@ -106,11 +106,16 @@ public partial class AgentView : UserControl
 
     public bool IsDetached { get; private set; }
 
+    /// <summary>独立窗口模式下由 AgentWindow 显式登记，避免审批激活时错误解析到主窗口。</summary>
+    public Window? HostWindow { get; private set; }
+
     public void SetDetached(bool detached)
     {
         IsDetached = detached;
         DetachButton.Visibility = detached ? Visibility.Collapsed : Visibility.Visible;
     }
+
+    public void SetHostWindow(Window? window) => HostWindow = window;
 
     public (double ScrollOffset, int CaretIndex) CaptureViewState()
         => (ChatScroll.VerticalOffset, InputBox.CaretIndex);
@@ -127,8 +132,78 @@ public partial class AgentView : UserControl
 
     private void OnDetach(object sender, RoutedEventArgs e) => DetachRequested?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>
+    /// 审批卡片出现时，把承载当前 AgentView 的窗口切到前台；独立窗口模式下
+    /// 避免用户第一次点击只激活主窗口、审批按钮却不生效。
+    /// 审批需要用户立即处理，因此即使应用当前不在前台也会主动激活 AI 窗口。
+    /// </summary>
+    private void BringApprovalWindowToFront()
+    {
+        var window = HostWindow ?? Window.GetWindow(this);
+        if (window is not { IsLoaded: true, IsVisible: true } || window.IsActive)
+            return;
+
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (window.IsLoaded && window.IsVisible && !window.IsActive)
+                window.Activate();
+        }), System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// 鼠标移入审批卡片时先把承载窗口激活，避免实际点击发生在窗口激活之前导致第一次点击被吞。
+    /// </summary>
+    private void OnApprovalCardMouseEnter(object sender, MouseEventArgs e)
+    {
+        if ((HostWindow ?? Window.GetWindow(this)) is { IsLoaded: true, IsVisible: true } window
+            && !window.IsActive)
+            window.Activate();
+    }
+
+    /// <summary>
+    /// 审批卡片上的第一次点击先确保所属窗口激活；若命中的是审批按钮，直接在
+    /// PreviewMouseDown 执行命令，避免第一次点击被窗口激活流程吞掉。
+    /// </summary>
+    private void OnApprovalCardPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if ((HostWindow ?? Window.GetWindow(this)) is { IsLoaded: true, IsVisible: true } window
+            && !window.IsActive)
+            window.Activate();
+
+        if (FindAncestor<System.Windows.Controls.Button>(e.OriginalSource as DependencyObject)
+            is not { IsEnabled: true } button)
+            return;
+
+        if (button.Command is { } command && command.CanExecute(button.CommandParameter))
+        {
+            command.Execute(button.CommandParameter);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>鼠标按下被窗口激活流程吞掉时，抬起事件仍补执行一次审批命令。</summary>
+    private void OnApprovalCardPreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<System.Windows.Controls.Button>(e.OriginalSource as DependencyObject)
+            is not { IsEnabled: true } button)
+            return;
+
+        if (button.Command is { } command && command.CanExecute(button.CommandParameter))
+        {
+            command.Execute(button.CommandParameter);
+            e.Handled = true;
+        }
+    }
+
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(AgentViewModel.HasPendingApproval))
+        {
+            if (_viewModel.HasPendingApproval)
+                BringApprovalWindowToFront();
+            return;
+        }
+
         if (e.PropertyName != nameof(AgentViewModel.SelectedSession))
             return;
 
@@ -1184,7 +1259,11 @@ public partial class AgentView : UserControl
         {
             if (node is T match)
                 return match;
-            node = System.Windows.Media.VisualTreeHelper.GetParent(node);
+
+            // 按钮文本的 OriginalSource 可能是 Run 等内容元素，不能直接用 VisualTreeHelper。
+            node = node is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D
+                ? System.Windows.Media.VisualTreeHelper.GetParent(node)
+                : System.Windows.LogicalTreeHelper.GetParent(node);
         }
         return null;
     }

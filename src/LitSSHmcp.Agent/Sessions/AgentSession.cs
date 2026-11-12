@@ -4,6 +4,7 @@ using System.Text.Json;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 
 namespace LitSSHmcp.Agent;
@@ -37,6 +38,7 @@ public sealed class AgentSession
     private readonly Func<long, long, bool>? _budgetCheck;
     private readonly Action<long, long>? _onUsageDelta;
     private readonly WorkLogStore? _workLog;
+    private readonly AgentWorkingMemory _workingMemory = new();
 
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
     private bool _planMode;
@@ -74,6 +76,8 @@ public sealed class AgentSession
 
     public List<ChatMessage> Messages { get; } = new();
 
+    public AgentWorkingMemory WorkingMemory => _workingMemory;
+
     public AgentSession(
         IChatClient client,
         AgentProviderConfig provider,
@@ -89,7 +93,8 @@ public sealed class AgentSession
         Func<long, long, bool>? budgetCheck = null,
         Action<long, long>? onUsageDelta = null,
         WorkLogStore? workLog = null,
-        string? assetGraph = null)
+        string? assetGraph = null,
+        string? workingMemoryJson = null)
     {
         _client = client;
         _provider = provider;
@@ -107,6 +112,7 @@ public sealed class AgentSession
         _budgetCheck = budgetCheck;
         _onUsageDelta = onUsageDelta;
         _workLog = workLog;
+        _workingMemory.ImportJson(workingMemoryJson);
         Messages.Add(new ChatMessage(ChatRole.System, systemPrompt));
         if (history is not null)
             Messages.AddRange(history);
@@ -277,9 +283,78 @@ public sealed class AgentSession
         }
     }
 
+    private void AddWorkingMemoryContext(List<ChatMessage> transientContext)
+    {
+        _workingMemory.SetPlan(_planProvider?.Invoke());
+        var text = _workingMemory.BuildContext();
+        if (text is null)
+            return;
+
+        var message = new ChatMessage(ChatRole.System, text);
+        Messages.Insert(Messages.Count - 1, message);
+        transientContext.Add(message);
+    }
+
+    /// <summary>
+    /// 复杂只读取证的自动预委派：在调用主模型前，把整段请求交给隔离的 run_subagent，
+    /// 主上下文只接收摘要。只做只读取证，不改变后续写操作路径；失败时静默回退主会话。
+    /// </summary>
+    private async Task TryAutoDelegateAsync(string userText, IProgress<AgentEvent>? progress,
+        List<ChatMessage> transientContext, CancellationToken ct)
+    {
+        if (!ShouldAutoDelegate(userText, _config) || !_toolsByName.ContainsKey(SubAgents.ToolName))
+            return;
+
+        var callId = "auto-subagent-" + Guid.NewGuid().ToString("N")[..8];
+        var arguments = new Dictionary<string, object?> { ["task"] = userText };
+        progress?.Report(new AgentEvent(AgentEventKind.ToolCall,
+            ToolName: SubAgents.ToolName, ArgumentsJson: SerializeArgs(arguments), CallId: callId));
+
+        var call = new FunctionCallContent(callId, SubAgents.ToolName, arguments);
+        var (ok, text, ms) = await InvokeOneAsync(call, progress, ct);
+        _workingMemory.RecordToolResult(SubAgents.ToolName, ok, text);
+        progress?.Report(new AgentEvent(AgentEventKind.ToolResult,
+            ToolName: SubAgents.ToolName, Text: text, ToolSuccess: ok,
+            DurationMs: ms, CallId: callId));
+
+        if (!ok || string.IsNullOrWhiteSpace(text))
+        {
+            progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                Text: "自动子代理预取证未返回有效摘要，继续使用主会话取证。"));
+            return;
+        }
+
+        var context = new ChatMessage(ChatRole.System,
+            "## 自动子代理只读预取证\n" +
+            "以下摘要由隔离子代理生成，原始大输出未进入主上下文。优先基于该摘要回答；" +
+            "仅当摘要不足时再调用必要的只读工具，不要重复委派同一任务。\n\n" + text.Trim());
+        Messages.Insert(Messages.Count - 1, context);
+        transientContext.Add(context);
+    }
+
+    internal static bool ShouldAutoDelegate(string userText, AgentConfig config)
+    {
+        if (!config.AutoSubAgentRouting || !config.EnableSubAgent ||
+            config.Profile is AgentToolProfile.Chat or AgentToolProfile.Change)
+            return false;
+        if (string.IsNullOrWhiteSpace(userText) || userText.Contains("不要子代理", StringComparison.Ordinal) ||
+            userText.Contains("直接执行", StringComparison.Ordinal))
+            return false;
+
+        var text = userText.Trim();
+        var keywords = new[]
+        {
+            "全面", "巡检", "排查", "所有服务器", "多台", "逐台", "批量", "整体",
+            "大日志", "日志排查", "影响面", "根因", "对比", "全量", "多个服务器"
+        };
+        return (keywords.Any(k => text.Contains(k, StringComparison.OrdinalIgnoreCase)) && text.Length >= 10) ||
+               text.Length >= 200;
+    }
+
     private async Task SendCoreAsync(IReadOnlyList<AIContent> userContents, IProgress<AgentEvent>? progress, CancellationToken ct)
     {
         var userText = string.Concat(userContents.OfType<TextContent>().Select(t => t.Text));
+        _workingMemory.SetGoal(userText);
 
         // 发送前修复历史里可能残留的孤儿 tool_calls（如上次中断），避免服务端拒绝整段请求。
         RepairOrphanToolCalls();
@@ -306,6 +381,9 @@ public sealed class AgentSession
         var transientContext = new List<ChatMessage>(1);
         try
         {
+            await TryAutoDelegateAsync(userText, progress, transientContext, ct);
+            AddWorkingMemoryContext(transientContext);
+
             var retrieval = await BuildRetrievalContextAsync(userText, recentUserTexts, progress, ct);
             if (retrieval is not null)
             {
@@ -570,7 +648,7 @@ public sealed class AgentSession
                     // 用 Task.Run 隔离：部分本地工具在首个 await 前可能同步阻塞，
                     // 直接调用会先占满当前线程，导致“并行”退化为串行（见并行工具测试）。
                     var tasks = parallelIndices
-                        .Select(i => Task.Run(() => InvokeOneAsync(calls[i].Name, calls[i].Arguments, ct), ct))
+                        .Select(i => Task.Run(() => InvokeOneAsync(calls[i], progress, ct), ct))
                         .ToArray();
                     await Task.WhenAll(tasks);   // 任一取消将抛出，由外层补齐孤儿并中止
                     for (var k = 0; k < parallelIndices.Count; k++)
@@ -579,19 +657,20 @@ public sealed class AgentSession
                 else if (parallelIndices.Count == 1)
                 {
                     var only = parallelIndices[0];
-                    results[only] = await InvokeOneAsync(calls[only].Name, calls[only].Arguments, ct);
+                    results[only] = await InvokeOneAsync(calls[only], progress, ct);
                 }
 
                 for (var i = 0; i < calls.Count; i++)
                 {
                     if (!parallelIndices.Contains(i))
-                        results[i] = await InvokeOneAsync(calls[i].Name, calls[i].Arguments, ct);
+                        results[i] = await InvokeOneAsync(calls[i], progress, ct);
                 }
 
                 // 按原始顺序回填结果、事件与历史（保持 tool_calls ↔ tool 配对与 UI 步骤对应）。
                 for (var i = 0; i < calls.Count; i++)
                 {
                     var (ok, resultText, ms) = results[i];
+                    _workingMemory.RecordToolResult(calls[i].Name, ok, resultText);
                     progress?.Report(new AgentEvent(
                         AgentEventKind.ToolResult, ToolName: calls[i].Name, Text: resultText,
                         ToolSuccess: ok, DurationMs: ms, CallId: calls[i].CallId));
@@ -881,42 +960,131 @@ public sealed class AgentSession
 
     /// <summary>执行单个工具调用（异常转为失败结果；取消向上抛，由调用方补齐孤儿）。</summary>
     private async Task<(bool Ok, string Text, long Ms)> InvokeOneAsync(
-        string name, IDictionary<string, object?>? arguments, CancellationToken ct)
+        FunctionCallContent call, IProgress<AgentEvent>? progress, CancellationToken ct)
     {
+        var name = call.Name;
+        var arguments = call.Arguments;
+        var callId = call.CallId;
+
         if (IsDenied(name))
             return (false, DeniedMessage(name), 0);
         if (IsPlanBlocked(name))
             return (false, PlanBlockedMessage(name), 0);
 
-        var ok = true;
-        string resultText;
+        if (!_toolsByName.TryGetValue(name, out var tool))
+            return (false, ToolFailureHints.Append(name, $"未知工具: {name}"), 0);
+
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var heartbeat = ReportToolProgressHeartbeatAsync(name, callId, stopwatch, progress, heartbeatCts.Token);
         try
         {
-            if (!_toolsByName.TryGetValue(name, out var tool))
+            for (var attempt = 0; ; attempt++)
             {
-                ok = false;
-                resultText = $"未知工具: {name}";
+                try
+                {
+                    IProgress<ProgressNotificationValue>? mcpProgress = progress is null
+                        ? null
+                        : new Progress<ProgressNotificationValue>(value =>
+                        {
+                            var message = string.IsNullOrWhiteSpace(value.Message)
+                                ? FormatProgress(value)
+                                : value.Message + FormatProgress(value);
+                            progress.Report(new AgentEvent(AgentEventKind.ToolProgress,
+                                Text: message, ToolName: name, CallId: callId));
+                        });
+
+                    var result = await tool.InvokeAsync(arguments, mcpProgress, ct);
+                    var normalized = McpToolResultNormalizer.Normalize(result);
+                    var resultText = ToolResultFormatter.Normalize(normalized.Text);
+
+                    if (!normalized.IsError)
+                        return (true, resultText, stopwatch.ElapsedMilliseconds);
+
+                    if (attempt == 0 && IsRetryableReadOnly(tool, name, resultText, ct))
+                    {
+                        progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                            Text: $"工具 {name} 瞬时失败，自动重试 1 次。",
+                            ToolName: name, CallId: callId));
+                        await Task.Delay(350, ct);
+                        continue;
+                    }
+
+                    return (false, ToolFailureHints.Append(name, resultText), stopwatch.ElapsedMilliseconds);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (attempt == 0 && IsRetryableReadOnly(tool, name, ex.Message, ct))
+                    {
+                        progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                            Text: $"工具 {name} 瞬时异常，自动重试 1 次：{ex.Message}",
+                            ToolName: name, CallId: callId));
+                        await Task.Delay(350, ct);
+                        continue;
+                    }
+
+                    return (false,
+                        ToolFailureHints.Append(name, "工具执行异常: " + ex.Message),
+                        stopwatch.ElapsedMilliseconds);
+                }
             }
-            else
+        }
+        finally
+        {
+            heartbeatCts.Cancel();
+            try { await heartbeat; } catch (OperationCanceledException) { /* 正常取消 */ }
+            stopwatch.Stop();
+        }
+    }
+
+    private static bool IsRetryableReadOnly(IAgentTool tool, string name, string text, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested)
+            return false;
+        var safeToRetry = tool.ReadOnly ||
+                          string.Equals(name, "ssh_snapshot_refresh", StringComparison.OrdinalIgnoreCase);
+        if (!safeToRetry)
+            return false;
+        if (HasAny(text, "approval_timeout", "approval_unavailable", "rejected", "denied", "canceled", "cancelled"))
+            return false;
+        return HasAny(text, "timeout", "timed out", "connection refused", "connection reset", "broken pipe",
+            "temporarily unavailable", "service unavailable", "429", "502", "503", "504", "eof");
+    }
+
+    private static string FormatProgress(ProgressNotificationValue value)
+    {
+        if (value.Total is > 0)
+            return $" {value.Progress * 100 / value.Total:F0}%";
+        return value.Progress > 0 ? $" {value.Progress}" : string.Empty;
+    }
+
+    private static async Task ReportToolProgressHeartbeatAsync(string name, string? callId,
+        System.Diagnostics.Stopwatch stopwatch, IProgress<AgentEvent>? progress, CancellationToken ct)
+    {
+        if (progress is null)
+            return;
+        try
+        {
+            while (true)
             {
-                var result = await tool.InvokeAsync(arguments, ct);
-                resultText = result?.ToString() ?? string.Empty;
+                await Task.Delay(1500, ct);
+                progress.Report(new AgentEvent(AgentEventKind.ToolProgress,
+                    Text: $"已运行 {stopwatch.Elapsed.TotalSeconds:F0}s",
+                    ToolName: name, CallId: callId));
             }
         }
         catch (OperationCanceledException)
         {
-            throw;
+            // 工具结束/取消
         }
-        catch (Exception ex)
-        {
-            ok = false;
-            resultText = "工具执行异常: " + ex.Message;
-        }
-        stopwatch.Stop();
-        // 规范化：去掉 \uXXXX 转义、展开内嵌 JSON、保持紧凑——模型更省 token，界面也可读。
-        return (ok, ToolResultFormatter.Normalize(resultText), stopwatch.ElapsedMilliseconds);
     }
+
+    private static bool HasAny(string text, params string[] tokens) =>
+        tokens.Any(token => text.Contains(token, StringComparison.OrdinalIgnoreCase));
 
     // ---- 真实用量（provider 在响应里返回的 usage；不支持时保持 null，一切回退为估算） ----
 
@@ -1402,7 +1570,7 @@ public sealed class AgentSession
     /// 日志类工具保留尾部（最新日志），其余保留头部；若启用落盘，超大结果写入文件并只放预览 + <c>spill://</c> 句柄。</summary>
     private string BuildToolResultContextText(string toolName, string resultText)
     {
-        var max = _config.ToolResultMaxChars;
+        var max = ToolResultBudget.Resolve(toolName, _config.ToolResultMaxChars);
         if (max > 0 && toolName.Equals("mcp_usage_guide", StringComparison.OrdinalIgnoreCase))
             max = Math.Max(max, GuideResultMaxChars);
         if (max <= 0 || resultText.Length <= max)
@@ -1420,11 +1588,14 @@ public sealed class AgentSession
             {
                 var handle = _spill.Save(toolName, resultText);
                 var lines = CountLines(resultText);
-                var preview = tail
-                    ? resultText[^Math.Min(max, resultText.Length)..]
-                    : resultText[..Math.Min(max, resultText.Length)];
+                var summary = ToolResultSummaryBuilder.Build(toolName, resultText, Math.Min(max, 3000));
+                var preview = summary.Length > 0
+                    ? summary
+                    : (tail
+                        ? resultText[^Math.Min(max, resultText.Length)..]
+                        : resultText[..Math.Min(max, resultText.Length)]);
                 var label = tail ? "以下为最新内容" : "预览";
-                return preview +
+                return preview + BuildSpillSectionIndex(resultText) +
                     $"\n…[结果过大({resultText.Length} 字符/{lines} 行), 已落盘为 {SpillStore.Scheme}{handle}; " +
                     $"用 spill(action=\"read\", handle=\"{handle}\", offset, limit) 分段读取, spill(action=\"grep\", handle=\"{handle}\", pattern) 搜索, spill(action=\"list\") 列出; {label}]";
             }
@@ -1434,9 +1605,47 @@ public sealed class AgentSession
             }
         }
 
+        var fallbackSummary = ToolResultSummaryBuilder.Build(toolName, resultText, Math.Min(max, 3000));
+        if (fallbackSummary.Length > 0)
+            return fallbackSummary + "\n…[原始结果已按工具预算压缩; 完整结果见界面轨迹]";
+
         return tail
             ? $"[前 {resultText.Length - max} 字符已截断, 以下为最新内容]\n" + resultText[^max..]
             : resultText[..max] + $"\n…[已截断 {resultText.Length - max} 字符，完整结果见界面轨迹]";
+    }
+
+    /// <summary>
+    /// 快照类结果落盘时附加 section 索引，减少模型对同一文件反复 grep。
+    /// 只读取结构，不改变原始结果。
+    /// </summary>
+    internal static string BuildSpillSectionIndex(string resultText)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(resultText);
+            var root = doc.RootElement;
+            JsonElement sections;
+            if (root.TryGetProperty("data", out var data) && data.TryGetProperty("sections", out sections) ||
+                root.TryGetProperty("sections", out sections))
+            {
+                var parts = new List<string>();
+                foreach (var section in sections.EnumerateObject())
+                {
+                    if (section.Value.ValueKind != JsonValueKind.Object)
+                        continue;
+                    var status = section.Value.TryGetProperty("status", out var s) ? s.ToString() : "?";
+                    var chars = section.Value.TryGetProperty("dataChars", out var c) ? c.ToString() : "?";
+                    parts.Add($"{section.Name}({status},{chars})");
+                }
+                if (parts.Count > 0)
+                    return $"\n[快照维度索引] {string.Join("; ", parts)}。需要单维度用 ssh_snapshot_get(section=\"...\")，不要逐段 grep 落盘文件。";
+            }
+        }
+        catch (JsonException)
+        {
+            // 非 JSON 结果不附加索引
+        }
+        return string.Empty;
     }
 
     private static int CountLines(string text)

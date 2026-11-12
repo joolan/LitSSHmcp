@@ -203,7 +203,7 @@ MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mc
 
 > 新增 `accounts` 维度：账号、密码状态、authorized_keys 指纹、最近登录、失败登录与风险发现。`nginx_tls` 新增 `serverType`/`version`/`configHash`/`configFallback`。
 >
-> `section="accounts"` 默认返回 `summary` + `riskyUsers`/`privilegedUsers`/`loginUsers`/`keyUsers` + 风险 findings；完整 `users`/`authorizedKeys` 用 `detail="full"`。大结果落盘后，`spill(action="grep")` 对单行 JSON 返回匹配点前后上下文窗口。
+> `section="accounts"` 默认返回 `summary` + `riskyUsers`/`privilegedUsers`/`loginUsers`/`keyUsers` + 风险 findings；完整 `users`/`authorizedKeys` 用 `detail="full"`。大结果落盘后 JSON 会自动 pretty-print；可用 `spill(action="json", path="data.sections.resource")` 结构化读取，或 `spill(action="grep")` 搜索。
 - **参数**：`serverId`（服务器标识）、`snapshotId`（可选，取某一份历史快照；不传取该服务器**最新一份**）、`section`（可选，只取某维度完整数据：`resource`/`portmap`/`docker`/`nginx_tls`/`systemd`/`accounts`/`security`；不传返回概览）、`detail`（可选，`summary` 默认 / `full` 取全部完整数据）
 - **返回**：`{ success, status, hint, serverId, serverName, host, snapshotId, state, createdAt, completedAt, durationMs, escalation, collectorVersion, data, events, recent }`
   - **视图（重要）**：`data.view` = `summary`（默认）/`section`/`full`。**默认 `summary` 不返回各维度完整 `data`**，只给每个 section 的 `status`/`durationMs`/`error`/`note`/`dataChars` 与 `headline`（关键指标，如 resource 的负载/内存/磁盘/top 进程/告警、portmap 的计数、docker/nginx/systemd/security 的概要），并附 `hint` 提示按需拉取——这样避免把 >15 万字符一次性塞进上下文。**需要某维度完整数据用 `section="portmap"` 等**（含该维度完整 `data`，超长数组/字符串仍会压缩并提示）；**`detail="full"` 才返回全部完整数据**（较大）。

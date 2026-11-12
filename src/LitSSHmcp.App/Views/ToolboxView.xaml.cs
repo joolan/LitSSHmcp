@@ -18,6 +18,10 @@ public partial class ToolboxView : UserControl
     private PasswordGeneratorWindow? _passwordWindow;
     private EncryptedVaultWindow? _vaultWindow;
     private PasswordVaultWindow? _passwordVaultWindow;
+    private CertificateToolWindow? _certificateWindow;
+    private TextCodecToolWindow? _textCodecWindow;
+    private SshKeyToolWindow? _sshKeyWindow;
+    private LocalPortToolWindow? _localPortWindow;
     private ToolboxItemViewModel? _dragItem;
     private ToolboxItemViewModel? _dropTarget;
     private Point _dragStart;
@@ -145,6 +149,54 @@ public partial class ToolboxView : UserControl
                 _passwordVaultWindow = null;
                 new UserDialogService().Error("打开密码保管箱失败：" + ex.Message, "工具箱");
             }
+        }
+        if (string.Equals(id, "certificate", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_certificateWindow is { IsLoaded: true })
+            {
+                _certificateWindow.Activate();
+                return;
+            }
+
+            _certificateWindow = new CertificateToolWindow { Owner = Window.GetWindow(this) };
+            _certificateWindow.Closed += (_, _) => _certificateWindow = null;
+            _certificateWindow.Show();
+        }
+        if (string.Equals(id, "text-codec", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_textCodecWindow is { IsLoaded: true })
+            {
+                _textCodecWindow.Activate();
+                return;
+            }
+
+            _textCodecWindow = new TextCodecToolWindow { Owner = Window.GetWindow(this) };
+            _textCodecWindow.Closed += (_, _) => _textCodecWindow = null;
+            _textCodecWindow.Show();
+        }
+        if (string.Equals(id, "ssh-key", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_sshKeyWindow is { IsLoaded: true })
+            {
+                _sshKeyWindow.Activate();
+                return;
+            }
+
+            _sshKeyWindow = new SshKeyToolWindow { Owner = Window.GetWindow(this) };
+            _sshKeyWindow.Closed += (_, _) => _sshKeyWindow = null;
+            _sshKeyWindow.Show();
+        }
+        if (string.Equals(id, "local-port", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_localPortWindow is { IsLoaded: true })
+            {
+                _localPortWindow.Activate();
+                return;
+            }
+
+            _localPortWindow = new LocalPortToolWindow { Owner = Window.GetWindow(this) };
+            _localPortWindow.Closed += (_, _) => _localPortWindow = null;
+            _localPortWindow.Show();
         }
     }
 

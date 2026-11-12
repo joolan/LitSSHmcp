@@ -22,6 +22,7 @@ public class LocalTerminalToolTests
         var marker = Guid.NewGuid().ToString("N")[..8];
         LocalAudit.OverrideSink = log => { lock (records) records.Add(log); return Task.CompletedTask; };
         LocalAudit.AmbientSessionId = "agent-audit-test";
+        using var auditScope = LocalAudit.BeginRunScope("agent-audit-test");
         try
         {
             // ① 白名单外 → 策略拦截 (Blocked / blocked)

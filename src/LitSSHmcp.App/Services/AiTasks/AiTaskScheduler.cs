@@ -144,7 +144,9 @@ public sealed class AiTaskScheduler : IDisposable
                 result.Success ? "ok" : "fail: " + (result.Error ?? "unknown"),
                 sessionId, disable, CancellationToken.None);
 
-            Notify(task, result);
+            string? reportPath = null;
+            try { reportPath = await AiTaskReportStore.SaveAsync(task, runId, result, CancellationToken.None); } catch { /* 报告落盘失败不影响任务 */ }
+            Notify(task, result, reportPath);
             Completed?.Invoke(task, result);
             _ = _store.PruneRunsAsync(task.Id, 50, CancellationToken.None);
         }
@@ -155,7 +157,7 @@ public sealed class AiTaskScheduler : IDisposable
         }
     }
 
-    private static void Notify(AiTaskConfig task, AiTaskRunResult result)
+    private static void Notify(AiTaskConfig task, AiTaskRunResult result, string? reportPath)
     {
         if (!task.NotifyApp)
             return;
@@ -164,7 +166,11 @@ public sealed class AiTaskScheduler : IDisposable
         var text = result.Success
             ? Truncate(result.Summary, 300)
             : Truncate(result.Error ?? "运行失败", 300);
-        NotificationCenterService.Add("AI 定时任务", task.Name, text, severity);
+        if (!string.IsNullOrWhiteSpace(reportPath))
+            text += "\n报告: " + reportPath;
+        NotificationCenterService.Add("AI 定时任务", task.Name, text, severity,
+            result.Success ? LitSSHmcp.Core.Models.NotificationTypes.AiTaskSucceeded
+                           : LitSSHmcp.Core.Models.NotificationTypes.AiTaskFailed);
     }
 
     private static string Truncate(string value, int max) =>

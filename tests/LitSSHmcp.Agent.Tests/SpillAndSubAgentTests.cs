@@ -54,9 +54,43 @@ public class SpillAndSubAgentTests : IDisposable
         var text = (string)grep!;
 
         Assert.Contains("高风险", text);
-        Assert.Contains("...", text);
+        Assert.Contains("riskLevel", text);
+        var stored = File.ReadAllText(Path.Combine(store.Dir, handle));
+        Assert.Contains("\n", stored);
+        Assert.Contains("  \"users\"", stored);
         Assert.DoesNotContain(json, text);              // 不整行返回
         Assert.True(text.Split('\n').Length <= 5);      // max 生效
+    }
+
+    [Fact]
+    public async Task Spill_json_reads_json_path_and_pretty_prints_file()
+    {
+        var store = new SpillStore(_dir, 7);
+        var handle = store.Save("snapshot", """
+            {"data":{"sections":{"resource":{"status":"ok","dataChars":12},"portmap":{"status":"ok"}}}}
+            """);
+        var spill = Tool(SpillTools.Create(store), "spill");
+
+        var node = await spill.InvokeAsync(
+            Args(("action", "json"), ("handle", handle), ("path", "data.sections.resource")), default);
+        var text = (string)node!;
+        Assert.Contains("\"status\": \"ok\"", text);
+        Assert.Contains("\"dataChars\": 12", text);
+
+        var root = await spill.InvokeAsync(
+            Args(("action", "json"), ("handle", handle), ("path", "")), default);
+        Assert.Contains("data=object", (string)root!);
+    }
+
+    [Fact]
+    public void Spill_section_index_lists_snapshot_sections()
+    {
+        var index = AgentSession.BuildSpillSectionIndex(
+            """{"data":{"sections":{"resource":{"status":"ok","dataChars":10},"portmap":{"status":"ok","dataChars":20}}}}""");
+
+        Assert.Contains("resource(ok,10)", index);
+        Assert.Contains("portmap(ok,20)", index);
+        Assert.Contains("ssh_snapshot_get", index);
     }
 
     [Fact]

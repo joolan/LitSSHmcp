@@ -91,6 +91,8 @@ public interface IContextStore
 
     /// <summary>保存会话级连接器子集（空串=继承；首条消息后锁定不再变化）。</summary>
     Task SetSessionEnabledMcpAsync(long id, string enabledMcpJson, CancellationToken ct = default);
+    Task<string> GetSessionWorkingMemoryAsync(long id, CancellationToken ct = default);
+    Task SetSessionWorkingMemoryAsync(long id, string workingMemoryJson, CancellationToken ct = default);
 
     /// <summary>列出已定义的分组名（按名称排序）。</summary>
     Task<List<string>> ListGroupsAsync(CancellationToken ct = default);
@@ -162,7 +164,7 @@ public class ContextStore : IContextStore
     /// 仅追加列（非破坏性），版本仅用于后续迁移分支判断。
     /// </summary>
     // v7：新增 agent_messages_deleted / agent_sessions_deleted 删除表（裁剪/删除前归档）。
-    private const int AgentDbFormatVersion = 7;
+    private const int AgentDbFormatVersion = 8;
 
     private readonly string _dbPath;
 
@@ -246,6 +248,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions_deleted (
     WorkspaceDir TEXT NOT NULL DEFAULT '',
     OwnerUserId TEXT NOT NULL DEFAULT 'local',
     EnabledMcp TEXT NOT NULL DEFAULT '',
+    WorkingMemory TEXT NOT NULL DEFAULT '',
     DeletedAt TEXT NOT NULL,
     Reason TEXT NOT NULL DEFAULT ''
 );
@@ -433,6 +436,18 @@ CREATE INDEX IF NOT EXISTS IX_agent_sessions_deleted_DeletedAt ON agent_sessions
         }
 
         // 结构版本盖章（旧库 0 → 6；后续迁移以 user_version 判断是否需要执行）
+        // v8：任务工作记忆（JSON；''=无）
+        try
+        {
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE agent_sessions ADD COLUMN WorkingMemory TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // 列已存在
+        }
+
         try
         {
             await using var version = connection.CreateCommand();
@@ -652,6 +667,20 @@ CREATE INDEX IF NOT EXISTS IX_agent_sessions_deleted_DeletedAt ON agent_sessions
     public Task SetSessionEnabledMcpAsync(long id, string enabledMcpJson, CancellationToken ct = default) =>
         ExecAsync("UPDATE agent_sessions SET EnabledMcp=@v WHERE Id=@id;",
             new() { ["@v"] = enabledMcpJson ?? string.Empty, ["@id"] = id }, ct);
+
+    public async Task<string> GetSessionWorkingMemoryAsync(long id, CancellationToken ct = default)
+    {
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT WorkingMemory FROM agent_sessions WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@id", id);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s ? s : string.Empty;
+    }
+
+    public Task SetSessionWorkingMemoryAsync(long id, string workingMemoryJson, CancellationToken ct = default) =>
+        ExecAsync("UPDATE agent_sessions SET WorkingMemory=@v WHERE Id=@id;",
+            new() { ["@v"] = workingMemoryJson ?? string.Empty, ["@id"] = id }, ct);
 
     public async Task<List<string>> ListGroupsAsync(CancellationToken ct = default)
     {
@@ -950,10 +979,10 @@ CREATE INDEX IF NOT EXISTS IX_agent_sessions_deleted_DeletedAt ON agent_sessions
             archive.CommandText =
                 "INSERT OR IGNORE INTO agent_sessions_deleted" +
                 "(Id, Title, CreatedAt, UpdatedAt, ProviderId, Archived, Summary, Plan, ActiveSkills, PlanMode, " +
-                "ToolPolicy, \"Group\", SortOrder, AgentId, WorkspaceDir, OwnerUserId, EnabledMcp, DeletedAt, Reason) " +
+                "ToolPolicy, \"Group\", SortOrder, AgentId, WorkspaceDir, OwnerUserId, EnabledMcp, WorkingMemory, DeletedAt, Reason) " +
                 "SELECT s.Id, s.Title, s.CreatedAt, s.UpdatedAt, s.ProviderId, s.Archived, s.Summary, s.Plan, " +
                 "s.ActiveSkills, s.PlanMode, s.ToolPolicy, s.\"Group\", s.SortOrder, s.AgentId, s.WorkspaceDir, " +
-                "s.OwnerUserId, s.EnabledMcp, @deletedAt, @reason " +
+                "s.OwnerUserId, s.EnabledMcp, s.WorkingMemory, @deletedAt, @reason " +
                 "FROM agent_sessions s WHERE " + where + ";";
             foreach (var (name, value) in allArgs)
                 archive.Parameters.AddWithValue(name, value);

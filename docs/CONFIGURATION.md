@@ -121,7 +121,8 @@
     "storeEffectiveConfig": false
   },
   "agent": {
-    "retentionMaxMessages": 2000
+    "retentionMaxMessages": 2000,
+    "autoSubAgentRouting": true
   }
 }
 ```
@@ -129,3 +130,45 @@
 - `snapshot.collectAccounts` / `collectAuthorizedKeys` / `collectLoginHistory`：账号安全维度与公钥/登录历史采集开关。
 - `snapshot.storeEffectiveConfig`：默认 `false`，完整 `nginx -T` 存入 `snapshots.db` 的 `NginxConfigs` 表，`detail="full"` 时回填。
 - `agent.retentionMaxMessages`：默认 2000；按整轮裁剪，被裁消息归档到 `agent_messages_deleted`，不会单独丢掉 user 提示词。
+- `agent.autoSubAgentRouting`：默认 `true`；命中“全面/巡检/多台/大日志”等复杂只读取证请求时，先自动交给 `run_subagent`，主上下文只接收摘要。
+
+## 通知中心
+
+`notifications.channels` 定义通知渠道，`notifications.routes` 定义“消息类型 → 渠道”的路由、最低级别、限频和去重。
+
+```json
+{
+  "notifications": {
+    "channels": [
+      { "id": "app", "name": "应用内", "type": "app", "enabled": true },
+      {
+        "id": "dingtalk-ops",
+        "name": "运维钉钉群",
+        "type": "dingtalk",
+        "enabled": true,
+        "url": "https://oapi.dingtalk.com/robot/send?access_token=...",
+        "secret": "enc:...",
+        "template": "dingtalk"
+      }
+    ],
+    "routes": [
+      {
+        "id": "critical-alerts",
+        "name": "高风险告警",
+        "types": ["health.critical", "security.alert", "snapshot.failed", "ai_task.failed", "backup.failed", "sync.failed", "web.login_failed"],
+        "channels": ["app", "dingtalk-ops"],
+        "minSeverity": "warning",
+        "rateLimitCount": 5,
+        "rateLimitWindowSeconds": 300,
+        "dedupeSeconds": 600
+      }
+    ]
+  }
+}
+```
+
+- `types` 支持通配符：`ai_task.*`、`snapshot.*`。
+- `channels` 为空时默认投递应用内渠道。
+- `rateLimitCount` / `rateLimitWindowSeconds`：同一路由+渠道的限频；0=不限。
+- `dedupeSeconds`：相同 `DedupeKey` 时间窗内去重；0=不去重。
+- 渠道 `secret` 会按当前 Windows 用户 DPAPI 加密。

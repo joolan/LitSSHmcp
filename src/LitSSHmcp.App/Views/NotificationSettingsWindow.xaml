@@ -1,0 +1,126 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.NotificationSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="通知设置" Height="700" Width="1040" MinHeight="520" MinWidth="840"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="通知设置"/>
+
+        <TabControl Grid.Row="1" Margin="12,8">
+            <TabItem Header="通知渠道">
+                <Grid Margin="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="260"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <DockPanel Grid.Column="0">
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                            <ui:Button Content="新增" Click="OnAddChannel" Padding="10,4" Margin="0,0,6,0"/>
+                            <ui:Button Content="删除" Click="OnDeleteChannel" Padding="10,4" Margin="0,0,6,0"/>
+                            <ui:Button Content="测试" Click="OnTestChannel" Padding="10,4"/>
+                        </StackPanel>
+                        <ListBox x:Name="ChannelList" SelectionChanged="OnChannelSelectionChanged"
+                                 DisplayMemberPath="Name"/>
+                    </DockPanel>
+                    <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource AppBorderSubtleBrush}"/>
+                    <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="8" DataContext="{Binding ElementName=ChannelList, Path=SelectedItem}">
+                            <TextBlock Text="渠道配置" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <TextBlock Text="ID" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox Text="{Binding Id, Mode=TwoWay}" Margin="0,2,0,8"/>
+                            <TextBlock Text="名称" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox Text="{Binding Name, Mode=TwoWay}" Margin="0,2,0,8"/>
+                            <TextBlock Text="类型" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <ComboBox x:Name="ChannelTypeBox" Margin="0,2,0,8" SelectedValuePath="Tag">
+                                <ComboBoxItem Content="应用内" Tag="app"/>
+                                <ComboBoxItem Content="桌面通知" Tag="desktop"/>
+                                <ComboBoxItem Content="钉钉" Tag="dingtalk"/>
+                                <ComboBoxItem Content="企业微信" Tag="wecom"/>
+                                <ComboBoxItem Content="飞书" Tag="feishu"/>
+                                <ComboBoxItem Content="通用 Webhook" Tag="webhook"/>
+                            </ComboBox>
+                            <CheckBox Content="启用" IsChecked="{Binding Enabled, Mode=TwoWay}" Margin="0,2,0,8"/>
+                            <TextBlock Text="Webhook URL" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox Text="{Binding Url, Mode=TwoWay}" Margin="0,2,0,8"/>
+                            <TextBlock Text="签名 Secret（留空保持原值）" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <PasswordBox x:Name="ChannelSecretBox" Margin="0,2,0,8"/>
+                            <TextBlock Text="模板" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <ComboBox x:Name="ChannelTemplateBox" Margin="0,2,0,8" SelectedValuePath="Tag">
+                                <ComboBoxItem Content="通用" Tag="generic"/>
+                                <ComboBoxItem Content="钉钉" Tag="dingtalk"/>
+                                <ComboBoxItem Content="企业微信" Tag="wecom"/>
+                                <ComboBoxItem Content="飞书" Tag="feishu"/>
+                            </ComboBox>
+                            <TextBlock Text="超时（秒）" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox x:Name="ChannelTimeoutBox" Margin="0,2,0,12"/>
+                            <ui:Button Content="保存通知设置" Click="OnSave" Padding="12,5" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="通知规则">
+                <Grid Margin="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="280"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <DockPanel Grid.Column="0">
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                            <ui:Button Content="新增" Click="OnAddRoute" Padding="10,4" Margin="0,0,6,0"/>
+                            <ui:Button Content="删除" Click="OnDeleteRoute" Padding="10,4"/>
+                        </StackPanel>
+                        <ListBox x:Name="RouteList" SelectionChanged="OnRouteSelectionChanged"
+                                 DisplayMemberPath="Name"/>
+                    </DockPanel>
+                    <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource AppBorderSubtleBrush}"/>
+                    <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="8" DataContext="{Binding ElementName=RouteList, Path=SelectedItem}">
+                            <TextBlock Text="规则配置" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <TextBlock Text="ID" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox Text="{Binding Id, Mode=TwoWay}" Margin="0,2,0,8"/>
+                            <TextBlock Text="名称" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox Text="{Binding Name, Mode=TwoWay}" Margin="0,2,0,8"/>
+                            <CheckBox Content="启用" IsChecked="{Binding Enabled, Mode=TwoWay}" Margin="0,2,0,8"/>
+                            <TextBlock Text="消息类型（逗号分隔，支持 ai_task.*）" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox x:Name="RouteTypesBox" Margin="0,2,0,8"/>
+                            <TextBlock Text="渠道 ID（逗号分隔；空=app）" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox x:Name="RouteChannelsBox" Margin="0,2,0,8"/>
+                            <TextBlock Text="最低严重级别" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <ComboBox x:Name="RouteSeverityBox" Margin="0,2,0,8" SelectedValuePath="Tag">
+                                <ComboBoxItem Content="Info" Tag="info"/>
+                                <ComboBoxItem Content="Success" Tag="success"/>
+                                <ComboBoxItem Content="Warning" Tag="warning"/>
+                                <ComboBoxItem Content="Error" Tag="error"/>
+                            </ComboBox>
+                            <TextBlock Text="限频次数（0=不限）" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox x:Name="RouteRateCountBox" Margin="0,2,0,8"/>
+                            <TextBlock Text="限频窗口（秒）" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox x:Name="RouteRateWindowBox" Margin="0,2,0,8"/>
+                            <TextBlock Text="去重窗口（秒，0=不去重）" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                            <TextBox x:Name="RouteDedupeBox" Margin="0,2,0,12"/>
+                            <ui:Button Content="保存通知设置" Click="OnSave" Padding="12,5" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <Border Grid.Row="2" Padding="12,6" Background="{DynamicResource AppSurfaceAltBrush}">
+            <TextBlock x:Name="StatusText" Text="修改后点击保存；敏感 Secret 使用 DPAPI 加密存储。"
+                       FontSize="{DynamicResource AppFontSizeMicro}"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

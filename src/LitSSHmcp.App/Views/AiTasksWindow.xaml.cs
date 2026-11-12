@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -46,8 +47,15 @@ public partial class AiTasksWindow : FluentWindow
             var selectedId = (TaskGrid.SelectedItem as AiTaskRow)?.Task.Id;
             var tasks = await _store.ListAsync(includeDisabled: true);
             _tasks.Clear();
+            var keyword = SearchBox?.Text?.Trim() ?? string.Empty;
             foreach (var task in tasks)
+            {
+                if (keyword.Length > 0 &&
+                    !task.Name.Contains(keyword, StringComparison.OrdinalIgnoreCase) &&
+                    !task.DescribeSchedule().Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                    continue;
                 _tasks.Add(new AiTaskRow(task));
+            }
 
             if (selectedId is not null)
             {
@@ -91,6 +99,81 @@ public partial class AiTasksWindow : FluentWindow
 
     private void OnTaskSelectionChanged(object sender, SelectionChangedEventArgs e) =>
         AsyncOperation.Run("加载 AI 任务运行历史", LoadRunsAsync);
+
+    private void OnTaskRightButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is AiTaskRow row)
+            TaskGrid.SelectedItem = row;
+    }
+
+    private void OnSearchChanged(object sender, TextChangedEventArgs e) =>
+        AsyncOperation.Run("筛选 AI 定时任务", ReloadAsync);
+
+    private void OnMoreClick(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        var toggle = new System.Windows.Controls.MenuItem { Header = "启用 / 停用" };
+        toggle.Click += OnToggleClick;
+        var report = new System.Windows.Controls.MenuItem { Header = "查看报告" };
+        report.Click += OnOpenReportClick;
+        var install = new System.Windows.Controls.MenuItem { Header = "安装计划任务" };
+        install.Click += OnInstallWindowsTaskClick;
+        var remove = new System.Windows.Controls.MenuItem { Header = "移除计划任务" };
+        remove.Click += OnRemoveWindowsTaskClick;
+        var delete = new System.Windows.Controls.MenuItem { Header = "删除" };
+        delete.Click += OnDeleteClick;
+        menu.Items.Add(toggle);
+        menu.Items.Add(report);
+        menu.Items.Add(install);
+        menu.Items.Add(remove);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(delete);
+        menu.PlacementTarget = sender as UIElement;
+        menu.IsOpen = true;
+    }
+    private void OnNewFromTemplateClick(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        foreach (var template in AiTaskTemplates.All)
+        {
+            var item = new System.Windows.Controls.MenuItem { Header = template.Name, ToolTip = template.Description };
+            item.Click += (_, _) => AsyncOperation.Run("从模板创建 AI 巡检任务", async () =>
+            {
+                var task = AiTaskTemplates.CreateTask(template);
+                await _store.CreateAsync(task);
+                StatusText.Text = $"已创建「{task.Name}」，默认每天 {task.TimeOfDay} 运行（只读）。";
+                await ReloadAsync();
+            });
+            menu.Items.Add(item);
+        }
+        menu.PlacementTarget = sender as UIElement;
+        menu.IsOpen = true;
+    }
+
+    private void OnOpenReportClick(object sender, RoutedEventArgs e)
+    {
+        if (RunGrid.SelectedItem is not AiTaskRunRow row)
+        {
+            StatusText.Text = "请先选择一条运行记录。";
+            return;
+        }
+
+        var path = row.ReportPath;
+        if (!File.Exists(path))
+        {
+            StatusText.Text = "该运行还没有报告文件（旧任务或报告落盘失败）。";
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "打开报告失败: " + ex.Message;
+        }
+    }
 
     private void OnRunNowClick(object sender, RoutedEventArgs e)
     {
@@ -209,5 +292,6 @@ public partial class AiTasksWindow : FluentWindow
             : $"{(Run.CompletedAt.Value - Run.StartedAt).TotalSeconds:F1}s";
         public string Tokens => (Run.InputTokens + Run.OutputTokens).ToString();
         public string Summary => string.IsNullOrWhiteSpace(Run.Error) ? Run.Summary ?? string.Empty : Run.Error!;
+        public string ReportPath => AiTaskReportStore.PathFor(Run.TaskId, Run.Id);
     }
 }

@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LitSSHmcp.Core\LitSSHmcp.Core.csproj" />
+    <InternalsVisibleTo Include="LitSSHmcp.Agent.Tests" />
   </ItemGroup>
 
   <ItemGroup>

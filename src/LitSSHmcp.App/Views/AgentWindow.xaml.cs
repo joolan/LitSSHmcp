@@ -33,6 +33,7 @@ public partial class AgentWindow : FluentWindow
         WindowLayout.Attach(this, "agent");
         AgentHost.Content = view;
         view.SetDetached(!ownsView);
+        view.SetHostWindow(this);
         Closed += OnAgentClosed;
     }
 
@@ -46,6 +47,7 @@ public partial class AgentWindow : FluentWindow
     private void OnAgentClosed(object? sender, EventArgs e)
     {
         Closed -= OnAgentClosed;
+        _view.SetHostWindow(null);
         AgentHost.Content = null;
 
         if (_ownsView)

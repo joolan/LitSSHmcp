@@ -61,6 +61,7 @@ public sealed class AgentRuntime : IAsyncDisposable
     private readonly IAgentTool? _roundNotifier;
     private readonly Action<IReadOnlyList<PlanItem>>? _onPlan;
     private readonly AgentSession.ToolLimitContinuation? _toolLimitContinuation;
+    private readonly string? _initialWorkingMemoryJson;
     private readonly Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? _recall;
     private readonly Func<string, CancellationToken, Task<AssetGraphContextResult?>>? _graphContext;
     private readonly string? _assetGraph;
@@ -101,7 +102,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         WorkLogStore? workLog,
         IEnumerable<ChatMessage>? history,
         string? assetGraph = null,
-        AgentSession.ToolLimitContinuation? toolLimitContinuation = null)
+        AgentSession.ToolLimitContinuation? toolLimitContinuation = null,
+        string? workingMemoryJson = null)
     {
         Hosts = hosts;
         McpWarnings = mcpWarnings;
@@ -123,6 +125,7 @@ public sealed class AgentRuntime : IAsyncDisposable
         _roundNotifier = roundNotifier;
         _onPlan = onPlan;
         _toolLimitContinuation = toolLimitContinuation;
+        _initialWorkingMemoryJson = workingMemoryJson;
         _recall = recall;
         _graphContext = graphContext;
         _assetGraph = assetGraph;
@@ -248,7 +251,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         }
         session = new AgentSession(client, provider, tools, _prompt, _config, history, _recall, _spill,
             roundNotifier: _roundNotifier, graphContext: _graphContext, budgetCheck: budgetCheck,
-            onUsageDelta: budget is null ? null : budget.Add, workLog: _workLog, assetGraph: _assetGraph);
+            onUsageDelta: budget is null ? null : budget.Add, workLog: _workLog, assetGraph: _assetGraph,
+            workingMemoryJson: Session?.WorkingMemory.ExportJson() ?? _initialWorkingMemoryJson);
         session.SetToolPolicy(_toolPolicy);
         session.SetPlanMode(_planMode);
         session.SetPlanProvider(() => latestPlan);
@@ -286,7 +290,8 @@ public sealed class AgentRuntime : IAsyncDisposable
         bool enableWorkLog = true,
         long? sessionId = null,
         IFleetPlanStore? fleetPlanStore = null,
-        AgentSession.ToolLimitContinuation? toolLimitContinuation = null)
+        AgentSession.ToolLimitContinuation? toolLimitContinuation = null,
+        string? workingMemoryJson = null)
     {
         // D8 启用层：会话级连接器子集只在全局启用集合内收窄（null=继承全局默认集合；全局停用恒出局）
         var servers = McpSubsetPolicy.EffectiveServers(AgentMcpServerConfig.Normalize(config.McpServers), enabledMcpIds);
@@ -615,7 +620,7 @@ public sealed class AgentRuntime : IAsyncDisposable
                 hostStatuses.Add(new McpHostStatus(s.Id, s.Name, false, info.Error is null, info.ToolCount, info.Error));
         }
 
-        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, consolidation, fleetPlans, ownerUserId ?? "local", sessionId, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, graphContext, spill, workLog, history, assetGraph, toolLimitContinuation);
+        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, consolidation, fleetPlans, ownerUserId ?? "local", sessionId, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, graphContext, spill, workLog, history, assetGraph, toolLimitContinuation, workingMemoryJson);
         fleetRuntime = runtime;
         runtime.WorkspaceRoot = workspaceRoot;
         if (activeSkillIds is { Count: > 0 })

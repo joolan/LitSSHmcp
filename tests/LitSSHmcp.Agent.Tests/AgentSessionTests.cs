@@ -189,6 +189,131 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public async Task Transient_readonly_tool_failure_is_retried_once()
+    {
+        static ChatResponse Call(string id) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent(id, "read_probe", new Dictionary<string, object?>())
+            })
+        });
+
+        var count = 0;
+        var tool = new FakeTool("read_probe", "ok", readOnly: true, invoke: _ =>
+        {
+            count++;
+            if (count == 1)
+                throw new TimeoutException("timed out");
+            return Task.FromResult<object?>("ok");
+        });
+        var client = new FakeChatClient(Call("c1"),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { tool }, "sys",
+            new AgentConfig { MaxToolIterations = 5, ContextLimit = 0, ContextTokenLimit = 0, AutoSummarize = false });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Equal(2, count);
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Warning && e.Text!.Contains("自动重试"));
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Done);
+    }
+
+    [Fact]
+    public async Task Slow_tool_emits_progress_heartbeat()
+    {
+        static ChatResponse Call(string id) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent(id, "slow_probe", new Dictionary<string, object?>())
+            })
+        });
+
+        var tool = new FakeTool("slow_probe", "ok", readOnly: true, delayMs: 1800);
+        var client = new FakeChatClient(Call("c1"),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { tool }, "sys",
+            new AgentConfig { MaxToolIterations = 5, ContextLimit = 0, ContextTokenLimit = 0, AutoSummarize = false });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.ToolProgress &&
+                                     e.Text!.Contains("已运行") && e.CallId == "c1");
+    }
+
+    [Fact]
+    public async Task Write_tool_failure_is_not_retried()
+    {
+        static ChatResponse Call(string id) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent(id, "write_probe", new Dictionary<string, object?>())
+            })
+        });
+
+        var count = 0;
+        var tool = new FakeTool("write_probe", "ok", invoke: _ =>
+        {
+            count++;
+            throw new TimeoutException("timed out");
+        });
+        var client = new FakeChatClient(Call("c1"),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { tool }, "sys",
+            new AgentConfig { MaxToolIterations = 5, ContextLimit = 0, ContextTokenLimit = 0, AutoSummarize = false });
+
+        await session.SendAsync("hi", null);
+
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task Complex_readonly_request_is_auto_delegated_to_subagent()
+    {
+        var subagentCalls = 0;
+        var subagent = new FakeTool("run_subagent", "sub-summary", readOnly: true, isLocal: true,
+            invoke: _ =>
+            {
+                subagentCalls++;
+                return Task.FromResult<object?>("sub-summary");
+            });
+        var client = new FakeChatClient(new ChatResponse(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, "done")
+        }));
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { subagent }, "sys",
+            new AgentConfig
+            {
+                MaxToolIterations = 5, ContextLimit = 0, ContextTokenLimit = 0, AutoSummarize = false,
+                EnableSubAgent = true, AutoSubAgentRouting = true
+            });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("全面巡检所有服务器并对比日志", new SyncProgress(events.Add));
+
+        Assert.Equal(1, subagentCalls);
+        Assert.Contains(events, e => e.Kind == AgentEventKind.ToolCall && e.ToolName == "run_subagent");
+    }
+
+    [Fact]
+    public void Auto_delegate_skips_change_profile_and_simple_prompt()
+    {
+        var config = new AgentConfig { EnableSubAgent = true, AutoSubAgentRouting = true };
+        Assert.False(AgentSession.ShouldAutoDelegate("hi", config));
+        Assert.True(AgentSession.ShouldAutoDelegate("全面巡检所有服务器并对比日志", config));
+        Assert.False(AgentSession.ShouldAutoDelegate("全面巡检所有服务器并对比日志",
+            new AgentConfig { EnableSubAgent = true, AutoSubAgentRouting = true, Profile = AgentToolProfile.Change }));
+    }
+
+    [Fact]
     public async Task Tool_limit_can_be_stopped_by_host_confirmation()
     {
         static ChatResponse Call(string id) => new(new List<ChatMessage>
@@ -596,7 +721,8 @@ public class AgentSessionTests
         var toolMessage = Assert.Single(session.Messages, m => m.Role == ChatRole.Tool);
         var contextText = Assert.IsType<FunctionResultContent>(Assert.Single(toolMessage.Contents)).Result!.ToString()!;
         Assert.True(contextText.Length < big.Length);
-        Assert.Contains("已截断", contextText);
+        Assert.Contains("文本摘要", contextText);
+        Assert.Contains("预算压缩", contextText);
 
         var ev = Assert.Single(events, e => e.Kind == AgentEventKind.ToolResult);
         Assert.Equal(big, ev.Text);   // 界面仍拿到完整结果

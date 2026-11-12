@@ -184,6 +184,10 @@ public class MainWindowXamlTests
             _ = new LitSSHmcp.App.Views.ToolboxView();
             _ = new LitSSHmcp.App.Views.ToolboxItemEditWindow();
             _ = new LitSSHmcp.App.Views.Tools.HostsEditorWindow();
+            _ = new LitSSHmcp.App.Views.Tools.CertificateToolWindow();
+            _ = new LitSSHmcp.App.Views.Tools.TextCodecToolWindow();
+            _ = new LitSSHmcp.App.Views.Tools.SshKeyToolWindow();
+            _ = new LitSSHmcp.App.Views.Tools.LocalPortToolWindow();
             _ = new LitSSHmcp.App.Views.Tools.EncryptedVaultWindow();
             _ = new LitSSHmcp.App.Views.Tools.VaultCreateWindow();
             _ = new LitSSHmcp.App.Views.Tools.VaultChangePasswordWindow("test");

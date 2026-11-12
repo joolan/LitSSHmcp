@@ -1,0 +1,150 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.Tools.SshKeyToolWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="SSH 密钥助手" Height="720" Width="1080" MinHeight="560" MinWidth="820"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="SSH 密钥助手"/>
+
+        <TabControl Grid.Row="1" Margin="12,4,12,8">
+            <TabItem Header="生成密钥">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="4,10,4,4">
+                        <Border Style="{DynamicResource CardBorderStyle}" Padding="14,12" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="算法" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                <ComboBox x:Name="AlgorithmBox" Grid.Row="0" Grid.Column="1" Width="260"
+                                          HorizontalAlignment="Left" Height="34" Margin="0,0,0,8"
+                                          DisplayMemberPath="Title" VerticalContentAlignment="Center"
+                                          SelectionChanged="OnAlgorithmChanged"/>
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="注释" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                <TextBox x:Name="CommentBox" Grid.Row="1" Grid.Column="1" Height="34" Margin="0,0,0,8"
+                                         VerticalContentAlignment="Center" Padding="8,0"
+                                         ToolTip="写入公钥末尾的注释，例如 user@host 或用途"/>
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="私钥口令" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                <PasswordBox x:Name="PassphraseBox" Grid.Row="2" Grid.Column="1" Height="34" Margin="0,0,0,8"
+                                             Padding="8,0" ToolTip="可选；填写后私钥会被口令加密"/>
+
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="保存到" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                <DockPanel Grid.Row="3" Grid.Column="1" Margin="0,0,0,8">
+                                    <ui:Button DockPanel.Dock="Right" Content="浏览" Padding="10,4" Margin="8,0,0,0"
+                                               Click="OnChoosePath"/>
+                                    <TextBox x:Name="PrivateKeyPathBox" Height="34" VerticalContentAlignment="Center"
+                                             Padding="8,0" ToolTip="生成时会同时创建同名 .pub 公钥文件"/>
+                                </DockPanel>
+
+                                <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal">
+                                    <ui:Button x:Name="GenerateButton" Content="生成密钥" Appearance="Primary"
+                                               Padding="14,5" Margin="0,0,6,0" Click="OnGenerate"/>
+                                    <ui:Button Content="复制公钥" Padding="10,4" Margin="0,0,6,0" Click="OnCopyPublicKey"/>
+                                    <ui:Button Content="打开目录" Padding="10,4" Click="OnOpenKeyFolder"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{DynamicResource CardBorderStyle}" Padding="14,12">
+                            <StackPanel>
+                                <TextBlock Text="公钥（复制到目标机 ~/.ssh/authorized_keys）" FontWeight="SemiBold"
+                                           Margin="0,0,0,6"/>
+                                <TextBox x:Name="PublicKeyBox" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                                         MinHeight="90" MaxHeight="180" VerticalScrollBarVisibility="Auto"
+                                         FontFamily="{DynamicResource AppFontMonoFamily}"
+                                         FontSize="{DynamicResource AppFontSizeCaption}" Padding="8,6"/>
+                                <TextBlock Text="SHA256 指纹" FontWeight="SemiBold" Margin="0,10,0,4"/>
+                                <TextBox x:Name="FingerprintBox" IsReadOnly="True"
+                                         FontFamily="{DynamicResource AppFontMonoFamily}"
+                                         FontSize="{DynamicResource AppFontSizeCaption}" Padding="8,5"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="检查公钥">
+                <Grid Margin="4,10,4,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                        <DockPanel LastChildFill="False">
+                            <TextBlock DockPanel.Dock="Left" Text="公钥内容" FontWeight="SemiBold"
+                                       VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <ui:Button Content="导入 .pub" Padding="10,4" Margin="0,0,6,0" Click="OnImportPublicKey"/>
+                                <ui:Button Content="解析" Appearance="Primary" Padding="10,4" Click="OnInspect"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <TextBox x:Name="InspectInputBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" FontFamily="{DynamicResource AppFontMonoFamily}"
+                             FontSize="{DynamicResource AppFontSizeCaption}" Padding="8"
+                             ToolTip="粘贴 ssh-ed25519 / ssh-rsa / ecdsa-... 公钥"/>
+
+                    <Border Grid.Row="2" Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,8,0,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="类型" VerticalAlignment="Center"/>
+                            <TextBox x:Name="InspectTypeBox" Grid.Row="0" Grid.Column="1" IsReadOnly="True" Margin="0,0,0,5"
+                                     FontFamily="{DynamicResource AppFontMonoFamily}" Padding="6,4"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="指纹" VerticalAlignment="Center"/>
+                            <TextBox x:Name="InspectFingerprintBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True" Margin="0,0,0,5"
+                                     FontFamily="{DynamicResource AppFontMonoFamily}" Padding="6,4"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="注释" VerticalAlignment="Center"/>
+                            <TextBox x:Name="InspectCommentBox" Grid.Row="2" Grid.Column="1" IsReadOnly="True" Margin="0,0,0,5"
+                                     Padding="6,4"/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="公钥" VerticalAlignment="Center"/>
+                            <TextBox x:Name="InspectKeyBox" Grid.Row="3" Grid.Column="1" IsReadOnly="True" TextWrapping="Wrap"
+                                     FontFamily="{DynamicResource AppFontMonoFamily}" FontSize="{DynamicResource AppFontSizeCaption}"
+                                     Padding="6,4"/>
+                            <ui:Button Grid.Row="0" Grid.Column="2" Content="复制" Padding="10,4" Margin="8,0,0,0"
+                                       Click="OnCopyInspectKey"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <Border Grid.Row="2" Padding="12,6" Background="{DynamicResource AppSurfaceAltBrush}">
+            <TextBlock x:Name="StatusText"
+                       Text="私钥只写入本机文件；公钥可复制到服务器的 authorized_keys。检查功能只解析公钥，不读取或上传私钥。"
+                       FontSize="{DynamicResource AppFontSizeMicro}"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

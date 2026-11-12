@@ -16,6 +16,29 @@ public class SystemPromptBuilderTests
     }
 
     [Fact]
+    public void Build_includes_short_tool_routing_table()
+    {
+        var prompt = SystemPromptBuilder.Build(null, null, null, subAgent: true, fleetTools: true);
+
+        Assert.Contains("## 工具路由(优先)", prompt);
+        Assert.Contains("ssh_snapshot_get", prompt);
+        Assert.Contains("mcp_usage_guide", prompt);
+        Assert.Contains("run_subagent", prompt);
+        Assert.Contains("fleet_query", prompt);
+    }
+
+    [Fact]
+    public void Tool_routing_table_follows_enabled_groups()
+    {
+        var prompt = SystemPromptBuilder.Build(null, null, null,
+            availableGroups: new[] { "log" });
+
+        Assert.Contains("log_query", prompt);
+        Assert.DoesNotContain("mysql_query", prompt);
+        Assert.DoesNotContain("mcp_usage_guide", prompt);
+    }
+
+    [Fact]
     public void Build_includes_fact_and_destructive_confirmation_rules()
     {
         var prompt = SystemPromptBuilder.Build(null, null, null);

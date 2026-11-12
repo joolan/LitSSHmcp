@@ -26,6 +26,7 @@ internal sealed class ApprovalDialog : Form
     private readonly CheckBox _chkSession = new();
     private readonly string _command;
     private readonly bool _topMost;
+    private SplitContainer? _riskSplit;
     private int _remaining;
 
     /// <summary>是否为超时自动拒绝。</summary>
@@ -95,6 +96,26 @@ internal sealed class ApprovalDialog : Form
             _timer.Stop();
             _timer.Dispose();
         };
+    }
+
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+
+        // SplitContainer 的分隔位置/最小面板尺寸必须在控件拿到实际宽度后设置：
+        // 在构造函数里（Width 仍为默认 150）设置会抛 InvalidOperationException，
+        // 使带风险报告的审批弹窗构造失败并退化为原生 MessageBox。
+        if (_riskSplit is { } split)
+        {
+            var width = split.Width;
+            var splitterWidth = split.SplitterWidth;
+            var maxDistance = Math.Max(split.Panel1MinSize, width - split.Panel2MinSize - splitterWidth);
+            var distance = Math.Clamp(430, split.Panel1MinSize, maxDistance);
+
+            split.SplitterDistance = distance;
+            split.Panel1MinSize = Math.Min(260, distance);
+            split.Panel2MinSize = Math.Min(260, Math.Max(0, width - distance - splitterWidth));
+        }
     }
 
     protected override void OnShown(EventArgs e)
@@ -204,11 +225,9 @@ internal sealed class ApprovalDialog : Form
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Vertical,
                 FixedPanel = FixedPanel.Panel2,
-                SplitterDistance = 430,
-                Panel1MinSize = 260,
-                Panel2MinSize = 260,
                 BackColor = Border
             };
+            _riskSplit = split;
 
             var riskHeader = BuildSectionHeader("脚本风险分析（服务端规则扫描）");
             var riskBox = new TextBox

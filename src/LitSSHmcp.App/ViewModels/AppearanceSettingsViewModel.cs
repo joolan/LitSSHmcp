@@ -11,6 +11,7 @@ namespace LitSSHmcp.App.ViewModels;
 public class AppearanceSettingsViewModel : INotifyPropertyChanged, IConfigReloadable
 {
     private readonly IConfigService _configService;
+    private bool _suppressApply;
 
     public AppearanceSettingsViewModel(IConfigService? configService = null)
     {
@@ -30,7 +31,8 @@ public class AppearanceSettingsViewModel : INotifyPropertyChanged, IConfigReload
             if (string.Equals(_theme, value, StringComparison.Ordinal))
                 return;
             Set(ref _theme, value);
-            ThemeService.Apply(value, AccentToHex(Accent));
+            if (!_suppressApply)
+                ThemeService.Apply(value, AccentToHex(Accent));
         }
     }
 
@@ -46,7 +48,8 @@ public class AppearanceSettingsViewModel : INotifyPropertyChanged, IConfigReload
             if (string.Equals(_accent, value, StringComparison.Ordinal))
                 return;
             Set(ref _accent, value);
-            ThemeService.Apply(Theme, AccentToHex(value));
+            if (!_suppressApply)
+                ThemeService.Apply(Theme, AccentToHex(value));
         }
     }
 
@@ -80,8 +83,23 @@ public class AppearanceSettingsViewModel : INotifyPropertyChanged, IConfigReload
         try
         {
             var config = await _configService.LoadConfigAsync();
-            Theme = string.IsNullOrWhiteSpace(config.Ui?.Theme) ? "system" : config.Ui!.Theme;
-            Accent = HexToAccent(config.Ui?.Accent);
+            var theme = string.IsNullOrWhiteSpace(config.Ui?.Theme) ? "system" : config.Ui!.Theme;
+            var accent = HexToAccent(config.Ui?.Accent);
+
+            // 先同步两个字段再统一应用一次，避免 Theme/Accent 两个 setter 各触发一次
+            // 资源字典重载与 WPF-UI 主题切换（打开设置时会造成可感知的卡顿/闪烁）。
+            _suppressApply = true;
+            try
+            {
+                Theme = theme;
+                Accent = accent;
+            }
+            finally
+            {
+                _suppressApply = false;
+            }
+            ThemeService.Apply(theme, AccentToHex(accent));
+
             StatusMessage = "已加载";
         }
         catch (Exception ex)

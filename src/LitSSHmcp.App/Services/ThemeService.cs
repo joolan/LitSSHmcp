@@ -16,6 +16,8 @@ public static class ThemeService
     private static ResourceDictionary? _bridge;
     private static ResourceDictionary? _accentDict;
     private static bool _followSystem = true;
+    private static bool _applied;
+    private static Application? _appliedApp;
     private static string _accent = string.Empty;
 
     /// <summary>当前生效主题：light / dark。</summary>
@@ -23,16 +25,31 @@ public static class ThemeService
 
     public static void Apply(string? theme, string? accent = null)
     {
-        _accent = accent ?? string.Empty;
+        var requestedAccent = accent ?? string.Empty;
         var t = (theme ?? "system").Trim().ToLowerInvariant();
-        _followSystem = t is not ("light" or "dark");
-        Current = t switch
+        var followSystem = t is not ("light" or "dark");
+        var effective = t switch
         {
             "light" => "light",
             "dark" => "dark",
             _ => SystemIsLight() ? "light" : "dark"
         };
+
+        // 相同主题/强调色重复应用会重载资源字典并触发整棵可视树刷新；
+        // 设置页每次加载都会走这里，直接跳过可避免打开设置时的可感知卡顿。
+        if (_applied
+            && ReferenceEquals(_appliedApp, Application.Current)
+            && followSystem == _followSystem
+            && string.Equals(effective, Current, StringComparison.Ordinal)
+            && string.Equals(requestedAccent, _accent, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _accent = requestedAccent;
+        _followSystem = followSystem;
+        Current = effective;
         ApplyInternal();
+        _applied = true;
+        _appliedApp = Application.Current;
     }
 
     /// <summary>跟随系统模式下系统主题变化时调用。</summary>

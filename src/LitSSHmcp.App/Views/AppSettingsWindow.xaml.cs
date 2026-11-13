@@ -13,6 +13,7 @@ public partial class AppSettingsWindow : FluentWindow
     private readonly IConfigService _configService;
     private readonly IAppServices? _services;
     private readonly Dictionary<int, FrameworkElement> _tabContent = new();
+    private bool _contentActivated;
 
     public AppSettingsWindow(IConfigService configService, IAppServices? services = null)
     {
@@ -20,13 +21,35 @@ public partial class AppSettingsWindow : FluentWindow
         _services = services;
         InitializeComponent();
         WindowLayout.Attach(this, "app-settings");
-        EnsureTabContent(SettingsTabs.SelectedIndex);
+
+        // 先让窗口外壳完成首帧渲染，再创建当前 Tab 的内容：
+        // 内容页会加载配置/主题，放在构造期会让窗口迟迟不出现（打开设置明显卡顿）。
+        Loaded += (_, _) =>
+        {
+            _contentActivated = true;
+            Dispatcher.BeginInvoke(
+                new Action(() =>
+                {
+                    if (IsLoaded)
+                        ShowTabContent(SettingsTabs.SelectedIndex);
+                }),
+                System.Windows.Threading.DispatcherPriority.Background);
+        };
     }
 
     /// <summary>设置页按需创建：打开窗口只加载当前 Tab，避免一次性解析全部设置页造成白屏等待。</summary>
     private void OnSettingsTabChanged(object sender, SelectionChangedEventArgs e)
     {
         var index = SettingsTabs.SelectedIndex;
+        if (index < 0)
+            return;
+
+        if (_contentActivated)
+            ShowTabContent(index);
+    }
+
+    private void ShowTabContent(int index)
+    {
         if (index < 0)
             return;
 
@@ -100,7 +123,8 @@ public partial class AppSettingsWindow : FluentWindow
         if (index < 0 || index >= SettingsTabs.Items.Count)
             return;
         SettingsTabs.SelectedIndex = index;
-        EnsureTabContent(index);
+        if (_contentActivated)
+            ShowTabContent(index);
     }
 
     private ContentControl? HostFor(int index) => index switch

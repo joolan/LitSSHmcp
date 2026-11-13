@@ -38,4 +38,21 @@ public class ApprovalDialogTests
         Assert.True(thread.Join(TimeSpan.FromSeconds(30)), "审批弹窗构造超时");
         Assert.Null(error);
     }
+
+    [Fact]
+    public void Native_message_body_keeps_head_and_tail_and_caps_height()
+    {
+        var text = string.Join('\n', Enumerable.Range(0, 200)
+            .Select(i => $"line{i} " + new string('x', 300)));
+
+        var compact = DesktopApprovalService.CompactNativeBody(text, out var truncated);
+
+        Assert.True(truncated);
+        Assert.True(compact.Length < text.Length);
+        Assert.Contains("中间省略", compact);
+        Assert.Contains("line0", compact);
+        Assert.Contains("line199", compact);
+        Assert.DoesNotContain(new string('x', 200), compact);
+        Assert.All(compact.Split('\n'), line => Assert.True(line.Length <= 240));
+    }
 }

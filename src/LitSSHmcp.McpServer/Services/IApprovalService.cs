@@ -386,13 +386,69 @@ public class DesktopApprovalService : IApprovalService
     private static extern int MessageBoxTimeout(
         IntPtr hWnd, string text, string caption, uint type, ushort languageId, uint milliseconds);
 
+    private const int NativeBodyMaxLines = 18;
+    private const int NativeBodyMaxChars = 1600;
+    private const int NativeLineMaxChars = 180;
+
+    /// <summary>
+    /// 原生 MessageBox 不会滚动，内容过长会把"确定/取消"按钮顶出屏幕。
+    /// 这里保留首尾、压缩中间，并限制单行宽度；完整内容仍在审计/界面轨迹中。
+    /// </summary>
+    internal static string CompactNativeBody(string text, out bool truncated)
+    {
+        truncated = false;
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
+        var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        var compactLines = new string[lines.Length];
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            if (line.Length > NativeLineMaxChars)
+            {
+                line = line[..(NativeLineMaxChars - 1)] + "…";
+                truncated = true;
+            }
+            compactLines[i] = line;
+        }
+
+        var joined = string.Join('\n', compactLines);
+        if (compactLines.Length > NativeBodyMaxLines)
+        {
+            const int headLines = 12;
+            const int tailLines = 4;
+            var omitted = compactLines.Length - headLines - tailLines;
+            joined = string.Join('\n', compactLines.Take(headLines)) +
+                     $"\n…[中间省略 {omitted} 行]…\n" +
+                     string.Join('\n', compactLines.Skip(compactLines.Length - tailLines));
+            truncated = true;
+        }
+
+        if (joined.Length > NativeBodyMaxChars)
+        {
+            var headChars = (int)(NativeBodyMaxChars * 0.7);
+            var tailChars = NativeBodyMaxChars - headChars - 40;
+            var omitted = joined.Length - headChars - tailChars;
+            joined = joined[..headChars] +
+                     $"\n…[中间省略 {omitted} 字符]…\n" +
+                     joined[^tailChars..];
+            truncated = true;
+        }
+
+        return joined;
+    }
+
     private ApprovalOutcome ShowNative(string serverName, string operation, string command, string? filePath, ApprovalConfig options)
     {
-        var message = $"服务器: {serverName}\n操作: {operation}\n命令: {command}";
+        var compactCommand = CompactNativeBody(command, out var compacted);
+        var message = $"服务器: {serverName}\n操作: {operation}\n命令: {compactCommand}";
         if (!string.IsNullOrWhiteSpace(SessionLabel))
             message += $"\n会话: {SessionLabel}";
         if (filePath != null)
             message += $"\n文件: {filePath}";
+        if (compacted)
+            message += "\n\n(内容过长已压缩显示；完整内容见审计/界面轨迹，建议使用 dialog 样式查看)";
         message += "\n\n是否允许执行?";
 
         var flags = MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON2 | MB_SETFOREGROUND;

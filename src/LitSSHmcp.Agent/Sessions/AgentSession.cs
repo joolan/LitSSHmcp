@@ -415,6 +415,15 @@ public sealed class AgentSession
         var lastSpillTarget = string.Empty;
         var sameSpillTargetRounds = 0;
         var localLoopNudged = false;
+        // 跨轮累计（不因工具交替而清零）：同一工具+入参重复、以及本轮本地工具总量。
+        const int repeatCallNudgeAfter = 8;
+        const int maxRepeatCallCount = 16;
+        const int localToolNudgeAfter = 40;
+        const int maxLocalToolCalls = 80;
+        var callSignatureCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var repeatNudged = new HashSet<string>(StringComparer.Ordinal);
+        var localToolCalls = 0;
+        var localBudgetNudged = false;
         while (true)
         {
             if (iteration >= maxIterations)
@@ -564,6 +573,60 @@ public sealed class AgentSession
                     progress?.Report(new AgentEvent(AgentEventKind.Error,
                         Text: $"本地工具连续重复调用过多（相同入参 {sameLocalRounds} 轮，同一 spill 目标 {sameSpillTargetRounds} 轮），" +
                               "已停止本轮以避免空转；请直接基于已有结果回答，或用 section/detail 精确取数。"));
+                    return;
+                }
+
+                // 跨轮累计重复检测：即使与远程工具交替出现，同一工具+入参反复调用也会被计数。
+                string? repeatedTool = null;
+                var repeatedCount = 0;
+                foreach (var call in calls)
+                {
+                    var signature = call.Name + ":" + (SerializeArgs(call.Arguments) ?? string.Empty);
+                    callSignatureCounts.TryGetValue(signature, out var count);
+                    count++;
+                    callSignatureCounts[signature] = count;
+                    if (count > repeatedCount)
+                    {
+                        repeatedCount = count;
+                        repeatedTool = call.Name;
+                    }
+                    if (count == repeatCallNudgeAfter && repeatNudged.Add(signature))
+                    {
+                        var nudge = new ChatMessage(ChatRole.User,
+                            $"同一工具与入参已重复调用 {count} 次（{call.Name}）。请停止重复调用；" +
+                            "改用不同的参数或更精确的查询（例如 spill 用 grep/json），或基于已有结果继续。");
+                        Messages.Add(nudge);
+                        transientContext.Add(nudge);
+                        progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                            Text: $"检测到同一工具+入参重复调用 {count} 次（{call.Name}），已提示模型停止重复。"));
+                    }
+                }
+
+                if (repeatedCount >= maxRepeatCallCount)
+                {
+                    progress?.Report(new AgentEvent(AgentEventKind.Error,
+                        Text: $"同一工具+入参重复调用达到 {repeatedCount} 次（{repeatedTool}），" +
+                              "已停止本轮以避免空转；请改用不同参数或直接基于已有结果回答。"));
+                    return;
+                }
+
+                localToolCalls += calls.Count(c => IsLocalTool(c.Name));
+                if (localToolCalls >= localToolNudgeAfter && !localBudgetNudged)
+                {
+                    localBudgetNudged = true;
+                    var nudge = new ChatMessage(ChatRole.User,
+                        $"本轮本地工具（spill/文档/计划等）已调用 {localToolCalls} 次。请不要继续无止境读取；" +
+                        "优先用 grep/json 精确定位，或基于已获取的关键信息给出结论。");
+                    Messages.Add(nudge);
+                    transientContext.Add(nudge);
+                    progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                        Text: $"本轮本地工具调用已达 {localToolCalls} 次，已提示模型收敛（上限 {maxLocalToolCalls} 次）。"));
+                }
+                if (localToolCalls >= maxLocalToolCalls)
+                {
+                    progress?.Report(new AgentEvent(AgentEventKind.Error,
+                        Text: $"本轮本地工具调用达到 {localToolCalls} 次，已停止以避免空转；" +
+                              "请缩小范围或用 grep/json 精确取数后再继续。"));
                     return;
                 }
             }

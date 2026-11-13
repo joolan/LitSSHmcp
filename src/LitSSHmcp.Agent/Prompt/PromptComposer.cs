@@ -166,7 +166,7 @@ internal static class PromptComposer
         sb.AppendLine();
         sb.AppendLine("## 大输出与委派");
         if (ctx.SpillTools)
-            sb.AppendLine("- 结果提示已落盘为 `spill://…` 时用 `spill(action=\"read\", handle=\"spill://…\", offset, limit)` 分段读取、`spill(action=\"json\", path=...)` 按路径读取，或用 `spill(action=\"grep\", ...)` 搜索；不要重复调用原工具。");
+            sb.AppendLine("- 结果提示已落盘为 `spill://…` 时用 `spill(action=\"read\", handle=\"spill://…\", offset, limit)` 分段读取；返回头会给出 `下次 offset=N`，按它翻页、不要猜偏移；大 JSON 优先 `spill(action=\"json\", path=...)`，定位内容用 `spill(action=\"grep\", ...)`。spill 结果同样受输出预算约束，不要重复读取同一页或重复调用原工具。");
         if (ctx.SubAgent)
             sb.AppendLine("- 预计一次只读任务需要 3 个以上工具、跨多台主机或读取大日志时，优先先委派 `run_subagent`；主上下文只保留摘要。");
         if (ctx.FleetTools)

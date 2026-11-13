@@ -158,6 +158,87 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public async Task Interleaved_identical_tool_calls_are_stopped_across_rounds()
+    {
+        static ChatResponse SpillCall(string id) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent(id, "spill", new Dictionary<string, object?>
+                {
+                    ["action"] = "read",
+                    ["handle"] = "same.txt",
+                    ["offset"] = 0,
+                    ["limit"] = 50
+                })
+            })
+        });
+
+        static ChatResponse EchoCall(string id, int i) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent(id, "echo", new Dictionary<string, object?> { ["n"] = i })
+            })
+        });
+
+        // 远程工具交替出现会让“连续相同调用”计数器清零；跨轮累计必须仍能熔断。
+        var responses = new List<ChatResponse>();
+        for (var i = 1; i <= 20; i++)
+        {
+            responses.Add(SpillCall($"s{i}"));
+            responses.Add(EchoCall($"e{i}", i));
+        }
+
+        var client = new FakeChatClient(responses.ToArray());
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[]
+            {
+                new FakeTool("spill", "ok", readOnly: true, isLocal: true),
+                new FakeTool("echo", "ok")
+            }, "sys",
+            new AgentConfig { MaxToolIterations = 1000, ContextLimit = 0, ContextTokenLimit = 0, AutoSummarize = false });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Error &&
+                                     e.Text!.Contains("同一工具+入参重复调用达到 16 次"));
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Done);
+    }
+
+    [Fact]
+    public async Task Local_tool_budget_stops_unbounded_spill_reads()
+    {
+        static ChatResponse Call(string id, int i) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent(id, "spill", new Dictionary<string, object?>
+                {
+                    ["action"] = "read",
+                    ["handle"] = "h" + i,
+                    ["offset"] = 0,
+                    ["limit"] = 20
+                })
+            })
+        });
+
+        var responses = Enumerable.Range(1, 90).Select(i => Call($"c{i}", i)).ToArray();
+        var client = new FakeChatClient(responses);
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { new FakeTool("spill", "ok", readOnly: true, isLocal: true) }, "sys",
+            new AgentConfig { MaxToolIterations = 1000, ContextLimit = 0, ContextTokenLimit = 0, AutoSummarize = false });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Error &&
+                                     e.Text!.Contains("本轮本地工具调用达到 80 次"));
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Done);
+    }
+
+    [Fact]
     public async Task Different_local_tool_inputs_do_not_trigger_local_loop_guard()
     {
         static ChatResponse Call(string id, int i) => new(new List<ChatMessage>

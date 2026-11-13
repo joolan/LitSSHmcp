@@ -467,7 +467,9 @@ public sealed class AgentRuntime : IAsyncDisposable
             : SkillTools.Create(skillsDir, availableGroups).ToList();
 
         var spill = TryCreateSpill(config, ownerUserId, scopeSpillByOwner);
-        var spillTools = spill is null ? new List<IAgentTool>() : SpillTools.Create(spill).ToList();
+        var spillTools = spill is null
+            ? new List<IAgentTool>()
+            : SpillTools.Create(spill, ToolResultBudget.Resolve("spill", config.ToolResultMaxChars)).ToList();
 
         // 记忆先于工具装配：memory != null 时注册 ops_memory_*（否则不暴露，提示词同步不注入该段）
         var (memory, memoryDisabledReason) = await TryCreateMemoryAsync(config, provider, ownerUserId,

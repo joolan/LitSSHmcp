@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using LitSSHmcp.Agent;
 using LitSSHmcp.Core.Models;
 using Microsoft.Extensions.AI;
@@ -13,6 +14,30 @@ public class SpillAndSubAgentTests : IDisposable
 
     private static Dictionary<string, object?> Args(params (string, object?)[] pairs) =>
         pairs.ToDictionary(p => p.Item1, p => p.Item2);
+
+    [Fact]
+    public async Task Spill_read_pages_by_char_budget_and_reports_next_offset()
+    {
+        var store = new SpillStore(_dir, 7);
+        var content = string.Join('\n', Enumerable.Range(0, 50)
+            .Select(i => $"line{i}-" + new string('x', 180)));
+        var handle = store.Save("big", content);
+        var spill = Tool(SpillTools.Create(store, maxResultChars: 1000), "spill");
+
+        var first = (string)(await spill.InvokeAsync(
+            Args(("handle", handle), ("limit", 200)), default))!;
+        Assert.True(first.Length <= 1000, $"spill read 超出预算: {first.Length}");
+        Assert.Contains("下次 offset=", first);
+
+        var match = Regex.Match(first, @"下次 offset=(\d+)");
+        Assert.True(match.Success);
+        var nextOffset = int.Parse(match.Groups[1].Value);
+
+        var second = (string)(await spill.InvokeAsync(
+            Args(("handle", handle), ("offset", nextOffset), ("limit", 200)), default))!;
+        Assert.Contains($"{nextOffset}: line{nextOffset}-", second);
+        Assert.NotEqual(first, second);
+    }
 
     [Fact]
     public async Task Spill_store_saves_resolves_and_blocks_escape()

@@ -166,7 +166,7 @@ public static class SystemPromptBuilder
         sb.AppendLine("- 不得调用任何写/变更/审批类工具；如任务需要变更，返回结论并说明需要主代理处理。");
         sb.AppendLine($"- 最终摘要不超过 {summaryMaxChars} 字，按「结论 / 证据 / 未决 / 建议」组织；没有内容的项省略，不要粘贴原始日志。");
         if (spillTools)
-            sb.AppendLine("- 工具结果若提示已落盘为 `spill://…`, 用 `spill(action=\"read\", handle=\"spill://…\", offset, limit)` 分段读取，或用 `spill(action=\"grep\", handle=\"spill://…\", pattern)` 搜索；不要重复调用原工具。");
+            sb.AppendLine("- 工具结果若提示已落盘为 `spill://…`, 用 `spill(action=\"read\", handle=\"spill://…\", offset, limit)` 分段读取；返回头会给出 `下次 offset=N`，按它翻页、不要猜偏移；大 JSON 优先 `spill(action=\"json\", path=...)`，定位内容用 `spill(action=\"grep\", handle=\"spill://…\", pattern)`。spill 结果同样受输出预算约束，不要重复读取同一页或重复调用原工具。");
         if (!string.IsNullOrWhiteSpace(restrictionNote))
             sb.AppendLine(restrictionNote.Trim());
         return sb.ToString().Trim();

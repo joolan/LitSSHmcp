@@ -57,6 +57,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
     private string _connectionPoolKeepAlive = "30";
     private string _connectionPoolConnectTimeout = "20";
     private string _connectionPoolMaxPerServer = "1";
+    private string _connectionPoolAcquireTimeout = "30";
     private bool _authzEnabled = true;
     private string _webJobsRoot = string.Empty;
     private string _statusMessage = string.Empty;
@@ -115,6 +116,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
     public string ConnectionPoolKeepAlive { get => _connectionPoolKeepAlive; set => Set(ref _connectionPoolKeepAlive, value); }
     public string ConnectionPoolConnectTimeout { get => _connectionPoolConnectTimeout; set => Set(ref _connectionPoolConnectTimeout, value); }
     public string ConnectionPoolMaxPerServer { get => _connectionPoolMaxPerServer; set => Set(ref _connectionPoolMaxPerServer, value); }
+    public string ConnectionPoolAcquireTimeout { get => _connectionPoolAcquireTimeout; set => Set(ref _connectionPoolAcquireTimeout, value); }
 
     /// <summary>Web 授权矩阵启用开关（config.security.authorization.enabled；关闭=放弃该防线）。</summary>
     public bool AuthzEnabled { get => _authzEnabled; set => Set(ref _authzEnabled, value); }
@@ -193,6 +195,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
             ConnectionPoolKeepAlive = pool.KeepAliveSeconds.ToString();
             ConnectionPoolConnectTimeout = pool.ConnectTimeoutSeconds.ToString();
             ConnectionPoolMaxPerServer = pool.MaxPerServer.ToString();
+            ConnectionPoolAcquireTimeout = pool.AcquireTimeoutSeconds.ToString();
 
             var authz = s.Authorization ?? new AuthorizationConfig();
             AuthzEnabled = authz.Enabled;
@@ -293,6 +296,7 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
             config.ConnectionPool.KeepAliveSeconds = (int)Math.Max(0, ParseLong(ConnectionPoolKeepAlive, 30));
             config.ConnectionPool.ConnectTimeoutSeconds = (int)Math.Max(5, ParseLong(ConnectionPoolConnectTimeout, 20));
             config.ConnectionPool.MaxPerServer = (int)Math.Clamp(ParseLong(ConnectionPoolMaxPerServer, 1), 1, 16);
+            config.ConnectionPool.AcquireTimeoutSeconds = (int)Math.Clamp(ParseLong(ConnectionPoolAcquireTimeout, 30), 1, 600);
 
             s.Authorization ??= new AuthorizationConfig();
             s.Authorization.Enabled = AuthzEnabled;

@@ -80,7 +80,8 @@ internal sealed class FakeSshService : ISshService
         int maxFiles,
         long maxTotalBytes,
         Func<string, bool>? overwriteResolver = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IProgress<BatchTransferFileProgress>? progress = null)
         => Task.FromResult(new BatchTransferResult { Success = true });
 
     public Task<BatchTransferResult> UploadBatchAsync(
@@ -92,7 +93,8 @@ internal sealed class FakeSshService : ISshService
         long maxFileBytes,
         long maxTotalBytes,
         Func<string, bool>? overwriteResolver = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IProgress<BatchTransferFileProgress>? progress = null)
         => Task.FromResult(new BatchTransferResult { Success = true });
 
     public Task<CommandResult> ExecuteStreamingAsync(

@@ -194,6 +194,54 @@ public class FileTransferToolsSessionLandingTests : IDisposable
         Assert.Equal(new[] { sharedFile }, ssh.LastUploadBatchPaths!);
     }
 
+    [Fact]
+    public async Task Download_forwards_per_file_progress_to_mcp_progress_notifications()
+    {
+        // P1-1: 底层逐文件进度必须桥接为 MCP progress notification（Progress/Total + 稳定 JSON Message），
+        // 大文件/目录下载时客户端不再盲等。
+        SessionWorkspace.Current = _sessionUnderRoot;
+        var (tools, _) = MakeTools(MakeConfig(_root));
+
+        var notifications = new List<ModelContextProtocol.ProgressNotificationValue>();
+        var progress = new InlineProgress<ModelContextProtocol.ProgressNotificationValue>(notifications.Add);
+
+        var result = await tools.Download("srv1", "/var/log/a.log\n/var/log/b.log", progress: progress);
+
+        Assert.True(result.Success);
+        Assert.Equal(2, notifications.Count);
+        Assert.Equal(1, notifications[0].Progress);
+        Assert.Equal(2, notifications[0].Total);
+        Assert.Equal(2, notifications[1].Progress);
+        Assert.Contains("a.log", notifications[0].Message);
+        Assert.Contains("\"success\":true", notifications[0].Message);
+    }
+
+    [Fact]
+    public async Task Upload_forwards_per_file_progress_to_mcp_progress_notifications()
+    {
+        var localFile = Path.Combine(_sessionUnderRoot, "pkg.bin");
+        File.WriteAllText(localFile, "data");
+
+        SessionWorkspace.Current = _sessionUnderRoot;
+        var (tools, _) = MakeTools(MakeConfig(_root));
+
+        var notifications = new List<ModelContextProtocol.ProgressNotificationValue>();
+        var progress = new InlineProgress<ModelContextProtocol.ProgressNotificationValue>(notifications.Add);
+
+        var result = await tools.Upload("srv1", localFile, "/var/log", progress: progress);
+
+        Assert.True(result.Success);
+        Assert.Single(notifications);
+        Assert.Equal(1, notifications[0].Progress);
+        Assert.Equal(1, notifications[0].Total);
+        Assert.Contains("pkg.bin", notifications[0].Message);
+    }
+
+    private sealed class InlineProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value) => handler(value);
+    }
+
     private sealed class StubSsh : ISshService
     {
         public string? LastDownloadBatchDirectory { get; private set; }
@@ -205,9 +253,11 @@ public class FileTransferToolsSessionLandingTests : IDisposable
 
         public Task<BatchTransferResult> DownloadBatchAsync(SshServerConfig server, IReadOnlyList<string> remotePaths,
             string localDirectory, bool recursive, int maxFiles, long maxTotalBytes,
-            Func<string, bool>? overwriteResolver = null, CancellationToken ct = default)
+            Func<string, bool>? overwriteResolver = null, CancellationToken ct = default,
+            IProgress<BatchTransferFileProgress>? progress = null)
         {
             LastDownloadBatchDirectory = localDirectory;
+            ReportFakeProgress(remotePaths, progress);
             return Task.FromResult(new BatchTransferResult { Success = true, Total = remotePaths.Count, Succeeded = remotePaths.Count });
         }
 
@@ -223,15 +273,26 @@ public class FileTransferToolsSessionLandingTests : IDisposable
         public Task<RemoteFileListResult> ListRemoteFilesAsync(SshServerConfig server, string remotePath, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<bool> RemoteFileExistsAsync(SshServerConfig server, string remotePath, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<BatchTransferResult> UploadBatchAsync(SshServerConfig server, IReadOnlyList<string> localPaths, string remoteDirectory,
-            bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default)
+            bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default,
+            IProgress<BatchTransferFileProgress>? progress = null)
         {
             LastUploadBatchPaths = localPaths.ToList();
+            ReportFakeProgress(localPaths, progress);
             return Task.FromResult(new BatchTransferResult
             {
                 Success = true,
                 Total = localPaths.Count,
                 Succeeded = localPaths.Count
             });
+        }
+
+        /// <summary>模拟逐文件进度上报（每个路径报一次），供 progress 转发断言使用。</summary>
+        private static void ReportFakeProgress(IReadOnlyList<string> paths, IProgress<BatchTransferFileProgress>? progress)
+        {
+            if (progress is null)
+                return;
+            for (var i = 0; i < paths.Count; i++)
+                progress.Report(new BatchTransferFileProgress(i + 1, paths.Count, paths[i], paths[i], true, null, 100, (i + 1) * 100));
         }
         public Task<CommandResult> ExecuteStreamingAsync(SshServerConfig server, string command,
             Action<string>? onStdout = null, Action<string>? onStderr = null, string? stdinText = null,

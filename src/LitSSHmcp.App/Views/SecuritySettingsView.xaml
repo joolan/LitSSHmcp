@@ -224,6 +224,11 @@
                     <TextBox Text="{Binding ConnectionPoolMaxPerServer, UpdateSourceTrigger=PropertyChanged}" Width="40" Margin="4,0,4,0"/>
                     <TextBlock Text="(1~16, 并发调用分配到不同连接)" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10"/>
                 </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="等待空闲连接超时(秒):" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding ConnectionPoolAcquireTimeout, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="4,0,4,0"/>
+                    <TextBlock Text="(1~600, 池满时有界等待; 超时返回连接池繁忙而不是无限挂起)" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10"/>
+                </StackPanel>
 
                 <TextBlock Text="查询结果脱敏 (列名正则=模式, 每行一条; 模式: full/email/phone/last4)" FontWeight="Bold" Margin="0,8,0,4"/>
                 <TextBox Text="{Binding MaskingRules, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True"

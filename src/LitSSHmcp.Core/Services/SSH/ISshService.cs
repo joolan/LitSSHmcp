@@ -28,12 +28,14 @@ public interface ISshService
     /// <summary>单条 SFTP 连接批量下载（多个文件 / 目录，可递归）；用于"下载文件夹"避免每个文件重新建连。
     /// <paramref name="overwriteResolver"/> 在目标文件已存在时被调用（参数=本地目标路径），返回 true=覆盖，false=跳过；null=一律覆盖。</summary>
     Task<BatchTransferResult> DownloadBatchAsync(SshServerConfig server, IReadOnlyList<string> remotePaths, string localDirectory,
-        bool recursive, int maxFiles, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default);
+        bool recursive, int maxFiles, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default,
+        IProgress<BatchTransferFileProgress>? progress = null);
 
     /// <summary>单条 SFTP 连接批量上传（多个文件 / 目录，可递归，保持子目录结构）；用于"上传文件夹"避免每个文件重新建连。
     /// <paramref name="overwriteResolver"/> 在目标文件已存在时被调用（参数=远程目标路径），返回 true=覆盖，false=跳过；null=一律覆盖。</summary>
     Task<BatchTransferResult> UploadBatchAsync(SshServerConfig server, IReadOnlyList<string> localPaths, string remoteDirectory,
-        bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default);
+        bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default,
+        IProgress<BatchTransferFileProgress>? progress = null);
 
     /// <summary>
     /// 执行命令并实时回调 stdout / stderr 的行（用于解析传输进度）。
@@ -102,6 +104,20 @@ public class FileTransferProgress
     public long TotalBytes { get; set; }
     public double Percentage => TotalBytes > 0 ? (double)BytesTransferred / TotalBytes * 100 : 0;
 }
+
+/// <summary>
+/// 批量传输逐文件进度（供 UI/MCP progress notification 使用）：
+/// 每完成一个文件上报一次（成功或失败），累计字节让客户端可以算总量与均速。
+/// </summary>
+public sealed record BatchTransferFileProgress(
+    int Completed,
+    int Total,
+    string Path,
+    string RemotePath,
+    bool Success,
+    string? Error,
+    long Bytes,
+    long CumulativeBytes);
 
 public class RemoteFileInfo
 {

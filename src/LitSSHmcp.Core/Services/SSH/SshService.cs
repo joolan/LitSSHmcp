@@ -34,13 +34,14 @@ public class SshService : ISshService
         _pool = pool;
     }
 
-    /// <summary>获取一条（可能复用的）SSH 连接。启用连接池时命令执行完不断开、放回池；否则新建并在释放时断开。</summary>
-    private SshConnection OpenConnection(SshServerConfig server)
+    /// <summary>获取一条（可能复用的）SSH 连接。启用连接池时命令执行完不断开、放回池；否则新建并在释放时断开。
+    /// 池满员时有界等待（AcquireTimeoutSeconds），取消令牌可及时中断等待。</summary>
+    private SshConnection OpenConnection(SshServerConfig server, CancellationToken ct = default)
     {
         var options = _securityOptions?.ConnectionPool;
         if (_pool is not null && options is { Enabled: true })
         {
-            var lease = _pool.Rent(server);
+            var lease = _pool.Rent(server, ct);
             return new SshConnection(lease.Client, lease.Dispose, lease.Invalidate);
         }
 
@@ -82,13 +83,13 @@ public class SshService : ISshService
         }
     }
 
-    /// <summary>获取一条（可能复用的）SFTP 连接；启用连接池时传输完不断开、放回池。</summary>
-    private SftpConnection OpenSftpConnection(SshServerConfig server)
+    /// <summary>获取一条（可能复用的）SFTP 连接；启用连接池时传输完不断开、放回池。池满员时有界等待，取消令牌可及时中断等待。</summary>
+    private SftpConnection OpenSftpConnection(SshServerConfig server, CancellationToken ct = default)
     {
         var options = _securityOptions?.ConnectionPool;
         if (_pool is not null && options is { Enabled: true })
         {
-            var lease = _pool.RentSftp(server);
+            var lease = _pool.RentSftp(server, ct);
             return new SftpConnection(lease.Client, lease.Dispose);
         }
 
@@ -269,7 +270,7 @@ public class SshService : ISshService
     private CommandResult ExecuteCommandWithRetry(SshServerConfig server, string command, int timeoutSeconds, Stopwatch sw,
         CancellationToken ct)
     {
-        using var conn = OpenConnection(server);
+        using var conn = OpenConnection(server, ct);
         try
         {
             return ExecuteCommandOnClient(conn.Client, server, command, timeoutSeconds, sw, ct);
@@ -280,7 +281,7 @@ public class SshService : ISshService
             // 只对“打开通道失败”做一次安全重试；命令可能已执行的网络中断不在此列。
             conn.Invalidate();
             Log($"Command channel failed; evicted connection and retrying once: {ex.Message}", "WARN");
-            using var retry = OpenConnection(server);
+            using var retry = OpenConnection(server, ct);
             try
             {
                 return ExecuteCommandOnClient(retry.Client, server, command, timeoutSeconds, sw, ct);
@@ -351,7 +352,7 @@ public class SshService : ISshService
                 // 只走 sudo/su 的交互式通道，管不到 AI 自带的那层 sudo。
                 var effectiveCommand = StripSudoPrefix(command);
 
-                connection = OpenConnection(server);
+                connection = OpenConnection(server, ct);
                 var client = connection.Client;
 
                 CommandResult Execute() => server.SudoType switch
@@ -786,7 +787,7 @@ public class SshService : ISshService
 
                 try
                 {
-                    using var conn = OpenSftpConnection(server);
+                    using var conn = OpenSftpConnection(server, ct);
                     var sftp = conn.Client;
                     Log("SFTP connection established");
 
@@ -864,7 +865,7 @@ public class SshService : ISshService
 
                 try
                 {
-                    using var conn = OpenSftpConnection(server);
+                    using var conn = OpenSftpConnection(server, ct);
                     var sftp = conn.Client;
                     Log("SFTP connection established");
 
@@ -1066,7 +1067,7 @@ public class SshService : ISshService
             try
             {
                 Log($"Listing files in {server.Host}:{remotePath}");
-                using var conn = OpenSftpConnection(server);
+                using var conn = OpenSftpConnection(server, ct);
                 var sftp = conn.Client;
 
                 var files = sftp.ListDirectory(remotePath);
@@ -1102,7 +1103,7 @@ public class SshService : ISshService
 
             try
             {
-                using var conn = OpenConnection(server);
+                using var conn = OpenConnection(server, ct);
                 var client = conn.Client;
 
                 var escapedPath = remotePath.Replace("'", "'\\''");
@@ -1176,7 +1177,7 @@ public class SshService : ISshService
         {
             try
             {
-                using var conn = OpenSftpConnection(server);
+                using var conn = OpenSftpConnection(server, ct);
                 return conn.Client.Exists(remotePath);
             }
             catch
@@ -1187,7 +1188,8 @@ public class SshService : ISshService
     }
 
     public async Task<BatchTransferResult> DownloadBatchAsync(SshServerConfig server, IReadOnlyList<string> remotePaths,
-        string localDirectory, bool recursive, int maxFiles, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default)
+        string localDirectory, bool recursive, int maxFiles, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default,
+        IProgress<BatchTransferFileProgress>? progress = null)
     {
         return await Task.Run(() =>
         {
@@ -1198,7 +1200,7 @@ public class SshService : ISshService
             var sw = Stopwatch.StartNew();
             try
             {
-                using var conn = OpenSftpConnection(server);
+                using var conn = OpenSftpConnection(server, ct);
                 var sftp = conn.Client;
 
                 var cap = Math.Clamp(maxFiles, 1, 5000);
@@ -1237,6 +1239,7 @@ public class SshService : ISshService
                             Success = false,
                             Error = "远端路径不安全或本地路径越界"
                         });
+                        ReportBatchProgress(progress, result.Files.Count, items.Count, remote, string.Empty, false, "远端路径不安全或本地路径越界", 0, result.TotalBytes);
                         continue;
                     }
 
@@ -1249,6 +1252,7 @@ public class SshService : ISshService
                         if (overwriteResolver is not null && File.Exists(localPath) && !overwriteResolver(localPath))
                         {
                             result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = localPath, Success = false, Error = "已跳过(同名)" });
+                            ReportBatchProgress(progress, result.Files.Count, items.Count, remote, localPath, false, "已跳过(同名)", 0, result.TotalBytes);
                             continue;
                         }
 
@@ -1256,6 +1260,7 @@ public class SshService : ISshService
                         {
                             result.Truncated = true;
                             result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = localPath, Success = false, Error = "达到批量下载总量上限" });
+                            ReportBatchProgress(progress, result.Files.Count, items.Count, remote, localPath, false, "达到批量下载总量上限", 0, result.TotalBytes);
                             continue;
                         }
 
@@ -1265,10 +1270,12 @@ public class SshService : ISshService
                         var len = new FileInfo(localPath).Length;
                         result.TotalBytes += len;
                         result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = localPath, Success = true, Bytes = len });
+                        ReportBatchProgress(progress, result.Files.Count, items.Count, remote, localPath, true, null, len, result.TotalBytes);
                     }
                     catch (Exception ex)
                     {
                         result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = localPath, Success = false, Error = ex.Message });
+                        ReportBatchProgress(progress, result.Files.Count, items.Count, remote, localPath, false, ex.Message, 0, result.TotalBytes);
                     }
                 }
 
@@ -1295,10 +1302,27 @@ public class SshService : ISshService
         }, ct);
     }
 
+    /// <summary>上报批量传输逐文件进度；对端断开等上报失败不影响传输主流程。</summary>
+    private static void ReportBatchProgress(IProgress<BatchTransferFileProgress>? progress, int completed, int total,
+        string path, string remotePath, bool success, string? error, long bytes, long cumulativeBytes)
+    {
+        if (progress is null)
+            return;
+        try
+        {
+            progress.Report(new BatchTransferFileProgress(completed, total, path, remotePath, success, error, bytes, cumulativeBytes));
+        }
+        catch
+        {
+            // 进度通知失败（对端已断开）不影响批量传输结果
+        }
+    }
+
     /// <summary>把路径展开为待下载文件列表（目录按 recursive 递归；跳过软链接防环；限制深度与数量）。
     /// 关键：相对路径始终相对**顶层下载根目录**计算，递归子目录不会丢层级。</summary>
     public async Task<BatchTransferResult> UploadBatchAsync(SshServerConfig server, IReadOnlyList<string> localPaths,
-        string remoteDirectory, bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default)
+        string remoteDirectory, bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default,
+        IProgress<BatchTransferFileProgress>? progress = null)
     {
         return await Task.Run(() =>
         {
@@ -1309,7 +1333,7 @@ public class SshService : ISshService
             var sw = Stopwatch.StartNew();
             try
             {
-                using var conn = OpenSftpConnection(server);
+                using var conn = OpenSftpConnection(server, ct);
                 var sftp = conn.Client;
 
                 var cap = Math.Clamp(maxFiles, 1, 5000);
@@ -1347,6 +1371,7 @@ public class SshService : ISshService
                             if (exists && !overwriteResolver(remote))
                             {
                                 result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = local, Success = false, Error = "已跳过(同名)" });
+                                ReportBatchProgress(progress, result.Files.Count, items.Count, local, remote, false, "已跳过(同名)", 0, result.TotalBytes);
                                 continue;
                             }
                         }
@@ -1354,12 +1379,14 @@ public class SshService : ISshService
                         var info = new FileInfo(local);
                         if (maxFileBytes > 0 && info.Length > maxFileBytes)                        {
                             result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = local, Success = false, Error = "超过单文件大小上限" });
+                            ReportBatchProgress(progress, result.Files.Count, items.Count, local, remote, false, "超过单文件大小上限", 0, result.TotalBytes);
                             continue;
                         }
                         if (maxTotalBytes > 0 && result.TotalBytes + info.Length > maxTotalBytes)
                         {
                             result.Truncated = true;
                             result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = local, Success = false, Error = "达到批量上传总量上限" });
+                            ReportBatchProgress(progress, result.Files.Count, items.Count, local, remote, false, "达到批量上传总量上限", 0, result.TotalBytes);
                             continue;
                         }
 
@@ -1372,10 +1399,12 @@ public class SshService : ISshService
 
                         result.TotalBytes += info.Length;
                         result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = local, Success = true, Bytes = info.Length });
+                        ReportBatchProgress(progress, result.Files.Count, items.Count, local, remote, true, null, info.Length, result.TotalBytes);
                     }
                     catch (Exception ex)
                     {
                         result.Files.Add(new BatchFileResult { RemotePath = remote, LocalPath = local, Success = false, Error = ex.Message });
+                        ReportBatchProgress(progress, result.Files.Count, items.Count, local, remote, false, ex.Message, 0, result.TotalBytes);
                     }
                 }
 
@@ -1666,7 +1695,7 @@ public class SshService : ISshService
             try
             {
                 Log($"Executing streaming command on {server.Host}:{server.Port}");
-                using var conn = OpenConnection(server);
+                using var conn = OpenConnection(server, ct);
                 using var cmd = conn.Client.CreateCommand(command);
                 cmd.CommandTimeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 86400));
 
@@ -2018,8 +2047,8 @@ public class SshService : ISshService
         {
             await Task.Run(() =>
             {
-                using var srcConn = OpenSftpConnection(request.Source);
-                using var dstConn = OpenSftpConnection(endpoint);
+                using var srcConn = OpenSftpConnection(request.Source, ct);
+                using var dstConn = OpenSftpConnection(endpoint, ct);
                 EnsureRemoteDirectory(dstConn.Client, request.TargetDirectory);
 
                 foreach (var path in request.SourcePaths)

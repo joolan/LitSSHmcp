@@ -9,8 +9,17 @@ namespace LitSSHmcp.Core.Services.SSH;
 /// <summary>SSH 连接复用池：命令通道（SshClient）与文件传输通道（SftpClient）分别按服务器复用，空闲自动断开。</summary>
 public interface ISshConnectionPool
 {
-    SshConnectionLease Rent(SshServerConfig server);
-    SftpConnectionLease RentSftp(SshServerConfig server);
+    SshConnectionLease Rent(SshServerConfig server, CancellationToken ct = default);
+    SftpConnectionLease RentSftp(SshServerConfig server, CancellationToken ct = default);
+}
+
+/// <summary>
+/// 连接池满员且在 <see cref="ConnectionPoolConfig.AcquireTimeoutSeconds"/> 内未等到空闲连接时抛出；
+/// 避免长命令/长传输占满容量后调用线程无限挂起、取消无法生效。
+/// </summary>
+public sealed class SshConnectionPoolBusyException : TimeoutException
+{
+    public SshConnectionPoolBusyException(string message) : base(message) { }
 }
 
 /// <summary>
@@ -30,22 +39,35 @@ public sealed class SshConnectionPool : ISshConnectionPool, IDisposable
         ISshKnownHostsStore? knownHosts,
         Func<SshHostKeyMode> hostKeyMode,
         Func<ConnectionPoolConfig> options)
+        : this(options,
+            s => SshClientFactory.Create(s, knownHosts, hostKeyMode()),
+            s => SshClientFactory.CreateSftp(s, knownHosts, hostKeyMode()),
+            connector: null)
+    {
+    }
+
+    /// <summary>测试缝：允许注入假工厂与连接动作（connector 为 null 时走真实 Connect）。</summary>
+    internal SshConnectionPool(
+        Func<ConnectionPoolConfig> options,
+        Func<SshServerConfig, SshClient> commandFactory,
+        Func<SshServerConfig, SftpClient> sftpFactory,
+        Action<BaseClient, ConnectionPoolConfig>? connector)
     {
         _options = options;
-        _commands = new Pool<SshClient>(options, s => SshClientFactory.Create(s, knownHosts, hostKeyMode()));
-        _sftp = new Pool<SftpClient>(options, s => SshClientFactory.CreateSftp(s, knownHosts, hostKeyMode()));
+        _commands = new Pool<SshClient>(options, commandFactory, connector);
+        _sftp = new Pool<SftpClient>(options, sftpFactory, connector);
         _sweeper = new Timer(_ => Sweep(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
-    public SshConnectionLease Rent(SshServerConfig server)
+    public SshConnectionLease Rent(SshServerConfig server, CancellationToken ct = default)
     {
-        var lease = _commands.Rent(server);
+        var lease = _commands.Rent(server, ct);
         return new SshConnectionLease((SshClient)lease.Client, lease.Dispose, lease.Invalidate);
     }
 
-    public SftpConnectionLease RentSftp(SshServerConfig server)
+    public SftpConnectionLease RentSftp(SshServerConfig server, CancellationToken ct = default)
     {
-        var lease = _sftp.Rent(server);
+        var lease = _sftp.Rent(server, ct);
         return new SftpConnectionLease((SftpClient)lease.Client, lease.Dispose);
     }
 
@@ -76,19 +98,22 @@ public sealed class SshConnectionPool : ISshConnectionPool, IDisposable
         private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
         private readonly Func<SshServerConfig, T> _factory;
         private readonly Func<ConnectionPoolConfig> _options;
+        private readonly Action<BaseClient, ConnectionPoolConfig>? _connector;
 
-        public Pool(Func<ConnectionPoolConfig> options, Func<SshServerConfig, T> factory)
+        public Pool(Func<ConnectionPoolConfig> options, Func<SshServerConfig, T> factory,
+            Action<BaseClient, ConnectionPoolConfig>? connector)
         {
             _options = options;
             _factory = factory;
+            _connector = connector;
         }
 
-        public Lease Rent(SshServerConfig server)
+        public Lease Rent(SshServerConfig server, CancellationToken ct = default)
         {
             var options = _options();
             var max = Math.Clamp(options.MaxPerServer, 1, MaxSlotsCap);
-            var entry = _entries.GetOrAdd(Key(server, max), _ => new Entry(_factory, max));
-            return entry.Rent(server, options);
+            var entry = _entries.GetOrAdd(Key(server, max), _ => new Entry(_factory, _connector, max));
+            return entry.Rent(server, options, ct);
         }
 
         public void SweepIdle(DateTime now, TimeSpan idle)
@@ -134,19 +159,28 @@ public sealed class SshConnectionPool : ISshConnectionPool, IDisposable
         private sealed class Entry : IDisposable
         {
             private readonly Func<SshServerConfig, T> _factory;
+            private readonly Action<BaseClient, ConnectionPoolConfig>? _connector;
+            private readonly int _maxPerServer;
             private readonly object _lock = new();
             private readonly List<Slot> _slots = new();
             private readonly SemaphoreSlim _capacity;
 
-            public Entry(Func<SshServerConfig, T> factory, int maxPerServer)
+            public Entry(Func<SshServerConfig, T> factory, Action<BaseClient, ConnectionPoolConfig>? connector, int maxPerServer)
             {
                 _factory = factory;
+                _connector = connector;
+                _maxPerServer = maxPerServer;
                 _capacity = new SemaphoreSlim(maxPerServer, maxPerServer);
             }
 
-            public Lease Rent(SshServerConfig server, ConnectionPoolConfig options)
+            public Lease Rent(SshServerConfig server, ConnectionPoolConfig options, CancellationToken ct)
             {
-                _capacity.Wait();   // 预留并发容量；满则等待某条连接归还
+                // 预留并发容量；满员时有界等待——超时抛"连接池繁忙"而不是无限挂起，ct 取消也能及时生效。
+                var acquireTimeout = TimeSpan.FromSeconds(Math.Clamp(options.AcquireTimeoutSeconds, 1, 600));
+                if (!_capacity.Wait(acquireTimeout, ct))
+                    throw new SshConnectionPoolBusyException(
+                        $"连接池繁忙: {server.Host}:{server.Port} 已满 {_maxPerServer} 条连接，" +
+                        $"等待 {acquireTimeout.TotalSeconds:0}s 未获得空闲连接（可能有长命令或大文件传输在执行，可稍后重试）");
                 Slot slot;
                 lock (_lock)
                 {
@@ -196,6 +230,11 @@ public sealed class SshConnectionPool : ISshConnectionPool, IDisposable
 
                 SafeDispose(existing);
                 var client = _factory(server);
+                if (_connector is not null)
+                {
+                    _connector(client, options);
+                    return client;
+                }
                 client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.ConnectTimeoutSeconds, 5, 120));
                 client.KeepAliveInterval = TimeSpan.FromSeconds(Math.Clamp(options.KeepAliveSeconds, 0, 3600));
                 client.Connect();

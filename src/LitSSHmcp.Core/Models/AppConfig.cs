@@ -617,6 +617,9 @@ public class ConnectionPoolConfig
 
     /// <summary>每台服务器最多复用的连接数（默认 1；并发调用该服务器时分配到不同连接，1~16）。</summary>
     public int MaxPerServer { get; set; } = 1;
+
+    /// <summary>连接池满员时等待空闲连接的最长秒数（默认 30，1~600）。超时返回"连接池繁忙"错误而不是无限挂起，MCP 取消也能及时生效。</summary>
+    public int AcquireTimeoutSeconds { get; set; } = 30;
 }
 
 public class SecurityConfig

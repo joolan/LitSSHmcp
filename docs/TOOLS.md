@@ -215,7 +215,7 @@ MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mc
 ### `ssh_snapshot_refresh`
 - **参数**：`serverId` — 服务器标识；`section` / `detail`（可选，同 `ssh_snapshot_get`，默认返回概览）；`force`（可选，默认 false）；`profile`（可选，`quick` = resource+portmap+systemd+security，`full` = 全部，默认 full）；`sections`（可选，逗号分隔，显式指定采集维度并覆盖 profile）
 - **返回**：同 `ssh_snapshot_get` 的结构（默认 `data.view=summary` 概览，可用 `section`/`detail="full"` 取完整）；成功 `status=succeeded`，失败 `status=failed`（并保留已采集到的部分 section 与失败事件，便于排障）；**节流**：距上次**成功**快照小于 `snapshot.minRefreshIntervalSeconds`（默认 60s）且未传 `force=true` 时，**直接返回已有快照**并置 `status=fresh`（`hint` 说明剩余间隔），不重新采集——避免同一任务内反复全量刷新。
-- **说明**：**重新采集**整机快照（与 `ssh_snapshot_get` 同一套 data 结构）。**耗时较长**（典型 10~30 秒，弱网更久），工具描述已明确提示。**单飞限流**：同一服务器同时只允许一个快照在采集中，重复调用立即返回 `status=snapshot_in_progress`（含进行中的 `snapshotId`），不会排队或重复采集——此时应改用 `ssh_snapshot_get` 稍后查询。**失败也落库**：连接失败/超时/取消都会把该份快照记为 `failed` 并写入 `error` 与事件；`security` 兼容性上，采集命令均为**内置固定只读命令**，但仍受命令过滤器 `Blocked` 规则约束。
+- **说明**：**重新采集**整机快照（与 `ssh_snapshot_get` 同一套 data 结构）。**耗时较长**（典型 10~30 秒，弱网更久），工具描述已明确提示。**单飞限流**：同一服务器同时只允许一个快照在采集中，重复调用立即返回 `status=snapshot_in_progress`（含进行中的 `snapshotId`），不会排队或重复采集——此时应改用 `ssh_snapshot_get` 稍后查询。**失败也落库**：连接失败/超时/取消都会把该份快照记为 `failed` 并写入 `error` 与事件；`security` 兼容性上，采集命令均为**内置固定只读命令**，但仍受命令过滤器 `Blocked` 规则约束。 **授权级别**：登记为 **read**（远端仅固定只读采集命令、仅写本地快照缓存，与 Agent 只读模式放行语义一致），Web 强制授权模式下 read 用户可刷新快照，且不占目标写锁。
 - **提权**：由 `config.json` 的 `snapshot.useSudo`（默认 `true`）与该服务器 `SudoType` 共同决定；开启且已配置提权时自动以 sudo/su 执行（`portmap` 可见 root 进程属主与 systemd 服务名、`nginx_tls` 可读 root-only 证书目录），**不逐次弹审批**；未配置/关闭时自动降级，不报错。设置 `snapshot.useSudo=false` 可完全禁止快照提权。
 - **保留**：每台服务器保留最近 `snapshot.retentionPerServer` 份（默认 30，`0`=不限），超出时按时间裁剪并级联清理其事件。
 - **accounts 隐私**：`snapshot.collectAccounts` / `snapshot.collectAuthorizedKeys` / `snapshot.collectLoginHistory` 默认均 `true`；关闭公钥或登录历史可减少敏感数据与快照体积。
@@ -267,11 +267,13 @@ MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mc
 上传/下载受 `fileTransfer.enabled` 开关与 `allowedLocalPaths` / `allowedRemotePaths` 白名单约束（越界返回 `path_not_allowed`，禁用返回 `file_transfer_disabled`），路径会做规范化并拦截 `..` 穿越。**上传源对称约束**（需求 D6）：宿主注入了会话工作目录（`LITSSH_SESSION_WORKSPACE_DIR`）时，上传源还须位于该会话目录之内（与"下载落点限会话目录"对称，`PathGuard` 物理解析防链接逃逸），否则 `path_not_allowed`；共享工作区文件请先复制到会话目录再上传。上传/下载过程中会通过 MCP `notifications/progress` 推送进度（字节数/百分比）。
 
 ### `ssh_upload`
+- **进度**：多文件时通过 MCP progress notification 逐文件上报（`progress`=已完成文件数、`total`=总文件数、`message`=含 file/remotePath/success/error/bytes/totalBytes 的 JSON），环境搭建大文件传输不再盲等。
 - **参数**：`serverId`、`localPaths`（每行一个：文件或目录）、`remoteDirectory`（远程目标目录，须在 `allowedRemotePaths` 内）、`recursive`（默认 false，目录递归子目录）、`maxFiles`（默认 200，1~5000）、`riskNote`（可选，助手风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」）
 - **返回**：`{ success, status, error, remoteDirectory, total, succeeded, failed, truncated, files: [...] }`
 - **说明**：统一上传入口，单文件/多文件/目录均可用；**用一条 SFTP 连接**批量上传，目录按 `recursive` 展开并保留相对子目录结构；**整批一次人工确认**。
 
 ### `ssh_download`
+- **进度**：多文件时通过 MCP progress notification 逐文件上报（同 `ssh_upload` 的 JSON 格式）。
 - **参数**：`serverId`、`remotePaths`（每行一个：文件或目录）、`localDirectory`（可选，本地目标目录；省略 = 会话工作目录）、`recursive`（默认 false，目录递归，软链接跳过）、`maxFiles`（默认 200，1~5000）
 - **返回**：`{ success, status, error, localDirectory, total, succeeded, failed, truncated, totalBytes, durationMs, files: [{ remotePath, localPath, success, size, error }] }`
 - **说明**：统一下载入口，单文件/多文件/目录均可用；**用一条 SFTP 连接**批量下载，目录按 `recursive` 展开并跳过软链接；**整批一次人工确认**。

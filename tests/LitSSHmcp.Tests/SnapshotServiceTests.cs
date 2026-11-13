@@ -290,10 +290,10 @@ public class SnapshotServiceTests : IDisposable
         public Task<bool> RemoteFileExistsAsync(SshServerConfig server, string remotePath, CancellationToken ct = default) =>
             Task.FromResult(false);
 
-        public Task<BatchTransferResult> DownloadBatchAsync(SshServerConfig server, IReadOnlyList<string> remotePaths, string localDirectory, bool recursive, int maxFiles, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default) =>
+        public Task<BatchTransferResult> DownloadBatchAsync(SshServerConfig server, IReadOnlyList<string> remotePaths, string localDirectory, bool recursive, int maxFiles, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default, IProgress<BatchTransferFileProgress>? progress = null) =>
             throw new NotSupportedException();
 
-        public Task<BatchTransferResult> UploadBatchAsync(SshServerConfig server, IReadOnlyList<string> localPaths, string remoteDirectory, bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default) =>
+        public Task<BatchTransferResult> UploadBatchAsync(SshServerConfig server, IReadOnlyList<string> localPaths, string remoteDirectory, bool recursive, int maxFiles, long maxFileBytes, long maxTotalBytes, Func<string, bool>? overwriteResolver = null, CancellationToken ct = default, IProgress<BatchTransferFileProgress>? progress = null) =>
             throw new NotSupportedException();
 
         public Task<CommandResult> ExecuteStreamingAsync(SshServerConfig server, string command, Action<string>? onStdout = null, Action<string>? onStderr = null, string? stdinText = null, CancellationToken ct = default, int timeoutSeconds = 120) =>

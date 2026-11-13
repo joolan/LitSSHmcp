@@ -116,7 +116,9 @@ public static class ToolSecurityCatalog
         ServerRead("ssh_test_connection");
         ServerRead("ssh_snapshot_get");
         ServerRead("ssh_snapshot_diff");
-        ServerExec("ssh_snapshot_refresh");
+        // 快照刷新：远端只执行内置固定只读采集命令、仅写本地快照缓存，
+        // 与 Agent 只读模式（ToolProfileFilter）放行它的语义保持一致 → 登记为 read，不占目标写锁。
+        ServerRead("ssh_snapshot_refresh");
         ServerRead("ssh_list_files");
         ServerRead("ssh_download");
 

@@ -158,8 +158,10 @@ public sealed class GuardedCommandService : IGuardedCommandService
             ServerHost = server.Host,
             Success = result.Success,
             Status = result.Success ? null : ToolSupport.CommandFailureStatus(result),
-            Error = result.Success ? null : result.Error,
-            Output = output,
+            // Guarded 层出口统一脱敏兜底：docker inspect/日志/JVM 诊断等易输出连接串或口令，
+            // 不依赖底层 SshService 的部分脱敏"碰巧覆盖"。
+            Error = result.Success ? null : ToolSupport.RedactSecrets(result.Error, server),
+            Output = ToolSupport.RedactSecrets(output, server),
             Truncated = truncated,
             OutputChars = originalLength,
             ExitCode = result.ExitCode,
@@ -248,8 +250,8 @@ public sealed class GuardedCommandService : IGuardedCommandService
                         Host = server.Host,
                         Success = result.Success,
                         Status = result.Success ? null : ToolSupport.CommandFailureStatus(result),
-                        Error = result.Success ? null : result.Error,
-                        Output = output,
+                        Error = result.Success ? null : ToolSupport.RedactSecrets(result.Error, server),
+                        Output = ToolSupport.RedactSecrets(output, server),
                         Truncated = truncated,
                         ExitCode = result.ExitCode,
                         DurationMs = sw.Elapsed.TotalMilliseconds
@@ -269,7 +271,7 @@ public sealed class GuardedCommandService : IGuardedCommandService
                         Host = server.Host,
                         Success = false,
                         Status = "exception",
-                        Error = ex.Message,
+                        Error = ToolSupport.RedactSecrets(ex.Message, server),
                         Output = string.Empty,
                         DurationMs = sw.Elapsed.TotalMilliseconds
                     };

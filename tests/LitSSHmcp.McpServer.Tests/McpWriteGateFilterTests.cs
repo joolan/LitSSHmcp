@@ -51,13 +51,26 @@ public class McpWriteGateFilterTests : IDisposable
     [InlineData("ssh_download", false)]
     [InlineData("mysql_query", false)]
     [InlineData("redis_read", false)]
-    [InlineData("ssh_snapshot_refresh", true)]
+    // 快照刷新只写本地快照缓存、远端为固定只读采集命令 → 不占目标写锁（与 Agent 只读模式语义一致）
+    [InlineData("ssh_snapshot_refresh", false)]
     [InlineData("topology_discover", false)]
     [InlineData("app_health_snapshot", false)]
     [InlineData("unknown_tool", false)]
     [InlineData(null, false)]
     public void RequiresWriteGate_classifies_tools(string? tool, bool expected) =>
         Assert.Equal(expected, McpWriteGateFilter.RequiresWriteGate(tool));
+
+    [Fact]
+    public void Snapshot_refresh_is_registered_read_level_consistent_with_agent_readonly_mode()
+    {
+        // 快照刷新远端只执行固定只读采集命令、仅写本地缓存；Agent 只读模式（ToolProfileFilter）
+        // 也放行它。安全目录必须登记为 read 且不占写锁，否则 Web 强制授权模式下 read 用户无法刷新快照，
+        // 与桌面 Agent 语义漂移。
+        var descriptor = ToolSecurityCatalog.Find("ssh_snapshot_refresh");
+        Assert.NotNull(descriptor);
+        Assert.Equal(ToolAccessLevel.Read, descriptor.RequiredAccess);
+        Assert.False(descriptor.RequiresWriteLock);
+    }
 
     // ---------- 条件写工具的只读判定 ----------
 

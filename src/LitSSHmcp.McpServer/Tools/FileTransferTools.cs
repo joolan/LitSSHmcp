@@ -5,11 +5,13 @@
 // 只同步其一, AI 客户端拿到的工具说明就会与实际能力不一致。详见 docs/TOOLS.md 顶部"同步约定"。
 using System.ComponentModel;
 using System.Text;
+using System.Text.Json;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.SSH;
 using LitSSHmcp.Core.Services.Storage;
 using LitSSHmcp.McpServer.Services;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace LitSSHmcp.McpServer.Tools;
@@ -41,7 +43,7 @@ public class FileTransferTools
     }
 
     [McpServerTool(Name = "ssh_upload", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
-    [Description("上传一个或多个文件/目录到 SSH 目标：localPaths 每行一个（目录可递归）；单次操作统一人工审批，返回逐项结果。")]
+    [Description("上传一个或多个文件/目录到 SSH 目标：localPaths 每行一个（目录可递归）；单次操作统一人工审批，返回逐项结果；多文件时通过 progress 通知逐文件进度。")]
     public Task<BatchTransferResultDto> Upload(
         [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("本地源路径，每行一个（文件或目录）")] string localPaths,
@@ -49,19 +51,45 @@ public class FileTransferTools
         [Description("是否递归上传目录，默认 false")] bool recursive = false,
         [Description("最多上传文件数（默认 200，1~5000）")] int maxFiles = 200,
         [Description("助手对本操作的摘要（可选，仅供参考）")] string? riskNote = null,
+        IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken cancellationToken = default)
-        => UploadFiles(serverId, localPaths, remoteDirectory, recursive, maxFiles, riskNote, cancellationToken);
+        => UploadFiles(serverId, localPaths, remoteDirectory, recursive, maxFiles, riskNote, cancellationToken, progress);
 
     [McpServerTool(Name = "ssh_download", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
-    [Description("从 SSH 目标下载一个或多个文件/目录：remotePaths 每行一个（目录可递归）；单次操作统一人工审批，返回逐项结果。")]
+    [Description("从 SSH 目标下载一个或多个文件/目录：remotePaths 每行一个（目录可递归）；单次操作统一人工审批，返回逐项结果；多文件时通过 progress 通知逐文件进度。")]
     public Task<BatchTransferResultDto> Download(
         [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("远端源路径，每行一个（文件或目录）")] string remotePaths,
         [Description("本地目标目录（可选；省略=会话工作目录）")] string? localDirectory = null,
         [Description("是否递归下载目录，默认 false")] bool recursive = false,
         [Description("最多下载文件数（默认 200，1~5000）")] int maxFiles = 200,
+        IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken cancellationToken = default)
-        => DownloadFiles(serverId, remotePaths, localDirectory, recursive, maxFiles, cancellationToken);
+        => DownloadFiles(serverId, remotePaths, localDirectory, recursive, maxFiles, cancellationToken, progress);
+
+    /// <summary>把批量传输逐文件进度桥接为 MCP progress notification（与 ssh_execute_fleet 的逐台进度同构：稳定 JSON Message）。</summary>
+    private static IProgress<BatchTransferFileProgress>? BridgeTransferProgress(IProgress<ProgressNotificationValue>? progress) =>
+        progress is null
+            ? null
+            : new InlineProgress<BatchTransferFileProgress>(p => progress.Report(new ProgressNotificationValue
+            {
+                Progress = p.Completed,
+                Total = p.Total,
+                Message = JsonSerializer.Serialize(new
+                {
+                    file = p.Path,
+                    remotePath = p.RemotePath,
+                    success = p.Success,
+                    error = p.Error,
+                    bytes = p.Bytes,
+                    totalBytes = p.CumulativeBytes
+                })
+            }));
+
+    private sealed class InlineProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value) => handler(value);
+    }
 
     public async Task<BatchTransferResultDto> UploadFiles(
         [Description("服务器 ID/名称/主机名")] string serverId,
@@ -70,7 +98,8 @@ public class FileTransferTools
         [Description("是否递归上传子目录, 默认 false")] bool recursive = false,
         [Description("最多上传文件数(默认 200, 1~5000)")] int maxFiles = 200,
         [Description("助手对该操作的风险评估摘要(可选), 展示在审批弹窗并标注『助手评估(仅供参考)』; 服务端扫描才是权威")] string? riskNote = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<ProgressNotificationValue>? progress = null)
     {
         var config = await _configService.LoadConfigAsync();
         var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverId);
@@ -180,7 +209,8 @@ public class FileTransferTools
         }
 
         var result = await _sshService.UploadBatchAsync(server, paths, remoteDirectory, recursive,
-            Math.Clamp(maxFiles, 1, 5000), ft.MaxFileSizeBytes, 0, ct: cancellationToken);
+            Math.Clamp(maxFiles, 1, 5000), ft.MaxFileSizeBytes, 0, ct: cancellationToken,
+            progress: BridgeTransferProgress(progress));
 
         await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
         {
@@ -241,7 +271,8 @@ public class FileTransferTools
         [Description("本地目标目录(必须在security.fileTransfer.allowedLocalPaths内); 目录内文件按相对路径还原。省略=会话工作目录; 相对路径=会话工作目录之下(工具级默认落地, 评估报告§5.2)")] string? localDirectory = null,
         [Description("是否递归下载子目录, 默认 false")] bool recursive = false,
         [Description("最多下载文件数(默认 200, 1~5000)")] int maxFiles = 200,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<ProgressNotificationValue>? progress = null)
     {
         var config = await _configService.LoadConfigAsync();
         var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverId);
@@ -303,7 +334,8 @@ public class FileTransferTools
             }
         }
 
-        var result = await _sshService.DownloadBatchAsync(server, paths, localDirectory, recursive, Math.Clamp(maxFiles, 1, 5000), 0, ct: cancellationToken);
+        var result = await _sshService.DownloadBatchAsync(server, paths, localDirectory, recursive, Math.Clamp(maxFiles, 1, 5000), 0, ct: cancellationToken,
+            progress: BridgeTransferProgress(progress));
 
         await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
         {

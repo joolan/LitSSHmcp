@@ -124,6 +124,9 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
     /// <summary>Web 授权矩阵规则行（界面上的可编辑集合）。</summary>
     public ObservableCollection<AuthzRuleRow> AuthzRules { get; } = new();
 
+    /// <summary>可信脚本哈希（完整 SHA-256；仅跳过脚本内容硬拦截，仍需人工审批）。</summary>
+    public ObservableCollection<TrustedScriptHashRow> TrustedScriptHashes { get; } = new();
+
     /// <summary>允许下发 Web 的外部连接器（来自 agent.mcpServers 非内置条目）。</summary>
     public ObservableCollection<WebConnectorOption> WebConnectors { get; } = new();
 
@@ -153,6 +156,17 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
             ScriptExtraBlockedPatterns = Join(s.ScriptRules.ExtraBlockedPatterns);
             ScriptExtraSensitivePatterns = Join(s.ScriptRules.ExtraSensitivePatterns);
             ScriptDisabledRuleLabels = Join(s.ScriptRules.DisabledBuiltinRuleLabels);
+            TrustedScriptHashes.Clear();
+            foreach (var entry in s.ScriptRules.TrustedScriptHashes ?? Array.Empty<TrustedScriptHash>())
+            {
+                TrustedScriptHashes.Add(new TrustedScriptHashRow
+                {
+                    Sha256 = entry.Sha256,
+                    Label = entry.Label,
+                    Note = entry.Note ?? string.Empty,
+                    AddedAt = entry.AddedAt
+                });
+            }
             SqlBlockedPatterns = Join(s.SqlFilter.BlockedPatterns);
             SqlSensitivePatterns = Join(s.SqlFilter.SensitivePatterns);
 
@@ -232,6 +246,13 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
             s.ScriptRules.ExtraBlockedPatterns = Split(ScriptExtraBlockedPatterns);
             s.ScriptRules.ExtraSensitivePatterns = Split(ScriptExtraSensitivePatterns);
             s.ScriptRules.DisabledBuiltinRuleLabels = Split(ScriptDisabledRuleLabels);
+            var trustedHashes = ToTrustedScriptHashes(TrustedScriptHashes, out var trustedError);
+            if (trustedHashes is null)
+            {
+                StatusMessage = trustedError ?? "可信脚本哈希校验失败";
+                return;
+            }
+            s.ScriptRules.TrustedScriptHashes = trustedHashes;
             s.SqlFilter.BlockedPatterns = Split(SqlBlockedPatterns);
             s.SqlFilter.SensitivePatterns = Split(SqlSensitivePatterns);
 
@@ -362,6 +383,52 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
             ? Array.Empty<string>()
             : text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(x => x.TrimEnd('\r')).ToArray();
 
+    /// <summary>把 UI 行转换为可信脚本哈希；非法/重复哈希返回 null 并给出错误。</summary>
+    public static TrustedScriptHash[]? ToTrustedScriptHashes(IEnumerable<TrustedScriptHashRow> rows,
+        out string? error)
+    {
+        error = null;
+        var result = new List<TrustedScriptHash>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var row in rows)
+        {
+            var raw = (row.Sha256 ?? string.Empty).Trim();
+            if (raw.Length == 0)
+            {
+                if (!string.IsNullOrWhiteSpace(row.Label) || !string.IsNullOrWhiteSpace(row.Note))
+                {
+                    error = "可信脚本哈希不能为空（标签/备注所在行仍需填写 SHA-256）";
+                    return null;
+                }
+                continue;
+            }
+
+            var hash = ScriptRiskAnalyzer.NormalizeHash(raw);
+            if (hash.Length != 64 || !hash.All(IsHexChar))
+            {
+                error = $"可信脚本哈希格式错误（需完整 64 位 SHA-256）: {raw}";
+                return null;
+            }
+            if (!seen.Add(hash))
+            {
+                error = $"可信脚本哈希重复: {hash}";
+                return null;
+            }
+
+            result.Add(new TrustedScriptHash
+            {
+                Sha256 = hash,
+                Label = string.IsNullOrWhiteSpace(row.Label) ? "未命名" : row.Label.Trim(),
+                Note = string.IsNullOrWhiteSpace(row.Note) ? null : row.Note.Trim(),
+                AddedAt = row.AddedAt ?? DateTimeOffset.Now
+            });
+        }
+        return result.ToArray();
+    }
+
+    private static bool IsHexChar(char c) =>
+        c is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F';
+
     /// <summary>
     /// 规则行 → 授权矩阵规则（保存路径）：User 为空白的草稿行丢弃；
     /// 目标按空白/逗号/分号分割去空；级别按下拉索引映射（2=exec、1=write、其余=read，宁严勿松）。
@@ -445,6 +512,15 @@ public class SecuritySettingsViewModel : INotifyPropertyChanged, IConfigReloadab
 
     private static long ParseLong(string? text, long fallback) =>
         long.TryParse(text?.Trim(), out var value) && value >= 0 ? value : fallback;
+
+    public sealed class TrustedScriptHashRow
+    {
+        public string Sha256 { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+        public string Note { get; set; } = string.Empty;
+        public DateTimeOffset? AddedAt { get; set; }
+        public string AddedAtText => AddedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

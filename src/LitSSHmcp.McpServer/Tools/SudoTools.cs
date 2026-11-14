@@ -124,7 +124,8 @@ public class SudoTools
                 return CommandResultDto.Fail("blocked",
                     $"提权脚本被安全策略禁止执行。服务端扫描发现危险模式(sha256={report.Sha256}):\n" +
                     string.Join("\n", report.Findings.Where(f => f.Level == ScriptRiskLevel.Blocked)
-                        .Select(f => $"L{f.Line} [{f.Rule}] {f.Excerpt}")),
+                        .Select(f => $"L{f.Line} [{f.Rule}] {f.Excerpt}")) +
+                    ScriptRiskAnalyzer.BlockedActionHint(report),
                     "blocked_script", command, server.Id, server.Name, server.Host);
             }
 

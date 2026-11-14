@@ -125,6 +125,7 @@ public class AssetTopologyExplorerViewModelTests
         public FakeTopologyService(TopologyGraph graph) => _graph = graph;
         public Task<TopologyGraph> GetGraphAsync(CancellationToken ct = default) => Task.FromResult(_graph);
         public Task<DependencyGraph> GetDependenciesAsync(string assetId, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default,
+            IProgress<TopologyDiscoveryProgress>? progress = null) => throw new NotSupportedException();
     }
 }

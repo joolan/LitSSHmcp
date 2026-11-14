@@ -59,6 +59,7 @@ public partial class AgentSettingsViewModel
         try
         {
             var status = OpsIncidentStatusFilter is "全部" or "" ? null : OpsIncidentStatusFilter;
+            var selectedId = SelectedOpsIncident?.Id;
             var records = await _memoryStore.ListIncidentsAsync(null, status, 200, ct);
             ct.ThrowIfCancellationRequested();
             OpsIncidents.Clear();
@@ -66,7 +67,9 @@ public partial class AgentSettingsViewModel
                 OpsIncidents.Add(IncidentInsightEntry.From(record));
             if (OpsIncidents.Count > 0)
             {
-                SelectedOpsIncident = OpsIncidents[0];
+                SelectedOpsIncident = selectedId is long id
+                    ? OpsIncidents.FirstOrDefault(i => i.Id == id) ?? OpsIncidents[0]
+                    : OpsIncidents[0];
                 await LoadOpsTimelineAsync(SelectedOpsIncident, ct);
             }
             else

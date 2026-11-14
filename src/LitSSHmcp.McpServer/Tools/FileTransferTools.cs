@@ -1,4 +1,4 @@
-// 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
+﻿// 【同步约定 · 请勿删除】本文件中的工具若发生变动(新增/改名/删除、参数或描述变化), 必须同步更新:
 //   ① docs/TOOLS.md —— 工具说明的唯一事实来源(接入说明、意图路由表、参数与返回结构);
 //   ② App 端菜单"配置 → MCP工具说明"(McpToolsWindow, 内容由 docs/TOOLS.md 嵌入) + mcp_usage_guide 内置清单(由注解反射生成, 无需手改);
 //   ③ 若新增了工具类, 记得在 Program.cs 注册 WithTools<T>()。
@@ -83,7 +83,7 @@ public class FileTransferTools
                     error = p.Error,
                     bytes = p.Bytes,
                     totalBytes = p.CumulativeBytes
-                })
+                }, JsonOutput.Options)
             }));
 
     private sealed class InlineProgress<T>(Action<T> handler) : IProgress<T>
@@ -137,13 +137,15 @@ public class FileTransferTools
         {
             var blockedParts = new List<string>();
             var reportParts = new List<string>();
+            string? blockedHint = null;
             foreach (var (scriptPath, report) in ScanScripts(scriptFiles))
             {
                 if (report.Level == ScriptRiskLevel.Blocked)
                 {
-                    blockedParts.Add($"【{report.FileName} sha256={report.Sha256}】\n" +
+                    blockedParts.Add($"【{report.FileName} sha256={report.Sha256} full={report.Sha256Full}】\n" +
                         string.Join("\n", report.Findings.Where(f => f.Level == ScriptRiskLevel.Blocked)
                             .Select(f => $"  L{f.Line} [{f.Rule}] {f.Excerpt}")));
+                    blockedHint ??= ScriptRiskAnalyzer.BlockedActionHint(report);
                 }
                 else
                 {
@@ -165,7 +167,8 @@ public class FileTransferTools
                     FilePath = remoteDirectory
                 });
                 return BatchTransferResultDto.Fail("blocked_script",
-                    $"批内 {blockedParts.Count} 个脚本内容扫描未通过(整批拒绝):\n" + string.Join("\n", blockedParts),
+                    $"批内 {blockedParts.Count} 个脚本内容扫描未通过(整批拒绝):\n" +
+                    string.Join("\n", blockedParts) + blockedHint,
                     server.Id, server.Name, server.Host);
             }
 

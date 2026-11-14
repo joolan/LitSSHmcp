@@ -33,6 +33,7 @@ public class ToolGroupsViewModel : INotifyPropertyChanged, IConfigReloadable
         Add(ToolGroups.Java, "JVM 诊断", "java_processes / java_diagnostics");
         Add(ToolGroups.Topology, "拓扑", "topology_query / topology_history / topology_discover");
         Add(ToolGroups.App, "应用体检", "app_health_snapshot");
+        Add(ToolGroups.Jobs, "长任务", "job_start / job_status / job_result / job_events / job_cancel / job_list");
         Add(ToolGroups.Guide, "指南 / 自检", "mcp_usage_guide / mcp_self_check");
 
         foreach (var group in Groups)

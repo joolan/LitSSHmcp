@@ -78,15 +78,15 @@ public class SnapshotTools
             snapshot.Status.ToString(), CommandStatus.Executed, AuditCategory.Meta);
 
         var resultDto = BuildDto(server, snapshot, events, recent, success: true, status: "ok",
-            section: section, full: IsFull(detail), account: account, riskLevel: riskLevel);
-        if (IsFull(detail) && (string.IsNullOrWhiteSpace(section) ||
+            section: section, full: SnapshotRequest.IsFull(detail), account: account, riskLevel: riskLevel);
+        if (SnapshotRequest.IsFull(detail) && (string.IsNullOrWhiteSpace(section) ||
                                string.Equals(section.Trim(), "nginx_tls", StringComparison.OrdinalIgnoreCase)))
             await TryInjectNginxConfigAsync(server, snapshot, resultDto.Data, cancellationToken);
         return resultDto;
     }
 
     [McpServerTool(Name = "ssh_snapshot_refresh", UseStructuredContent = true, OutputSchemaType = typeof(SnapshotDto), ReadOnly = false, Idempotent = false, Destructive = false, OpenWorld = true)]
-    [Description("重新采集服务器整机快照(典型10-30秒，同一服务器单飞)。距上次成功快照不足60s且未传 force=true 时返回已有快照(status=fresh)；默认仅返回概览，可用 section/detail 取完整数据")]
+    [Description("重新采集服务器整机快照(典型10-30秒,同一服务器单飞);多机/长任务可用 job_start(operation=ssh_snapshot_refresh)。默认返回概览,section/detail 取完整数据。")]
     public async Task<SnapshotDto> RefreshSnapshot(
         [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("可选: 返回某维度完整数据, 取值 resource/portmap/docker/nginx_tls/systemd/security/accounts; 不传则返回概览")] string? section = null,
@@ -102,9 +102,67 @@ public class SnapshotTools
             return SnapshotDto.Fail(resolveStatus ?? "server_not_found", resolveError!);
 
         var options = config.Snapshot ?? new SnapshotConfig();
+        var collectSections = SnapshotRequest.ParseSections(profile, sections);
+        return await RefreshCoreAsync(server, options, section, detail, force, collectSections,
+            progress: null, cancellationToken);
+    }
 
-        var collectSections = ParseCollectSections(profile, sections);
-        var result = await _snapshotService.RefreshAsync(server, options, collectSections, force, cancellationToken);
+    /// <summary>注册为 Job 模型的 operation（job_start(operation=ssh_snapshot_refresh)）。</summary>
+    public void RegisterJobOperations(JobManager jobs) =>
+        jobs.Register(JobOperation,
+            "重新采集服务器整机快照(典型10-30秒/台)；可指定 section/profile/force，逐采集器上报进度",
+            JobOperation,
+            async (arguments, ct) =>
+            {
+                var config = await _configService.LoadConfigAsync();
+                var serverId = GetStringArg(arguments, "serverId");
+                if (string.IsNullOrWhiteSpace(serverId))
+                    return JobManager.JobPrepared.Fail("invalid_arguments", "serverId 不能为空");
+
+                var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverId);
+                if (server is null)
+                    return JobManager.JobPrepared.Fail(resolveStatus ?? "server_not_found", resolveError ?? "服务器未找到");
+
+                var section = GetStringArg(arguments, "section");
+                var detail = GetStringArg(arguments, "detail");
+                var force = GetBoolArg(arguments, "force");
+                var collectSections = SnapshotRequest.ParseSections(
+                    GetStringArg(arguments, "profile"), GetStringArg(arguments, "sections"));
+                var options = config.Snapshot ?? new SnapshotConfig();
+
+                return JobManager.JobPrepared.Ready(async (ctx, ct2) =>
+                {
+                    var progress = ctx.AsProgress<SnapshotProgress>(p => (
+                        p.Done, p.Total,
+                        JsonSerializer.Serialize(new
+                        {
+                            phase = p.Phase,
+                            collector = p.Collector,
+                            done = p.Done,
+                            total = p.Total,
+                            status = p.Status,
+                            snapshotId = p.SnapshotId,
+                            note = p.Note
+                        }, JsonOutput.Options)),
+                        p => p.Phase == "collector_start" ? JobEventKinds.Phase : JobEventKinds.Progress);
+
+                    var dto = await RefreshCoreAsync(server, options, section, detail, force,
+                        collectSections, progress, ct2);
+                    return dto.Success
+                        ? JobManager.JobOutcome.Succeed(dto)
+                        : JobManager.JobOutcome.Fail(dto.Status ?? "snapshot_failed",
+                            dto.Error ?? "快照采集失败");
+                });
+            });
+
+    public const string JobOperation = "ssh_snapshot_refresh";
+
+    private async Task<SnapshotDto> RefreshCoreAsync(SshServerConfig server, SnapshotConfig options,
+        string? section, string? detail, bool force, IReadOnlyCollection<string>? collectSections,
+        IProgress<SnapshotProgress>? progress, CancellationToken cancellationToken)
+    {
+        var result = await _snapshotService.RefreshAsync(server, options, collectSections, force,
+            cancellationToken, progress);
 
         if (result.Status == "fresh")
         {
@@ -115,8 +173,8 @@ public class SnapshotTools
                 var cachedEvents = await _snapshotStore.GetEventsAsync(cachedSnapshot.Id, 50, cancellationToken);
                 var cachedRecent = await _snapshotStore.GetRecentAsync(server.Id, 10, cancellationToken);
                 var cached = BuildDto(server, cachedSnapshot, cachedEvents, cachedRecent, success: true,
-                    status: "fresh", section: section, full: IsFull(detail));
-                if (IsFull(detail) && (string.IsNullOrWhiteSpace(section) ||
+                    status: "fresh", section: section, full: SnapshotRequest.IsFull(detail));
+                if (SnapshotRequest.IsFull(detail) && (string.IsNullOrWhiteSpace(section) ||
                                        string.Equals(section.Trim(), "nginx_tls", StringComparison.OrdinalIgnoreCase)))
                     await TryInjectNginxConfigAsync(server, cachedSnapshot, cached.Data, cancellationToken);
                 cached.Hint = result.Hint;
@@ -160,8 +218,8 @@ public class SnapshotTools
             success: succeeded,
             status: succeeded ? "succeeded" : "failed",
             error: succeeded ? null : result.Error,
-            section: section, full: IsFull(detail));
-        if (snapshot is not null && IsFull(detail) &&
+            section: section, full: SnapshotRequest.IsFull(detail));
+        if (snapshot is not null && SnapshotRequest.IsFull(detail) &&
             (string.IsNullOrWhiteSpace(section) ||
              string.Equals(section.Trim(), "nginx_tls", StringComparison.OrdinalIgnoreCase)))
             await TryInjectNginxConfigAsync(server, snapshot, response.Data, cancellationToken);
@@ -171,28 +229,17 @@ public class SnapshotTools
         return response;
     }
 
-    /// <summary>profile=quick 只采集轻量只读维度；sections 显式列表优先于 profile。</summary>
-    private static IReadOnlyCollection<string>? ParseCollectSections(string? profile, string? sections)
-    {
-        if (!string.IsNullOrWhiteSpace(sections))
-        {
-            var list = sections.Split(new[] { ',', '，', ' ', ';' },
-                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(s => s.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            return list.Length > 0 ? list : null;
-        }
+    private static string? GetStringArg(JsonElement arguments, string name) =>
+        arguments.ValueKind == JsonValueKind.Object &&
+        arguments.TryGetProperty(name, out var value) &&
+        value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
-        return (profile ?? string.Empty).Trim().ToLowerInvariant() switch
-        {
-            "quick" => new[] { "resource", "portmap", "systemd", "security" },
-            _ => null
-        };
-    }
-
-    private static bool IsFull(string? detail) =>
-        string.Equals(detail?.Trim(), "full", StringComparison.OrdinalIgnoreCase);
+    private static bool GetBoolArg(JsonElement arguments, string name) =>
+        arguments.ValueKind == JsonValueKind.Object &&
+        arguments.TryGetProperty(name, out var value) &&
+        value.ValueKind == JsonValueKind.True;
 
     internal static bool TryAgeSeconds(string? completedAt, out double ageSeconds)
     {

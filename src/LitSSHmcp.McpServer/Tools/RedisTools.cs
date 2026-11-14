@@ -164,7 +164,7 @@ public class RedisTools
                 Name = ds.Name,
                 Command = args,
                 Db = EffectiveDb(ds),
-                Result = JsonSerializer.Serialize(formatted.Value),
+                Result = JsonSerializer.Serialize(formatted.Value, JsonOutput.Options),
                 Truncated = formatted.Truncated,
                 DurationMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 2),
                 AccessMode = session.AccessMode,
@@ -270,7 +270,7 @@ public class RedisTools
                 Name = ds.Name,
                 Command = args,
                 Db = EffectiveDb(ds),
-                Result = JsonSerializer.Serialize(RedisValueFormatter.Format(reply, 100).Value),
+                Result = JsonSerializer.Serialize(RedisValueFormatter.Format(reply, 100).Value, JsonOutput.Options),
                 DurationMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 2)
             };
         }

@@ -401,7 +401,7 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
     public string ResponseStyle { get => _responseStyle; set => Set(ref _responseStyle, value); }
 
     /// <summary>会话工具 profile 选项；运行时按场景收窄工具面。</summary>
-    public IReadOnlyList<string> ProfileOptions { get; } = new[] { "auto", "diagnose", "change", "assets", "chat" };
+    public IReadOnlyList<string> ProfileOptions { get; } = new[] { "auto", "ops", "diagnose", "change", "assets", "chat" };
 
     private string _selectedProfile = "auto";
     public string SelectedProfile { get => _selectedProfile; set => Set(ref _selectedProfile, value); }

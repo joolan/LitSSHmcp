@@ -41,7 +41,7 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
     [Fact]
     public async Task Frontend_modules_are_served()
     {
-        foreach (var path in new[] { "/js/app.js", "/js/sanitize.js", "/js/chat.js", "/js/approvals.js", "/js/files.js", "/js/api.js", "/js/memory.js", "/js/consolidation.js", "/js/ops.js", "/css/app.css" })
+        foreach (var path in new[] { "/js/app.js", "/js/sanitize.js", "/js/chat.js", "/js/approvals.js", "/js/files.js", "/js/api.js", "/js/memory.js", "/js/ops.js", "/css/app.css" })
         {
             var resp = await _fx.Client.GetAsync(path);
             Assert.True(resp.StatusCode == HttpStatusCode.OK, $"{path} → {resp.StatusCode}");
@@ -126,24 +126,6 @@ public class StaticAssetsTests : IClassFixture<StaticAssetsFixture>
         var css = await _fx.Client.GetStringAsync("/css/app.css");
         var normalized = System.Text.RegularExpressions.Regex.Replace(css, @"\s+", " ");
         Assert.Contains(".memory-sheet {", normalized, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Admin_consolidation_panel_entry_is_present_for_admin_only()
-    {
-        var html = await _fx.Client.GetStringAsync("/");
-        Assert.Contains("id=\"consolidation-admin-btn\"", html, StringComparison.Ordinal);
-        Assert.Contains("id=\"consolidation-admin\"", html, StringComparison.Ordinal);
-        Assert.Contains("id=\"consolidation-list\"", html, StringComparison.Ordinal);
-        Assert.Contains("id=\"consolidation-alert\"", html, StringComparison.Ordinal);
-
-        var js = await _fx.Client.GetStringAsync("/js/consolidation.js");
-        Assert.Contains("ConsolidationAdminPanel", js, StringComparison.Ordinal);
-        Assert.Contains("/api/admin/consolidation/candidates", js, StringComparison.Ordinal);
-
-        var css = await _fx.Client.GetStringAsync("/css/app.css");
-        var normalized = System.Text.RegularExpressions.Regex.Replace(css, @"\s+", " ");
-        Assert.Contains(".consolidation-sheet {", normalized, StringComparison.Ordinal);
     }
 
     [Fact]

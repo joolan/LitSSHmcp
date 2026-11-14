@@ -20,8 +20,8 @@ public static class SpillTools
         var budget = maxResultChars <= 0 ? int.MaxValue : Math.Max(500, maxResultChars);
         var function = new LocalFunction(
             "spill",
-            "大工具结果落盘：action=list 列出句柄；action=read 分段读取；action=grep 按正则搜索（单行大 JSON 会返回匹配点前后上下文窗口）。handle 可传 spill://xxx 或文件名。",
-            """{"type":"object","properties":{"action":{"type":"string","enum":["list","read","grep","json"],"description":"list=列出句柄, read=分段读取(默认), grep=正则搜索"},"handle":{"type":"string","description":"read/grep: 句柄(spill://xxx 或文件名)"},"offset":{"type":"integer","description":"read: 起始行(0 起), 默认 0"},"limit":{"type":"integer","description":"read: 读取行数, 默认 200, 上限 2000"},"pattern":{"type":"string","description":"grep: 正则表达式"},"path":{"type":"string","description":"json: path, e.g. data.sections.resource"},"max":{"type":"integer","description":"grep: 最多返回条数, 默认 100"}},"required":[]}""",
+            "大工具结果落盘：action=list 列出句柄；action=read 分段读取（超长单行可按 offset 分页或传 column 指定字符偏移）；action=grep 按正则搜索（单行大 JSON 会返回匹配点前后上下文窗口）。handle 可传 spill://xxx 或文件名。",
+            """{"type":"object","properties":{"action":{"type":"string","enum":["list","read","grep","json"],"description":"list=列出句柄, read=分段读取(默认), grep=正则搜索"},"handle":{"type":"string","description":"read/grep: 句柄(spill://xxx 或文件名)"},"offset":{"type":"integer","description":"read: 起始行(0 起), 默认 0；单行超长文件按分页序号解释"},"limit":{"type":"integer","description":"read: 读取行数, 默认 200, 上限 2000"},"column":{"type":"integer","description":"read: 单行超长时的字符偏移(0 起), 默认 0"},"pattern":{"type":"string","description":"grep: 正则表达式"},"path":{"type":"string","description":"json: path, e.g. data.sections.resource"},"max":{"type":"integer","description":"grep: 最多返回条数, 默认 100"}},"required":[]}""",
             args =>
             {
                 var action = (ArgumentReader.ReadString(args, "action") ?? "read").Trim().ToLowerInvariant();
@@ -31,7 +31,8 @@ public static class SpillTools
                         ? string.Join('\n', items)
                         : "(无落盘结果)",
                     "read" => Read(store, ArgumentReader.ReadString(args, "handle"),
-                        ArgumentReader.ReadInt(args, "offset"), ArgumentReader.ReadInt(args, "limit"), budget),
+                        ArgumentReader.ReadInt(args, "offset"), ArgumentReader.ReadInt(args, "limit"),
+                        ArgumentReader.ReadInt(args, "column"), budget),
                     "grep" => Grep(store, ArgumentReader.ReadString(args, "handle"),
                         ArgumentReader.ReadString(args, "pattern"), ArgumentReader.ReadInt(args, "max"), budget),
                     "json" => ReadJson(store, ArgumentReader.ReadString(args, "handle"),
@@ -43,7 +44,7 @@ public static class SpillTools
         return new IAgentTool[] { new LocalAgentTool(function, readOnly: true) };
     }
 
-    private static string Read(SpillStore store, string? handle, int? offset, int? limit, int maxResultChars)
+    private static string Read(SpillStore store, string? handle, int? offset, int? limit, int? column, int maxResultChars)
     {
         var path = store.Resolve(handle);
         if (path is null || !File.Exists(path))
@@ -52,52 +53,124 @@ public static class SpillTools
         var start = Math.Max(0, offset ?? 0);
         var count = Math.Clamp(limit ?? 200, 1, MaxReadLines);
         var bodyBudget = Math.Max(200, maxResultChars - 360);
+        var windowChars = Math.Clamp(MaxLineChars, 200, Math.Max(200, bodyBudget - 160));
+        var name = Path.GetFileName(path);
+
+        // 单行超长文件：把 offset 当作字符分页序号（旧调用 offset=0/1/2 也能继续翻页），
+        // 避免 line-based read 永远只返回同一段 2000 字符。
+        if (column is null && IsSingleLineFile(path))
+        {
+            var raw = File.ReadLines(path).FirstOrDefault() ?? string.Empty;
+            if (raw.Length <= MaxLineChars)
+            {
+                return start > 0
+                    ? $"(偏移 {start} 超出范围, 共 1 行)"
+                    : $"[{name} 共 1 行; 已返回 0..0; 已到末尾]{Environment.NewLine}0: {raw}";
+            }
+
+            var startChar = start * windowChars;
+            if (startChar >= raw.Length)
+                return $"(偏移 {start} 超出范围, 单行共 {raw.Length} 字符, 每页 {windowChars} 字符)";
+
+            var endChar = Math.Min(raw.Length, startChar + windowChars);
+            var moreChars = endChar < raw.Length;
+            var singleHeader = $"[{name} 共 1 行; 单行超长(共 {raw.Length} 字符); 已返回字符 {startChar}..{endChar}";
+            singleHeader += moreChars ? $"; 下次 offset={start + 1}" : "; 已到末尾";
+            return singleHeader + "]" + Environment.NewLine + $"0: {raw[startChar..endChar]}" +
+                   (moreChars ? "…" : string.Empty);
+        }
+
         var sb = new StringBuilder();
         var total = 0;
         var lastEmitted = start - 1;
         var longLineTruncated = false;
+        var longLineIndex = -1;
+        var longLineNextColumn = -1;
 
         foreach (var raw in File.ReadLines(path))
         {
             if (total >= start && total < start + count)
             {
-                var lineTruncated = raw.Length > MaxLineChars;
-                var line = lineTruncated ? raw[..MaxLineChars] + "…" : raw;
-                var formatted = $"{total}: {line}";
-                if (sb.Length + formatted.Length + Environment.NewLine.Length > bodyBudget && lastEmitted >= start)
+                if (raw.Length > MaxLineChars)
                 {
-                    // 已达字符预算：停止追加，但继续扫描以统计总行数（与旧实现一致，仅多一次遍历）。
-                }
-                else if (sb.Length + formatted.Length + Environment.NewLine.Length > bodyBudget)
-                {
-                    // 首行就超过预算：强制返回截断的一行，保证 offset 能继续前进。
-                    var firstLineBudget = Math.Max(100, bodyBudget - 32);
-                    sb.AppendLine($"{total}: {(line.Length <= firstLineBudget ? line : line[..firstLineBudget] + "…")}");
-                    lastEmitted = total;
-                    longLineTruncated = true;
+                    var lineStart = Math.Clamp(column ?? 0, 0, Math.Max(0, raw.Length - 1));
+                    var maxLineChars = Math.Max(100, bodyBudget - 48);
+                    var lineEnd = Math.Min(raw.Length, lineStart + Math.Min(windowChars, maxLineChars));
+                    var suffix = lineEnd < raw.Length ? "…" : string.Empty;
+                    var formatted = $"{total}: {raw[lineStart..lineEnd]}{suffix}";
+                    if (sb.Length + formatted.Length + Environment.NewLine.Length > bodyBudget && lastEmitted >= start)
+                    {
+                        // 已达字符预算：停止追加，但继续扫描以统计总行数。
+                    }
+                    else if (sb.Length + formatted.Length + Environment.NewLine.Length > bodyBudget)
+                    {
+                        var firstLineBudget = Math.Max(100, bodyBudget - 48);
+                        var firstEnd = Math.Min(raw.Length, lineStart + firstLineBudget);
+                        sb.AppendLine($"{total}: {raw[lineStart..firstEnd]}…");
+                        lastEmitted = total;
+                        longLineTruncated = true;
+                        longLineIndex = total;
+                        longLineNextColumn = firstEnd;
+                    }
+                    else
+                    {
+                        sb.AppendLine(formatted);
+                        lastEmitted = total;
+                        if (lineEnd < raw.Length)
+                        {
+                            longLineTruncated = true;
+                            longLineIndex = total;
+                            longLineNextColumn = lineEnd;
+                        }
+                    }
                 }
                 else
                 {
-                    sb.AppendLine(formatted);
-                    lastEmitted = total;
-                    longLineTruncated |= lineTruncated;
+                    var formatted = $"{total}: {raw}";
+                    if (sb.Length + formatted.Length + Environment.NewLine.Length > bodyBudget && lastEmitted >= start)
+                    {
+                        // 已达字符预算：停止追加，但继续扫描以统计总行数。
+                    }
+                    else if (sb.Length + formatted.Length + Environment.NewLine.Length > bodyBudget)
+                    {
+                        var firstLineBudget = Math.Max(100, bodyBudget - 32);
+                        sb.AppendLine($"{total}: {(raw.Length <= firstLineBudget ? raw : raw[..firstLineBudget] + "…")}");
+                        lastEmitted = total;
+                        longLineTruncated = true;
+                    }
+                    else
+                    {
+                        sb.AppendLine(formatted);
+                        lastEmitted = total;
+                    }
                 }
             }
             total++;
         }
+        if (total == 0)
+            return $"[{name} 为空文件]";
         if (start >= total)
             return $"(偏移 {start} 超出范围, 共 {total} 行)";
 
         var end = lastEmitted;
         var next = end + 1;
         var more = next < total;
-        var name = Path.GetFileName(path);
         var header = $"[{name} 共 {total} 行; 已返回 {start}..{end}";
         header += more ? $"; 下次 offset={next}" : "; 已到末尾";
-        if (longLineTruncated)
+        if (longLineTruncated && longLineIndex >= 0 && longLineNextColumn >= 0)
+            header += $"; 单行超长请下次 offset={longLineIndex} column={longLineNextColumn} 继续";
+        else if (longLineTruncated)
             header += "; 存在超长行已截断, 建议 action=grep 精确定位";
         header += "]";
         return (header + Environment.NewLine + sb.ToString()).TrimEnd();
+    }
+
+    private static bool IsSingleLineFile(string path)
+    {
+        using var lines = File.ReadLines(path).GetEnumerator();
+        if (!lines.MoveNext())
+            return false;
+        return !lines.MoveNext();
     }
 
     private static readonly System.Text.Json.JsonSerializerOptions PrettyJson = new()
@@ -161,6 +234,14 @@ public static class SpillTools
             return json.Length <= budget
                 ? json
                 : json[..budget] + $"\n…[JSON 结果超过 {budget} 字符，已截断；请缩小 path 或改用 action=read 分段读取]";
+        }
+
+        // 字符串字段（如 ssh_execute_command.output）按真实换行展开，避免返回一长串转义 \n。
+        if (current is System.Text.Json.Nodes.JsonValue value && value.TryGetValue<string>(out var text))
+        {
+            return text.Length <= budget
+                ? text
+                : text[..budget] + $"\n…[字符串结果超过 {budget} 字符，已截断；请用 action=read 分段读取]";
         }
 
         return current.ToJsonString(PrettyJson);

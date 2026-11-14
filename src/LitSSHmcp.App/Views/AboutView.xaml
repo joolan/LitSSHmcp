@@ -53,7 +53,7 @@
                 <StackPanel>
                     <TextBlock Text="MCP 核心能力（AI 可调用的工具）" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,6"
-                               Text="通过 Model Context Protocol（stdio）向任意 MCP 客户端暴露 34 个默认外部工具（另有 1 个宿主内部审批工具），覆盖以下能力域（可在「工具分组」按部署裁剪）："/>
+                               Text="通过 Model Context Protocol（stdio）向任意 MCP 客户端暴露 41 个默认外部工具（另有 1 个宿主内部审批工具），覆盖以下能力域（可在「工具分组」按部署裁剪）："/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 运维：命令执行、sudo 提权、连接测试/状态、批量与目录文件上传下载、目录浏览。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源：MySQL / PostgreSQL 只读查询、执行计划、写操作与诊断（连接数/慢查询/锁/复制），Redis 只读与写/管理命令、诊断；支持直连或 SSH 隧道，密码仅本机保存、不暴露给 AI。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 容器与服务：Docker 容器/镜像/日志/inspect/stats，systemd 服务状态与日志。"/>
@@ -61,6 +61,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 日志与 Java：按关键字/正则检索日志、发现日志文件，Java 进程/线程栈/堆内存/JVM 信息。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 快照与拓扑：整机快照（资源/端口进程服务/证书/Docker/systemd/安全巡检）；人工配置拓扑主图（overview/search/neighbors/path/impact/explain/dependencies/resolve_url）、快照历史时间线与 Diff、自动发现证据与配置建议。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 聚合体检：按应用聚合所在服务器进程/容器/端口与依赖数据源的连通性，支撑全链路排障。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 长任务：多机全量拓扑扫描等耗时任务可后台执行，逐台上报进度，支持状态/结果查询、事件断点续读与取消。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 安全与审计：命令/SQL 过滤、敏感操作桌面审批、文件传输路径白名单、TOFU 主机密钥校验、按目标限流，全部操作写入 HMAC-SHA256 哈希链审计。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• MCP 资源（Resources）：以只读方式向 MCP 客户端暴露服务器清单 / 数据源清单 / 使用指南 / 资产拓扑 / 最新快照概览（litssh:// 资源与模板），供浏览与挂载为上下文；不含密码、禁用项排除，按启用的工具分组裁剪。"/>
                 </StackPanel>

@@ -48,6 +48,23 @@ public class SnapshotServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Refresh_reports_collector_progress()
+    {
+        var (service, _) = await NewAsync(Ok("resource", 10), Ok("systemd", 40));
+        var reports = new List<SnapshotProgress>();
+
+        var result = await service.RefreshAsync(Server(), new SnapshotConfig(),
+            progress: new InlineProgress<SnapshotProgress>(reports.Add));
+
+        Assert.Equal("succeeded", result.Status);
+        Assert.Contains(reports, r => r.Phase == "started" && r.Total == 2);
+        Assert.Contains(reports, r => r.Phase == "collector_start" && r.Collector == "resource");
+        Assert.Contains(reports, r => r.Phase == "collector_done" && r.Collector == "resource" && r.Done == 1);
+        Assert.Contains(reports, r => r.Phase == "collector_done" && r.Collector == "systemd" && r.Done == 2);
+        Assert.Contains(reports, r => r.Phase == "completed" && r.Done == 2);
+    }
+
+    [Fact]
     public async Task Nginx_config_is_externalized_by_default()
     {
         var collector = new TestCollector("nginx_tls", 30, (_, _) =>
@@ -321,6 +338,11 @@ public class SnapshotServiceTests : IDisposable
             CalledId = ds.Id;
             throw new InvalidOperationException($"Access denied for user '{ds.Username}'@'%' to database 'mysql'");
         }
+    }
+
+    private sealed class InlineProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value) => handler(value);
     }
 
     public void Dispose()

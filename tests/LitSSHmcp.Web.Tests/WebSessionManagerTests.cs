@@ -89,6 +89,23 @@ public class WebSessionManagerTests
     }
 
     [Fact]
+    public async Task Invoke_job_tool_uses_owner_runtime_and_is_scoped()
+    {
+        var session = await _manager.CreateSessionAsync(_alice, "长任务");
+
+        var text = await _manager.InvokeJobToolAsync(_alice, session.Id, "job_list",
+            new Dictionary<string, object?> { ["limit"] = 10 });
+
+        Assert.Equal("host:job_list", text);
+        Assert.Equal("101", Assert.Single(_factory.Requests).OwnerUserId);
+        Assert.Equal("job_list", Assert.Single(_factory.ToolCalls).Tool);
+
+        await Assert.ThrowsAsync<WebSessionNotFoundException>(
+            () => _manager.InvokeJobToolAsync(_bob, session.Id, "job_list",
+                new Dictionary<string, object?>()));
+    }
+
+    [Fact]
     public async Task Get_fleet_plan_is_owner_and_session_scoped()
     {
         var session = await _manager.CreateSessionAsync(_alice, "批量变更");
@@ -144,23 +161,6 @@ public class WebSessionManagerTests
         await _manager.CancelFleetChangeAsync(_alice, session.Id);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
-    }
-
-    [Fact]
-    public async Task Consolidation_failure_writes_access_log()
-    {
-        var logDir = Path.Combine(WebTestEnv.DataDir, $"logs-{Guid.NewGuid():N}");
-        var manager = new WebSessionManager(_store, _factory, new WebAccessLog(logDir), _config);
-        var session = await manager.CreateSessionAsync(_alice, "失败告警");
-        await manager.InvokeToolAsync(_alice, session.Id, "status", new Dictionary<string, object?>());
-
-        _factory.EmitConsolidationFailure("consolidation 失败: provider timeout");
-
-        var file = Assert.Single(Directory.GetFiles(logDir, "web-access-*.log"));
-        var text = await File.ReadAllTextAsync(file);
-        Assert.Contains("consolidation_failed", text);
-        Assert.Contains($"session={session.Id}", text);
-        Assert.Contains("provider timeout", text);
     }
 
     [Fact]
@@ -512,41 +512,24 @@ public sealed class FakeRuntimeFactory : IWebRuntimeFactory
     public List<WebRuntimeRequest> Requests { get; } = new();
     public List<(string SessionId, string UserText, string AssistantText)> Indexed { get; } = new();
     public List<(string Tool, IDictionary<string, object?>? Arguments)> ToolCalls { get; } = new();
-    public List<(long SessionId, string OwnerUserId)> Consolidations { get; } = new();
     public Func<string, IProgress<AgentEvent>?, CancellationToken, Task>? OnSend { get; set; }
     public Func<string, IDictionary<string, object?>?, CancellationToken, Task<object?>>? OnInvokeHostTool { get; set; }
     public bool Disposed { get; private set; }
     public string Summary { get; set; } = "summary";
     public FleetPlanState? PlanToReturn { get; set; }
-    private readonly List<FakeRuntime> _runtimes = new();
-
-    public void EmitConsolidationFailure(string message)
-    {
-        lock (_runtimes) _runtimes[^1].EmitConsolidationFailure(message);
-    }
     /// <summary>最近一轮收到的内容（断言图片附件用）。</summary>
     public IReadOnlyList<AIContent>? LastContents { get; private set; }
 
     public Task<IWebRuntime> CreateAsync(WebRuntimeRequest request, CancellationToken ct)
     {
         lock (Requests) Requests.Add(request);
-        var runtime = new FakeRuntime(this, request.SessionId, request.OwnerUserId);
-        lock (_runtimes) _runtimes.Add(runtime);
+        var runtime = new FakeRuntime(this);
         return Task.FromResult<IWebRuntime>(runtime);
     }
 
-    private sealed class FakeRuntime(FakeRuntimeFactory owner, long sessionId, string ownerUserId) : IWebRuntime
+    private sealed class FakeRuntime(FakeRuntimeFactory owner) : IWebRuntime
     {
         public string Summary => owner.Summary;
-
-        public event Action<string>? ConsolidationFailed;
-
-        public void EmitConsolidationFailure(string message) => ConsolidationFailed?.Invoke(message);
-
-        public void ConsolidateInBackground()
-        {
-            lock (owner.Consolidations) owner.Consolidations.Add((sessionId, ownerUserId));
-        }
 
         public void IndexTurnInBackground(string sessionId, string userText, string assistantText)
         {

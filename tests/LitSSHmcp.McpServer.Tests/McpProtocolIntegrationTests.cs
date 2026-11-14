@@ -41,7 +41,7 @@ public class McpProtocolIntegrationTests
             var tools = list.GetProperty("result").GetProperty("tools").EnumerateArray().ToList();
             var names = tools.Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
 
-            Assert.Equal(35, tools.Count);
+            Assert.Equal(41, tools.Count);
             Assert.DoesNotContain("mcp_approval_round", names);
             Assert.Contains("ssh_upload", names);
             Assert.Contains("ssh_download", names);
@@ -54,7 +54,7 @@ public class McpProtocolIntegrationTests
             Assert.DoesNotContain("log_tail", names);
             Assert.Contains("java_diagnostics", names);
             Assert.DoesNotContain("java_threads", names);
-            foreach (var expected in new[] { "mysql_query", "postgres_query", "redis_read", "ssh_list_servers", "datasource_list", "topology_query", "topology_history", "mcp_usage_guide", "mcp_self_check", "docker_query", "service_query", "log_query", "java_processes", "java_diagnostics", "app_health_snapshot", "ssh_snapshot_get", "ssh_snapshot_refresh" })
+            foreach (var expected in new[] { "mysql_query", "postgres_query", "redis_read", "ssh_list_servers", "datasource_list", "topology_query", "topology_history", "mcp_usage_guide", "mcp_self_check", "docker_query", "service_query", "log_query", "java_processes", "java_diagnostics", "app_health_snapshot", "ssh_snapshot_get", "ssh_snapshot_refresh", "job_start", "job_status", "job_result", "job_events", "job_cancel", "job_list" })
                 Assert.Contains(expected, names);
 
             foreach (var tool in tools)
@@ -131,6 +131,205 @@ public class McpProtocolIntegrationTests
     }
 
     [Fact]
+    public async Task Job_start_status_events_and_result_over_stdio()
+    {
+        var exe = LocateServerExecutable();
+        var dataDir = Path.Combine(Path.GetTempPath(), "litssh-mcp-job-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dataDir);
+        await File.WriteAllTextAsync(Path.Combine(dataDir, "config.json"), """
+            {
+              "schemaVersion": 3,
+              "servers": [
+                {
+                  "id": "s1", "name": "offline", "host": "127.0.0.1", "port": 1,
+                  "username": "nobody", "authType": "Password", "password": "x"
+                }
+              ],
+              "connectionPool": { "connectTimeoutSeconds": 1 },
+              "snapshot": { "timeoutSeconds": 1, "minRefreshIntervalSeconds": 0, "useSudo": false }
+            }
+            """, Encoding.UTF8);
+
+        try
+        {
+            using var client = new McpStdioClient(exe, dataDir);
+            await client.RequestAsync("initialize", new
+            {
+                protocolVersion = "2024-11-05",
+                capabilities = new { },
+                clientInfo = new { name = "it-job", version = "1.0" }
+            });
+            await client.NotifyAsync("notifications/initialized");
+
+            var start = await client.RequestAsync("tools/call", new
+            {
+                name = "job_start",
+                arguments = new
+                {
+                    operation = "ssh_snapshot_refresh",
+                    arguments = "{\"serverId\":\"s1\",\"force\":true}",
+                    wait = false
+                }
+            });
+            var startStructured = start.GetProperty("result").GetProperty("structuredContent");
+            Assert.True(startStructured.GetProperty("success").GetBoolean(), startStructured.ToString());
+            var jobId = startStructured.GetProperty("jobId").GetString();
+            Assert.False(string.IsNullOrWhiteSpace(jobId));
+
+            var list = await client.RequestAsync("tools/call", new
+            {
+                name = "job_list",
+                arguments = new { limit = 50 }
+            });
+            var listStructured = list.GetProperty("result").GetProperty("structuredContent");
+            Assert.True(listStructured.GetProperty("success").GetBoolean(), listStructured.ToString());
+            Assert.Contains(listStructured.GetProperty("jobs").EnumerateArray(),
+                j => j.GetProperty("jobId").GetString() == jobId);
+
+            string state;
+            var deadline = DateTime.UtcNow.AddSeconds(20);
+            do
+            {
+                await Task.Delay(150);
+                var status = await client.RequestAsync("tools/call", new
+                {
+                    name = "job_status",
+                    arguments = new { jobId, includeEvents = 5 }
+                });
+                state = status.GetProperty("result").GetProperty("structuredContent")
+                    .GetProperty("state").GetString() ?? "";
+                if (state is "succeeded" or "failed" or "cancelled" or "orphaned")
+                    break;
+            } while (DateTime.UtcNow < deadline);
+
+            Assert.Contains(state, new[] { "succeeded", "failed", "cancelled", "orphaned" });
+
+            var events = await client.RequestAsync("tools/call", new
+            {
+                name = "job_events",
+                arguments = new { jobId, fromSeq = 0, limit = 100 }
+            });
+            var eventStructured = events.GetProperty("result").GetProperty("structuredContent");
+            var eventItems = eventStructured.GetProperty("events");
+            Assert.True(eventItems.GetArrayLength() > 0);
+            Assert.Contains(eventItems.EnumerateArray(),
+                e => e.GetProperty("kind").GetString() == "result");
+
+            var result = await client.RequestAsync("tools/call", new
+            {
+                name = "job_result",
+                arguments = new { jobId }
+            });
+            var resultStructured = result.GetProperty("result").GetProperty("structuredContent");
+            Assert.Equal(state, resultStructured.GetProperty("state").GetString());
+
+            // wait=true：同步等待完成，直接返回终态（离线服务器预期 failed，但不再返回 running）。
+            var waited = await client.RequestAsync("tools/call", new
+            {
+                name = "job_start",
+                arguments = new
+                {
+                    operation = "ssh_snapshot_refresh",
+                    arguments = "{\"serverId\":\"s1\",\"force\":true}",
+                    wait = true
+                }
+            });
+            var waitedStructured = waited.GetProperty("result").GetProperty("structuredContent");
+            Assert.True(waitedStructured.GetProperty("success").GetBoolean(), waitedStructured.ToString());
+            Assert.Contains(waitedStructured.GetProperty("state").GetString(),
+                new[] { "succeeded", "failed", "cancelled", "orphaned" });
+            Assert.False(string.IsNullOrWhiteSpace(waitedStructured.GetProperty("jobId").GetString()));
+        }
+        finally
+        {
+            try { Directory.Delete(dataDir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public async Task Fleet_job_operations_run_over_stdio()
+    {
+        var exe = LocateServerExecutable();
+        var dataDir = Path.Combine(Path.GetTempPath(), "litssh-mcp-fleet-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dataDir);
+        await File.WriteAllTextAsync(Path.Combine(dataDir, "config.json"), """
+            {
+              "schemaVersion": 3,
+              "servers": [
+                {
+                  "id": "s1", "name": "offline-1", "host": "127.0.0.1", "port": 1,
+                  "username": "nobody", "authType": "Password", "password": "x"
+                },
+                {
+                  "id": "s2", "name": "offline-2", "host": "127.0.0.1", "port": 1,
+                  "username": "nobody", "authType": "Password", "password": "x"
+                }
+              ],
+              "connectionPool": { "connectTimeoutSeconds": 1 },
+              "snapshot": { "timeoutSeconds": 1, "minRefreshIntervalSeconds": 0, "useSudo": false }
+            }
+            """, Encoding.UTF8);
+
+        try
+        {
+            using var client = new McpStdioClient(exe, dataDir);
+            await client.RequestAsync("initialize", new
+            {
+                protocolVersion = "2024-11-05",
+                capabilities = new { },
+                clientInfo = new { name = "it-fleet", version = "1.0" }
+            });
+            await client.NotifyAsync("notifications/initialized");
+
+            var inventory = await client.RequestAsync("tools/call", new
+            {
+                name = "job_start",
+                arguments = new
+                {
+                    operation = "fleet_inventory",
+                    argumentsObject = new { serverIds = "s1,s2" },
+                    wait = true
+                }
+            });
+            var inventoryStructured = inventory.GetProperty("result").GetProperty("structuredContent");
+            Assert.True(inventoryStructured.GetProperty("success").GetBoolean(), inventoryStructured.ToString());
+            Assert.Equal("succeeded", inventoryStructured.GetProperty("state").GetString());
+            Assert.True(inventoryStructured.GetProperty("result").TryGetProperty("servers", out _));
+
+            var refresh = await client.RequestAsync("tools/call", new
+            {
+                name = "job_start",
+                arguments = new
+                {
+                    operation = "fleet_snapshot_refresh",
+                    arguments = "{\"serverIds\":\"s1,s2\",\"force\":true}",
+                    wait = true
+                }
+            });
+            var refreshStructured = refresh.GetProperty("result").GetProperty("structuredContent");
+            Assert.True(refreshStructured.GetProperty("success").GetBoolean(), refreshStructured.ToString());
+            Assert.Equal("succeeded", refreshStructured.GetProperty("state").GetString());
+            Assert.True(refreshStructured.GetProperty("result").TryGetProperty("results", out _));
+
+            var list = await client.RequestAsync("tools/call", new
+            {
+                name = "job_list",
+                arguments = new { limit = 10 }
+            });
+            var listStructured = list.GetProperty("result").GetProperty("structuredContent");
+            var operations = listStructured.GetProperty("availableOperations").EnumerateArray()
+                .Select(e => e.GetString() ?? "")
+                .ToArray();
+            Assert.Contains(operations, op => op.StartsWith("fleet_inventory", StringComparison.Ordinal));
+            Assert.Contains(operations, op => op.StartsWith("fleet_snapshot_refresh", StringComparison.Ordinal));
+        }
+        finally
+        {
+            try { Directory.Delete(dataDir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public async Task Internal_round_tool_is_only_visible_to_host()
     {
         var exe = LocateServerExecutable();
@@ -150,7 +349,7 @@ public class McpProtocolIntegrationTests
                 var list = await external.RequestAsync("tools/list", new { });
                 var names = list.GetProperty("result").GetProperty("tools").EnumerateArray()
                     .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
-                Assert.Equal(35, names.Count);
+                Assert.Equal(41, names.Count);
                 Assert.DoesNotContain("mcp_approval_round", names);
             }
 
@@ -165,7 +364,7 @@ public class McpProtocolIntegrationTests
             var hostList = await host.RequestAsync("tools/list", new { });
             var hostNames = hostList.GetProperty("result").GetProperty("tools").EnumerateArray()
                 .Select(t => t.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
-            Assert.Equal(36, hostNames.Count);
+            Assert.Equal(42, hostNames.Count);
             Assert.Contains("mcp_approval_round", hostNames);
         }
         finally
@@ -201,7 +400,7 @@ public class McpProtocolIntegrationTests
 
             // 工具仍会列出（外部客户端不含内部工具）
             var list = await client.RequestAsync("tools/list", new { });
-            Assert.Equal(35, list.GetProperty("result").GetProperty("tools").GetArrayLength());
+            Assert.Equal(41, list.GetProperty("result").GetProperty("tools").GetArrayLength());
 
             // 但任何调用都被拒绝
             var call = await client.RequestAsync("tools/call", new { name = "mcp_self_check", arguments = new { } });

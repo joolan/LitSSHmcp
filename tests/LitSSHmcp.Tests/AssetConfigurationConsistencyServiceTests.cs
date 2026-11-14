@@ -91,7 +91,8 @@ public class AssetConfigurationConsistencyServiceTests
         public Task<TopologyGraph> GetGraphAsync(CancellationToken ct = default) => Task.FromResult(new TopologyGraph());
         public Task<TopologyGraph> GetCuratedGraphAsync(CancellationToken ct = default) => Task.FromResult(new TopologyGraph());
         public Task<DependencyGraph> GetDependenciesAsync(string assetId, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default,
+            IProgress<TopologyDiscoveryProgress>? progress = null) => throw new NotSupportedException();
         public Task<ServerDiscoveryEvidence?> GetServerDiscoveryEvidenceAsync(string serverId, CancellationToken ct = default) =>
             Task.FromResult(_evidence);
     }

@@ -272,6 +272,15 @@ public class ToolSupportTests
         Assert.NotNull(ToolSupport.BlockingCommandHint(command));
     }
 
+    [Fact]
+    public void BlockingCommandHint_includes_rule_and_matched_fragment()
+    {
+        var hint = ToolSupport.BlockingCommandHint("sudo rm -rf /tmp/x");
+        Assert.NotNull(hint);
+        Assert.Contains("sudo-tty", hint);
+        Assert.Contains("sudo rm -rf", hint);
+    }
+
     [Theory]
     [InlineData("df -h")]
     [InlineData("tail -n 200 /var/log/app.log")]

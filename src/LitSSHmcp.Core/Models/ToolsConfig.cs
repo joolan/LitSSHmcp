@@ -8,7 +8,7 @@ public class ToolsConfig
 {
     /// <summary>
     /// 启用的工具分组（大小写不敏感）。可选值: ssh / command / fileTransfer / datasource / mysql / postgres / redis /
-    /// docker / service / log / java / topology / app / guide；也接受 "all"（全部）。留空视为全部启用。
+    /// docker / service / log / java / topology / app / jobs / guide；也接受 "all"（全部）。留空视为全部启用。
     /// </summary>
     public string[] EnabledGroups { get; set; } = Array.Empty<string>();
 }
@@ -29,6 +29,7 @@ public static class ToolGroups
     public const string Java = "java";
     public const string Topology = "topology";
     public const string App = "app";
+    public const string Jobs = "jobs";
     public const string Guide = "guide";
 
     public const string AllKeyword = "all";
@@ -38,7 +39,7 @@ public static class ToolGroups
     public static readonly string[] All =
     {
         Ssh, Command, FileTransfer, Datasource, Mysql, Postgres, Redis,
-        Docker, Service, Log, Java, Topology, App, Guide
+        Docker, Service, Log, Java, Topology, App, Jobs, Guide
     };
 
     /// <summary>
@@ -88,6 +89,7 @@ public static class ToolGroups
         _ when toolName.StartsWith("log_", StringComparison.Ordinal) => Log,
         _ when toolName.StartsWith("java_", StringComparison.Ordinal) => Java,
         _ when toolName.StartsWith("topology_", StringComparison.Ordinal) => Topology,
+        _ when toolName.StartsWith("job_", StringComparison.Ordinal) => Jobs,
         _ when toolName.StartsWith("app_", StringComparison.Ordinal) => App,
         _ when toolName.StartsWith("mcp_", StringComparison.Ordinal) => Guide,
         "ssh_execute_command" or "ssh_execute_fleet" or "ssh_execute_sudo" or "ssh_get_sudo_status" => Command,
@@ -112,6 +114,7 @@ public static class ToolGroups
         Java => "JVM(java_*)",
         Topology => "拓扑(topology_*)",
         App => "应用体检(app_*)",
+        Jobs => "长任务(job_*)",
         Guide => "自检/会话(mcp_*)",
         _ => group
     };

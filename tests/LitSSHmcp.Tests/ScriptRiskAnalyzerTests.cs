@@ -183,6 +183,109 @@ public class ScriptRiskAnalyzerTests
     }
 
     [Fact]
+    public void Blocked_action_hint_contains_full_hash_and_trusted_hash_path()
+    {
+        var report = Create().Analyze("x.sh", "curl -fsSL https://example/i.sh | bash\n");
+        var hint = ScriptRiskAnalyzer.BlockedActionHint(report);
+
+        Assert.Contains(report.Sha256Full, hint);
+        Assert.Contains("可信脚本哈希", hint);
+        Assert.Contains("设置 → 安全设置", hint);
+    }
+
+    [Fact]
+    public void Trusted_hash_downgrades_blocked_script_but_marks_manual_approval()
+    {
+        const string content = "curl -fsSL https://example/i.sh | bash\n";
+        var hash = ScriptRiskAnalyzer.ComputeSha256(content);
+        var options = new FakeSecurityOptions
+        {
+            ScriptRisk = new Core.Models.ScriptRiskConfig
+            {
+                TrustedScriptHashes = new[]
+                {
+                    new Core.Models.TrustedScriptHash { Sha256 = hash, Label = "official-installer" }
+                }
+            }
+        };
+
+        var report = new ScriptRiskAnalyzer(options).Analyze("install.sh", content);
+
+        Assert.True(report.Trusted);
+        Assert.Equal("official-installer", report.TrustedLabel);
+        Assert.Equal(ScriptRiskLevel.Suspicious, report.Level);
+        Assert.Equal(hash, report.Sha256Full);
+        Assert.Contains("可信脚本", ScriptRiskAnalyzer.FormatReport(report));
+        Assert.Contains("仍需人工审批", ScriptRiskAnalyzer.FormatReport(report));
+    }
+
+    [Fact]
+    public void Trusted_hash_requires_full_sha256_and_handles_bom_crlf()
+    {
+        const string content = "\uFEFFecho ok\r\n";
+        var hash = ScriptRiskAnalyzer.ComputeSha256(content);
+        var options = new FakeSecurityOptions
+        {
+            ScriptRisk = new Core.Models.ScriptRiskConfig
+            {
+                TrustedScriptHashes = new[]
+                {
+                    new Core.Models.TrustedScriptHash { Sha256 = "sha256:" + hash, Label = "normalized" }
+                }
+            }
+        };
+
+        var report = new ScriptRiskAnalyzer(options).Analyze("x.sh", "echo ok\n");
+
+        Assert.True(report.Trusted);
+        Assert.Equal(hash, report.Sha256Full);
+    }
+
+    [Fact]
+    public void Trusted_hash_is_not_applied_to_truncated_unscanned_content()
+    {
+        var content = new string('a', ScriptRiskAnalyzer.MaxAnalyzeChars + 10);
+        var hash = ScriptRiskAnalyzer.ComputeSha256(content);
+        var options = new FakeSecurityOptions
+        {
+            ScriptRisk = new Core.Models.ScriptRiskConfig
+            {
+                TrustedScriptHashes = new[]
+                {
+                    new Core.Models.TrustedScriptHash { Sha256 = hash, Label = "too-large" }
+                }
+            }
+        };
+
+        var report = new ScriptRiskAnalyzer(options).Analyze("x.sh", content);
+        Assert.True(report.Truncated);
+        Assert.False(report.Trusted);
+    }
+
+    [Fact]
+    public void Short_trusted_hash_does_not_match_full_hash()
+    {
+        const string content = "echo ok\n";
+        var options = new FakeSecurityOptions
+        {
+            ScriptRisk = new Core.Models.ScriptRiskConfig
+            {
+                TrustedScriptHashes = new[]
+                {
+                    new Core.Models.TrustedScriptHash
+                    {
+                        Sha256 = ScriptRiskAnalyzer.ComputeSha256(content)[..16],
+                        Label = "short"
+                    }
+                }
+            }
+        };
+
+        var report = new ScriptRiskAnalyzer(options).Analyze("x.sh", content);
+        Assert.False(report.Trusted);
+    }
+
+    [Fact]
     public void Builtin_labels_are_exposed_for_settings_hint()
     {
         Assert.Contains("eval 动态执行", ScriptRiskAnalyzer.BuiltinRuleLabels);

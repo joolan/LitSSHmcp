@@ -48,6 +48,8 @@ public enum ToolAccessLevel
 /// 新增工具必须在此登记；<c>ToolCatalogConsistencyTests</c> 会用反射校验注册工具与目录一致。
 /// <param name="SelfScopedGlobal">目标形态为 Global 时，工具自身按调用者裁剪返回内容（如服务器/数据源/会话清单），
 /// 强制模式下允许普通成员调用；为 false 的无目标全局工具仅管理员可用。</param>
+/// <param name="JobRouted">job_start 专用：静态条目仅作登记标记，实际授权按 operation 参数路由到
+/// JobManager operation 注册表指向的底层工具描述符（方案A，详见长任务 Job 模型设计 §3.6）。</param>
 /// </summary>
 public sealed record ToolSecurityDescriptor(
     string Name,
@@ -56,7 +58,8 @@ public sealed record ToolSecurityDescriptor(
     ToolAccessLevel RequiredAccess,
     bool RequiresWriteLock,
     bool IsConditionalWrite,
-    bool SelfScopedGlobal = false);
+    bool SelfScopedGlobal = false,
+    bool JobRouted = false);
 
 /// <summary>已注册 MCP 工具的安全目录。</summary>
 public static class ToolSecurityCatalog
@@ -91,10 +94,11 @@ public static class ToolSecurityCatalog
             bool writeLock = false,
             bool conditionalWrite = false,
             bool selfScopedGlobal = false,
+            bool jobRouted = false,
             params string[] targetArguments)
         {
             list.Add(new ToolSecurityDescriptor(
-                name, kind, targetArguments, access, writeLock, conditionalWrite, selfScopedGlobal));
+                name, kind, targetArguments, access, writeLock, conditionalWrite, selfScopedGlobal, jobRouted));
         }
 
         void LocalRead(string name) => Add(name, ToolTargetKind.None, ToolAccessLevel.Read);
@@ -164,11 +168,69 @@ public static class ToolSecurityCatalog
 
         // 会话列表：全局清单，由工具按用户裁剪。
 
+        // 长任务 Job 工具面（设计 §3.5/§3.6）。job_start 按 operation 参数路由到
+        // JobManager operation 注册表指向的底层工具描述符（方案A）；其余 5 个为本人任务管理工具。
+        Add("job_start", ToolTargetKind.None, ToolAccessLevel.Read, jobRouted: true);
+        LocalRead("job_status");
+        LocalRead("job_result");
+        LocalRead("job_events");
+        Add("job_cancel", ToolTargetKind.None, ToolAccessLevel.Exec);
+        LocalRead("job_list");
+
         var duplicate = list.GroupBy(d => d.Name, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1);
         if (duplicate is not null)
             throw new InvalidOperationException($"工具安全目录存在重复项: {duplicate.Key}");
 
         return list.ToDictionary(d => d.Name, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// 解析一次调用的有效描述符与有效参数：job_start 通过 operationResolver（来自 JobManager
+    /// 的 operation 注册表）拿到本次 operation 的请求描述符，并把 arguments(JSON 文本) 展开为内层
+    /// 参数字典供目标解析；其余工具原样返回。resolver 缺失/operation 未注册 = fail-closed。
+    /// </summary>
+    public static (ToolSecurityDescriptor? Descriptor, IDictionary<string, JsonElement>? EffectiveArgs)
+        ResolveForCall(string? tool, IDictionary<string, JsonElement>? args,
+            Func<string, ToolSecurityDescriptor?>? operationResolver = null)
+    {
+        var descriptor = Find(tool);
+        if (descriptor is null)
+            return (null, args);
+
+        if (!descriptor.JobRouted)
+            return (descriptor, args);
+
+        var operation = ToolTargetResolver.GetStringArg(args, "operation");
+        if (string.IsNullOrWhiteSpace(operation) || operationResolver is null)
+            return (null, args);
+
+        var routed = operationResolver(operation);
+        if (routed is null)
+            return (null, args);
+
+        return (routed, UnwrapJobArguments(args));
+    }
+
+    /// <summary>把 job_start 的 arguments(JSON 对象文本) 展开为内层参数字典；解析失败返回外层参数。</summary>
+    public static IDictionary<string, JsonElement>? UnwrapJobArguments(IDictionary<string, JsonElement>? args)
+    {
+        var raw = ToolTargetResolver.GetStringArg(args, "arguments");
+        if (string.IsNullOrWhiteSpace(raw))
+            return args;
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return args;
+            var inner = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var property in doc.RootElement.EnumerateObject())
+                inner[property.Name] = property.Value.Clone();
+            return inner;
+        }
+        catch (JsonException)
+        {
+            return args; // 非法 JSON：按空参数处理，由 job_start 工具体给出 invalid_arguments 错误
+        }
     }
 }
 

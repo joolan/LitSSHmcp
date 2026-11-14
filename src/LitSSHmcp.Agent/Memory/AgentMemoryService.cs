@@ -77,7 +77,7 @@ public sealed class AgentMemoryService
     /// <summary>当前 embeddings 模型标识；模型变化时文档索引会自动重建，避免旧维度向量不可用。</summary>
     public string EmbeddingModel => _embeddingModel;
 
-    /// <summary>底层存储（供后台 consolidation/维护任务复用同一作用域连接）。</summary>
+    /// <summary>底层存储（供维护任务复用同一作用域连接）。</summary>
     public IAgentMemoryStore Store => _store;
 
     /// <summary>按 AgentConfig 创建记忆服务（供 Web/桌面审核等非运行时场景使用）；未启用/未配置模型返回 null。</summary>

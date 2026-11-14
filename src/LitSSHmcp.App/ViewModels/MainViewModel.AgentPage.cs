@@ -16,6 +16,9 @@ public partial class MainViewModel
     /// <summary>嵌入主界面的 AI 助手视图；独立窗口打开时为 null，主页面显示占位卡。</summary>
     public AgentView? AgentPageView => _agentDetached ? null : _agentView;
 
+    /// <summary>首次进入 AI 页且 AgentView 尚未创建：主窗口显示轻量骨架，避免整页白屏。</summary>
+    public bool IsAgentPageLoading => !_agentDetached && _agentView is null;
+
     public bool IsAgentDetached => _agentDetached;
 
     public int AgentRunningCount => _agentView?.ViewModel.RunningSessionCount ?? 0;
@@ -193,6 +196,7 @@ public partial class MainViewModel
     private void RaiseAgentPageStateChanged()
     {
         OnPropertyChanged(nameof(AgentPageView));
+        OnPropertyChanged(nameof(IsAgentPageLoading));
         OnPropertyChanged(nameof(IsAgentDetached));
         OnPropertyChanged(nameof(ShowAgentBadge));
         (DetachAgentCommand as RelayCommand)?.RaiseCanExecuteChanged();

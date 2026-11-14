@@ -298,7 +298,6 @@ public sealed class WebSessionManager : IAsyncDisposable
                     await _store.AppendMessageAsync(sessionId, "assistant", assistantText.ToString(),
                         CancellationToken.None);
                 slot.Runtime.IndexTurnInBackground(sessionId.ToString(), userText, assistantText.ToString());
-                slot.Runtime.ConsolidateInBackground();
             }
             else
             {
@@ -398,6 +397,19 @@ public sealed class WebSessionManager : IAsyncDisposable
             if (slot.Deleting)
                 await slot.DisposeRuntimeAsync();
         }
+    }
+
+    /// <summary>调用长任务工具（job_list/job_status/job_cancel），不占用对话轮次闸门。</summary>
+    public async Task<string> InvokeJobToolAsync(WebPrincipal owner, long sessionId, string toolName,
+        IDictionary<string, object?> arguments, CancellationToken ct = default)
+    {
+        await EnsureOwnerAsync(owner, sessionId, ct);
+        var slot = _slots.GetOrAdd(sessionId, _ => new SessionSlot());
+        await EnsureRuntimeAsync(owner, sessionId, slot, ct);
+        using var auditScope = LocalAudit.BeginRunScope(sessionId.ToString());
+        var result = await slot.Runtime!.InvokeBuiltinToolAsync(toolName, arguments, ct);
+        _accessLog.Write("session_job", owner.Username, null, $"session={sessionId} tool={toolName}");
+        return McpToolResultNormalizer.Normalize(result).Text;
     }
 
     /// <summary>取消当前会话正在执行的批量变更（owner 校验）。</summary>
@@ -631,8 +643,6 @@ public sealed class WebSessionManager : IAsyncDisposable
                 new WebRuntimeRequest(sessionId, owner.UserId.ToString(), owner.Username, owner.Role, dir, built.History, summary,
                     sessionRow?.ProviderId, built.ActiveAgent, built.ActiveSkillIds, built.PlanMode, built.AssetGraph,
                     toolPolicy), ct);
-            slot.Runtime.ConsolidationFailed += message => _accessLog.Write("consolidation_failed",
-                slot.OwnerUsername, null, $"session={sessionId} {message}");
         }
         finally
         {

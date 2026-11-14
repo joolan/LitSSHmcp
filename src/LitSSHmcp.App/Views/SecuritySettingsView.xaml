@@ -1,6 +1,7 @@
 <UserControl x:Class="LitSSHmcp.App.Views.SecuritySettingsView"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -115,7 +116,59 @@
                 <TextBox Text="{Binding ScriptDisabledRuleLabels, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="40" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,0,2"/>
                 <TextBlock Text="{Binding BuiltinScriptRuleLabelsHint}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,0,0,8"
                            Foreground="{DynamicResource AppTextSecondaryBrush}"
-                           ToolTip="内置脚本规则标签全集（可填入上方禁用框按需关闭单条）"/>
+                           ToolTip="禁用脚本规则标签全集（可填入上方禁用框按需关闭单条）"/>
+
+                <TextBlock Text="可信脚本哈希 (完整 SHA-256; 仅跳过脚本内容硬拦截, 仍需人工审批)" FontWeight="Bold" Margin="0,8,0,4"/>
+                <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,0,0,6"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           Text="脚本内容变更后哈希失效；可信不等于安全，脚本仍会要求人工审批。哈希按去 BOM、统一 LF 后的内容计算。执行/上传被拦截时，报告里的 full 字段就是这里要填的完整 SHA-256。"/>
+                <Grid Margin="0,0,0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="430"/>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="220"/>
+                        <ColumnDefinition Width="120"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="SHA-256（完整 64 位）" FontSize="{DynamicResource AppFontSizeMicro}"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    <TextBlock Grid.Column="1" Text="标签（用于识别）" FontSize="{DynamicResource AppFontSizeMicro}"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    <TextBlock Grid.Column="2" Text="备注（可选）" FontSize="{DynamicResource AppFontSizeMicro}"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                    <TextBlock Grid.Column="3" Text="添加时间" FontSize="{DynamicResource AppFontSizeMicro}"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                </Grid>
+                <ItemsControl ItemsSource="{Binding TrustedScriptHashes}" Margin="0,0,0,4">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="430"/>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ui:TextBox Grid.Column="0" Text="{Binding Sha256, UpdateSourceTrigger=PropertyChanged}"
+                                            FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,0,8,0"
+                                            PlaceholderText="粘贴完整 64 位 SHA-256"
+                                            ToolTip="完整 64 位 SHA-256，可带 sha256: 前缀"/>
+                                <ui:TextBox Grid.Column="1" Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}"
+                                            Margin="0,0,8,0" PlaceholderText="如：宝塔官方安装脚本"
+                                            ToolTip="用于识别这条可信脚本"/>
+                                <ui:TextBox Grid.Column="2" Text="{Binding Note, UpdateSourceTrigger=PropertyChanged}"
+                                            Margin="0,0,8,0" PlaceholderText="审核备注（可选）"/>
+                                <TextBlock Grid.Column="3" Text="{Binding AddedAtText}" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                           FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,0,8,0"/>
+                                <Button Grid.Column="4" Content="移除" Padding="10,3"
+                                        Click="OnTrustedScriptRemove" ToolTip="移除可信哈希"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="+ 添加可信脚本" Padding="10,3" Margin="0,0,0,8" Click="OnTrustedScriptAdd"/>
 
                 <TextBlock Text="SQL 过滤 (正则, 每行一条)" FontWeight="Bold" Margin="0,8,0,4"/>
                 <TextBlock Text="禁止模式:" Margin="0,0,0,2"/>

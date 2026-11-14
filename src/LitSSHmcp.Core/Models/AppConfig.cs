@@ -124,7 +124,9 @@ public enum AgentToolProfile
     Diagnose,
     Change,
     Assets,
-    Chat
+    Chat,
+    /// <summary>运维专注：保留日常运维/巡检/变更所需工具，隐去调度、记忆审核等 UI/管理工具。</summary>
+    Ops
 }
 
 /// <summary>
@@ -224,9 +226,6 @@ public class AgentConfig
     /// <summary>长期记忆/RAG（远程 Embeddings 向量化 + 本地 SQLite 向量库存储/检索）配置。</summary>
     public AgentMemoryConfig Memory { get; set; } = new();
 
-    /// <summary>后台记忆整理（raw → 事件/候选）配置；默认关闭。</summary>
-    public AgentConsolidationConfig Consolidation { get; set; } = new();
-
     /// <summary>桌面端工作日志：含变更操作的任务结束后自动追加到工作区 worklogs/日期文件（Web 端暂不启用）。</summary>
     public AgentWorkLogConfig WorkLog { get; set; } = new();
 
@@ -255,6 +254,15 @@ public class AgentConfig
     public int OrphanSessionDirRetentionDays { get; set; } = 30;
 
     /// <summary>本机 PowerShell 终端 & AI 本地 CLI 执行配置（默认关闭）。</summary>
+    /// <summary>job_start 等待适配器最长同步等待秒数（默认 900，1-7200）；超时后任务仍在后台执行。</summary>
+    public int JobWaitTimeoutSeconds { get; set; } = 900;
+
+    /// <summary>job 状态轮询最小间隔秒数（默认 2，1-30）。</summary>
+    public int JobPollMinSeconds { get; set; } = 2;
+
+    /// <summary>job 状态轮询最大退避间隔秒数（默认 5，1-60，且不小于最小值）。</summary>
+    public int JobPollMaxSeconds { get; set; } = 5;
+
     public LocalTerminalConfig LocalTerminal { get; set; } = new();
 }
 
@@ -504,39 +512,6 @@ public class AgentMemoryConfig
 }
 
 /// <summary>
-/// 后台 consolidation：把未处理的 raw 会话片段提炼为事件/候选。
-/// 默认关闭；开启后仅在成功轮之后后台运行（受最小间隔/条数/候选数限制）。
-/// </summary>
-public class AgentConsolidationConfig
-{
-    public bool Enabled { get; set; }
-
-    /// <summary>未处理 raw 少于该值时跳过。</summary>
-    public int MinRawCount { get; set; } = 5;
-
-    /// <summary>单次最多读取的 raw 条数。</summary>
-    public int MaxRawPerRun { get; set; } = 100;
-
-    /// <summary>单次最多生成候选数。</summary>
-    public int MaxCandidatesPerRun { get; set; } = 20;
-
-    /// <summary>后台自动运行的最小间隔（分钟）。</summary>
-    public int MinIntervalMinutes { get; set; } = 10;
-
-    /// <summary>单个会话送入提炼器的最大字符数。</summary>
-    public int MaxInputCharsPerSession { get; set; } = 6000;
-
-    /// <summary>每日最多自动运行次数（0=不限；force=true 的手动触发不受限）。</summary>
-    public int MaxRunsPerDay { get; set; }
-
-    /// <summary>每日最多处理的 raw 条数（0=不限；force=true 的手动触发不受限）。</summary>
-    public int MaxRawPerDay { get; set; }
-
-    /// <summary>consolidation 专用低成本模型 Id（空=复用当前会话模型）。</summary>
-    public string ProviderId { get; set; } = string.Empty;
-}
-
-/// <summary>
 /// 桌面端工作日志：按天追加、永久保留（不自动删除）的运维流水，供交接/复盘/审计引用。
 /// 与「滚动摘要」（仅上下文续接）和「ops_memory_*」（可复用经验）分工不同。
 /// </summary>
@@ -622,6 +597,19 @@ public class ConnectionPoolConfig
     public int AcquireTimeoutSeconds { get; set; } = 30;
 }
 
+/// <summary>MCP 长任务 Job 模型配置。</summary>
+public class JobsConfig
+{
+    /// <summary>running 状态心跳超过该秒数且进程非本进程 → 判定 orphaned（默认 180，60~3600）。</summary>
+    public int OrphanHeartbeatSeconds { get; set; } = 180;
+
+    /// <summary>终态 job 保留时长（小时），job_start 时滚动清理（默认 24，1~720）。</summary>
+    public int RetentionHours { get; set; } = 24;
+
+    /// <summary>单用户保留的终态 job 上限（默认 100）。</summary>
+    public int MaxFinishedPerUser { get; set; } = 100;
+}
+
 public class SecurityConfig
 {
     /// <summary>全局 MCP 开关：false 时拒绝所有工具调用（安全设置中可切换，热生效、无需重启）。</summary>
@@ -643,6 +631,9 @@ public class SecurityConfig
     public LimitsConfig Limits { get; set; } = new();
     public AuditConfig Audit { get; set; } = new();
     public ApprovalConfig Approval { get; set; } = new();
+
+    /// <summary>MCP 长任务 Job 模型配置（job_start 等 6 工具）。</summary>
+    public JobsConfig Jobs { get; set; } = new();
 
     /// <summary>查询结果列级脱敏规则。</summary>
     public MaskingConfig Masking { get; set; } = new();

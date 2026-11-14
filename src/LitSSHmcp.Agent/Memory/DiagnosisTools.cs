@@ -15,7 +15,7 @@ public static class DiagnosisTools
     {
         var function = new LocalFunction(
             ToolName,
-            "生成结构化诊断/变更报告（最终回答直接使用其返回文本）；有记忆时同时写入事件记录。诊断/变更任务结束前必须调用。mode=change 必须填写 verification 和 rollback，没有验证不得声称成功。",
+            "生成结构化诊断/变更报告（最终回答直接使用其返回文本）；有记忆时同时写入事件记录。诊断/变更任务结束前必须调用。mode=change 必须填写 verification 和 rollback，没有验证不得声称成功。可跨事件复用的结论另用 ops_memory_write，不要把同一内容重复写入记忆。",
             """
             {"type":"object","properties":{
               "mode":{"type":"string","enum":["diagnose","change"],"description":"diagnose=诊断/排障, change=变更/发布"},

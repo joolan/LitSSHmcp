@@ -80,6 +80,20 @@
       "sensitiveCommands": ["rm ", "chmod", "reboot", "shutdown"],
       "sensitivePatterns": ["\\brm\\b", "\\bchmod\\b"]
     },
+    "scriptRules": {
+      "enabled": true,
+      "disabledBuiltinRuleLabels": [],
+      "extraBlockedPatterns": [],
+      "extraSensitivePatterns": [],
+      "trustedScriptHashes": [
+        {
+          "sha256": "REPLACE_WITH_FULL_64_HEX",
+          "label": "已审核官方安装脚本",
+          "note": "内容变更后需重新审核",
+          "addedAt": "2026-11-14T10:00:00+08:00"
+        }
+      ]
+    },
     "sqlFilter": {
       "blockedPatterns": ["\\btruncate\\b", "\\bgrant\\b"],
       "sensitivePatterns": ["\\binsert\\b", "\\bupdate\\b", "\\bdelete\\b"]
@@ -93,6 +107,7 @@
     },
     "sshHostKey": { "mode": "tofu" },
     "discovery": { "allowedSearchPaths": ["/opt", "/home", "/srv", "/app", "/data", "/etc/nginx"], "useSudo": false },
+    "jobs": { "orphanHeartbeatSeconds": 180, "retentionHours": 24, "maxFinishedPerUser": 100 },
     "limits": { "maxConcurrentPerTarget": 3, "maxCallsPerMinutePerTarget": 60 },
     "audit": { "storeSqlText": true, "maskLiterals": false, "retentionDays": 90 },
     "masking": { "rules": [ { "column": "phone|mobile", "mode": "phone" } ] },
@@ -103,6 +118,8 @@
 }
 ```
 
+> `security.jobs` 控制长任务 Job 模型：`orphanHeartbeatSeconds` 为 running 心跳超时判 orphaned 的秒数（默认 180），`retentionHours` 为终态 job 保留小时数（默认 24），`maxFinishedPerUser` 为单用户保留的终态 job 上限（默认 100）。Job 状态与事件存放在 `%APPDATA%\LitSSH\jobs.db`，启动和 `job_start` 时滚动清理。
+>
 > 所有明文密码在保存 / 加载时会自动迁移为 **DPAPI 密文**（`enc:` 前缀），仅当前 Windows 用户可解密。访问模式、拓扑关系类型、审批弹窗样式等含义详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 近期新增字段
@@ -122,7 +139,10 @@
   },
   "agent": {
     "retentionMaxMessages": 2000,
-    "autoSubAgentRouting": true
+    "autoSubAgentRouting": true,
+    "jobWaitTimeoutSeconds": 900,
+    "jobPollMinSeconds": 2,
+    "jobPollMaxSeconds": 5
   }
 }
 ```
@@ -131,6 +151,7 @@
 - `snapshot.storeEffectiveConfig`：默认 `false`，完整 `nginx -T` 存入 `snapshots.db` 的 `NginxConfigs` 表，`detail="full"` 时回填。
 - `agent.retentionMaxMessages`：默认 2000；按整轮裁剪，被裁消息归档到 `agent_messages_deleted`，不会单独丢掉 user 提示词。
 - `agent.autoSubAgentRouting`：默认 `true`；命中“全面/巡检/多台/大日志”等复杂只读取证请求时，先自动交给 `run_subagent`，主上下文只接收摘要。
+- `agent.jobWaitTimeoutSeconds` / `jobPollMinSeconds` / `jobPollMaxSeconds`：Agent 等待 `job_start` 的最长同步等待与状态轮询退避；超时后任务仍在后台执行，可稍后 `job_result` 收割。
 
 ## 通知中心
 

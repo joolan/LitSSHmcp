@@ -13,7 +13,7 @@ public static class MemoryTools
     {
         var write = new LocalFunction(
             "ops_memory_write",
-            "写入/修正/删除核心运维经验记忆(任务复盘/脚本/资产经验): action=save 新增/合并(同 kind+key 覆盖最新有效路径并频次+1); action=update 修正字段或把过时经验标记 superseded(不再召回); action=delete 删除一条记忆; 内容含密码/密钥/令牌会被拒绝, 过短或与既有条目高度相似时自动合并; Web 普通成员写入私有记忆, 管理员写入团队记忆",
+            "只写入/修正/删除可跨事件复用的运维经验(任务复盘/脚本/资产经验): action=save 新增/合并; action=update 修正或标记 superseded; action=delete 删除。单次诊断/变更记录用 ops_diagnosis_write，不要重复写 incident。内容含密码/密钥/令牌会被拒绝，过短或高度相似时自动合并; Web 普通成员写私有记忆, 管理员写团队记忆",
             """{"type":"object","properties":{"action":{"type":"string","enum":["save","update","delete"],"description":"save=新增/合并, update=修正字段或标记过时, delete=删除"},"kind":{"type":"string","enum":["task","script","asset"],"description":"类别: task=任务复盘, script=脚本工具, asset=资产经验"},"key":{"type":"string","description":"语义唯一键, 如 磁盘满:ssh:web01"},"content":{"type":"string","description":"save: 经验内容(现象→根因→验证成功的解决路径); update: 新内容(省略则不变); delete: 忽略"},"assetIds":{"type":"string","description":"关联资产ID, 逗号分隔, 如 ssh:web01,ds:mysql01"},"tags":{"type":"string","description":"标签, 逗号分隔"},"status":{"type":"string","enum":["active","superseded"],"description":"update: active=有效, superseded=已过时(召回不再出现)"}},"required":["action","kind","key"]}""",
             async (args, ct) =>
             {

@@ -46,16 +46,25 @@ public static class McpAuthorizationFilter
                 catch { config = new AppConfig(); }
             }
 
-            var descriptor = ToolSecurityCatalog.Find(tool);
+            // 方案A：job_start 按 operation 参数路由到底层工具描述符，内层 arguments 参与目标解析。
+            // operation → 底层工具的映射来自 JobManager 注册表，避免安全目录维护第二份清单。
+            var jobManager = services?.GetService(typeof(JobManager)) as JobManager;
+            Func<string, ToolSecurityDescriptor?>? jobOperationResolver = jobManager is null
+                ? null
+                : op => jobManager.TryGetRequestDescriptor(op, out var requestDescriptor) ? requestDescriptor : null;
+            var (descriptor, effectiveArgs) = ToolSecurityCatalog.ResolveForCall(tool, args, jobOperationResolver);
             if (descriptor is null)
             {
                 const string unclassified = "(unclassified)";
-                await RecordDeniedAsync(services, config, tool, unclassified, "工具未登记安全描述符（默认拒绝）")
+                var denyReason = string.Equals(tool, "job_start", StringComparison.Ordinal)
+                    ? "job_start 的 operation 未注册（默认拒绝）"
+                    : "工具未登记安全描述符（默认拒绝）";
+                await RecordDeniedAsync(services, config, tool, unclassified, denyReason)
                     .ConfigureAwait(false);
-                return Denied(tool, unclassified, "工具未登记安全描述符（默认拒绝）");
+                return Denied(tool, unclassified, denyReason);
             }
 
-            var resolution = ToolTargetResolver.Resolve(config, descriptor, args);
+            var resolution = ToolTargetResolver.Resolve(config, descriptor, effectiveArgs);
             if (resolution.Error is not null)
             {
                 var display = resolution.DisplayKey ?? "(none)";
@@ -90,7 +99,7 @@ public static class McpAuthorizationFilter
             }
 
             var sqlFilter = services?.GetService(typeof(ISqlFilterService)) as ISqlFilterService;
-            var requiredAccess = ResolveRequiredAccess(descriptor, tool, args, sqlFilter);
+            var requiredAccess = ResolveRequiredAccess(descriptor, tool, effectiveArgs, sqlFilter);
 
             var policy = config.Security?.Authorization ?? new AuthorizationConfig();
             var (allowed, reason) = EvaluateAccess(

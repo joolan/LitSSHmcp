@@ -77,6 +77,14 @@
                     </StackPanel>
                 </Button>
                 <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
+                        Margin="0,0,0,2" Click="OnJobsClick"
+                        ToolTip="查看后台长任务、进度与事件，支持取消">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Clock24" FontSize="{DynamicResource AppFontSizeSubtitle}" Margin="0,0,10,0"/>
+                        <TextBlock Text="长任务" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button DockPanel.Dock="Top" Style="{DynamicResource ActionRowButton}" HorizontalAlignment="Stretch"
                         Margin="0,0,0,2" Click="OnAiTasksClick"
                         ToolTip="查看/启停/立即运行/删除 AI 定时任务（任务由对话创建）">
                     <StackPanel Orientation="Horizontal">

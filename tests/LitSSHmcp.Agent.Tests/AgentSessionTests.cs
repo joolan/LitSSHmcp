@@ -44,6 +44,224 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public async Task Job_start_terminal_state_is_returned_without_polling()
+    {
+        var call = new FunctionCallContent("c1", "job_start",
+            new Dictionary<string, object?> { ["operation"] = "topology_discover" });
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage>
+            {
+                new(ChatRole.Assistant, new AIContent[] { call })
+            }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+
+        var statusCalls = 0;
+        var tools = new IAgentTool[]
+        {
+            new FakeTool("job_start",
+                """{"success":true,"jobId":"job_1","state":"succeeded","result":{"ok":true}}"""),
+            new FakeTool("job_status", "{}", readOnly: true, invoke: _ =>
+            {
+                statusCalls++;
+                return Task.FromResult<object?>("{}");
+            }),
+            new FakeTool("job_result", "{}", readOnly: true)
+        };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            tools, "sys", new AgentConfig { MaxToolIterations = 5, ContextLimit = 50 });
+
+        await session.SendAsync("hi", new SyncProgress(_ => { }));
+
+        Assert.Equal(0, statusCalls);
+        var toolMessage = Assert.Single(session.Messages, m => m.Role == ChatRole.Tool);
+        var result = Assert.IsType<FunctionResultContent>(Assert.Single(toolMessage.Contents));
+        Assert.Contains("job_1", result.Result?.ToString());
+    }
+
+    [Fact]
+    public async Task Job_start_wait_timeout_returns_partial_and_job_id()
+    {
+        var call = new FunctionCallContent("c1", "job_start",
+            new Dictionary<string, object?> { ["operation"] = "topology_discover" });
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage>
+            {
+                new(ChatRole.Assistant, new AIContent[] { call })
+            }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+
+        var tools = new IAgentTool[]
+        {
+            new FakeTool("job_start", """{"success":true,"jobId":"job_1","state":"running"}"""),
+            new FakeTool("job_status", """{"state":"running","progressDone":1,"progressTotal":3}""", readOnly: true),
+            new FakeTool("job_result", "{}", readOnly: true)
+        };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            tools, "sys", new AgentConfig
+            {
+                MaxToolIterations = 5,
+                ContextLimit = 50,
+                JobWaitTimeoutSeconds = 1,
+                JobPollMinSeconds = 1,
+                JobPollMaxSeconds = 1
+            });
+
+        await session.SendAsync("hi", new SyncProgress(_ => { }));
+
+        var toolMessage = Assert.Single(session.Messages, m => m.Role == ChatRole.Tool);
+        var result = Assert.IsType<FunctionResultContent>(Assert.Single(toolMessage.Contents));
+        var text = result.Result?.ToString() ?? string.Empty;
+        Assert.Contains("job 等待超时", text);
+        Assert.Contains("job_1", text);
+    }
+
+    [Fact]
+    public async Task Job_start_wait_cancel_calls_job_cancel()
+    {
+        var call = new FunctionCallContent("c1", "job_start",
+            new Dictionary<string, object?> { ["operation"] = "topology_discover" });
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage>
+            {
+                new(ChatRole.Assistant, new AIContent[] { call })
+            }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+
+        var statusStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelCalled = false;
+        var tools = new IAgentTool[]
+        {
+            new FakeTool("job_start", """{"success":true,"jobId":"job_1","state":"running"}"""),
+            new FakeTool("job_status", """{"state":"running"}""", readOnly: true, invoke: _ =>
+            {
+                statusStarted.TrySetResult();
+                return Task.FromResult<object?>("""{"state":"running"}""");
+            }),
+            new FakeTool("job_result", "{}", readOnly: true),
+            new FakeTool("job_cancel", "{}", readOnly: false, invoke: _ =>
+            {
+                cancelCalled = true;
+                return Task.FromResult<object?>("{}");
+            })
+        };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            tools, "sys", new AgentConfig
+            {
+                MaxToolIterations = 5,
+                ContextLimit = 50,
+                JobPollMinSeconds = 1,
+                JobPollMaxSeconds = 1
+            });
+        using var cts = new CancellationTokenSource();
+
+        var send = session.SendAsync("hi", new SyncProgress(_ => { }), cts.Token);
+        await statusStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => send);
+        Assert.True(cancelCalled);
+    }
+
+    [Fact]
+    public async Task Job_status_queries_have_independent_budget()
+    {
+        static ChatResponse Call(int i) => new(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent($"j{i}", "job_status",
+                    new Dictionary<string, object?> { ["jobId"] = "job_1" })
+            })
+        });
+
+        var responses = Enumerable.Range(0, 61).Select(Call).ToArray();
+        var client = new FakeChatClient(responses);
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { new FakeTool("job_status", "{\"state\":\"running\"}", readOnly: true) },
+            "sys", new AgentConfig { MaxToolIterations = 1 });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Error &&
+                                     e.Text!.Contains("任务状态查询达到 60 次"));
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.Error &&
+                                           e.Text!.Contains("工具调用超过 1 次"));
+    }
+
+    [Fact]
+    public async Task Ops_record_delegates_diagnosis_and_memory_actions()
+    {
+        var diagnosis = new FakeTool("ops_diagnosis_write", "diagnosis-ok");
+        var memory = new FakeTool("ops_memory_write", "memory-ok", isLocal: true);
+        var record = OpsRecordTools.Create(diagnosis, memory);
+
+        var diagResult = await record.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["action"] = "diagnosis", ["title"] = "db down"
+        }, CancellationToken.None);
+        Assert.Equal("diagnosis-ok", diagResult?.ToString());
+        Assert.Equal("diagnose", diagnosis.LastArgs!["mode"]);
+
+        var memResult = await record.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["action"] = "memory_save", ["kind"] = "task", ["key"] = "k", ["content"] = "c"
+        }, CancellationToken.None);
+        Assert.Equal("memory-ok", memResult?.ToString());
+        Assert.Equal("save", memory.LastArgs!["action"]);
+    }
+
+    [Fact]
+    public async Task Job_start_operation_policy_blocks_unknown_operation()
+    {
+        var session = new AgentSession(new FakeChatClient(), new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { new FakeTool("job_start", "ok") }, "sys", new AgentConfig());
+
+        var result = await session.InvokeToolAsync("job_start",
+            new Dictionary<string, object?> { ["operation"] = "not_registered" }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("未登记安全策略", result.Result);
+        Assert.True(JobOperationPolicies.IsAllowed("fleet_inventory", AgentToolProfile.Diagnose, readOnly: false));
+        Assert.False(JobOperationPolicies.IsAllowed("not_registered", AgentToolProfile.Auto, readOnly: false));
+    }
+
+    [Fact]
+    public void Ops_profile_keeps_core_ops_tools_and_hides_admin_surfaces()
+    {
+        Assert.True(ToolProfileFilter.AllowsLocal("fleet_change", AgentToolProfile.Ops));
+        Assert.True(ToolProfileFilter.AllowsLocal("ops_record", AgentToolProfile.Ops));
+        Assert.True(ToolProfileFilter.AllowsLocal("skill", AgentToolProfile.Ops));
+        Assert.False(ToolProfileFilter.AllowsLocal("ai_task_list", AgentToolProfile.Ops));
+        Assert.False(ToolProfileFilter.AllowsLocal("ops_incident_write", AgentToolProfile.Ops));
+        Assert.True(ToolProfileFilter.AllowsRemote(new FakeTool("topology_discover", "ok"), AgentToolProfile.Ops));
+    }
+
+    [Fact]
+    public void Job_start_is_allowed_as_safe_profile_probe()
+    {
+        Assert.True(ToolProfileFilter.IsSafeLocalCacheProbe("job_start"));
+        Assert.True(ToolProfileFilter.IsProfileReadOnly(
+            new FakeTool("job_start", "ok")));
+    }
+
+    [Fact]
+    public async Task Model_hidden_tools_remain_host_callable_but_not_counted_in_model_tool_set()
+    {
+        var tools = new IAgentTool[]
+        {
+            new FakeTool("visible", "ok"),
+            new FakeTool("fleet_targets", "ok", isLocal: true)
+        };
+        var session = new AgentSession(new FakeChatClient(), new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            tools, "sys", new AgentConfig(),
+            modelHiddenTools: new HashSet<string>(StringComparer.Ordinal) { "fleet_targets" });
+
+        Assert.Equal(1, session.ToolCount);
+        Assert.Equal("ok", await session.InvokeHostToolAsync("fleet_targets", null));
+    }
+
+    [Fact]
     public async Task Tool_limit_can_be_extended_by_host_confirmation()
     {
         static ChatResponse Call(string id) => new(new List<ChatMessage>

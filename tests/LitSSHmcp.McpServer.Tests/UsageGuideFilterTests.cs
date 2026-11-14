@@ -42,6 +42,26 @@ public class UsageGuideFilterTests
     }
 
     [Fact]
+    public void BuildGuide_uses_shared_tool_routing_and_filters_jobs()
+    {
+        var all = UsageGuideTools.BuildGuide(null, includeInternalTools: false);
+        using (var doc = JsonDocument.Parse(all))
+        {
+            Assert.True(doc.RootElement.TryGetProperty("job_operations", out var operations));
+            var text = operations.ToString();
+            Assert.Contains("fleet_snapshot_refresh", text);
+            Assert.Contains("fleet_inventory", text);
+            Assert.True(doc.RootElement.TryGetProperty("tool_routing", out _));
+        }
+
+        var noJobs = UsageGuideTools.BuildGuide(
+            new HashSet<string>(new[] { ToolGroups.Ssh }, StringComparer.OrdinalIgnoreCase),
+            includeInternalTools: false);
+        using var noJobsDoc = JsonDocument.Parse(noJobs);
+        Assert.False(noJobsDoc.RootElement.TryGetProperty("job_operations", out _));
+    }
+
+    [Fact]
     public void BuildGuide_summary_omits_tool_list_and_keeps_routing()
     {
         var json = UsageGuideTools.BuildGuide(null, includeInternalTools: true,
@@ -78,7 +98,7 @@ public class UsageGuideFilterTests
         using var doc = JsonDocument.Parse(json);
 
         // 与 ToolCatalogConsistencyTests.ExpectedToolCount 一致：宿主会话包含内部工具
-        Assert.Equal(36, doc.RootElement.GetProperty("tools").GetArrayLength());
+        Assert.Equal(42, doc.RootElement.GetProperty("tools").GetArrayLength());
         Assert.False(doc.RootElement.TryGetProperty("disabled_groups", out _));
     }
 
@@ -91,7 +111,7 @@ public class UsageGuideFilterTests
         var names = doc.RootElement.GetProperty("tools").EnumerateArray()
             .Select(e => e.GetProperty("name").GetString()!)
             .ToArray();
-        Assert.Equal(35, names.Length);
+        Assert.Equal(41, names.Length);
         Assert.DoesNotContain("mcp_approval_round", names);
         Assert.DoesNotContain("ssh_upload_file", names);
         Assert.DoesNotContain("service_status", names);

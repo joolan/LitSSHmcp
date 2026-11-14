@@ -16,6 +16,13 @@ public class SystemPromptBuilderTests
     }
 
     [Fact]
+    public void Main_prompt_reuses_shared_core_prompt()
+    {
+        var prompt = SystemPromptBuilder.Build(null, null, null);
+        Assert.StartsWith(SystemPromptBuilder.CorePrompt, prompt);
+    }
+
+    [Fact]
     public void Build_includes_short_tool_routing_table()
     {
         var prompt = SystemPromptBuilder.Build(null, null, null, subAgent: true, fleetTools: true);
@@ -91,7 +98,7 @@ public class SystemPromptBuilderTests
     {
         var prompt = SystemPromptBuilder.Build(null, null, null, spillTools: true, memoryTools: true);
         Assert.Contains("ops_doc_write(mode=overwrite|append|patch)", prompt);
-        Assert.Contains("ops_memory_write(action=save", prompt);
+        Assert.Contains("ops_record(action=memory_save", prompt);
         Assert.Contains("tags=pitfall", prompt);
         Assert.Contains("spill(action=\"read\", handle=", prompt);
         Assert.Contains("下次 offset=", prompt);

@@ -36,8 +36,12 @@ public partial class AgentSettingsWindow : FluentWindow
             _tabLoadTimer.Stop();
             await LoadPendingTabAsync();
         };
-        Tabs.SelectionChanged += (_, _) =>
+        Tabs.SelectionChanged += (_, e) =>
         {
+            // SelectionChanged 是冒泡路由事件：内部 ListBox/ComboBox 的选中也会冒泡到这里。
+            // 只处理 TabControl 自身的选中，否则点选运维视图列表项会触发整个 Tab 重新加载并把选中项重置为第一条。
+            if (!ReferenceEquals(e.Source, Tabs))
+                return;
             if (Tabs.SelectedItem is not TabItem tab)
                 return;
             _pendingTab = tab;
@@ -78,9 +82,6 @@ public partial class AgentSettingsWindow : FluentWindow
                     break;
                 case "记忆管理":
                     await _viewModel.LoadMemoryEntriesAsync(cts.Token);
-                    break;
-                case "记忆候选":
-                    await _viewModel.LoadConsolidationCandidatesAsync(cts.Token);
                     break;
                 case "运维视图":
                     await _viewModel.LoadOpsIncidentsAsync(cts.Token);
@@ -124,7 +125,6 @@ public partial class AgentSettingsWindow : FluentWindow
             "model" => "大模型设置",
             "archive" => "归档记录",
             "memory" or "memories" or "memoryManage" => "记忆管理",
-            "consolidation" or "candidates" or "memoryCandidates" => "记忆候选",
             "ops" or "insights" or "opsInsights" or "opsView" => "运维视图",
             "agents" or "agent" => "智能体",
             "mcp" or "mcpServers" => "MCP 服务器",
@@ -218,45 +218,19 @@ public partial class AgentSettingsWindow : FluentWindow
 
     private void OnReloadMemories(object sender, RoutedEventArgs e) => _ = _viewModel.LoadMemoryEntriesAsync();
 
-    private void OnReloadConsolidationCandidates(object sender, RoutedEventArgs e) =>
-        _ = _viewModel.LoadConsolidationCandidatesAsync();
-
     private void OnReloadOpsIncidents(object sender, RoutedEventArgs e) =>
         _ = _viewModel.LoadOpsIncidentsAsync();
 
-    private void OnOpsIncidentSelectionChanged(object sender, SelectionChangedEventArgs e) =>
-        _ = _viewModel.LoadOpsTimelineAsync(_viewModel.SelectedOpsIncident);
+    private void OnOpsIncidentSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // SelectionChanged 可能早于 TwoWay 绑定回写 VM，直接取 ListBox 的当前项，避免加载上一条事件的时间线。
+        var entry = (sender as ListBox)?.SelectedItem as IncidentInsightEntry
+                    ?? _viewModel.SelectedOpsIncident;
+        _ = _viewModel.LoadOpsTimelineAsync(entry);
+    }
 
     private void OnLoadOpsAssetProfile(object sender, RoutedEventArgs e) =>
         _ = _viewModel.LoadOpsAssetProfileAsync();
-
-    private void OnApproveConsolidationCandidate(object sender, RoutedEventArgs e)
-    {
-        var entry = _viewModel.SelectedConsolidationCandidate;
-        if (entry is null)
-        {
-            _dialogs.Info("请先在候选列表中选择一条。", "记忆候选");
-            return;
-        }
-        if (!_dialogs.Confirm($"批准候选 #{entry.Id} 并应用？\n\n{entry.Title}", "批准候选"))
-            return;
-        _ = _viewModel.ApproveConsolidationCandidateAsync(entry);
-    }
-
-    private void OnRejectConsolidationCandidate(object sender, RoutedEventArgs e)
-    {
-        var entry = _viewModel.SelectedConsolidationCandidate;
-        if (entry is null)
-        {
-            _dialogs.Info("请先在候选列表中选择一条。", "记忆候选");
-            return;
-        }
-        var reason = TextInputDialog.Prompt(this, "拒绝候选",
-            $"拒绝候选 #{entry.Id} 的原因（可留空）:", "重复/无证据");
-        if (reason is null)
-            return;
-        _ = _viewModel.RejectConsolidationCandidateAsync(entry, reason);
-    }
 
     private void OnDeleteMemory(object sender, RoutedEventArgs e)
     {

@@ -30,8 +30,8 @@
     <span class="spacer"></span>
     <button id="approval-badge" class="badge" hidden title="有待审批操作，点击展开">待审批 <b id="approval-count">0</b></button>
     <button id="memory-admin-btn" class="ghost" hidden title="团队记忆库（管理员）：查看历史、回滚、归档">记忆库</button>
-    <button id="consolidation-admin-btn" class="ghost" hidden title="记忆候选审核（管理员）：批准/拒绝后台提炼的事件候选">候选审核</button>
     <button id="ops-insights-btn" class="ghost" title="运维视图：事件浏览、时间线、资产画像">运维视图</button>
+    <button id="jobs-btn" class="ghost" title="长任务：查看后台任务、进度与事件，支持取消">长任务</button>
     <span id="whoami" class="whoami"></span>
     <button id="logout-btn" class="ghost" title="退出登录">退出</button>
   </header>
@@ -126,29 +126,6 @@
     </div>
   </div>
 
-  <!-- 管理员记忆候选审核：后台 consolidation 生成的事件候选（仅 admin 显示入口） -->
-  <div id="consolidation-admin" class="sheet consolidation-sheet" hidden>
-    <div class="sheet-head">
-      <span>记忆候选审核</span>
-      <span class="spacer"></span>
-      <select id="consolidation-status" title="按状态筛选">
-        <option value="pending">待审核</option>
-        <option value="">全部</option>
-        <option value="applied">已应用</option>
-        <option value="rejected">已拒绝</option>
-        <option value="conflict">冲突</option>
-      </select>
-      <button id="consolidation-refresh" class="ghost" title="刷新列表">刷新</button>
-      <button id="consolidation-close" class="ghost">关闭</button>
-    </div>
-    <div class="sheet-body consolidation-body">
-      <div id="consolidation-alert" class="consolidation-alert" hidden></div>
-      <div id="consolidation-list" class="consolidation-list"></div>
-      <div class="ops-section-title" style="margin-top:12px">运行历史</div>
-      <div id="consolidation-runs" class="consolidation-list"></div>
-    </div>
-  </div>
-
   <!-- 运维视图：事件浏览 + 时间线 + 资产画像（登录用户可见，服务端按团队/私有作用域过滤） -->
   <div id="ops-insights" class="sheet ops-insights-sheet" hidden>
     <div class="sheet-head">
@@ -178,6 +155,46 @@
             <button id="ops-asset-load" class="ghost">加载</button>
           </div>
           <pre id="ops-asset-profile" class="ops-pre">输入资产 ID 查看图谱关系与历史记忆</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 长任务：job_list / job_status / job_cancel（job_* 由 session 的 MCP 运行时执行） -->
+  <div id="jobs-sheet" class="sheet ops-insights-sheet" hidden>
+    <div class="sheet-head">
+      <span>长任务</span>
+      <span class="spacer"></span>
+      <select id="jobs-state" title="按状态筛选">
+        <option value="">全部状态</option>
+        <option value="running">运行中</option>
+        <option value="succeeded">已成功</option>
+        <option value="failed">失败</option>
+        <option value="cancelled">已取消</option>
+        <option value="orphaned">已孤儿</option>
+      </select>
+      <label class="check-inline" title="每 2 秒刷新一次；页面隐藏时自动暂停">
+        <input type="checkbox" id="jobs-auto-refresh" checked/>
+        自动刷新(2s)
+      </label>
+      <button id="jobs-refresh" class="ghost" title="刷新任务列表">刷新</button>
+      <button id="jobs-close" class="ghost">关闭</button>
+    </div>
+    <div class="sheet-body ops-body">
+      <div class="ops-grid">
+        <div class="ops-col ops-list-col">
+          <div class="ops-section-title">任务列表</div>
+          <div id="jobs-list" class="ops-incident-list"></div>
+        </div>
+        <div class="ops-col">
+          <div class="ops-section-title">任务详情</div>
+          <pre id="job-detail" class="ops-pre">选择左侧任务查看状态、进度与最近事件</pre>
+          <div class="ops-profile-head">
+            <span class="ops-section-title">操作</span>
+            <span class="spacer"></span>
+            <button id="job-result-btn" class="ghost" disabled>查看结果</button>
+            <button id="job-cancel-btn" class="ghost" disabled>取消任务</button>
+          </div>
         </div>
       </div>
     </div>

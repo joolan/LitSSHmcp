@@ -81,14 +81,14 @@
 
 ## MCP 工具
 
-MCP 服务默认暴露 **35 个外部工具 + 1 个宿主内部审批工具**，覆盖 SSH、数据源、Docker、systemd、日志、Java、拓扑、应用体检和自检。完整参数、返回结构与“用户意图 → 工具”路由见 **[docs/TOOLS.md](docs/TOOLS.md)**。
+MCP 服务默认暴露 **41 个外部工具 + 1 个宿主内部审批工具**，覆盖 SSH、数据源、Docker、systemd、日志、Java、拓扑、应用体检、长任务和自检。完整参数、返回结构与“用户意图 → 工具”路由见 **[docs/TOOLS.md](docs/TOOLS.md)**。
 
 可在 App 的“设置 → 工具分组”或 `config.json` 的 `tools.enabledGroups` 中裁剪工具分组：
 
 ```json
 {
   "tools": {
-    "enabledGroups": ["ssh", "command", "datasource", "mysql", "postgres", "redis", "docker", "service", "log", "java", "topology", "app", "guide"]
+    "enabledGroups": ["ssh", "command", "datasource", "mysql", "postgres", "redis", "docker", "service", "log", "java", "topology", "app", "jobs", "guide"]
   }
 }
 ```
@@ -204,7 +204,7 @@ litssh deny <审批ID>               # 拒绝
 | [docs/APP_GUIDE.md](docs/APP_GUIDE.md) | 桌面 App 使用指南：页面、终端、数据源、拓扑、AI 助手、设置 |
 | [docs/WEB_GUIDE.md](docs/WEB_GUIDE.md) | Web 助手：启动、账号、安全边界 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计：分层、模块、安全、拓扑、线程模型、扩展点 |
-| [docs/TOOLS.md](docs/TOOLS.md) | 35 个常规工具 + 1 个宿主内部工具完整参考 |
+| [docs/TOOLS.md](docs/TOOLS.md) | 41 个常规工具 + 1 个宿主内部工具完整参考 |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | `config.json` 配置字段与示例 |
 | [docs/MCP_CLIENT_SETUP.md](docs/MCP_CLIENT_SETUP.md) | Claude Desktop / Cursor / Cline / CodeBuddy / 开发模式配置 |
 | [docs/SECURITY.md](docs/SECURITY.md) | 安全模型、审批、Web 安全与 sudo 提权 |

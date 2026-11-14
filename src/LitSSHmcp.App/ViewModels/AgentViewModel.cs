@@ -2533,7 +2533,6 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
             if (ctx.Runtime is not null && turnSucceeded)
                 ctx.Runtime.IndexTurnInBackground(ctx.SessionId.ToString(), turn.UserText, assistantText.ToString());
-            if (turnSucceeded) ctx.Runtime?.ConsolidateInBackground();
             await ReloadSessionsAsync();
             if (ReferenceEquals(ctx, CurrentContext))
             {

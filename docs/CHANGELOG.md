@@ -2,6 +2,60 @@
 
 本项目的所有重要变更都记录在此文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增
+
+- **长任务统一 Job 模型（P1-4）**：新增 `job_start` / `job_status` / `job_result` / `job_events` / `job_cancel` / `job_list` 六个通用工具；状态与事件写入跨进程共享的 `jobs.db`，支持进度/阶段事件断点续读、跨进程取消标记、orphan 判定与 TTL 清理。首个 operation 为 `topology_discover`（多机全量拓扑扫描），Agent 内置等待适配器会自动轮询并把最终结果回填给模型，避免模型逐轮轮询。新增 `tools.enabledGroups` 分组 `jobs` 与 `security.jobs` 清理配置。
+- **Job 模型接入 `ssh_snapshot_refresh`（P2）**：整机快照重采可注册为 `job_start(operation=ssh_snapshot_refresh)`；新增 `SnapshotProgress` 逐采集器上报阶段/进度，`job_result` 返回与同步工具等价的 `SnapshotDto`，`job_cancel` 可中断采集。
+
+### 修复
+
+- **运维视图列表选中被重置**：`TabControl.SelectionChanged` 会收到内部 `ListBox` 冒泡的选中事件，导致点选事件后整页重新加载并跳回第一条；现在只处理 TabControl 自身的选择变化，并在手动刷新时按事件 Id 保留当前选中项。
+- **长任务详情 JSON 转义**：`McpToolResultNormalizer` 现在也解包 JSON 文本/`JsonElement` 形式的 MCP `CallToolResult`，避免宿主拿到外层 `content[].text`；Job 事件/结果统一用 relaxed encoder 写入，不再产生中文 `\u865A` 与 `\u0022` / `\u002B00:00` 转义。桌面详情递归展开旧事件里已存的 JSON 字符串，历史任务也能正常显示中文；模型侧经 `ToolResultFormatter` 同样展开，token 开销不受影响。
+- **Job 结果/事件结构化**：`job_start(wait=true)` 与 `job_result` 返回结构化 `result`，不再返回二次编码的 `resultJson`；`job_events/job_status.recentEvents` 将 JSON 消息解析到 `data` 对象，普通文本留在 `message`，减少模型/UI 二次解析和 token。
+- **长任务 UI 增量刷新**：桌面任务列表按 `jobId` 复用行并只更新变化字段，详情仅在选中项或状态/进度签名变化时重载，避免每 2 秒清空重建与选中闪烁。
+- **JSON 输出统一**：Job、Graph、Redis 等用户/模型可见 JSON 共用 relaxed encoder，并新增 `JsonOutputTests` 防止中文/时间偏移再次变成 `\uXXXX`。
+- **快照参数解析共用**：`SnapshotTools` 与 `FleetJobOperations` 共用 `SnapshotRequest.ParseSections/IsFull`，避免单机/多机快照对 `profile/sections/detail` 的解释漂移。
+- **核心 Prompt 去重**：`SystemPromptBuilder.CorePrompt` 同时用于主代理与子代理，移除 `PromptComposer.AppendCore` 的重复模板，避免提示词分叉。
+- **本地工具目录**：新增 `LocalToolCatalog`，模型隐藏工具集合与 Diagnose/Assets/Chat/Ops 本地白名单统一到单一来源；`ToolSurfaceConsistencyTests` 校验目录与运行时隐藏集合一致。
+- **`job_start` 结构化参数**：新增推荐参数 `argumentsObject`（对象），保留 `arguments` JSON 字符串兼容旧客户端；系统提示、usage guide 与文档同步改用对象形式。
+- **Job operation 目录驱动**：`JobOperationPolicies` 扩展为 operation 目录（描述、参数提示、所需分组）；系统提示、`mcp_usage_guide.job_operations` 与文档一致性测试均从目录生成/校验，减少手写清单漂移。
+- **Job 进度事件压缩**：多机 `fleet_inventory` / `fleet_snapshot_refresh` 不再为每台目标写 start 事件，只保留完成/失败事件；任务进度数值仍然实时更新。
+- **Web 长任务自动刷新**：新增“自动刷新(2s)”开关，页面隐藏时暂停轮询；列表/详情按 jobId 与状态签名增量更新。
+- **`job_result` 摘要模式**：新增 `summary=true`，返回结果类型、条目/失败数、顶层字段、`resultChars` 与完整结果提示；大结果不必每轮都塞进模型上下文。
+- **Job operation 参数 Schema**：`JobOperationPolicies` 增加字段级参数定义（名称/类型/必填/说明），`mcp_usage_guide.job_operations` 输出 `argumentsSchema`，减少模型猜参数。
+- **Job 事件结构化落库**：`mcp_job_events` 新增 `Server/Phase/Done/Total/Status` 列并自动迁移旧库；旧事件仍可从 `Message`/`data` 兼容读取。
+- **可信脚本哈希**：`security.scriptRules.trustedScriptHashes` 支持按完整 SHA-256（去 BOM、CRLF→LF 规范化）精确放行脚本内容硬拦截；仍强制人工审批，不跳过命令过滤/授权/只读；安全设置页新增可信脚本列表、列头/占位提示、校验与增删，执行/上传报告显示可信标签和完整哈希。被硬拦截时返回完整 `full` SHA-256，并提示人工核对后到设置页添加可信哈希再重试。
+- **spill 超长单行读取**：单行超长文件现在按字符分页（offset 作为分页序号）并支持 `column` 字符偏移；JSON 字符串字段（如 `ssh_execute_command.output`）在 `spill(action="json", path=...)` 时展开真实换行，避免反复读取同一段被截断内容。
+- **阻塞命令提示**：`BlockingCommandHint` 现在在错误中回显命中规则与命令片段，避免模型在“which/head/grep 哪段触发”之间反复猜测。
+- **Agent Job 等待**：`job_start(wait=true)` 返回终态时直接使用其结果，不再因不存在的 `completed` 字段进入多余轮询。
+- **拓扑发现并发提示**：同步 `topology_discover` 撞上后台 job 时，`discovery_in_progress` 错误会带回当前 `jobId` 与已完成进度。
+- **批量变更互斥**：`fleet_change` 执行阶段增加 plan 级跨进程租约，同一 `planId` 并发触发会被拒绝；遗留 `Running` 标记可安全恢复。
+- **长任务 UI**：桌面 AI 助手新增「长任务」窗口，Web 顶部新增「长任务」面板；支持列表、状态/进度/事件查看与取消。
+- **Job operation 单一注册表**：`job_start` 的安全路由直接读取 `JobManager` 的 operation 注册表，不再维护第二份 `JobOperations` 映射，新增 operation 不会漏授权。
+- **Job 事件顺序**：`AsProgress` 改为顺序队列，终态落库前 flush 所有进度事件；`mcp_job_events(JobId, Seq)` 增加唯一索引。
+- **Job 等待参数可配**：新增 `agent.jobWaitTimeoutSeconds` / `jobPollMinSeconds` / `jobPollMaxSeconds`，替代 Agent 内部硬编码。
+- **Job operation 启动注册**：修复 `WithTools<T>()` 不保证工具类型可从 DI 解析导致 operation 未注册的问题，改用 `ActivatorUtilities` 构造注册实例。
+- **Job E2E**：新增真实 stdio MCP 进程集成测试，覆盖 `job_start → job_status → job_events → job_result` 全链路。
+- **长任务 UI 完成度**：App/Web 任务面板增加结果查看与终态通知；`result` 事件改为先于终态落库，保证状态终态时事件已可读。
+- **长任务 UI 细节**：结果视图不再被 2 秒轮询覆盖；`job_status` 增加 `errorStatus`；App/Web 详情可同时看到错误状态与错误文本。
+- **Job 库兼容**：建 `(JobId, Seq)` 唯一索引前自动去重旧事件，避免历史 jobs.db 启动失败。
+- **Job 可见性**：明确按 `OwnerUser` 隔离（不按 SessionId 隔离），保证跨进程查询；管理员可跨用户查看；设计与工具文档已同步。
+- **AI 页面首屏**：首次进入 AI 运维助手时，主窗口先显示左侧会话/右侧会话骨架，避免 AgentView 首次构建期间整页白屏。
+- **Job 回归测试**：补充 operation 注册表校验、无 resolver fail-closed、`job_start(wait=true)` E2E 路径。
+- **多机 Job operation**：新增 job-only operation `fleet_inventory`（在线/端口/Docker/Jenkins）与 `fleet_snapshot_refresh`（多机快照刷新）；不新增 MCP 工具，通过 `job_start` 调用，按目标集合做 read 级授权。Agent 提示/使用指南同步引导多机优先用这两个 operation，而不是每台调用一次 `ssh_snapshot_refresh`。
+- **长任务时间显示**：App/Web 任务列表与详情把 UTC ISO 时间转换为本地时间显示（含北京时间）。
+- **AI 工具注意力收敛**：`fleet_targets`、`ai_task_*` 保留宿主/UI 调用能力但不再暴露给模型；`job_start` 纳入安全探测入口，只读/诊断 profile 可使用只读 Job operation。
+- **任务查询预算**：`job_status/job_result/job_events` 不计入普通工具轮次，改为独立预算（20 次提示、60 次上限），避免模型手动轮询长任务消耗主工具轮次。
+- **Ops 专注 profile**：新增 `agent.profile=ops`，保留巡检/诊断/变更/多机编排与计划/记忆/文档工具，隐藏 AI 定时任务、批量目标选择、事件直写等管理型工具；`ops_incident_write/list` 默认不再暴露给模型，事件记录统一走 `ops_diagnosis_write`，历史查询走 `ops_insight`。
+- **知识写入入口收敛**：新增 `ops_record` 统一入口（`action=diagnosis|change|memory_save|memory_update|memory_delete`）；`ops_diagnosis_write` 与 `ops_memory_write` 隐藏为宿主兼容工具，模型侧工具数净减 1，避免同一结论重复写入 incident 与记忆。
+- **Job operation 级安全策略**：新增 `JobOperationPolicies`，按 operation 判断只读/profile 允许范围；`job_start` 不再整体视为安全探测，Diagnose/Assets/只读模式只允许只读 operation，未知 operation fail-closed。
+- **多机 Job E2E**：新增真实 stdio 集成测试，覆盖 `fleet_inventory` 与 `fleet_snapshot_refresh` 的 `job_start → 终态 → result`，并校验 `job_list.availableOperations`。
+- **统一工具路由表**：新增 `ToolRoutingCatalog`，Agent 系统提示与完整 `mcp_usage_guide` 共用同一份“意图→主工具”路由，避免不同提示层给出冲突建议。
+- **本地工具面守门**：新增 `ToolSurfaceConsistencyTests`，校验模型可见/隐藏本地工具、Ops profile 与共享路由表的一致性；`fleet_targets`、`ai_task_*`、incident/旧知识写入工具保持隐藏。
+- **移除“记忆候选 / consolidation”闭环**：删除后台候选生成、`ops_consolidation_*` 工具、`agent.consolidation` 配置、桌面“记忆候选”Tab、Web“候选审核”面板与候选/运行 API；知识沉淀统一由 `ops_record` 完成。管理员事件列表/supersede 接口保留；`agent_consolidation_candidate`、`agent_consolidation_run` 与历史记录不迁移、不删除，仅停止读写入口。
+
 ## [1.6.3] - 2026-11-13
 
 ### 新增

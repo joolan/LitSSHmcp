@@ -118,7 +118,8 @@ public class CommandTools
                 ServerId = server.Id,
                 ServerName = server.Name,
                 Command = $"PROBE: cat {scriptPath}",
-                Result = $"{report.LevelText}, {report.Findings.Count} 处命中, sha256={report.Sha256}",
+                Result = $"{report.LevelText}, {report.Findings.Count} 处命中, sha256={report.Sha256}, full={report.Sha256Full}" +
+                         (report.Trusted ? $", trusted={report.TrustedLabel}" : string.Empty),
                 Status = probe.Success ? CommandStatus.Executed : CommandStatus.Failed,
                 Category = AuditCategory.Probe
             });
@@ -137,7 +138,8 @@ public class CommandTools
                 return CommandResultDto.Fail("blocked",
                     $"脚本被安全策略禁止执行。服务端扫描发现危险模式(sha256={report.Sha256}):\n" +
                     string.Join("\n", report.Findings.Where(f => f.Level == ScriptRiskLevel.Blocked)
-                        .Select(f => $"L{f.Line} [{f.Rule}] {f.Excerpt}")),
+                        .Select(f => $"L{f.Line} [{f.Rule}] {f.Excerpt}")) +
+                    ScriptRiskAnalyzer.BlockedActionHint(report),
                     "blocked_script", command, server.Id, server.Name, server.Host);
             }
 
@@ -248,7 +250,7 @@ public class CommandTools
                     success = p.Success,
                     error = p.Error,
                     output = p.Output
-                })
+                }, JsonOutput.Options)
             }));
         var outcome = await _guarded.RunFleetAsync(references, command, concurrency, maxTargets,
             operationLabel: "批量变更", riskReport: riskNote, ct: cancellationToken, progress: fleetProgress, timeoutSeconds: timeoutSeconds);

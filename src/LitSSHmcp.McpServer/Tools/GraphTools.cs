@@ -20,7 +20,7 @@ namespace LitSSHmcp.McpServer.Tools;
 [McpServerToolType]
 public class GraphTools
 {
-    private static readonly JsonSerializerOptions ResultJson = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions ResultJson = JsonOutput.Options;
 
     private readonly IAssetGraphQueryService _query;
     private readonly ITopologyService _topologyService;

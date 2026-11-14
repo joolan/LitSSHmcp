@@ -1,6 +1,6 @@
 # LitSSH MCP 工具参考
 
-MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **35 个常规工具**，宿主会话看到 **36 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；各工具 `[Description]` 只保留 1~2 句能力与关键互斥提示，完整的"意图→工具"路由由 `mcp_usage_guide` 提供（见下方路由表）。
+MCP 服务器代码注册 **42 个工具**，按用途分为 15 组；其中 `mcp_approval_round` 是宿主内部工具（仅宿主可见）。外部 MCP 客户端看到 **41 个常规工具**，宿主会话看到 **42 个**。工具收敛后不再保留旧名兼容别名。本文档说明每个工具的用途、参数、返回结构与选择路由；各工具 `[Description]` 只保留 1~2 句能力与关键互斥提示，完整的"意图→工具"路由由 `mcp_usage_guide` 提供（见下方路由表）。
 
 > **目标 ID 规范化**：服务器/数据源/应用参数优先按裸 ID 精确匹配（也支持名称或主机名），并兼容 `ssh:` / `ssh://`、`ds:`、`app:` 资产前缀；工具会自动去除前缀，同时保留歧义与禁用校验。
 
@@ -79,6 +79,7 @@ MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mc
 | `java` | JVM 诊断 | `java_processes`、`java_diagnostics` |
 | `topology` | 拓扑 | `topology_query`、`topology_history`、`topology_discover` |
 | `app` | 应用体检 | `app_health_snapshot` |
+| `jobs` | 长任务 | `job_start`、`job_status`、`job_result`、`job_events`、`job_cancel`、`job_list` |
 | `guide` | 指南/自检 | `mcp_usage_guide`、`mcp_self_check` |
 
 > 注意：只启用 `mysql`/`redis` 而不启用 `datasource` 时，AI 将没有 `datasource_list` 来获取 `datasourceId`（启动日志会给出告警）。
@@ -100,6 +101,7 @@ MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mc
 | JVM | `java_` | 进程列表 / 线程栈 / 堆与GC / JVM信息 |
 | 拓扑 | `topology_` | 拓扑总览 / 资产依赖 / 自动发现 / 搜索 / 邻域 / 链路 / 影响面 / 证据解释 / 时间线 / 快照 Diff |
 | 应用 | `app_` | 跨服务器+数据源的一键体检快照 |
+| 长任务 | `job_` | 启动 / 状态 / 结果 / 事件续读 / 取消 / 列表 |
 | MCP 自身 | `mcp_` | 使用指南 / 自检 |
 
 - 规范动词：`list` / `get` / `test` / `execute` / `read` / `query` / `explain` / `upload` / `download` / `discover` / `diagnostics`。
@@ -162,7 +164,10 @@ MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mc
 | 某台机器最近新增或消失了哪些服务/端口 | `topology_history`（action=timeline） | 按快照历史重放并标出增量 |
 | 两次快照之间具体变了什么 | `topology_history`（action=diff） | 默认比较最近两次快照 |
 | 用户只给 URL，定位应用/服务器/日志 | `topology_query`（action=resolve_url, url=...）或 `log_query(url=...)` | 按人工应用 URL 解析入口/后端/运行环境 |
-| 拓扑缺失或过期 | `topology_discover` | |
+| 拓扑缺失或过期 | `topology_discover`；多机全量扫描建议 `job_start(operation=topology_discover)` | 长任务可逐个服务器看进度 |
+| 多机在线状态 / 端口↔进程 / Docker / Jenkins | `job_start(operation=fleet_inventory)` | `refresh=true` 会先重采快照 |
+| 多机扫描/长任务不想阻塞等待 | `job_start` → `job_status` / `job_result` / `job_events` | 断连后可用 `fromSeq` 续读事件 |
+| 停止后台长任务 / 看任务是否在跑 | `job_cancel` / `job_list` | 取消后已产生的事件与证据保留 |
 | 不确定用哪个 | `mcp_usage_guide`（返回内置使用指南） | |
 | MCP是否正常 / 工具用不了 / 自检 | `mcp_self_check` | |
 
@@ -177,7 +182,7 @@ MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mc
 ### 通用约定
 
 - 所有返回均为 JSON；**除 `mcp_usage_guide`（使用指南文档）外，全部工具均提供结构化输出**（MCP `structuredContent` + `outputSchema`），并同时保留等价的 text(JSON)（向后兼容）。注意：`ssh_list_servers`/`datasource_list`/`*_history` 等由裸数组改为 `{ success, count, ... }` 包裹；`ssh_execute_command` 等命令类返回 `output`/`error`（非 stdout/stderr）；字段统一 camelCase；
-- 成功/失败统一以 `success` 字段为主，配合 `status` 细分错误类型。常见 `status`：`blocked`（命中禁止规则，**不要重试**）、`rejected`（用户拒绝）、`approval_timeout`（审批超时）、`approval_unavailable`（审批通道不可用，如无桌面且未启用 CLI）、`path_not_allowed`、`file_transfer_disabled`、`file_not_found`、`file_too_large`、`*_not_found`（ID 不存在，错误里会回显可用 ID）、`readonly_statement`（只读语句用错写工具）、`not_readonly_statement`（写语句用错只读工具）、`not_readonly`（Redis 非只读命令用错 `redis_read`）、`sudo_not_configured`、`auth_failed`、`host_key_mismatch`（主机密钥变化，可能是安全事件，先人工核对指纹）、`timeout`、`rate_limited`（被限流，应退避重试）、`connection_error`；
+- 成功/失败统一以 `success` 字段为主，配合 `status` 细分错误类型。常见 `status`：`blocked`（命中禁止规则，**不要重试**）、`rejected`（用户拒绝）、`approval_timeout`（审批超时）、`approval_unavailable`（审批通道不可用，如无桌面且未启用 CLI）、`path_not_allowed`、`file_transfer_disabled`、`file_not_found`、`file_too_large`、`*_not_found`（ID 不存在，错误里会回显可用 ID）、`readonly_statement`（只读语句用错写工具）、`not_readonly_statement`（写语句用错只读工具）、`not_readonly`（Redis 非只读命令用错 `redis_read`）、`job_not_found`（任务不存在或不属于当前用户）、`unknown_operation`（job_start 的 operation 未注册）、`sudo_not_configured`、`auth_failed`、`host_key_mismatch`（主机密钥变化，可能是安全事件，先人工核对指纹）、`timeout`、`rate_limited`（被限流，应退避重试）、`connection_error`；
 - `serverId` / `datasourceId` 支持 **ID / 名称 / 主机名**（忽略大小写）三种写法；传错时错误信息回显可用 ID；
 - 命令输出超过 2 万字符会被截断并置 `truncated: true`、`outputChars` 记录原始长度；审计库中单条结果截断到 4000 字符；
 - 敏感操作（敏感命令、敏感 SQL、Redis 写命令、文件传输）需人工确认，默认同时启用**桌面弹窗 + CLI 带外审批**两条通道（`security.approval.channels`，默认 `["desktop","cli"]`，超时默认 45 秒）；AI 侧表现为 `status: "rejected"` / `"approval_timeout"` / `"approval_unavailable"`；桌面弹窗可勾选放行范围（默认仅本次；「本轮次内放行该工具」到下一条用户消息自动失效、恢复正常审批；「整个会话放行该工具（不建议）」到连接断开为止）；第一期 Redis 写命令**一律**确认（不按敏感度分级）；**审批模式**（`security.approval.mode`）：`manual`（默认，所有触发审批的操作都需人工确认）、`auto-approve`（危险：所有触发审批的操作自动放行）、`auto-reject`（触发审批时直接拒绝），可在桌面 App「安全设置 → 审批模式」切换；三种模式都**不影响**被命令过滤器硬拒绝（`blocked`）的操作；
@@ -217,6 +222,7 @@ MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mc
 - **返回**：同 `ssh_snapshot_get` 的结构（默认 `data.view=summary` 概览，可用 `section`/`detail="full"` 取完整）；成功 `status=succeeded`，失败 `status=failed`（并保留已采集到的部分 section 与失败事件，便于排障）；**节流**：距上次**成功**快照小于 `snapshot.minRefreshIntervalSeconds`（默认 60s）且未传 `force=true` 时，**直接返回已有快照**并置 `status=fresh`（`hint` 说明剩余间隔），不重新采集——避免同一任务内反复全量刷新。
 - **说明**：**重新采集**整机快照（与 `ssh_snapshot_get` 同一套 data 结构）。**耗时较长**（典型 10~30 秒，弱网更久），工具描述已明确提示。**单飞限流**：同一服务器同时只允许一个快照在采集中，重复调用立即返回 `status=snapshot_in_progress`（含进行中的 `snapshotId`），不会排队或重复采集——此时应改用 `ssh_snapshot_get` 稍后查询。**失败也落库**：连接失败/超时/取消都会把该份快照记为 `failed` 并写入 `error` 与事件；`security` 兼容性上，采集命令均为**内置固定只读命令**，但仍受命令过滤器 `Blocked` 规则约束。 **授权级别**：登记为 **read**（远端仅固定只读采集命令、仅写本地快照缓存，与 Agent 只读模式放行语义一致），Web 强制授权模式下 read 用户可刷新快照，且不占目标写锁。
 - **提权**：由 `config.json` 的 `snapshot.useSudo`（默认 `true`）与该服务器 `SudoType` 共同决定；开启且已配置提权时自动以 sudo/su 执行（`portmap` 可见 root 进程属主与 systemd 服务名、`nginx_tls` 可读 root-only 证书目录），**不逐次弹审批**；未配置/关闭时自动降级，不报错。设置 `snapshot.useSudo=false` 可完全禁止快照提权。
+- **长任务**：单台后台采集用 `job_start(operation="ssh_snapshot_refresh", argumentsObject={"serverId":"...","force":true})`；多台批量刷新用 `job_start(operation="fleet_snapshot_refresh", argumentsObject={"serverIds":"...","force":true})`；结果用 `job_result` 取，事件用 `job_events` 断点续读。
 - **保留**：每台服务器保留最近 `snapshot.retentionPerServer` 份（默认 30，`0`=不限），超出时按时间裁剪并级联清理其事件。
 - **accounts 隐私**：`snapshot.collectAccounts` / `snapshot.collectAuthorizedKeys` / `snapshot.collectLoginHistory` 默认均 `true`；关闭公钥或登录历史可减少敏感数据与快照体积。
 - **按需取配置**：`section="nginx_tls"` 默认省略完整 `effectiveConfig`，保留 `configHash`/`configPreview`/sites/domains/certificates；完整配置用 `detail="full"`。
@@ -239,7 +245,7 @@ MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mc
 - **参数**：`serverId`（服务器标识）、`command`（Shell命令）、`timeoutSeconds`（可选，命令超时秒数，1-3600，默认 60；超时返回 `status=timeout`）、`riskNote`（可选，助手对该操作的风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」；服务端扫描才是权威）
 - **返回**：`{ success, status, reason, error, command, output, truncated, outputChars, exitCode, durationMs }`（`output` 为命令输出，超 2 万字符截断并置 `truncated: true`；被拒绝/禁止时 `status` 为 `rejected`/`blocked`/`approval_timeout`/`approval_unavailable`；脚本扫描硬拒时 `status=blocked`、`reason=blocked_script`）
 - **防挂起**：会持续输出/需交互的命令（`tail -f`、`docker logs -f`、`journalctl -f`、`vi/vim/less/top/watch`、普通通道的 `sudo/su`、`ping` 不带 `-c`、`nc/telnet`、`docker exec -it`、`docker attach` 等）**不会执行**，直接返回 `status=blocking_command` 并给出替代写法（如 `tail -n`/`--tail`/`--no-pager`/用 `ssh_execute_sudo`）。启动常驻进程请用 `nohup ... &`/`setsid`/`systemctl`/`docker -d`，不要前台跑。
-- **脚本安全门**：识别"执行脚本文件"形态（`bash x.sh`、`python3 /opt/a.py`、`powershell -File a.ps1`、`./x.sh`；`bash -c "…"` 内联形态不走此门）时，执行前先 `cat` 预读远端内容做**服务端规则扫描**（命令过滤规则 + 脚本专用规则：fork炸弹/`curl|sh`/写裸盘/反弹shell/SSH凭据/清历史/crontab等）：命中危险模式**直接 `status=blocked` 不进审批**；扫描报告（结论/命中行/sha256/助手评估）附在审批弹窗，**脚本形态一律需人工同意**（即使命令行本身无敏感词）。探测读取本身写审计（`category=probe`）。脚本专用内置规则可在 `security.scriptRules` 按标签禁用单条或整体关闭，并可追加自定义危险/可疑正则（安全设置页可编辑，保存后热生效）。
+- **脚本安全门**：识别"执行脚本文件"形态（`bash x.sh`、`python3 /opt/a.py`、`powershell -File a.ps1`、`./x.sh`；`bash -c "…"` 内联形态不走此门）时，执行前先 `cat` 预读远端内容做**服务端规则扫描**（命令过滤规则 + 脚本专用规则：fork炸弹/`curl|sh`/写裸盘/反弹shell/SSH凭据/清历史/crontab等）：命中危险模式**直接 `status=blocked` 不进审批**；扫描报告（结论/命中行/sha256/助手评估）附在审批弹窗，**脚本形态一律需人工同意**（即使命令行本身无敏感词）。探测读取本身写审计（`category=probe`）。脚本专用内置规则可在 `security.scriptRules` 按标签禁用单条或整体关闭，并可追加自定义危险/可疑正则；`trustedScriptHashes` 可按完整 SHA-256 精确内容放行脚本硬拦截，但**仍强制人工审批**。安全设置页可编辑可信脚本哈希，保存后热生效。被硬拦截的返回会附带完整 `full` SHA-256 与“人工核对后在 设置 → 安全设置 → 脚本风险规则 → 可信脚本哈希 添加”的处理提示。
 - **安全链路**：挂起/交互拦截 → 黑名单直接拒绝 → 脚本内容扫描(危险硬拒) → 敏感命令/脚本人工确认 → 执行 → 写审计（sudo 提权命令用 `ssh_execute_sudo`）
 
 ### `ssh_execute_fleet`
@@ -443,6 +449,40 @@ MCP 服务器代码注册 **36 个工具**，按用途分为 14 组；其中 `mc
 - **返回**：`{ success, status, error, application: { id, name, type, containerName, port }, servers: [{ serverId, serverName, host, reachable, status, error, output, truncated }], datasources: [{ datasourceId, name, type, reachable, status, version, accessMode, viaTunnelServer, summary, error }], notes: [...] }`
 - **说明**：应用→服务器取自 `runsOn` 关系（缺失时用应用的 `host` 兜底），应用→数据源取自 `connectsTo` 关系。服务器探测命令一次聚合 **Java 进程 + Docker 容器 + 监听端口**，并**按应用过滤**：java 段按应用名 `grep`、docker 段按 `containerName` `--filter name=`、端口段按应用的 `port` 过滤（缺失则相应段列全部）。`success` 表示"快照已产出"，具体健康看每个 server/datasource 的 `reachable`；`notes` 里会说明本次的过滤范围。
 - **场景**：跨机排查某应用时**先用它**拿到全局画像，再按需下钻到 `docker_query`（action=logs） / `service_query`（action=logs） / `log_query`（action=grep） / `java_diagnostics` / `mysql_query`（action=diagnostics） 等。
+
+## 长任务组（jobs）
+
+> 适用于 10 秒以上、多目标或需要断点续查的任务。当前内置 operation：`topology_discover`（多机全量拓扑扫描）、`ssh_snapshot_refresh`（单台整机快照重采，逐采集器上报进度）、`fleet_inventory`（多机在线/端口/Docker/Jenkins 巡检）、`fleet_snapshot_refresh`（多机快照刷新）。审批、路径策略、授权与写锁在 `job_start` 时同步完成，后台执行阶段不再弹审批；任务状态与事件写入跨进程共享的 `jobs.db`。
+
+> `fleet_inventory` / `fleet_snapshot_refresh` 为 **job-only operation**：不新增 MCP 工具，只能通过 `job_start` 调用；`fleet_inventory` 支持 `serverIds`、`refresh`、`maxAgeMinutes`，`fleet_snapshot_refresh` 支持 `serverIds`、`force`、`profile`、`sections`。未启用 `ssh` 分组时这两个 operation 不注册。完整参数定义见 `mcp_usage_guide` 的 `job_operations[].argumentsSchema`。
+
+### `job_start`
+- **参数**：`operation`（见 `mcp_usage_guide` 的 `job_operations`）、`argumentsObject`（推荐，结构化对象，如 `{"serverIds":"web-1,db-1"}` 或 `{"serverId":"web-1","force":true}`；参数名与同步工具一致）、`arguments`（旧版 JSON 字符串，兼容保留）、`wait`（默认 false=后台执行立即返回 jobId；true=同步等待终态）
+- **返回**：`{ success, status, error, jobId, operation, state, result }`；后台模式返回 `state=running`，`wait=true` 完成时直接带终态与结构化 `result`
+- **说明**：授权按 `operation` 路由到底层工具的真实安全描述符（未注册 operation fail-closed）；`wait=true` 时通过 MCP progress notification 实时上报
+
+### `job_status`
+- **参数**：`jobId`、`includeEvents`（默认 5，0=不返回事件）
+- **返回**：`{ success, status, error, jobId, operation, state, progress, progressDone, progressTotal, cancelRequested, partial, errorStatus, errorText, createdAt, finishedAt, recentEvents }`；`recentEvents` 与 `job_events` 同构，结构化消息在 `data`
+- **可见性**：当前按 **OwnerUser** 隔离（同一用户跨进程/跨 MCP 会话可查，以支持 G2 跨进程查询）；管理员可跨用户查看；不按 SessionId 隔离，避免破坏跨进程可见性。
+
+### `job_result`
+- **参数**：`jobId`、`summary`（默认 false；true 只返回数量/失败数/顶层字段与 `resultChars`，不返回完整 payload）
+- **返回**：`{ success, status, error, jobId, operation, state, partial, result?, summary?, resultChars?, resultHint? }`；非终态返回 `status=running`，终态 `result` 与同步工具的结构化输出等价
+
+### `job_events`
+- **参数**：`jobId`、`fromSeq`（首次 0，续读传上次最大 Seq）、`limit`（默认 100，1~500）
+- **返回**：`{ success, status, error, jobId, fromSeq, events: [{ seq, kind, message?, data?, server?, phase?, done?, total?, status?, createdAt }] }`；`kind` 为 `log` / `progress` / `phase` / `result`；进度事件同时提供结构化列与 `data`，普通文本事件在 `message`
+
+### `job_cancel`
+- **参数**：`jobId`
+- **返回**：`{ success, status, error, jobId, state }`；本进程任务立即取消，其他进程任务写入共享取消标记后由执行进程在检查点停止
+- **说明**：取消后已产生的部分事件与证据保留，`job_result` 可查看 `partial=true`
+
+### `job_list`
+- **参数**：`operation`（可选）、`state`（可选）、`limit`（默认 20，1~100）
+- **返回**：`{ success, status, error, jobs: [{ jobId, operation, state, progress, createdAt, errorStatus }], availableOperations }`
+- **说明**：仅列出本人近期任务；不带 `operation` 时同时返回可用 operation 清单
 
 ## 指南组（guide）
 

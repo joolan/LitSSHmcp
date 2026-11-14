@@ -74,7 +74,7 @@ export class MemoryAdminPanel {
 
   renderList() {
     if (this.items.length === 0) {
-      this.listEl.replaceChildren(el("div", "empty", "暂无记忆（AI 成功任务后会自动积累，或让 AI 用 ops_memory_write(mode=save) 写入）"));
+      this.listEl.replaceChildren(el("div", "empty", "暂无记忆（AI 成功任务后会自动积累，或让 AI 用 ops_record(action=memory_save) 写入）"));
       return;
     }
     const rows = this.items.map((item) => {

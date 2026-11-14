@@ -40,6 +40,68 @@ public class SpillAndSubAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task Spill_read_pages_single_long_line_by_offset()
+    {
+        var store = new SpillStore(_dir, 7);
+        var content = "START-" + new string('x', 2500) + "-END";
+        var handle = store.Save("ssh_execute_command", content);
+        var spill = Tool(SpillTools.Create(store, maxResultChars: 1000), "spill");
+
+        var first = (string)(await spill.InvokeAsync(Args(("handle", handle), ("offset", 0)), default))!;
+        Assert.Contains("单行超长", first);
+        Assert.Contains("START-", first);
+        Assert.Contains("下次 offset=1", first);
+        Assert.True(first.Length <= 1000, $"spill read 超出预算: {first.Length}");
+
+        var second = (string)(await spill.InvokeAsync(Args(("handle", handle), ("offset", 1)), default))!;
+        Assert.NotEqual(first, second);
+
+        var page = second;
+        var next = 2;
+        while (!page.Contains("已到末尾") && next <= 10)
+        {
+            page = (string)(await spill.InvokeAsync(Args(("handle", handle), ("offset", next)), default))!;
+            next++;
+        }
+        Assert.Contains("-END", page);
+        Assert.Contains("已到末尾", page);
+    }
+
+    [Fact]
+    public async Task Spill_read_long_line_in_multiline_file_supports_column_paging()
+    {
+        var store = new SpillStore(_dir, 7);
+        var longLine = "COL-" + new string('a', 2400) + "-TAIL";
+        var handle = store.Save("ssh_execute_command", "header\n" + longLine + "\nfooter");
+        var spill = Tool(SpillTools.Create(store, maxResultChars: 1000), "spill");
+
+        var first = (string)(await spill.InvokeAsync(
+            Args(("handle", handle), ("offset", 1), ("column", 0)), default))!;
+        Assert.Contains("COL-", first);
+        Assert.Contains("column=", first);
+
+        var match = Regex.Match(first, @"column=(\d+)");
+        Assert.True(match.Success);
+        var nextColumn = int.Parse(match.Groups[1].Value);
+        var second = (string)(await spill.InvokeAsync(
+            Args(("handle", handle), ("offset", 1), ("column", nextColumn)), default))!;
+        Assert.NotEqual(first, second);
+    }
+
+    [Fact]
+    public async Task Spill_json_decodes_long_string_field_newlines()
+    {
+        var store = new SpillStore(_dir, 7);
+        var handle = store.Save("ssh_execute_command",
+            "{\"success\":true,\"output\":\"line1\\nline2\\nline3\"}");
+        var spill = Tool(SpillTools.Create(store), "spill");
+
+        var text = (string)(await spill.InvokeAsync(
+            Args(("action", "json"), ("handle", handle), ("path", "output")), default))!;
+        Assert.Contains("line1\nline2\nline3", text);
+    }
+
+    [Fact]
     public async Task Spill_store_saves_resolves_and_blocks_escape()
     {
         var store = new SpillStore(_dir, 7);

@@ -204,6 +204,81 @@ public static class WebSessionEndpoints
             }
         });
 
+        // 长任务：列表 / 状态 / 取消（只读查询不占用对话轮次闸门）
+        api.MapGet("/{id:long}/jobs", async (long id, string? operation, string? state, int? limit,
+            HttpContext ctx, WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            try
+            {
+                var text = await manager.InvokeJobToolAsync(principal, id, "job_list",
+                    new Dictionary<string, object?>
+                    {
+                        ["operation"] = operation,
+                        ["state"] = state,
+                        ["limit"] = Math.Clamp(limit ?? 50, 1, 100)
+                    }, ctx.RequestAborted);
+                return Results.Content(text, "application/json");
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        api.MapGet("/{id:long}/jobs/{jobId}", async (long id, string jobId, HttpContext ctx,
+            WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            try
+            {
+                var text = await manager.InvokeJobToolAsync(principal, id, "job_status",
+                    new Dictionary<string, object?> { ["jobId"] = jobId, ["includeEvents"] = 20 },
+                    ctx.RequestAborted);
+                return Results.Content(text, "application/json");
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        api.MapGet("/{id:long}/jobs/{jobId}/result", async (long id, string jobId, HttpContext ctx,
+            WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            try
+            {
+                var text = await manager.InvokeJobToolAsync(principal, id, "job_result",
+                    new Dictionary<string, object?> { ["jobId"] = jobId }, ctx.RequestAborted);
+                return Results.Content(text, "application/json");
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        api.MapPost("/{id:long}/jobs/{jobId}/cancel", async (long id, string jobId, HttpContext ctx,
+            WebSessionManager manager) =>
+        {
+            var principal = ctx.GetWebPrincipal();
+            if (principal is null) return Results.Unauthorized();
+            try
+            {
+                var text = await manager.InvokeJobToolAsync(principal, id, "job_cancel",
+                    new Dictionary<string, object?> { ["jobId"] = jobId }, ctx.RequestAborted);
+                return Results.Content(text, "application/json");
+            }
+            catch (WebSessionNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
         api.MapGet("/{id:long}/fleet-targets", async (long id, string? query, HttpContext ctx,
             WebSessionManager manager) =>
         {

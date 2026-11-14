@@ -6,7 +6,7 @@ namespace LitSSHmcp.Agent;
 /// <summary>拼装系统提示 = 基础行为约定 + 能力边界 + MCP server instructions + 技能正文 + 用户附加提示。</summary>
 public static class SystemPromptBuilder
 {
-    private const string BasePrompt =
+    internal const string CorePrompt =
         "你是 LitSSH 运维助手, 通过 MCP 工具在本机对服务器/数据源/应用执行运维与排障。\n" +
         "工作方式:\n" +
         "1) 先用工具获取事实(ID/状态/日志/端口/快照), 再给结论; 不要编造路径、端口、ID。\n" +
@@ -68,39 +68,24 @@ public static class SystemPromptBuilder
     internal static void AppendToolRouting(StringBuilder sb, IReadOnlyCollection<string>? availableGroups,
         bool subAgent, bool fleetTools, bool fleetChangeTools)
     {
-        bool Has(string group) => availableGroups is null ||
-                                  availableGroups.Contains(group, StringComparer.OrdinalIgnoreCase);
+        var lines = ToolRoutingCatalog.ForGroups(availableGroups)
+            .Select(route =>
+                $"- {route.Intent}：{route.Tools}" +
+                (string.IsNullOrWhiteSpace(route.Note) ? "。" : $"（{route.Note}）。"))
+            .ToList();
 
-        var lines = new List<string>();
-        if (Has(ToolGroups.Ssh))
-            lines.Add("- 整机态势/巡检/磁盘/端口/账号：先 ssh_snapshot_get；过期或明确要最新才 ssh_snapshot_refresh；变化用 ssh_snapshot_diff。");
-        if (Has(ToolGroups.Command))
-            lines.Add("- 单机命令/Shell：ssh_execute_command；需要 root 且服务器已配置提权时用 ssh_execute_sudo。");
-        if (Has(ToolGroups.Log))
-            lines.Add("- 日志：log_query 按关键字/时间窗检索，避免无边界 tail。");
-        if (Has(ToolGroups.FileTransfer))
-            lines.Add("- 文件：ssh_list_files 浏览目录；ssh_upload/ssh_download 传输文件。");
-        if (Has(ToolGroups.Service))
-            lines.Add("- systemd：service_query 查服务状态与日志。");
-        if (Has(ToolGroups.Docker))
-            lines.Add("- 容器：docker_query 查容器/镜像/日志；写操作走对应受审批工具。");
-        if (Has(ToolGroups.Java))
-            lines.Add("- Java/JVM：java_processes 找进程；java_diagnostics 取线程栈/堆/JVM 信息。");
+        if (availableGroups is null ||
+            availableGroups.Any(g => string.Equals(g, ToolGroups.Jobs, StringComparison.OrdinalIgnoreCase)))
+        {
+            foreach (var operation in JobOperationPolicies.ForGroups(availableGroups))
+            {
+                lines.Add($"- Job `{operation.Operation}`：{operation.Description}" +
+                          (string.IsNullOrWhiteSpace(operation.ArgumentsHint)
+                              ? "。"
+                              : $"；参数：{operation.ArgumentsHint}。"));
+            }
+        }
 
-        var dataTools = new List<string>();
-        if (Has(ToolGroups.Datasource)) dataTools.Add("datasource_list/test_connection");
-        if (Has(ToolGroups.Mysql)) dataTools.Add("mysql_query");
-        if (Has(ToolGroups.Postgres)) dataTools.Add("postgres_query");
-        if (Has(ToolGroups.Redis)) dataTools.Add("redis_read");
-        if (dataTools.Count > 0)
-            lines.Add("- 数据源：" + string.Join(" / ", dataTools) + " 只读查询；写执行工具仅在有明确变更意图时使用。");
-
-        if (Has(ToolGroups.Topology))
-            lines.Add("- 拓扑/影响面：topology_query(action=overview/search/neighbors/path/impact/explain)；历史用 topology_history。");
-        if (Has(ToolGroups.App))
-            lines.Add("- 应用聚合体检：app_health_snapshot；单机细节再用对应服务器/数据源工具下钻。");
-        if (Has(ToolGroups.Guide))
-            lines.Add("- 不确定工具名、参数或分组：先 mcp_usage_guide，再调用实际存在的工具。");
         if (subAgent)
             lines.Add("- 复杂只读取证（多工具/多主机/大日志）：优先 run_subagent，主上下文只接摘要。");
         if (fleetTools)
@@ -157,7 +142,7 @@ public static class SystemPromptBuilder
         bool spillTools = false)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(BasePrompt);
+        sb.AppendLine(CorePrompt);
         sb.AppendLine();
         sb.AppendLine("## 子代理约束");
         sb.AppendLine("- 你是主代理委派的**子代理**：只做**只读**调查取证，用工具收集事实后只返回简洁结论（要点/证据/未决），不要提问。");
@@ -166,7 +151,7 @@ public static class SystemPromptBuilder
         sb.AppendLine("- 不得调用任何写/变更/审批类工具；如任务需要变更，返回结论并说明需要主代理处理。");
         sb.AppendLine($"- 最终摘要不超过 {summaryMaxChars} 字，按「结论 / 证据 / 未决 / 建议」组织；没有内容的项省略，不要粘贴原始日志。");
         if (spillTools)
-            sb.AppendLine("- 工具结果若提示已落盘为 `spill://…`, 用 `spill(action=\"read\", handle=\"spill://…\", offset, limit)` 分段读取；返回头会给出 `下次 offset=N`，按它翻页、不要猜偏移；大 JSON 优先 `spill(action=\"json\", path=...)`，定位内容用 `spill(action=\"grep\", handle=\"spill://…\", pattern)`。spill 结果同样受输出预算约束，不要重复读取同一页或重复调用原工具。");
+            sb.AppendLine("- 工具结果若提示已落盘为 `spill://…`, 用 `spill(action=\"read\", handle=\"spill://…\", offset, limit)` 分段读取；返回头会给出 `下次 offset=N`，按它翻页、不要猜偏移；单行超长可按 offset 分页或传 `column` 继续读；大 JSON 优先 `spill(action=\"json\", path=...)`（字符串字段会展开换行），定位内容用 `spill(action=\"grep\", handle=\"spill://…\", pattern)`。spill 结果同样受输出预算约束，不要重复读取同一页或重复调用原工具。");
         if (!string.IsNullOrWhiteSpace(restrictionNote))
             sb.AppendLine(restrictionNote.Trim());
         return sb.ToString().Trim();

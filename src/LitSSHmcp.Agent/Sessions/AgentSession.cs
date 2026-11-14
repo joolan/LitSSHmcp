@@ -22,6 +22,7 @@ public sealed class AgentSession
     private readonly AgentProviderConfig _provider;
     private readonly AgentConfig _config;
     private readonly IReadOnlyList<IAgentTool> _tools;
+    private readonly IReadOnlyList<IAgentTool> _modelTools;
     private readonly Dictionary<string, IAgentTool> _toolsByName;
     /// <summary>工具定义（名称+描述+JSON schema）的固定 token 估算；每次请求都相同，缓存避免重复序列化。</summary>
     private readonly int _toolDefinitionTokens;
@@ -94,14 +95,18 @@ public sealed class AgentSession
         Action<long, long>? onUsageDelta = null,
         WorkLogStore? workLog = null,
         string? assetGraph = null,
-        string? workingMemoryJson = null)
+        string? workingMemoryJson = null,
+        IReadOnlySet<string>? modelHiddenTools = null)
     {
         _client = client;
         _provider = provider;
         _tools = tools.ToList();
+        _modelTools = _tools
+            .Where(t => modelHiddenTools is null || !modelHiddenTools.Contains(t.Name))
+            .ToList();
         _config = config;
         _toolsByName = _tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
-        _toolDefinitionTokens = TokenEstimator.EstimateToolDefinitions(_tools.Select(t => t.Tool));
+        _toolDefinitionTokens = TokenEstimator.EstimateToolDefinitions(_modelTools.Select(t => t.Tool));
         _recall = recall;
         _graphContext = graphContext;
         _assetGraph = assetGraph;
@@ -119,7 +124,7 @@ public sealed class AgentSession
         RepairOrphanToolCalls();
     }
 
-    public int ToolCount => _tools.Count;
+    public int ToolCount => _modelTools.Count;
 
     /// <summary>替换系统提示（用于会话中切换激活技能等场景）；只改第一条 System 消息，不动历史。</summary>
     public void SetSystemPrompt(string prompt)
@@ -218,6 +223,10 @@ public sealed class AgentSession
     private bool IsLocalTool(string toolName) =>
         _toolsByName.TryGetValue(toolName, out var tool) && tool.IsLocal;
 
+    /// <summary>任务状态查询类工具：长任务可能需要多次查看，单独预算，不占普通远程工具轮次。</summary>
+    private static bool IsJobQueryTool(string toolName) =>
+        toolName is "job_status" or "job_result" or "job_events";
+
     private static string DeniedMessage(string toolName) =>
         $"工具 {toolName} 已被本会话的「工具审批策略」禁用（拒绝），未执行。"
         + "如需使用，请在输入区 + 菜单 → 工具审批策略 里把它改回「默认」或「允许」。";
@@ -228,6 +237,34 @@ public sealed class AgentSession
 
     private static string PlanBlockedMessage(string toolName) =>
         $"计划模式下不允许执行写操作（工具 {toolName}），未执行。请切到「执行模式」后重试。";
+
+    /// <summary>job_start 按 operation 元数据做 profile/只读校验，避免把所有 operation 当成同一个安全级别。</summary>
+    private bool IsJobOperationBlocked(string toolName, IDictionary<string, object?>? arguments, out string reason)
+    {
+        reason = string.Empty;
+        if (!string.Equals(toolName, "job_start", StringComparison.Ordinal))
+            return false;
+        if (arguments is null || !arguments.TryGetValue("operation", out var raw) ||
+            string.IsNullOrWhiteSpace(raw?.ToString()))
+            return false; // 缺 operation 交给 job_start 自己返回参数错误
+
+        var operation = raw!.ToString()!;
+        var policy = JobOperationPolicies.Find(operation);
+        if (policy is null)
+        {
+            reason = $"job_start 的 operation 未登记安全策略: {operation}（已拒绝）";
+            return true;
+        }
+
+        if ((_config.ReadOnly && !policy.ReadOnly) ||
+            !JobOperationPolicies.IsAllowed(operation, _config.Profile, _config.ReadOnly))
+        {
+            reason = $"当前会话模式（readOnly={_config.ReadOnly}, profile={_config.Profile}）不允许启动 job operation: {operation}";
+            return true;
+        }
+
+        return false;
+    }
 
     /// <summary>宿主机（桌面/Web 可视化面板）直接调用当前会话内的工具；不写入对话历史、不产生工具轨迹。</summary>
     public async Task<object?> InvokeHostToolAsync(string toolName, IDictionary<string, object?>? arguments,
@@ -393,7 +430,7 @@ public sealed class AgentSession
 
             var options = new ChatOptions
         {
-            Tools = _tools.Select(t => t.Tool).ToList(),
+            Tools = _modelTools.Select(t => t.Tool).ToList(),
             Temperature = (float)_provider.Temperature
         };
         if (_provider.MaxTokens > 0)
@@ -424,6 +461,11 @@ public sealed class AgentSession
         var repeatNudged = new HashSet<string>(StringComparer.Ordinal);
         var localToolCalls = 0;
         var localBudgetNudged = false;
+        // 任务状态查询独立预算：不占普通工具轮次，但防止模型无限轮询。
+        const int jobQueryNudgeAfter = 20;
+        const int maxJobQueryCalls = 60;
+        var jobQueryCalls = 0;
+        var jobQueryNudged = false;
         while (true)
         {
             if (iteration >= maxIterations)
@@ -510,7 +552,7 @@ public sealed class AgentSession
             var contents = assistantMessages.SelectMany(m => m.Contents).ToList();
             var calls = contents.OfType<FunctionCallContent>().ToList();
             // 仅本地工具（文档读写等）的轮次不占用「最大工具轮数」；同一轮只要含远程工具就计 1 次。
-            var countsTowardToolLimit = calls.Any(c => !IsLocalTool(c.Name));
+            var countsTowardToolLimit = calls.Any(c => !IsLocalTool(c.Name) && !IsJobQueryTool(c.Name));
 
             if (calls.Count > 0)
             {
@@ -581,6 +623,9 @@ public sealed class AgentSession
                 var repeatedCount = 0;
                 foreach (var call in calls)
                 {
+                    // job_status/result/events 允许对同一 job 持续查询，由独立预算控制。
+                    if (IsJobQueryTool(call.Name))
+                        continue;
                     var signature = call.Name + ":" + (SerializeArgs(call.Arguments) ?? string.Empty);
                     callSignatureCounts.TryGetValue(signature, out var count);
                     count++;
@@ -607,6 +652,27 @@ public sealed class AgentSession
                     progress?.Report(new AgentEvent(AgentEventKind.Error,
                         Text: $"同一工具+入参重复调用达到 {repeatedCount} 次（{repeatedTool}），" +
                               "已停止本轮以避免空转；请改用不同参数或直接基于已有结果回答。"));
+                    return;
+                }
+
+                // job_status/result/events 不计入普通工具轮次，但有自己的查询预算，避免无限轮询。
+                jobQueryCalls += calls.Count(c => IsJobQueryTool(c.Name));
+                if (jobQueryCalls >= jobQueryNudgeAfter && !jobQueryNudged)
+                {
+                    jobQueryNudged = true;
+                    var nudge = new ChatMessage(ChatRole.User,
+                        $"本轮任务状态查询已调用 {jobQueryCalls} 次。长任务等待优先依赖 harness 自动等待；" +
+                        "不要每轮都手动轮询，拿到足够状态后继续其它取证或直接汇总。");
+                    Messages.Add(nudge);
+                    transientContext.Add(nudge);
+                    progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                        Text: $"任务状态查询已达 {jobQueryCalls} 次，已提示模型减少轮询（上限 {maxJobQueryCalls} 次）"));
+                }
+                if (jobQueryCalls >= maxJobQueryCalls)
+                {
+                    progress?.Report(new AgentEvent(AgentEventKind.Error,
+                        Text: $"任务状态查询达到 {maxJobQueryCalls} 次，已停止，避免长时间空转；" +
+                              "请基于已有状态回答，或使用 job_cancel 后重新规划。"));
                     return;
                 }
 
@@ -1031,6 +1097,8 @@ public sealed class AgentSession
 
         if (IsDenied(name))
             return (false, DeniedMessage(name), 0);
+        if (IsJobOperationBlocked(name, arguments, out var jobBlockReason))
+            return (false, jobBlockReason, 0);
         if (IsPlanBlocked(name))
             return (false, PlanBlockedMessage(name), 0);
 
@@ -1062,7 +1130,14 @@ public sealed class AgentSession
                     var resultText = ToolResultFormatter.Normalize(normalized.Text);
 
                     if (!normalized.IsError)
+                    {
+                        // WaitableJobAdapter（长任务 Job 模型设计 §3.9）：job_start 返回运行中的 jobId 时，
+                        // harness 内部退避轮询 job_status 直至终态再取 job_result 回填——模型只看到一次工具调用。
+                        var awaitedText = await TryAwaitJobResultAsync(name, resultText, progress, ct);
+                        if (awaitedText is not null)
+                            resultText = awaitedText;
                         return (true, resultText, stopwatch.ElapsedMilliseconds);
+                    }
 
                     if (attempt == 0 && IsRetryableReadOnly(tool, name, resultText, ct))
                     {
@@ -1116,6 +1191,150 @@ public sealed class AgentSession
             return false;
         return HasAny(text, "timeout", "timed out", "connection refused", "connection reset", "broken pipe",
             "temporarily unavailable", "service unavailable", "429", "502", "503", "504", "eof");
+    }
+
+    // ---- WaitableJobAdapter（长任务 Job 模型设计 §3.9）----
+
+
+
+    /// <summary>
+    /// job_start 返回运行中的 jobId 时进入等待循环：harness 内部轮询 job_status（不经过模型），
+    /// 状态变化转发 ToolProgress；终态取 job_result 作为工具结果回填模型；超时返回 partial+jobId；
+    /// 用户停止时联动 job_cancel（任务优雅终止而非弃置）。非 job_start 或已完成的调用返回 null。
+    /// </summary>
+    private async Task<string?> TryAwaitJobResultAsync(string toolName, string resultText,
+        IProgress<AgentEvent>? progress, CancellationToken ct)
+    {
+        if (!string.Equals(toolName, "job_start", StringComparison.Ordinal))
+            return null;
+
+        var jobId = ReadJsonStringField(resultText, "jobId");
+        if (string.IsNullOrEmpty(jobId))
+            return null;
+        // job_start(wait=true) 已同步完成时直接使用其结果；JobStartDto 没有 completed 字段，
+        // 必须以 state 判断终态（否则会多轮询一次并可能覆盖原结果）。
+        var state = ReadJsonStringField(resultText, "state");
+        if (state is "succeeded" or "failed" or "cancelled" or "orphaned")
+            return null;
+
+        if (!_toolsByName.TryGetValue("job_status", out var statusTool) ||
+            !_toolsByName.TryGetValue("job_result", out var resultTool))
+            return null; // job 工具面被裁剪：退化为立即返回 jobId（模型可自行决定后续动作）
+
+        var waitSeconds = Math.Clamp(_config.JobWaitTimeoutSeconds, 1, 7200);
+        var pollMinSeconds = Math.Clamp(_config.JobPollMinSeconds, 1, 30);
+        var pollMaxSeconds = Math.Clamp(_config.JobPollMaxSeconds, pollMinSeconds, 60);
+        var delay = TimeSpan.FromSeconds(pollMinSeconds);
+        var maxDelay = TimeSpan.FromSeconds(pollMaxSeconds);
+        var deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
+        var lastState = "running";
+        try
+        {
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (DateTime.UtcNow >= deadline)
+                    return resultText +
+                        $"\n[job 等待超时({waitSeconds}s)] 任务 {jobId} 仍在后台执行（状态 {lastState}），未取消；" +
+                        $"可稍后用 job_result(jobId=\"{jobId}\") 获取完整结果，或 job_cancel(jobId=\"{jobId}\") 停止。";
+
+                await Task.Delay(delay, ct);
+                if (delay < maxDelay)
+                    delay = TimeSpan.FromSeconds(Math.Min(maxDelay.TotalSeconds, delay.TotalSeconds * 1.5));
+
+                var statusText = await InvokeJobToolTextAsync(statusTool, new Dictionary<string, object?>
+                {
+                    ["jobId"] = jobId
+                }, ct);
+                lastState = ReadJsonStringField(statusText, "state") ?? lastState;
+                var done = ReadJsonIntField(statusText, "progressDone");
+                var total = ReadJsonIntField(statusText, "progressTotal");
+                progress?.Report(new AgentEvent(AgentEventKind.ToolProgress,
+                    Text: total > 0 ? $"job {jobId} {lastState} {done}/{total}" : $"job {jobId} {lastState}",
+                    ToolName: toolName));
+
+                if (lastState is "succeeded" or "failed" or "cancelled" or "orphaned")
+                {
+                    var finalText = await InvokeJobToolTextAsync(resultTool, new Dictionary<string, object?>
+                    {
+                        ["jobId"] = jobId
+                    }, ct);
+                    return string.IsNullOrWhiteSpace(finalText) ? statusText : finalText;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 用户停止：联动取消后台任务（尽力而为，失败不掩盖原始取消）
+            await TryCancelJobAsync(jobId);
+            throw;
+        }
+    }
+
+    private async Task TryCancelJobAsync(string jobId)
+    {
+        try
+        {
+            if (_toolsByName.TryGetValue("job_cancel", out var cancelTool))
+                await cancelTool.InvokeAsync(new Dictionary<string, object?> { ["jobId"] = jobId },
+                    CancellationToken.None);
+        }
+        catch
+        {
+            // 取消联动失败不掩盖用户停止
+        }
+    }
+
+    private async Task<string> InvokeJobToolTextAsync(IAgentTool tool, IDictionary<string, object?> arguments,
+        CancellationToken ct)
+    {
+        var result = await tool.InvokeAsync(arguments, ct);
+        var normalized = McpToolResultNormalizer.Normalize(result);
+        return normalized.Text;
+    }
+
+    /// <summary>从工具结果文本解析 JSON 字段（属性名大小写不敏感；文本非法 JSON 返回 null）。</summary>
+    private static string? ReadJsonStringField(string? text, string field)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(text);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            foreach (var property in doc.RootElement.EnumerateObject())
+            {
+                if (string.Equals(property.Name, field, StringComparison.OrdinalIgnoreCase) &&
+                    property.Value.ValueKind == JsonValueKind.String)
+                    return property.Value.GetString();
+            }
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static int? ReadJsonIntField(string? text, string field)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(text);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            foreach (var property in doc.RootElement.EnumerateObject())
+            {
+                if (string.Equals(property.Name, field, StringComparison.OrdinalIgnoreCase) &&
+                    property.Value.ValueKind is JsonValueKind.Number &&
+                    property.Value.TryGetInt32(out var value))
+                    return value;
+            }
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static string FormatProgress(ProgressNotificationValue value)
@@ -1386,6 +1605,8 @@ public sealed class AgentSession
     {
         if (IsDenied(name))
             return (false, DeniedMessage(name), 0);
+        if (IsJobOperationBlocked(name, arguments, out var jobBlockReason))
+            return (false, jobBlockReason, 0);
         if (IsPlanBlocked(name))
             return (false, PlanBlockedMessage(name), 0);
 

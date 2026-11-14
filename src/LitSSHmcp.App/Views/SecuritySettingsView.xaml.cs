@@ -43,6 +43,18 @@ public partial class SecuritySettingsView : UserControl
             _viewModel.AuthzRules.Remove(row);
     }
 
+    private void OnTrustedScriptAdd(object sender, RoutedEventArgs e) =>
+        _viewModel.TrustedScriptHashes.Add(new SecuritySettingsViewModel.TrustedScriptHashRow
+        {
+            AddedAt = DateTimeOffset.Now
+        });
+
+    private void OnTrustedScriptRemove(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: SecuritySettingsViewModel.TrustedScriptHashRow row })
+            _viewModel.TrustedScriptHashes.Remove(row);
+    }
+
     private void OnResetWebJobsRoot(object sender, RoutedEventArgs e) => _viewModel.WebJobsRoot = string.Empty;
 
     private async Task RefreshAppLockStatusAsync()

@@ -20,6 +20,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- MCP initialize 的 serverInfo.version 来自程序集版本；发布脚本可用 -p:Version=<tag> 覆盖。 -->
+    <Version>1.6.3</Version>
   </PropertyGroup>
 
 </Project>

@@ -187,43 +187,76 @@ public static class ToolSupport
         if (string.IsNullOrWhiteSpace(command))
             return null;
 
+        // 错误里回显命中的规则与命令片段，避免模型在“which/head/grep 到底哪段触发了”之间反复猜测。
+        string? Hit(string rule, string pattern, string hint)
+        {
+            var match = Regex.Match(command, pattern);
+            if (!match.Success)
+                return null;
+            // 从命中位置往后取一小段（而非仅 match.Value），例如 sudo 规则能回显 “sudo rm -rf …”。
+            var snippetLength = Math.Min(80, command.Length - match.Index);
+            var snippet = command.Substring(match.Index, snippetLength).Trim();
+            if (snippet.Length == 0)
+                snippet = match.Value.Trim();
+            return $"{hint}（规则: {rule}；命中片段: {snippet}）";
+        }
+
         // 跟随日志（-f/--follow）：会持续输出、不返回
-        if (Regex.IsMatch(command, @"(?i)\btail\b[^\r\n|;&]*(\s-f\b|\s-F\b|--follow)"))
-            return "检测到 `tail -f/-F/--follow`：会一直跟随文件、连接不返回。请改用一次性查看 `tail -n 200 <file>`，或直接用 log_query 工具（action=tail/grep）。";
-        if (Regex.IsMatch(command, @"(?i)\bdocker\s+(compose\s+)?logs\b[^\r\n|;&]*(--follow|\s-f\b)"))
-            return "检测到 `docker logs -f/--follow`：会持续跟随。请用 `docker logs --tail 200 <container>`，或直接用 docker_query 工具（action=logs）。";
-        if (Regex.IsMatch(command, @"(?i)\bjournalctl\b[^\r\n|;&]*(--follow|\s-f\b)"))
-            return "检测到 `journalctl -f/--follow`。请用 `journalctl -n 200 --no-pager`，或直接用 service_query 工具（action=logs）。";
-        if (Regex.IsMatch(command, @"(?i)\bkubectl\s+logs\b[^\r\n|;&]*(--follow|\s-f\b)"))
-            return "检测到 `kubectl logs -f/--follow`。请用 `kubectl logs --tail=200 <pod> -n <ns>`。";
+        var hit = Hit("tail-follow", @"(?i)\btail\b[^\r\n|;&]*(\s-f\b|\s-F\b|--follow)",
+            "检测到 `tail -f/-F/--follow`：会一直跟随文件、连接不返回。请改用一次性查看 `tail -n 200 <file>`，或直接用 log_query 工具（action=tail/grep）。");
+        if (hit is not null) return hit;
+
+        hit = Hit("docker-logs-follow", @"(?i)\bdocker\s+(compose\s+)?logs\b[^\r\n|;&]*(--follow|\s-f\b)",
+            "检测到 `docker logs -f/--follow`：会持续跟随。请用 `docker logs --tail 200 <container>`，或直接用 docker_query 工具（action=logs）。");
+        if (hit is not null) return hit;
+
+        hit = Hit("journalctl-follow", @"(?i)\bjournalctl\b[^\r\n|;&]*(--follow|\s-f\b)",
+            "检测到 `journalctl -f/--follow`。请用 `journalctl -n 200 --no-pager`，或直接用 service_query 工具（action=logs）。");
+        if (hit is not null) return hit;
+
+        hit = Hit("kubectl-logs-follow", @"(?i)\bkubectl\s+logs\b[^\r\n|;&]*(--follow|\s-f\b)",
+            "检测到 `kubectl logs -f/--follow`。请用 `kubectl logs --tail=200 <pod> -n <ns>`。");
+        if (hit is not null) return hit;
 
         // 交互式分页/编辑器/监视器：等待按键、不返回
-        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*|\bsudo\s+|\bnohup\s+)(vi|vim|nano|emacs|less|more|top|htop|watch)\b"))
-            return "检测到交互式命令(编辑器/分页/监视器)：无 TTY 会挂起。请改用非交互方式，如 `ps`/`ss`/`free`/`df`，日志用 `head`/`tail -n`/`--no-pager`。";
+        hit = Hit("interactive-pager", @"(?i)(^|[;&|]\s*|\bsudo\s+|\bnohup\s+)(vi|vim|nano|emacs|less|more|top|htop|watch)\b",
+            "检测到交互式命令(编辑器/分页/监视器)：无 TTY 会挂起。请改用非交互方式，如 `ps`/`ss`/`free`/`df`，日志用 `head`/`tail -n`/`--no-pager`。");
+        if (hit is not null) return hit;
 
         // 交互式 shell / 需要 stdin
-        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*)(read|bash\s+-i|sh\s+-i|python\s+-i|bc|sqlplus|mysql)\b"))
-            return "检测到需要交互输入的命令：MCP 无 TTY、无法输入。请改为非交互方式(参数化/管道输入)。";
+        hit = Hit("interactive-stdin", @"(?i)(^|[;&|]\s*)(read|bash\s+-i|sh\s+-i|python\s+-i|bc|sqlplus|mysql)\b",
+            "检测到需要交互输入的命令：MCP 无 TTY、无法输入。请改为非交互方式(参数化/管道输入)。");
+        if (hit is not null) return hit;
 
         // 普通通道里的 sudo/su：无 TTY 会等密码
-        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*|\bnohup\s+)sudo\b"))
-            return "普通命令通道里的 `sudo` 会因无 TTY 等待密码而挂起。请改用 ssh_execute_sudo(方式由服务器配置的 SudoType 决定)。";
-        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*|\bnohup\s+)su\b"))
-            return "`su` 需要 TTY/密码，会挂起。请改用 ssh_execute_sudo。";
+        hit = Hit("sudo-tty", @"(?i)(^|[;&|]\s*|\bnohup\s+)sudo\b",
+            "普通命令通道里的 `sudo` 会因无 TTY 等待密码而挂起。请改用 ssh_execute_sudo(方式由服务器配置的 SudoType 决定)。");
+        if (hit is not null) return hit;
+
+        hit = Hit("su-tty", @"(?i)(^|[;&|]\s*|\bnohup\s+)su\b",
+            "`su` 需要 TTY/密码，会挂起。请改用 ssh_execute_sudo。");
+        if (hit is not null) return hit;
 
         // ping 未限定次数 / nc/telnet 交互连接
-        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*)ping\b") && !Regex.IsMatch(command, @"(?i)\s-[a-z]*c\s*\d"))
-            return "`ping` 未限定次数会一直运行。请用 `ping -c 4 <host>`。";
-        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*)(nc|netcat|telnet)\b"))
-            return "`nc/telnet` 交互连接会挂起。探活请用 `timeout 5 bash -c '</dev/tcp/<host>/<port>' && echo open || echo closed`。";
+        const string pingPattern = @"(?i)(^|[;&|]\s*)ping\b";
+        if (Regex.IsMatch(command, pingPattern) && !Regex.IsMatch(command, @"(?i)\s-[a-z]*c\s*\d"))
+        {
+            hit = Hit("ping-unbounded", pingPattern, "`ping` 未限定次数会一直运行。请用 `ping -c 4 <host>`。");
+            if (hit is not null) return hit;
+        }
+
+        hit = Hit("nc-telnet", @"(?i)(^|[;&|]\s*)(nc|netcat|telnet)\b",
+            "`nc/telnet` 交互连接会挂起。探活请用 `timeout 5 bash -c '</dev/tcp/<host>/<port>' && echo open || echo closed`。");
+        if (hit is not null) return hit;
 
         // docker 交互
-        if (Regex.IsMatch(command, @"(?i)\bdocker\s+exec\b[^\r\n|;&]*\s(?:-it|-ti|-i\s+-t|-t\s+-i)\b"))
-            return "检测到 `docker exec -it`：交互式会挂起。请去掉 `-it`，用 `docker exec <container> <cmd>`。";
-        if (Regex.IsMatch(command, @"(?i)(^|[;&|]\s*)docker\s+attach\b"))
-            return "`docker attach` 会附着到容器前台并可能阻塞。请改用 `docker logs --tail 200 <container>`。";
+        hit = Hit("docker-exec-it", @"(?i)\bdocker\s+exec\b[^\r\n|;&]*\s(?:-it|-ti|-i\s+-t|-t\s+-i)\b",
+            "检测到 `docker exec -it`：交互式会挂起。请去掉 `-it`，用 `docker exec <container> <cmd>`。");
+        if (hit is not null) return hit;
 
-        return null;
+        hit = Hit("docker-attach", @"(?i)(^|[;&|]\s*)docker\s+attach\b",
+            "`docker attach` 会附着到容器前台并可能阻塞。请改用 `docker logs --tail 200 <container>`。");
+        return hit;
     }
 
     /// <summary>服务器展示标签：名称(用户@主机:端口)，供审批确认时核对真实目标。</summary>

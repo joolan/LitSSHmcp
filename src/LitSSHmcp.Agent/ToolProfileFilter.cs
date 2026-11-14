@@ -23,7 +23,10 @@ public static class ToolProfileFilter
     private static readonly HashSet<string> ProfileSafeNonMutating = new(StringComparer.OrdinalIgnoreCase)
     {
         "ssh_snapshot_refresh",
-        "topology_discover"
+        "topology_discover",
+        // job_start 本身不直接操作目标；当前注册的 operation（topology/snapshot/fleet_inventory/
+        // fleet_snapshot_refresh）均为只读探测。将来接入写型 operation 时必须改为 operation 级判定。
+        "job_start"
     };
 
     /// <summary>profile/计划模式下的“安全只读”判定：MCP ReadOnly 或非变更探测白名单。</summary>
@@ -38,33 +41,9 @@ public static class ToolProfileFilter
     public static bool IsSafeLocalCacheProbe(string name) =>
         ProfileSafeNonMutating.Contains(name);
 
-    private static readonly HashSet<string> DiagnoseLocal = new(StringComparer.Ordinal)
-    {
-        "ops_doc_read", "ops_memory_list", "ops_memory_write",
-        "ops_incident_list", "ops_incident_write", "ops_diagnosis_write", "ops_insight",
-        "skill", "spill",
-        "update_plan", "run_subagent", "fleet_query",
-        "ai_task_list", "ai_task_runs"
-    };
-
-    private static readonly HashSet<string> AssetsLocal = new(StringComparer.Ordinal)
-    {
-        "ops_doc_read", "ops_doc_write", "ops_memory_list", "ops_memory_write",
-        "ops_incident_list", "ops_incident_write", "ops_diagnosis_write", "ops_insight",
-        "skill",
-        "spill", "update_plan", "run_subagent", "fleet_query", "ops_script_register",
-        "ai_task_list", "ai_task_runs"
-    };
-
-    private static readonly HashSet<string> ChatLocal = new(StringComparer.Ordinal)
-    {
-        "ops_doc_read", "skill",
-        "spill", "ops_memory_list", "ops_incident_list", "ops_insight"
-    };
-
     public static bool AllowsRemote(IAgentTool tool, AgentToolProfile profile)
     {
-        if (profile is AgentToolProfile.Auto or AgentToolProfile.Change)
+        if (profile is AgentToolProfile.Auto or AgentToolProfile.Change or AgentToolProfile.Ops)
             return true;
 
         return profile switch
@@ -78,14 +57,8 @@ public static class ToolProfileFilter
         };
     }
 
-    public static bool AllowsLocal(string name, AgentToolProfile profile) => profile switch
-    {
-        AgentToolProfile.Auto or AgentToolProfile.Change => true,
-        AgentToolProfile.Diagnose => DiagnoseLocal.Contains(name),
-        AgentToolProfile.Assets => AssetsLocal.Contains(name),
-        AgentToolProfile.Chat => ChatLocal.Contains(name),
-        _ => true
-    };
+    public static bool AllowsLocal(string name, AgentToolProfile profile) =>
+        LocalToolCatalog.AllowsLocal(name, profile);
 
     public static string? Display(AgentToolProfile profile) => profile switch
     {
@@ -93,6 +66,7 @@ public static class ToolProfileFilter
         AgentToolProfile.Change => "变更/发布",
         AgentToolProfile.Assets => "资产治理",
         AgentToolProfile.Chat => "问答",
+        AgentToolProfile.Ops => "运维专注",
         _ => null
     };
 }

@@ -66,8 +66,8 @@
                                     <TextBlock Text="会话工具模式:" VerticalAlignment="Center"/>
                                     <ComboBox ItemsSource="{Binding ProfileOptions}" SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
                                               Width="110" Margin="6,0,16,0"
-                                              ToolTip="auto=全部；diagnose=诊断/巡检（只读+快照刷新/拓扑发现）；change=变更/发布；assets=资产治理（只读+拓扑发现）；chat=问答。新会话生效。"/>
-                                    <TextBlock Text="(auto / diagnose / change / assets / chat；新会话生效)" VerticalAlignment="Center"
+                                              ToolTip="auto=全部；ops=运维专注（巡检/诊断/变更/多机编排，隐藏调度与记忆审核等工具）；diagnose=诊断/巡检（只读+快照刷新/拓扑发现）；change=变更/发布；assets=资产治理（只读+拓扑发现）；chat=问答。新会话生效。"/>
+                                    <TextBlock Text="(auto / ops / diagnose / change / assets / chat；新会话生效)" VerticalAlignment="Center"
                                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6"
@@ -517,62 +517,6 @@
                                 </DockPanel>
                             </Border>
                         </Grid>
-                    </Grid>
-                </TabItem>
-                <!-- ===== Tab：记忆候选（后台 consolidation 生成的事件候选，人工批准/拒绝）===== -->
-                <TabItem Header="记忆候选">
-                    <Grid Margin="12">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <DockPanel Margin="0,0,0,8" LastChildFill="False">
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                <TextBlock Text="状态:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox ItemsSource="{Binding ConsolidationStatusFilters}"
-                                          SelectedItem="{Binding ConsolidationStatusFilter, Mode=TwoWay}"
-                                          Width="110" Margin="0,0,12,0"/>
-                                <ui:Button Content="刷新" Padding="12,4" Click="OnReloadConsolidationCandidates"/>
-                            </StackPanel>
-                            <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                       Text="后台 consolidation 从 raw 会话片段提炼的事件/资产事实/脚本候选。批准后写入对应记忆（脚本只存经验、不执行）；拒绝可填写原因。候选仅在本机 agent.db 中，按团队/私有作用域隔离。"/>
-                        </DockPanel>
-                        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}">
-                            <ListBox ItemsSource="{Binding ConsolidationCandidates}"
-                                     SelectedItem="{Binding SelectedConsolidationCandidate, Mode=TwoWay}"
-                                     Background="Transparent" BorderThickness="0"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                        <Setter Property="Padding" Value="10,7"/>
-                                        <Setter Property="Margin" Value="0,0,0,2"/>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel ToolTip="{Binding PayloadJson}">
-                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
-                                                       FontFamily="{DynamicResource AppFontUiFamily}"/>
-                                            <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Margin="0,2,0,0"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                            <TextBlock Text="{Binding Meta}" FontSize="10" Margin="0,2,0,0"
-                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </Border>
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-                            <ui:Button Content="批准应用" Padding="12,4" Margin="0,0,8,0"
-                                       Click="OnApproveConsolidationCandidate"
-                                       ToolTip="批准候选：事件写入 agent_incident；资产事实/脚本写入对应记忆（脚本不执行）"/>
-                            <ui:Button Content="拒绝…" Padding="12,4"
-                                       Click="OnRejectConsolidationCandidate"
-                                       ToolTip="拒绝该候选并记录原因；候选状态变为 rejected"/>
-                        </StackPanel>
                     </Grid>
                 </TabItem>
                 <!-- ===== Tab：运维视图（事件浏览 + 时间线 + 资产画像）===== -->

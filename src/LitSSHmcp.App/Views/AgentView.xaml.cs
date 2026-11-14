@@ -364,6 +364,11 @@ public partial class AgentView : UserControl
         window.ShowDialog();
     }
 
+    private void OnJobsClick(object sender, RoutedEventArgs e)
+    {
+        new JobListWindow(_viewModel) { Owner = Window.GetWindow(this) }.Show();
+    }
+
     private void OnAiTasksClick(object sender, RoutedEventArgs e)
     {
         new AiTasksWindow { Owner = Window.GetWindow(this) }.Show();

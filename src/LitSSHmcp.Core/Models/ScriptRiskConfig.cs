@@ -17,4 +17,19 @@ public class ScriptRiskConfig
 
     /// <summary>要禁用的内置规则标签（精确匹配内置标签文本，如 "eval 动态执行"；留空=全部启用）。</summary>
     public string[] DisabledBuiltinRuleLabels { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// 已审核可信脚本的完整 SHA-256 列表。只跳过脚本内容扫描的硬拦截，仍强制人工审批；
+    /// 哈希按去 BOM、CRLF/CR→LF 规范化后的 UTF-8 内容计算。
+    /// </summary>
+    public TrustedScriptHash[] TrustedScriptHashes { get; set; } = Array.Empty<TrustedScriptHash>();
+}
+
+/// <summary>一条可信脚本哈希：精确内容白名单，不按路径/文件名匹配。</summary>
+public sealed class TrustedScriptHash
+{
+    public string Sha256 { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string? Note { get; set; }
+    public DateTimeOffset? AddedAt { get; set; }
 }

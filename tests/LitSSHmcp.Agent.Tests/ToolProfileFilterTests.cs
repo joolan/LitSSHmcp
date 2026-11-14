@@ -17,6 +17,7 @@ public class ToolProfileFilterTests
         Assert.False(ToolProfileFilter.AllowsRemote(new FakeTool("ssh_execute_command", "command", false), AgentToolProfile.Diagnose));
         Assert.True(ToolProfileFilter.AllowsLocal("ops_memory_write", AgentToolProfile.Diagnose));
         Assert.True(ToolProfileFilter.AllowsLocal("ops_diagnosis_write", AgentToolProfile.Diagnose));
+        Assert.True(ToolProfileFilter.AllowsLocal("ops_record", AgentToolProfile.Diagnose));
         Assert.True(ToolProfileFilter.AllowsLocal("fleet_query", AgentToolProfile.Diagnose));
         Assert.False(ToolProfileFilter.AllowsLocal("ops_doc_write", AgentToolProfile.Diagnose));
         Assert.False(ToolProfileFilter.AllowsLocal("local_shell", AgentToolProfile.Diagnose));

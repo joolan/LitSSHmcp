@@ -16,15 +16,27 @@ public interface ISnapshotService
     /// 同步生成一份服务器快照并落库（阻塞到完成）。同一服务器同时只允许一个快照：
     /// 并发调用返回 status=snapshot_in_progress（含进行中的快照 Id），不排队、不重复采集。
     /// </summary>
-    Task<SnapshotRefreshResult> RefreshAsync(SshServerConfig server, SnapshotConfig options, CancellationToken ct = default);
+    Task<SnapshotRefreshResult> RefreshAsync(SshServerConfig server, SnapshotConfig options,
+        CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null);
 
     /// <summary>
     /// 同上，但只采集指定 section（如 ["resource","portmap","systemd","security"]）；null/空=全部。
     /// 用于 profile=quick / 按需采集，减少耗时与快照体积。
     /// </summary>
     Task<SnapshotRefreshResult> RefreshAsync(SshServerConfig server, SnapshotConfig options,
-        IReadOnlyCollection<string>? sectionNames, bool force = false, CancellationToken ct = default);
+        IReadOnlyCollection<string>? sectionNames, bool force = false, CancellationToken ct = default,
+        IProgress<SnapshotProgress>? progress = null);
 }
+
+/// <summary>快照采集进度（Job 模型事件源）：phase 为 started/collector_start/collector_done/completed/failed/fresh/in_progress。</summary>
+public sealed record SnapshotProgress(
+    string Phase,
+    int Done,
+    int Total,
+    string? Collector = null,
+    string? Status = null,
+    long? SnapshotId = null,
+    string? Note = null);
 
 public sealed class SnapshotRefreshResult
 {
@@ -87,12 +99,26 @@ public class SnapshotService : ISnapshotService
     }
 
     public Task<SnapshotRefreshResult> RefreshAsync(SshServerConfig server, SnapshotConfig options,
-        CancellationToken ct = default)
-        => RefreshAsync(server, options, sectionNames: null, force: false, ct);
+        CancellationToken ct = default, IProgress<SnapshotProgress>? progress = null)
+        => RefreshAsync(server, options, sectionNames: null, force: false, ct, progress);
 
     public async Task<SnapshotRefreshResult> RefreshAsync(SshServerConfig server, SnapshotConfig options,
-        IReadOnlyCollection<string>? sectionNames, bool force = false, CancellationToken ct = default)
+        IReadOnlyCollection<string>? sectionNames, bool force = false, CancellationToken ct = default,
+        IProgress<SnapshotProgress>? progress = null)
     {
+        void Report(string phase, int done, int total, string? collector = null, string? status = null,
+            long? snapshotId = null, string? note = null)
+        {
+            try
+            {
+                progress?.Report(new SnapshotProgress(phase, done, total, collector, status, snapshotId, note));
+            }
+            catch
+            {
+                // 进度接收方异常不影响采集主流程
+            }
+        }
+
         // 节流下沉到服务层：桌面/MCP 共用同一规则；显式指定 section 或 force=true 时跳过。
         if (!force && sectionNames is not { Count: > 0 } && options.MinRefreshIntervalSeconds > 0)
         {
@@ -101,13 +127,15 @@ public class SnapshotService : ISnapshotService
                 TryAgeSeconds(latest.CompletedAt, out var age) &&
                 age < options.MinRefreshIntervalSeconds)
             {
-                return new SnapshotRefreshResult
+                var fresh = new SnapshotRefreshResult
                 {
                     Status = "fresh",
                     SnapshotId = latest.Id,
                     Snapshot = latest,
                     Hint = $"距上次快照仅 {age:F0}s (< {options.MinRefreshIntervalSeconds}s)，已返回缓存；force=true 可强制重采"
                 };
+                Report("fresh", 0, 0, status: "fresh", snapshotId: latest.Id, note: fresh.Hint);
+                return fresh;
             }
         }
 
@@ -118,14 +146,23 @@ public class SnapshotService : ISnapshotService
             ? _collectors
             : _collectors.Where(c => collectorFilter.Contains(c.Name)).ToList();
         if (collectors.Count == 0)
-            return new SnapshotRefreshResult
+        {
+            var noCollector = new SnapshotRefreshResult
             {
                 Status = "failed",
                 Error = "未匹配到任何采集器: " + string.Join(", ", sectionNames ?? Array.Empty<string>())
             };
+            Report("failed", 0, 0, status: "failed", note: noCollector.Error);
+            return noCollector;
+        }
 
         if (!_active.TryAdd(server.Id, 0))
-            return await InProgressAsync(server.Id, ct);
+        {
+            var inProgress = await InProgressAsync(server.Id, ct);
+            Report("in_progress", 0, 0, status: inProgress.Status,
+                snapshotId: inProgress.SnapshotId, note: inProgress.Error);
+            return inProgress;
+        }
 
         var stopwatch = Stopwatch.StartNew();
         long snapshotId = 0;
@@ -137,7 +174,12 @@ public class SnapshotService : ISnapshotService
             if (existing is not null)
             {
                 if (!IsStale(existing, options))
-                    return BuildInProgress(existing);
+                {
+                    var inProgress = BuildInProgress(existing);
+                    Report("in_progress", 0, 0, status: inProgress.Status,
+                        snapshotId: inProgress.SnapshotId, note: inProgress.Error);
+                    return inProgress;
+                }
 
                 await _store.FailAsync(existing.Id, "stale_running_snapshot (上一次采集未正常结束)", 0, null, ct);
                 await SafeAppendEventAsync(existing.Id, server.Id, "failed", null, "stale_running_snapshot");
@@ -146,7 +188,14 @@ public class SnapshotService : ISnapshotService
             // 唯一部分索引兜底并发抢占: 抢到 null 说明另一进程刚插入 Running
             snapshotId = await _store.BeginAsync(server.Id, server.Name, ct) ?? 0;
             if (snapshotId == 0)
-                return BuildInProgress(await _store.GetRunningAsync(server.Id, ct));
+            {
+                var inProgress = BuildInProgress(await _store.GetRunningAsync(server.Id, ct));
+                Report("in_progress", 0, 0, status: inProgress.Status,
+                    snapshotId: inProgress.SnapshotId, note: inProgress.Error);
+                return inProgress;
+            }
+
+            Report("started", 0, collectors.Count, status: "running", snapshotId: snapshotId);
 
             var elevate = options.UseSudo && server.SudoType != SudoType.None;
             var escalationRef = new EscalationRef();
@@ -182,6 +231,7 @@ public class SnapshotService : ISnapshotService
             var abortedReason = default(string?);
             var attempted = 0;    // 实际执行过的采集器(不含 skipped)
             var valid = 0;        // 产出有效数据的采集器(ok/degraded)
+            var processed = 0;    // 已完成(含 skipped)的采集器，供进度上报
             var firstError = default(string?);
 
             foreach (var collector in collectors)
@@ -194,9 +244,12 @@ public class SnapshotService : ISnapshotService
                         : $"快照超时(>{options.TimeoutSeconds}秒)";
                     sections[collector.Name] = SkippedSection(abortedReason);
                     await SafeAppendEventAsync(snapshotId, server.Id, "collector_skipped", collector.Name, abortedReason);
+                    processed++;
+                    Report("collector_skipped", processed, collectors.Count, collector.Name, "skipped", snapshotId, abortedReason);
                     continue;
                 }
 
+                Report("collector_start", processed, collectors.Count, collector.Name, "running", snapshotId);
                 await SafeAppendEventAsync(snapshotId, server.Id, "collector_started", collector.Name, null);
 
                 CollectorResult result;
@@ -259,6 +312,10 @@ public class SnapshotService : ISnapshotService
                     collector.Name,
                     result.Success ? result.Note : result.Error);
 
+                processed++;
+                Report("collector_done", processed, collectors.Count, collector.Name, status, snapshotId,
+                    result.Success ? result.Note : result.Error);
+
                 // 传输层致命错误(认证/断网/超时/限流): 后续采集器必然同样失败, 立即中止
                 if (!result.Success && result.IsFatal)
                     abortedReason = result.Error;
@@ -273,6 +330,7 @@ public class SnapshotService : ISnapshotService
                     BuildDataJson(sections, elevate), CancellationToken.None);
                 await SafeAppendEventAsync(snapshotId, server.Id, "failed", null, error);
 
+                Report("failed", processed, collectors.Count, status: "failed", snapshotId: snapshotId, note: error);
                 await TryPruneAsync(server.Id, options.RetentionPerServer);
                 return new SnapshotRefreshResult
                 {
@@ -290,6 +348,8 @@ public class SnapshotService : ISnapshotService
             await SafeAppendEventAsync(snapshotId, server.Id, "completed", null,
                 $"{valid}/{attempted} 采集器成功, 耗时 {stopwatch.Elapsed.TotalSeconds:F1}s");
 
+            Report("completed", processed, collectors.Count, status: "succeeded", snapshotId: snapshotId,
+                note: $"{valid}/{attempted} 采集器成功");
             await TryPruneAsync(server.Id, options.RetentionPerServer);
             return new SnapshotRefreshResult
             {
@@ -314,6 +374,8 @@ public class SnapshotService : ISnapshotService
                 }
             }
 
+            Report("failed", 0, collectors.Count, status: "failed",
+                snapshotId: snapshotId > 0 ? snapshotId : null, note: ex.Message);
             return new SnapshotRefreshResult
             {
                 Status = "failed",

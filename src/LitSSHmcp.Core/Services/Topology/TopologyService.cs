@@ -13,7 +13,10 @@ public interface ITopologyService
 {
     Task<TopologyGraph> GetGraphAsync(CancellationToken ct = default);
     Task<DependencyGraph> GetDependenciesAsync(string assetId, CancellationToken ct = default);
-    Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default);
+
+    /// <summary>自动发现。<paramref name="progress"/> 每台服务器开始/结束时上报（长任务 Job 模型的进度源），可空。</summary>
+    Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default,
+        IProgress<TopologyDiscoveryProgress>? progress = null);
 
     /// <summary>人工配置拓扑：只返回人工资产、人工关系和运行环境关系，不合并自动发现边。</summary>
     Task<TopologyGraph> GetCuratedGraphAsync(CancellationToken ct = default) => GetGraphAsync(ct);
@@ -28,6 +31,16 @@ public sealed class DiscoveryInProgressException : Exception
 {
     public DiscoveryInProgressException() : base("已有自动发现在执行，请稍后重试") { }
 }
+
+/// <summary>拓扑发现逐服务器进度（Job 模型事件源）。</summary>
+public sealed record TopologyDiscoveryProgress(
+    string Server,
+    string Phase,
+    int Done,
+    int Total,
+    bool Success,
+    string? Note = null,
+    long ElapsedMs = 0);
 
 public partial class TopologyService : ITopologyService
 {
@@ -101,14 +114,15 @@ public partial class TopologyService : ITopologyService
     /// 自动发现。会做**节流**：同一时间只允许一个发现任务，正在执行时本次调用直接返回
     /// <see cref="DiscoveryInProgressException"/>（避免并发扫描拖垮目标机与本机）。
     /// </summary>
-    public async Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default)
+    public async Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default,
+        IProgress<TopologyDiscoveryProgress>? progress = null)
     {
         if (!await _discoverGate.WaitAsync(0, ct))
             throw new DiscoveryInProgressException();
 
         try
         {
-            return await DiscoverCoreAsync(serverIds, searchPaths, ct);
+            return await DiscoverCoreAsync(serverIds, searchPaths, ct, progress);
         }
         finally
         {
@@ -116,7 +130,8 @@ public partial class TopologyService : ITopologyService
         }
     }
 
-    private async Task<DiscoveryResult> DiscoverCoreAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default)
+    private async Task<DiscoveryResult> DiscoverCoreAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default,
+        IProgress<TopologyDiscoveryProgress>? progress = null)
     {
         var config = await _configService.LoadConfigAsync();
         var result = new DiscoveryResult();
@@ -183,9 +198,20 @@ public partial class TopologyService : ITopologyService
 
         var dnsCache = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
 
+        // 进度上报失败不影响发现主流程（与批量文件传输的 ReportBatchProgress 同策略）
+        void Report(string server, string phase, int done, bool success, string? note = null, long elapsedMs = 0)
+        {
+            try { progress?.Report(new TopologyDiscoveryProgress(server, phase, done, servers.Length, success, note, elapsedMs)); }
+            catch { /* 进度接收方异常不阻断扫描 */ }
+        }
+
+        var serverIndex = 0;
+        var serverSw = System.Diagnostics.Stopwatch.StartNew();
         foreach (var server in servers)
         {
             ct.ThrowIfCancellationRequested();
+            Report(server.Name, "start", serverIndex, true);
+            serverSw.Restart();
             var sshNode = AssetNode.Ssh(server.Id);
 
             if (identityProbeEnabled)
@@ -649,6 +675,9 @@ public partial class TopologyService : ITopologyService
             {
                 notes.Add($"{server.Name}: 配置文件扫描失败: {Truncate(grepResult.Error, 200)}");
             }
+
+            serverIndex++;
+            Report(server.Name, "done", serverIndex, true, elapsedMs: serverSw.ElapsedMilliseconds);
 
             // 自动发现只采集证据，不写入拓扑主图。
         }

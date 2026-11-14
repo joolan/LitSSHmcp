@@ -115,6 +115,10 @@ builder.Services.AddSingleton<ITopologyService, TopologyService>();
 builder.Services.AddSingleton<IAssetIdentityStore, AssetIdentityStore>();
 builder.Services.AddSingleton<IUrlResolutionService, UrlResolutionService>();
 builder.Services.AddSingleton<IAssetGraphQueryService, AssetGraphQueryService>();
+// 长任务 Job 模型（设计: maybe-to/2026-11-13-长任务统一Job模型设计.md）:
+// 共享 jobs.db 跨进程存状态/事件 + 进程内执行器(注册 operation、桥接进度、观察取消)
+builder.Services.AddSingleton<SqliteJobStore>();
+builder.Services.AddSingleton<JobManager>();
 
 // 【同步约定 · 请勿删除】每个 WithTools<T>() 对应一个工具类。新增/移除工具类, 或工具类内的工具发生变动
 // (新增/改名/删除、参数或描述变化)时, 必须同步以下三处, 否则 AI 客户端拿到的说明与实际能力不一致:
@@ -151,6 +155,7 @@ if (enabledToolGroups.Contains(ToolGroups.Log)) mcp = mcp.WithTools<LogTools>();
 if (enabledToolGroups.Contains(ToolGroups.Java)) mcp = mcp.WithTools<JavaTools>();
         if (enabledToolGroups.Contains(ToolGroups.Topology)) mcp = mcp.WithTools<TopologyTools>().WithTools<GraphTools>();
 if (enabledToolGroups.Contains(ToolGroups.App)) mcp = mcp.WithTools<AppTools>();
+if (enabledToolGroups.Contains(ToolGroups.Jobs)) mcp = mcp.WithTools<JobTools>();
 if (enabledToolGroups.Contains(ToolGroups.Guide)) mcp = mcp.WithTools<UsageGuideTools>().WithTools<HealthTools>();
 // 内部工具：审批轮次边界。仅 LitSSH 宿主注入 LITSSH_INTERNAL_TOOLS=1 时注册，外部 MCP 客户端不可见。
 if (HostEnv.InternalToolsEnabled)
@@ -197,7 +202,7 @@ if (!enabledToolGroups.Contains(ToolGroups.Datasource) &&
 try
 {
     var configService = host.Services.GetRequiredService<IConfigService>();
-    await configService.LoadConfigAsync();
+    var appConfig = await configService.LoadConfigAsync();
 
     var snapshotStore = host.Services.GetRequiredService<ISnapshotStore>();
     await snapshotStore.InitializeAsync();
@@ -209,6 +214,43 @@ try
     // 启动即登记本次会话（客户端名称/版本会在首个工具调用时由过滤器回填）
     var sessionTracker = host.Services.GetRequiredService<McpSessionTracker>();
     await auditLog.RecordSessionAsync(sessionTracker.Snapshot());
+
+    // Job 模型：注册 topology_discover operation；启动清理把上一进程遗留的
+    // running job（心跳超时）标记 orphaned，并滚动清理过期终态（设计 §3.7）。
+    if (enabledToolGroups.Contains(ToolGroups.Jobs))
+    {
+        var jobs = host.Services.GetRequiredService<JobManager>();
+
+        // job operation 的底层工具必须也启用；例如只启用 jobs 未启用 topology 时，
+        // 不注册 topology_discover operation（job_start 会 fail-closed 返回 unknown_operation）。
+        // WithTools<T>() 只负责 MCP 工具注册，不保证 T 本身可从 DI 解析；
+        // 这里用 ActivatorUtilities 构造实例并注册 job operation。
+        if (enabledToolGroups.Contains(ToolGroups.Topology))
+            ActivatorUtilities.CreateInstance<TopologyTools>(host.Services).RegisterJobOperations(jobs);
+        else
+            startupLogger.LogWarning("已启用 jobs 但未启用 topology；job_start(operation=topology_discover) 将不可用");
+
+        if (enabledToolGroups.Contains(ToolGroups.Ssh))
+        {
+            ActivatorUtilities.CreateInstance<SnapshotTools>(host.Services).RegisterJobOperations(jobs);
+            ActivatorUtilities.CreateInstance<FleetJobOperations>(host.Services).Register(jobs);
+        }
+        else
+        {
+            startupLogger.LogWarning("已启用 jobs 但未启用 ssh；job_start(operation=ssh_snapshot_refresh/fleet_inventory/fleet_snapshot_refresh) 将不可用");
+        }
+
+        var jobsConfig = appConfig.Security?.Jobs ?? new JobsConfig();
+        try
+        {
+            await host.Services.GetRequiredService<SqliteJobStore>().CleanupAsync(
+                jobsConfig.OrphanHeartbeatSeconds, jobsConfig.RetentionHours, jobsConfig.MaxFinishedPerUser);
+        }
+        catch (Exception ex)
+        {
+            startupLogger.LogWarning(ex, "Job 库启动清理失败(不影响 MCP 启动), 可稍后由下一次 job_start 触发清理");
+        }
+    }
 }
 catch (Exception ex)
 {

@@ -475,6 +475,39 @@ public class TopologyDiscoveryTests
     }
 
     [Fact]
+    public async Task Discovery_reports_start_and_done_progress_per_server()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web1", Host = "10.0.0.1" } },
+            Security = new SecurityConfig { Discovery = new DiscoveryConfig { AllowedSearchPaths = new[] { "/opt" } } }
+        };
+
+        var topology = new TopologyService(new FakeConfig(config), new FakeSsh(), new EmptyRegistry(),
+            new AllowAllCommandFilter(), new NoopAudit());
+        var reports = new List<TopologyDiscoveryProgress>();
+
+        await topology.DiscoverAsync(null, null, progress: new InlineProgress<TopologyDiscoveryProgress>(reports.Add));
+
+        Assert.Collection(reports,
+            start =>
+            {
+                Assert.Equal("web1", start.Server);
+                Assert.Equal("start", start.Phase);
+                Assert.Equal(0, start.Done);
+                Assert.Equal(1, start.Total);
+            },
+            done =>
+            {
+                Assert.Equal("web1", done.Server);
+                Assert.Equal("done", done.Phase);
+                Assert.Equal(1, done.Done);
+                Assert.Equal(1, done.Total);
+                Assert.True(done.ElapsedMs >= 0);
+            });
+    }
+
+    [Fact]
     public async Task Discovery_ingests_latest_snapshot_into_graph()
     {
         var config = new AppConfig
@@ -952,6 +985,11 @@ public class TopologyDiscoveryTests
 
         public Task<IReadOnlyList<AssetIdentityRecord>> GetAllAsync() =>
             Task.FromResult<IReadOnlyList<AssetIdentityRecord>>(Records.ToArray());
+    }
+
+    private sealed class InlineProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value) => handler(value);
     }
 
     private sealed class FakeSnapshotStore : ISnapshotStore

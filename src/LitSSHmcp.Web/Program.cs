@@ -224,7 +224,7 @@ app.MapWebSessionEndpoints();
 app.MapWebApprovalEndpoints();
 app.MapWebFileEndpoints();
 app.MapWebMemoryEndpoints();
-app.MapWebConsolidationEndpoints();
+app.MapWebIncidentEndpoints();
 app.MapWebOpsEndpoints();
 app.MapWebAlertEndpoints();
 

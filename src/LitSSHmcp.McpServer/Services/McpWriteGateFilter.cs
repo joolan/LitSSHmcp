@@ -31,22 +31,30 @@ public static class McpWriteGateFilter
         McpRequestFilter<CallToolRequestParams, CallToolResult> filter = next => async (context, ct) =>
         {
             var tool = context.Params?.Name;
-            var descriptor = ToolSecurityCatalog.Find(tool);
-            if (string.IsNullOrEmpty(tool) || descriptor is null || !descriptor.RequiresWriteLock)
+            if (string.IsNullOrEmpty(tool))
                 return await next(context, ct);
 
             var services = context.Services;
             var args = context.Params?.Arguments;
 
+            // 方案A：job_start 按 operation 参数路由到底层工具描述符（是否占写锁跟随底层工具）
+            var jobManager = services?.GetService(typeof(JobManager)) as JobManager;
+            Func<string, ToolSecurityDescriptor?>? jobOperationResolver = jobManager is null
+                ? null
+                : op => jobManager.TryGetRequestDescriptor(op, out var requestDescriptor) ? requestDescriptor : null;
+            var (descriptor, effectiveArgs) = ToolSecurityCatalog.ResolveForCall(tool, args, jobOperationResolver);
+            if (descriptor is null || !descriptor.RequiresWriteLock)
+                return await next(context, ct);
+
             var sqlFilter = services?.GetService(typeof(ISqlFilterService)) as ISqlFilterService;
-            if (descriptor.IsConditionalWrite && IsReadCall(tool, args, sqlFilter))
+            if (descriptor.IsConditionalWrite && IsReadCall(tool, effectiveArgs, sqlFilter))
                 return await next(context, ct);
 
             var mutex = services?.GetService(typeof(ITargetWriteMutex)) as ITargetWriteMutex;
             if (mutex is null)
                 return await next(context, ct);
 
-            var targetKey = await ResolveTargetKeyAsync(services, tool, args, ct).ConfigureAwait(false);
+            var targetKey = await ResolveTargetKeyAsync(services, tool, effectiveArgs, ct).ConfigureAwait(false);
             if (targetKey is null)
                 return await next(context, ct); // 归一化失败：工具自身会拒绝，无真实写竞态
 

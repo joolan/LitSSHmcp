@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
 
@@ -18,13 +19,16 @@ public static class FleetChangeTools
 
     public static IAgentTool? Create(IAgentTool? fleetExecTool, IAgentTool? testConnectionTool,
         IFleetPlanStore? planStore = null, string ownerKey = "local", long? sessionId = null,
-        IAgentTool? listServersTool = null, Func<string, bool>? isDenied = null)
+        IAgentTool? listServersTool = null, Func<string, bool>? isDenied = null,
+        ITargetWriteMutex? planMutex = null)
     {
         if (fleetExecTool is null)
             return null;
 
         var store = planStore ?? new MemoryFleetPlanStore();
         var owner = string.IsNullOrWhiteSpace(ownerKey) ? "local" : ownerKey;
+        // plan 级跨进程租约：与 job 的 running 状态语义一致，避免同一 planId 被并发触发。
+        var runMutex = planMutex ?? new FileTargetWriteMutex(ConfigPaths.TargetStateDir);
         var function = new LocalFunction(
             ToolName,
             "批量变更编排（最重要：严格按 plan → dry_run → canary → apply → rollback 顺序）。plan 只生成计划；dry_run 只做连通性预检；canary 先在 1 台执行；apply 执行其余目标；rollback 只回滚已变更目标。canary/apply/rollback/retry_failed 必须 confirm=true，apply 前必须 canary 成功且提供 rollbackCommand；retry_failed 只重试失败目标。实际执行由 MCP ssh_execute_fleet 一次审批+命令过滤+审计完成。",
@@ -61,50 +65,67 @@ public static class FleetChangeTools
                 if (mode == "status")
                     return Status(plan);
 
-                plan.Running = true;
-                plan.Phase = mode;
-                plan.LastError = null;
-                await store.SaveAsync(plan, ct);
-                try
+                // 同一 planId 的跨进程运行互斥；与 job 的 running 状态语义一致，第二个执行入口直接拒绝。
+                var (lease, leaseReason) = await runMutex.AcquireAsync($"fleet-plan:{plan.Id}", TimeSpan.Zero, ct);
+                if (lease is null)
+                    return $"错误: 计划 {plan.Id} 正在执行中（{leaseReason ?? "write_busy"}），请等待当前阶段完成；可用 mode=status 查看进度。";
+
+                using (lease)
                 {
-                    var text = mode switch
+                    if (plan.Running)
                     {
-                        "dry_run" => await DryRunAsync(store, plan, testConnectionTool, isDenied, ct),
-                        "canary" => await CanaryAsync(store, plan, fleetExecTool, args, ct),
-                        "apply" => await ApplyAsync(store, plan, fleetExecTool, args, ct),
-                        "rollback" => await RollbackAsync(store, plan, fleetExecTool, args, ct),
-                        "retry_failed" => await RetryFailedAsync(store, plan, fleetExecTool, args, ct),
-                        _ => "错误: mode 仅支持 plan/dry_run/canary/apply/rollback/retry_failed/status"
-                    };
-                    plan.Running = false;
-                    plan.Phase = mode + "_done";
-                    if (text.StartsWith("错误:", StringComparison.Ordinal))
-                        plan.LastError = Shorten(text);
-                    await store.SaveAsync(plan, CancellationToken.None);
-                    return text;
-                }
-                catch (OperationCanceledException)
-                {
-                    plan.Running = false;
-                    plan.Phase = "cancelled";
-                    plan.LastError = "用户取消";
-                    foreach (var item in plan.TargetResults.Where(t => t.Status == "running"))
-                        item.Status = "cancelled";
-                    await store.SaveAsync(plan, CancellationToken.None);
-                    return $"已取消计划 {plan.Id}（{mode}）。已执行的目标不会自动回滚，请检查后按需 rollback。";
-                }
-                catch (Exception ex)
-                {
-                    plan.Running = false;
-                    plan.Phase = "failed";
-                    plan.LastError = Shorten(ex.Message);
-                    foreach (var item in plan.TargetResults.Where(t => t.Status == "running"))
-                    {
-                        item.Status = "failed";
-                        item.Error ??= plan.LastError;
+                        // 旧进程崩溃后可能遗留 Running；既然已拿到跨进程租约，可安全恢复为可执行状态。
+                        plan.Running = false;
+                        plan.Phase = "stale";
+                        plan.LastError = "检测到遗留 Running 标记，已自动恢复";
+                        await store.SaveAsync(plan, ct);
                     }
-                    await store.SaveAsync(plan, CancellationToken.None);
-                    return $"错误: {mode} 执行失败: {Shorten(ex.Message)}";
+
+                    plan.Running = true;
+                    plan.Phase = mode;
+                    plan.LastError = null;
+                    await store.SaveAsync(plan, ct);
+                    try
+                    {
+                        var text = mode switch
+                        {
+                            "dry_run" => await DryRunAsync(store, plan, testConnectionTool, isDenied, ct),
+                            "canary" => await CanaryAsync(store, plan, fleetExecTool, args, ct),
+                            "apply" => await ApplyAsync(store, plan, fleetExecTool, args, ct),
+                            "rollback" => await RollbackAsync(store, plan, fleetExecTool, args, ct),
+                            "retry_failed" => await RetryFailedAsync(store, plan, fleetExecTool, args, ct),
+                            _ => "错误: mode 仅支持 plan/dry_run/canary/apply/rollback/retry_failed/status"
+                        };
+                        plan.Running = false;
+                        plan.Phase = mode + "_done";
+                        if (text.StartsWith("错误:", StringComparison.Ordinal))
+                            plan.LastError = Shorten(text);
+                        await store.SaveAsync(plan, CancellationToken.None);
+                        return text;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        plan.Running = false;
+                        plan.Phase = "cancelled";
+                        plan.LastError = "用户取消";
+                        foreach (var item in plan.TargetResults.Where(t => t.Status == "running"))
+                            item.Status = "cancelled";
+                        await store.SaveAsync(plan, CancellationToken.None);
+                        return $"已取消计划 {plan.Id}（{mode}）。已执行的目标不会自动回滚，请检查后按需 rollback。";
+                    }
+                    catch (Exception ex)
+                    {
+                        plan.Running = false;
+                        plan.Phase = "failed";
+                        plan.LastError = Shorten(ex.Message);
+                        foreach (var item in plan.TargetResults.Where(t => t.Status == "running"))
+                        {
+                            item.Status = "failed";
+                            item.Error ??= plan.LastError;
+                        }
+                        await store.SaveAsync(plan, CancellationToken.None);
+                        return $"错误: {mode} 执行失败: {Shorten(ex.Message)}";
+                    }
                 }
             });
 

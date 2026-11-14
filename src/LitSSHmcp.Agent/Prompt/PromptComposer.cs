@@ -40,16 +40,8 @@ internal static class PromptComposer
         return sb.ToString().Trim();
     }
 
-    private static void AppendCore(StringBuilder sb)
-    {
-        sb.AppendLine("你是 LitSSH 运维助手，通过 MCP 工具在本机对服务器/数据源/应用执行运维与排障。");
-        sb.AppendLine("工作方式:");
-        sb.AppendLine("1) 先用工具获取事实(ID/状态/日志/端口/快照)，再给结论；不要编造路径、端口、ID。");
-        sb.AppendLine("2) 整机态势优先 ssh_snapshot_get；过期或明确要最新才 ssh_snapshot_refresh，同一任务内不要重复刷新。");
-        sb.AppendLine("3) 敏感/写操作(命令/SQL/文件/重启)会弹人工审批；rejected/approval_timeout 时不要反复重试，向用户说明。");
-        sb.AppendLine("4) 回答用简体中文，结论先行，再给关键证据和可执行建议；一次只调用必要的工具。");
-        sb.AppendLine("5) 变更类操作按“只读取证 → 定位根因 → 最小变更 → 变更后验证”执行，并说明影响与回滚。");
-    }
+    private static void AppendCore(StringBuilder sb) =>
+        sb.AppendLine(SystemPromptBuilder.CorePrompt);
 
     private static void AppendCapabilityBoundary(StringBuilder sb, IReadOnlyCollection<string>? groups)
     {
@@ -88,7 +80,7 @@ internal static class PromptComposer
             return;
         sb.AppendLine();
         sb.AppendLine("## 诊断/变更报告契约");
-        sb.AppendLine("- 诊断/变更结束调用 `ops_diagnosis_write(mode=diagnose|change, ...)`；最终回答直接使用其返回报告，不另写自由格式结论。");
+        sb.AppendLine("- 诊断/变更结束调用 `ops_record(action=diagnosis|change, ...)`；最终回答直接使用其返回报告，不另写自由格式结论。");
         sb.AppendLine("- `mode=change` 必须填写 `verification` 和 `rollback`；没有验证不得声称成功，证据不足明确说不确定。");
         if (insightTools)
         {
@@ -140,10 +132,10 @@ internal static class PromptComposer
         if (!enabled)
             return;
         sb.AppendLine();
-        sb.AppendLine("## 经验记忆(ops_memory_*)");
+        sb.AppendLine("## 知识记录(ops_record / ops_memory_list)");
         sb.AppendLine("- 排障前可先用 ops_memory_list 查同类经验；记忆仅作参考，以本次工具结果为准。");
-        sb.AppendLine("- 成功/失败的可复用结论用 ops_memory_write(action=save/update) 记录（现象→根因→处置→验证）；可复用失败教训加 tags=pitfall。");
-        sb.AppendLine("- 涉及具体服务器/数据源/应用时填 assetIds；凭据、密码、令牌绝不写入；事件可用 ops_incident_write/list。");
+        sb.AppendLine("- 成功/失败的可复用结论用 `ops_record(action=memory_save|memory_update, kind=task|script|asset, key=..., content=...)` 记录（现象→根因→处置→验证）；可复用失败教训加 tags=pitfall。");
+        sb.AppendLine("- 单次排查/变更记录用 `ops_record(action=diagnosis|change, ...)`（自动写 incident）；只有跨事件复用的结论才写 memory_*，历史事件/资产画像用 ops_insight。不要把同一结论同时写两处。凭据、密码、令牌绝不写入。");
     }
 
     private static void AppendScripts(StringBuilder sb, SystemPromptContext ctx)
@@ -166,7 +158,7 @@ internal static class PromptComposer
         sb.AppendLine();
         sb.AppendLine("## 大输出与委派");
         if (ctx.SpillTools)
-            sb.AppendLine("- 结果提示已落盘为 `spill://…` 时用 `spill(action=\"read\", handle=\"spill://…\", offset, limit)` 分段读取；返回头会给出 `下次 offset=N`，按它翻页、不要猜偏移；大 JSON 优先 `spill(action=\"json\", path=...)`，定位内容用 `spill(action=\"grep\", ...)`。spill 结果同样受输出预算约束，不要重复读取同一页或重复调用原工具。");
+            sb.AppendLine("- 结果提示已落盘为 `spill://…` 时用 `spill(action=\"read\", handle=\"spill://…\", offset, limit)` 分段读取；返回头会给出 `下次 offset=N`，按它翻页、不要猜偏移；单行超长可按 offset 分页或传 `column` 继续读；大 JSON 优先 `spill(action=\"json\", path=...)`（字符串字段会展开换行），定位内容用 `spill(action=\"grep\", ...)`。spill 结果同样受输出预算约束，不要重复读取同一页或重复调用原工具。");
         if (ctx.SubAgent)
             sb.AppendLine("- 预计一次只读任务需要 3 个以上工具、跨多台主机或读取大日志时，优先先委派 `run_subagent`；主上下文只保留摘要。");
         if (ctx.FleetTools)

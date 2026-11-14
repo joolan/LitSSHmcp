@@ -438,7 +438,8 @@ public class AssetGraphQueryTests
         public Task<DependencyGraph> GetDependenciesAsync(string assetId, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
-        public Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default) =>
+        public Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default,
+            IProgress<TopologyDiscoveryProgress>? progress = null) =>
             throw new NotSupportedException();
     }
 }

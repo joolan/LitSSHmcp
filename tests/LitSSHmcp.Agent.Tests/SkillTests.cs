@@ -370,9 +370,9 @@ public class SkillTests : IDisposable
         var without = SystemPromptBuilder.Build(null, null, null);
 
         Assert.Contains("诊断/变更报告契约", withContract);
-        Assert.Contains("ops_diagnosis_write", withContract);
+        Assert.Contains("ops_record(action=diagnosis", withContract);
         Assert.Contains("verification", withContract);
-        Assert.DoesNotContain("ops_diagnosis_write", without);
+        Assert.DoesNotContain("ops_record(action=diagnosis", without);
     }
 
     [Fact]

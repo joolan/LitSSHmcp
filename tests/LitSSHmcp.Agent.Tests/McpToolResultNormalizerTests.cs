@@ -69,4 +69,49 @@ public class McpToolResultNormalizerTests
         Assert.Equal("ok", normalized.Text);
         Assert.False(normalized.IsError);
     }
+
+    [Fact]
+    public void Json_string_envelope_is_unwrapped_without_unicode_escapes()
+    {
+        var inner = JsonSerializer.Serialize(new
+        {
+            success = true,
+            jobId = "job_x",
+            createdAt = "2026-11-14T03:07:49.2705243"
+        });
+        var outer = JsonSerializer.Serialize(new
+        {
+            content = new[] { new { type = "text", text = inner } }
+        });
+
+        var normalized = McpToolResultNormalizer.Normalize(outer);
+
+        Assert.Equal(inner, normalized.Text);
+        Assert.Contains("\"success\":true", normalized.Text);
+        Assert.DoesNotContain("\\u0022", normalized.Text);
+    }
+
+    [Fact]
+    public void Json_element_envelope_prefers_structured_content()
+    {
+        using var outer = JsonDocument.Parse("""
+            {
+              "content": [{"type":"text","text":"duplicate text"}],
+              "structuredContent": {"success":true,"jobId":"job_y"}
+            }
+            """);
+
+        var normalized = McpToolResultNormalizer.Normalize(outer.RootElement);
+
+        Assert.Contains("\"jobId\":\"job_y\"", normalized.Text);
+        Assert.DoesNotContain("duplicate text", normalized.Text);
+    }
+
+    [Fact]
+    public void Ordinary_json_with_content_field_is_not_treated_as_mcp_envelope()
+    {
+        const string json = """{"content":"normal business data","value":1}""";
+        var normalized = McpToolResultNormalizer.Normalize(json);
+        Assert.Equal(json, normalized.Text);
+    }
 }

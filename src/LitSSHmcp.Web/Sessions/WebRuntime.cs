@@ -31,16 +31,6 @@ public interface IWebRuntime : IAsyncDisposable
     /// <summary>把成功轮后台写入长期记忆（默认空实现，测试假运行时可忽略）。</summary>
     void IndexTurnInBackground(string sessionId, string userText, string assistantText) { }
 
-    /// <summary>后台 consolidation（默认空实现，测试假运行时可忽略）。</summary>
-    void ConsolidateInBackground() { }
-
-    /// <summary>后台 consolidation 最终失败（默认空实现；生产运行时转发给宿主记录访问日志/告警）。</summary>
-    event Action<string>? ConsolidationFailed
-    {
-        add { }
-        remove { }
-    }
-
     /// <summary>宿主机面板直接调用当前会话工具（默认空实现，测试假运行时可忽略）。</summary>
     Task<object?> InvokeHostToolAsync(string toolName, IDictionary<string, object?>? arguments,
         CancellationToken ct) => Task.FromResult<object?>("(测试运行时未实现)");
@@ -52,6 +42,10 @@ public interface IWebRuntime : IAsyncDisposable
     /// <summary>列出当前 owner/session 的批量变更计划（默认空实现）。</summary>
     Task<IReadOnlyList<FleetPlanState>> ListFleetPlansAsync(string ownerKey, long sessionId,
         CancellationToken ct) => Task.FromResult<IReadOnlyList<FleetPlanState>>(Array.Empty<FleetPlanState>());
+
+    /// <summary>宿主侧栏专用：绕过会话工具裁剪直接调用内置 MCP 工具；默认退化为普通工具调用。</summary>
+    Task<object?> InvokeBuiltinToolAsync(string toolName, IDictionary<string, object?>? arguments,
+        CancellationToken ct) => InvokeHostToolAsync(toolName, arguments, ct);
 }
 
 public interface IWebRuntimeFactory
@@ -110,7 +104,6 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
         if (request.ToolPolicy is { Count: > 0 })
             runtime.Session.SetToolPolicy(request.ToolPolicy);
         var webRuntime = new AgentWebRuntime(runtime, agent.Budget, provider.InputPricePerMTok, provider.OutputPricePerMTok);
-        runtime.ConsolidationFailed += webRuntime.NotifyConsolidationFailed;
         return webRuntime;
     }
 
@@ -139,14 +132,11 @@ public sealed class AgentWebRuntimeFactory : IWebRuntimeFactory
         public void IndexTurnInBackground(string sessionId, string userText, string assistantText) =>
             runtime.IndexTurnInBackground(sessionId, userText, assistantText);
 
-        public event Action<string>? ConsolidationFailed;
-
-        internal void NotifyConsolidationFailed(string message) => ConsolidationFailed?.Invoke(message);
-
-        public void ConsolidateInBackground() => runtime.ConsolidateInBackground();
-
         public Task<object?> InvokeHostToolAsync(string toolName, IDictionary<string, object?>? arguments,
             CancellationToken ct) => runtime.InvokeHostToolAsync(toolName, arguments, ct);
+
+        public Task<object?> InvokeBuiltinToolAsync(string toolName, IDictionary<string, object?>? arguments,
+            CancellationToken ct) => runtime.InvokeBuiltinToolAsync(toolName, arguments, ct);
 
         public Task<FleetPlanState?> GetFleetPlanAsync(string ownerKey, long sessionId, string planId,
             CancellationToken ct) => runtime.FleetPlans.GetAsync(planId, ownerKey, sessionId, ct);

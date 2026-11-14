@@ -23,11 +23,15 @@ namespace LitSSHmcp.McpServer.Tools;
 public class UsageGuideTools
 {
     private readonly IConfigService? _configService;
+    private readonly JobManager? _jobManager;
 
-    /// <summary>测试/无 DI 场景：视为全部启用（保持工具清单完整）。</summary>
+    /// <summary>无参/由 DI 构造：作为全局配置；无配置时工具清单不裁剪。</summary>
     public UsageGuideTools() { }
 
     public UsageGuideTools(IConfigService configService) => _configService = configService;
+
+    public UsageGuideTools(IConfigService configService, JobManager jobManager) : this(configService) =>
+        _jobManager = jobManager;
 
     [McpServerTool(Name = "mcp_usage_guide", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("获取LitSSH MCP使用指南(意图路由/取ID/错误处理)。不确定用哪个工具时先调它; detail=summary(默认)只返回路由, detail=full 含完整工具清单")]
@@ -50,7 +54,8 @@ public class UsageGuideTools
         }
 
         var full = string.Equals(detail?.Trim(), "full", StringComparison.OrdinalIgnoreCase);
-        return BuildGuide(enabled, includeToolList: full, summaryOnly: !full);
+        return BuildGuide(enabled, includeToolList: full, summaryOnly: !full,
+            jobOperations: _jobManager?.ListOperations());
     }
 
     /// <summary>
@@ -62,7 +67,8 @@ public class UsageGuideTools
     /// 路由段始终排在工具清单之前，避免 App 按 4000 字符截断时先把路由裁掉。
     /// </summary>
     internal static string BuildGuide(IReadOnlySet<string>? enabled, bool? includeInternalTools = null,
-        bool includeToolList = true, bool summaryOnly = false)
+        bool includeToolList = true, bool summaryOnly = false,
+        IReadOnlyList<(string Operation, string Description)>? jobOperations = null)
     {
         var tools = EnumerateToolInfos();
         var toolGroup = tools.ToDictionary(t => t.Name, t => t.Group, StringComparer.Ordinal);
@@ -75,6 +81,44 @@ public class UsageGuideTools
         {
             ["title"] = "LitSSH MCP 使用指南"
         };
+
+        // 与 Agent 系统提示共用同一张主路由表，避免提示层与 usage guide 给出冲突建议。
+        var toolRoutes = ToolRoutingCatalog.ForGroups(enabled)
+            .Select(route => new { intent = route.Intent, tools = route.Tools, note = route.Note })
+            .Cast<object>()
+            .ToArray();
+        if (!summaryOnly && toolRoutes.Length > 0)
+            guide["tool_routing"] = toolRoutes;
+
+        var jobsEnabled = enabled is null ||
+                          enabled.Any(g => string.Equals(g, ToolGroups.Jobs, StringComparison.OrdinalIgnoreCase));
+        if (!summaryOnly && jobsEnabled)
+        {
+            var operationItems = new List<object>();
+            var actual = jobOperations is { Count: > 0 }
+                ? jobOperations
+                : JobOperationPolicies.ForGroups(enabled).Select(p => (p.Operation, p.Description)).ToArray();
+            foreach (var (operation, fallbackDescription) in actual)
+            {
+                var policy = JobOperationPolicies.Find(operation);
+                operationItems.Add(new
+                {
+                    operation,
+                    description = policy?.Description ?? fallbackDescription,
+                    arguments = policy?.ArgumentsHint ?? string.Empty,
+                    argumentsSchema = policy?.ArgumentsSchema?.Select(a => new
+                    {
+                        name = a.Name,
+                        type = a.Type,
+                        required = a.Required,
+                        description = a.Description
+                    }).ToArray(),
+                    readOnly = policy?.ReadOnly ?? true
+                });
+            }
+            if (operationItems.Count > 0)
+                guide["job_operations"] = operationItems;
+        }
 
         var serverGuideLines = Keep(new[]
         {
@@ -91,7 +135,8 @@ public class UsageGuideTools
             "用户问systemd服务状态、服务列表或服务日志时,使用 service_query(action=list/status/logs); 重启服务用 service_restart",
             "用户要看日志文件尾部、在日志里搜错误/关键字或发现日志路径时,使用 log_query(action=tail/grep/find; 可传 path, 也可传 appId 用应用管理里配置的日志路径; 路径受 security.logs.allowedPaths 约束)",
             "用户问Java进程/线程/死锁/CPU飙高/内存/GC时,先用 java_processes 拿pid(可传appId过滤), 再用 java_diagnostics(action=threads/heap/info, 也可直接传appId自动解析pid)",
-            "用户要对某个应用做整体体检(跨服务器+依赖数据库)时,优先用 app_health_snapshot, 再按需下钻"
+            "用户要对某个应用做整体体检(跨服务器+依赖数据库)时,优先用 app_health_snapshot, 再按需下钻",
+            "长任务统一用 job_start(operation=..., argumentsObject={...}, wait=false)；具体 operation 见 job_operations。查询用 job_status/job_result、事件用 job_events(fromSeq) 断点续读、取消用 job_cancel、本人任务列表用 job_list"
         });
         if (serverGuideLines.Length > 0)
         {
@@ -254,6 +299,7 @@ public class UsageGuideTools
             "sudo_not_configured=未配置提权",
             "snapshot_not_found=该服务器还没快照(用ssh_snapshot_refresh生成)",
             "snapshot_in_progress=该服务器已有快照在采集(不要重复刷新,稍后用ssh_snapshot_get查)",
+            "job_not_found=任务不存在或不属于当前用户; unknown_operation=job_start 的 operation 未注册",
             "auth_failed=账号/密钥错",
             "host_key_mismatch=主机密钥变化(可能是安全事件, 先人工核对指纹, 不要重试)",
             "timeout/rate_limited/connection_error=可稍后重试"

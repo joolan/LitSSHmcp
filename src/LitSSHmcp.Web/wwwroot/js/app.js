@@ -4,8 +4,8 @@ import { ChatController } from "./chat.js";
 import { ApprovalsPanel } from "./approvals.js";
 import { FilesPanel } from "./files.js";
 import { MemoryAdminPanel } from "./memory.js";
-import { ConsolidationAdminPanel } from "./consolidation.js";
 import { OpsInsightsPanel } from "./ops.js";
+import { JobsPanel } from "./jobs.js";
 import { FleetChangePanel } from "./fleet.js";
 
 const $ = (id) => document.getElementById(id);
@@ -48,15 +48,17 @@ const els = {
   memoryRefresh: $("memory-refresh"),
   memoryClose: $("memory-close"),
   memoryCurrent: $("memory-current"),
-  consolidationAdminBtn: $("consolidation-admin-btn"),
-  consolidationSheet: $("consolidation-admin"),
-  consolidationList: $("consolidation-list"),
-  consolidationRuns: $("consolidation-runs"),
-  consolidationAlert: $("consolidation-alert"),
-  consolidationStatus: $("consolidation-status"),
-  consolidationRefresh: $("consolidation-refresh"),
-  consolidationClose: $("consolidation-close"),
   opsInsightsBtn: $("ops-insights-btn"),
+  jobsBtn: $("jobs-btn"),
+  jobsSheet: $("jobs-sheet"),
+  jobsList: $("jobs-list"),
+  jobDetail: $("job-detail"),
+  jobsState: $("jobs-state"),
+  jobsAutoRefresh: $("jobs-auto-refresh"),
+  jobsRefresh: $("jobs-refresh"),
+  jobsClose: $("jobs-close"),
+  jobCancelBtn: $("job-cancel-btn"),
+  jobResultBtn: $("job-result-btn"),
   opsSheet: $("ops-insights"),
   opsIncidents: $("ops-incident-list"),
   opsStatus: $("ops-incident-status"),
@@ -175,24 +177,9 @@ const memoryAdmin = new MemoryAdminPanel({
   onToast,
 });
 
-const consolidationAdmin = new ConsolidationAdminPanel({
-  sheetEl: els.consolidationSheet,
-  listEl: els.consolidationList,
-  runsEl: els.consolidationRuns,
-  alertEl: els.consolidationAlert,
-  statusEl: els.consolidationStatus,
-  refreshBtn: els.consolidationRefresh,
-  closeBtn: els.consolidationClose,
-  onToast,
-});
-
 els.memoryAdminBtn.addEventListener("click", () => {
-  consolidationAdmin.close();
+  jobsPanel.close();
   memoryAdmin.open();
-});
-els.consolidationAdminBtn.addEventListener("click", () => {
-  memoryAdmin.close();
-  consolidationAdmin.open();
 });
 
 const opsInsights = new OpsInsightsPanel({
@@ -210,8 +197,28 @@ const opsInsights = new OpsInsightsPanel({
 
 els.opsInsightsBtn.addEventListener("click", () => {
   memoryAdmin.close();
-  consolidationAdmin.close();
+  jobsPanel.close();
   opsInsights.open();
+});
+
+const jobsPanel = new JobsPanel({
+  sheetEl: els.jobsSheet,
+  listEl: els.jobsList,
+  detailEl: els.jobDetail,
+  stateEl: els.jobsState,
+  autoRefreshEl: els.jobsAutoRefresh,
+  refreshBtn: els.jobsRefresh,
+  closeBtn: els.jobsClose,
+  cancelBtn: els.jobCancelBtn,
+  resultBtn: els.jobResultBtn,
+  getSessionId: () => chat.sessionId,
+  onToast,
+});
+
+els.jobsBtn.addEventListener("click", () => {
+  memoryAdmin.close();
+  opsInsights.close?.();
+  jobsPanel.open();
 });
 
 const fleetChange = new FleetChangePanel({
@@ -250,8 +257,8 @@ const fleetChange = new FleetChangePanel({
 // Web 端批量变更入口暂时不开放（index.html 的 #fleet-btn 已隐藏）；保留面板与绑定，恢复时移除 hidden。
 els.fleetBtn.addEventListener("click", () => {
   memoryAdmin.close();
-  consolidationAdmin.close();
   opsInsights.close?.();
+  jobsPanel.close();
   fleetChange.open();
 });
 
@@ -301,10 +308,8 @@ function showApp(user) {
   els.appView.hidden = false;
   els.whoami.textContent = `${user.username}（${user.role}）`;
   els.memoryAdminBtn.hidden = user.role !== "admin";
-  els.consolidationAdminBtn.hidden = user.role !== "admin";
   if (user.role !== "admin") {
     memoryAdmin.close();
-    consolidationAdmin.close();
   }
   updatePlaceholder();
   approvals.start();
@@ -342,7 +347,6 @@ els.logoutBtn.addEventListener("click", async () => {
   chat.close();
   files.close();
   memoryAdmin.close();
-  consolidationAdmin.close();
   opsInsights.close();
   me = null;
   sessions = [];
@@ -455,11 +459,10 @@ document.addEventListener("click", (ev) => {
   }
   if (memoryAdmin.isOpen() && !els.memorySheet.contains(ev.target) && !els.memoryAdminBtn.contains(ev.target))
     memoryAdmin.close();
-  if (consolidationAdmin.isOpen() && !els.consolidationSheet.contains(ev.target) &&
-      !els.consolidationAdminBtn.contains(ev.target))
-    consolidationAdmin.close();
   if (opsInsights.isOpen() && !els.opsSheet.contains(ev.target) && !els.opsInsightsBtn.contains(ev.target))
     opsInsights.close();
+  if (jobsPanel.isOpen() && !els.jobsSheet.contains(ev.target) && !els.jobsBtn.contains(ev.target))
+    jobsPanel.close();
 });
 
 // ---- 会话列表 ----
@@ -691,10 +694,10 @@ document.addEventListener("keydown", (ev) => {
     closeModelSheet();
   } else if (memoryAdmin.isOpen()) {
     memoryAdmin.close();
-  } else if (consolidationAdmin.isOpen()) {
-    consolidationAdmin.close();
   } else if (opsInsights.isOpen()) {
     opsInsights.close();
+  } else if (jobsPanel.isOpen()) {
+    jobsPanel.close();
   } else if (document.body.classList.contains("drawer-open")) {
     closeDrawer();
   }

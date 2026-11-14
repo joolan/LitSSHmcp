@@ -136,7 +136,8 @@ public class ResourceTests
 
         public Task<TopologyGraph> GetGraphAsync(CancellationToken ct = default) => Task.FromResult(_graph);
         public Task<DependencyGraph> GetDependenciesAsync(string assetId, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<DiscoveryResult> DiscoverAsync(string[]? serverIds, string[]? searchPaths, CancellationToken ct = default,
+            IProgress<TopologyDiscoveryProgress>? progress = null) => throw new NotImplementedException();
     }
 
     private sealed class StubConfig : IConfigService

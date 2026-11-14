@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using LitSSHmcp.Agent;
+using LitSSHmcp.Core.Services.Security;
 using Microsoft.Extensions.AI;
 using Xunit;
 
@@ -147,6 +148,40 @@ public class FleetChangeToolsTests
         Assert.Equal("cancelled", plan!.Phase);
         Assert.False(plan.Running);
         Assert.Equal("用户取消", plan.LastError);
+    }
+
+    [Fact]
+    public async Task Concurrent_execution_on_same_plan_is_rejected()
+    {
+        var lockDir = Path.Combine(Path.GetTempPath(), "litssh-planlock-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var exec = new BlockingFleetExecTool();
+            var store = new MemoryFleetPlanStore();
+            var tool = FleetChangeTools.Create(exec, new FakeTestConnectionTool(), store,
+                planMutex: new FileTargetWriteMutex(lockDir))!;
+            var planText = await Invoke(tool, ("mode", "plan"), ("serverIds", "s1"),
+                ("command", "systemctl restart nginx"), ("rollbackCommand", "true"));
+            var planId = ExtractPlanId(planText);
+            await Invoke(tool, ("mode", "dry_run"), ("planId", planId));
+
+            using var cts = new CancellationTokenSource();
+            var first = tool.InvokeAsync(new Dictionary<string, object?>
+            {
+                ["mode"] = "canary", ["planId"] = planId, ["confirm"] = true
+            }, cts.Token);
+            await exec.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            var second = await Invoke(tool, ("mode", "canary"), ("planId", planId), ("confirm", true));
+            Assert.Contains("正在执行中", second);
+
+            cts.Cancel();
+            Assert.Contains("已取消计划", (await first)?.ToString() ?? string.Empty);
+        }
+        finally
+        {
+            try { Directory.Delete(lockDir, recursive: true); } catch { /* ignore */ }
+        }
     }
 
     [Fact]

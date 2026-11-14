@@ -80,7 +80,7 @@ public class StorageSettingsViewModel : INotifyPropertyChanged, IConfigReloadabl
                 Stat("通知中心 notifications.json", Path.Combine(_dataDir, "notifications.json")), Stat("通知投递 notifications.db", Path.Combine(_dataDir, "notifications.db"), includeSidecars: true),
                 Stat("大结果 spill", spillDir),
                 Stat("工作区 jobs", jobsDir),
-                Stat("日志", Path.Combine(_dataDir, "logs")),
+                Stat("日志", Path.Combine(_dataDir, "logs")), Stat("终端会话日志 terminal-logs", Path.Combine(_dataDir, "terminal-logs")),
                 Stat("技能", Path.Combine(_dataDir, "skills")),
                 Stat("加密文件柜", Path.Combine(_dataDir, "vaults")),
                 Stat("密码保管箱", Path.Combine(_dataDir, "password-vault")),

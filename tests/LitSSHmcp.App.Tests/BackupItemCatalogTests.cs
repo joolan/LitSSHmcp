@@ -25,6 +25,22 @@ public class BackupItemCatalogTests : IDisposable
         Assert.Contains("桌面宠物", item.Name);
     }
 
+    [Fact]
+    public void Terminal_logs_are_available_for_backup()
+    {
+        var terminalLogs = Path.Combine(_root, "terminal-logs");
+        Directory.CreateDirectory(terminalLogs);
+        File.WriteAllText(Path.Combine(terminalLogs, "session.cast"), "{}");
+
+        var item = Assert.Single(BackupItemCatalog.Build(new AppConfig(), _root),
+            candidate => candidate.Id == "terminal-logs");
+
+        Assert.True(item.Exists);
+        Assert.Equal(terminalLogs, item.Path);
+        Assert.True(item.Size > 0);
+        Assert.Contains("terminal-logs", item.Name);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { /* ignore */ }

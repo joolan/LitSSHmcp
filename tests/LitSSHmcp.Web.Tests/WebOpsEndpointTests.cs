@@ -120,6 +120,13 @@ public class WebOpsEndpointTests : IAsyncLifetime
         Assert.Contains("磁盘满恢复", text);
     }
 
+    [Fact]
+    public async Task Asset_profile_requires_asset_id()
+    {
+        var resp = await _client.SendAsync(Request(HttpMethod.Get, "/api/ops/asset-profile", "user"));
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
     private sealed class TestStoreFactory(string dbPath) : IWebMemoryStoreFactory
     {
         public IAgentMemoryStore Create(string ownerUserId, bool isAdmin) =>

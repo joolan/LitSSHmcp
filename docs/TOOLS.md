@@ -196,7 +196,7 @@ MCP 服务器代码注册 **42 个工具**，按用途分为 15 组；其中 `mc
 
 ### `ssh_list_servers`
 - **参数**：无
-- **返回**：`{ success, count, servers: [...] }`，每项含 `id/name/host/port/username/authType/description/tags/lastConnectedAt/canExec`（**无密码**）；`canExec` 为当前调用者是否具备该目标的 exec 权限（供批量变更 plan 预检，不执行命令）
+- **返回**：`{ success, count, servers: [...] }`，每项含 `id/name/host/port/internalHost/internalPort/proxyJumpServerId/username/authType/description/tags/lastConnectedAt/canExec`（**无密码**）；`internalHost`/`internalPort` 是服务器配置中可选的内网访问地址与端口（未配置时为 null），可用于关联“公网 SSH 入口 → 内网数据库/应用”；`canExec` 为当前调用者是否具备该目标的 exec 权限（供批量变更 plan 预检，不执行命令）
 - **说明**：**已禁用的服务器不会出现在本列表中**。服务器一旦禁用：① 不出现在 `ssh_list_servers`；② 任何按服务器标识解析的工具（`ssh_*` / `docker_*` / `service_*` / `log_*` / `java_*` / 应用与文件等）都返回 `server_disabled` 并拒绝执行；③ 资产拓扑中该服务器不可建链/连接；④ 拓扑自动发现跳过它。需在桌面 App 的「服务器编辑」里取消勾选“禁用”并保存后恢复。Web 强制模式下还只返回当前用户命中 `read` 白名单的 `ssh:<id>`；桌面未启用强制时保持全量。
 
 ### `ssh_test_connection`

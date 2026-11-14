@@ -149,6 +149,13 @@ public class WebMemoryEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, again.StatusCode);
     }
 
+    [Fact]
+    public void Web_memory_store_factory_creates_agent_store()
+    {
+        var store = new WebMemoryStoreFactory().Create("1", false);
+        Assert.IsType<AgentMemoryStore>(store);
+    }
+
     private sealed class TestStoreFactory(string dbPath) : IWebMemoryStoreFactory
     {
         public IAgentMemoryStore Create(string ownerUserId, bool isAdmin) =>

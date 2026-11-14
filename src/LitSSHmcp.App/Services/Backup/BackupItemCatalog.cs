@@ -56,6 +56,7 @@ public static class BackupItemCatalog
         SqliteItem("notifications-outbox", "通知投递 notifications.db", "通知渠道投递队列、重试与历史", "notifications.db"),
         DirItem("skills", "技能 skills", "本机技能文件", "skills"),
         DirItem("logs", "日志 logs", "应用运行日志（可能含敏感信息，默认不选）", "logs"),
+        DirItem("terminal-logs", "终端会话日志 terminal-logs", "交互式终端录像与文本日志（默认不选）", "terminal-logs"),
         DirItem("vaults", "加密文件柜", "加密文件柜目录", "vaults"),
         DirItem("password-vault", "密码保管箱", "密码保管箱目录", "password-vault"),
         DirItem("pet-assets", "桌面宠物素材", "自定义宠物素材包、动画与许可证文件", "pet-assets"),

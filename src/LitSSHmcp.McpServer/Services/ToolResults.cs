@@ -92,6 +92,9 @@ public sealed class SshServerSummaryDto
     public string Name { get; set; } = string.Empty;
     public string Host { get; set; } = string.Empty;
     public int Port { get; set; }
+    public string? InternalHost { get; set; }
+    public int? InternalPort { get; set; }
+    public string? ProxyJumpServerId { get; set; }
     public string Username { get; set; } = string.Empty;
     public string AuthType { get; set; } = string.Empty;
     public string? Description { get; set; }

@@ -111,6 +111,19 @@ public class WebIncidentEndpointTests : IAsyncLifetime
         Assert.Equal(_newIncidentId, old.SupersededBy);
     }
 
+    [Fact]
+    public async Task Supersede_requires_login_and_valid_new_id()
+    {
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await _client.SendAsync(Request(HttpMethod.Post,
+                $"/api/admin/incidents/{_oldIncidentId}/supersede", null,
+                new { newId = _newIncidentId }))).StatusCode);
+
+        var invalid = await _client.SendAsync(Request(HttpMethod.Post,
+            $"/api/admin/incidents/{_oldIncidentId}/supersede", "admin", new { newId = 0 }));
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+    }
+
     private sealed class TestStoreFactory(string dbPath) : IWebMemoryStoreFactory
     {
         public IAgentMemoryStore Create(string ownerUserId, bool isAdmin) =>

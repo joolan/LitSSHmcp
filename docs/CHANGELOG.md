@@ -2,7 +2,7 @@
 
 本项目的所有重要变更都记录在此文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.7.0] - 2026-11-14
 
 ### 新增
 
@@ -55,6 +55,9 @@
 - **统一工具路由表**：新增 `ToolRoutingCatalog`，Agent 系统提示与完整 `mcp_usage_guide` 共用同一份“意图→主工具”路由，避免不同提示层给出冲突建议。
 - **本地工具面守门**：新增 `ToolSurfaceConsistencyTests`，校验模型可见/隐藏本地工具、Ops profile 与共享路由表的一致性；`fleet_targets`、`ai_task_*`、incident/旧知识写入工具保持隐藏。
 - **移除“记忆候选 / consolidation”闭环**：删除后台候选生成、`ops_consolidation_*` 工具、`agent.consolidation` 配置、桌面“记忆候选”Tab、Web“候选审核”面板与候选/运行 API；知识沉淀统一由 `ops_record` 完成。管理员事件列表/supersede 接口保留；`agent_consolidation_candidate`、`agent_consolidation_run` 与历史记录不迁移、不删除，仅停止读写入口。
+
+- **SSH 内网地址露出**：`ssh_list_servers` 与 `litssh://servers` 新增可选 `internalHost` / `internalPort` / `proxyJumpServerId`，便于 AI 把公网 SSH 入口与内网数据库/应用关联；未配置时为 null，仍受目标可见性/授权过滤。
+- **版本**：App / MCP Server 默认版本更新至 1.7.0；「关于」页版本号取自程序集，Debug 构建与发布包保持一致。
 
 ## [1.6.3] - 2026-11-13
 

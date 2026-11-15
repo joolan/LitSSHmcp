@@ -31,8 +31,11 @@ public sealed class NotificationItem : INotifyPropertyChanged
             if (_isRead == value) return;
             _isRead = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRead)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUnread)));
         }
     }
+
+    public bool IsUnread => !IsRead;
 
     public string TimeText => CreatedAt.ToString("MM-dd HH:mm");
     public string TypeText => string.IsNullOrWhiteSpace(Type) ? NotificationTypes.Generic : Type;
@@ -65,10 +68,27 @@ public static class NotificationCenterService
             type, source, title, message, severity));
     }
 
+    public static void MarkRead(NotificationItem item)
+    {
+        if (item.IsRead)
+            return;
+        item.IsRead = true;
+        Changed?.Invoke();
+        _ = NotificationHub.Default.PersistStateAsync();
+    }
+
     public static void MarkAllRead()
     {
         foreach (var item in Items)
             item.IsRead = true;
+        Changed?.Invoke();
+        _ = NotificationHub.Default.PersistStateAsync();
+    }
+
+    public static void Delete(NotificationItem item)
+    {
+        if (!Items.Remove(item))
+            return;
         Changed?.Invoke();
         _ = NotificationHub.Default.PersistStateAsync();
     }

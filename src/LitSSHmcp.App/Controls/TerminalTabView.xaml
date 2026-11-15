@@ -96,7 +96,7 @@
 
             <Grid Grid.Column="2">
                 <Border Background="{DynamicResource AppTerminalBgBrush}" CornerRadius="{DynamicResource AppRadiusS}">
-                    <controls:TerminalView x:Name="Terminal" Session="{Binding}" Margin="4"/>
+                    <controls:TerminalView x:Name="Terminal" Session="{Binding}" Margin="4,8,4,4"/>
                 </Border>
                 <Border VerticalAlignment="Top" Margin="6" Padding="10,6" CornerRadius="6"
                         Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}"

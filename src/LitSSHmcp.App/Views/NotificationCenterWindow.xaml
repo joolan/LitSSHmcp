@@ -6,6 +6,9 @@
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize" ShowInTaskbar="False"
         ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
     <Grid>
+        <Grid.Resources>
+            <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -46,6 +49,7 @@
                     </StackPanel>
                     <ListBox Grid.Row="1" x:Name="NotificationList"
                              BorderThickness="0" Background="Transparent"
+                             MouseDoubleClick="OnNotificationDoubleClick"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
@@ -77,6 +81,18 @@
                                         </Ellipse>
                                         <StackPanel Grid.Column="1">
                                             <DockPanel LastChildFill="False">
+                                                <ui:Button DockPanel.Dock="Right" Content="删除" Padding="8,2"
+                                                           Margin="8,0,0,0" Click="OnDeleteNotification"
+                                                           ToolTip="删除此通知"/>
+                                                <ui:Button DockPanel.Dock="Right" Content="标为已读" Padding="8,2"
+                                                           Margin="8,0,0,0"
+                                                           Visibility="{Binding IsUnread, Converter={StaticResource BoolToVis}}"
+                                                           Click="OnMarkRead"
+                                                           ToolTip="标为已读（也可双击该消息）"/>
+                                                <TextBlock Text="✉" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource AppAccentBrush}"
+                                                           FontSize="13" ToolTip="未读消息"
+                                                           Visibility="{Binding IsUnread, Converter={StaticResource BoolToVis}}"/>
                                                 <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"/>
                                                 <TextBlock DockPanel.Dock="Right" Text="{Binding TimeText}"
                                                            Foreground="{DynamicResource AppTextTertiaryBrush}"

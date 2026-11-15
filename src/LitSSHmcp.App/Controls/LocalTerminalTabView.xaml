@@ -52,7 +52,7 @@
         </DockPanel>
 
         <Border Background="{DynamicResource AppTerminalBgBrush}" CornerRadius="{DynamicResource AppRadiusS}" Margin="6">
-            <controls:TerminalView x:Name="Terminal" Session="{Binding}" Margin="4"/>
+            <controls:TerminalView x:Name="Terminal" Session="{Binding}" Margin="4,8,4,4"/>
         </Border>
     </DockPanel>
 </UserControl>

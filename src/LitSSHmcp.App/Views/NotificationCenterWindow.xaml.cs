@@ -4,6 +4,7 @@ using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Services.Notifications;
 using Wpf.Ui.Controls;
@@ -93,10 +94,42 @@ public partial class NotificationCenterWindow : FluentWindow
 
     private void OnFilterChanged(object sender, TextChangedEventArgs e) => _view.Refresh();
 
+    private void OnMarkRead(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: NotificationItem item })
+        {
+            NotificationCenterService.MarkRead(item);
+            RefreshSummary();
+        }
+        e.Handled = true;
+    }
+
+    private void OnNotificationDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        var source = e.OriginalSource as DependencyObject;
+        var container = ItemsControl.ContainerFromElement(NotificationList, source) as ListBoxItem;
+        if (container?.DataContext is NotificationItem item)
+        {
+            NotificationCenterService.MarkRead(item);
+            RefreshSummary();
+            e.Handled = true;
+        }
+    }
+
     private void OnMarkAllRead(object sender, RoutedEventArgs e)
     {
         NotificationCenterService.MarkAllRead();
         RefreshSummary();
+    }
+
+    private void OnDeleteNotification(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: NotificationItem item })
+        {
+            NotificationCenterService.Delete(item);
+            RefreshSummary();
+        }
+        e.Handled = true;
     }
 
     private void OnClear(object sender, RoutedEventArgs e)

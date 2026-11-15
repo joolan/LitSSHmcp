@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using LitSSHmcp.App.Controls;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.Core.Services.Storage;
 
@@ -260,6 +261,34 @@ public partial class TerminalLogWindow : Wpf.Ui.Controls.FluentWindow
         }
         catch { /* ignore */ }
         Refresh();
+    }
+
+    private void OnPruneOld(object sender, RoutedEventArgs e)
+    {
+        var days = Math.Clamp(TerminalSettings.LogRetentionDays, 1, 3650);
+        var cutoff = DateTime.Now.AddDays(-days);
+        var deleted = 0;
+        try
+        {
+            if (Directory.Exists(_dir))
+            {
+                foreach (var file in Directory.EnumerateFiles(_dir))
+                {
+                    var ext = Path.GetExtension(file).ToLowerInvariant();
+                    if (ext is not (".log" or ".cast") || File.GetLastWriteTime(file) >= cutoff)
+                        continue;
+                    File.Delete(file);
+                    deleted++;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "清理失败: " + ex.Message;
+            return;
+        }
+        Refresh();
+        StatusText.Text = $"已清理 {deleted} 个超过 {days} 天的会话日志。";
     }
 
     private sealed record CastEvent(double T, string Type, string Text);

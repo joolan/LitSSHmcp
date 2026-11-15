@@ -126,7 +126,7 @@
                                     <MenuItem Header="分离为独立窗口" Click="OnDetachItem"/>
                                 </ContextMenu>
                             </StackPanel.ContextMenu>
-                            <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center" ToolTip="连接状态">
+                            <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center" ToolTip="{Binding StatusToolTip}">
                                 <Ellipse.Style>
                                     <Style TargetType="Ellipse">
                                         <Setter Property="Fill" Value="{DynamicResource AppTextTertiaryBrush}"/>
@@ -134,7 +134,13 @@
                                             <DataTrigger Binding="{Binding IsConnected}" Value="True">
                                                 <Setter Property="Fill" Value="{DynamicResource AppSuccessBrush}"/>
                                             </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsCommandRunning}" Value="True">
+                                                <Setter Property="Fill" Value="{DynamicResource AppWarningBrush}"/>
+                                            </DataTrigger>
                                             <DataTrigger Binding="{Binding IsConnected}" Value="False">
+                                                <Setter Property="Fill" Value="{DynamicResource AppDangerBrush}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding HasFailedCommand}" Value="True">
                                                 <Setter Property="Fill" Value="{DynamicResource AppDangerBrush}"/>
                                             </DataTrigger>
                                         </Style.Triggers>

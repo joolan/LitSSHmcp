@@ -22,7 +22,8 @@
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
                     <Button Content="刷新" Padding="10,3" Margin="0,0,6,0" Click="OnRefresh"/>
                     <Button Content="打开目录" Padding="10,3" Margin="0,0,6,0" Click="OnOpenFolder"/>
-                    <Button Content="删除" Padding="10,3" Click="OnDelete"/>
+                    <Button Content="删除" Padding="10,3" Margin="0,0,6,0" Click="OnDelete"/>
+                    <Button Content="清理过期" Padding="10,3" Click="OnPruneOld"/>
                 </StackPanel>
                 <ListBox x:Name="LogList" SelectionChanged="OnSelect" Background="Transparent" BorderThickness="0">
                     <ListBox.ItemTemplate>

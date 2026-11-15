@@ -22,6 +22,7 @@ public struct TerminalCell
 {
     public char Ch;
     public TerminalAttributes Attr;
+    public bool WideContinuation;
 }
 
 /// <summary>
@@ -56,13 +57,37 @@ public sealed class TerminalModel
     /// <summary>是否处于备用屏（vim/top/less 等全屏程序）。</summary>
     public bool IsAltScreen => _altScreen;
 
+    /// <summary>远端 shell 是否启用了 bracketed paste（CSI ?2004h）。</summary>
+    public bool BracketedPasteEnabled { get; private set; }
+
+    /// <summary>OSC 7 报告的工作目录（shell integration）。</summary>
+    public string? CurrentDirectory { get; private set; }
+
+    /// <summary>OSC 133 报告的命令执行状态。</summary>
+    public bool IsCommandRunning { get; private set; }
+
+    /// <summary>上一条命令退出码（OSC 133 D）。</summary>
+    public int? LastExitCode { get; private set; }
+
+    public event Action? ShellStateChanged;
+
+    /// <summary>向远端终端程序回复 DSR/DA/颜色查询等终端响应。</summary>
+    public event Action<string>? ResponseRequested;
+
+    public uint ThemeFg { get; set; } = 0xD4D4D4;
+    public uint ThemeBg { get; set; } = 0x1E1E1E;
+
+    /// <summary>ANSI 16 色板（由当前终端主题注入；默认使用内置色板）。</summary>
+    public uint[] AnsiPalette { get; set; } = TerminalTheme.DefaultAnsi16;
+
     /// <summary>回看行数上限。</summary>
     public int MaxScrollback { get; set; } = 2000;
 
     // 解析状态
-    private enum ParseState { Ground, Esc, Csi, Osc, OscEsc }
+    private enum ParseState { Ground, Esc, Csi, Osc, OscEsc, Dcs, DcsEsc }
     private ParseState _state = ParseState.Ground;
     private readonly StringBuilder _param = new();
+    private readonly StringBuilder _osc = new();
 
     public TerminalModel(int cols, int rows)
     {
@@ -196,18 +221,29 @@ public sealed class TerminalModel
     public void Feed(string text)
     {
         foreach (var ch in text)
-            Process(ch);
+        {
+            try
+            {
+                Process(ch);
+            }
+            catch
+            {
+                // 单个异常序列不应让整屏内容停在未刷新状态。
+                _state = ParseState.Ground;
+                _param.Clear();
+                _osc.Clear();
+            }
+        }
         RaiseChanged();
     }
 
     private TerminalCell[] Active => _altScreen ? _altCells : _cells;
 
-    private void SetCell(int x, int y, char ch, TerminalAttributes attr, bool clone = true)
+    private void SetCell(int x, int y, char ch, TerminalAttributes attr, bool wideContinuation = false)
     {
         if (x < 0 || y < 0 || x >= _cols || y >= _rows)
             return;
-        var attrCopy = attr;
-        Active[y * _cols + x] = new TerminalCell { Ch = ch, Attr = attrCopy };
+        Active[y * _cols + x] = new TerminalCell { Ch = ch, Attr = attr, WideContinuation = wideContinuation };
     }
 
     private void Process(char ch)
@@ -224,11 +260,46 @@ public sealed class TerminalModel
                 ProcessCsi(ch);
                 break;
             case ParseState.Osc:
-                if (ch == '\a') _state = ParseState.Ground;
-                else if (ch == '\u001b') _state = ParseState.OscEsc;
+                if (ch == '\a')
+                {
+                    ProcessOsc(_osc.ToString());
+                    _osc.Clear();
+                    _state = ParseState.Ground;
+                }
+                else if (ch == '\u001b')
+                {
+                    _state = ParseState.OscEsc;
+                }
+                else
+                {
+                    _osc.Append(ch);
+                }
                 break;
             case ParseState.OscEsc:
-                _state = ch == '\\' ? ParseState.Ground : ParseState.Osc;
+                if (ch == '\\')
+                {
+                    ProcessOsc(_osc.ToString());
+                    _osc.Clear();
+                    _state = ParseState.Ground;
+                }
+                else
+                {
+                    _osc.Append('\u001b').Append(ch);
+                    _state = ParseState.Osc;
+                }
+                break;
+            case ParseState.Dcs:
+                // DCS/SOS/PM/APC 内容全部吞掉，不渲染（只支持 ST = ESC \ 终止）。
+                if (ch == '\u001b')
+                    _state = ParseState.DcsEsc;
+                break;
+            case ParseState.DcsEsc:
+                if (ch == '\\')
+                    _state = ParseState.Ground;
+                else if (ch == '\u001b')
+                    _state = ParseState.DcsEsc;
+                else
+                    _state = ParseState.Dcs;
                 break;
         }
     }
@@ -255,6 +326,7 @@ public sealed class TerminalModel
                 return;
             case '\t':
                 _cx = Math.Min(_cols - 1, (_cx / 8 + 1) * 8);
+                _wrapPending = false;
                 return;
             case '\a':
                 return;
@@ -283,7 +355,7 @@ public sealed class TerminalModel
 
         SetCell(_cx, _cy, ch, _attr);
         if (width == 2 && _cx + 1 < _cols)
-            SetCell(_cx + 1, _cy, ' ', _attr);
+            SetCell(_cx + 1, _cy, ' ', _attr, wideContinuation: true);
 
         if (_cx + width >= _cols)
         {
@@ -312,6 +384,58 @@ public sealed class TerminalModel
         || (c >= 0xFF00 && c <= 0xFF60)
         || (c >= 0xFFE0 && c <= 0xFFE6);
 
+    private void ProcessOsc(string text)
+    {
+        if (text.StartsWith("133;", StringComparison.Ordinal))
+        {
+            var code = text.Length > 4 ? text[4] : '\0';
+            switch (code)
+            {
+                case 'A':
+                case 'B':
+                    IsCommandRunning = false;
+                    ShellStateChanged?.Invoke();
+                    break;
+                case 'C':
+                    IsCommandRunning = true;
+                    LastExitCode = null;
+                    ShellStateChanged?.Invoke();
+                    break;
+                case 'D':
+                    IsCommandRunning = false;
+                    LastExitCode = null;
+                    var parts = text.Split(';');
+                    if (parts.Length > 2 && int.TryParse(parts[2], out var exitCode))
+                        LastExitCode = exitCode;
+                    ShellStateChanged?.Invoke();
+                    break;
+            }
+            return;
+        }
+
+        if (text.StartsWith("7;file://", StringComparison.OrdinalIgnoreCase) &&
+            Uri.TryCreate(text[2..], UriKind.Absolute, out var uri))
+        {
+            CurrentDirectory = Uri.UnescapeDataString(uri.AbsolutePath);
+            ShellStateChanged?.Invoke();
+            return;
+        }
+
+        if (text == "10;?" || text == "11;?" || text == "12;?")
+        {
+            var rgb = text == "11;?" ? ThemeBg : ThemeFg;
+            ResponseRequested?.Invoke($"\u001b]{text[..2]};{OscRgb(rgb)}\a");
+        }
+    }
+
+    private static string OscRgb(uint rgb)
+    {
+        var r = ((rgb >> 16) & 0xff) * 0x101;
+        var g = ((rgb >> 8) & 0xff) * 0x101;
+        var b = (rgb & 0xff) * 0x101;
+        return $"rgb:{r:X4}/{g:X4}/{b:X4}";
+    }
+
     private void ProcessEsc(char ch)
     {
         switch (ch)
@@ -333,6 +457,7 @@ public sealed class TerminalModel
                 _cx = Math.Min(_savedCx, _cols - 1);
                 _cy = Math.Min(_savedCy, _rows - 1);
                 _attr = _savedAttr;
+                _wrapPending = false;
                 _state = ParseState.Ground;
                 return;
             case 'D':
@@ -357,6 +482,13 @@ public sealed class TerminalModel
             case '*':
             case '+':
                 _state = ParseState.Ground; // 忽略字符集选择（吞掉下一个字符）
+                return;
+            case 'P':
+            case 'X':
+            case '^':
+            case '_':
+                // DCS/SOS/PM/APC：吞掉后续内容直到 ST(ESC \)，否则中间字节会被渲染成乱码。
+                _state = ParseState.Dcs;
                 return;
             default:
                 _state = ParseState.Ground;
@@ -385,12 +517,21 @@ public sealed class TerminalModel
             case 'D': MoveCursor(-Arg(args, 0, 1), 0); break;
             case 'E': _cx = 0; MoveCursor(0, Arg(args, 0, 1)); break;
             case 'F': _cx = 0; MoveCursor(0, -Arg(args, 0, 1)); break;
-            case 'G': _cx = Math.Clamp(Arg(args, 0, 1) - 1, 0, _cols - 1); break;
-            case 'd': _cy = Math.Clamp(Arg(args, 0, 1) - 1, 0, _rows - 1); break;
+            case 'G':
+                _cx = Math.Clamp(Arg(args, 0, 1) - 1, 0, _cols - 1);
+                _wrapPending = false;
+                break;
+            case 'd':
+                _cy = Math.Clamp(Arg(args, 0, 1) - 1, 0, _rows - 1);
+                _wrapPending = false;
+                break;
             case 'H':
             case 'f':
                 _cy = Math.Clamp(Arg(args, 0, 1) - 1, 0, _rows - 1);
                 _cx = Math.Clamp(Arg(args, 1, 1) - 1, 0, _cols - 1);
+                // 显式定位必须终止"待换行"：否则下一个字符会先换行，
+                // 若此时位于最后一行将触发滚屏，首行内容被永久挤出（vim/less 表现为缺第一行）。
+                _wrapPending = false;
                 break;
             case 'J': EraseInDisplay(Arg(args, 0, 0)); break;
             case 'K': EraseInLine(Arg(args, 0, 0)); break;
@@ -404,9 +545,24 @@ public sealed class TerminalModel
             case 'm': ApplySgr(args); break;
             case 'r': SetScrollRegion(args); break;
             case 's': _savedCx = _cx; _savedCy = _cy; _savedAttr = _attr; break;
-            case 'u': _cx = _savedCx; _cy = _savedCy; _attr = _savedAttr; break;
+            case 'u':
+                _cx = _savedCx;
+                _cy = _savedCy;
+                _attr = _savedAttr;
+                _wrapPending = false;
+                break;
             case 'h': SetMode(isPrivate, args, true); break;
             case 'l': SetMode(isPrivate, args, false); break;
+            case 'n' when !isPrivate && Arg(args, 0, 0) == 6:
+                ResponseRequested?.Invoke($"\u001b[{_cy + 1};{_cx + 1}R");
+                break;
+            case 'c':
+                // DA1(CSI c) 应回 "CSI ? 1;2 c"（VT100+AVO），DA2(CSI > c) 应回 "CSI > ..."。
+                // 两者不能互换：全屏程序（vim/less）依赖 DA1 前缀 "?" 判断终端能力。
+                ResponseRequested?.Invoke(_param.Length > 0 && _param[0] == '>'
+                    ? "\u001b[>0;95;0c"
+                    : "\u001b[?1;2c");
+                break;
             default: break;
         }
     }
@@ -541,6 +697,7 @@ public sealed class TerminalModel
     private void InsertLines(int n)
     {
         if (_cy < _scrollTop || _cy > _scrollBottom) return;
+        n = Math.Clamp(n, 1, _scrollBottom - _scrollTop + 1);
         var active = Active;
         for (var y = _scrollBottom; y >= _cy + n; y--)
             Array.Copy(active, (y - n) * _cols, active, y * _cols, _cols);
@@ -552,6 +709,7 @@ public sealed class TerminalModel
     private void DeleteLines(int n)
     {
         if (_cy < _scrollTop || _cy > _scrollBottom) return;
+        n = Math.Clamp(n, 1, _scrollBottom - _scrollTop + 1);
         var active = Active;
         for (var y = _cy; y <= _scrollBottom - n; y++)
             Array.Copy(active, (y + n) * _cols, active, y * _cols, _cols);
@@ -592,6 +750,7 @@ public sealed class TerminalModel
         _scrollBottom = bottom;
         _cx = 0;
         _cy = top;
+        _wrapPending = false;
     }
 
     private void SetMode(bool priv, int[] args, bool enable)
@@ -609,6 +768,9 @@ public sealed class TerminalModel
                 case 1049:
                     SwitchAltScreen(enable);
                     break;
+                case 2004:
+                    BracketedPasteEnabled = enable;
+                    break;
                 default: break;
             }
         }
@@ -624,6 +786,7 @@ public sealed class TerminalModel
             _altScreen = true;
             Fill(_altCells, _cols, _rows, TerminalAttributes.Default);
             _cx = 0; _cy = 0;
+            _wrapPending = false;
             _scrollTop = 0; _scrollBottom = _rows - 1;
         }
         else
@@ -633,6 +796,7 @@ public sealed class TerminalModel
             _cx = Math.Min(_savedCx, _cols - 1);
             _cy = Math.Min(_savedCy, _rows - 1);
             _attr = _savedAttr;
+            _wrapPending = false;
         }
     }
 
@@ -648,6 +812,12 @@ public sealed class TerminalModel
         _cursorVisible = true;
         _autoWrap = true;
         _wrapPending = false;
+        BracketedPasteEnabled = false;
+        IsCommandRunning = false;
+        LastExitCode = null;
+        CurrentDirectory = null;
+        _osc.Clear();
+        ShellStateChanged?.Invoke();
     }
 
     private void ApplySgr(int[] args)
@@ -702,20 +872,14 @@ public sealed class TerminalModel
     private static uint Rgb(int r, int g, int b)
         => (uint)((Math.Clamp(r, 0, 255) << 16) | (Math.Clamp(g, 0, 255) << 8) | Math.Clamp(b, 0, 255));
 
-    private static readonly uint[] Ansi16 =
-    {
-        0x000000, 0xCD0000, 0x00CD00, 0xCDCD00, 0x0000EE, 0xCD00CD, 0x00CDCD, 0xE5E5E5,
-        0x7F7F7F, 0xFF0000, 0x00FF00, 0xFFFF00, 0x5C5CFF, 0xFF00FF, 0x00FFFF, 0xFFFFFF
-    };
+    private uint BasicColor(int index) => AnsiPalette[Math.Clamp(index, 0, 7)];
+    private uint BrightColor(int index) => AnsiPalette[8 + Math.Clamp(index, 0, 7)];
 
-    private static uint BasicColor(int index) => Ansi16[Math.Clamp(index, 0, 7)];
-    private static uint BrightColor(int index) => Ansi16[8 + Math.Clamp(index, 0, 7)];
-
-    private static uint Color256(int index)
+    private uint Color256(int index)
     {
         index = Math.Clamp(index, 0, 255);
         if (index < 16)
-            return Ansi16[index];
+            return AnsiPalette[index];
         if (index >= 232)
         {
             var v = (uint)(8 + (index - 232) * 10);

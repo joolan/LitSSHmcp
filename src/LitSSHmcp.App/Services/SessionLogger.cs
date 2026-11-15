@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using LitSSHmcp.App.Controls;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 
@@ -28,6 +29,7 @@ public sealed class SessionLogger : IDisposable
                 ? Path.Combine(ConfigPaths.AppDataDir, "terminal-logs")
                 : logRoot!;
             Directory.CreateDirectory(dir);
+            PruneOldLogs(dir);
             var safe = new string(serverName.Where(c => !Path.GetInvalidFileNameChars().Contains(c)).ToArray());
             if (string.IsNullOrWhiteSpace(safe))
                 safe = "session";
@@ -53,6 +55,26 @@ public sealed class SessionLogger : IDisposable
         {
             FilePath = string.Empty;
             CastPath = string.Empty;
+        }
+    }
+
+    private static void PruneOldLogs(string dir)
+    {
+        try
+        {
+            var cutoff = DateTime.Now.AddDays(-Math.Clamp(TerminalSettings.LogRetentionDays, 1, 3650));
+            foreach (var file in Directory.EnumerateFiles(dir, "*.*"))
+            {
+                var ext = Path.GetExtension(file).ToLowerInvariant();
+                if (ext is not (".log" or ".cast"))
+                    continue;
+                if (File.GetLastWriteTime(file) < cutoff)
+                    File.Delete(file);
+            }
+        }
+        catch
+        {
+            // 清理失败不影响录制
         }
     }
 

@@ -2,6 +2,14 @@
 
 本项目的所有重要变更都记录在此文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 修复
+
+- **终端全屏程序缺首行（vim/less）**：`TerminalModel` 的光标定位（CUP/CHA/VPA/RCP、DECSTBM、切换备用屏）未清除"待换行"状态。全屏程序把光标写到最后一列后，紧接的 `CSI row;col H` 定位会被残留的待换行拦下，在末行触发一次滚屏，首行内容被永久挤出屏幕（表现为 vim 打开文件后第一行看不见、内容整体上移一行）。现在显式定位/Tab 统一终止待换行，并新增回归测试 `Cursor_positioning_cancels_pending_wrap_so_first_line_is_not_scrolled_away`。
+- **终端 DCS 序列未吞掉**：`ESC P … ST`（DCS，vim 启动时的 XTGETTCAP 探测等）此前落入 default 分支，payload 被当普通字符渲染成乱码。现在 DCS/SOS/PM/APC（`ESC P/X/^/_`）整体吞掉直到 ST（`ESC \`），新增回归测试 `Dcs_sequences_are_consumed_until_ST_and_not_rendered`。
+- **终端 DA1/DA2 应答互换**：`CSI c`（DA1）此前回的是 DA2 格式 `CSI > 0;95;0 c`，而 `CSI > c`（DA2）回 DA1 格式，全屏程序会因此误判终端能力。现改为按前缀正确路由：DA1 回 `CSI ? 1;2 c`，DA2 回 `CSI > 0;95;0 c`，新增回归测试 `Device_attribute_queries_return_correct_DA1_and_DA2_responses`。
+
 ## [1.7.0] - 2026-11-14
 
 ### 新增
@@ -57,6 +65,12 @@
 - **移除“记忆候选 / consolidation”闭环**：删除后台候选生成、`ops_consolidation_*` 工具、`agent.consolidation` 配置、桌面“记忆候选”Tab、Web“候选审核”面板与候选/运行 API；知识沉淀统一由 `ops_record` 完成。管理员事件列表/supersede 接口保留；`agent_consolidation_candidate`、`agent_consolidation_run` 与历史记录不迁移、不删除，仅停止读写入口。
 
 - **SSH 内网地址露出**：`ssh_list_servers` 与 `litssh://servers` 新增可选 `internalHost` / `internalPort` / `proxyJumpServerId`，便于 AI 把公网 SSH 入口与内网数据库/应用关联；未配置时为 null，仍受目标可见性/授权过滤。
+- **通知中心单条已读/删除**：未读消息新增「标为已读」按钮、未打开信封图标，双击消息也可标记已读；每条通知新增「删除」按钮；已读状态与删除结果继续持久化到 `notifications.json`。
+- **SSH 终端可靠性**：首次连接失败会重置连接状态并自动退避重连；重连用连接代际隔离旧读循环，避免旧会话覆盖新状态；输出按 33ms 批量刷新，减少高吞吐卡顿；查找增加防抖与行文本缓存。
+- **SSH 终端交互与日志**：支持 bracketed paste，多行粘贴先确认；修复斜体/下划线字符缓存；会话日志支持保留天数配置、启动自动清理和「清理过期」入口。
+- **SSH 终端视觉与交互**：主题扩展选中/查找/ANSI 16 色并支持导入 Windows Terminal JSON 配色；光标闪烁与失焦隐藏；双击选词、三击选行、Ctrl+Click 打开 http/https 链接；查找显示当前/总数；标签页显示运行状态、cwd 与上条命令退出码，并解析 OSC 133/OSC 7 shell integration。
+- **SSH 终端显示修复**：中文字符使用双宽单元格，绘制改为先铺整行背景再画文字，避免右侧单元格背景覆盖汉字右半部分；复制选中文本时跳过宽字符占位格。
+- **SSH 终端交互修复**：双击/三击使用时间窗计数并延迟复制，避免 CopyOnSelect 阻塞连续点击；终端响应 DSR/DA/OSC 10/11/12 查询，兼容 Debian vim 的终端探测；大数量插入/删除行序列做边界收敛，避免异常序列中断解析、整屏内容不刷新。
 - **版本**：App / MCP Server 默认版本更新至 1.7.0；「关于」页版本号取自程序集，Debug 构建与发布包保持一致。
 
 ## [1.6.3] - 2026-11-13

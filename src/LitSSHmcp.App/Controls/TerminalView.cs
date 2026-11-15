@@ -3,6 +3,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 
 namespace LitSSHmcp.App.Controls;
@@ -18,6 +20,13 @@ public sealed class TerminalView : Grid
     private readonly TextBox _ime;
     private readonly Border _findBar;
     private readonly TextBox _findBox;
+    private readonly TextBlock _findCount;
+    private readonly DispatcherTimer _findDebounce;
+    private readonly DispatcherTimer _cursorTimer;
+    private readonly DispatcherTimer _selectionCopyTimer;
+    private bool _cursorOn = true;
+    private readonly Dictionary<int, string> _lineTextCache = new();
+    private static readonly UserDialogService Dialogs = new();
 
     private Typeface _typeface = new(new FontFamily("Consolas"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
     private Typeface _boldTypeface = new(new FontFamily("Consolas"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
@@ -35,6 +44,9 @@ public sealed class TerminalView : Grid
     private bool _selecting;
     private bool _hasSelection;
     private int _selStartRow, _selStartCol, _selEndRow, _selEndCol;
+    private int _clickCount;
+    private long _lastClickTicks;
+    private int _lastClickRow = -1, _lastClickCol = -1;
 
     // 搜索
     private readonly List<(int Line, int Col)> _findMatches = new();
@@ -67,8 +79,46 @@ public sealed class TerminalView : Grid
         Children.Add(_ime);
 
         _findBox = new TextBox { Width = 160, VerticalContentAlignment = VerticalAlignment.Center, Padding = new Thickness(4, 2, 4, 2) };
-        _findBox.TextChanged += (_, _) => UpdateFind();
+        _findCount = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(6, 0, 0, 0),
+            MinWidth = 54,
+            Foreground = Brushes.White
+        };
+        _findDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
+        _findDebounce.Tick += (_, _) =>
+        {
+            _findDebounce.Stop();
+            UpdateFind();
+        };
+        _findBox.TextChanged += (_, _) =>
+        {
+            _findDebounce.Stop();
+            _findDebounce.Start();
+        };
         _findBox.PreviewKeyDown += OnFindBoxKeyDown;
+
+        _cursorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(530) };
+        _cursorTimer.Tick += (_, _) =>
+        {
+            _cursorOn = !_cursorOn;
+            if (_session is not null && IsKeyboardFocusWithin)
+                InvalidateVisual();
+        };
+        _selectionCopyTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
+        _selectionCopyTimer.Tick += (_, _) =>
+        {
+            _selectionCopyTimer.Stop();
+            if (_hasSelection && TerminalSettings.CopyOnSelect)
+                CopySelection();
+        };
+        Loaded += (_, _) => _cursorTimer.Start();
+        Unloaded += (_, _) =>
+        {
+            _cursorTimer.Stop();
+            _selectionCopyTimer.Stop();
+        };
 
         var prev = new Button { Content = "上一个", Padding = new Thickness(8, 2, 8, 2), Margin = new Thickness(6, 0, 0, 0) };
         prev.Click += (_, _) => FindStep(-1);
@@ -79,6 +129,7 @@ public sealed class TerminalView : Grid
 
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
         panel.Children.Add(_findBox);
+        panel.Children.Add(_findCount);
         panel.Children.Add(prev);
         panel.Children.Add(next);
         panel.Children.Add(close);
@@ -123,6 +174,13 @@ public sealed class TerminalView : Grid
         _typeface = new Typeface(family, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
         _boldTypeface = new Typeface(family, FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
         _textCache.Clear();
+        _lineTextCache.Clear();
+        if (_session is not null)
+        {
+            _session.Model.AnsiPalette = TerminalSettings.Theme.Ansi16Palette;
+            _session.Model.ThemeFg = TerminalSettings.Theme.Fg;
+            _session.Model.ThemeBg = TerminalSettings.Theme.Bg;
+        }
         RecalcCellSize();
         RecalcGrid();
     }
@@ -153,14 +211,22 @@ public sealed class TerminalView : Grid
     private void AttachSession(ITerminalSession? oldSession, ITerminalSession? newSession)
     {
         if (oldSession is not null)
+        {
             oldSession.Model.Changed -= OnModelChanged;
+            oldSession.Model.ResponseRequested -= OnResponseRequested;
+        }
 
         _session = newSession;
+        _lineTextCache.Clear();
         _scrollOffset = 0;
         _hasSelection = false;
         if (newSession is not null)
         {
             newSession.Model.Changed += OnModelChanged;
+            newSession.Model.ResponseRequested += OnResponseRequested;
+            newSession.Model.AnsiPalette = TerminalSettings.Theme.Ansi16Palette;
+            newSession.Model.ThemeFg = TerminalSettings.Theme.Fg;
+            newSession.Model.ThemeBg = TerminalSettings.Theme.Bg;
             _ = newSession.EnsureStartedAsync(_cols, _rows);
             if (IsLoaded)
                 OnViewLoaded(this, new RoutedEventArgs());
@@ -173,8 +239,23 @@ public sealed class TerminalView : Grid
         InvalidateVisual();
     }
 
+    private void OnResponseRequested(string response)
+    {
+        var session = _session;
+        if (session is null)
+            return;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            try { session.SendInput(response); }
+            catch { /* 终端查询响应失败不应中断绘制 */ }
+        }), DispatcherPriority.Background);
+    }
+
     private void OnModelChanged()
     {
+        _lineTextCache.Clear();
+        if (_session?.Model.IsAltScreen == true)
+            _scrollOffset = 0;
         if (Dispatcher.CheckAccess())
             InvalidateVisual();
         else
@@ -183,9 +264,24 @@ public sealed class TerminalView : Grid
 
     private void OnViewLoaded(object sender, RoutedEventArgs e)
     {
+        _cursorOn = true;
+        _cursorTimer.Start();
         RecalcCellSize();
         RecalcGrid();
         _ime.Focus();
+    }
+
+    protected override void OnGotKeyboardFocus(KeyboardFocusChangedEventArgs e)
+    {
+        base.OnGotKeyboardFocus(e);
+        _cursorOn = true;
+        InvalidateVisual();
+    }
+
+    protected override void OnLostKeyboardFocus(KeyboardFocusChangedEventArgs e)
+    {
+        base.OnLostKeyboardFocus(e);
+        InvalidateVisual();
     }
 
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
@@ -227,6 +323,8 @@ public sealed class TerminalView : Grid
         var model = _session.Model;
         _cols = model.Cols;
         _rows = model.Rows;
+        if (model.IsAltScreen)
+            _scrollOffset = 0;
 
         var findLines = _findMatches.Count > 0 ? _findMatches : null;
         for (var row = 0; row < _rows; row++)
@@ -238,39 +336,65 @@ public sealed class TerminalView : Grid
     private void DrawLine(DrawingContext dc, TerminalModel model, int row, List<(int Line, int Col)>? findMatches)
     {
         var y = row * _cellHeight;
-        var baseIndex = model.ScrollbackCount + row - _scrollOffset;
-        var fromScrollback = baseIndex < model.ScrollbackCount;
+        var baseIndex = model.IsAltScreen ? row : model.ScrollbackCount + row - _scrollOffset;
+        var fromScrollback = !model.IsAltScreen && baseIndex < model.ScrollbackCount;
         var findSet = findMatches is not null ? CollectRowMatches(findMatches, baseIndex) : null;
+        var currentFind = _findIndex >= 0 && _findIndex < _findMatches.Count ? _findMatches[_findIndex] : default;
+        var hasCurrentFind = _findIndex >= 0 && _findIndex < _findMatches.Count;
+        var currentLen = Math.Max(1, _findBox.Text.Length);
 
+        var cells = new TerminalCell[_cols];
+        if (baseIndex < 0)
+        {
+            for (var col = 0; col < _cols; col++)
+                cells[col] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
+        }
+        else if (fromScrollback)
+        {
+            var line = model.ScrollbackLine(model.ScrollbackCount - baseIndex);
+            Array.Copy(line, cells, Math.Min(line.Length, _cols));
+        }
+        else
+        {
+            var screenRow = model.IsAltScreen ? row : baseIndex - model.ScrollbackCount;
+            for (var col = 0; col < _cols; col++)
+                cells[col] = model.CellAt(col, screenRow);
+        }
+
+        // 先画完整行背景，再画文字，避免双宽字符右侧单元格的背景覆盖汉字右半部分。
         for (var col = 0; col < _cols; col++)
         {
-            TerminalCell cell;
-            if (baseIndex < 0)
-                cell = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
-            else if (fromScrollback)
-                cell = model.ScrollbackLine(model.ScrollbackCount - baseIndex)[col];
-            else
-                cell = model.CellAt(col, baseIndex - model.ScrollbackCount);
-
-            var x = col * _cellWidth;
-            var (fg, bg, reverse) = ResolveColors(cell.Attr);
+            var cell = cells[col];
+            var (cellFg, bg, reverse) = ResolveColors(cell.Attr);
             if (reverse)
-                (fg, bg) = (bg, fg);
+                bg = cellFg;
 
             if (IsSelected(row, col))
             {
-                bg = 0x264F78;
+                bg = TerminalSettings.Theme.SelectionBg;
             }
             else if (findSet is not null && findSet.Contains(col))
             {
-                bg = 0x6B5D00;
+                bg = hasCurrentFind && currentFind.Line == baseIndex &&
+                    col >= currentFind.Col && col < currentFind.Col + currentLen
+                    ? TerminalSettings.Theme.FindCurrentBg
+                    : TerminalSettings.Theme.FindBg;
             }
 
             if (bg != TerminalSettings.Theme.Bg)
-                dc.DrawRectangle(GetBrush(bg), null, new Rect(x, y, _cellWidth, _cellHeight));
+                dc.DrawRectangle(GetBrush(bg), null, new Rect(col * _cellWidth, y, _cellWidth, _cellHeight));
+        }
 
-            if (cell.Ch != ' ' && cell.Ch != '\0')
-                dc.DrawText(GetText(cell.Ch, fg, cell.Attr), new Point(x, y));
+        for (var col = 0; col < _cols; col++)
+        {
+            var cell = cells[col];
+            if (cell.WideContinuation || cell.Ch == ' ' || cell.Ch == '\0')
+                continue;
+
+            var (fg, cellBg, reverse) = ResolveColors(cell.Attr);
+            if (reverse)
+                fg = cellBg;
+            dc.DrawText(GetText(cell.Ch, fg, cell.Attr), new Point(col * _cellWidth, y));
         }
     }
 
@@ -289,7 +413,7 @@ public sealed class TerminalView : Grid
 
     private void DrawCursor(DrawingContext dc, TerminalModel model)
     {
-        if (_scrollOffset != 0 || !model.CursorVisible)
+        if (_scrollOffset != 0 || !model.CursorVisible || !IsKeyboardFocusWithin || !_cursorOn)
             return;
         if (model.CursorX >= _cols || model.CursorY >= _rows)
             return;
@@ -316,6 +440,8 @@ public sealed class TerminalView : Grid
     {
         var fg = attr.Fg ?? TerminalSettings.Theme.Fg;
         var bg = attr.Bg ?? TerminalSettings.Theme.Bg;
+        if (fg == bg)
+            fg = bg > 0x7F7F7Fu ? 0x000000u : 0xFFFFFFu;
         return (fg, bg, attr.Reverse);
     }
 
@@ -331,7 +457,8 @@ public sealed class TerminalView : Grid
 
     private FormattedText GetText(char ch, uint fg, TerminalAttributes attr)
     {
-        var key = ch | ((long)fg << 16) | ((attr.Bold ? 1L : 0L) << 48);
+        var key = ch | ((long)fg << 16) | ((attr.Bold ? 1L : 0L) << 48) |
+                  ((attr.Italic ? 1L : 0L) << 49) | ((attr.Underline ? 1L : 0L) << 50);
         if (_textCache.TryGetValue(key, out var cached))
             return cached;
 
@@ -381,12 +508,33 @@ public sealed class TerminalView : Grid
         return (row, col);
     }
 
-    protected override void OnMouseDown(MouseButtonEventArgs e)
+    protected override void OnPreviewMouseLeftButtonDown(MouseButtonEventArgs e)
     {
+        if (e.OriginalSource is DependencyObject source && _findBar.IsAncestorOf(source))
+            return;
         _ime.Focus();
         if (e.ChangedButton == MouseButton.Left)
         {
             var (row, col) = PointToCell(e.GetPosition(this));
+            var clickCount = Math.Max(e.ClickCount, RegisterClickCount(row, col));
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && TryOpenLink(row, col))
+            {
+                e.Handled = true;
+                return;
+            }
+            if (clickCount == 2)
+            {
+                SelectWord(row, col);
+                e.Handled = true;
+                return;
+            }
+            if (clickCount >= 3)
+            {
+                SelectLine(row);
+                e.Handled = true;
+                return;
+            }
+
             _selStartRow = _selEndRow = row;
             _selStartCol = _selEndCol = col;
             _selecting = true;
@@ -395,7 +543,7 @@ public sealed class TerminalView : Grid
             InvalidateVisual();
             e.Handled = true;
         }
-        base.OnMouseDown(e);
+        base.OnPreviewMouseLeftButtonDown(e);
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -407,6 +555,15 @@ public sealed class TerminalView : Grid
             _selEndCol = col;
             _hasSelection = true;
             InvalidateVisual();
+        }
+        else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && _session is not null)
+        {
+            var (row, col) = PointToCell(e.GetPosition(this));
+            Cursor = TryGetLink(row, col, out _) ? Cursors.Hand : Cursors.IBeam;
+        }
+        else
+        {
+            Cursor = Cursors.IBeam;
         }
     }
 
@@ -428,6 +585,129 @@ public sealed class TerminalView : Grid
     {
         Paste();
         e.Handled = true;
+    }
+
+    private void ScheduleSelectionCopy()
+    {
+        if (!TerminalSettings.CopyOnSelect)
+            return;
+        _selectionCopyTimer.Stop();
+        _selectionCopyTimer.Start();
+    }
+
+    private int RegisterClickCount(int row, int col)
+    {
+        var now = Environment.TickCount64;
+        var interval = 900;
+        if (now - _lastClickTicks <= interval && row == _lastClickRow && col == _lastClickCol)
+            _clickCount = Math.Min(3, _clickCount + 1);
+        else
+            _clickCount = 1;
+        _lastClickTicks = now;
+        _lastClickRow = row;
+        _lastClickCol = col;
+        return _clickCount;
+    }
+
+    private string GetRowText(int row)
+    {
+        if (_session is null || row < 0 || row >= _rows)
+            return string.Empty;
+        var model = _session.Model;
+        var abs = model.ScrollbackCount + row - _scrollOffset;
+        if (abs < 0)
+            return string.Empty;
+
+        var chars = new char[_cols];
+        if (abs < model.ScrollbackCount)
+        {
+            var cells = model.ScrollbackLine(model.ScrollbackCount - abs);
+            for (var c = 0; c < chars.Length && c < cells.Length; c++)
+                chars[c] = cells[c].WideContinuation ? '\0' : cells[c].Ch;
+        }
+        else
+        {
+            for (var c = 0; c < chars.Length; c++)
+            {
+                var cell = model.CellAt(c, abs - model.ScrollbackCount);
+                chars[c] = cell.WideContinuation ? '\0' : cell.Ch;
+            }
+        }
+        return new string(chars).TrimEnd('\0', ' ');
+    }
+
+    private static bool IsWordChar(char ch) =>
+        ch == '\0' || (!char.IsWhiteSpace(ch) && "\"'`()[]{}<>".IndexOf(ch) < 0);
+
+    private void SelectWord(int row, int col)
+    {
+        var text = GetRowText(row);
+        if (col < 0 || col >= text.Length || !IsWordChar(text[col]))
+            return;
+
+        var start = col;
+        while (start > 0 && IsWordChar(text[start - 1])) start--;
+        var end = col;
+        while (end < text.Length && IsWordChar(text[end])) end++;
+
+        _selStartRow = _selEndRow = row;
+        _selStartCol = start;
+        _selEndCol = Math.Max(start, end - 1);
+        _selecting = false;
+        _hasSelection = true;
+        ScheduleSelectionCopy();
+        InvalidateVisual();
+    }
+
+    private void SelectLine(int row)
+    {
+        var text = GetRowText(row);
+        _selStartRow = _selEndRow = row;
+        _selStartCol = 0;
+        _selEndCol = Math.Max(0, text.Length - 1);
+        _selecting = false;
+        _hasSelection = text.Length > 0;
+        ScheduleSelectionCopy();
+        InvalidateVisual();
+    }
+
+    private bool TryOpenLink(int row, int col)
+    {
+        if (!TryGetLink(row, col, out var url))
+            return false;
+        try
+        {
+            NativeShell.OpenFile(url);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool TryGetLink(int row, int col, out string url)
+    {
+        url = string.Empty;
+        var text = GetRowText(row);
+        if (col < 0 || col >= text.Length)
+            return false;
+
+        static bool IsLinkChar(char ch) =>
+            char.IsLetterOrDigit(ch) || ":/?#[]@!$&'()*+,;=%._~-".IndexOf(ch) >= 0;
+
+        if (!IsLinkChar(text[col]))
+            return false;
+        var start = col;
+        while (start > 0 && IsLinkChar(text[start - 1])) start--;
+        var end = col + 1;
+        while (end < text.Length && IsLinkChar(text[end])) end++;
+        var candidate = text[start..end].TrimEnd('.', ',', ';', ')', ']', '}');
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return false;
+        url = candidate;
+        return true;
     }
 
     private void CopySelection()
@@ -462,8 +742,10 @@ public sealed class TerminalView : Grid
             var rowText = new System.Text.StringBuilder();
             for (var col = start; col <= end && col < _cols; col++)
             {
-                var ch = line is not null ? line[col].Ch : model.CellAt(col, baseIndex - model.ScrollbackCount).Ch;
-                rowText.Append(ch == '\0' ? ' ' : ch);
+                var cell = line is not null ? line[col] : model.CellAt(col, baseIndex - model.ScrollbackCount);
+                if (cell.WideContinuation)
+                    continue;
+                rowText.Append(cell.Ch == '\0' ? ' ' : cell.Ch);
             }
             sb.Append(rowText.ToString().TrimEnd());
             if (row != r2)
@@ -483,9 +765,11 @@ public sealed class TerminalView : Grid
 
     private void HideFind()
     {
+        _findDebounce.Stop();
         _findBar.Visibility = Visibility.Collapsed;
         _findMatches.Clear();
         _findIndex = -1;
+        UpdateFindCount();
         InvalidateVisual();
         _ime.Focus();
     }
@@ -511,6 +795,7 @@ public sealed class TerminalView : Grid
         var query = _findBox.Text;
         if (_session is null || string.IsNullOrEmpty(query))
         {
+            UpdateFindCount();
             InvalidateVisual();
             return;
         }
@@ -519,37 +804,56 @@ public sealed class TerminalView : Grid
         var total = model.ScrollbackCount + model.Rows;
         for (var line = 0; line < total; line++)
         {
-            var cells = FullLine(model, line);
-            for (var col = 0; col + query.Length <= cells.Length; col++)
+            var text = GetLineText(model, line);
+            var offset = 0;
+            while (offset <= text.Length - query.Length)
             {
-                var match = true;
-                for (var k = 0; k < query.Length; k++)
-                {
-                    if (cells[col + k] != query[k]) { match = false; break; }
-                }
-                if (match)
-                    _findMatches.Add((line, col));
+                var col = text.IndexOf(query, offset, StringComparison.Ordinal);
+                if (col < 0)
+                    break;
+                _findMatches.Add((line, col));
+                offset = col + Math.Max(1, query.Length);
             }
         }
 
         if (_findMatches.Count > 0)
             FindStep(1);
         else
+        {
+            UpdateFindCount();
             InvalidateVisual();
+        }
     }
 
-    private char[] FullLine(TerminalModel model, int line)
+    private string GetLineText(TerminalModel model, int line)
     {
+        if (_lineTextCache.TryGetValue(line, out var cached))
+            return cached;
+
+        var chars = new char[model.Cols];
         if (line < model.ScrollbackCount)
         {
             var cells = model.ScrollbackLine(model.ScrollbackCount - line);
-            return cells.Select(c => c.Ch).ToArray();
+            for (var c = 0; c < chars.Length; c++)
+                chars[c] = cells[c].Ch;
         }
-        var screenRow = line - model.ScrollbackCount;
-        var result = new char[model.Cols];
-        for (var c = 0; c < model.Cols; c++)
-            result[c] = model.CellAt(c, screenRow).Ch;
-        return result;
+        else
+        {
+            var screenRow = line - model.ScrollbackCount;
+            for (var c = 0; c < chars.Length; c++)
+                chars[c] = model.CellAt(c, screenRow).Ch;
+        }
+
+        var text = new string(chars);
+        _lineTextCache[line] = text;
+        return text;
+    }
+
+    private void UpdateFindCount()
+    {
+        _findCount.Text = _findMatches.Count == 0
+            ? (_findBox.Text.Length == 0 ? string.Empty : "无结果")
+            : $"{_findIndex + 1}/{_findMatches.Count}";
     }
 
     private void FindStep(int direction)
@@ -562,6 +866,7 @@ public sealed class TerminalView : Grid
         var model = _session?.Model;
         if (model is null)
             return;
+        UpdateFindCount();
         if (target < model.ScrollbackCount)
         {
             var desiredRow = Math.Max(0, _rows / 2);
@@ -580,6 +885,11 @@ public sealed class TerminalView : Grid
     {
         if (_session is null)
             return;
+        if (_session.Model.IsAltScreen)
+        {
+            e.Handled = true;
+            return;
+        }
         var max = _session.Model.ScrollbackCount;
         _scrollOffset = Math.Clamp(_scrollOffset + (e.Delta > 0 ? 3 : -3), 0, max);
         InvalidateVisual();
@@ -627,8 +937,22 @@ public sealed class TerminalView : Grid
     {
         try
         {
-            if (Clipboard.ContainsText())
-                _session?.SendUserInput(Clipboard.GetText());
+            if (!Clipboard.ContainsText())
+                return;
+            var text = Clipboard.GetText();
+            if (string.IsNullOrEmpty(text))
+                return;
+
+            if (text.Contains('\n') || text.Contains('\r'))
+            {
+                var preview = text.Length <= 600 ? text : text[..600] + "…";
+                if (!Dialogs.Confirm("粘贴内容包含换行，可能会一次执行多条命令。是否继续？\n\n" + preview, "确认粘贴"))
+                    return;
+            }
+
+            if (_session?.Model.BracketedPasteEnabled == true)
+                text = "\u001b[200~" + text + "\u001b[201~";
+            _session?.SendUserInput(text);
         }
         catch
         {

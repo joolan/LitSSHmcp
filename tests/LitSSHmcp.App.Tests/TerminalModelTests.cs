@@ -82,8 +82,102 @@ public class TerminalModelTests
         var model = new TerminalModel(20, 5);
         model.Feed("中A");
         Assert.Equal('中', model.CellAt(0, 0).Ch);
+        Assert.False(model.CellAt(0, 0).WideContinuation);
+        Assert.True(model.CellAt(1, 0).WideContinuation);
         Assert.Equal('A', model.CellAt(2, 0).Ch);
         Assert.Equal(3, model.CursorX);
+    }
+
+    [Fact]
+    public void Large_line_delete_does_not_throw_or_underflow()
+    {
+        var model = new TerminalModel(10, 4);
+        model.Feed("A\r\nB\r\nC");
+        model.Feed("\u001b[999M");
+        Assert.True(model.Rows > 0);
+    }
+
+    [Fact]
+    public void Responds_to_cursor_and_color_queries()
+    {
+        var model = new TerminalModel(20, 5);
+        var responses = new List<string>();
+        model.ResponseRequested += responses.Add;
+
+        model.Feed("\u001b[2;3H\u001b[6n\u001b]11;?\u0007");
+
+        Assert.Contains("\u001b[2;3R", responses);
+        Assert.Contains(responses, r => r.StartsWith("\u001b]11;rgb:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Debian_vim_startup_sequence_renders_file_content()
+    {
+        var model = new TerminalModel(80, 24);
+        model.Feed("\u001b[?2004h$ vim file.txt\r\n");
+        model.Feed("\u001b[?1006;1000h\u001b[?1002h\u001b[?1049h\u001b[22;0;0t" +
+                   "\u001b[>4;2m\u001b[?1h\u001b=\u001b[?2004h\u001b[?1004h\u001b[1;24r" +
+                   "\u001b[?12h\u001b[?12l\u001b[22;2t\u001b[22;1t\u001b[27m\u001b[23m" +
+                   "\u001b[29m\u001b[m\u001b[H\u001b[2J\u001b[?25l\u001b[24;1H\"file.txt\"" +
+                   "\u001b[2;1H\u001b[6n\u001b[3;1H\u001bPzz\u001b\\\u001b[0%m\u001b[6n" +
+                   "\u001b[1;1H\u001b[>c\u001b[38;144H1,1\u001b[11CAll\u001b[1;1H\u6D4B\u8BD5\u5185\u5BB9\r\n" +
+                   "\u001b[94m~\u001b[m\u001b[24;1H\u001b[?25h");
+
+        Assert.True(model.IsAltScreen);
+        Assert.Equal('\u6D4B', model.CellAt(0, 0).Ch);
+        Assert.Equal('\u8BD5', model.CellAt(2, 0).Ch);
+        Assert.True(model.CellAt(1, 0).WideContinuation);
+    }
+
+    [Fact]
+    public void Cursor_positioning_cancels_pending_wrap_so_first_line_is_not_scrolled_away()
+    {
+        // 真实 vim 场景：逐行画 "~" 时把光标顶到最后一列（触发 pending wrap），
+        // 随后用 CUP 定位到状态行继续写。若 CUP 不清 pending wrap，
+        // 接下来的字符会先在最后一行触发一次滚屏，导致首行内容被永久挤出屏幕。
+        var model = new TerminalModel(10, 4);
+        model.Feed("TOP\r\n");
+        model.Feed("\u001b[4;1H0123456789");   // 最后一行写满 10 列 -> pending wrap
+        Assert.Equal(9, model.CursorX);
+        Assert.Equal(3, model.CursorY);
+
+        model.Feed("\u001b[4;4HX");            // CUP 定位后写字符：不得换行/滚屏
+        Assert.Equal('T', model.CellAt(0, 0).Ch);
+        Assert.Equal('O', model.CellAt(1, 0).Ch);
+        Assert.Equal('P', model.CellAt(2, 0).Ch);
+        Assert.Equal('X', model.CellAt(3, 3).Ch);
+        Assert.Equal(0, model.ScrollbackCount);
+    }
+
+    [Fact]
+    public void Dcs_sequences_are_consumed_until_ST_and_not_rendered()
+    {
+        // vim 启动会发 DCS 探测（如 XTGETTCAP）：ESC P <payload> ESC \，
+        // payload 必须整体吞掉，不能当普通字符画到屏幕上。
+        var model = new TerminalModel(20, 5);
+        model.Feed("\u001bP+q544e\u001b\\OK");
+        Assert.Equal('O', model.CellAt(0, 0).Ch);
+        Assert.Equal('K', model.CellAt(1, 0).Ch);
+        Assert.Equal(2, model.CursorX);
+
+        // ST 内的 ESC 不终止序列；连续 ESC 后跟 '\' 才终止。
+        model.Feed("\u001bPq\u001b[0m\u001b\\tail");
+        Assert.Equal('t', model.CellAt(2, 0).Ch);
+        Assert.Equal('l', model.CellAt(5, 0).Ch);
+    }
+
+    [Fact]
+    public void Device_attribute_queries_return_correct_DA1_and_DA2_responses()
+    {
+        var model = new TerminalModel(20, 5);
+        var responses = new List<string>();
+        model.ResponseRequested += responses.Add;
+
+        model.Feed("\u001b[c");   // DA1：无前缀
+        Assert.Contains("\u001b[?1;2c", responses);
+
+        model.Feed("\u001b[>c");  // DA2：'>' 前缀
+        Assert.Contains("\u001b[>0;95;0c", responses);
     }
 
     [Fact]
@@ -106,10 +200,43 @@ public class TerminalModelTests
     }
 
     [Fact]
+    public void Bracketed_paste_mode_tracks_remote_switch()
+    {
+        var model = new TerminalModel(20, 3);
+        model.Feed("\u001b[?2004h");
+        Assert.True(model.BracketedPasteEnabled);
+        model.Feed("\u001b[?2004l");
+        Assert.False(model.BracketedPasteEnabled);
+    }
+
+    [Fact]
     public void Last_line_text_reflects_prompt()
     {
         var model = new TerminalModel(20, 3);
         model.Feed("hello\r\nuser@host:~$ ");
         Assert.EndsWith("$", model.LastNonEmptyLineText());
+    }
+
+    [Fact]
+    public void Osc133_tracks_command_state_and_exit_code()
+    {
+        var model = new TerminalModel(20, 3);
+        model.Feed("\u001b]133;C\u0007");
+        Assert.True(model.IsCommandRunning);
+
+        model.Feed("\u001b]133;D;7\u0007");
+        Assert.False(model.IsCommandRunning);
+        Assert.Equal(7, model.LastExitCode);
+
+        model.Feed("\u001b]133;A\u0007");
+        Assert.Equal(7, model.LastExitCode);
+    }
+
+    [Fact]
+    public void Osc7_tracks_working_directory()
+    {
+        var model = new TerminalModel(20, 3);
+        model.Feed("\u001b]7;file://host/home/user\u0007");
+        Assert.Equal("/home/user", model.CurrentDirectory);
     }
 }

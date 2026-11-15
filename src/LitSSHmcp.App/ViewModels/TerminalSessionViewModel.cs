@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Windows.Input;
 using LitSSHmcp.App.Controls;
 using LitSSHmcp.App.Services;
@@ -14,6 +15,12 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     private readonly ISshService _ssh;
     private readonly CommandSyncService? _commandSync;
     private readonly object _gate = new();
+    private readonly object _outputGate = new();
+    private readonly StringBuilder _pendingOutput = new();
+    private int _flushScheduled;
+    private long _generation;
+    private int _reconnectAttempt;
+    private CancellationTokenSource? _reconnectCts;
     private SshShellSession? _shell;
     private CancellationTokenSource? _cts;
     private bool _started;
@@ -28,6 +35,10 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         _commandSync = commandSync;
         Ordinal = ordinal;
         Model = new TerminalModel(cols, rows);
+        Model.AnsiPalette = TerminalSettings.Theme.Ansi16Palette;
+        Model.ThemeFg = TerminalSettings.Theme.Fg;
+        Model.ThemeBg = TerminalSettings.Theme.Bg;
+        Model.ShellStateChanged += OnShellStateChanged;
         FileBrowser = new RemoteFileBrowserViewModel(server, ssh);
         FileBrowser.CdRequested = ChangeDirectory;
         FileBrowser.TerminalCommandSender = TrySendCommandToTerminal;
@@ -67,29 +78,38 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     }
 
     /// <summary>重开会话（用于 exit/logout 或断线后恢复）。</summary>
-    public async Task ReconnectAsync()
+    public Task ReconnectAsync() => ReconnectCoreAsync(manual: true);
+
+    private async Task ReconnectCoreAsync(bool manual)
     {
         if (_disposed)
             return;
 
+        CancelReconnect();
         SshShellSession? old;
+        CancellationTokenSource? oldCts;
         lock (_gate)
         {
             old = _shell;
             _shell = null;
             _started = false;
+            _generation++;
+            oldCts = _cts;
+            _cts = null;
         }
-        try { _cts?.Cancel(); } catch { /* ignore */ }
+        if (manual)
+            _reconnectAttempt = 0;
+        try { oldCts?.Cancel(); } catch { /* ignore */ }
         if (old is not null)
         {
             try { await old.DisposeAsync(); } catch { /* ignore */ }
         }
-        _cts?.Dispose();
-        _cts = null;
+        oldCts?.Dispose();
         try { _logger?.Dispose(); } catch { /* ignore */ }
         _logger = null;
         IsConnected = false;
-        Model.Feed("\r\n[重新连接…]\r\n");
+        if (manual)
+            Model.Feed("\r\n[重新连接…]\r\n");
         await EnsureStartedAsync(Model.Cols, Model.Rows);
     }
 
@@ -129,7 +149,19 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         OnPropertyChanged(nameof(Title));
     }
 
-    public string Subtitle => $"{Server.Host}:{Server.Port}";
+    public string Subtitle => Model.CurrentDirectory is { Length: > 0 } cwd
+        ? $"{Server.Host}:{Server.Port} · {cwd}"
+        : $"{Server.Host}:{Server.Port}";
+
+    public bool IsCommandRunning => Model.IsCommandRunning;
+
+    public int? LastExitCode => Model.LastExitCode;
+
+    public bool HasFailedCommand => Model.LastExitCode is > 0;
+
+    public string StatusToolTip => StatusMessage +
+        (Model.CurrentDirectory is { Length: > 0 } cwd ? "\n目录: " + cwd : string.Empty) +
+        (Model.LastExitCode is int code ? "\n上条命令退出码: " + code : string.Empty);
 
     /// <summary>是否处于全屏程序（vim/top 等备用屏）——批量执行时视为不安全。</summary>
     public bool IsFullScreenActive => Model.IsAltScreen;
@@ -154,7 +186,12 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     public string StatusMessage
     {
         get => _statusMessage;
-        private set { _statusMessage = value; OnPropertyChanged(); }
+        private set
+        {
+            _statusMessage = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(StatusToolTip));
+        }
     }
 
     private bool _isConnected;
@@ -181,6 +218,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     /// <summary>首次显示时按实际控件尺寸打开 shell；已启动则仅调整尺寸。</summary>
     public async Task EnsureStartedAsync(int cols, int rows)
     {
+        long generation;
         lock (_gate)
         {
             if (_started)
@@ -190,6 +228,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
                 return;
             }
             _started = true;
+            generation = ++_generation;
         }
 
         Model.Resize(cols, rows);
@@ -197,45 +236,56 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         try
         {
             var shell = await _ssh.OpenShellAsync(Server, "xterm-256color", (uint)cols, (uint)rows);
-            if (_disposed)
+            if (_disposed || generation != _generation)
             {
                 await shell.DisposeAsync();
                 return;
             }
-            _shell = shell;
+
+            CancellationTokenSource cts;
+            lock (_gate)
+            {
+                if (_disposed || generation != _generation)
+                {
+                    _ = shell.DisposeAsync();
+                    return;
+                }
+                _shell = shell;
+                _cts = new CancellationTokenSource();
+                cts = _cts;
+            }
+
+            _reconnectAttempt = 0;
             if (TerminalSettings.RecordSessions)
                 _logger = new Services.SessionLogger(Server.Name, Server.Host, Model.Cols, Model.Rows);
             IsConnected = true;
             StatusMessage = "已连接";
             // 连接建立前可能已按控件尺寸调整过模型：补一次窗口尺寸同步
             shell.Resize((uint)Model.Cols, (uint)Model.Rows);
-            _cts = new CancellationTokenSource();
-            _ = ReadLoopAsync(shell, _cts.Token);
+            _ = ReadLoopAsync(shell, cts.Token, generation);
         }
         catch (Exception ex)
         {
+            lock (_gate)
+            {
+                if (generation == _generation)
+                {
+                    _started = false;
+                    _shell = null;
+                }
+            }
             StatusMessage = "连接失败: " + ex.Message;
             Model.Feed($"\r\n[连接失败] {ex.Message}\r\n");
+            ScheduleAutoReconnect(generation);
         }
     }
 
-    private async Task ReadLoopAsync(SshShellSession shell, CancellationToken ct)
+    private async Task ReadLoopAsync(SshShellSession shell, CancellationToken ct, long generation)
     {
         var buffer = new byte[8192];
         var charBuffer = new char[8192];
         var decoder = System.Text.Encoding.UTF8.GetDecoder();
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-
-        void FeedOnUi(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return;
-            _logger?.Write(text);
-            if (dispatcher is not null)
-                _ = dispatcher.BeginInvoke(new Action(() => SafeFeed(text)));
-            else
-                SafeFeed(text);
-        }
+        var unexpectedlyFailed = false;
 
         try
         {
@@ -247,15 +297,64 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
 
                 decoder.Convert(buffer, 0, n, charBuffer, 0, charBuffer.Length, flush: false,
                     out _, out var charsUsed, out _);
-                FeedOnUi(new string(charBuffer, 0, charsUsed));
+                QueueOutput(new string(charBuffer, 0, charsUsed));
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 正常关闭/重连
         }
         catch
         {
-            // 连接结束/异常：落到下方状态
+            unexpectedlyFailed = true;
         }
 
-        OnDisconnected();
+        if (_disposed || generation != _generation)
+            return;
+
+        OnDisconnected(unexpectedlyFailed, generation);
+    }
+
+    private void QueueOutput(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+        _logger?.Write(text);
+        lock (_outputGate)
+        {
+            _pendingOutput.Append(text);
+            if (_flushScheduled != 0)
+                return;
+            _flushScheduled = 1;
+        }
+        _ = FlushOutputLoopAsync();
+    }
+
+    private async Task FlushOutputLoopAsync()
+    {
+        while (true)
+        {
+            await Task.Delay(33).ConfigureAwait(false);
+            string text;
+            lock (_outputGate)
+            {
+                if (_pendingOutput.Length == 0)
+                {
+                    _flushScheduled = 0;
+                    return;
+                }
+                text = _pendingOutput.ToString();
+                _pendingOutput.Clear();
+            }
+
+            if (_disposed)
+                return;
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher is not null && !dispatcher.CheckAccess())
+                _ = dispatcher.BeginInvoke(new Action(() => SafeFeed(text)));
+            else
+                SafeFeed(text);
+        }
     }
 
     private void SafeFeed(string text)
@@ -264,24 +363,69 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         catch { /* 渲染数据异常不应导致进程退出 */ }
     }
 
-    /// <summary>连接结束：切回 UI 线程更新状态（避免跨线程 PropertyChanged 引发异常）。</summary>
-    private void OnDisconnected()
+    /// <summary>连接结束：切回 UI 线程更新状态，并仅在当前连接代际上自动重连。</summary>
+    private void OnDisconnected(bool unexpectedlyFailed, long generation)
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is not null && !dispatcher.CheckAccess())
-            _ = dispatcher.BeginInvoke(new Action(ApplyDisconnected));
+            _ = dispatcher.BeginInvoke(new Action(() => ApplyDisconnected(unexpectedlyFailed, generation)));
         else
-            ApplyDisconnected();
+            ApplyDisconnected(unexpectedlyFailed, generation);
     }
 
-    private void ApplyDisconnected()
+    private void ApplyDisconnected(bool unexpectedlyFailed, long generation)
     {
+        if (_disposed || generation != _generation)
+            return;
+        lock (_gate)
+        {
+            _started = false;
+            _shell = null;
+        }
         IsConnected = false;
         if (!StatusMessage.StartsWith("连接失败", StringComparison.Ordinal))
-            StatusMessage = "连接已断开";
+            StatusMessage = unexpectedlyFailed ? "连接异常，准备重连…" : "连接已断开";
+        if (unexpectedlyFailed)
+            ScheduleAutoReconnect(generation);
     }
 
     /// <summary>程序化下发（文件浏览器 cd、重连、AI 等）：不参与命令同步广播。</summary>
+    private void ScheduleAutoReconnect(long generation)
+    {
+        if (_disposed || generation != _generation || _reconnectAttempt >= 5)
+            return;
+        CancelReconnect();
+        var cts = new CancellationTokenSource();
+        _reconnectCts = cts;
+        var attempt = ++_reconnectAttempt;
+        var delay = TimeSpan.FromSeconds(Math.Min(30, Math.Pow(2, attempt)));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(delay, cts.Token).ConfigureAwait(false);
+                if (_disposed || generation != _generation)
+                    return;
+                if (ReferenceEquals(_reconnectCts, cts))
+                    _reconnectCts = null;
+                cts.Dispose();
+                await ReconnectCoreAsync(manual: false);
+            }
+            catch (OperationCanceledException)
+            {
+                // 手动重连/关闭会取消自动重连
+            }
+        });
+    }
+
+    private void CancelReconnect()
+    {
+        var cts = _reconnectCts;
+        _reconnectCts = null;
+        try { cts?.Cancel(); } catch { /* ignore */ }
+        cts?.Dispose();
+    }
+
     public void SendInput(string text) => SendDirectInput(text);
 
     /// <summary>用户输入（键盘 / IME / 粘贴 / 发送框）：先写入本会话，再广播给其他已开启同步的会话。</summary>
@@ -325,13 +469,18 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        Model.ShellStateChanged -= OnShellStateChanged;
+        CancelReconnect();
         try { _cts?.Cancel(); } catch { /* ignore */ }
         SshShellSession? shell;
         lock (_gate)
         {
+            _generation++;
             shell = _shell;
             _shell = null;
         }
+        lock (_outputGate)
+            _pendingOutput.Clear();
         if (shell is not null)
             await shell.DisposeAsync();
         _cts?.Dispose();
@@ -340,6 +489,15 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnShellStateChanged()
+    {
+        OnPropertyChanged(nameof(IsCommandRunning));
+        OnPropertyChanged(nameof(LastExitCode));
+        OnPropertyChanged(nameof(HasFailedCommand));
+        OnPropertyChanged(nameof(Subtitle));
+        OnPropertyChanged(nameof(StatusToolTip));
+    }
 
     private void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

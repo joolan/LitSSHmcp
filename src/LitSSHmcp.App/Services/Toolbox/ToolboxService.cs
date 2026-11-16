@@ -14,6 +14,7 @@ public sealed class ToolboxService
     private static readonly Guid TextCodecBuiltinId = Guid.Parse("D5F9B3A2-0C4E-4B7F-9D3A-8E2C6B0F1A74");
     private static readonly Guid SshKeyBuiltinId = Guid.Parse("E6A0C4B3-1D5F-4C8A-9E4B-8F3D7C1A2B85");
     private static readonly Guid LocalPortBuiltinId = Guid.Parse("F7B1D5C4-2E6A-4D9B-8F5C-9A4E8D2B3C96");
+    private static readonly Guid WakeOnLanBuiltinId = Guid.Parse("0A2C4E6F-8B1D-4A3C-9E5F-7D9B1C3E5A70");
 
     private readonly ToolboxStore _store;
     private readonly ToolboxLauncher _launcher;
@@ -69,6 +70,8 @@ public sealed class ToolboxService
             "生成 OpenSSH 密钥、查看公钥类型、注释与 SHA256 指纹", order + 60);
         changed |= EnsureBuiltin("local-port", LocalPortBuiltinId, "本地端口 / 进程检查",
             "查看本机监听端口、活动连接、PID、进程与路径", order + 70);
+        changed |= EnsureBuiltin("wake-on-lan", WakeOnLanBuiltinId, "网络唤醒 (Wake-on-LAN)",
+            "按 MAC 发送魔术包唤醒设备，支持局域网扫描添加与原理说明", order + 80);
 
         if (changed)
             await PersistAsync();

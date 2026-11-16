@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **网络唤醒 / Wake-on-LAN（工具箱）**：新增内置工具，可按名称保存 MAC、可选 IP / 广播地址 / 端口和备注，发送标准 102 字节魔术包并支持重复发送、唤醒次数与最近时间记录；支持扫描同网段设备（并发 ICMP ping + ARP 缓存 + 反向主机名）后批量添加。内置「原理与条件」页说明实现原理、BIOS/UEFI 与网卡电源管理、关闭快速启动、有线网络、同 VLAN/跨网段中继和扫描边界；设备列表仅保存在本机 `wake-on-lan.json`，不修改系统网络配置。
+
 ### 修复
 
 - **终端全屏程序缺首行（vim/less）**：`TerminalModel` 的光标定位（CUP/CHA/VPA/RCP、DECSTBM、切换备用屏）未清除"待换行"状态。全屏程序把光标写到最后一列后，紧接的 `CSI row;col H` 定位会被残留的待换行拦下，在末行触发一次滚屏，首行内容被永久挤出屏幕（表现为 vim 打开文件后第一行看不见、内容整体上移一行）。现在显式定位/Tab 统一终止待换行，并新增回归测试 `Cursor_positioning_cancels_pending_wrap_so_first_line_is_not_scrolled_away`。

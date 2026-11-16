@@ -22,6 +22,7 @@ public partial class ToolboxView : UserControl
     private TextCodecToolWindow? _textCodecWindow;
     private SshKeyToolWindow? _sshKeyWindow;
     private LocalPortToolWindow? _localPortWindow;
+    private WakeOnLanToolWindow? _wakeOnLanWindow;
     private ToolboxItemViewModel? _dragItem;
     private ToolboxItemViewModel? _dropTarget;
     private Point _dragStart;
@@ -197,6 +198,18 @@ public partial class ToolboxView : UserControl
             _localPortWindow = new LocalPortToolWindow { Owner = Window.GetWindow(this) };
             _localPortWindow.Closed += (_, _) => _localPortWindow = null;
             _localPortWindow.Show();
+        }
+        if (string.Equals(id, "wake-on-lan", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_wakeOnLanWindow is { IsLoaded: true })
+            {
+                _wakeOnLanWindow.Activate();
+                return;
+            }
+
+            _wakeOnLanWindow = new WakeOnLanToolWindow { Owner = Window.GetWindow(this) };
+            _wakeOnLanWindow.Closed += (_, _) => _wakeOnLanWindow = null;
+            _wakeOnLanWindow.Show();
         }
     }
 

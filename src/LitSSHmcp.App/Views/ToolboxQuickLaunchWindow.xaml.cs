@@ -99,6 +99,13 @@ public partial class ToolboxQuickLaunchWindow : FluentWindow
             return;
         }
 
+        if (string.Equals(id, "wake-on-lan", StringComparison.OrdinalIgnoreCase))
+        {
+            new WakeOnLanToolWindow().Show();
+            Close();
+            return;
+        }
+
         if (string.Equals(id, "vault", StringComparison.OrdinalIgnoreCase))
         {
             try

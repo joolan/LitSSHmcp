@@ -378,6 +378,7 @@ public sealed class ToolboxItemViewModel : INotifyPropertyChanged
             "password" => SymbolRegular.Key24,
             "password-vault" => SymbolRegular.ShieldKeyhole24,
             "vault" => SymbolRegular.LockClosed24,
+            "wake-on-lan" => SymbolRegular.Power24,
             _ => SymbolRegular.Wrench24
         }
     };

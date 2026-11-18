@@ -8,11 +8,21 @@ public sealed class WakeOnLanHost
     public string IpAddress { get; set; } = string.Empty;
     public string BroadcastAddress { get; set; } = string.Empty;
     public int Port { get; set; } = WakeOnLanService.DefaultPort;
+    public string SecureOnPassword { get; set; } = string.Empty;
     public string Notes { get; set; } = string.Empty;
+    public bool ScheduleEnabled { get; set; }
+    public string ScheduleTime { get; set; } = string.Empty;
+    public string LastScheduledWakeDate { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset? LastWokenAt { get; set; }
     public int WakeCount { get; set; }
+
+    public string ScheduleText => ScheduleEnabled && !string.IsNullOrWhiteSpace(ScheduleTime)
+        ? $"每日 {ScheduleTime}"
+        : string.Empty;
+
+    public string SecureOnText => string.IsNullOrWhiteSpace(SecureOnPassword) ? string.Empty : "已启用";
 
     public WakeOnLanHost Clone() => (WakeOnLanHost)MemberwiseClone();
 }

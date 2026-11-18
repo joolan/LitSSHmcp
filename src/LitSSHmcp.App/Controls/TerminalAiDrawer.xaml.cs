@@ -96,11 +96,13 @@ public partial class TerminalAiDrawer : UserControl
 
     private void OnInputKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Enter || (Keyboard.Modifiers & ModifierKeys.Control) == 0)
+        if (e.Key != Key.Enter || (Keyboard.Modifiers & ModifierKeys.Shift) != 0)
             return;
 
-        if (_viewModel?.SendOrStopCommand.CanExecute(null) == true)
+        if (_viewModel is { IsBusy: false } && _viewModel.SendOrStopCommand.CanExecute(null))
+        {
             _viewModel.SendOrStopCommand.Execute(null);
-        e.Handled = true;
+            e.Handled = true;
+        }
     }
 }

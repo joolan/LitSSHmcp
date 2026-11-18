@@ -96,7 +96,10 @@ public sealed class WakeOnLanStore
             host.MacAddress = host.MacAddress?.Trim() ?? string.Empty;
             host.IpAddress = host.IpAddress?.Trim() ?? string.Empty;
             host.BroadcastAddress = host.BroadcastAddress?.Trim() ?? string.Empty;
+            host.SecureOnPassword = host.SecureOnPassword?.Trim() ?? string.Empty;
             host.Notes ??= string.Empty;
+            host.ScheduleTime = host.ScheduleTime?.Trim() ?? string.Empty;
+            host.LastScheduledWakeDate = host.LastScheduledWakeDate?.Trim() ?? string.Empty;
             host.Port = host.Port is < 1 or > 65535 ? WakeOnLanService.DefaultPort : host.Port;
         }
         return document;

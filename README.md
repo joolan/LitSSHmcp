@@ -76,7 +76,7 @@
 | 日志与 Java | 日志检索、文件发现；Java 进程、线程栈、堆内存、JVM 信息 |
 | 拓扑与体检 | 资产拓扑、上下游依赖、影响面、URL 落地、应用聚合体检 |
 | 自动化 | 文件同步、触发事件、定时备份、AI 定时任务、Jenkins 构建与日志 |
-| 本地工具箱 | 程序/文件/脚本启动、Hosts、密码与加密保管、证书/TLS 批量检测、文本/编码转换、SSH 密钥、本地端口/进程检查、网络唤醒 (Wake-on-LAN) |
+| 本地工具箱 | 程序/文件/脚本启动、Hosts、密码与加密保管、证书/TLS 批量检测、文本/编码转换、SSH 密钥、本地端口/进程检查、网络唤醒 (Wake-on-LAN，SecureOn/CSV/批量/每日定时) |
 | 安全审计 | 命令 / SQL 审计、审批链、哈希链完整性校验、Web 授权矩阵 |
 
 详细桌面端能力见 [docs/APP_GUIDE.md](docs/APP_GUIDE.md)，Web 端见 [docs/WEB_GUIDE.md](docs/WEB_GUIDE.md)。

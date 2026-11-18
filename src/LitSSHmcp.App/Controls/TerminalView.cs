@@ -24,6 +24,9 @@ public sealed class TerminalView : Grid
     private readonly DispatcherTimer _findDebounce;
     private readonly DispatcherTimer _cursorTimer;
     private readonly DispatcherTimer _selectionCopyTimer;
+    private readonly DispatcherTimer _resizeDebounce;
+    private int _pendingCols = 80;
+    private int _pendingRows = 24;
     private bool _cursorOn = true;
     private readonly Dictionary<int, string> _lineTextCache = new();
     private static readonly UserDialogService Dialogs = new();
@@ -113,11 +116,23 @@ public sealed class TerminalView : Grid
             if (_hasSelection && TerminalSettings.CopyOnSelect)
                 CopySelection();
         };
+        _resizeDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+        _resizeDebounce.Tick += (_, _) =>
+        {
+            _resizeDebounce.Stop();
+            if (_pendingCols == _cols && _pendingRows == _rows)
+                return;
+            _cols = _pendingCols;
+            _rows = _pendingRows;
+            _session?.Resize(_cols, _rows);
+            InvalidateVisual();
+        };
         Loaded += (_, _) => _cursorTimer.Start();
         Unloaded += (_, _) =>
         {
             _cursorTimer.Stop();
             _selectionCopyTimer.Stop();
+            _resizeDebounce.Stop();
         };
 
         var prev = new Button { Content = "上一个", Padding = new Thickness(8, 2, 8, 2), Margin = new Thickness(6, 0, 0, 0) };
@@ -306,12 +321,13 @@ public sealed class TerminalView : Grid
             return;
         var cols = Math.Max(2, (int)(ActualWidth / _cellWidth));
         var rows = Math.Max(2, (int)(ActualHeight / _cellHeight));
-        if (cols == _cols && rows == _rows)
+        if (cols == _pendingCols && rows == _pendingRows)
             return;
 
-        _cols = cols;
-        _rows = rows;
-        _session?.Resize(cols, rows);
+        _pendingCols = cols;
+        _pendingRows = rows;
+        _resizeDebounce.Stop();
+        _resizeDebounce.Start();
     }
 
     protected override void OnRender(DrawingContext dc)

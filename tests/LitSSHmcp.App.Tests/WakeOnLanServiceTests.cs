@@ -46,6 +46,57 @@ public class WakeOnLanServiceTests
     }
 
     [Fact]
+    public void Magic_packet_can_include_secure_on_password()
+    {
+        var packet = WakeOnLanService.BuildMagicPacket("AA:BB:CC:DD:EE:FF", "11:22:33:44:55:66");
+
+        Assert.Equal(108, packet.Length);
+        Assert.Equal(new byte[] { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66 }, packet.Skip(102).Take(6));
+    }
+
+    [Fact]
+    public void Csv_export_import_round_trips_hosts_and_secure_on()
+    {
+        var source = new WakeOnLanHost
+        {
+            Name = "NAS,\"主\"",
+            MacAddress = "AA:BB:CC:DD:EE:FF",
+            IpAddress = "192.168.1.10",
+            BroadcastAddress = "192.168.1.255",
+            Port = 7,
+            SecureOnPassword = "11:22:33:44:55:66",
+            ScheduleEnabled = true,
+            ScheduleTime = "08:30",
+            Notes = "line1\nline2"
+        };
+
+        var imported = WakeOnLanCsv.Import(WakeOnLanCsv.Export(new[] { source }));
+
+        var host = Assert.Single(imported);
+        Assert.Equal(source.Name, host.Name);
+        Assert.Equal(source.MacAddress, host.MacAddress);
+        Assert.Equal(source.SecureOnPassword, host.SecureOnPassword);
+        Assert.True(host.ScheduleEnabled);
+        Assert.Equal("08:30", host.ScheduleTime);
+        Assert.Equal(source.Notes, host.Notes);
+    }
+
+    [Fact]
+    public void Csv_import_deduplicates_mac_and_skips_invalid_rows()
+    {
+        const string csv =
+            "name,mac,ip,broadcast,port,secureon,scheduleEnabled,scheduleTime,notes\n" +
+            "a,AA:BB:CC:DD:EE:FF,192.168.1.2,,9,,false,,\n" +
+            "b,aa-bb-cc-dd-ee-ff,192.168.1.3,,9,,false,,\n" +
+            "bad,not-a-mac,,,,,false,,\n";
+
+        var imported = WakeOnLanCsv.Import(csv);
+
+        Assert.Single(imported);
+        Assert.Equal("AA:BB:CC:DD:EE:FF", imported[0].MacAddress);
+    }
+
+    [Fact]
     public void Arp_parser_reads_rows_and_ignores_headers()
     {
         const string output =

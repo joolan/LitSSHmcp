@@ -97,6 +97,7 @@ public sealed class TerminalJobTool : IAgentTool
         var jobId = "j-" + Guid.NewGuid().ToString("N")[..8];
         var escaped = Quote(command);
         var start = "mkdir -p ~/.litssh-ai/jobs; " +
+                    "find ~/.litssh-ai/jobs -type f -mtime +7 -delete; " +
                     $"log=~/.litssh-ai/jobs/{jobId}.log; " +
                     $"nohup setsid /bin/sh -c {escaped} > \"$log\" 2>&1 & " +
                     $"echo $! > ~/.litssh-ai/jobs/{jobId}.pid; " +

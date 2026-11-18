@@ -30,6 +30,7 @@ public partial class TerminalTabView : UserControl
         Loaded += OnViewLoaded;
         Unloaded += OnViewUnloaded;
         DataContextChanged += (_, _) => Hook();
+        PreviewKeyDown += OnViewPreviewKeyDown;
     }
 
     private void OnViewLoaded(object sender, RoutedEventArgs e)
@@ -168,6 +169,38 @@ public partial class TerminalTabView : UserControl
             HideAiPane();
         else
             ShowAiPane();
+    }
+
+    private void OnViewPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        var modifiers = Keyboard.Modifiers;
+        if ((modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) !=
+            (ModifierKeys.Control | ModifierKeys.Shift) ||
+            (modifiers & ModifierKeys.Alt) != 0)
+            return;
+
+        switch (e.Key)
+        {
+            case Key.A:
+                OnToggleAi(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+            case Key.N:
+                ShowAiPane();
+                _aiVm?.NewConversationCommand.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.L:
+                ShowAiPane();
+                _aiVm?.AttachSelectionCommand.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.I:
+                ShowAiPane();
+                AiDrawer.FocusInput();
+                e.Handled = true;
+                break;
+        }
     }
 
     private void ShowAiPane()

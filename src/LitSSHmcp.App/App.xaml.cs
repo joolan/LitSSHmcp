@@ -115,12 +115,16 @@ public partial class App : Application
             };
             _backupScheduler.Start();
 
+            _wakeOnLanScheduler = new WakeOnLanScheduler();
+            _wakeOnLanScheduler.Start();
+
             // AI 定时任务调度器：桌面 App 为主宿主；启动时自然补跑到期任务。
             _ = StartAiTaskSchedulerAsync();
 
             Exit += (_, _) =>
             {
                 _aiTaskScheduler?.Dispose();
+                _wakeOnLanScheduler?.Dispose();
                 _backupScheduler?.Dispose();
                 _triggerScheduler?.Dispose();
                 _syncScheduler?.Dispose();
@@ -310,6 +314,7 @@ public partial class App : Application
     private static SyncScheduler? _syncScheduler;
     private static TriggerScheduler? _triggerScheduler;
     private static BackupScheduler? _backupScheduler;
+    private static WakeOnLanScheduler? _wakeOnLanScheduler;
     private static AiTaskScheduler? _aiTaskScheduler;
 
     private static bool TryGetAiTaskId(string[] args, out string taskId)

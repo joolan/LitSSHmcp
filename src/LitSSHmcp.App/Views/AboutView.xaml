@@ -26,7 +26,8 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 终端 AI 助手：绑定当前服务器，仅暴露 terminal_exec / terminal_sudo / terminal_job；命令在当前 PTY 执行，共享 cwd/env/alias，支持最近 50 行上下文、sudo 手动/自动提权与结构化审计。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 终端体验升级：主屏与滚动历史宽度重排、终端/AI 可拖动分隔条、vim/less DECCKM 方向键修复、AI 会话与开合状态按终端隔离。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 长任务与多轮：新增 terminal_job 后台任务（start/status/log/cancel/list）、AI 新对话、选中文本附加，以及输入/输出/缓存 token 与估算成本显示。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 工具箱：新增网络唤醒（Wake-on-LAN），支持 MAC/名称管理、魔术包发送、同网段扫描与原理/条件说明。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 工具箱：网络唤醒（Wake-on-LAN）支持 MAC/名称、SecureOn、CSV 导入导出、多选批量唤醒、每日定时唤醒、同网段扫描与原理/条件说明。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 终端 AI 结果 Markdown 渲染；AI 流式输出与终端 resize 重排防抖，长任务日志自动清理。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 保留 1.7 的长任务 Job 模型、Ops 专注 profile、可信脚本哈希与多机巡检/快照 Job 化能力。"/>
                 </StackPanel>
             </Border>

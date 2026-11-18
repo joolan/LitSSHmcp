@@ -9,10 +9,12 @@
 ### 新增
 
 - **SSH 终端 AI 助手**：终端标签新增 AI 侧栏，按终端实例隔离并绑定当前服务器；只暴露 `terminal_exec` / `terminal_sudo` / `terminal_job` 三个工具，命令在当前 PTY 执行，共享 cwd/env/alias/后台任务。每轮发送前可编辑最近 50 行终端上下文；普通命令按审批模式执行，危险命令与 sudo 始终确认；sudo 密码不写日志/回放；sudo 确认框默认「确认后直接填入左侧终端并执行，由我输入密码」（取消勾选才自动使用配置密码）；确认后按 SudoType 生成完整提权命令（`sudo /bin/sh -c` 或 `su - ... -c`）填入 PTY，等待用户输入密码；完成后工具自动返回输出与退出码，无需复制结果。密码错误最多可重试 3 次，超时 5 分钟后返回明确错误。sudo 的完成标记与提权命令在同一命令行，避免后续包装行被 sudo 当作密码读取。配置的 PTY sudo 认证失败时自动回退到服务器配置的提权通道，并明确提示未共享当前 cwd/env。`terminal_sudo` 只接受单行命令，禁止在 `terminal_exec` 中运行 sudo/su。AI 助手、开合状态与上下文折叠状态按终端实例隔离，切换标签不再串话；AI 结果文本支持鼠标选择并提供复制按钮。新增 AI「新对话」、输入/输出/缓存 token 与估算成本显示、终端选中文本附加到上下文、终端/AI 可拖动分隔条，以及 `terminal_job` 后台长任务（start/status/log/cancel/list）。终端主屏与滚动历史支持宽度变化后的逻辑行重排，vim/top 备用屏由程序自身重绘；备用屏期间主屏也会重排，退出后不会保留截断状态。AI 操作写入 `audit.db`，审计日志新增「AI 终端 (AI)」筛选。第一版仅支持已保存服务器与 bash/zsh/sh，不支持全屏程序；执行前会在终端与会话日志中写入 `[AI] <命令>`（提权为 `[AI][sudo] <命令>`），内部完成标记与包装行不写入日志；审计库另存结构化记录。
-- **网络唤醒 / Wake-on-LAN（工具箱）**：新增内置工具，可按名称保存 MAC、可选 IP / 广播地址 / 端口和备注，发送标准 102 字节魔术包并支持重复发送、唤醒次数与最近时间记录；支持扫描同网段设备（并发 ICMP ping + ARP 缓存 + 反向主机名）后批量添加。内置「原理与条件」页说明实现原理、BIOS/UEFI 与网卡电源管理、关闭快速启动、有线网络、同 VLAN/跨网段中继和扫描边界；设备列表仅保存在本机 `wake-on-lan.json`，不修改系统网络配置。
+- **网络唤醒 / Wake-on-LAN（工具箱）**：新增内置工具，可按名称保存 MAC、可选 IP / 广播地址 / 端口 / SecureOn 密码和备注，发送标准 102 字节魔术包（SecureOn 为 108 字节）并支持重复发送、唤醒次数与最近时间记录；支持扫描同网段设备（并发 ICMP ping + ARP 缓存 + 反向主机名，按 MAC 去重）后批量添加、CSV 导入导出、多选批量唤醒和每日定时唤醒（App 运行期间）。内置「原理与条件」页说明实现原理、BIOS/UEFI 与网卡电源管理、关闭快速启动、有线网络、同 VLAN/跨网段中继和扫描边界；设备列表仅保存在本机 `wake-on-lan.json`，不修改系统网络配置。
+- **终端 AI 结果 Markdown 渲染**：AI 回答按 Markdown 渲染（标题、列表、代码块、表格、链接等），同时保留原始文本复制按钮。
 
 ### 修复
 
+- **终端 / AI 性能与稳定性**：终端 resize 重排增加 120ms 防抖；AI 流式文本按 80ms 批量刷新；上下文限制 50k 字符；`terminal_job` 自动清理 7 天前任务文件。
 - **vim/less 方向键失效**：终端模型新增 DECCKM（`CSI ?1h/l`）应用光标键模式，方向键/Home/End 在应用模式下发送 `ESC O A/B/C/D/H/F`，修复部分机器进入 vim 后方向键无法移动光标的问题。
 - **终端全屏程序缺首行（vim/less）**：`TerminalModel` 的光标定位（CUP/CHA/VPA/RCP、DECSTBM、切换备用屏）未清除"待换行"状态。全屏程序把光标写到最后一列后，紧接的 `CSI row;col H` 定位会被残留的待换行拦下，在末行触发一次滚屏，首行内容被永久挤出屏幕（表现为 vim 打开文件后第一行看不见、内容整体上移一行）。现在显式定位/Tab 统一终止待换行，并新增回归测试 `Cursor_positioning_cancels_pending_wrap_so_first_line_is_not_scrolled_away`。
 - **终端 DCS 序列未吞掉**：`ESC P … ST`（DCS，vim 启动时的 XTGETTCAP 探测等）此前落入 default 分支，payload 被当普通字符渲染成乱码。现在 DCS/SOS/PM/APC（`ESC P/X/^/_`）整体吞掉直到 ST（`ESC \`），新增回归测试 `Dcs_sequences_are_consumed_until_ST_and_not_rendered`。

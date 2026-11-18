@@ -45,8 +45,9 @@
                        Command="{Binding ReconnectCommand}"/>
             <ui:Button DockPanel.Dock="Left" Icon="{ui:SymbolIcon Code24}" Padding="8,3" Margin="0,0,8,4"
                        ToolTip="命令片段" AutomationProperties.Name="命令片段" Click="OnSnippets"/>
-            <ui:Button x:Name="AiButton" DockPanel.Dock="Left" Icon="{ui:SymbolIcon Chat24}" Padding="8,3"
-                       Margin="0,0,8,4" ToolTip="终端 AI 助手（仅当前服务器）"
+            <ui:Button x:Name="AiButton" DockPanel.Dock="Left" Content="AI 助手"
+                       Icon="{ui:SymbolIcon Chat24}" Padding="8,3"
+                       Margin="0,0,8,4" ToolTip="终端 AI 助手（仅当前服务器，Ctrl+Shift+A）"
                        AutomationProperties.Name="终端 AI 助手" Click="OnToggleAi"/>
             <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource TileCloseButton}" Margin="4,0,0,0"
                     ToolTip="关闭会话"
@@ -68,17 +69,6 @@
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         </DockPanel>
 
-        <DockPanel DockPanel.Dock="Bottom" Margin="6,4,6,6">
-            <ui:Button DockPanel.Dock="Right" Content="发送" Padding="16,4" Appearance="Primary" Margin="6,0,0,0" Click="OnSendInput"/>
-            <ui:Button DockPanel.Dock="Right" Content="AI 分析" Padding="12,4" Margin="6,0,0,0"
-                       ToolTip="把下方输入框的命令交给「运维专家」智能体分析（打开临时聊天，可修改后再发送）"
-                       Click="OnAiAnalyze"/>
-            <ui:TextBox FontWeight="Normal" x:Name="SendBox" KeyDown="OnSendBoxKeyDown"
-                        AcceptsReturn="True" TextWrapping="Wrap" MinHeight="30" MaxHeight="120"
-                        VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" Padding="5"
-                        PlaceholderText="在此输入或粘贴内容（可多行），Enter 发送、Shift+Enter 换行；或点「AI 分析」交给运维专家解读"/>
-        </DockPanel>
-
         <Grid Margin="6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="FileCol" Width="300"/>
@@ -87,19 +77,23 @@
                 <ColumnDefinition x:Name="AiSplitterCol" Width="Auto"/>
                 <ColumnDefinition x:Name="AiCol" Width="0"/>
             </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-            <Border x:Name="FilePanel" Grid.Column="0" Margin="0,0,4,0"
+            <Border x:Name="FilePanel" Grid.Column="0" Grid.RowSpan="2" Margin="0,0,4,0"
                     Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
                     CornerRadius="{DynamicResource AppRadiusS}" Padding="6"
                     Visibility="{Binding ShowFileBrowser, Converter={StaticResource BoolToVis}}">
                 <controls:RemoteFileBrowserView DataContext="{Binding FileBrowser}"/>
             </Border>
 
-            <GridSplitter x:Name="Splitter" Grid.Column="1" Width="4" HorizontalAlignment="Stretch" Background="Transparent"
+            <GridSplitter x:Name="Splitter" Grid.Column="1" Grid.RowSpan="2" Width="4" HorizontalAlignment="Stretch" Background="Transparent"
                           DragCompleted="OnSplitterDragCompleted"
                           Visibility="{Binding ShowFileBrowser, Converter={StaticResource BoolToVis}}"/>
 
-            <Grid Grid.Column="2">
+            <Grid Grid.Column="2" Grid.Row="0">
                 <Border Background="{DynamicResource AppTerminalBgBrush}" CornerRadius="{DynamicResource AppRadiusS}">
                     <controls:TerminalView x:Name="Terminal" Session="{Binding}" Margin="4,8,4,4"/>
                 </Border>
@@ -127,12 +121,23 @@
                 </Border>
             </Grid>
 
-            <GridSplitter x:Name="AiSplitter" Grid.Column="3" Width="4" HorizontalAlignment="Stretch"
+            <DockPanel Grid.Column="2" Grid.Row="1" Margin="0,6,0,0">
+                <ui:Button DockPanel.Dock="Right" Content="发送" Padding="16,4" Appearance="Primary" Margin="6,0,0,0" Click="OnSendInput"/>
+                <ui:Button DockPanel.Dock="Right" Content="AI 分析" Padding="12,4" Margin="6,0,0,0"
+                           ToolTip="把下方输入框的命令交给「运维专家」智能体分析（打开临时聊天，可修改后再发送）"
+                           Click="OnAiAnalyze"/>
+                <ui:TextBox FontWeight="Normal" x:Name="SendBox" KeyDown="OnSendBoxKeyDown"
+                            AcceptsReturn="True" TextWrapping="Wrap" MinHeight="30" MaxHeight="120"
+                            VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" Padding="5"
+                            PlaceholderText="在此输入或粘贴内容（可多行），Enter 发送、Shift+Enter 换行；或点「AI 分析」交给运维专家解读"/>
+            </DockPanel>
+
+            <GridSplitter x:Name="AiSplitter" Grid.Column="3" Grid.RowSpan="2" Width="4" HorizontalAlignment="Stretch"
                           Background="Transparent" Visibility="Collapsed"
                           DragCompleted="OnAiSplitterDragCompleted"
                           ResizeBehavior="PreviousAndNext" ResizeDirection="Columns"/>
 
-            <Border x:Name="AiPanel" Grid.Column="4" Margin="4,0,0,0" Visibility="Collapsed"
+            <Border x:Name="AiPanel" Grid.Column="4" Grid.RowSpan="2" Margin="4,0,0,0" Visibility="Collapsed"
                     BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
                     CornerRadius="{DynamicResource AppRadiusS}">
                 <controls:TerminalAiDrawer x:Name="AiDrawer"/>

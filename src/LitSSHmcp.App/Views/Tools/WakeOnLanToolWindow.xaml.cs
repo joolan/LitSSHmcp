@@ -1,9 +1,12 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Net;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Services.Toolbox;
+using Microsoft.Win32;
 using Wpf.Ui.Controls;
 
 namespace LitSSHmcp.App.Views.Tools;
@@ -76,6 +79,9 @@ public partial class WakeOnLanToolWindow : FluentWindow
         IpBox.Text = host.IpAddress;
         BroadcastBox.Text = host.BroadcastAddress;
         PortBox.Text = host.Port.ToString();
+        SecureOnBox.Text = host.SecureOnPassword;
+        ScheduleEnabledBox.IsChecked = host.ScheduleEnabled;
+        ScheduleTimeBox.Text = string.IsNullOrWhiteSpace(host.ScheduleTime) ? "08:00" : host.ScheduleTime;
         NotesBox.Text = host.Notes;
         StatusText.Text = $"已选择「{host.Name}」，可直接唤醒或修改后保存。";
     }
@@ -96,6 +102,9 @@ public partial class WakeOnLanToolWindow : FluentWindow
         IpBox.Text = string.Empty;
         BroadcastBox.Text = string.Empty;
         PortBox.Text = WakeOnLanService.DefaultPort.ToString();
+        SecureOnBox.Text = string.Empty;
+        ScheduleEnabledBox.IsChecked = false;
+        ScheduleTimeBox.Text = "08:00";
         NotesBox.Text = string.Empty;
         NameBox.Focus();
         StatusText.Text = "填写名称与 MAC 地址后保存，MAC 支持冒号、短横线或 Cisco 点分格式。";
@@ -111,6 +120,9 @@ public partial class WakeOnLanToolWindow : FluentWindow
         IpBox.Text = string.Empty;
         BroadcastBox.Text = string.Empty;
         PortBox.Text = WakeOnLanService.DefaultPort.ToString();
+        SecureOnBox.Text = string.Empty;
+        ScheduleEnabledBox.IsChecked = false;
+        ScheduleTimeBox.Text = "08:00";
         NotesBox.Text = string.Empty;
         StatusText.Text = "表单已清空。";
     }
@@ -138,6 +150,9 @@ public partial class WakeOnLanToolWindow : FluentWindow
         host.IpAddress = values.Ip;
         host.BroadcastAddress = values.Broadcast;
         host.Port = values.Port;
+        host.SecureOnPassword = values.SecureOn;
+        host.ScheduleEnabled = values.ScheduleEnabled;
+        host.ScheduleTime = values.ScheduleTime;
         host.Notes = values.Notes;
         host.UpdatedAt = now;
 
@@ -180,49 +195,144 @@ public partial class WakeOnLanToolWindow : FluentWindow
 
     private async Task WakeSelectedAsync()
     {
-        WakeOnLanHost host;
-        if (HostGrid.SelectedItem is WakeOnLanHost selected)
+        var targets = HostGrid.SelectedItems.OfType<WakeOnLanHost>().ToList();
+        if (targets.Count == 0)
         {
-            host = selected;
-        }
-        else if (TryReadEditor(out var values))
-        {
-            host = new WakeOnLanHost
+            if (!TryReadEditor(out var values))
+                return;
+            targets.Add(new WakeOnLanHost
             {
                 Name = values.Name,
                 MacAddress = values.Mac,
                 IpAddress = values.Ip,
                 BroadcastAddress = values.Broadcast,
                 Port = values.Port,
+                SecureOnPassword = values.SecureOn,
                 Notes = values.Notes
-            };
-        }
-        else
-        {
-            return;
+            });
         }
 
         var repeat = RepeatOptions[Math.Clamp(RepeatBox.SelectedIndex, 0, RepeatOptions.Length - 1)];
-        StatusText.Text = $"正在向「{host.Name}」发送魔术包...";
-        var result = await _service.WakeAsync(host);
-        StatusText.Text = result.Message;
-        if (!result.Success)
+        var success = 0;
+        var failed = new List<string>();
+        var persist = false;
+        foreach (var host in targets)
         {
-            _dialogs.Warn(result.Message, "网络唤醒");
-            return;
+            StatusText.Text = $"正在向「{host.Name}」发送魔术包...";
+            var result = await _service.WakeAsync(host, repeat: repeat);
+            if (!result.Success)
+            {
+                failed.Add($"{host.Name}: {result.Message}");
+                continue;
+            }
+
+            success++;
+            if (_hosts.Contains(host))
+            {
+                host.LastWokenAt = DateTimeOffset.Now;
+                host.WakeCount++;
+                host.UpdatedAt = DateTimeOffset.Now;
+                persist = true;
+            }
         }
 
-        if (_hosts.Contains(host))
+        if (persist)
         {
-            host.LastWokenAt = DateTimeOffset.Now;
-            host.WakeCount++;
-            host.UpdatedAt = DateTimeOffset.Now;
             await SaveDocumentAsync();
             HostGrid.Items.Refresh();
         }
+
+        StatusText.Text = failed.Count == 0
+            ? $"已向 {success} 台设备发送魔术包。目标开机通常需要 3-15 秒。"
+            : $"成功 {success} 台，失败 {failed.Count} 台。";
+        if (failed.Count > 0)
+            _dialogs.Warn(string.Join("\n", failed), "网络唤醒");
     }
 
-    private bool TryReadEditor(out (string Name, string Mac, string Ip, string Broadcast, int Port, string Notes) values)
+    private void OnRefreshHosts(object sender, RoutedEventArgs e)
+        => AsyncOperation.Run("刷新网络唤醒设备", RefreshHostsAsync);
+
+    private async Task RefreshHostsAsync()
+    {
+        await LoadAsync();
+        StatusText.Text = "已从本机存储刷新设备列表。";
+    }
+
+    private void OnImportCsv(object sender, RoutedEventArgs e)
+        => AsyncOperation.Run("导入网络唤醒 CSV", ImportCsvAsync);
+
+    private async Task ImportCsvAsync()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "导入网络唤醒 CSV",
+            Filter = "CSV 文件 (*.csv)|*.csv|所有文件 (*.*)|*.*"
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        string text;
+        try { text = await File.ReadAllTextAsync(dialog.FileName); }
+        catch (Exception ex)
+        {
+            _dialogs.Warn("读取 CSV 失败：" + ex.Message, "网络唤醒");
+            return;
+        }
+
+        var imported = WakeOnLanCsv.Import(text);
+        var added = 0;
+        var skipped = 0;
+        foreach (var host in imported)
+        {
+            if (_hosts.Any(h => WakeOnLanService.TryNormalizeMac(h.MacAddress, out var mac) &&
+                                string.Equals(mac, host.MacAddress, StringComparison.OrdinalIgnoreCase)))
+            {
+                skipped++;
+                continue;
+            }
+            _hosts.Add(host);
+            added++;
+        }
+
+        if (added > 0)
+        {
+            await SaveDocumentAsync();
+            HostGrid.Items.Refresh();
+            RefreshHostSummary();
+        }
+        StatusText.Text = $"导入完成：新增 {added} 台，跳过重复/无效 {skipped} 台。";
+    }
+
+    private void OnExportCsv(object sender, RoutedEventArgs e)
+    {
+        if (_hosts.Count == 0)
+        {
+            StatusText.Text = "没有可导出的设备。";
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "导出网络唤醒 CSV",
+            Filter = "CSV 文件 (*.csv)|*.csv",
+            FileName = $"wake-on-lan-{DateTime.Now:yyyyMMdd-HHmmss}.csv"
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            File.WriteAllText(dialog.FileName, WakeOnLanCsv.Export(_hosts), new UTF8Encoding(true));
+            StatusText.Text = "已导出：" + dialog.FileName;
+        }
+        catch (Exception ex)
+        {
+            _dialogs.Warn("导出 CSV 失败：" + ex.Message, "网络唤醒");
+        }
+    }
+
+    private bool TryReadEditor(out (string Name, string Mac, string Ip, string Broadcast, int Port,
+        string SecureOn, bool ScheduleEnabled, string ScheduleTime, string Notes) values)
     {
         values = default;
         if (!WakeOnLanService.TryNormalizeMac(MacBox.Text, out var mac))
@@ -264,11 +374,36 @@ public partial class WakeOnLanToolWindow : FluentWindow
             return false;
         }
 
+        var secureOn = SecureOnBox.Text.Trim();
+        if (secureOn.Length > 0)
+        {
+            if (!WakeOnLanService.TryNormalizeMac(secureOn, out var normalizedSecureOn))
+            {
+                StatusText.Text = "SecureOn 密码格式无效。";
+                _dialogs.Warn("SecureOn 密码必须是 6 字节十六进制，例如 AA:BB:CC:DD:EE:FF；留空表示未启用。", "网络唤醒");
+                SecureOnBox.Focus();
+                return false;
+            }
+            secureOn = normalizedSecureOn;
+        }
+
+        var scheduleTime = ScheduleTimeBox.Text.Trim();
+        if (scheduleTime.Length == 0)
+            scheduleTime = "08:00";
+        if (!WakeOnLanCsv.IsValidTime(scheduleTime))
+        {
+            StatusText.Text = "定时唤醒时间格式无效。";
+            _dialogs.Warn("定时唤醒时间必须是 HH:mm，例如 08:00。", "网络唤醒");
+            ScheduleTimeBox.Focus();
+            return false;
+        }
+
         var name = NameBox.Text.Trim();
         if (name.Length == 0)
             name = mac;
 
-        values = (name, mac, ip, broadcast, port, NotesBox.Text.Trim());
+        values = (name, mac, ip, broadcast, port, secureOn,
+            ScheduleEnabledBox.IsChecked == true, scheduleTime, NotesBox.Text.Trim());
         return true;
     }
 

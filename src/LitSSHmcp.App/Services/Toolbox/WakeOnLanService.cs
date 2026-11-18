@@ -64,15 +64,25 @@ public sealed class WakeOnLanService
 
     public static bool LooksLikeMac(string? value) => !string.IsNullOrWhiteSpace(value) && MacPattern.IsMatch(value.Trim());
 
-    public static byte[] BuildMagicPacket(string macAddress)
+    public static byte[] BuildMagicPacket(string macAddress, string? secureOnPassword = null)
     {
         var normalized = NormalizeMac(macAddress);
         var mac = Convert.FromHexString(normalized.Replace(":", string.Empty, StringComparison.Ordinal));
-        var packet = new byte[6 + 16 * 6];
+        byte[]? secureOn = null;
+        if (!string.IsNullOrWhiteSpace(secureOnPassword))
+        {
+            if (!TryNormalizeMac(secureOnPassword, out var secureNormalized))
+                throw new FormatException("SecureOn 密码必须是 6 字节十六进制（如 AA:BB:CC:DD:EE:FF）。");
+            secureOn = Convert.FromHexString(secureNormalized.Replace(":", string.Empty, StringComparison.Ordinal));
+        }
+
+        var packet = new byte[6 + 16 * 6 + (secureOn is null ? 0 : 6)];
         for (var i = 0; i < 6; i++)
             packet[i] = 0xFF;
         for (var repeat = 0; repeat < 16; repeat++)
             mac.CopyTo(packet, 6 + repeat * 6);
+        if (secureOn is not null)
+            secureOn.CopyTo(packet, 6 + 16 * 6);
         return packet;
     }
 
@@ -166,7 +176,15 @@ public sealed class WakeOnLanService
             return new WakeOnLanSendResult(false, "端口必须在 1-65535 之间。", Array.Empty<string>());
 
         var repeatCount = Math.Clamp(repeat, 1, 10);
-        var packet = BuildMagicPacket(mac);
+        byte[] packet;
+        try
+        {
+            packet = BuildMagicPacket(mac, host.SecureOnPassword);
+        }
+        catch (FormatException ex)
+        {
+            return new WakeOnLanSendResult(false, ex.Message, Array.Empty<string>());
+        }
         var targetText = targets.Select(t => $"{t}:{usePort}").ToArray();
 
         try

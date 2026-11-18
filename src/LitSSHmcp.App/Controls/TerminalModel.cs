@@ -53,12 +53,17 @@ public sealed class TerminalModel
     private int _scrollBottom;
 
     private readonly List<TerminalCell[]> _scrollback = new();
+    private readonly List<bool> _scrollbackWrapped = new();
+    private bool[] _lineWrapped = Array.Empty<bool>();
 
     /// <summary>是否处于备用屏（vim/top/less 等全屏程序）。</summary>
     public bool IsAltScreen => _altScreen;
 
     /// <summary>远端 shell 是否启用了 bracketed paste（CSI ?2004h）。</summary>
     public bool BracketedPasteEnabled { get; private set; }
+
+    /// <summary>应用光标键模式（DECCKM，CSI ?1h）：方向键应发送 ESC O A/B/C/D，而不是 ESC [ A/B/C/D。</summary>
+    public bool ApplicationCursorKeys { get; private set; }
 
     /// <summary>OSC 7 报告的工作目录（shell integration）。</summary>
     public string? CurrentDirectory { get; private set; }
@@ -164,7 +169,11 @@ public sealed class TerminalModel
     {
         Fill(Active, _cols, _rows, TerminalAttributes.Default);
         if (!_altScreen)
+        {
             _scrollback.Clear();
+            _scrollbackWrapped.Clear();
+        }
+        Array.Clear(_lineWrapped, 0, _lineWrapped.Length);
         _cx = 0;
         _cy = 0;
         _wrapPending = false;
@@ -178,29 +187,167 @@ public sealed class TerminalModel
         if (cols == _cols && rows == _rows && _cells.Length == cols * rows)
             return;
 
-        var newCells = new TerminalCell[cols * rows];
-        var newAlt = new TerminalCell[cols * rows];
-        Fill(newCells, cols, rows, TerminalAttributes.Default);
-        Fill(newAlt, cols, rows, TerminalAttributes.Default);
+        // 备用屏（vim/top）自身会重绘；但主屏内容仍要在后台重排，
+        // 否则退出 vim 后主屏会保留缩窄时的截断状态。
+        if (_altScreen)
+        {
+            var (mainCx, mainCy) = ReflowMainBuffer(cols, rows, _savedCx, _savedCy);
+            var newAlt = new TerminalCell[cols * rows];
+            Fill(newAlt, cols, rows, TerminalAttributes.Default);
+            var copyCols = _cols == 0 ? 0 : Math.Min(cols, _cols);
+            var copyRows = _rows == 0 ? 0 : Math.Min(rows, _rows);
+            for (var y = 0; y < copyRows; y++)
+                for (var x = 0; x < copyCols; x++)
+                    newAlt[y * cols + x] = _altCells[y * _cols + x];
 
-        var copyCols = _cols == 0 ? 0 : Math.Min(cols, _cols);
-        var copyRows = _rows == 0 ? 0 : Math.Min(rows, _rows);
-        for (var y = 0; y < copyRows; y++)
-            for (var x = 0; x < copyCols; x++)
-            {
-                newCells[y * cols + x] = _cells[y * _cols + x];
-                newAlt[y * cols + x] = _altCells[y * _cols + x];
-            }
+            _cols = cols;
+            _rows = rows;
+            _altCells = newAlt;
+            _savedCx = mainCx;
+            _savedCy = mainCy;
+            _scrollTop = 0;
+            _scrollBottom = rows - 1;
+            _cx = Math.Min(_cx, cols - 1);
+            _cy = Math.Min(_cy, rows - 1);
+            RaiseChanged();
+            return;
+        }
 
+        var (newCx, newCy) = ReflowMainBuffer(cols, rows, _cx, _cy);
+        var newAltCells = new TerminalCell[cols * rows];
+        Fill(newAltCells, cols, rows, TerminalAttributes.Default);
         _cols = cols;
         _rows = rows;
-        _cells = newCells;
-        _altCells = newAlt;
+        _altCells = newAltCells;
         _scrollTop = 0;
         _scrollBottom = rows - 1;
-        _cx = Math.Min(_cx, cols - 1);
-        _cy = Math.Min(_cy, rows - 1);
+        _cx = newCx;
+        _cy = newCy;
+        _wrapPending = false;
         RaiseChanged();
+    }
+
+    /// <summary>重排主屏与滚动历史，返回主屏光标的新位置。</summary>
+    private (int Cx, int Cy) ReflowMainBuffer(int cols, int rows, int cursorX, int cursorY)
+    {
+        var sourceRows = new List<TerminalCell[]>(_scrollback.Count + _rows);
+        var sourceWrapped = new List<bool>(_scrollback.Count + _rows);
+        for (var i = 0; i < _scrollback.Count; i++)
+        {
+            sourceRows.Add(_scrollback[i]);
+            sourceWrapped.Add(i < _scrollbackWrapped.Count && _scrollbackWrapped[i]);
+        }
+        for (var i = 0; i < _rows; i++)
+        {
+            var line = new TerminalCell[_cols];
+            Array.Copy(_cells, i * _cols, line, 0, _cols);
+            sourceRows.Add(line);
+            sourceWrapped.Add(i < _lineWrapped.Length && _lineWrapped[i]);
+        }
+
+        var cursorGlobalRow = _scrollback.Count + cursorY;
+        var logical = new List<List<TerminalCell>>();
+        var cursorLogical = -1;
+        var cursorOffset = 0;
+        for (var i = 0; i < sourceRows.Count; i++)
+        {
+            if (i == 0 || !sourceWrapped[i - 1])
+                logical.Add(new List<TerminalCell>(_cols));
+            var current = logical[^1];
+            if (i == cursorGlobalRow)
+            {
+                cursorLogical = logical.Count - 1;
+                cursorOffset = current.Count + Math.Clamp(cursorX, 0, Math.Max(0, sourceRows[i].Length - 1));
+            }
+            current.AddRange(sourceRows[i]);
+        }
+
+        if (logical.Count == 0)
+            logical.Add(new List<TerminalCell>());
+        for (var i = 0; i < logical.Count; i++)
+        {
+            var line = logical[i];
+            while (line.Count > 0 && (line[^1].Ch == ' ' || line[^1].Ch == '\0'))
+                line.RemoveAt(line.Count - 1);
+            if (i == cursorLogical && cursorOffset > line.Count)
+                cursorOffset = line.Count;
+        }
+
+        // 屏幕底部的空行只是填充，不应在缩窄后变成滚动历史。
+        while (logical.Count > 1 && logical[^1].Count == 0 && logical.Count - 1 != cursorLogical)
+            logical.RemoveAt(logical.Count - 1);
+
+        var newRows = new List<TerminalCell[]>();
+        var newWrapped = new List<bool>();
+        var cursorNewRow = 0;
+        var cursorNewCol = 0;
+        for (var lineIndex = 0; lineIndex < logical.Count; lineIndex++)
+        {
+            var line = logical[lineIndex];
+            var chunkCount = Math.Max(1, (line.Count + cols - 1) / cols);
+            var firstChunkRow = newRows.Count;
+            for (var chunk = 0; chunk < chunkCount; chunk++)
+            {
+                var cells = new TerminalCell[cols];
+                for (var x = 0; x < cols; x++)
+                    cells[x] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
+                for (var x = 0; x < cols; x++)
+                {
+                    var source = chunk * cols + x;
+                    if (source < line.Count)
+                        cells[x] = line[source];
+                }
+                newRows.Add(cells);
+                newWrapped.Add(chunk + 1 < chunkCount);
+            }
+            if (lineIndex == cursorLogical)
+            {
+                var offset = Math.Min(cursorOffset, line.Count);
+                var rowOffset = Math.Min(offset / cols, chunkCount - 1);
+                cursorNewRow = firstChunkRow + rowOffset;
+                cursorNewCol = Math.Clamp(offset % cols, 0, cols - 1);
+            }
+        }
+
+        if (newRows.Count == 0)
+        {
+            var blank = new TerminalCell[cols];
+            Fill(blank, cols, 1, TerminalAttributes.Default);
+            newRows.Add(blank);
+            newWrapped.Add(false);
+        }
+
+        var total = newRows.Count;
+        var screenStart = Math.Max(0, total - rows);
+        _scrollback.Clear();
+        _scrollbackWrapped.Clear();
+        for (var i = 0; i < screenStart; i++)
+        {
+            _scrollback.Add(newRows[i]);
+            _scrollbackWrapped.Add(newWrapped[i]);
+        }
+        if (_scrollback.Count > MaxScrollback)
+        {
+            var trim = _scrollback.Count - MaxScrollback;
+            _scrollback.RemoveRange(0, trim);
+            if (_scrollbackWrapped.Count >= trim)
+                _scrollbackWrapped.RemoveRange(0, trim);
+        }
+
+        var newCells = new TerminalCell[cols * rows];
+        Fill(newCells, cols, rows, TerminalAttributes.Default);
+        var newWrappedFlags = new bool[rows];
+        var screenWriteRow = 0;
+        for (var i = screenStart; i < total && screenWriteRow < rows; i++, screenWriteRow++)
+        {
+            Array.Copy(newRows[i], 0, newCells, screenWriteRow * cols, cols);
+            newWrappedFlags[screenWriteRow] = newWrapped[i];
+        }
+
+        _cells = newCells;
+        _lineWrapped = newWrappedFlags;
+        return (Math.Clamp(cursorNewCol, 0, cols - 1),
+            Math.Clamp(cursorNewRow - screenStart, 0, rows - 1));
     }
 
     private static void Fill(TerminalCell[] cells, int cols, int rows, TerminalAttributes attr)
@@ -318,7 +465,7 @@ public sealed class TerminalModel
             case '\n':
             case '\v':
             case '\f':
-                LineFeed();
+                LineFeed(wrapped: false);
                 return;
             case '\b':
                 if (_cx > 0) _cx--;
@@ -342,7 +489,7 @@ public sealed class TerminalModel
         if (_wrapPending)
         {
             _cx = 0;
-            LineFeed();
+            LineFeed(wrapped: true);
             _wrapPending = false;
         }
 
@@ -350,7 +497,7 @@ public sealed class TerminalModel
         if (width == 2 && _cx >= _cols - 1 && _autoWrap)
         {
             _cx = 0;
-            LineFeed();
+            LineFeed(wrapped: true);
         }
 
         SetCell(_cx, _cy, ch, _attr);
@@ -461,7 +608,7 @@ public sealed class TerminalModel
                 _state = ParseState.Ground;
                 return;
             case 'D':
-                LineFeed();
+                LineFeed(wrapped: false);
                 _state = ParseState.Ground;
                 return;
             case 'M':
@@ -470,7 +617,7 @@ public sealed class TerminalModel
                 return;
             case 'E':
                 _cx = 0;
-                LineFeed();
+                LineFeed(wrapped: false);
                 _state = ParseState.Ground;
                 return;
             case 'c':
@@ -593,9 +740,11 @@ public sealed class TerminalModel
         _wrapPending = false;
     }
 
-    private void LineFeed()
+    private void LineFeed(bool wrapped)
     {
         _wrapPending = false;
+        if (!_altScreen && _cy >= 0 && _cy < _lineWrapped.Length)
+            _lineWrapped[_cy] = wrapped;
         if (_cy == _scrollBottom)
             ScrollUp(1);
         else if (_cy < _rows - 1)
@@ -619,13 +768,27 @@ public sealed class TerminalModel
         if (!_altScreen && _scrollTop == 0 && n <= height)
         {
             for (var i = 0; i < n; i++)
+            {
                 _scrollback.Add(GetScreenLine(active, i));
+                _scrollbackWrapped.Add(i < _lineWrapped.Length && _lineWrapped[i]);
+            }
             if (_scrollback.Count > MaxScrollback)
-                _scrollback.RemoveRange(0, _scrollback.Count - MaxScrollback);
+            {
+                var trim = _scrollback.Count - MaxScrollback;
+                _scrollback.RemoveRange(0, trim);
+                if (_scrollbackWrapped.Count >= trim)
+                    _scrollbackWrapped.RemoveRange(0, trim);
+            }
         }
 
         for (var y = _scrollTop; y <= _scrollBottom - n; y++)
             Array.Copy(active, (y + n) * _cols, active, y * _cols, _cols);
+        if (!_altScreen && _lineWrapped.Length == _rows)
+        {
+            Array.Copy(_lineWrapped, _scrollTop + n, _lineWrapped, _scrollTop, height - n);
+            for (var y = _scrollBottom - n + 1; y <= _scrollBottom; y++)
+                _lineWrapped[y] = false;
+        }
         var blank = TerminalAttributes.Default;
         for (var y = _scrollBottom - n + 1; y <= _scrollBottom; y++)
             for (var x = 0; x < _cols; x++)
@@ -638,6 +801,13 @@ public sealed class TerminalModel
         var active = Active;
         for (var y = _scrollBottom; y >= _scrollTop + n; y--)
             Array.Copy(active, (y - n) * _cols, active, y * _cols, _cols);
+        if (!_altScreen && _lineWrapped.Length == _rows)
+        {
+            for (var y = _scrollBottom; y >= _scrollTop + n; y--)
+                _lineWrapped[y] = _lineWrapped[y - n];
+            for (var y = _scrollTop; y < _scrollTop + n; y++)
+                _lineWrapped[y] = false;
+        }
         for (var y = _scrollTop; y < _scrollTop + n; y++)
             for (var x = 0; x < _cols; x++)
                 active[y * _cols + x] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
@@ -701,6 +871,13 @@ public sealed class TerminalModel
         var active = Active;
         for (var y = _scrollBottom; y >= _cy + n; y--)
             Array.Copy(active, (y - n) * _cols, active, y * _cols, _cols);
+        if (!_altScreen && _lineWrapped.Length == _rows)
+        {
+            for (var y = _scrollBottom; y >= _cy + n; y--)
+                _lineWrapped[y] = _lineWrapped[y - n];
+            for (var y = _cy; y < _cy + n && y <= _scrollBottom; y++)
+                _lineWrapped[y] = false;
+        }
         for (var y = _cy; y < _cy + n && y <= _scrollBottom; y++)
             for (var x = 0; x < _cols; x++)
                 active[y * _cols + x] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
@@ -713,6 +890,13 @@ public sealed class TerminalModel
         var active = Active;
         for (var y = _cy; y <= _scrollBottom - n; y++)
             Array.Copy(active, (y + n) * _cols, active, y * _cols, _cols);
+        if (!_altScreen && _lineWrapped.Length == _rows)
+        {
+            for (var y = _cy; y <= _scrollBottom - n; y++)
+                _lineWrapped[y] = _lineWrapped[y + n];
+            for (var y = _scrollBottom - n + 1; y <= _scrollBottom; y++)
+                _lineWrapped[y] = false;
+        }
         for (var y = _scrollBottom - n + 1; y <= _scrollBottom; y++)
             for (var x = 0; x < _cols; x++)
                 active[y * _cols + x] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
@@ -763,6 +947,7 @@ public sealed class TerminalModel
             {
                 case 25: _cursorVisible = enable; break;
                 case 7: _autoWrap = enable; break;
+                case 1: ApplicationCursorKeys = enable; break;   // DECCKM
                 case 47:
                 case 1047:
                 case 1049:
@@ -804,6 +989,9 @@ public sealed class TerminalModel
     {
         Fill(_cells, _cols, _rows, TerminalAttributes.Default);
         Fill(_altCells, _cols, _rows, TerminalAttributes.Default);
+        _scrollback.Clear();
+        _scrollbackWrapped.Clear();
+        Array.Clear(_lineWrapped, 0, _lineWrapped.Length);
         _altScreen = false;
         _cx = _cy = 0;
         _attr = TerminalAttributes.Default;

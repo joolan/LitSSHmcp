@@ -232,6 +232,10 @@
                               ToolTip="手动处理(默认)=敏感操作需人工确认; 自动允许授权(危险)=敏感操作自动放行; 自动拒绝授权=敏感操作直接拒绝。仅影响需人工确认的敏感操作，被命令过滤器硬拒绝(blocked)的不受影响"/>
                 </StackPanel>
 
+                <TextBlock Text="注意：开启「自动允许授权」后，SSH 终端内的 AI 助手也会自动执行普通命令；危险命令和 sudo 仍会要求确认。"
+                           Foreground="{DynamicResource AppDangerBrush}" TextWrapping="Wrap" Margin="0,2,0,6"
+                           FontSize="{DynamicResource AppFontSizeMicro}"/>
+
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                     <TextBlock Text="审批通道:" VerticalAlignment="Center"/>
                     <ComboBox ItemsSource="{Binding ApprovalChannelOptions}" SelectedIndex="{Binding ApprovalChannelIndex}"

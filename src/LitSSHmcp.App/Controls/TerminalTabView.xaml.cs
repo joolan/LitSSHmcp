@@ -2,19 +2,27 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using LitSSHmcp.App.Services;
+using LitSSHmcp.App.Services.TerminalAi;
 using LitSSHmcp.App.ViewModels;
+using LitSSHmcp.Core.Services.Security;
+using LitSSHmcp.Core.Services.Storage;
 namespace LitSSHmcp.App.Controls;
 
 /// <summary>终端标签内容：左侧远程文件浏览器 + 右侧终端；分栏宽度记忆、可显示/隐藏。</summary>
 public partial class TerminalTabView : UserControl
 {
     private const string WidthKey = "ssh.filepanel.width";
+    private const string AiWidthKey = "ssh.ai.width";
     private const double DefaultWidth = 300;
     private const double MinPanelWidth = 120;
+    private const double DefaultAiWidth = 400;
+    private const double MinAiWidth = 300;
 
     private TerminalSessionViewModel? _hookedVm;
     private MainViewModel? _mainVm;
+    private TerminalAiViewModel? _aiVm;
 
     public TerminalTabView()
     {
@@ -36,6 +44,35 @@ public partial class TerminalTabView : UserControl
         if (_mainVm is not null)
             _mainVm.PropertyChanged -= OnMainVmPropertyChanged;
         _mainVm = null;
+        if (_hookedVm is { } vm)
+        {
+            vm.PropertyChanged -= OnVmPropertyChanged;
+            vm.FileBrowser.TerminalCommandSent -= OnTerminalCommandSent;
+        }
+        _hookedVm = null;
+        AttachAiVm(null);
+        HideAiPaneLayout();
+    }
+
+    private void ShowAiPaneLayout()
+    {
+        AiSplitter.Visibility = Visibility.Visible;
+        AiSplitterCol.Width = GridLength.Auto;
+        AiCol.Width = new GridLength(Math.Max(MinAiWidth, UiPrefs.GetDouble(AiWidthKey, DefaultAiWidth)));
+        AiPanel.Visibility = Visibility.Visible;
+    }
+
+    private void HideAiPaneLayout()
+    {
+        AiSplitter.Visibility = Visibility.Collapsed;
+        AiCol.Width = new GridLength(0);
+        AiPanel.Visibility = Visibility.Collapsed;
+    }
+
+    private void OnAiSplitterDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (AiCol.ActualWidth >= MinAiWidth)
+            UiPrefs.SetDouble(AiWidthKey, AiCol.ActualWidth);
     }
 
     private void HookWindowViewModel()
@@ -72,7 +109,8 @@ public partial class TerminalTabView : UserControl
 
     private void Hook()
     {
-        if (_hookedVm is { } old)
+        var previous = _hookedVm;
+        if (previous is { } old)
         {
             old.PropertyChanged -= OnVmPropertyChanged;
             old.FileBrowser.TerminalCommandSent -= OnTerminalCommandSent;
@@ -84,8 +122,122 @@ public partial class TerminalTabView : UserControl
             vm.PropertyChanged += OnVmPropertyChanged;
             vm.FileBrowser.TerminalCommandSent += OnTerminalCommandSent;
         }
+
+        if (!ReferenceEquals(previous, _hookedVm))
+            SyncAiForCurrentTerminal();
         ApplyLayout();
         UpdateSyncVisibility();
+    }
+
+    private void SyncAiForCurrentTerminal()
+    {
+        AttachAiVm(Vm?.AiAssistant is { IsOpen: true } ai ? ai : null);
+        if (_aiVm is null)
+            HideAiPaneLayout();
+        else
+            ShowAiPaneLayout();
+    }
+
+    private void AttachAiVm(TerminalAiViewModel? vm)
+    {
+        if (ReferenceEquals(_aiVm, vm))
+            return;
+        if (_aiVm is not null)
+        {
+            _aiVm.FillTerminalRequested -= OnAiFillTerminal;
+            _aiVm.AttachSelectionRequested -= OnAiAttachSelection;
+        }
+        _aiVm = vm;
+        if (_aiVm is not null)
+        {
+            _aiVm.FillTerminalRequested += OnAiFillTerminal;
+            _aiVm.AttachSelectionRequested += OnAiAttachSelection;
+        }
+        AiDrawer.DataContext = _aiVm;
+    }
+
+    private void OnAiAttachSelection()
+    {
+        var text = Terminal.GetSelectedText();
+        _aiVm?.AppendContextSelection(text);
+    }
+
+    private void OnToggleAi(object sender, RoutedEventArgs e)
+    {
+        if (Vm?.AiAssistant is { IsOpen: true })
+            HideAiPane();
+        else
+            ShowAiPane();
+    }
+
+    private void ShowAiPane()
+    {
+        var terminal = Vm;
+        if (terminal is null)
+            return;
+        if (terminal.AiAssistant is null)
+        {
+            terminal.AiAssistant = new TerminalAiViewModel(
+                terminal,
+                AppServiceFactory.CreateConfigService(),
+                new AuditLogService(),
+                (command, sudo, cwd, filter, ct) =>
+                    RequestAiApprovalAsync(terminal, command, sudo, cwd, filter, ct));
+        }
+
+        AttachAiVm(terminal.AiAssistant);
+        ShowAiPaneLayout();
+        terminal.AiAssistant.IsOpen = true;
+        AiDrawer.FocusInput();
+    }
+
+    private void HideAiPane()
+    {
+        if (Vm?.AiAssistant is { } ai)
+            ai.IsOpen = false;
+        AttachAiVm(null);
+        HideAiPaneLayout();
+    }
+
+    private Task<TerminalAiApprovalResult> RequestAiApprovalAsync(
+        TerminalSessionViewModel terminal, string command, bool sudo, string workingDirectory,
+        CommandFilterResult filter, CancellationToken ct)
+    {
+        var tcs = new TaskCompletionSource<TerminalAiApprovalResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        void Show()
+        {
+            try
+            {
+                var hasPassword = !string.IsNullOrWhiteSpace(terminal.Server.SudoPassword) ||
+                                  !string.IsNullOrWhiteSpace(terminal.Server.Password);
+                var allowManual = sudo &&
+                                  terminal.Server.SudoType != LitSSHmcp.Core.Models.SudoType.None &&
+                                  !string.Equals(terminal.Server.Username, "root", StringComparison.Ordinal);
+                var window = new Views.TerminalAiCommandApprovalWindow(
+                    terminal.Server.Name, command, workingDirectory, sudo, filter, hasPassword, allowManual)
+                {
+                    Owner = Window.GetWindow(this),
+                    Topmost = true
+                };
+                window.ShowDialog();
+                tcs.TrySetResult(new TerminalAiApprovalResult(window.Approved, window.ManualPassword));
+            }
+            catch
+            {
+                tcs.TrySetResult(new TerminalAiApprovalResult(false, false));
+            }
+        }
+
+        Dispatcher.BeginInvoke(new Action(Show));
+        return tcs.Task;
+    }
+
+    private void OnAiFillTerminal(string command)
+    {
+        SendBox.Text = command;
+        SendBox.Focus();
+        Keyboard.Focus(SendBox);
     }
 
     private void OnTerminalCommandSent()
@@ -95,6 +247,12 @@ public partial class TerminalTabView : UserControl
     {
         if (e.PropertyName == nameof(TerminalSessionViewModel.ShowFileBrowser))
             ApplyLayout();
+        if (e.PropertyName == nameof(TerminalSessionViewModel.IsAiAwaitingManualInput) &&
+            _hookedVm?.IsAiAwaitingManualInput == true)
+        {
+            Dispatcher.BeginInvoke(new Action(() => Terminal.FocusInput()),
+                System.Windows.Threading.DispatcherPriority.Input);
+        }
     }
 
     private void ApplyLayout()

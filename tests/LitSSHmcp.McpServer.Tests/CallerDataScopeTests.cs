@@ -142,7 +142,7 @@ public class CallerDataScopeTests : IDisposable
 
         public Task<CommandAuditLog[]> GetLogsAsync(string? serverId = null, int limit = 100, string? keyword = null,
             bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null,
-            AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null)
+            AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null, string? toolPrefix = null)
         {
             LogCalls++;
             LastUserIds = userIds;
@@ -153,7 +153,7 @@ public class CallerDataScopeTests : IDisposable
 
         public Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null,
             bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null,
-            AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null)
+            AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null, string? toolPrefix = null)
         {
             LastSqlUserIds = userIds;
             return Task.FromResult(Array.Empty<SqlAuditLog>());

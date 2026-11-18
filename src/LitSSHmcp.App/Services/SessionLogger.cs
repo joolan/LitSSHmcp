@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using LitSSHmcp.App.Controls;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
@@ -16,6 +17,13 @@ namespace LitSSHmcp.App.Services;
 /// </summary>
 public sealed class SessionLogger : IDisposable
 {
+    private static readonly Regex AiEchoNoise = new(
+        @"(?m)^[^\r\n]*stty -echo 2>/dev/null \|\| true[^\r\n]*(?:\r?\n|$)",
+        RegexOptions.Compiled);
+    private static readonly Regex AiMarkerNoise = new(
+        @"(?m)^<<<LITSSH_AI_[0-9a-fA-F]{32}>>>\|[^\r\n]*(?:\r?\n|$)",
+        RegexOptions.Compiled);
+
     private readonly StreamWriter? _writer;
     private readonly StreamWriter? _cast;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -87,6 +95,11 @@ public sealed class SessionLogger : IDisposable
         if (string.IsNullOrEmpty(text))
             return;
         text = SecretRedactor.Redact(text);
+        // 终端 AI 的内部包装行不写入会话日志/回放；[AI] 命令行与真实输出保留。
+        text = AiMarkerNoise.Replace(text, string.Empty);
+        text = AiEchoNoise.Replace(text, string.Empty);
+        if (text.Length == 0)
+            return;
         lock (_gate)
         {
             try { _writer?.Write(text); } catch { /* ignore */ }

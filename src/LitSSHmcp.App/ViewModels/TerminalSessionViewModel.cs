@@ -4,6 +4,7 @@ using System.Text;
 using System.Windows.Input;
 using LitSSHmcp.App.Controls;
 using LitSSHmcp.App.Services;
+using LitSSHmcp.App.Services.LocalTerminal;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.SSH;
 
@@ -26,6 +27,9 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     private bool _started;
     private bool _disposed;
     private Services.SessionLogger? _logger;
+    private readonly TerminalOutputBuffer _aiOutput = new(262144);
+    private int _aiCommandRunning;
+    private int _aiManualInput;
 
     public TerminalSessionViewModel(SshServerConfig server, ISshService ssh, int cols = 80, int rows = 24, int ordinal = 1,
         CommandSyncService? commandSync = null)
@@ -65,6 +69,8 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
             return "终端未连接，无法发送命令。请先连接或点击「重新连接」。";
         if (IsFullScreenActive)
             return "终端正在运行全屏程序（如 vim / top / less），请先退出后再试。";
+        if (IsAiCommandRunning)
+            return "AI 正在使用该终端执行命令，请等待完成或点击停止。";
         if (!IsLikelyIdle)
         {
             var line = Model.LastNonEmptyLineText().Trim();
@@ -116,6 +122,12 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     private static string Quote(string path) => "'" + path.Replace("'", "'\\''") + "'";
 
     public SshServerConfig Server { get; }
+
+    /// <summary>供终端 AI 在 PTY 提权失败时回退到服务器配置的提权通道。</summary>
+    public ISshService SshService => _ssh;
+
+    /// <summary>该终端专属的 AI 助手（按终端隔离；随终端关闭释放）。</summary>
+    public TerminalAiViewModel? AiAssistant { get; set; }
 
     /// <summary>同一服务器下的终端序号（1 起）；用于区分标题与独立窗口布局。</summary>
     public int Ordinal { get; }
@@ -319,6 +331,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     {
         if (string.IsNullOrEmpty(text))
             return;
+        _aiOutput.Append(text);
         _logger?.Write(text);
         lock (_outputGate)
         {
@@ -428,30 +441,120 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
 
     public void SendInput(string text) => SendDirectInput(text);
 
+    /// <summary>AI 命令读取/执行期间，用户输入被锁定；只允许 Ctrl+C 中断。</summary>
+    private static bool IsInterrupt(string text) => string.Equals(text, "\u0003", StringComparison.Ordinal);
+
     /// <summary>用户输入（键盘 / IME / 粘贴 / 发送框）：先写入本会话，再广播给其他已开启同步的会话。</summary>
     public void SendUserInput(string text)
     {
         if (string.IsNullOrEmpty(text))
             return;
-        SendDirectInput(text);
-        _commandSync?.Broadcast(this, text);
+        var manual = IsAiAwaitingManualInput;
+        if (IsAiCommandRunning && !manual && !IsInterrupt(text))
+            return;
+        SendDirectInput(text, logInput: !manual);
+        if (!manual)
+            _commandSync?.Broadcast(this, text);
     }
 
     /// <summary>命令同步目标写入：只写本会话，不再广播（避免递归）。</summary>
-    public void SendReplicatedInput(string text) => SendDirectInput(text);
+    public void SendReplicatedInput(string text)
+    {
+        if (IsAiAwaitingManualInput)
+            return;
+        if (IsAiCommandRunning && !IsInterrupt(text))
+            return;
+        SendDirectInput(text);
+    }
 
-    private void SendDirectInput(string text)
+    /// <summary>提权密码等敏感输入：不写会话日志/回放，仅写入 PTY。</summary>
+    public void SendSensitiveInput(string text)
     {
         if (string.IsNullOrEmpty(text))
             return;
-        _logger?.WriteInput(text);
+        lock (_gate)
+            _shell?.Write(text);
+    }
+
+    public bool IsAiCommandRunning => Volatile.Read(ref _aiCommandRunning) != 0;
+
+    /// <summary>AI 正在等待用户在终端手动输入 sudo/su 密码；仅此时允许用户输入，且不写日志。</summary>
+    public bool IsAiAwaitingManualInput => Volatile.Read(ref _aiManualInput) != 0;
+
+    public void BeginAiManualInput()
+    {
+        Interlocked.Exchange(ref _aiManualInput, 1);
+        OnPropertyChanged(nameof(IsAiAwaitingManualInput));
+    }
+
+    public void EndAiManualInput()
+    {
+        Interlocked.Exchange(ref _aiManualInput, 0);
+        OnPropertyChanged(nameof(IsAiAwaitingManualInput));
+    }
+
+    public bool TryBeginAiCommand()
+    {
+        if (Interlocked.CompareExchange(ref _aiCommandRunning, 1, 0) != 0)
+            return false;
+        OnPropertyChanged(nameof(IsAiCommandRunning));
+        return true;
+    }
+
+    public void EndAiCommand()
+    {
+        Volatile.Write(ref _aiCommandRunning, 0);
+        Volatile.Write(ref _aiManualInput, 0);
+        OnPropertyChanged(nameof(IsAiCommandRunning));
+        OnPropertyChanged(nameof(IsAiAwaitingManualInput));
+    }
+
+    public long OutputCursor => _aiOutput.Cursor;
+
+    public TerminalOutputSnapshot ReadOutput(long cursor, int maxChars) => _aiOutput.Read(cursor, maxChars);
+
+    public TerminalOutputSnapshot ReadRawOutput(long cursor, int maxChars) => _aiOutput.ReadRaw(cursor, maxChars);
+
+    /// <summary>最近终端文本（已去除 ANSI/OSC），用于 AI 上下文预览。</summary>
+    public string GetRecentTerminalText(int maxLines)
+    {
+        if (maxLines <= 0)
+            return string.Empty;
+        var snapshot = _aiOutput.Read(0, 262144);
+        var text = TerminalOutputBuffer.Clean(snapshot.Text);
+        var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n')
+            .Where(line =>
+                !line.Contains("__litssh_", StringComparison.Ordinal) &&
+                !line.Contains("<<<LITSSH_AI_", StringComparison.Ordinal) &&
+                !line.TrimStart().StartsWith("stty -echo", StringComparison.Ordinal) &&
+                !line.TrimStart().StartsWith("stty echo", StringComparison.Ordinal))
+            .ToArray();
+        if (lines.Length <= maxLines)
+            return string.Join("\n", lines).TrimEnd();
+        return string.Join("\n", lines.Skip(lines.Length - maxLines)).TrimEnd();
+    }
+
+    private void SendDirectInput(string text, bool logInput = true)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+        if (logInput)
+            _logger?.WriteInput(text);
         lock (_gate)
             _shell?.Write(text);
     }
 
     public void SendBytes(byte[] data)
     {
-        if (data.Length > 0)
+        if (data.Length == 0)
+            return;
+        var interrupt = data.Length == 1 && data[0] == 3;
+        var manual = IsAiAwaitingManualInput;
+        if (IsAiCommandRunning && !manual && !interrupt)
+            return;
+        if (!manual)
         {
             try { _logger?.WriteInput(System.Text.Encoding.UTF8.GetString(data)); } catch { /* ignore */ }
         }
@@ -469,6 +572,14 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        Interlocked.Exchange(ref _aiCommandRunning, 0);
+        Interlocked.Exchange(ref _aiManualInput, 0);
+        var aiAssistant = AiAssistant;
+        AiAssistant = null;
+        if (aiAssistant is not null)
+        {
+            try { await aiAssistant.DisposeAsync(); } catch { /* ignore */ }
+        }
         Model.ShellStateChanged -= OnShellStateChanged;
         CancelReconnect();
         try { _cts?.Cancel(); } catch { /* ignore */ }

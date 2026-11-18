@@ -23,12 +23,11 @@
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
                     <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 长任务统一 Job 模型：job_start / job_status / job_result / job_events / job_cancel / job_list，支持后台执行、逐台进度、结构化结果与事件断点续读。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 长任务 UI：桌面「长任务」窗口与 Web「长任务」面板支持列表、状态/进度/事件、结果查看、取消和终态通知；详情增量刷新。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• AI 运维工具面收敛：新增 Ops 专注 profile、统一意图路由表、ops_record 知识写入口，隐藏管理型本地工具，降低模型选择成本。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 可信脚本哈希：安全设置可按完整 SHA-256 维护可信脚本，准确跳过 blocked_script 硬拦截，但仍保留人工审批。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 多机巡检/快照 Job 化：fleet_inventory / fleet_snapshot_refresh 通过 job_start 执行，不再逐台启动长任务。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 可读性与安全加固：Job/JSON 输出不再出现中文 \uXXXX 转义，事件结构化落库，移除冗余的记忆候选/consolidation 闭环。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 终端 AI 助手：绑定当前服务器，仅暴露 terminal_exec / terminal_sudo / terminal_job；命令在当前 PTY 执行，共享 cwd/env/alias，支持最近 50 行上下文、sudo 手动/自动提权与结构化审计。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 终端体验升级：主屏与滚动历史宽度重排、终端/AI 可拖动分隔条、vim/less DECCKM 方向键修复、AI 会话与开合状态按终端隔离。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 长任务与多轮：新增 terminal_job 后台任务（start/status/log/cancel/list）、AI 新对话、选中文本附加，以及输入/输出/缓存 token 与估算成本显示。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 工具箱：新增网络唤醒（Wake-on-LAN），支持 MAC/名称管理、魔术包发送、同网段扫描与原理/条件说明。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 保留 1.7 的长任务 Job 模型、Ops 专注 profile、可信脚本哈希与多机巡检/快照 Job 化能力。"/>
                 </StackPanel>
             </Border>
 
@@ -80,6 +79,8 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Kubernetes：多集群只读视图，支持集群概览、节点 / Pod / 工作负载、日志 / 事件、Service / Ingress 关系、版本对比与自动刷新。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程桌面：RDP / VNC 连接管理（密码仅本机 DPAPI 加密、可经 SSH 隧道访问内网桌面），内嵌多标签查看器（标签可分离 / 收回）与外部客户端打开。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机终端：ConPTY 真实本机 PowerShell 终端；AI 本地 CLI 在白名单内执行本机命令（人工审批、超时与进程树清理），单个 AI 会话最多并行管理 4 个独立终端。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 终端 AI 助手：按终端绑定当前服务器，只暴露 terminal_exec / terminal_sudo / terminal_job；共享当前 PTY 的 cwd/env/alias，支持上下文确认、sudo 手动/自动提权、后台长任务与审计。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 工具箱：程序/文件/脚本启动、Hosts、密码与加密保管、证书/TLS 批量检测、文本/编码转换、SSH 密钥、本地端口/进程检查、网络唤醒（Wake-on-LAN）。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 批量执行 / 快速命令：多台服务器并行下发命令；内置快速命令（一键巡检、磁盘/inode/内存/端口/进程/大目录/日志/容器/网络）与「一键巡检」，写操作执行前确认。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源 / 应用管理 + 数据库工作台：维护数据源与应用；工作台支持 SQL 查询/对象浏览/表数据分页预览、Redis 键浏览（分批扫描、补全类型/TTL/大小、DB 切换、大结果集警告）、只读/写入模式与审计。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑：旧版可视化编辑（拖动/缩放、拖线建关系、正交避障连线、网格吸附、撤销重做、导出图片）+ 新版只读结构化视图（服务器泳道 / 应用链路 / 依赖矩阵 / 配置建议）与配置体检。"/>

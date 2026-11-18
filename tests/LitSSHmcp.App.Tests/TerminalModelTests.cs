@@ -39,6 +39,96 @@ public class TerminalModelTests
     }
 
     [Fact]
+    public void Application_cursor_keys_use_ss3_sequences()
+    {
+        Assert.Equal("\u001bOA", TerminalView.CursorSequence('A', 1, applicationCursorKeys: true));
+        Assert.Equal("\u001b[A", TerminalView.CursorSequence('A', 1, applicationCursorKeys: false));
+        Assert.Equal("\u001b[1;2A", TerminalView.CursorSequence('A', 2, applicationCursorKeys: true));
+    }
+
+    [Fact]
+    public void Resize_reflows_wrapped_lines_and_restores_when_widened()
+    {
+        var model = new TerminalModel(10, 5);
+        model.Feed("abcdefghijklm");
+
+        model.Resize(5, 5);
+
+        var dump = string.Join("|", Enumerable.Range(0, model.Rows).Select(r => RowText(model, r)));
+        Assert.True(RowText(model, 0).Contains("abcde", StringComparison.Ordinal), dump);
+        Assert.Contains("fghij", RowText(model, 1));
+        Assert.Contains("klm", RowText(model, 2));
+
+        model.Resize(10, 5);
+
+        Assert.Contains("abcdefghij", RowText(model, 0));
+        Assert.Contains("klm", RowText(model, 1));
+    }
+
+    [Fact]
+    public void Resize_reflows_scrollback_content()
+    {
+        var model = new TerminalModel(12, 3);
+        for (var i = 0; i < 6; i++)
+            model.Feed($"line{i}-abcdefghij\r\n");
+
+        var before = model.ScrollbackCount;
+        Assert.True(before > 0);
+
+        model.Resize(6, 3);
+
+        Assert.True(model.ScrollbackCount > 0);
+        var text = string.Join("\n", Enumerable.Range(1, model.ScrollbackCount)
+            .Select(i => new string(model.ScrollbackLine(i).Select(c => c.Ch).ToArray())));
+        Assert.Contains("line", text);
+    }
+
+    [Fact]
+    public void Resize_while_alt_screen_still_reflows_main_screen_for_after_exit()
+    {
+        var model = new TerminalModel(10, 5);
+        model.Feed("abcdefghijklm");
+        model.Feed("\u001b[?1049h");
+
+        model.Resize(5, 5);
+        model.Feed("\u001b[?1049l");
+
+        Assert.Contains("abcde", RowText(model, 0));
+        Assert.Contains("fghij", RowText(model, 1));
+        Assert.Contains("klm", RowText(model, 2));
+    }
+
+    [Fact]
+    public void Resize_does_not_join_separate_lines()
+    {
+        var model = new TerminalModel(10, 5);
+        model.Feed("abc\r\ndef");
+
+        model.Resize(4, 5);
+
+        Assert.Contains("abc", RowText(model, 0));
+        Assert.Contains("def", RowText(model, 1));
+    }
+
+    private static string RowText(TerminalModel model, int row)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (var x = 0; x < model.Cols; x++)
+            sb.Append(model.CellAt(x, row).Ch);
+        return sb.ToString().TrimEnd();
+    }
+
+    [Fact]
+    public void Application_cursor_keys_mode_toggles_with_decckm()
+    {
+        var model = new TerminalModel(20, 5);
+        model.Feed("\u001b[?1h");
+        Assert.True(model.ApplicationCursorKeys);
+        model.Feed("\u001b[?1l");
+        Assert.False(model.ApplicationCursorKeys);
+    }
+
+    [Fact]
     public void Sgr_sets_color_and_reset_clears()
     {
         var model = new TerminalModel(20, 5);

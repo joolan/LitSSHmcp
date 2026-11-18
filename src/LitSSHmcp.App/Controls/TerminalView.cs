@@ -710,6 +710,9 @@ public sealed class TerminalView : Grid
         return true;
     }
 
+    /// <summary>返回当前鼠标选中的终端文本；无选中返回空字符串。</summary>
+    public string GetSelectedText() => ExtractSelection();
+
     private void CopySelection()
     {
         var text = ExtractSelection();
@@ -987,7 +990,12 @@ public sealed class TerminalView : Grid
         return sb.ToString();
     }
 
-    private static string? MapKey(KeyEventArgs e)
+    internal static string CursorSequence(char final, int modifier, bool applicationCursorKeys) =>
+        modifier == 1
+            ? (applicationCursorKeys ? $"\u001bO{final}" : $"\u001b[{final}")
+            : $"\u001b[1;{modifier}{final}";
+
+    private string? MapKey(KeyEventArgs e)
     {
         var mods = e.KeyboardDevice.Modifiers;
         var ctrl = mods.HasFlag(ModifierKeys.Control);
@@ -995,7 +1003,8 @@ public sealed class TerminalView : Grid
         var alt = mods.HasFlag(ModifierKeys.Alt);
         var m = 1 + (shift ? 1 : 0) + (alt ? 2 : 0) + (ctrl ? 4 : 0);
 
-        string Csi(char final) => m == 1 ? $"\u001b[{final}" : $"\u001b[1;{m}{final}";
+        string Cursor(char final) =>
+            CursorSequence(final, m, _session?.Model.ApplicationCursorKeys == true);
         string Tilde(int code) => m == 1 ? $"\u001b[{code}~" : $"\u001b[{code};{m}~";
 
         if (ctrl && !alt)
@@ -1018,12 +1027,12 @@ public sealed class TerminalView : Grid
             case Key.Back: return "\u007f";
             case Key.Tab: return shift ? "\u001b[Z" : "\t";
             case Key.Escape: return "\u001b";
-            case Key.Up: return Csi('A');
-            case Key.Down: return Csi('B');
-            case Key.Right: return Csi('C');
-            case Key.Left: return Csi('D');
-            case Key.Home: return Csi('H');
-            case Key.End: return Csi('F');
+            case Key.Up: return Cursor('A');
+            case Key.Down: return Cursor('B');
+            case Key.Right: return Cursor('C');
+            case Key.Left: return Cursor('D');
+            case Key.Home: return Cursor('H');
+            case Key.End: return Cursor('F');
             case Key.Insert: return Tilde(2);
             case Key.Delete: return Tilde(3);
             case Key.PageUp: return Tilde(5);

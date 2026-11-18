@@ -386,7 +386,7 @@ public class AuditLogService : IAuditLogService
 
     // —— 查询（活动表 / 含历史归档） ——
 
-    public async Task<CommandAuditLog[]> GetLogsAsync(string? serverId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null)
+    public async Task<CommandAuditLog[]> GetLogsAsync(string? serverId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null, string? toolPrefix = null)
     {
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync();
@@ -420,6 +420,12 @@ public class AuditLogService : IAuditLogService
             cmd.Parameters.AddWithValue("@Tool", tool);
         }
 
+        if (!string.IsNullOrWhiteSpace(toolPrefix))
+        {
+            conditions.Add("Tool LIKE @ToolPrefix ESCAPE '\\'");
+            cmd.Parameters.AddWithValue("@ToolPrefix", EscapeLike(toolPrefix.Trim()) + "%");
+        }
+
         if (category is { } cat)
         {
             conditions.Add("Category = @Category");
@@ -442,7 +448,7 @@ public class AuditLogService : IAuditLogService
         return logs.ToArray();
     }
 
-    public async Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null)
+    public async Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null, bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null, AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null, string? toolPrefix = null)
     {
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync();
@@ -474,6 +480,12 @@ public class AuditLogService : IAuditLogService
         {
             conditions.Add("Tool = @Tool");
             cmd.Parameters.AddWithValue("@Tool", tool);
+        }
+
+        if (!string.IsNullOrWhiteSpace(toolPrefix))
+        {
+            conditions.Add("Tool LIKE @ToolPrefix ESCAPE '\\'");
+            cmd.Parameters.AddWithValue("@ToolPrefix", EscapeLike(toolPrefix.Trim()) + "%");
         }
 
         if (category is { } scat)

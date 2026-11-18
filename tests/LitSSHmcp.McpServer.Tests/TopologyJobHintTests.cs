@@ -93,12 +93,12 @@ public sealed class TopologyJobHintTests
         public Task LogCommandAsync(CommandAuditLog log) => Task.CompletedTask;
         public Task<CommandAuditLog[]> GetLogsAsync(string? serverId = null, int limit = 100, string? keyword = null,
             bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null,
-            AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null) =>
+            AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null, string? toolPrefix = null) =>
             Task.FromResult(Array.Empty<CommandAuditLog>());
         public Task LogSqlAsync(SqlAuditLog log) => Task.CompletedTask;
         public Task<SqlAuditLog[]> GetSqlLogsAsync(string? dataSourceId = null, int limit = 100, string? keyword = null,
             bool includeHistory = false, int offset = 0, string? sessionId = null, string? tool = null,
-            AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null) =>
+            AuditCategory? category = null, IReadOnlyCollection<string>? userIds = null, string? toolPrefix = null) =>
             Task.FromResult(Array.Empty<SqlAuditLog>());
         public Task RecordSessionAsync(AuditSession session) => Task.CompletedTask;
         public Task<AuditSession[]> GetSessionsAsync(int limit = 50, string? ownerUserId = null) =>

@@ -37,14 +37,14 @@ public class AuditViewModel : INotifyPropertyChanged
     }
 
     private int _categoryIndex;
-    /// <summary>事件类型过滤：0=全部, 1=Exec, 2=Gate, 3=Probe, 4=Meta, 5=Transfer, 6=Local。</summary>
+    /// <summary>事件类型过滤：0=全部, 1=Exec, 2=Gate, 3=Probe, 4=Meta, 5=Transfer, 6=Local, 7=终端 AI。</summary>
     public int CategoryIndex
     {
         get => _categoryIndex;
         set { _categoryIndex = value; OnPropertyChanged(); }
     }
 
-    public string[] CategoryOptions { get; } = { "全部", "执行 (Exec)", "审批拦截 (Gate)", "只读探测 (Probe)", "列表元数据 (Meta)", "文件传输 (Transfer)", "本地工具 (Local)" };
+    public string[] CategoryOptions { get; } = { "全部", "执行 (Exec)", "审批拦截 (Gate)", "只读探测 (Probe)", "列表元数据 (Meta)", "文件传输 (Transfer)", "本地工具 (Local)", "AI 终端 (AI)" };
 
     public string StatusMessage
     {
@@ -99,6 +99,7 @@ public class AuditViewModel : INotifyPropertyChanged
             var session = string.IsNullOrWhiteSpace(SessionFilter) ? null : SessionFilter.Trim();
             var limit = int.TryParse(LimitText, out var parsed) && parsed > 0 ? parsed : 200;
 
+            var aiOnly = CategoryIndex == 7;
             var category = CategoryIndex switch
             {
                 1 => AuditCategory.Exec,
@@ -109,6 +110,7 @@ public class AuditViewModel : INotifyPropertyChanged
                 6 => AuditCategory.Local,
                 _ => (AuditCategory?)null
             };
+            var toolPrefix = aiOnly ? "terminal_ai_" : null;
 
             // 归因展示：Web 会话审计存用户 Id → 映射为 web.db 用户名（桌面登录本身存用户名）
             Dictionary<string, string>? idToName = null;
@@ -133,7 +135,8 @@ public class AuditViewModel : INotifyPropertyChanged
                 // 无 web.db / 读取失败：按原始 Id 展示
             }
 
-            var commands = await _audit.GetLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category, userIds: keywordUserIds);
+            var commands = await _audit.GetLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session,
+                category: category, userIds: keywordUserIds, toolPrefix: toolPrefix);
             CommandLogs.Clear();
             foreach (var item in commands)
             {
@@ -142,27 +145,31 @@ public class AuditViewModel : INotifyPropertyChanged
                 CommandLogs.Add(item);
             }
 
-            var platformItems = new List<CommandAuditLog>();
-            foreach (var tool in new[] { "jenkins", "kubernetes" })
-            {
-                var items = await _audit.GetLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, tool: tool, category: category, userIds: keywordUserIds);
-                platformItems.AddRange(items);
-            }
             PlatformLogs.Clear();
-            foreach (var item in platformItems.OrderByDescending(item => item.Timestamp).ThenByDescending(item => item.Id).Take(limit))
-            {
-                if (idToName is not null && item.UserId is not null && idToName.TryGetValue(item.UserId, out var name))
-                    item.UserName = name;
-                PlatformLogs.Add(item);
-            }
-
-            var sqls = await _audit.GetSqlLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, category: category, userIds: keywordUserIds);
             SqlLogs.Clear();
-            foreach (var item in sqls)
+            if (!aiOnly)
             {
-                if (idToName is not null && item.UserId is not null && idToName.TryGetValue(item.UserId, out var name))
-                    item.UserName = name;
-                SqlLogs.Add(item);
+                var platformItems = new List<CommandAuditLog>();
+                foreach (var tool in new[] { "jenkins", "kubernetes" })
+                {
+                    var items = await _audit.GetLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session, tool: tool, category: category, userIds: keywordUserIds);
+                    platformItems.AddRange(items);
+                }
+                foreach (var item in platformItems.OrderByDescending(item => item.Timestamp).ThenByDescending(item => item.Id).Take(limit))
+                {
+                    if (idToName is not null && item.UserId is not null && idToName.TryGetValue(item.UserId, out var name))
+                        item.UserName = name;
+                    PlatformLogs.Add(item);
+                }
+
+                var sqls = await _audit.GetSqlLogsAsync(filter, limit, keyword, IncludeHistory, sessionId: session,
+                    category: category, userIds: keywordUserIds);
+                foreach (var item in sqls)
+                {
+                    if (idToName is not null && item.UserId is not null && idToName.TryGetValue(item.UserId, out var name))
+                        item.UserName = name;
+                    SqlLogs.Add(item);
+                }
             }
 
             var sessions = await _audit.GetSessionsAsync(200);
@@ -173,7 +180,7 @@ public class AuditViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(SummaryText));
             OnPropertyChanged(nameof(FailureCount));
             OnPropertyChanged(nameof(GateCount));
-            StatusMessage = $"命令审计 {commands.Length} 条, 平台操作 {PlatformLogs.Count} 条, SQL审计 {sqls.Length} 条, 会话 {sessions.Length} 个" + (IncludeHistory ? "（含归档）" : "");
+            StatusMessage = $"命令审计 {commands.Length} 条, 平台操作 {PlatformLogs.Count} 条, SQL审计 {SqlLogs.Count} 条, 会话 {sessions.Length} 个" + (IncludeHistory ? "（含归档）" : "");
         }
         catch (Exception ex)
         {

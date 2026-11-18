@@ -50,7 +50,12 @@ public sealed class TerminalOutputBuffer
         }
     }
 
-    public TerminalOutputSnapshot Read(long cursor, int maxChars)
+    public TerminalOutputSnapshot Read(long cursor, int maxChars) => ReadCore(cursor, maxChars, clean: true);
+
+    /// <summary>读取原始输出（保留 OSC/CSI）；仅用于检测不可见的提示标记，不用于展示。</summary>
+    public TerminalOutputSnapshot ReadRaw(long cursor, int maxChars) => ReadCore(cursor, maxChars, clean: false);
+
+    private TerminalOutputSnapshot ReadCore(long cursor, int maxChars, bool clean)
     {
         if (maxChars <= 0)
             maxChars = 8192;
@@ -83,7 +88,8 @@ public sealed class TerminalOutputBuffer
                 sb.Append(chunk.Text, from, length);
             }
 
-            return new TerminalOutputSnapshot(Clean(sb.ToString()), end, truncated, _lastWriteAt);
+            var text = sb.ToString();
+            return new TerminalOutputSnapshot(clean ? Clean(text) : text, end, truncated, _lastWriteAt);
         }
     }
 

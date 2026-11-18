@@ -1,0 +1,40 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.TerminalAiCommandApprovalWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="终端 AI 命令确认" Width="660" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="终端 AI 命令确认"/>
+        <StackPanel Grid.Row="1" Margin="16,0,16,14">
+            <TextBlock x:Name="IntroText" TextWrapping="Wrap"/>
+            <TextBlock x:Name="ScopeText" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       Margin="0,4,0,8" TextWrapping="Wrap"/>
+            <TextBox x:Name="CommandText" IsReadOnly="True" FontFamily="{DynamicResource AppFontMonoFamily}"
+                     FontSize="13" TextWrapping="Wrap" MaxHeight="220" VerticalScrollBarVisibility="Auto"
+                     Background="{DynamicResource AppCodeBgBrush}" Padding="8" BorderThickness="0"/>
+            <Border x:Name="WarnBorder" Background="{DynamicResource AppDangerSubtleBrush}"
+                    BorderBrush="{DynamicResource AppDangerBrush}" BorderThickness="1"
+                    CornerRadius="{DynamicResource AppRadiusS}" Padding="10,8" Margin="0,10,0,0"
+                    Visibility="Collapsed">
+                <TextBlock x:Name="WarnText" Foreground="{DynamicResource AppDangerBrush}" TextWrapping="Wrap"/>
+            </Border>
+            <StackPanel x:Name="ManualPasswordPanel" Margin="0,10,0,0" Visibility="Collapsed">
+                <CheckBox x:Name="ManualPasswordBox" Content="确认后直接填入左侧终端并执行，由我输入密码"/>
+                <TextBlock x:Name="ManualPasswordHint" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap" Margin="22,3,0,0"/>
+            </StackPanel>
+            <TextBlock Text="命令将在当前 SSH 终端 PTY 中执行，并与用户共享 cwd/env/alias/后台任务。请确认命令与目标服务器无误。"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,10,0,0" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                <ui:Button Content="拒绝" Width="96" Margin="0,0,8,0" Click="OnDeny" IsCancel="True"/>
+                <ui:Button Content="允许执行" Appearance="Primary" Width="108" Click="OnAllow" IsDefault="True"/>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

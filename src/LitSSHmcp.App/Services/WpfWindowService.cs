@@ -118,9 +118,9 @@ public sealed partial class WpfWindowService : IWindowService
         return window;
     }
 
-    public DbWorkbenchWindow CreateDbWorkbenchWindow(DataSourceConfig? initial = null, Window? owner = null)
+    public DbWorkbenchWindow CreateDbWorkbenchWindow(DataSourceConfig? initial = null, Window? owner = null, bool openAi = false)
     {
-        var window = new DbWorkbenchWindow(initial, Services) { Topmost = false };
+        var window = new DbWorkbenchWindow(initial, Services, openAi) { Topmost = false };
         if (owner is not null)
             window.Owner = owner;
         return window;

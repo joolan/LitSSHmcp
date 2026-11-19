@@ -51,7 +51,8 @@ public sealed class TerminalJobTool : IAgentTool
 
     private const string Description =
         "当前 SSH 服务器终端上的后台长任务。action=start 启动后台命令并返回 jobId（不阻塞 AI）；" +
-        "action=status 查看运行状态和最近日志；action=log 读取日志；action=cancel 取消；action=list 列出任务。" +
+        "action=status 返回 RUNNING/COMPLETED/FAILED/UNKNOWN、exitCode 和最近日志；任务结束时日志包含 LITSSH_JOB_DONE:<exitCode>。" +
+        "action=log 读取日志；action=cancel 取消；action=list 列出任务。" +
         "用于构建/下载/长脚本等长时间任务；不要用于 vim/top/tail -f 等交互式命令。命令必须单行，且不在命令内使用 sudo/su。";
 
     public async Task<object?> InvokeAsync(IDictionary<string, object?>? arguments, CancellationToken ct)
@@ -96,13 +97,22 @@ public sealed class TerminalJobTool : IAgentTool
 
         var jobId = "j-" + Guid.NewGuid().ToString("N")[..8];
         var escaped = Quote(command);
+        var pidFile = $"~/.litssh-ai/jobs/{jobId}.pid";
+        var cmdFile = $"~/.litssh-ai/jobs/{jobId}.cmd";
+        // setsid 默认可能 fork，$! 记录的是 setsid 而不是真正的后台 shell。
+        // 让内层 shell 在 exec 前写入自己的 PID，status/cancel 才能命中真实任务进程组。
+        var logFile = $"~/.litssh-ai/jobs/{jobId}.log";
+        var exitFile = $"~/.litssh-ai/jobs/{jobId}.exit";
+        // 包装层负责写退出码和 DONE 标记；status 不再只靠 PID 猜测任务结果。
+        var jobScript = $"echo $$ > {pidFile}; /bin/sh -c {escaped}; " +
+                        $"__litssh_job_ec=$?; echo \"$__litssh_job_ec\" > {exitFile}; " +
+                        $"echo \"LITSSH_JOB_DONE:$__litssh_job_ec\" >> {logFile}; exit \"$__litssh_job_ec\"";
         var start = "mkdir -p ~/.litssh-ai/jobs; " +
                     "find ~/.litssh-ai/jobs -type f -mtime +7 -delete; " +
-                    $"log=~/.litssh-ai/jobs/{jobId}.log; " +
-                    $"nohup setsid /bin/sh -c {escaped} > \"$log\" 2>&1 & " +
-                    $"echo $! > ~/.litssh-ai/jobs/{jobId}.pid; " +
-                    $"printf '%s\\n' {escaped} > ~/.litssh-ai/jobs/{jobId}.cmd; " +
-                    $"echo JOB_STARTED:{jobId}:$(cat ~/.litssh-ai/jobs/{jobId}.pid):$log";
+                    $"nohup setsid /bin/sh -c {Quote(jobScript)} > {logFile} 2>&1 & " +
+                    $"for i in 1 2 3 4 5 6 7 8 9 10; do [ -s {pidFile} ] && break; sleep 0.1; done; " +
+                    $"printf '%s\\n' {escaped} > {cmdFile}; " +
+                    $"echo JOB_STARTED:{jobId}:$(cat {pidFile}):{logFile}";
 
         var result = await _runner.RunAsync(_terminal, start, sudo: false, TimeSpan.FromSeconds(20), ct);
         await AuditAsync("start", command, result.Success ? CommandStatus.Executed : CommandStatus.Failed,
@@ -111,14 +121,17 @@ public sealed class TerminalJobTool : IAgentTool
             return Error("后台任务启动失败：" + Truncate(result.Output + result.Error, 2000));
 
         var pid = ReadStartedPid(result.Output);
+        if (string.IsNullOrWhiteSpace(pid))
+            return Error("后台任务已启动，但未读取到有效 PID；请用 terminal_job(action=log) 检查任务输出。");
         return JsonSerializer.Serialize(new
         {
             ok = true,
             jobId,
             pid,
             logPath = $"~/.litssh-ai/jobs/{jobId}.log",
+            exitPath = $"~/.litssh-ai/jobs/{jobId}.exit",
             command,
-            message = "后台任务已启动。使用 terminal_job(action=status|log|cancel, jobId=...) 查看或取消。"
+            message = "后台任务已启动。使用 terminal_job(action=status|log|cancel, jobId=...) 查看或取消；完成后日志会写入 LITSSH_JOB_DONE:<exitCode>。"
         });
     }
 
@@ -128,15 +141,25 @@ public sealed class TerminalJobTool : IAgentTool
         if (jobId is null)
             return Error("缺少 jobId。");
         var script = $"j={Quote(jobId)}; pid=$(cat ~/.litssh-ai/jobs/$j.pid 2>/dev/null); " +
-                     "if [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; then echo STATUS:RUNNING; " +
-                     "else echo STATUS:STOPPED; fi; " +
+                     "exitCode=$(cat ~/.litssh-ai/jobs/$j.exit 2>/dev/null); " +
+                     "if [ -n \"$exitCode\" ]; then " +
+                     "  if [ \"$exitCode\" = \"0\" ]; then echo STATUS:COMPLETED; else echo STATUS:FAILED; fi; " +
+                     "elif [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; then echo STATUS:RUNNING; " +
+                     "else echo STATUS:UNKNOWN; fi; " +
+                     "echo EXIT:${exitCode:-unknown}; " +
                      "ps -p \"$pid\" -o pid=,stat=,etime=,cmd= 2>/dev/null; " +
                      "echo ---LOG---; tail -n 40 ~/.litssh-ai/jobs/$j.log 2>/dev/null";
         var result = await _runner.RunAsync(_terminal, script, sudo: false, TimeSpan.FromSeconds(15), ct);
+        var state = ReadState(result.Output);
+        var exitCode = ReadExitCode(result.Output);
         return JsonSerializer.Serialize(new
         {
             ok = result.Success,
             jobId,
+            state,
+            exitCode,
+            completed = state == "COMPLETED",
+            failed = state == "FAILED",
             output = Truncate(result.Output, 12000),
             error = result.Error
         });
@@ -167,7 +190,9 @@ public sealed class TerminalJobTool : IAgentTool
             return Error("缺少 jobId。");
         var script = $"j={Quote(jobId)}; pid=$(cat ~/.litssh-ai/jobs/$j.pid 2>/dev/null); " +
                      "if [ -n \"$pid\" ]; then kill -TERM -\"$pid\" 2>/dev/null || kill -TERM \"$pid\" 2>/dev/null; " +
-                     "sleep 1; kill -KILL -\"$pid\" 2>/dev/null || true; echo CANCELLED:$pid; " +
+                     "sleep 1; kill -KILL -\"$pid\" 2>/dev/null || true; " +
+                     "if [ ! -s ~/.litssh-ai/jobs/$j.exit ]; then echo 143 > ~/.litssh-ai/jobs/$j.exit; " +
+                     "echo LITSSH_JOB_DONE:143 >> ~/.litssh-ai/jobs/$j.log; fi; echo CANCELLED:$pid; " +
                      "else echo NOT_RUNNING; fi";
         var result = await _runner.RunAsync(_terminal, script, sudo: false, TimeSpan.FromSeconds(15), ct);
         await AuditAsync("cancel", jobId, result.Success ? CommandStatus.Executed : CommandStatus.Failed,
@@ -236,6 +261,28 @@ public sealed class TerminalJobTool : IAgentTool
         => command.Split(new[] { ' ', '\t', ';', '&', '|', '(', ')', '`' },
                 StringSplitOptions.RemoveEmptyEntries)
             .Any(t => t is "sudo" or "su");
+
+    internal static string ReadState(string output)
+    {
+        if (output.Contains("STATUS:COMPLETED", StringComparison.Ordinal))
+            return "COMPLETED";
+        if (output.Contains("STATUS:FAILED", StringComparison.Ordinal))
+            return "FAILED";
+        if (output.Contains("STATUS:RUNNING", StringComparison.Ordinal))
+            return "RUNNING";
+        return "UNKNOWN";
+    }
+
+    internal static int? ReadExitCode(string output)
+    {
+        var line = output.Split('\n').FirstOrDefault(l =>
+            l.Contains("EXIT:", StringComparison.Ordinal));
+        if (line is null)
+            return null;
+        var value = line[(line.IndexOf("EXIT:", StringComparison.Ordinal) + 5)..].Trim();
+        var digits = new string(value.TakeWhile(c => char.IsDigit(c) || c == '-').ToArray());
+        return int.TryParse(digits, out var code) ? code : null;
+    }
 
     private static string ReadStartedPid(string output)
     {

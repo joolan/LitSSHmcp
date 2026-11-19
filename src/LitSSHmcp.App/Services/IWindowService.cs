@@ -65,6 +65,6 @@ public interface IWindowService
     DatasourceEditWindow CreateDatasourceEditWindow(Window? owner = null);
     RemoteDesktopEditWindow CreateRemoteDesktopEditWindow(Window? owner = null);
 
-    DbWorkbenchWindow CreateDbWorkbenchWindow(DataSourceConfig? initial = null, Window? owner = null);
+    DbWorkbenchWindow CreateDbWorkbenchWindow(DataSourceConfig? initial = null, Window? owner = null, bool openAi = false);
     RemoteDesktopSessionWindow CreateRemoteDesktopSessionWindow(IConfigService configService);
 }

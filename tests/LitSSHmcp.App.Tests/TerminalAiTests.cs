@@ -28,6 +28,31 @@ public class TerminalAiTests
     }
 
     [Fact]
+    public void Payload_is_single_line_for_normal_commands_to_avoid_extra_prompts()
+    {
+        var payload = TerminalCommandRunner.BuildPayload(
+            new SshServerConfig { Username = "ops", SudoType = SudoType.None },
+            "id && hostname", sudo: false, token: "LITSSH_AI_TEST",
+            disableEcho: true, password: string.Empty);
+
+        Assert.DoesNotContain('\n', payload);
+        Assert.DoesNotContain('\r', payload);
+        Assert.Contains("stty -echo", TerminalCommandRunner.BuildEchoOffReady("LITSSH_EO_TEST"));
+
+        var sudoPayload = TerminalCommandRunner.BuildPayload(
+            new SshServerConfig
+            {
+                Username = "ops",
+                SudoType = SudoType.CurrentUser,
+                SudoPassword = "secret"
+            },
+            "systemctl restart nginx", sudo: true, token: "LITSSH_AI_TEST",
+            disableEcho: true, password: "secret");
+        Assert.DoesNotContain('\n', sudoPayload);
+        Assert.DoesNotContain('\r', sudoPayload);
+    }
+
+    [Fact]
     public void Sudo_payload_disables_echo_and_uses_prompt()
     {
         var server = new SshServerConfig
@@ -90,7 +115,7 @@ public class TerminalAiTests
 
         Assert.Contains("__litssh_ec=$?", sudoLine);
         Assert.Contains("__litssh_m=", sudoLine);
-        Assert.Contains("printf '\\n%s|%s|%s\\n", sudoLine);
+        Assert.Contains("printf '\\033]0;%s|%s|%s\\007'", sudoLine);
         Assert.Contains("stty echo", sudoLine);
     }
 
@@ -102,6 +127,18 @@ public class TerminalAiTests
 
         var rootUser = new SshServerConfig { Username = "ops", SudoType = SudoType.RootUser };
         Assert.Equal("su - root -c 'id'", TerminalCommandRunner.BuildManualSudoCommand(rootUser, "id"));
+    }
+
+    [Fact]
+    public void Job_status_parser_returns_state_and_exit_code()
+    {
+        Assert.Equal("RUNNING", TerminalJobTool.ReadState("[root@host ~]# STATUS:RUNNING\nEXIT:unknown"));
+        Assert.Equal("COMPLETED", TerminalJobTool.ReadState("STATUS:COMPLETED\nEXIT:0"));
+        Assert.Equal("FAILED", TerminalJobTool.ReadState("STATUS:FAILED\nEXIT:2"));
+        Assert.Equal("UNKNOWN", TerminalJobTool.ReadState("STATUS:STOPPED"));
+        Assert.Equal(0, TerminalJobTool.ReadExitCode("STATUS:COMPLETED\nEXIT:0"));
+        Assert.Equal(2, TerminalJobTool.ReadExitCode("EXIT:2"));
+        Assert.Null(TerminalJobTool.ReadExitCode("EXIT:unknown"));
     }
 
     [Fact]

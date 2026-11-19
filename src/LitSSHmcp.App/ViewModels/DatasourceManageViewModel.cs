@@ -39,9 +39,15 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
         NewAiSessionItemCommand = new RelayCommand(p =>
         {
             var ds = p as DataSourceConfig ?? SelectedDataSource;
-            if (ds is not null)
-                NewAiSessionRequested?.Invoke(ds);
-        }, p => (p as DataSourceConfig ?? SelectedDataSource) is not null);
+            if (ds is null)
+                return;
+            if (!SupportsDatasourceAi(ds))
+            {
+                _dialogs.Warn("数据源 AI 第一批仅支持 MySQL / PostgreSQL。", "数据源 AI");
+                return;
+            }
+            OpenWorkbench(ds, openAi: true);
+        }, p => SupportsDatasourceAi(p as DataSourceConfig ?? SelectedDataSource));
         EditItemCommand = new RelayCommand(p => { SelectedDataSource = p as DataSourceConfig; Edit(); });
         TestItemCommand = new RelayCommand(p => { SelectedDataSource = p as DataSourceConfig; Test(); });
         ViewItemCommand = new RelayCommand(p => View(p as DataSourceConfig));
@@ -157,7 +163,6 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
     public ICommand UserManagerItemCommand { get; }
     public ICommand NewAiSessionItemCommand { get; }
 
-    public event Action<DataSourceConfig>? NewAiSessionRequested;
     public ICommand EditItemCommand { get; }
     public ICommand TestItemCommand { get; }
     public ICommand ViewItemCommand { get; }
@@ -209,20 +214,25 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
         window.Show();
     }
 
-    private void OpenWorkbench(DataSourceConfig? target)
+    private static bool SupportsDatasourceAi(DataSourceConfig? ds)
+        => ds?.Type.ToLowerInvariant() is "mysql" or "postgres";
+
+    private void OpenWorkbench(DataSourceConfig? target, bool openAi = false)
     {
-        // 同一数据源已打开则激活该窗口；否则新开一个工作台窗口（支持多窗口/多数据源并行）。
+        // 同一数据源已打开则激活该窗口；否则新开一个工作台窗口（支持多窗口/多数据源并行）�?
         if (target is not null)
         {
             var existing = _workbenches.FirstOrDefault(w => w.IsLoaded && w.CurrentDatasourceId == target.Id);
             if (existing is not null)
             {
                 existing.Activate();
+                if (openAi)
+                    existing.OpenAiDrawer();
                 return;
             }
         }
 
-        var window = _windows.CreateDbWorkbenchWindow(target, Application.Current.MainWindow);
+        var window = _windows.CreateDbWorkbenchWindow(target, Application.Current.MainWindow, openAi);
         _workbenches.Add(window);
         window.Closed += (_, _) => _workbenches.Remove(window);
         window.Show();

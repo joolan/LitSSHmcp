@@ -27,4 +27,18 @@ public class DbWorkbenchXamlTests
         var ex = RunSta(() => _ = new DbWorkbenchWindow());
         Assert.Null(ex);
     }
+
+    [Fact]
+    public void Result_grid_supports_extended_row_selection_for_ai_send()
+    {
+        var ex = RunSta(() =>
+        {
+            var window = new DbWorkbenchWindow();
+            var grid = Assert.IsType<System.Windows.Controls.DataGrid>(
+                window.FindName("ResultGrid"));
+            Assert.Equal(System.Windows.Controls.DataGridSelectionUnit.FullRow, grid.SelectionUnit);
+            Assert.Equal(System.Windows.Controls.DataGridSelectionMode.Extended, grid.SelectionMode);
+        });
+        Assert.Null(ex);
+    }
 }

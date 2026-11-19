@@ -50,6 +50,9 @@ public sealed class TerminalView : Grid
     private int _clickCount;
     private long _lastClickTicks;
     private int _lastClickRow = -1, _lastClickCol = -1;
+    private bool _mouseCaptured;
+    private int _mouseButton = -1;
+    private bool _focusReported;
 
     // 搜索
     private readonly List<(int Line, int Col)> _findMatches = new();
@@ -184,7 +187,7 @@ public sealed class TerminalView : Grid
 
     private void ApplySettings()
     {
-        _fontSize = TerminalSettings.FontSize;
+        _fontSize = GetSavedZoom() ?? TerminalSettings.FontSize;
         var family = new FontFamily(string.IsNullOrWhiteSpace(TerminalSettings.FontFamilyName) ? "Consolas" : TerminalSettings.FontFamilyName);
         _typeface = new Typeface(family, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
         _boldTypeface = new Typeface(family, FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
@@ -229,9 +232,11 @@ public sealed class TerminalView : Grid
         {
             oldSession.Model.Changed -= OnModelChanged;
             oldSession.Model.ResponseRequested -= OnResponseRequested;
+            oldSession.Model.ClipboardRequested -= OnClipboardRequested;
         }
 
         _session = newSession;
+        _fontSize = GetSavedZoom() ?? TerminalSettings.FontSize;
         _lineTextCache.Clear();
         _scrollOffset = 0;
         _hasSelection = false;
@@ -239,6 +244,7 @@ public sealed class TerminalView : Grid
         {
             newSession.Model.Changed += OnModelChanged;
             newSession.Model.ResponseRequested += OnResponseRequested;
+            newSession.Model.ClipboardRequested += OnClipboardRequested;
             newSession.Model.AnsiPalette = TerminalSettings.Theme.Ansi16Palette;
             newSession.Model.ThemeFg = TerminalSettings.Theme.Fg;
             newSession.Model.ThemeBg = TerminalSettings.Theme.Bg;
@@ -252,6 +258,19 @@ public sealed class TerminalView : Grid
             }
         }
         InvalidateVisual();
+    }
+
+    private void OnClipboardRequested(string text)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(text))
+                Clipboard.SetText(text);
+        }
+        catch
+        {
+            // 剪贴板被占用时忽略
+        }
     }
 
     private void OnResponseRequested(string response)
@@ -271,6 +290,8 @@ public sealed class TerminalView : Grid
         _lineTextCache.Clear();
         if (_session?.Model.IsAltScreen == true)
             _scrollOffset = 0;
+        if (_session?.Model.SynchronizedOutput == true)
+            return; // 等 CSI ?2026l 关闭同步输出时再统一刷新
         if (Dispatcher.CheckAccess())
             InvalidateVisual();
         else
@@ -291,12 +312,22 @@ public sealed class TerminalView : Grid
         base.OnGotKeyboardFocus(e);
         _cursorOn = true;
         InvalidateVisual();
+        if (_session?.Model.FocusReporting == true && !_focusReported)
+        {
+            _focusReported = true;
+            _session.SendUserInput("\u001b[I");
+        }
     }
 
     protected override void OnLostKeyboardFocus(KeyboardFocusChangedEventArgs e)
     {
         base.OnLostKeyboardFocus(e);
         InvalidateVisual();
+        if (_session?.Model.FocusReporting == true && _focusReported)
+        {
+            _focusReported = false;
+            _session.SendUserInput("\u001b[O");
+        }
     }
 
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
@@ -404,13 +435,16 @@ public sealed class TerminalView : Grid
         for (var col = 0; col < _cols; col++)
         {
             var cell = cells[col];
-            if (cell.WideContinuation || cell.Ch == ' ' || cell.Ch == '\0')
+            if (cell.WideContinuation || cell.Text == " ")
                 continue;
 
             var (fg, cellBg, reverse) = ResolveColors(cell.Attr);
             if (reverse)
                 fg = cellBg;
-            dc.DrawText(GetText(cell.Ch, fg, cell.Attr), new Point(col * _cellWidth, y));
+            var drawAttr = cell.Attr;
+            if (cell.Hyperlink is { Length: > 0 })
+                drawAttr.Underline = true;
+            dc.DrawText(GetText(cell.Text, fg, drawAttr), new Point(col * _cellWidth, y));
         }
     }
 
@@ -471,10 +505,13 @@ public sealed class TerminalView : Grid
         return brush;
     }
 
-    private FormattedText GetText(char ch, uint fg, TerminalAttributes attr)
+    private FormattedText GetText(string value, uint fg, TerminalAttributes attr)
     {
-        var key = ch | ((long)fg << 16) | ((attr.Bold ? 1L : 0L) << 48) |
-                  ((attr.Italic ? 1L : 0L) << 49) | ((attr.Underline ? 1L : 0L) << 50);
+        // 必须把 hash 当作无符号 32 位；直接转 long 会让负 hash 把高 32 位全部置 1，
+        // 导致同一字符在不同前景色下复用同一个缓存，出现单词局部异色。
+        var key = (long)(uint)value.GetHashCode() | ((long)fg << 32) |
+                  ((attr.Bold ? 1L : 0L) << 56) | ((attr.Italic ? 1L : 0L) << 57) |
+                  ((attr.Underline ? 1L : 0L) << 58);
         if (_textCache.TryGetValue(key, out var cached))
             return cached;
 
@@ -482,7 +519,7 @@ public sealed class TerminalView : Grid
             _textCache.Clear();
 
         var typeface = attr.Bold ? _boldTypeface : _typeface;
-        var text = new FormattedText(ch.ToString(), CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+        var text = new FormattedText(value, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
             typeface, _fontSize, GetBrush(fg), _pixelsPerDip);
         if (attr.Italic)
             text.SetFontStyle(FontStyles.Italic);
@@ -524,6 +561,38 @@ public sealed class TerminalView : Grid
         return (row, col);
     }
 
+    private bool ShouldForwardMouse
+        => _session?.Model.MouseTracking != MouseTrackingMode.None &&
+           !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+
+    private void SendMouse(int button, bool press, int row, int col, bool motion = false)
+    {
+        var model = _session?.Model;
+        if (model is null)
+            return;
+
+        var modifiers = 0;
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt)) modifiers |= 8;
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) modifiers |= 16;
+        var code = button + modifiers + (motion ? 32 : 0);
+        var x = Math.Clamp(col + 1, 1, Math.Max(1, _cols));
+        var y = Math.Clamp(row + 1, 1, Math.Max(1, _rows));
+
+        if (model.MouseSgr)
+        {
+            _session!.SendUserInput($"\u001b[<{code};{x};{y}{(press ? 'M' : 'm')}");
+            return;
+        }
+
+        // X10/legacy 编码只支持单字节坐标；release 用 button=3。
+        if (!press)
+            code = 3 + modifiers + (motion ? 32 : 0);
+        var b = Math.Clamp(32 + code, 0, 255);
+        var cx = Math.Clamp(32 + x, 0, 255);
+        var cy = Math.Clamp(32 + y, 0, 255);
+        _session!.SendUserInput($"\u001b[M{(char)b}{(char)cx}{(char)cy}");
+    }
+
     protected override void OnPreviewMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         if (e.OriginalSource is DependencyObject source && _findBar.IsAncestorOf(source))
@@ -535,6 +604,15 @@ public sealed class TerminalView : Grid
             var clickCount = Math.Max(e.ClickCount, RegisterClickCount(row, col));
             if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && TryOpenLink(row, col))
             {
+                e.Handled = true;
+                return;
+            }
+            if (ShouldForwardMouse)
+            {
+                _mouseButton = 0;
+                _mouseCaptured = true;
+                SendMouse(0, press: true, row, col);
+                CaptureMouse();
                 e.Handled = true;
                 return;
             }
@@ -564,6 +642,21 @@ public sealed class TerminalView : Grid
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
+        if (_mouseCaptured && _session?.Model.MouseTracking != MouseTrackingMode.None)
+        {
+            var model = _session!.Model;
+            var (row, col) = PointToCell(e.GetPosition(this));
+            if (model.MouseTracking is MouseTrackingMode.Button or MouseTrackingMode.Any)
+            {
+                if (_mouseButton >= 0 || model.MouseTracking == MouseTrackingMode.Any)
+                {
+                    SendMouse(_mouseButton >= 0 ? _mouseButton : 3, press: true, row, col, motion: true);
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+
         if (_selecting)
         {
             var (row, col) = PointToCell(e.GetPosition(this));
@@ -585,6 +678,17 @@ public sealed class TerminalView : Grid
 
     protected override void OnMouseUp(MouseButtonEventArgs e)
     {
+        if (_mouseCaptured && e.ChangedButton == MouseButton.Left)
+        {
+            var (row, col) = PointToCell(e.GetPosition(this));
+            SendMouse(_mouseButton >= 0 ? _mouseButton : 0, press: false, row, col);
+            _mouseCaptured = false;
+            _mouseButton = -1;
+            ReleaseMouseCapture();
+            e.Handled = true;
+            return;
+        }
+
         if (_selecting && e.ChangedButton == MouseButton.Left)
         {
             _selecting = false;
@@ -599,6 +703,14 @@ public sealed class TerminalView : Grid
 
     protected override void OnMouseRightButtonUp(MouseButtonEventArgs e)
     {
+        if (ShouldForwardMouse)
+        {
+            var (row, col) = PointToCell(e.GetPosition(this));
+            SendMouse(2, press: true, row, col);
+            SendMouse(2, press: false, row, col);
+            e.Handled = true;
+            return;
+        }
         Paste();
         e.Handled = true;
     }
@@ -634,22 +746,26 @@ public sealed class TerminalView : Grid
         if (abs < 0)
             return string.Empty;
 
-        var chars = new char[_cols];
+        var sb = new System.Text.StringBuilder(_cols);
         if (abs < model.ScrollbackCount)
         {
             var cells = model.ScrollbackLine(model.ScrollbackCount - abs);
-            for (var c = 0; c < chars.Length && c < cells.Length; c++)
-                chars[c] = cells[c].WideContinuation ? '\0' : cells[c].Ch;
+            for (var c = 0; c < _cols && c < cells.Length; c++)
+            {
+                if (!cells[c].WideContinuation)
+                    sb.Append(cells[c].Text);
+            }
         }
         else
         {
-            for (var c = 0; c < chars.Length; c++)
+            for (var c = 0; c < _cols; c++)
             {
                 var cell = model.CellAt(c, abs - model.ScrollbackCount);
-                chars[c] = cell.WideContinuation ? '\0' : cell.Ch;
+                if (!cell.WideContinuation)
+                    sb.Append(cell.Text);
             }
         }
-        return new string(chars).TrimEnd('\0', ' ');
+        return sb.ToString().TrimEnd();
     }
 
     private static bool IsWordChar(char ch) =>
@@ -705,6 +821,13 @@ public sealed class TerminalView : Grid
     private bool TryGetLink(int row, int col, out string url)
     {
         url = string.Empty;
+        var cell = CellAtView(row, col);
+        if (cell?.Hyperlink is { Length: > 0 } hyperlink)
+        {
+            url = hyperlink;
+            return true;
+        }
+
         var text = GetRowText(row);
         if (col < 0 || col >= text.Length)
             return false;
@@ -724,6 +847,22 @@ public sealed class TerminalView : Grid
             return false;
         url = candidate;
         return true;
+    }
+
+    private TerminalCell? CellAtView(int row, int col)
+    {
+        if (_session is null || row < 0 || row >= _rows || col < 0 || col >= _cols)
+            return null;
+        var model = _session.Model;
+        var abs = model.ScrollbackCount + row - _scrollOffset;
+        if (abs < 0)
+            return null;
+        if (abs < model.ScrollbackCount)
+        {
+            var line = model.ScrollbackLine(model.ScrollbackCount - abs);
+            return col < line.Length ? line[col] : null;
+        }
+        return model.CellAt(col, abs - model.ScrollbackCount);
     }
 
     /// <summary>返回当前鼠标选中的终端文本；无选中返回空字符串。</summary>
@@ -764,7 +903,7 @@ public sealed class TerminalView : Grid
                 var cell = line is not null ? line[col] : model.CellAt(col, baseIndex - model.ScrollbackCount);
                 if (cell.WideContinuation)
                     continue;
-                rowText.Append(cell.Ch == '\0' ? ' ' : cell.Ch);
+                rowText.Append(cell.Text);
             }
             sb.Append(rowText.ToString().TrimEnd());
             if (row != r2)
@@ -849,21 +988,21 @@ public sealed class TerminalView : Grid
         if (_lineTextCache.TryGetValue(line, out var cached))
             return cached;
 
-        var chars = new char[model.Cols];
+        var sb = new System.Text.StringBuilder(model.Cols);
         if (line < model.ScrollbackCount)
         {
             var cells = model.ScrollbackLine(model.ScrollbackCount - line);
-            for (var c = 0; c < chars.Length; c++)
-                chars[c] = cells[c].Ch;
+            for (var c = 0; c < model.Cols; c++)
+                sb.Append(cells[c].Text);
         }
         else
         {
             var screenRow = line - model.ScrollbackCount;
-            for (var c = 0; c < chars.Length; c++)
-                chars[c] = model.CellAt(c, screenRow).Ch;
+            for (var c = 0; c < model.Cols; c++)
+                sb.Append(model.CellAt(c, screenRow).Text);
         }
 
-        var text = new string(chars);
+        var text = sb.ToString();
         _lineTextCache[line] = text;
         return text;
     }
@@ -902,8 +1041,21 @@ public sealed class TerminalView : Grid
 
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            ZoomFont(e.Delta > 0 ? 1 : -1);
+            e.Handled = true;
+            return;
+        }
         if (_session is null)
             return;
+        if (ShouldForwardMouse)
+        {
+            var (row, col) = PointToCell(e.GetPosition(this));
+            SendMouse(e.Delta > 0 ? 64 : 65, press: true, row, col);
+            e.Handled = true;
+            return;
+        }
         if (_session.Model.IsAltScreen)
         {
             e.Handled = true;
@@ -913,6 +1065,57 @@ public sealed class TerminalView : Grid
         _scrollOffset = Math.Clamp(_scrollOffset + (e.Delta > 0 ? 3 : -3), 0, max);
         InvalidateVisual();
         e.Handled = true;
+    }
+
+    private void ZoomFont(double delta)
+    {
+        var next = Math.Clamp(_fontSize + delta, 8, 32);
+        if (Math.Abs(next - _fontSize) < 0.01)
+            return;
+        _fontSize = next;
+        PersistZoom(_fontSize);
+        ApplyZoom();
+    }
+
+    private void ResetZoom()
+    {
+        _fontSize = TerminalSettings.FontSize;
+        PersistZoom(0);
+        ApplyZoom();
+    }
+
+    private void ApplyZoom()
+    {
+        _textCache.Clear();
+        _lineTextCache.Clear();
+        RecalcCellSize();
+        RecalcGrid();
+        InvalidateVisual();
+    }
+
+    private string? ZoomPreferenceKey
+    {
+        get
+        {
+            var layoutKey = (_session as TerminalSessionViewModel)?.LayoutKey;
+            return string.IsNullOrWhiteSpace(layoutKey) ? null : "terminal.zoom." + layoutKey;
+        }
+    }
+
+    private double? GetSavedZoom()
+    {
+        var key = ZoomPreferenceKey;
+        if (key is null)
+            return null;
+        var value = UiPrefs.GetDouble(key, 0);
+        return value is >= 8 and <= 32 ? value : null;
+    }
+
+    private void PersistZoom(double value)
+    {
+        var key = ZoomPreferenceKey;
+        if (key is not null)
+            UiPrefs.SetDouble(key, value);
     }
 
     private void OnImePreviewKeyDown(object sender, KeyEventArgs e)
@@ -926,6 +1129,7 @@ public sealed class TerminalView : Grid
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
 
+        if (ctrl && (e.Key == Key.D0 || e.Key == Key.NumPad0)) { ResetZoom(); e.Handled = true; return; }
         if (ctrl && shift && e.Key == Key.C) { CopySelection(); e.Handled = true; return; }
         if (ctrl && shift && e.Key == Key.V) { Paste(); e.Handled = true; return; }
         if (ctrl && shift && e.Key == Key.K) { ClearScreen(); e.Handled = true; return; }

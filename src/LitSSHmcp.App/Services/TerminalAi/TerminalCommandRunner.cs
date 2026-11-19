@@ -64,11 +64,7 @@ public sealed class TerminalCommandRunner
 
         try
         {
-            // 第一步只发送短命令关闭回显，避免长行换行导致擦除不干净。
-            terminal.SendInput(ToPtyInput("stty -echo 2>/dev/null || true"));
-            await Task.Delay(200, CancellationToken.None).ConfigureAwait(false);
-
-            // 第二步擦除上一行并发出隐藏就绪标记；确认它已执行后再发正文。
+            // 关闭回显并发出隐藏就绪标记；确认它已执行后再发正文。
             var echoReadyToken = "LITSSH_EO_" + Guid.NewGuid().ToString("N")[..16];
             terminal.SendInput(ToPtyInput(BuildEchoOffReady(echoReadyToken)));
             if (!await WaitForRawAsync(terminal, cursor, echoReadyToken, TimeSpan.FromSeconds(2),
@@ -92,13 +88,12 @@ public sealed class TerminalCommandRunner
             while (true)
             {
                 await Task.Delay(60, CancellationToken.None).ConfigureAwait(false);
-                var snapshot = terminal.ReadOutput(cursor, 524288);
-                lastSnapshot = snapshot.Text;
+                var rawSnapshot = terminal.ReadRawOutput(cursor, 524288).Text;
+                lastSnapshot = TerminalOutputBuffer.Clean(rawSnapshot);
 
                 if (expectPassword && !passwordSent)
                 {
-                    var raw = terminal.ReadRawOutput(cursor, 524288).Text;
-                    if (raw.Contains(promptNeedle, StringComparison.OrdinalIgnoreCase))
+                    if (rawSnapshot.Contains(promptNeedle, StringComparison.OrdinalIgnoreCase))
                     {
                         passwordSent = true;
                         terminal.SendSensitiveInput(password + "\r");
@@ -120,13 +115,13 @@ public sealed class TerminalCommandRunner
                         false, false, "sudo 密码错误或认证失败，请检查服务器提权密码。", AuthFailed: true);
                 }
 
-                var markerIndex = lastSnapshot.LastIndexOf(marker, StringComparison.Ordinal);
+                var markerIndex = rawSnapshot.LastIndexOf(marker, StringComparison.Ordinal);
                 if (markerIndex >= 0)
                 {
                     stopwatch.Stop();
                     echoRestored = true;
-                    var (exitCode, cwd) = ParseMarker(lastSnapshot, markerIndex + marker.Length);
-                    var output = lastSnapshot[..markerIndex].TrimEnd();
+                    var (exitCode, cwd) = ParseMarker(rawSnapshot, markerIndex + marker.Length);
+                    var output = TerminalOutputBuffer.Clean(rawSnapshot[..markerIndex]).TrimEnd();
                     output = StripWrapper(output, echoDisabled);
                     return new TerminalCommandRunResult(exitCode == 0, exitCode, output, stopwatch.Elapsed,
                         false, false);
@@ -142,8 +137,7 @@ public sealed class TerminalCommandRunner
                         echoRestored = true;
                         try { terminal.SendInput("stty echo\r"); } catch { /* ignore */ }
                     }
-                    var output = terminal.ReadOutput(cursor, 524288).Text;
-                    output = StripWrapper(output, echoDisabled).TrimEnd();
+                    var output = StripWrapper(lastSnapshot, echoDisabled).TrimEnd();
                     return new TerminalCommandRunResult(false, -1, output, stopwatch.Elapsed,
                         true, false, cancellationToken.IsCancellationRequested ? "已停止。" : "命令执行超时。");
                 }
@@ -172,7 +166,8 @@ public sealed class TerminalCommandRunner
 
     /// <summary>回显关闭后发送：擦掉上一行，并用隐藏 OSC 标记确认已执行。</summary>
     internal static string BuildEchoOffReady(string readyToken) =>
-        "printf '\\033[1A\\033[2K\\r\\033]0;" + readyToken + "\\007'";
+        "stty -echo 2>/dev/null || true; printf '\\033[1A\\033[2K\\r\\033]0;" +
+        readyToken + "\\007'";
 
     /// <summary>供「填入终端」使用的可手动执行提权命令：正常显示密码提示，由用户输入。</summary>
     internal static string BuildManualSudoCommand(SshServerConfig server, string command)
@@ -221,43 +216,43 @@ public sealed class TerminalCommandRunner
         bool manualPassword = false)
     {
         var escaped = command.Replace("'", "'\\''", StringComparison.Ordinal);
-        var runner = sudo ? BuildSudoCommand(server, escaped, password, manualPassword) : command;
+        var runner = sudo
+            ? BuildSudoCommand(server, escaped, password, manualPassword)
+            : command.TrimEnd().TrimEnd(';');
         var sb = new StringBuilder();
         var needsHiddenPrompt = sudo && !manualPassword && password.Length > 0 &&
                                 !string.Equals(server.Username, "root", StringComparison.Ordinal);
         if (needsHiddenPrompt)
         {
             // 用 OSC 设置标题作为密码提示：终端不显示文字，但又能在原始输出中检测到。
-            sb.Append("__litssh_sudo_prompt=$(printf '\\033]0;").Append(SudoPrompt).Append("\\007')\n");
+            sb.Append("__litssh_sudo_prompt=$(printf '\\033]0;").Append(SudoPrompt).Append("\\007'); ");
         }
         // 擦掉提示符行，然后把 AI 实际执行的命令显式写入终端/会话日志（回显已关闭）。
         if (manualPassword && sudo)
         {
-            sb.Append("printf '\\r\\033[2K[AI] 需要 sudo 密码，请在终端输入（输入不回显）\\r\\n'\n");
+            sb.Append("printf '\\r\\033[2K[AI] 需要 sudo 密码，请在终端输入（输入不回显）\\r\\n'; ");
         }
         var label = sudo ? "[AI][sudo] " : "[AI] ";
-        sb.Append("printf '\\r\\033[2K").Append(label).Append("%s\\r\\n' '").Append(escaped).Append("'\n");
+        sb.Append("printf '\\r\\033[2K").Append(label).Append("%s\\r\\n' '").Append(escaped).Append("'; ");
         if (sudo)
         {
             // sudo/su 会从 stdin 读取密码。完成标记必须和提权命令在同一行，
             // 否则后续行会被 sudo 当成密码输入，导致“未输入也 Sorry”并丢失标记。
             sb.Append(runner).Append("; __litssh_ec=$?; ");
             sb.Append("__litssh_m='<<<'").Append('"').Append(token).Append('"').Append("'>>>'; ");
-            sb.Append("printf '\\n%s|%s|%s\\n\\033[1A\\033[2K\\r' \"$__litssh_m\" \"$__litssh_ec\" \"$PWD\"; ");
+            sb.Append("printf '\\033]0;%s|%s|%s\\007' \"$__litssh_m\" \"$__litssh_ec\" \"$PWD\"; ");
             if (disableEcho)
-                sb.Append("stty echo 2>/dev/null || true");
-            sb.Append('\n');
+                sb.Append("stty echo 2>/dev/null || true; ");
         }
         else
         {
-            sb.Append(runner).Append('\n');
-            sb.Append("__litssh_ec=$?\n");
+            sb.Append(runner).Append("; __litssh_ec=$?; ");
             // 拼接标记，避免命令行回显提前命中。
-            sb.Append("__litssh_m='<<<'").Append('"').Append(token).Append('"').Append("'>>>'\n");
+            sb.Append("__litssh_m='<<<'").Append('"').Append(token).Append('"').Append("'>>>'; ");
             // 打印标记后立即用 ANSI 擦除该行：缓冲区仍能读到标记，但用户终端不残留。
-            sb.Append("printf '\\n%s|%s|%s\\n\\033[1A\\033[2K\\r' \"$__litssh_m\" \"$__litssh_ec\" \"$PWD\"\n");
+            sb.Append("printf '\\033]0;%s|%s|%s\\007' \"$__litssh_m\" \"$__litssh_ec\" \"$PWD\"; ");
             if (disableEcho)
-                sb.Append("stty echo 2>/dev/null || true\n");
+                sb.Append("stty echo 2>/dev/null || true; ");
         }
         return sb.ToString();
     }
@@ -307,7 +302,7 @@ public sealed class TerminalCommandRunner
         if (second < 0)
             return (-1, string.Empty);
         var exitText = rest[1..second].Trim();
-        var cwd = rest[(second + 1)..].Trim();
+        var cwd = rest[(second + 1)..].Trim().Trim('\a', '\u001b', '\\');
         return (int.TryParse(exitText, out var code) ? code : -1, cwd);
     }
 

@@ -14,18 +14,10 @@ public partial class MainViewModel
             $"SSH服务器「{server.Name}」(serverId={server.Id}, {server.Host}:{server.Port})\n");
     }
 
-    public void NewAiSessionForDataSource(DataSourceConfig datasource)
-    {
-        StartNewAiSession(
-            $"针对以下目标执行运维操作：\n" +
-            $"数据源「{datasource.Name}」(datasourceId={datasource.Id}, {datasource.Type} {datasource.Host}:{datasource.Port})\n");
-    }
 
     private DatasourceManageViewModel CreateDatasourcePage()
     {
-        var page = new DatasourceManageViewModel(_configService, services: _services);
-        page.NewAiSessionRequested += NewAiSessionForDataSource;
-        return page;
+        return new DatasourceManageViewModel(_configService, services: _services);
     }
 
     private void StartNewAiSession(string prompt)

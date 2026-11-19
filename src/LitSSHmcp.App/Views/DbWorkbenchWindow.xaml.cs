@@ -10,8 +10,10 @@ using ICSharpCode.AvalonEdit.CodeCompletion;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Editing;
 using LitSSHmcp.App.Services;
+using LitSSHmcp.App.Services.DatasourceAi;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Datasource;
 using Wpf.Ui.Controls;
 using WpfButton = System.Windows.Controls.Button;
 using WpfTextBlock = System.Windows.Controls.TextBlock;
@@ -23,13 +25,16 @@ public partial class DbWorkbenchWindow : FluentWindow
 {
     private readonly DbWorkbenchViewModel _vm;
 
-    public DbWorkbenchWindow(DataSourceConfig? initial = null, IAppServices? services = null)
+    public DbWorkbenchWindow(DataSourceConfig? initial = null, IAppServices? services = null, bool openAi = false)
     {
         InitializeComponent();
         _vm = new DbWorkbenchViewModel(services: services);
         DataContext = _vm;
         _vm.ConfirmWrite = info => DbWritePreviewWindow.Show(this, info);
         WindowLayout.Attach(this, "dbworkbench");
+        _pendingOpenAi = openAi;
+        AiDrawer.CloseRequested += CloseAiDrawer;
+        Closed += (_, _) => { try { _ = _aiVm?.DisposeAsync(); } catch { /* ignore */ } };
 
         // AvalonEdit 的 Text 不是依赖属性，无法绑定：这里在编辑器与 VM 之间做双向同步。
         _vm.PropertyChanged += OnVmPropertyChanged;
@@ -51,6 +56,12 @@ public partial class DbWorkbenchWindow : FluentWindow
     }
 
     private string? _requestedId;
+    private DatasourceAiViewModel? _aiVm;
+    private bool _aiOpen;
+    private bool _pendingOpenAi;
+    private string? _aiDatasourceId;
+    private string? _aiDatabase;
+    private double _aiWidth = 380;
 
     /// <summary>当前或请求打开的数据源 Id（供“同一数据源只开一个窗口”去重）。</summary>
     public string? CurrentDatasourceId => _vm.SelectedDatasource?.Id ?? _requestedId;
@@ -154,6 +165,21 @@ public partial class DbWorkbenchWindow : FluentWindow
     {
         if (e.PropertyName == nameof(DbWorkbenchViewModel.Results))
             ResetColumnFilters();
+
+        if (e.PropertyName is nameof(DbWorkbenchViewModel.SelectedDatasource)
+            or nameof(DbWorkbenchViewModel.SelectedDatabase))
+        {
+            if (!CanOpenAi())
+            {
+                if (_aiOpen)
+                    CloseAiDrawer();
+                return;
+            }
+            if (_aiOpen)
+                EnsureAiViewModel(force: true);
+            else if (_pendingOpenAi)
+                OpenAiDrawer();
+        }
 
         if (e.PropertyName != nameof(DbWorkbenchViewModel.SqlText) || _syncingSql)
             return;
@@ -353,35 +379,160 @@ public partial class DbWorkbenchWindow : FluentWindow
 
     private void OnMoreMenu(object sender, RoutedEventArgs e) => OpenButtonMenu(sender);
 
-    // ---- AI 分析 SQL：打开独立的临时聊天并预填提示词（与 AI 运维助手的临时聊天相互独立） ----
-    private TemporaryChatWindow? _sqlAiChat;
+    // ---- 数据源 AI：工作台右侧只读 Drawer ----
 
-    private void OnAnalyzeSql(object sender, RoutedEventArgs e)
+    private bool CanOpenAi()
+        => _vm.SupportsDatasourceAi && !string.IsNullOrWhiteSpace(_vm.SelectedDatabase);
+
+    private void OnToggleAi(object sender, RoutedEventArgs e)
     {
-        var sql = _vm.SqlText?.Trim();
-        if (string.IsNullOrWhiteSpace(sql))
-            return;
+        if (_aiOpen)
+            CloseAiDrawer();
+        else
+            OpenAiDrawer();
+    }
 
-        // 只预填 SQL 代码块（完整分析要求由「数据库分析」智能体的系统提示承担），并切到该智能体
-        var prompt = "```sql\n" + sql + "\n```";
+    private void OnSendResultToAi(object sender, RoutedEventArgs e)
+        => _ = SendResultToAiAsync();
 
-        if (_sqlAiChat is { IsLoaded: true })
+    private async Task SendResultToAiAsync()
+    {
+        try
         {
-            _sqlAiChat.Activate();
-            _sqlAiChat.SelectAgent("db");
-            _sqlAiChat.Prefill(prompt);
+            if (!CanOpenAi())
+            {
+                _vm.StatusMessage = "请先选择 MySQL / PostgreSQL 数据库。";
+                return;
+            }
+            if (_vm.Results is null)
+            {
+                _vm.StatusMessage = "当前没有可发送的查询结果，请先执行查询。";
+                return;
+            }
+
+            var selected = ResultGrid.SelectedItems.OfType<DataRowView>().ToList();
+            var dialog = new DatasourceAiSendResultWindow(
+                _vm.Results.Count, selected.Count, _vm.SqlText)
+            {
+                Owner = this
+            };
+            if (dialog.ShowDialog() != true)
+                return;
+
+            if (!_aiOpen)
+                OpenAiDrawer();
+            EnsureAiViewModel(force: false);
+            if (_aiVm is null)
+                return;
+            await _aiVm.SendManualQueryResultAsync(
+                _vm.SqlText, _vm.Results, dialog.Range, selected);
+        }
+        catch (Exception ex)
+        {
+            _vm.StatusMessage = "发送结果给 AI 失败：" + ex.Message;
+        }
+    }
+
+    public void OpenAiDrawer()
+    {
+        if (!CanOpenAi())
+        {
+            _pendingOpenAi = true;
+            _vm.StatusMessage = "请先选择数据库，再打开数据源 AI。";
             return;
         }
 
-        var window = new TemporaryChatWindow(new LitSSHmcp.Core.Services.Storage.ConfigService(), null, initialAgentId: "db")
+        _pendingOpenAi = false;
+        EnsureAiViewModel(force: false);
+        _aiOpen = true;
+        _aiWidth = Math.Max(320, _aiWidth);
+        AiColumn.MinWidth = 300;
+        AiColumn.Width = new GridLength(_aiWidth);
+        AiSplitterColumn.Width = new GridLength(8);
+        AiSplitter.Visibility = Visibility.Visible;
+        AiDrawer.Visibility = Visibility.Visible;
+        AiAssistantButton.Content = "收起 AI";
+        AiDrawer.FocusComposer();
+    }
+
+    private void CloseAiDrawer()
+    {
+        if (AiColumn.ActualWidth > 300)
+            _aiWidth = AiColumn.ActualWidth;
+        _aiOpen = false;
+        AiColumn.MinWidth = 0;
+        AiColumn.Width = new GridLength(0);
+        AiSplitterColumn.Width = new GridLength(0);
+        AiSplitter.Visibility = Visibility.Collapsed;
+        AiDrawer.Visibility = Visibility.Collapsed;
+        AiAssistantButton.Content = "AI 助手";
+    }
+
+    private void EnsureAiViewModel(bool force)
+    {
+        var ds = _vm.SelectedDatasource;
+        var database = _vm.SelectedDatabase;
+        if (ds is null || !_vm.SupportsDatasourceAi || string.IsNullOrWhiteSpace(database))
+            return;
+
+        if (!force && _aiVm is not null &&
+            string.Equals(_aiDatasourceId, ds.Id, StringComparison.Ordinal) &&
+            string.Equals(_aiDatabase, database, StringComparison.Ordinal))
+            return;
+
+        if (_aiVm is not null)
+            _aiVm.ManageSessionsRequested -= OpenSessionManager;
+        try { _ = _aiVm?.DisposeAsync(); } catch { /* ignore */ }
+        _aiDatasourceId = ds.Id;
+        _aiDatabase = database;
+        _aiVm = new DatasourceAiViewModel(
+            _vm, ds, database,
+            _vm.ConfigService, _vm.AuditService, _vm.SqlFilterService, _vm.DriverRegistry,
+            ConfirmAiSqlAsync,
+            sql => InvokeOnUi(() => _vm.InsertAiSql(sql)),
+            (sql, result) => InvokeOnUi(() => _vm.ShowAiQueryResult(sql, result)));
+        _aiVm.ManageSessionsRequested += OpenSessionManager;
+        AiDrawer.DataContext = _aiVm;
+    }
+
+    private void OpenSessionManager() => _ = ManageSessionsAsync();
+
+    private async Task ManageSessionsAsync()
+    {
+        var ds = _vm.SelectedDatasource;
+        var database = _vm.SelectedDatabase;
+        if (_aiVm is null || ds is null || string.IsNullOrWhiteSpace(database))
+            return;
+        var manager = new DatasourceAiSessionManagerWindow(
+            ds.Id, ds.Type, database, _aiVm.CurrentSessionId)
         {
-            Owner = this,
-            Topmost = false
+            Owner = this
         };
-        window.Closed += (_, _) => _sqlAiChat = null;
-        _sqlAiChat = window;
-        window.Show();
-        window.Prefill(prompt);
+        var open = manager.ShowDialog() == true;
+        var selectedId = manager.SelectedSessionId;
+        var deletedCurrent = manager.DeletedSessionIds.Contains(_aiVm.CurrentSessionId);
+        await _aiVm.RefreshHistoryAsync();
+        if (open && selectedId is long id)
+            await _aiVm.LoadSessionByIdAsync(id);
+        else if (deletedCurrent)
+            _aiVm.StartNewConversation();
+    }
+
+    private Task<DatasourceAiSqlDecision> ConfirmAiSqlAsync(
+        string sql, string target, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested)
+            return Task.FromResult(DatasourceAiSqlDecision.Cancel);
+        return Dispatcher.InvokeAsync(() =>
+            DatasourceAiSqlConfirmWindow.Show(this, sql, target)).Task;
+    }
+
+    private void InvokeOnUi(Action action)
+    {
+        if (Dispatcher.CheckAccess())
+            action();
+        else
+            Dispatcher.Invoke(action);
     }
 
     private static void OpenButtonMenu(object sender)

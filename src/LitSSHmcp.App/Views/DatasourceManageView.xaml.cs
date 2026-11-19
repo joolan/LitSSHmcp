@@ -78,7 +78,7 @@ public partial class DatasourceManageView : UserControl
             return;
 
         listView.SelectedItem = item.DataContext;
-        ViewModel?.EditCommand.Execute(null);
+        ViewModel?.WorkbenchCommand.Execute(null);
     }
 
     private void OnListPreviewRightClick(object sender, MouseButtonEventArgs e)

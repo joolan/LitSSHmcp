@@ -536,6 +536,40 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         return string.Join("\n", lines.Skip(lines.Length - maxLines)).TrimEnd();
     }
 
+    /// <summary>
+    /// 当前任务相关的终端尾部：优先从最后一个 [AI] 标记开始截取，避免把无关历史
+    /// 或固定 50 行的旧输出反复送进模型。
+    /// </summary>
+    public string GetTaskRelevantTerminalText(int maxLines = 40, int maxChars = 12000)
+    {
+        if (maxLines <= 0 || maxChars <= 0)
+            return string.Empty;
+        var text = GetRecentTerminalText(200);
+        if (string.IsNullOrWhiteSpace(text))
+            return string.Empty;
+
+        var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n');
+        var start = 0;
+        for (var i = lines.Length - 1; i >= 0; i--)
+        {
+            if (lines[i].Contains("[AI]", StringComparison.Ordinal))
+            {
+                start = i;
+                break;
+            }
+        }
+
+        var relevant = lines.Skip(start).ToArray();
+        if (relevant.Length > maxLines)
+            relevant = relevant.Skip(relevant.Length - maxLines).ToArray();
+        var result = string.Join("\n", relevant).TrimEnd();
+        if (result.Length <= maxChars)
+            return result;
+        return result[^maxChars..];
+    }
+
     private void SendDirectInput(string text, bool logInput = true)
     {
         if (string.IsNullOrEmpty(text))

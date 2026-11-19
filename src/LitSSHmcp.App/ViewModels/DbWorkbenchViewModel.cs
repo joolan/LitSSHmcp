@@ -20,7 +20,7 @@ namespace LitSSHmcp.App.ViewModels;
 /// 只读数据库工作台：对象浏览（库 → 表 → 列）+ SQL 查询（仅只读）+ 结果分页/导出 CSV。
 /// 复用数据源驱动与安全过滤；不提供任何写操作入口。
 /// </summary>
-public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObjectBrowserHost
+public sealed partial class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObjectBrowserHost
 {
     private readonly IConfigService _configService;
     private readonly IUserDialogService _dialogs;
@@ -314,6 +314,7 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
             OnPropertyChanged(nameof(SqlHint));
             OnPropertyChanged(nameof(IsRedisDb));
             OnPropertyChanged(nameof(IsSqlDb));
+            OnPropertyChanged(nameof(SupportsDatasourceAi));
             OnPropertyChanged(nameof(EditorLabel));
             OnPropertyChanged(nameof(SaveSnippetLabel));
             OnPropertyChanged(nameof(WriteBannerText));
@@ -386,6 +387,9 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
 
     /// <summary>当前数据源是否为 SQL（MySQL / PostgreSQL）。</summary>
     public bool IsSqlDb => SelectedDatasource is not null && !IsRedisDb;
+
+    /// <summary>P1 数据源 AI 只支持 MySQL / PostgreSQL。</summary>
+    public bool SupportsDatasourceAi => SelectedDatasource?.Type.ToLowerInvariant() is "mysql" or "postgres";
 
     /// <summary>Redis 键扫描的 MATCH 模式。</summary>
     public string KeyPattern
@@ -561,6 +565,8 @@ public sealed class DbWorkbenchViewModel : INotifyPropertyChanged, IWorkbenchObj
         get => _results;
         set { Set(ref _results, value); OnPropertyChanged(nameof(ShowPaging)); OnPropertyChanged(nameof(PageLabel)); RaiseCanExecute(); }
     }
+
+
 
     public int PageSize
     {

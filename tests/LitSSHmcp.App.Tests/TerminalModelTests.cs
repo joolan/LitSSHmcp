@@ -47,6 +47,104 @@ public class TerminalModelTests
     }
 
     [Fact]
+    public void Kitty_keyboard_sequences_do_not_render_literal_text()
+    {
+        var model = new TerminalModel(30, 5);
+        model.Feed("root$ ");
+        model.Feed("\u001b[<1u\u001b[<u\u001b[>7u\u001b[=1u");
+
+        Assert.Equal("root$", model.LastNonEmptyLineText());
+        Assert.False(model.IsAltScreen);
+    }
+
+    [Fact]
+    public void Esc_charset_selection_does_not_render_the_B_byte()
+    {
+        var model = new TerminalModel(30, 3);
+        model.Feed("A\u001b(B\u001b[mB");
+
+        Assert.Equal("AB", model.LastNonEmptyLineText());
+        Assert.Equal('A', model.CellAt(0, 0).Ch);
+        Assert.Equal('B', model.CellAt(1, 0).Ch);
+    }
+
+    [Fact]
+    public void Alt_screen_exit_restores_main_screen_and_cursor()
+    {
+        var model = new TerminalModel(30, 5);
+        model.Feed("main-prompt\r\n$ ");
+        var savedX = model.CursorX;
+        var savedY = model.CursorY;
+
+        model.Feed("\u001b[?1049h");
+        model.Feed("codex-ui");
+        Assert.True(model.IsAltScreen);
+        model.Feed("\u001b[?1049l");
+
+        Assert.False(model.IsAltScreen);
+        Assert.Equal(savedX, model.CursorX);
+        Assert.Equal(savedY, model.CursorY);
+        Assert.Contains("$", model.LastNonEmptyLineText());
+        Assert.DoesNotContain("codex-ui", model.LastNonEmptyLineText());
+    }
+
+    [Fact]
+    public void Emoji_is_rendered_as_one_wide_grapheme()
+    {
+        var model = new TerminalModel(20, 3);
+        model.Feed("A😀B");
+
+        Assert.Equal("A", model.CellAt(0, 0).Text);
+        Assert.Equal("😀", model.CellAt(1, 0).Text);
+        Assert.True(model.CellAt(2, 0).WideContinuation);
+        Assert.Equal("B", model.CellAt(3, 0).Text);
+        Assert.Equal(4, model.CursorX);
+    }
+
+    [Fact]
+    public void Combining_mark_attaches_to_previous_cell()
+    {
+        var model = new TerminalModel(20, 3);
+        model.Feed("e\u0301");
+
+        Assert.Equal("e\u0301", model.CellAt(0, 0).Text);
+        Assert.Equal(1, model.CursorX);
+    }
+
+    [Fact]
+    public void Mouse_focus_and_sync_modes_are_tracked()
+    {
+        var model = new TerminalModel(20, 3);
+        model.Feed("\u001b[?1002h\u001b[?1006h\u001b[?1004h\u001b[?2026h");
+        Assert.Equal(MouseTrackingMode.Button, model.MouseTracking);
+        Assert.True(model.MouseSgr);
+        Assert.True(model.FocusReporting);
+        Assert.True(model.SynchronizedOutput);
+
+        model.Feed("\u001b[?1002l\u001b[?1006l\u001b[?1004l\u001b[?2026l");
+        Assert.Equal(MouseTrackingMode.None, model.MouseTracking);
+        Assert.False(model.MouseSgr);
+        Assert.False(model.FocusReporting);
+        Assert.False(model.SynchronizedOutput);
+    }
+
+    [Fact]
+    public void Osc8_hyperlink_and_osc52_clipboard_are_parsed()
+    {
+        var model = new TerminalModel(30, 3);
+        string? clipboard = null;
+        model.ClipboardRequested += value => clipboard = value;
+        model.Feed("\u001b]8;;https://example.com\u0007X\u001b]8;;\u0007Y");
+        Assert.Equal("https://example.com", model.CellAt(0, 0).Hyperlink);
+        Assert.Equal("X", model.CellAt(0, 0).Text);
+        Assert.Null(model.CellAt(1, 0).Hyperlink);
+        Assert.Equal("Y", model.CellAt(1, 0).Text);
+
+        model.Feed("\u001b]52;c;SGVsbG8=\u0007");
+        Assert.Equal("Hello", clipboard);
+    }
+
+    [Fact]
     public void Resize_reflows_wrapped_lines_and_restores_when_widened()
     {
         var model = new TerminalModel(10, 5);

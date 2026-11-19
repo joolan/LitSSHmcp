@@ -1,6 +1,15 @@
+using System.Globalization;
 using System.Text;
 
 namespace LitSSHmcp.App.Controls;
+
+public enum MouseTrackingMode
+{
+    None,
+    X10,
+    Button,
+    Any
+}
 
 /// <summary>终端单元格属性。Fg/Bg 为 null 表示默认色；否则为 0xRRGGBB。</summary>
 public struct TerminalAttributes
@@ -21,8 +30,12 @@ public struct TerminalAttributes
 public struct TerminalCell
 {
     public char Ch;
+    public string? Grapheme;
+    public string? Hyperlink;
     public TerminalAttributes Attr;
     public bool WideContinuation;
+
+    public readonly string Text => Grapheme ?? (Ch == '\0' ? " " : Ch.ToString());
 }
 
 /// <summary>
@@ -65,6 +78,24 @@ public sealed class TerminalModel
     /// <summary>应用光标键模式（DECCKM，CSI ?1h）：方向键应发送 ESC O A/B/C/D，而不是 ESC [ A/B/C/D。</summary>
     public bool ApplicationCursorKeys { get; private set; }
 
+    /// <summary>远端 TUI 请求的鼠标跟踪模式。</summary>
+    public MouseTrackingMode MouseTracking { get; private set; } = MouseTrackingMode.None;
+
+    /// <summary>是否使用 SGR 鼠标编码（CSI ?1006h）。</summary>
+    public bool MouseSgr { get; private set; }
+
+    /// <summary>是否开启焦点事件上报（CSI ?1004h）。</summary>
+    public bool FocusReporting { get; private set; }
+
+    /// <summary>是否处于同步输出（CSI ?2026h）；开启时视图应延迟刷新。</summary>
+    public bool SynchronizedOutput { get; private set; }
+
+    /// <summary>Kitty keyboard protocol 已设置的 flag（仅跟踪，输入侧回退到标准键序列）。</summary>
+    public int KittyKeyboardFlags { get; private set; }
+
+    /// <summary>远端请求 OSC 52 剪贴板写入时触发（参数为已解码文本）。</summary>
+    public event Action<string>? ClipboardRequested;
+
     /// <summary>OSC 7 报告的工作目录（shell integration）。</summary>
     public string? CurrentDirectory { get; private set; }
 
@@ -89,10 +120,11 @@ public sealed class TerminalModel
     public int MaxScrollback { get; set; } = 2000;
 
     // 解析状态
-    private enum ParseState { Ground, Esc, Csi, Osc, OscEsc, Dcs, DcsEsc }
+    private enum ParseState { Ground, Esc, Csi, Osc, OscEsc, Dcs, DcsEsc, Charset }
     private ParseState _state = ParseState.Ground;
     private readonly StringBuilder _param = new();
     private readonly StringBuilder _osc = new();
+    private string? _activeHyperlink;
 
     public TerminalModel(int cols, int rows)
     {
@@ -145,10 +177,7 @@ public sealed class TerminalModel
         {
             var sb = new System.Text.StringBuilder(_cols);
             for (var x = 0; x < _cols; x++)
-            {
-                var ch = Active[y * _cols + x].Ch;
-                sb.Append(ch == '\0' ? ' ' : ch);
-            }
+                sb.Append(Active[y * _cols + x].Text);
             var text = sb.ToString().TrimEnd();
             if (text.Length > 0)
                 return text;
@@ -367,11 +396,30 @@ public sealed class TerminalModel
 
     public void Feed(string text)
     {
-        foreach (var ch in text)
+        var index = 0;
+        while (index < text.Length)
         {
+            string element;
+            if (_state != ParseState.Ground || text[index] < ' ' || text[index] == '\u001b')
+                element = text[index].ToString();
+            else
+            {
+                try
+                {
+                    element = StringInfo.GetNextTextElement(text, index);
+                }
+                catch
+                {
+                    element = text[index].ToString();
+                }
+            }
+
             try
             {
-                Process(ch);
+                if (element.Length == 1)
+                    Process(element[0]);
+                else
+                    ProcessGrapheme(element);
             }
             catch
             {
@@ -380,6 +428,8 @@ public sealed class TerminalModel
                 _param.Clear();
                 _osc.Clear();
             }
+
+            index += Math.Max(1, element.Length);
         }
         RaiseChanged();
     }
@@ -390,7 +440,27 @@ public sealed class TerminalModel
     {
         if (x < 0 || y < 0 || x >= _cols || y >= _rows)
             return;
-        Active[y * _cols + x] = new TerminalCell { Ch = ch, Attr = attr, WideContinuation = wideContinuation };
+        Active[y * _cols + x] = new TerminalCell
+        {
+            Ch = ch,
+            Hyperlink = _activeHyperlink,
+            Attr = attr,
+            WideContinuation = wideContinuation
+        };
+    }
+
+    private void SetCell(int x, int y, string text, TerminalAttributes attr, bool wideContinuation = false)
+    {
+        if (x < 0 || y < 0 || x >= _cols || y >= _rows || text.Length == 0)
+            return;
+        Active[y * _cols + x] = new TerminalCell
+        {
+            Ch = text[0],
+            Grapheme = text.Length > 1 ? text : null,
+            Hyperlink = _activeHyperlink,
+            Attr = attr,
+            WideContinuation = wideContinuation
+        };
     }
 
     private void Process(char ch)
@@ -447,6 +517,10 @@ public sealed class TerminalModel
                     _state = ParseState.DcsEsc;
                 else
                     _state = ParseState.Dcs;
+                break;
+            case ParseState.Charset:
+                // ESC ( B / ESC ) B / ESC * B / ESC + B / ESC % G：吞掉字符集选择字节
+                _state = ParseState.Ground;
                 break;
         }
     }
@@ -518,6 +592,115 @@ public sealed class TerminalModel
     }
 
     /// <summary>CJK/全角字符占两列。</summary>
+    private void ProcessGrapheme(string text)
+    {
+        var width = GraphemeWidth(text);
+        if (width == 0)
+        {
+            AppendCombining(text);
+            return;
+        }
+
+        if (_wrapPending)
+        {
+            _cx = 0;
+            LineFeed(wrapped: true);
+            _wrapPending = false;
+        }
+
+        if (width == 2 && _cx >= _cols - 1 && _autoWrap)
+        {
+            _cx = 0;
+            LineFeed(wrapped: true);
+        }
+
+        SetCell(_cx, _cy, text, _attr);
+        if (width == 2 && _cx + 1 < _cols)
+            SetCell(_cx + 1, _cy, ' ', _attr, wideContinuation: true);
+
+        if (_cx + width >= _cols)
+        {
+            if (_autoWrap)
+                _wrapPending = true;
+            else
+                _cx = _cols - 1;
+        }
+        else
+        {
+            _cx += width;
+        }
+    }
+
+    private void AppendCombining(string text)
+    {
+        if (_cy < 0 || _cy >= _rows || _cx <= 0)
+            return;
+        var cells = Active;
+        var baseX = _wrapPending ? _cx : _cx - 1;
+        var index = _cy * _cols + baseX;
+        if (index >= 0 && index < cells.Length && cells[index].WideContinuation && index > _cy * _cols)
+            index--;
+        if (index < 0 || index >= cells.Length)
+            return;
+        var cell = cells[index];
+        if (cell.Ch == '\0' || (cell.Ch == ' ' && cell.Grapheme is null))
+            return;
+        cell.Grapheme = cell.Text + text;
+        cells[index] = cell;
+    }
+
+    private static int GraphemeWidth(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return 0;
+        var hasEmoji = false;
+        var allCombining = true;
+        var hasEmojiPresentation = text.Contains('\uFE0F');
+        Rune first = default;
+        var firstSet = false;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (!firstSet)
+            {
+                first = rune;
+                firstSet = true;
+            }
+            if (!IsCombiningRune(rune))
+                allCombining = false;
+            if (IsEmojiRune(rune) || (hasEmojiPresentation && rune.Value is >= 0x2600 and <= 0x2BFF))
+                hasEmoji = true;
+        }
+
+        if (hasEmoji)
+            return 2;
+        if (firstSet && IsWideRune(first))
+            return 2;
+        if (allCombining)
+            return 0;
+        return 1;
+    }
+
+    private static bool IsCombiningRune(Rune rune)
+    {
+        var v = rune.Value;
+        return v is >= 0x0300 and <= 0x036F
+            or 0x200C or 0x200D
+            or >= 0x1AB0 and <= 0x1AFF
+            or >= 0x1DC0 and <= 0x1DFF
+            or >= 0x20D0 and <= 0x20FF
+            or >= 0xFE00 and <= 0xFE0F
+            or >= 0xFE20 and <= 0xFE2F
+            or >= 0xE0100 and <= 0xE01EF;
+    }
+
+    private static bool IsEmojiRune(Rune rune)
+        => rune.Value is >= 0x1F000 and <= 0x1FAFF
+            or >= 0x1F1E6 and <= 0x1F1FF;
+
+    private static bool IsWideRune(Rune rune)
+        => (rune.Value <= 0xFFFF && IsWide((char)rune.Value)) ||
+           rune.Value is >= 0x1F000 and <= 0x1FAFF;
+
     private static bool IsWide(char c)
         => (c >= 0x1100 && c <= 0x115F)
         || (c >= 0x2E80 && c <= 0x303E)
@@ -572,6 +755,40 @@ public sealed class TerminalModel
         {
             var rgb = text == "11;?" ? ThemeBg : ThemeFg;
             ResponseRequested?.Invoke($"\u001b]{text[..2]};{OscRgb(rgb)}\a");
+            return;
+        }
+
+        if (text.StartsWith("8;", StringComparison.Ordinal))
+        {
+            var separator = text.IndexOf(';', 2);
+            if (separator >= 0)
+            {
+                var hyperlink = text[(separator + 1)..];
+                _activeHyperlink = string.IsNullOrWhiteSpace(hyperlink) ? null : hyperlink;
+            }
+            return;
+        }
+
+        if (text.StartsWith("52;", StringComparison.Ordinal))
+        {
+            // OSC 52;c;base64 -> 本机剪贴板。限制大小，避免异常程序塞入超大内容。
+            var separator = text.IndexOf(';', 3);
+            if (separator < 0)
+                return;
+            var payload = text[(separator + 1)..];
+            if (payload.Length is 0 or > 1_500_000)
+                return;
+            try
+            {
+                var bytes = Convert.FromBase64String(payload);
+                var value = Encoding.UTF8.GetString(bytes);
+                if (value.Length > 0)
+                    ClipboardRequested?.Invoke(value);
+            }
+            catch
+            {
+                // 非法 base64 忽略
+            }
         }
     }
 
@@ -628,7 +845,8 @@ public sealed class TerminalModel
             case ')':
             case '*':
             case '+':
-                _state = ParseState.Ground; // 忽略字符集选择（吞掉下一个字符）
+            case '%':
+                _state = ParseState.Charset;
                 return;
             case 'P':
             case 'X':
@@ -645,7 +863,7 @@ public sealed class TerminalModel
 
     private void ProcessCsi(char ch)
     {
-        if (ch == '?' || ch == '>' || ch == '!' || ch == '=' || (ch >= '0' && ch <= '9') || ch == ';' || ch == ':')
+        if (ch == '?' || ch == '>' || ch == '<' || ch == '!' || ch == '=' || (ch >= '0' && ch <= '9') || ch == ';' || ch == ':')
         {
             _param.Append(ch);
             return;
@@ -693,6 +911,18 @@ public sealed class TerminalModel
             case 'r': SetScrollRegion(args); break;
             case 's': _savedCx = _cx; _savedCy = _cy; _savedAttr = _attr; break;
             case 'u':
+                // CSI u 是恢复光标；CSI <... u / >... u / ? u 属于 kitty keyboard protocol，
+                // 不能当成光标恢复，也不能把参数或后续字符渲染到屏幕上。
+                if (_param.Length > 0 && _param[0] is '<' or '>' or '=' or '?')
+                {
+                    if (_param[0] == '?')
+                        ResponseRequested?.Invoke("\u001b[?0u");
+                    else if (_param[0] is '>' or '=')
+                        KittyKeyboardFlags = args.Length > 0 ? args[0] : 0;
+                    else
+                        KittyKeyboardFlags = 0;
+                    break;
+                }
                 _cx = _savedCx;
                 _cy = _savedCy;
                 _attr = _savedAttr;
@@ -951,36 +1181,68 @@ public sealed class TerminalModel
                 case 47:
                 case 1047:
                 case 1049:
-                    SwitchAltScreen(enable);
+                    SwitchAltScreen(enable, a);
                     break;
                 case 2004:
                     BracketedPasteEnabled = enable;
+                    break;
+                case 1000:
+                    MouseTracking = enable ? MouseTrackingMode.X10 : MouseTrackingMode.None;
+                    break;
+                case 1002:
+                    MouseTracking = enable ? MouseTrackingMode.Button : MouseTrackingMode.None;
+                    break;
+                case 1003:
+                    MouseTracking = enable ? MouseTrackingMode.Any : MouseTrackingMode.None;
+                    break;
+                case 1004:
+                    FocusReporting = enable;
+                    break;
+                case 1006:
+                    MouseSgr = enable;
+                    break;
+                case 2026:
+                    SynchronizedOutput = enable;
                     break;
                 default: break;
             }
         }
     }
 
-    private void SwitchAltScreen(bool enable)
+    private void SwitchAltScreen(bool enable, int mode)
     {
         if (enable == _altScreen)
             return;
+
+        // 1049 保存/恢复光标；47/1047 只切换缓冲区，不能复用 1049 的光标语义。
+        var saveCursor = mode == 1049;
         if (enable)
         {
-            _savedCx = _cx; _savedCy = _cy; _savedAttr = _attr;
+            if (saveCursor)
+            {
+                _savedCx = _cx;
+                _savedCy = _cy;
+                _savedAttr = _attr;
+            }
             _altScreen = true;
             Fill(_altCells, _cols, _rows, TerminalAttributes.Default);
-            _cx = 0; _cy = 0;
+            _cx = 0;
+            _cy = 0;
             _wrapPending = false;
-            _scrollTop = 0; _scrollBottom = _rows - 1;
+            _scrollTop = 0;
+            _scrollBottom = _rows - 1;
         }
         else
         {
             _altScreen = false;
-            _scrollTop = 0; _scrollBottom = _rows - 1;
-            _cx = Math.Min(_savedCx, _cols - 1);
-            _cy = Math.Min(_savedCy, _rows - 1);
-            _attr = _savedAttr;
+            _scrollTop = 0;
+            _scrollBottom = _rows - 1;
+            if (saveCursor)
+            {
+                _cx = Math.Min(_savedCx, _cols - 1);
+                _cy = Math.Min(_savedCy, _rows - 1);
+                _attr = _savedAttr;
+            }
             _wrapPending = false;
         }
     }
@@ -1001,9 +1263,15 @@ public sealed class TerminalModel
         _autoWrap = true;
         _wrapPending = false;
         BracketedPasteEnabled = false;
+        MouseTracking = MouseTrackingMode.None;
+        MouseSgr = false;
+        FocusReporting = false;
+        SynchronizedOutput = false;
+        KittyKeyboardFlags = 0;
         IsCommandRunning = false;
         LastExitCode = null;
         CurrentDirectory = null;
+        _activeHyperlink = null;
         _osc.Clear();
         ShellStateChanged?.Invoke();
     }

@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
+using LitSSHmcp.App.Views;
 using LitSSHmcp.Core.Services.Security;
 using Microsoft.Win32;
 
@@ -42,9 +43,45 @@ public partial class RemoteFileBrowserView : UserControl
         var vm = ViewModel;
         if (vm is null)
             return;
-        var name = Views.TextInputDialog.Prompt(Owner, "新建文件夹", "文件夹名称:", "new-folder");
+        var name = Views.TextInputDialog.Prompt(Owner, "新建文件夹", "文件夹名称", "new-folder");
         if (!string.IsNullOrWhiteSpace(name))
             _ = vm.NewFolderAsync(name!);
+    }
+
+    private void OnNewFile(object sender, RoutedEventArgs e)
+    {
+        var vm = ViewModel;
+        if (vm is null)
+            return;
+        var directory = vm.SelectedItem is { IsDirectory: true } dir ? dir.FullName : vm.CurrentPath;
+        var window = RemoteFileEditorWindow.ShowForServer(Owner, vm.Server, vm.SshService, directory);
+        window.FileSaved -= OnEditorFileSaved;
+        window.FileSaved += OnEditorFileSaved;
+        window.OpenBlank(directory);
+    }
+
+    private void OnEditOnline(object sender, RoutedEventArgs e)
+    {
+        var vm = ViewModel;
+        if (vm?.SelectedItem is not { IsDirectory: false } item)
+            return;
+        if (item.IsSymbolicLink)
+        {
+            new UserDialogService().Warn(
+                "符号链接文件暂不支持在线编辑，请使用「打开方式」或下载。", "在线编辑");
+            return;
+        }
+
+        var window = RemoteFileEditorWindow.ShowForServer(Owner, vm.Server, vm.SshService, vm.CurrentPath);
+        window.FileSaved -= OnEditorFileSaved;
+        window.FileSaved += OnEditorFileSaved;
+        _ = window.OpenExistingAsync(item);
+    }
+
+    private void OnEditorFileSaved(string directory)
+    {
+        if (ViewModel is { } vm)
+            _ = vm.LoadAsync(string.IsNullOrWhiteSpace(directory) ? vm.CurrentPath : directory);
     }
 
     private void OnUpload(object sender, RoutedEventArgs e)
@@ -260,6 +297,27 @@ public partial class RemoteFileBrowserView : UserControl
 
     private void OnFileContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
+        var hit = FileList.InputHitTest(Mouse.GetPosition(FileList)) as DependencyObject;
+        var onItem = FindAncestor<ListViewItem>(hit) is not null;
+        RestoreContextMenuItems();
+        if (!onItem)
+        {
+            FileList.SelectedItem = null;
+            NewFileMenuItem.IsEnabled = ViewModel is not null;
+            // 空白处右键只保留“新建文件”，避免出现一堆针对未选中项的操作。
+            if (FileList.ContextMenu is { } menu)
+            {
+                foreach (var entry in menu.Items)
+                {
+                    if (entry is UIElement element)
+                        element.Visibility = ReferenceEquals(entry, NewFileMenuItem)
+                            ? Visibility.Visible
+                            : Visibility.Collapsed;
+                }
+            }
+            return;
+        }
+
         var vm = ViewModel;
         // 只在同时具备交互式终端（SSH 会话标签）的文件面板中显示；远程复制 / 选择目录窗口没有终端。
         TerminalOpsMenuItem.Visibility = vm?.TerminalCommandSender is not null
@@ -267,10 +325,23 @@ public partial class RemoteFileBrowserView : UserControl
             : Visibility.Collapsed;
 
         var isFile = vm?.SelectedItem is { IsDirectory: false };
+        EditOnlineMenuItem.IsEnabled = isFile && vm?.SelectedItem is { IsSymbolicLink: false };
+        NewFileMenuItem.IsEnabled = vm is not null;
         TerminalOpsMenuItem.IsEnabled = isFile;
         TerminalOpsMenuItem.ToolTip = isFile
             ? "在右侧终端执行日志命令（终端需空闲并已连接）"
             : "请选中一个文件后再使用终端操作";
+    }
+
+    private void RestoreContextMenuItems()
+    {
+        if (FileList.ContextMenu is not { } menu)
+            return;
+        foreach (var entry in menu.Items)
+        {
+            if (entry is UIElement element)
+                element.Visibility = Visibility.Visible;
+        }
     }
 
     private RemoteFileItem? SelectedFileItem()

@@ -1,0 +1,186 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.RemoteFileEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
+        Title="在线文件编辑器" Height="820" Width="1180" MinHeight="560" MinWidth="820"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica"
+        Closing="OnWindowClosing" PreviewKeyDown="OnWindowPreviewKeyDown">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" x:Name="TitleBarControl" Title="在线文件编辑器"/>
+
+        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}" Margin="12,6,12,6" Padding="10,7">
+            <DockPanel LastChildFill="False">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                    <ui:Button Content="新建文件" Icon="{ui:SymbolIcon DocumentAdd24}" Padding="10,3"
+                               Click="OnNewFile"/>
+                    <ui:Button Content="保存" Appearance="Primary" Padding="12,3" Margin="6,0,0,0"
+                               Click="OnSave"/>
+                    <ui:Button Content="全部保存" Padding="10,3" Margin="6,0,0,0"
+                               Click="OnSaveAll"/>
+                    <ui:Button Content="重新加载" Padding="10,3" Margin="6,0,0,0"
+                               Click="OnReload"/>
+                    <ui:Button Content="最近" Padding="10,3" Margin="6,0,0,0"
+                               Click="OnRecentMenu"/>
+                    <ui:Button Content="比较" Padding="10,3" Margin="6,0,0,0"
+                               Click="OnCompare"/>
+                    <ui:Button Content="历史" Padding="10,3" Margin="6,0,0,0"
+                               Click="OnHistory"/>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <TextBlock Text="编码" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}" Margin="10,0,5,0"/>
+                    <ComboBox x:Name="EncodingBox" Width="130" Height="30" FontSize="11" Padding="6,0"
+                              VerticalContentAlignment="Center"
+                              SelectionChanged="OnEncodingChanged" ToolTip="文件编码；切换后按原始字节重新解码"/>
+                    <TextBlock Text="换行" VerticalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}" Margin="10,0,5,0"/>
+                    <ComboBox x:Name="LineEndingBox" Width="82" Height="30" FontSize="11" Padding="6,0"
+                              VerticalContentAlignment="Center"
+                              SelectionChanged="OnLineEndingChanged" ToolTip="保存时使用的换行符"/>
+                    <CheckBox x:Name="WordWrapBox" Content="自动换行" VerticalAlignment="Center" Margin="12,0,0,0"
+                              Checked="OnWordWrapChanged" Unchecked="OnWordWrapChanged"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <TabControl Grid.Row="2" x:Name="TabStrip" Margin="12,0,12,0" BorderThickness="0"
+                    Background="Transparent" ItemsSource="{Binding Tabs}"
+                    SelectedItem="{Binding SelectedTab, Mode=TwoWay}"
+                    AllowDrop="True" PreviewMouseLeftButtonDown="OnTabStripPreviewMouseDown"
+                    PreviewMouseMove="OnTabStripPreviewMouseMove" DragOver="OnTabStripDragOver"
+                    Drop="OnTabStripDrop" SelectionChanged="OnTabSelectionChanged">
+            <TabControl.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel.ContextMenu>
+                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <MenuItem Header="关闭" Click="OnTabMenuClose"/>
+                                <MenuItem Header="关闭其他" Click="OnTabMenuCloseOthers"/>
+                                <MenuItem Header="关闭右侧" Click="OnTabMenuCloseRight"/>
+                                <Separator/>
+                                <MenuItem Header="复制路径" Click="OnTabMenuCopyPath"/>
+                                <MenuItem Header="固定 / 取消固定" Click="OnTabMenuPin"/>
+                            </ContextMenu>
+                        </StackPanel.ContextMenu>
+                        <TextBlock Text="📌" Margin="0,0,4,0" VerticalAlignment="Center" FontSize="11">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding Title}" VerticalAlignment="Center" MaxWidth="260"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding RemotePath}"/>
+                        <ui:Button Content="×" Appearance="Transparent" BorderThickness="0"
+                                   Background="Transparent" Width="22" Height="22" Padding="0"
+                                   Margin="5,0,0,0" FontSize="15"
+                                   ToolTip="关闭标签" Click="OnCloseTabClick"/>
+                    </StackPanel>
+                </DataTemplate>
+            </TabControl.ItemTemplate>
+            <TabControl.ContentTemplate>
+                <DataTemplate>
+                    <Grid Height="0"/>
+                </DataTemplate>
+            </TabControl.ContentTemplate>
+        </TabControl>
+
+        <Grid Grid.Row="3" Margin="12,6,12,0">
+            <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                    CornerRadius="6" ClipToBounds="True">
+                <avalonedit:TextEditor x:Name="Editor" FontFamily="{DynamicResource AppFontMonoFamily}"
+                                       FontSize="13" ShowLineNumbers="True" WordWrap="False"
+                                       BorderThickness="0" Background="Transparent" Padding="6"
+                                       Foreground="{DynamicResource AppCodeTextBrush}"
+                                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                       PreviewKeyDown="OnEditorPreviewKeyDown"
+                                       PreviewMouseWheel="OnEditorPreviewMouseWheel"/>
+            </Border>
+            <Border x:Name="FindBar" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,8,8,0" Padding="6" Background="{DynamicResource AppSurfaceBrush}"
+                    BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                    CornerRadius="6" Visibility="Collapsed" Panel.ZIndex="10">
+                                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:TextBox x:Name="FindBox" Width="220" Height="30" Padding="6,0"
+                                    VerticalContentAlignment="Center"
+                                    PlaceholderText="查找内容…"
+                                    PreviewKeyDown="OnFindBoxPreviewKeyDown"
+                                    TextChanged="OnFindTextChanged"/>
+                        <TextBlock x:Name="FindCountText" Width="58" VerticalAlignment="Center"
+                                   HorizontalAlignment="Center" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeMicro}" TextAlignment="Center"/>
+                        <ui:Button Content="↑" Width="28" Height="28" Padding="0" Margin="4,0,0,0"
+                                   Appearance="Transparent" BorderThickness="0" Background="Transparent"
+                                   ToolTip="上一个" Click="OnFindPrevious"/>
+                        <ui:Button Content="↓" Width="28" Height="28" Padding="0" Margin="2,0,0,0"
+                                   Appearance="Transparent" BorderThickness="0" Background="Transparent"
+                                   ToolTip="下一个" Click="OnFindNext"/>
+                        <ui:Button Content="×" Width="28" Height="28" Padding="0" Margin="2,0,0,0"
+                                   Appearance="Transparent" BorderThickness="0" Background="Transparent"
+                                   FontSize="15" ToolTip="关闭查找" Click="OnFindClose"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                        <ui:TextBox x:Name="ReplaceBox" Width="220" Height="28" Padding="6,0"
+                                    VerticalContentAlignment="Center" PlaceholderText="替换为…"/>
+                        <CheckBox x:Name="CaseSensitiveBox" Content="Aa" Margin="8,0,0,0"
+                                  VerticalAlignment="Center" Checked="OnFindOptionChanged" Unchecked="OnFindOptionChanged"
+                                  ToolTip="区分大小写"/>
+                        <CheckBox x:Name="WholeWordBox" Content="全词" Margin="8,0,0,0"
+                                  VerticalAlignment="Center" Checked="OnFindOptionChanged" Unchecked="OnFindOptionChanged"
+                                  ToolTip="全词匹配"/>
+                        <CheckBox x:Name="RegexBox" Content="正则" Margin="8,0,0,0"
+                                  VerticalAlignment="Center" Checked="OnFindOptionChanged" Unchecked="OnFindOptionChanged"
+                                  ToolTip="正则表达式"/>
+                        <ui:Button Content="替换" Width="52" Height="28" Padding="0" Margin="8,0,0,0"
+                                   Click="OnReplace"/>
+                        <ui:Button Content="全部替换" Width="70" Height="28" Padding="0" Margin="4,0,0,0"
+                                   Click="OnReplaceAll"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            <Border x:Name="LoadingOverlay" Background="#99000000" Visibility="Collapsed"
+                    CornerRadius="6">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <ProgressBar Width="220" Height="4" IsIndeterminate="True"/>
+                    <TextBlock x:Name="LoadingText" Foreground="White" Margin="0,10,0,0"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="4" Padding="12,7" Margin="12,6,12,10"
+                Style="{DynamicResource CardBorderStyle}">
+            <DockPanel>
+                <StackPanel x:Name="SaveAllProgressPanel" DockPanel.Dock="Right" Orientation="Horizontal"
+                            Margin="12,0,0,0" Visibility="Collapsed">
+                    <TextBlock x:Name="SaveAllProgressText" VerticalAlignment="Center" Margin="0,0,8,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}"/>
+                    <ProgressBar x:Name="SaveAllProgressBar" Width="100" Height="4"
+                                 VerticalAlignment="Center" Minimum="0" Maximum="100"/>
+                </StackPanel>
+                <TextBlock x:Name="CursorInfoText" DockPanel.Dock="Right"
+                           Foreground="{DynamicResource AppTextTertiaryBrush}"
+                           FontSize="{DynamicResource AppFontSizeMicro}" Margin="12,0,0,0"/>
+                <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           FontSize="{DynamicResource AppFontSizeMicro}"/>
+            </DockPanel>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

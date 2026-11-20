@@ -97,7 +97,11 @@ public sealed class RemoteTrashService
             "for f in \"$ROOT\"/info/*.trashinfo; do " +
             "[ -f \"$f\" ] || continue; " +
             "id=${f##*/}; id=${id%.trashinfo}; " +
-            "printf '##TRASH:%s\\n' \"$id\"; cat -- \"$f\"; printf '##END\\n'; done";
+            "printf '##TRASH:%s\\n' \"$id\"; cat -- \"$f\"; " +
+            "ITEM=\"$ROOT/files/$id\"; printf '##SIZE:'; " +
+            "if [ -d \"$ITEM\" ]; then du -sb -- \"$ITEM\" 2>/dev/null | cut -f1; " +
+            "else stat -c '%s' -- \"$ITEM\" 2>/dev/null; fi; printf '\\n'; " +
+            "printf '##END\\n'; done";
         var result = await _ssh.ExecuteCommandAsync(_server, command, ct, timeoutSeconds: 60);
         if (!result.Success)
             throw new InvalidOperationException("读取回收站失败: " + ErrorOf(result));
@@ -173,7 +177,9 @@ public sealed class RemoteTrashService
             "ROOT=\"$HOME/.litssh-trash\"; " +
             "mkdir -p -- \"$ROOT/files\" \"$ROOT/info\" && " +
             "chmod 700 -- \"$ROOT\" \"$ROOT/files\" \"$ROOT/info\" || exit 1; " +
-            "SIZE=$(du -sb -- " + path + " 2>/dev/null | cut -f1); SIZE=${SIZE:-0}; " +
+            "if [ \"" + type + "\" = \"file\" ]; then " +
+            "SIZE=$(stat -c '%s' -- " + path + " 2>/dev/null); " +
+            "else SIZE=$(du -sb -- " + path + " 2>/dev/null | cut -f1); fi; SIZE=${SIZE:-0}; " +
             "mv -- " + path + " \"$ROOT/files/" + id + "\" || exit 2; " +
             "printf '%s\\n' 'Version=1' 'PathB64=" + pathB64 + "' 'NameB64=" + nameB64 +
             "' 'Type=" + type + "' \"Size=$SIZE\" 'DeletionDate=" + deletedAt +
@@ -193,6 +199,12 @@ public sealed class RemoteTrashService
             {
                 current = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 currentId = line["##TRASH:".Length..].Trim();
+                continue;
+            }
+            if (line.StartsWith("##SIZE:", StringComparison.Ordinal))
+            {
+                if (current is not null)
+                    current["Size"] = line["##SIZE:".Length..].Trim();
                 continue;
             }
             if (line == "##END")

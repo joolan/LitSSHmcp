@@ -111,7 +111,7 @@ public static class SyntaxHighlighter
         "sql" or "mysql" => SqlKeywords.Contains(word),
         "java" or "kotlin" or "js" or "javascript" or "ts" or "typescript" or "c" or "csharp" or "cs" => JavaKeywords.Contains(word),
         "json" => JsonLiterals.Contains(word),
-        "yaml" or "yml" or "properties" or "ini" or "conf" => BashKeywords.Contains(word),  // 值里常见命令/关键字
+        "yaml" or "yml" or "properties" or "ini" or "conf" or "nginx" or "toml" or "dockerfile" => BashKeywords.Contains(word),  // 值里常见命令/关键字
         _ => false
     };
 
@@ -142,7 +142,7 @@ public static class SyntaxHighlighter
     {
         "sql" or "mysql" => new[] { "--" },
         "java" or "kotlin" or "js" or "javascript" or "ts" or "typescript" or "c" or "csharp" or "cs" => new[] { "//" },
-        "bash" or "sh" or "shell" or "yaml" or "yml" or "properties" or "ini" or "conf" or "dockerfile" => new[] { "#" },
+        "bash" or "sh" or "shell" or "yaml" or "yml" or "properties" or "ini" or "conf" or "nginx" or "toml" or "dockerfile" => new[] { "#" },
         _ => Array.Empty<string>()
     };
 

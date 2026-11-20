@@ -20,8 +20,10 @@ public partial class MainWindow : FluentWindow
 {
     private MainViewModel ViewModel => (MainViewModel)DataContext;
 
-    private System.Windows.Forms.NotifyIcon? _tray;
-    private System.Drawing.Icon? _trayIcon;
+    private static readonly object TrayGate = new();
+    private static System.Windows.Forms.NotifyIcon? _tray;
+    private static System.Drawing.Icon? _trayIcon;
+    private static MainWindow? _trayOwner;
     private bool _allowClose;
     private HelpWindow? _helpWindow;
     private HwndSource? _hotkeySource;
@@ -400,34 +402,40 @@ public partial class MainWindow : FluentWindow
 
     private void EnsureTray()
     {
-        if (_tray is not null)
+        lock (TrayGate)
         {
-            _tray.Visible = true;
-            return;
+            _trayOwner = this;
+
+            if (_tray is not null)
+            {
+                _tray.Visible = true;
+                return;
+            }
+
+            var menu = new System.Windows.Forms.ContextMenuStrip();
+            menu.Items.Add("显示主界面", null, (_, _) => _trayOwner?.RestoreFromTray());
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+            var petToggle = new System.Windows.Forms.ToolStripMenuItem("隐藏桌面宠物");
+            petToggle.Click += (_, _) => PetService.ToggleVisibility();
+            menu.Items.Add(petToggle);
+            menu.Items.Add("打开桌面宠物设置", null, (_, _) =>
+                _trayOwner?.RestoreFromTray(() => _trayOwner!.ViewModel.OpenPetSettings()));
+            menu.Items.Add("暂停 / 继续宠物移动", null, (_, _) => PetService.ToggleMovement());
+            menu.Items.Add("重置宠物位置", null, (_, _) => PetService.ResetPosition());
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+            menu.Items.Add("退出程序", null, (_, _) => _trayOwner?.ExitFromTray());
+            menu.Opening += (_, _) => petToggle.Text = PetService.IsVisible ? "隐藏桌面宠物" : "显示桌面宠物";
+
+            _trayIcon = CreateTrayIcon();
+            _tray = new System.Windows.Forms.NotifyIcon
+            {
+                Icon = _trayIcon,
+                Text = "LitSSH MCP Manager",
+                Visible = true,
+                ContextMenuStrip = menu
+            };
+            _tray.DoubleClick += (_, _) => _trayOwner?.RestoreFromTray();
         }
-
-        var menu = new System.Windows.Forms.ContextMenuStrip();
-        menu.Items.Add("显示主界面", null, (_, _) => RestoreFromTray());
-        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-        var petToggle = new System.Windows.Forms.ToolStripMenuItem("隐藏桌面宠物");
-        petToggle.Click += (_, _) => PetService.ToggleVisibility();
-        menu.Items.Add(petToggle);
-        menu.Items.Add("打开桌面宠物设置", null, (_, _) => RestoreFromTray(() => ViewModel.OpenPetSettings()));
-        menu.Items.Add("暂停 / 继续宠物移动", null, (_, _) => PetService.ToggleMovement());
-        menu.Items.Add("重置宠物位置", null, (_, _) => PetService.ResetPosition());
-        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-        menu.Items.Add("退出程序", null, (_, _) => ExitFromTray());
-        menu.Opening += (_, _) => petToggle.Text = PetService.IsVisible ? "隐藏桌面宠物" : "显示桌面宠物";
-
-        _trayIcon = CreateTrayIcon();
-        _tray = new System.Windows.Forms.NotifyIcon
-        {
-            Icon = _trayIcon,
-            Text = "LitSSH MCP Manager",
-            Visible = true,
-            ContextMenuStrip = menu
-        };
-        _tray.DoubleClick += (_, _) => RestoreFromTray();
     }
 
     private static System.Drawing.Icon CreateTrayIcon()
@@ -544,20 +552,24 @@ public partial class MainWindow : FluentWindow
 
     private void DisposeTray()
     {
-        try
+        lock (TrayGate)
         {
-            if (_tray is not null)
+            try
             {
-                _tray.Visible = false;
-                _tray.Dispose();
+                if (_tray is not null)
+                {
+                    _tray.Visible = false;
+                    _tray.Dispose();
+                }
             }
+            catch
+            {
+                // 忽略
+            }
+            _tray = null;
+            _trayOwner = null;
+            _trayIcon?.Dispose();
+            _trayIcon = null;
         }
-        catch
-        {
-            // 忽略
-        }
-        _tray = null;
-        _trayIcon?.Dispose();
-        _trayIcon = null;
     }
 }

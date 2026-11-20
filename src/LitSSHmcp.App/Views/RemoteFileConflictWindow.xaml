@@ -1,0 +1,39 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.RemoteFileConflictWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="保存冲突" Height="340" Width="640" MinHeight="300" MinWidth="520"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="保存冲突"/>
+
+        <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}" Margin="16,8,16,12" Padding="14,12">
+            <StackPanel>
+                <TextBlock Text="服务器文件已被其他程序修改。" FontWeight="SemiBold" FontSize="14"/>
+                <TextBlock x:Name="PathText" Margin="0,8,0,0" TextWrapping="Wrap"
+                           FontFamily="{DynamicResource AppFontMonoFamily}"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                <TextBlock Text="可以直接覆盖，也可以先查看差异，或重新加载服务器版本并放弃本地修改。"
+                           Margin="0,12,0,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            </StackPanel>
+        </Border>
+
+        <DockPanel Grid.Row="2" Margin="16,0,16,14">
+            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                <ui:Button Content="查看差异" Padding="12,5" Click="OnDiff"/>
+            </StackPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="取消" MinWidth="76" Padding="12,5" Margin="0,0,8,0" IsCancel="True" Click="OnCancel"/>
+                <ui:Button Content="重新加载" MinWidth="90" Padding="12,5" Margin="0,0,8,0" Click="OnReload"/>
+                <ui:Button Content="强制覆盖" MinWidth="90" Padding="14,5" Appearance="Danger" Click="OnOverwrite"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

@@ -82,6 +82,13 @@ public class RemoteTrashServiceTests
         Assert.Equal("2 KB", item.SizeText);
     }
 
+    [Theory]
+    [InlineData(300L * 1024, "300 KB")]
+    [InlineData(512L * 1024, "512 KB")]
+    [InlineData(3L * 1024 * 1024, "3 MB")]
+    public void Size_format_uses_binary_units(long bytes, string expected)
+        => Assert.Equal(expected, RemoteTrashItem.FormatSize(bytes));
+
     [Fact]
     public async Task Restore_quotes_original_path_and_reports_final_path()
     {

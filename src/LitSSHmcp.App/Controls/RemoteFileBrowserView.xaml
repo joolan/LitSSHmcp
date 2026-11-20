@@ -19,6 +19,7 @@
             <ui:Button Icon="{ui:SymbolIcon ArrowUp24}" Padding="6,3" Margin="0,0,4,4" ToolTip="上一级" Click="OnUp"/>
             <ui:Button Icon="{ui:SymbolIcon ArrowSync24}" Padding="6,3" Margin="0,0,4,4" ToolTip="刷新" Click="OnReload"/>
             <ui:Button Icon="{ui:SymbolIcon FolderAdd24}" Padding="6,3" Margin="0,0,4,4" ToolTip="新建文件夹" Click="OnNewFolder"/>
+            <ui:Button Icon="{ui:SymbolIcon DocumentAdd24}" Padding="6,3" Margin="0,0,4,4" ToolTip="在当前目录新建文本文件" Click="OnNewFile"/>
             <ui:Button Icon="{ui:SymbolIcon ArrowUpload24}" Padding="6,3" Margin="0,0,4,4" ToolTip="上传文件到当前目录（也可把文件/文件夹拖到此处上传）" Click="OnUpload"/>
             <ui:Button Icon="{ui:SymbolIcon Star24}" Padding="6,3" Margin="0,0,4,4" ToolTip="目录书签" Click="OnBookmarks"/>
             <ui:Button Icon="{ui:SymbolIcon Delete24}" Padding="6,3" Margin="0,0,4,4" ToolTip="远程回收站" Click="OnOpenTrash"/>
@@ -38,6 +39,8 @@
             <ListView.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="打开 / 进入" Click="OnOpen"/>
+                    <MenuItem x:Name="EditOnlineMenuItem" Header="在线编辑" Click="OnEditOnline"/>
+                    <MenuItem x:Name="NewFileMenuItem" Header="新建文件…" Click="OnNewFile"/>
                     <MenuItem Header="打开方式…（选择程序）" Click="OnOpenWith"/>
                     <MenuItem Header="下载…" Click="OnDownload"/>
                     <MenuItem Header="下载所选（含文件夹）…" Click="OnDownloadSelected"/>

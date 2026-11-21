@@ -9,12 +9,15 @@ public partial class AgentViewModel
         public string UpdatedAt { get; init; } = string.Empty;
         public List<AgentTurn> Turns { get; init; } = new();
         public bool HasUser { get; init; }
+        public long? OldestUserId { get; init; }
+        public bool HasOlder { get; init; }
     }
 
     private readonly Dictionary<long, CachedSessionView> _sessionViewCache = new();
     private bool _restoringCachedTurns;
 
-    private void CacheTranscript(long id, string? updatedAt, List<AgentTurn> turns, bool hasUser)
+    private void CacheTranscript(long id, string? updatedAt, List<AgentTurn> turns, bool hasUser,
+        long? oldestUserId = null, bool hasOlder = false)
     {
         if (string.IsNullOrEmpty(updatedAt))
             return;
@@ -22,7 +25,9 @@ public partial class AgentViewModel
         {
             UpdatedAt = updatedAt,
             Turns = turns.ToList(),
-            HasUser = hasUser
+            HasUser = hasUser,
+            OldestUserId = oldestUserId,
+            HasOlder = hasOlder
         };
     }
 
@@ -80,6 +85,9 @@ public partial class AgentViewModel
         }
 
         _sessionTitled = cache.HasUser;
+        _oldestLoadedUserId = cache.OldestUserId;
+        _hasOlderMessages = cache.HasOlder;
+        ctx.OldestLoadedUserId = cache.OldestUserId;
         Plan.Clear();
         foreach (var item in ctx.PlanItems)
             Plan.Add(item);

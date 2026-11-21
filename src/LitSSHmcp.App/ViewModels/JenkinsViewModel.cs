@@ -245,6 +245,8 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
     private CancellationTokenSource? _jobCts;
     private CancellationTokenSource? _queueCts;
     private CancellationTokenSource? _buildWatchCts;
+    private CancellationTokenSource? _refreshCts;
+    private static readonly TimeSpan PageRefreshTimeout = TimeSpan.FromSeconds(20);
     private long _logOffset;
     private int? _logBuildNumber;
     private int _buildOffset;
@@ -763,11 +765,39 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
             return;
         }
 
-        await LoadViewsAsync();
-        await LoadJobsAsync();
+        if (_refreshCts is not null)
+        {
+            StatusMessage = "正在刷新，请稍候…";
+            return;
+        }
 
-        if (string.IsNullOrEmpty(ErrorMessage))
-            _lastRefreshUtc = DateTime.UtcNow;
+        var connection = SelectedConnection;
+        CancelRefresh();
+        var cts = new CancellationTokenSource(PageRefreshTimeout);
+        _refreshCts = cts;
+        var ct = cts.Token;
+        try
+        {
+            // 刷新期间保留旧列表/详情；只有拿到新数据才 ReplaceRange，失败/超时不清空页面。
+            await LoadViewsAsync(ct: ct);
+            await LoadJobsAsync(ct);
+            if (string.IsNullOrEmpty(ErrorMessage) && ReferenceEquals(SelectedConnection, connection))
+            {
+                _lastRefreshUtc = DateTime.UtcNow;
+                StatusMessage = $"已刷新 {connection.DisplayName}";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(SelectedConnection, connection))
+                StatusMessage = "刷新超时或已取消，已保留上次数据。";
+        }
+        finally
+        {
+            if (ReferenceEquals(_refreshCts, cts))
+                _refreshCts = null;
+            cts.Dispose();
+        }
     }
 
     public void ReloadConfig()
@@ -852,6 +882,10 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         _client?.Dispose();
         _client = null;
         ClearJobState();
+        Views.Clear();
+        _selectedView = null;
+        OnPropertyChanged(nameof(SelectedView));
+        OnPropertyChanged(nameof(SelectedViewDescription));
 
         if (connection is null)
         {
@@ -921,7 +955,7 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         }
     }
 
-    private async Task LoadViewsAsync(bool preserveSelection = true)
+    private async Task LoadViewsAsync(bool preserveSelection = true, CancellationToken ct = default)
     {
         if (_client is null)
             return;
@@ -929,7 +963,7 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         var previousUrl = preserveSelection ? SelectedView?.Url : null;
         try
         {
-            var views = await _client.ListViewsAsync();
+            var views = await _client.ListViewsAsync(ct);
             if (!_isActive)
                 return;
 
@@ -947,14 +981,22 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
                 ? "当前连接没有配置 View，已显示全部任务。"
                 : $"已加载 {views.Count} 个 View。";
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            Views.Clear();
-            Views.Add(new JenkinsView("全部任务", string.Empty, "当前连接的全部顶层任务"));
-            _selectedView = Views[0];
-            OnPropertyChanged(nameof(SelectedView));
-            OnPropertyChanged(nameof(SelectedViewDescription));
-            StatusMessage = $"View 加载失败，已回退全部任务：{ex.Message}";
+            // 保留上一次成功的 View 列表；只有确实没有数据时才回退“全部任务”。
+            if (Views.Count == 0)
+            {
+                Views.Add(new JenkinsView("全部任务", string.Empty, "当前连接的全部顶层任务"));
+                _selectedView = Views[0];
+                OnPropertyChanged(nameof(SelectedView));
+                OnPropertyChanged(nameof(SelectedViewDescription));
+            }
+
+            StatusMessage = $"View 加载失败，已保留上次数据：{ex.Message}";
         }
     }
 
@@ -1130,17 +1172,21 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         }
     }
 
-    private async Task LoadJobsAsync()
+    private async Task LoadJobsAsync(CancellationToken external = default)
     {
         if (_client is null || !_isActive)
             return;
 
         CancelLoad();
-        _loadCts = new CancellationTokenSource();
-        var ct = _loadCts.Token;
+        _loadCts = external.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(external)
+            : new CancellationTokenSource(PageRefreshTimeout);
+        var loadCts = _loadCts;
+        var ct = loadCts.Token;
+        var selectedUrl = SelectedJob?.Url;
         IsBusy = true;
         ErrorMessage = string.Empty;
-        ClearJobState();
+        // 刷新不预先清空列表：新数据到达后 ReplaceRange，失败/超时保留上次成功内容。
         try
         {
             var jobs = SelectedView is { IsAll: false } view
@@ -1150,6 +1196,18 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
             OnPropertyChanged(nameof(HasJobs));
             RebuildJobRows();
             RebuildSearchResults();
+
+            // 按 URL 恢复选中项；任务列表对象换新后仍保持用户当前查看的任务。
+            if (!string.IsNullOrWhiteSpace(selectedUrl))
+            {
+                var restored = JobRows.FirstOrDefault(row =>
+                    string.Equals(row.Node.Job.Url, selectedUrl, StringComparison.Ordinal));
+                if (restored is not null)
+                    SelectedRow = restored;
+                else
+                    SelectedJob = null;
+            }
+
             StatusMessage = $"已加载 {jobs.Count} 个任务。";
             if (SelectedConnection is { } connection)
                 _ = PageDiskCache.SaveAsync("jenkins", connection.Id,
@@ -1158,14 +1216,25 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
         }
         catch (OperationCanceledException)
         {
+            // 外部刷新令牌取消（超时/切页）交给 RefreshAsync 处理；单独调用时只提示。
+            if (external.CanBeCanceled)
+                throw;
+            if (_isActive)
+                StatusMessage = "加载已取消，已保留上次数据。";
         }
         catch (Exception ex)
         {
             ErrorMessage = Describe(ex);
+            StatusMessage = "加载失败，已保留上次数据。";
         }
         finally
         {
             IsBusy = false;
+            if (ReferenceEquals(_loadCts, loadCts))
+            {
+                _loadCts = null;
+                loadCts.Dispose();
+            }
         }
     }
 
@@ -1951,10 +2020,18 @@ public sealed class JenkinsViewModel : INotifyPropertyChanged, IConfigReloadable
 
     private void CancelPending()
     {
+        CancelRefresh();
         CancelLoad();
         CancelJobLoad();
         CancelQueuePolling();
         CancelBuildWatch();
+    }
+
+    private void CancelRefresh()
+    {
+        _refreshCts?.Cancel();
+        _refreshCts?.Dispose();
+        _refreshCts = null;
     }
 
     private void CancelLoad()

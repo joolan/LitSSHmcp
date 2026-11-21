@@ -80,6 +80,7 @@
 | 自动化 | 文件同步、触发事件、定时备份、AI 定时任务、Jenkins 构建与日志 |
 | 本地工具箱 | 程序/文件/脚本启动、Hosts、密码与加密保管、证书/TLS 批量检测、文本/编码转换、SSH 密钥、本地端口/进程检查、网络唤醒 (Wake-on-LAN，SecureOn/CSV/批量/每日定时) |
 | 安全审计 | 命令 / SQL 审计、审批链、哈希链完整性校验、Web 授权矩阵 |
+| 性能诊断 | 设置页查看进程 / GC / MCP 宿主池 / 启动与刷新耗时，支持一键复制诊断；提供 `perf-baseline.ps1` 与 `check-perf.ps1` 发布性能门禁 |
 
 详细桌面端能力见 [docs/APP_GUIDE.md](docs/APP_GUIDE.md)，Web 端见 [docs/WEB_GUIDE.md](docs/WEB_GUIDE.md)。
 
@@ -113,6 +114,19 @@ git clone https://github.com/joolan/LitSSHmcp.git
 cd LitSSHmcp
 dotnet build LitSSHmcp.slnx
 dotnet test LitSSHmcp.slnx
+```
+
+启动性能基准（需先关闭已运行的 App）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\perf-baseline.ps1 -Runs 3
+# 发布门禁：中位启动超过 1500ms / 空闲内存超过 350MB 时失败
+powershell -ExecutionPolicy Bypass -File scripts\perf-baseline.ps1 -Runs 5 -StartupBudgetMs 1500 -MemoryBudgetMB 350
+
+# 发布前门禁：自动 publish 到 artifacts\perf-gate-app，再跑启动/内存预算
+powershell -ExecutionPolicy Bypass -File scripts\check-perf.ps1 -Runs 3 -StartupBudgetMs 1600 -MemoryBudgetMB 400
+# 或直接对已有发布产物执行
+powershell -ExecutionPolicy Bypass -File scripts\check-perf.ps1 -Exe release\v1.8.0\App\LitSSHmcp.App.exe -Runs 3
 ```
 
 ### 发布

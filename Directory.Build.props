@@ -5,6 +5,10 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- 发布时预编译（ReadyToRun）：减少启动与首次调用的 JIT。仅在带 RuntimeIdentifier 的 publish 生效。 -->
+    <PublishReadyToRun Condition="'$(RuntimeIdentifier)' != ''">true</PublishReadyToRun>
+    <!-- 分层 PGO：热点代码在运行中持续优化（.NET 8 默认开启，显式声明避免被环境覆盖）。 -->
+    <TieredPGO>true</TieredPGO>
   </PropertyGroup>
 
 </Project>

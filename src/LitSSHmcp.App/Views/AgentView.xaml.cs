@@ -28,7 +28,8 @@ public partial class AgentView : UserControl
         Services.LocalTerminal.IAiTerminalBroker? localTerminalBroker = null,
         IAppServices? services = null)
     {
-        InitializeComponent();
+        using (PerfLog.Scope("agent.view.xaml"))
+            InitializeComponent();
         _configService = configService;
         _services = services;
         _desktopLogin = AppServiceFactory.DesktopLogin;
@@ -46,6 +47,7 @@ public partial class AgentView : UserControl
         _viewModel.SkillsPickerRequested += () => Dispatcher.Invoke(OpenSkillPicker);
         DataContext = _viewModel;
         _viewModel.Turns.CollectionChanged += OnTurnsChanged;
+        _viewModel.OlderHistoryApplying += OnOlderHistoryApplying;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         ChatScroll.ScrollChanged += OnChatScrollChanged;
         foreach (var turn in _viewModel.Turns)
@@ -89,6 +91,7 @@ public partial class AgentView : UserControl
         if (_disposed)
             return;
         _disposed = true;
+        _viewModel.OlderHistoryApplying -= OnOlderHistoryApplying;
         await _viewModel.DisposeAsync();
     }
 
@@ -220,6 +223,10 @@ public partial class AgentView : UserControl
     private readonly HashSet<AgentTurn> _hookedTurns = new();
     private bool _autoFollow = true;
     private bool _scrollScheduled;
+    private bool _preserveScrollOnReset;
+    private bool _hasOlderScrollAnchor;
+    private double _olderAnchorOffset;
+    private double _olderAnchorExtent;
     private int _unseenMessages;
 
     private void OnTurnsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -238,6 +245,14 @@ public partial class AgentView : UserControl
                     UnhookTurn(turn);
             foreach (var turn in _viewModel.Turns)
                 HookTurn(turn);
+
+            // 加载更早记录：这是“在顶部插入旧内容”，不能当成切会话/新消息而跳到底部。
+            if (_preserveScrollOnReset)
+            {
+                _autoFollow = false;
+                UpdateScrollToBottomButton();
+                return;
+            }
 
             _autoFollow = true;
             _unseenMessages = 0;
@@ -337,6 +352,53 @@ public partial class AgentView : UserControl
         _unseenMessages = 0;
         ChatScroll.ScrollToEnd();
         UpdateScrollToBottomButton();
+    }
+
+    /// <summary>
+    /// 加载更早记录：旧内容插入在顶部，按“新增内容高度”回补滚动偏移，保持用户当前看到的位置不变。
+    /// </summary>
+    private void OnLoadOlderHistoryClick(object sender, RoutedEventArgs e)
+    {
+        if (_preserveScrollOnReset)
+            return;
+
+        _hasOlderScrollAnchor = false;
+        _preserveScrollOnReset = true;
+        _autoFollow = false;
+        AsyncOperation.Run("加载更早记录", async () =>
+        {
+            try
+            {
+                await _viewModel.LoadOlderHistoryAsync();
+                // 让 Reset 后的容器生成与布局跑完，再读取新的 ExtentHeight。
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Loaded);
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+            }
+            finally
+            {
+                if (_hasOlderScrollAnchor)
+                {
+                    var addedHeight = Math.Max(0, ChatScroll.ExtentHeight - _olderAnchorExtent);
+                    if (addedHeight > 0.5)
+                        ChatScroll.ScrollToVerticalOffset(_olderAnchorOffset + addedHeight);
+                }
+
+                _hasOlderScrollAnchor = false;
+                _preserveScrollOnReset = false;
+                UpdateScrollToBottomButton();
+            }
+        });
+    }
+
+    /// <summary>VM 即将在顶部插入旧内容：在真正修改集合前记录当前滚动锚点。</summary>
+    private void OnOlderHistoryApplying()
+    {
+        if (!_preserveScrollOnReset)
+            return;
+
+        _olderAnchorOffset = ChatScroll.VerticalOffset;
+        _olderAnchorExtent = ChatScroll.ExtentHeight;
+        _hasOlderScrollAnchor = true;
     }
 
     // 点击用户指令：展开/折叠本轮工具过程

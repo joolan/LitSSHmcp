@@ -399,9 +399,33 @@ public sealed class TerminalModel
         var index = 0;
         while (index < text.Length)
         {
+            var ch = text[index];
+
+            // 快速路径：Ground 状态下的可打印 ASCII 连续段（终端输出的绝大多数内容）。
+            // 整段批量写入，避免逐字符调用 StringInfo/状态机/虚方法。
+            if (_state == ParseState.Ground && IsPrintableAscii(ch))
+            {
+                var start = index;
+                while (index < text.Length && IsPrintableAscii(text[index]))
+                    index++;
+
+                try
+                {
+                    ProcessAsciiRun(text.AsSpan(start, index - start));
+                }
+                catch
+                {
+                    // 单个异常序列不应让整屏内容停在未刷新状态。
+                    _state = ParseState.Ground;
+                    _param.Clear();
+                    _osc.Clear();
+                }
+                continue;
+            }
+
             string element;
-            if (_state != ParseState.Ground || text[index] < ' ' || text[index] == '\u001b')
-                element = text[index].ToString();
+            if (_state != ParseState.Ground || ch < ' ' || ch == '\u001b')
+                element = ch.ToString();
             else
             {
                 try
@@ -410,13 +434,15 @@ public sealed class TerminalModel
                 }
                 catch
                 {
-                    element = text[index].ToString();
+                    element = ch.ToString();
                 }
             }
 
             try
             {
-                if (element.Length == 1)
+                // ASCII（含控制字符）走状态机；非 ASCII 单字符/组合字符走 grapheme 处理，
+                // 否则基础字符被 ASCII 快路径提前消费后，后续 combining mark 会被当成独立字符。
+                if (element.Length == 1 && element[0] < '\u007f')
                     Process(element[0]);
                 else
                     ProcessGrapheme(element);
@@ -525,9 +551,52 @@ public sealed class TerminalModel
         }
     }
 
-    private void ProcessGround(char ch)
+    private static bool IsPrintableAscii(char ch) => ch >= ' ' && ch < '\u007f';
+
+    /// <summary>
+    /// 可打印 ASCII 连续段的批量写入：跳过 Process/ProcessGround 的状态与宽字符判断，
+    /// 只保留自动换行、单元格写入和光标推进。终端输出中 95% 以上字符走这里。
+    /// </summary>
+    private void ProcessAsciiRun(ReadOnlySpan<char> chars)
     {
-        switch (ch)
+        var active = Active;
+        foreach (var ch in chars)
+        {
+            if (_wrapPending)
+            {
+                _cx = 0;
+                LineFeed(wrapped: true);
+                _wrapPending = false;
+                active = Active;
+            }
+
+            var index = _cy * _cols + _cx;
+            if ((uint)index < (uint)active.Length)
+            {
+                active[index] = new TerminalCell
+                {
+                    Ch = ch,
+                    Hyperlink = _activeHyperlink,
+                    Attr = _attr
+                };
+            }
+
+            if (_cx + 1 >= _cols)
+            {
+                if (_autoWrap)
+                    _wrapPending = true;
+                else
+                    _cx = _cols - 1;
+            }
+            else
+            {
+                _cx++;
+            }
+        }
+    }
+
+    private void ProcessGround(char ch)
+    {        switch (ch)
         {
             case '\u001b':
                 _state = ParseState.Esc;
@@ -1011,8 +1080,12 @@ public sealed class TerminalModel
             }
         }
 
-        for (var y = _scrollTop; y <= _scrollBottom - n; y++)
-            Array.Copy(active, (y + n) * _cols, active, y * _cols, _cols);
+        var rowsToMove = height - n;
+        if (rowsToMove > 0)
+        {
+            // 滚动区域是连续的：一次块拷贝代替逐行 Array.Copy。
+            Array.Copy(active, (_scrollTop + n) * _cols, active, _scrollTop * _cols, rowsToMove * _cols);
+        }
         if (!_altScreen && _lineWrapped.Length == _rows)
         {
             Array.Copy(_lineWrapped, _scrollTop + n, _lineWrapped, _scrollTop, height - n);
@@ -1029,8 +1102,12 @@ public sealed class TerminalModel
     {
         n = Math.Clamp(n, 1, _scrollBottom - _scrollTop + 1);
         var active = Active;
-        for (var y = _scrollBottom; y >= _scrollTop + n; y--)
-            Array.Copy(active, (y - n) * _cols, active, y * _cols, _cols);
+        var rowsToMove = _scrollBottom - _scrollTop + 1 - n;
+        if (rowsToMove > 0)
+        {
+            // 向下滚动同样是一次连续块拷贝（Array.Copy 支持重叠区间）。
+            Array.Copy(active, _scrollTop * _cols, active, (_scrollTop + n) * _cols, rowsToMove * _cols);
+        }
         if (!_altScreen && _lineWrapped.Length == _rows)
         {
             for (var y = _scrollBottom; y >= _scrollTop + n; y--)

@@ -11,7 +11,18 @@ namespace LitSSHmcp.Agent;
 /// </summary>
 public sealed class McpToolHost : IAsyncDisposable
 {
+    /// <summary>
+    /// 子进程优雅退出等待上限。SDK 默认 5 秒；内置/外部 MCP 子进程在 stdin 关闭后通常不会自行退出，
+    /// 5 秒会白白拖慢释放（切换模型、删除会话、App 退出）。500ms 后强制结束进程树即可。
+    /// </summary>
+    private static readonly TimeSpan BuiltinShutdownTimeout = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>外部 MCP 服务器可能确实需要一点时间落盘/清理，给 2 秒；仍不退出则强制结束。</summary>
+    private static readonly TimeSpan ExternalShutdownTimeout = TimeSpan.FromSeconds(2);
+
     private readonly Func<IClientTransport> _transportFactory;
+    private readonly object _connectGate = new();
+    private Task? _connectTask;
     private McpClient? _client;
 
     private McpToolHost(Func<IClientTransport> transportFactory) => _transportFactory = transportFactory;
@@ -45,6 +56,7 @@ public sealed class McpToolHost : IAsyncDisposable
             WorkingDirectory = launch.WorkingDirectory,
             EnvironmentVariables = env,
             InheritEnvironmentVariables = true,
+            ShutdownTimeout = BuiltinShutdownTimeout,
         }));
     }
 
@@ -95,6 +107,7 @@ public sealed class McpToolHost : IAsyncDisposable
             Arguments = arguments,
             EnvironmentVariables = env.ToDictionary(kv => kv.Key, kv => (string?)kv.Value),
             InheritEnvironmentVariables = true,
+            ShutdownTimeout = ExternalShutdownTimeout,
         }));
     }
 
@@ -137,7 +150,14 @@ public sealed class McpToolHost : IAsyncDisposable
         return map;
     }
 
-    public async Task ConnectAsync(CancellationToken ct = default)
+    /// <summary>连接（幂等）：同一宿主只建立一次 MCP 会话，供宿主池/重连复用。</summary>
+    public Task ConnectAsync(CancellationToken ct = default)
+    {
+        lock (_connectGate)
+            return _connectTask ??= ConnectCoreAsync(ct);
+    }
+
+    private async Task ConnectCoreAsync(CancellationToken ct)
     {
         var transport = _transportFactory();
         _client = await McpClient.CreateAsync(transport, null, null, ct);
@@ -147,10 +167,17 @@ public sealed class McpToolHost : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_client is not null)
+        McpClient? client;
+        lock (_connectGate)
         {
-            try { await _client.DisposeAsync(); } catch { /* 关停子进程失败忽略 */ }
+            client = _client;
             _client = null;
+            _connectTask = null;
+        }
+
+        if (client is not null)
+        {
+            try { await client.DisposeAsync(); } catch { /* 关停子进程失败忽略 */ }
         }
     }
 }

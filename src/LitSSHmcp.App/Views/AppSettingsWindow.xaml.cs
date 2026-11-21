@@ -113,6 +113,11 @@ public partial class AppSettingsWindow : FluentWindow
             }
             case 7:
                 return new PetSettingsView();
+            case 8:
+                return new PerformanceDiagnosticsView
+                {
+                    DataContext = new PerformanceDiagnosticsViewModel()
+                };
             default:
                 return new AboutView();
         }
@@ -137,7 +142,8 @@ public partial class AppSettingsWindow : FluentWindow
         5 => TransferHost,
         6 => StorageHost,
         7 => PetHost,
-        8 => AboutHost,
+        8 => DiagnosticsHost,
+        9 => AboutHost,
         _ => null
     };
 }

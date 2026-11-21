@@ -48,9 +48,12 @@ public partial class MainWindow : FluentWindow
         using (PerfLog.Scope("mainwindow.ctor.viewmodel"))
             DataContext = new MainViewModel();
         // 托盘图标随主窗口启动常驻，而不是等用户关闭窗口并选择“最小化到托盘”才创建。
+        // 放到首帧之后（Background 优先级）创建：NotifyIcon/ContextMenuStrip 首次会拉起 WinForms，
+        // 放在 Loaded 里会拖慢主窗口首帧。
         Loaded += (_, _) =>
         {
-            EnsureTray();
+            Dispatcher.BeginInvoke(new Action(EnsureTray),
+                System.Windows.Threading.DispatcherPriority.Background);
             Dispatcher.BeginInvoke(new Action(NetworkStatus.EnsureStarted),
                 System.Windows.Threading.DispatcherPriority.Background);
             Dispatcher.BeginInvoke(new Action(() =>
@@ -431,6 +434,8 @@ public partial class MainWindow : FluentWindow
                 _trayOwner?.RestoreFromTray(() => _trayOwner!.ViewModel.OpenPetSettings()));
             menu.Items.Add("暂停 / 继续宠物移动", null, (_, _) => PetService.ToggleMovement());
             menu.Items.Add("重置宠物位置", null, (_, _) => PetService.ResetPosition());
+            menu.Items.Add("性能诊断", null, (_, _) =>
+                _trayOwner?.RestoreFromTray(() => _trayOwner!.ViewModel.OpenSettingsTab(8)));
             menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
             menu.Items.Add("退出程序", null, (_, _) => _trayOwner?.ExitFromTray());
             menu.Opening += (_, _) => petToggle.Text = PetService.IsVisible ? "隐藏桌面宠物" : "显示桌面宠物";

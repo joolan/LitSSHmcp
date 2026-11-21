@@ -46,7 +46,9 @@
                           Padding="3" MouseDoubleClick="OnItemDoubleClick"
                           PreviewMouseRightButtonDown="OnListPreviewRightClick"
                           VirtualizingPanel.IsVirtualizing="True"
-                          ScrollViewer.CanContentScroll="False">
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          VirtualizingPanel.ScrollUnit="Pixel"
+                          ScrollViewer.CanContentScroll="True">
                     <ListView.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="打开" Click="OnOpenClick"/>

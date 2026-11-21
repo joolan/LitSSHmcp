@@ -78,6 +78,12 @@ public sealed class SessionRunContext
     /// <summary>装配该运行时时的配置代际（配置重载后 +1，旧代际运行时下次装配重建）。</summary>
     public int RuntimeVersion { get; set; } = -1;
 
+    /// <summary>
+    /// 已加载窗口的第一条 user 消息 Id；null = 全量/新会话。
+    /// 分页加载后落库只替换该 Id 及之后的消息，避免把未加载的更早轮次误删。
+    /// </summary>
+    public long? OldestLoadedUserId { get; set; }
+
     // ---- 流式缓冲（原实例级 _pendingDelta/_pendingReasoning，随运行归属会话） ----
 
     public StringBuilder PendingDelta { get; } = new();

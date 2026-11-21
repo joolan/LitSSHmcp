@@ -81,6 +81,8 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
     private bool _connectionsStale = true;
     private DateTime _lastDashboardUtc = DateTime.MinValue;
     private CancellationTokenSource? _refreshCts;
+    private CancellationTokenSource? _podDetailCts;
+    private CancellationTokenSource? _podLogCts;
     private static readonly TimeSpan PageRefreshTtl = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan PageRefreshTimeout = TimeSpan.FromSeconds(20);
     private readonly DispatcherTimer _autoRefreshTimer;
@@ -310,6 +312,8 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         {
             if (!Set(ref _selectedPod, value))
                 return;
+            _podDetailCts?.Cancel();
+            _podLogCts?.Cancel();
             OnPropertyChanged(nameof(HasSelectedPod));
             OnPropertyChanged(nameof(SelectedPodTitle));
             PodLogs = string.Empty;
@@ -894,6 +898,34 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    /// <summary>刷新后按 namespace/name 恢复详情选择；条目已不存在时清空对应详情。</summary>
+    private void RestoreSelection(
+        (string Namespace, string Name)? workload,
+        (string Namespace, string Name)? pod,
+        (string Namespace, string Name)? service)
+    {
+        if (workload is { } w)
+        {
+            SelectedWorkload = _allWorkloads.FirstOrDefault(item =>
+                string.Equals(item.Namespace, w.Namespace, StringComparison.Ordinal) &&
+                string.Equals(item.Name, w.Name, StringComparison.Ordinal));
+        }
+
+        if (pod is { } p)
+        {
+            SelectedPod = _allPods.FirstOrDefault(item =>
+                string.Equals(item.Namespace, p.Namespace, StringComparison.Ordinal) &&
+                string.Equals(item.Name, p.Name, StringComparison.Ordinal));
+        }
+
+        if (service is { } s)
+        {
+            SelectedService = _allServices.FirstOrDefault(item =>
+                string.Equals(item.Namespace, s.Namespace, StringComparison.Ordinal) &&
+                string.Equals(item.Name, s.Name, StringComparison.Ordinal));
+        }
+    }
+
     private async Task RefreshAsync(TimeSpan? timeout = null)
     {
         using var perf = PerfLog.Scope("kubernetes.refresh", () => SelectedConnection?.DisplayName ?? "-");
@@ -915,9 +947,9 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         var ct = cts.Token;
 
         var server = FindSshServer(connection);
-        SelectedWorkload = null;
-        SelectedPod = null;
-        SelectedService = null;
+        var workloadKey = SelectedWorkload is { } workload ? (workload.Namespace, workload.Name) : default;
+        var podKey = SelectedPod is { } pod ? (pod.Namespace, pod.Name) : default;
+        var serviceKey = SelectedService is { } service ? (service.Namespace, service.Name) : default;
         IsBusy = true;
         ErrorMessage = string.Empty;
         StatusMessage = $"正在读取 {connection.DisplayName}…";
@@ -928,13 +960,14 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
                 return;
 
             ApplyDashboard(dashboard, fromCache: false);
+            RestoreSelection(workloadKey, podKey, serviceKey);
             _lastDashboardUtc = DateTime.UtcNow;
             _ = PageDiskCache.SaveAsync("kubernetes", connection.Id, dashboard);
         }
         catch (OperationCanceledException)
         {
             if (_isActive)
-                StatusMessage = "已取消刷新。";
+                StatusMessage = "刷新超时或已取消，已保留上次数据。";
         }
         catch (Exception ex)
         {
@@ -958,14 +991,19 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
             return;
 
         var server = FindSshServer(connection);
+        _podDetailCts?.Cancel();
+        var detailCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        detailCts.CancelAfter(PageRefreshTimeout);
+        _podDetailCts = detailCts;
+        var ct = detailCts.Token;
         IsPodDetailBusy = true;
         IsPodLogsBusy = true;
         try
         {
             BuildPodAssociations(pod);
             var logsTask = _service.GetPodLogsAsync(
-                connection, server, pod, SelectedPodContainer, LoadPreviousLogs, _lifetime.Token);
-            var yamlTask = _service.GetPodYamlAsync(connection, server, pod, _lifetime.Token);
+                connection, server, pod, SelectedPodContainer, LoadPreviousLogs, ct);
+            var yamlTask = _service.GetPodYamlAsync(connection, server, pod, ct);
             await Task.WhenAll(logsTask, yamlTask).ConfigureAwait(true);
             if (!ReferenceEquals(SelectedPod, pod))
                 return;
@@ -982,6 +1020,9 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         }
         finally
         {
+            if (ReferenceEquals(_podDetailCts, detailCts))
+                _podDetailCts = null;
+            detailCts.Dispose();
             IsPodLogsBusy = false;
             IsPodDetailBusy = false;
         }
@@ -995,11 +1036,16 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
             return;
 
         var server = FindSshServer(connection);
+        _podLogCts?.Cancel();
+        var logCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        logCts.CancelAfter(PageRefreshTimeout);
+        _podLogCts = logCts;
+        var ct = logCts.Token;
         IsPodLogsBusy = true;
         try
         {
             var logs = await _service.GetPodLogsAsync(
-                connection, server, pod, SelectedPodContainer, LoadPreviousLogs, _lifetime.Token);
+                connection, server, pod, SelectedPodContainer, LoadPreviousLogs, ct);
             if (ReferenceEquals(SelectedPod, pod))
                 PodLogs = logs;
         }
@@ -1012,6 +1058,9 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         }
         finally
         {
+            if (ReferenceEquals(_podLogCts, logCts))
+                _podLogCts = null;
+            logCts.Dispose();
             IsPodLogsBusy = false;
         }
     }
@@ -1918,6 +1967,8 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
 
     private void ClearData()
     {
+        _podDetailCts?.Cancel();
+        _podLogCts?.Cancel();
         Version = "—";
         Distribution = string.Empty;
         _metricsAvailable = false;
@@ -2041,6 +2092,12 @@ public sealed class KubernetesViewModel : INotifyPropertyChanged, IDisposable
         _refreshCts?.Cancel();
         _refreshCts?.Dispose();
         _refreshCts = null;
+        _podDetailCts?.Cancel();
+        _podDetailCts?.Dispose();
+        _podDetailCts = null;
+        _podLogCts?.Cancel();
+        _podLogCts?.Dispose();
+        _podLogCts = null;
         _lifetime.Cancel();
         _lifetime.Dispose();
     }

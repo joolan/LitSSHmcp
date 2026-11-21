@@ -203,6 +203,7 @@
 
                                     <local:MarkdownBox Margin="0,8,0,0"
                                                        Markdown="{Binding AssistantText, Mode=OneWay}"
+                                                       IsStreaming="{Binding IsRunning}"
                                                        Visibility="{Binding AssistantVisibility}"
                                                        IsSelectionEnabled="True" IsTabStop="False"
                                                        VerticalScrollBarVisibility="Disabled"

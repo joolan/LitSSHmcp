@@ -1,0 +1,16 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+    <!-- 复用：hover 显示但不撑开（常占位、仅切透明度/命中） -->
+    <Style x:Key="HoverRevealStyle" TargetType="StackPanel">
+        <Setter Property="Opacity" Value="0"/>
+        <Setter Property="IsHitTestVisible" Value="False"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                <Setter Property="Opacity" Value="1"/>
+                <Setter Property="IsHitTestVisible" Value="True"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+</ResourceDictionary>

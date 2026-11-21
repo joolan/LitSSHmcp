@@ -40,6 +40,11 @@ public sealed class TerminalView : Grid
     private double _pixelsPerDip = 1;
     private int _cols = 80;
     private int _rows = 24;
+    // 逐行绘制的复用缓冲：避免每帧每行都分配一个 TerminalCell[]。
+    private TerminalCell[] _rowCells = Array.Empty<TerminalCell>();
+    // 行绘制缓存（内容哈希 -> 行内坐标 DrawingGroup）：滚动输出时复用未变化行。
+    private readonly Dictionary<long, DrawingGroup> _rowDrawingCache = new();
+    private const int MaxRowDrawingCacheEntries = 768;
     private int _scrollOffset;
     private ITerminalSession? _session;
 
@@ -238,6 +243,7 @@ public sealed class TerminalView : Grid
         _session = newSession;
         _fontSize = GetSavedZoom() ?? TerminalSettings.FontSize;
         _lineTextCache.Clear();
+        _rowDrawingCache.Clear();
         _scrollOffset = 0;
         _hasSelection = false;
         if (newSession is not null)
@@ -344,6 +350,7 @@ public sealed class TerminalView : Grid
         _cellWidth = Math.Max(4, probe.WidthIncludingTrailingWhitespace);
         _cellHeight = Math.Max(8, probe.Height);
         _textCache.Clear();
+        _rowDrawingCache.Clear();
     }
 
     private void RecalcGrid()
@@ -375,14 +382,33 @@ public sealed class TerminalView : Grid
 
         var findLines = _findMatches.Count > 0 ? _findMatches : null;
         for (var row = 0; row < _rows; row++)
-            DrawLine(dc, model, row, findLines);
+        {
+            var drawing = GetRowDrawing(model, row, findLines);
+            if (drawing is null)
+                continue;
+
+            if (row == 0)
+            {
+                dc.DrawDrawing(drawing);
+            }
+            else
+            {
+                dc.PushTransform(new TranslateTransform(0, row * _cellHeight));
+                dc.DrawDrawing(drawing);
+                dc.Pop();
+            }
+        }
 
         DrawCursor(dc, model);
     }
 
-    private void DrawLine(DrawingContext dc, TerminalModel model, int row, List<(int Line, int Col)>? findMatches)
+    /// <summary>
+    /// 取一行缓存好的绘制内容（行内坐标从 0 开始，绘制时再按行号平移）。
+    /// 以“行内容 + 选中/搜索高亮”哈希为键：滚动输出时大部分行可直接命中上一帧的绘制结果，
+    /// 只有真正变化的行才重建 FormattedText/DrawText。
+    /// </summary>
+    private DrawingGroup? GetRowDrawing(TerminalModel model, int row, List<(int Line, int Col)>? findMatches)
     {
-        var y = row * _cellHeight;
         var baseIndex = model.IsAltScreen ? row : model.ScrollbackCount + row - _scrollOffset;
         var fromScrollback = !model.IsAltScreen && baseIndex < model.ScrollbackCount;
         var findSet = findMatches is not null ? CollectRowMatches(findMatches, baseIndex) : null;
@@ -390,7 +416,31 @@ public sealed class TerminalView : Grid
         var hasCurrentFind = _findIndex >= 0 && _findIndex < _findMatches.Count;
         var currentLen = Math.Max(1, _findBox.Text.Length);
 
-        var cells = new TerminalCell[_cols];
+        var cells = PrepareRowCells(model, row, baseIndex, fromScrollback);
+        var hash = ComputeRowHash(row, cells, baseIndex, findSet, currentFind, hasCurrentFind, currentLen);
+        if (_rowDrawingCache.TryGetValue(hash, out var cached))
+            return cached;
+
+        var group = BuildRowDrawing(row, cells, baseIndex, findSet, currentFind, hasCurrentFind, currentLen);
+        if (_rowDrawingCache.Count >= MaxRowDrawingCacheEntries)
+            _rowDrawingCache.Clear();
+        _rowDrawingCache[hash] = group;
+        return group;
+    }
+
+    private TerminalCell[] PrepareRowCells(TerminalModel model, int row, int baseIndex, bool fromScrollback)
+    {
+        var cells = _rowCells;
+        if (cells.Length < _cols)
+        {
+            cells = _rowCells = new TerminalCell[_cols];
+        }
+        else
+        {
+            // 复用缓冲：清掉上一行可能残留的宽字符/超链接等字段。
+            Array.Clear(cells, 0, _cols);
+        }
+
         if (baseIndex < 0)
         {
             for (var col = 0; col < _cols; col++)
@@ -408,44 +458,98 @@ public sealed class TerminalView : Grid
                 cells[col] = model.CellAt(col, screenRow);
         }
 
-        // 先画完整行背景，再画文字，避免双宽字符右侧单元格的背景覆盖汉字右半部分。
+        return cells;
+    }
+
+    private DrawingGroup BuildRowDrawing(int row, TerminalCell[] cells, int baseIndex, HashSet<int>? findSet,
+        (int Line, int Col) currentFind, bool hasCurrentFind, int currentLen)
+    {
+        var group = new DrawingGroup();
+        using (var g = group.Open())
+        {
+            // 先画完整行背景，再画文字，避免双宽字符右侧单元格的背景覆盖汉字右半部分。
+            for (var col = 0; col < _cols; col++)
+            {
+                var cell = cells[col];
+                var (cellFg, bg, reverse) = ResolveColors(cell.Attr);
+                if (reverse)
+                    bg = cellFg;
+
+                if (IsSelected(row, col))
+                {
+                    bg = TerminalSettings.Theme.SelectionBg;
+                }
+                else if (findSet is not null && findSet.Contains(col))
+                {
+                    bg = hasCurrentFind && currentFind.Line == baseIndex &&
+                        col >= currentFind.Col && col < currentFind.Col + currentLen
+                        ? TerminalSettings.Theme.FindCurrentBg
+                        : TerminalSettings.Theme.FindBg;
+                }
+
+                if (bg != TerminalSettings.Theme.Bg)
+                    g.DrawRectangle(GetBrush(bg), null, new Rect(col * _cellWidth, 0, _cellWidth, _cellHeight));
+            }
+
+            for (var col = 0; col < _cols; col++)
+            {
+                var cell = cells[col];
+                if (cell.WideContinuation || cell.Text == " ")
+                    continue;
+
+                var (fg, cellBg, reverse) = ResolveColors(cell.Attr);
+                if (reverse)
+                    fg = cellBg;
+                var drawAttr = cell.Attr;
+                if (cell.Hyperlink is { Length: > 0 })
+                    drawAttr.Underline = true;
+                g.DrawText(GetText(cell.Text, fg, drawAttr), new Point(col * _cellWidth, 0));
+            }
+        }
+
+        group.Freeze();
+        return group;
+    }
+
+    private long ComputeRowHash(int row, TerminalCell[] cells, int baseIndex, HashSet<int>? findSet,
+        (int Line, int Col) currentFind, bool hasCurrentFind, int currentLen)
+    {
+        var h = 1469598103934665603UL;
+        h = Mix(h, _cols);
+        h = Mix(h, _rows);
+
         for (var col = 0; col < _cols; col++)
         {
             var cell = cells[col];
-            var (cellFg, bg, reverse) = ResolveColors(cell.Attr);
-            if (reverse)
-                bg = cellFg;
+            h = Mix(h, cell.Ch);
+            if (cell.Grapheme is { } grapheme)
+                h = Mix(h, grapheme.GetHashCode());
+            if (cell.Hyperlink is { } hyperlink)
+                h = Mix(h, hyperlink.GetHashCode());
+            if (cell.WideContinuation)
+                h = Mix(h, 1);
 
+            var attr = cell.Attr;
+            h = Mix(h, attr.Fg.HasValue ? attr.Fg.Value : -1);
+            h = Mix(h, attr.Bg.HasValue ? attr.Bg.Value : -1);
+            h = Mix(h, (attr.Bold ? 1 : 0) | (attr.Italic ? 2 : 0) | (attr.Underline ? 4 : 0) | (attr.Reverse ? 8 : 0));
             if (IsSelected(row, col))
-            {
-                bg = TerminalSettings.Theme.SelectionBg;
-            }
-            else if (findSet is not null && findSet.Contains(col))
-            {
-                bg = hasCurrentFind && currentFind.Line == baseIndex &&
-                    col >= currentFind.Col && col < currentFind.Col + currentLen
-                    ? TerminalSettings.Theme.FindCurrentBg
-                    : TerminalSettings.Theme.FindBg;
-            }
-
-            if (bg != TerminalSettings.Theme.Bg)
-                dc.DrawRectangle(GetBrush(bg), null, new Rect(col * _cellWidth, y, _cellWidth, _cellHeight));
+                h = Mix(h, 1);
+            if (findSet is not null && findSet.Contains(col))
+                h = Mix(h, 1);
         }
 
-        for (var col = 0; col < _cols; col++)
+        if (hasCurrentFind)
         {
-            var cell = cells[col];
-            if (cell.WideContinuation || cell.Text == " ")
-                continue;
-
-            var (fg, cellBg, reverse) = ResolveColors(cell.Attr);
-            if (reverse)
-                fg = cellBg;
-            var drawAttr = cell.Attr;
-            if (cell.Hyperlink is { Length: > 0 })
-                drawAttr.Underline = true;
-            dc.DrawText(GetText(cell.Text, fg, drawAttr), new Point(col * _cellWidth, y));
+            h = Mix(h, baseIndex);
+            h = Mix(h, currentFind.Line);
+            h = Mix(h, currentFind.Col);
+            h = Mix(h, currentLen);
         }
+
+        return (long)h;
+
+        static ulong Mix(ulong hash, long value) => (hash ^ (ulong)value) * 1099511628211UL;
     }
 
     private static HashSet<int>? CollectRowMatches(List<(int Line, int Col)> matches, int line)

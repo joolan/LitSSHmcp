@@ -29,10 +29,24 @@ public interface IContextStore
     /// <summary>用给定的完整消息序列替换该会话的持久化记录（编辑/重发/重生成后保持与界面一致）。</summary>
     Task ReplaceMessagesAsync(long sessionId, IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default);
 
+    /// <summary>
+    /// 只替换 <paramref name="fromMessageId"/> 及之后的消息（保留更早历史）。
+    /// 用于分页加载后的增量落库：已加载窗口之外的旧轮次不能被全量替换误删。
+    /// </summary>
+    Task ReplaceMessagesFromAsync(long sessionId, long fromMessageId,
+        IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default);
+
     Task<List<AgentMessageRow>> GetMessagesAsync(long sessionId, CancellationToken ct = default);
 
     /// <summary>分页读取消息（Id 倒序取最近 <paramref name="limit"/> 条，返回升序；beforeId 用于向前翻页）。</summary>
     Task<List<AgentMessageRow>> GetRecentMessagesAsync(long sessionId, long? beforeId = null, int limit = 120, CancellationToken ct = default);
+
+    /// <summary>
+    /// 按“用户轮次”分页：返回最近 <paramref name="userTurns"/> 轮（以其 user 行开头，含后续 tool/assistant 行），
+    /// <paramref name="beforeUserId"/> 为更早一页的边界（该 user 轮次不包含在结果里）。
+    /// </summary>
+    Task<AgentMessagePage> GetMessagePageAsync(long sessionId, int userTurns, long? beforeUserId = null,
+        CancellationToken ct = default);
     Task TouchSessionAsync(long id, CancellationToken ct = default);
 
     /// <summary>读取会话的滚动摘要（裁剪旧轮次后压缩保存的文本；无则空串）。</summary>
@@ -153,6 +167,9 @@ public static class RelativeTime
     }
 }
 public sealed record AgentMessageRow(string Role, string Content, string Timestamp, long Id = 0);
+
+/// <summary>按“用户轮次”分页的消息页：保证以 user 行开头，便于直接还原完整轮次。</summary>
+public sealed record AgentMessagePage(List<AgentMessageRow> Rows, long? OldestUserId, bool HasMore);
 
 public class ContextStore : IContextStore
 {
@@ -839,6 +856,38 @@ CREATE INDEX IF NOT EXISTS IX_agent_sessions_deleted_DeletedAt ON agent_sessions
         await tx.CommitAsync(ct);
     }
 
+    public async Task ReplaceMessagesFromAsync(long sessionId, long fromMessageId,
+        IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default)
+    {
+        var list = messages.ToList();
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
+
+        await using (var delete = connection.CreateCommand())
+        {
+            delete.Transaction = tx;
+            delete.CommandText = "DELETE FROM agent_messages WHERE SessionId=@s AND Id >= @from;";
+            delete.Parameters.AddWithValue("@s", sessionId);
+            delete.Parameters.AddWithValue("@from", fromMessageId);
+            await delete.ExecuteNonQueryAsync(ct);
+        }
+
+        var now = DateTime.UtcNow.ToString("O");
+        foreach (var (role, content) in list)
+        {
+            await using var insert = connection.CreateCommand();
+            insert.Transaction = tx;
+            insert.CommandText = "INSERT INTO agent_messages(SessionId, Role, Content, Timestamp) VALUES (@s, @r, @c, @now);";
+            insert.Parameters.AddWithValue("@s", sessionId);
+            insert.Parameters.AddWithValue("@r", role);
+            insert.Parameters.AddWithValue("@c", content);
+            insert.Parameters.AddWithValue("@now", now);
+            await insert.ExecuteNonQueryAsync(ct);
+        }
+
+        await tx.CommitAsync(ct);
+    }
+
     public async Task<List<AgentMessageRow>> GetMessagesAsync(long sessionId, CancellationToken ct = default)
     {
         var list = new List<AgentMessageRow>();
@@ -870,6 +919,64 @@ CREATE INDEX IF NOT EXISTS IX_agent_sessions_deleted_DeletedAt ON agent_sessions
             list.Add(new AgentMessageRow(reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(0)));
         list.Reverse();   // 返回升序（与 GetMessagesAsync 一致），便于前端直接 append
         return list;
+    }
+
+    public async Task<AgentMessagePage> GetMessagePageAsync(long sessionId, int userTurns, long? beforeUserId = null,
+        CancellationToken ct = default)
+    {
+        var limit = Math.Clamp(userTurns, 1, 200);
+        await using var connection = await OpenConnectionAsync(ct);
+
+        // 1) 取最近 N 个 user 行的 Id（分页边界只认 user 轮次，避免把一轮工具轨迹切成两半）。
+        var userIds = new List<long>();
+        await using (var ids = connection.CreateCommand())
+        {
+            ids.CommandText = "SELECT Id FROM agent_messages WHERE SessionId=@s AND Role='user'"
+                            + (beforeUserId is > 0 ? " AND Id < @before" : string.Empty)
+                            + " ORDER BY Id DESC LIMIT @n;";
+            ids.Parameters.AddWithValue("@s", sessionId);
+            if (beforeUserId is > 0)
+                ids.Parameters.AddWithValue("@before", beforeUserId.Value);
+            ids.Parameters.AddWithValue("@n", limit);
+            await using var reader = await ids.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                userIds.Add(reader.GetInt64(0));
+        }
+
+        if (userIds.Count == 0)
+        {
+            // 旧数据/异常会话没有 user 行：退回最近消息，至少保证会话不是空白。
+            var fallback = await GetRecentMessagesAsync(sessionId, beforeUserId, limit * 20, ct);
+            return new AgentMessagePage(fallback, null, false);
+        }
+
+        var minUserId = userIds.Min();
+
+        var rows = new List<AgentMessageRow>();
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "SELECT Id, Role, Content, Timestamp FROM agent_messages WHERE SessionId=@s AND Id >= @min"
+                            + (beforeUserId is > 0 ? " AND Id < @before" : string.Empty)
+                            + " ORDER BY Id;";
+            cmd.Parameters.AddWithValue("@s", sessionId);
+            cmd.Parameters.AddWithValue("@min", minUserId);
+            if (beforeUserId is > 0)
+                cmd.Parameters.AddWithValue("@before", beforeUserId.Value);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                rows.Add(new AgentMessageRow(reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(0)));
+        }
+
+        var hasMore = false;
+        await using (var more = connection.CreateCommand())
+        {
+            more.CommandText = "SELECT EXISTS(SELECT 1 FROM agent_messages WHERE SessionId=@s AND Role='user' AND Id < @min);";
+            more.Parameters.AddWithValue("@s", sessionId);
+            more.Parameters.AddWithValue("@min", minUserId);
+            hasMore = Convert.ToInt32(await more.ExecuteScalarAsync(ct)) != 0;
+        }
+
+        return new AgentMessagePage(rows, minUserId, hasMore);
     }
 
     public async Task<int> PruneAsync(int maxSessions, int maxMessagesPerSession, int retentionDays, CancellationToken ct = default)

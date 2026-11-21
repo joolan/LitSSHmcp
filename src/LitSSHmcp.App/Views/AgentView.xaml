@@ -4,21 +4,12 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
     <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="AgentViewResources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
 
-        <!-- 复用：hover 显示但不撑开（常占位、仅切透明度/命中） -->
-        <Style x:Key="HoverRevealStyle" TargetType="StackPanel">
-            <Setter Property="Opacity" Value="0"/>
-            <Setter Property="IsHitTestVisible" Value="False"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
-                    <Setter Property="Opacity" Value="1"/>
-                    <Setter Property="IsHitTestVisible" Value="True"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
-        <DataTemplate x:Key="RelatedTargetChip">
+            <DataTemplate x:Key="RelatedTargetChip">
             <Border Background="{DynamicResource AppSurfaceAltBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                     BorderThickness="1" CornerRadius="5" Padding="8,4" Margin="0,0,6,6"
                     Cursor="Hand" MouseLeftButtonUp="OnRelatedTargetClick" ToolTip="{Binding Subtitle}">
@@ -31,6 +22,7 @@
                 </StackPanel>
             </Border>
         </DataTemplate>
+        </ResourceDictionary>
     </UserControl.Resources>
     <Grid AllowDrop="True" DragOver="OnComposerDragOver" Drop="OnComposerDrop" PreviewKeyDown="OnWindowPreviewKeyDown" Margin="10,0,10,10">
             <Grid.ColumnDefinitions>
@@ -327,7 +319,7 @@
                     <StackPanel>
                         <!-- 单会话转录分页：加载更早的记录（仅在还有更早内容时显示） -->
                         <ui:Button Content="加载更早的记录" HorizontalAlignment="Center" Margin="0,6,0,2" Padding="14,4"
-                                   Command="{Binding LoadOlderHistoryCommand}"
+                                   Click="OnLoadOlderHistoryClick"
                                    Visibility="{Binding HasMoreHistory, Converter={StaticResource BoolToVis}}"/>
                         <ItemsControl ItemsSource="{Binding TurnsView}" Margin="4,2,8,2">
                         <ItemsControl.ItemTemplate>
@@ -516,14 +508,14 @@
                                                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                                 </Expander.Header>
                                                 <StackPanel>
-                                                    <controls:MarkdownBox Markdown="{Binding ReasoningText}"/>
+                                                    <controls:MarkdownBox Markdown="{Binding ReasoningText}" IsStreaming="{Binding IsRunning}"/>
                                                     <ui:Button Content="收起思考" HorizontalAlignment="Left"
                                                                Margin="0,6,0,0" Padding="10,3"
                                                                Click="OnCollapseReasoning"
                                                                Visibility="{Binding ShowReasoning, Converter={StaticResource BoolToVis}}"/>
                                                 </StackPanel>
                                             </Expander>
-                                            <controls:MarkdownBox Markdown="{Binding AssistantText}"/>
+                                            <controls:MarkdownBox Markdown="{Binding AssistantText}" IsStreaming="{Binding IsRunning}"/>
                                             <TextBlock Text="{Binding Note}" Foreground="{DynamicResource AppDangerBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeCaption}"
                                                        Margin="0,3,0,0" Visibility="{Binding NoteVisibility}"/>
                                             <StackPanel Margin="0,10,0,0"

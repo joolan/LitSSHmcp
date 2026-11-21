@@ -92,6 +92,8 @@ public partial class App : Application
         // 端口转发：退出时统一停止活动隧道并断开 SSH 连接
         Exit += (_, _) => PetService.Close();
         Exit += (_, _) => AppServiceFactory.DisposePortForwardService();
+        // 内置 MCP 宿主池：退出时结束池内常驻子进程（进程级，需在退出前统一释放）
+        Exit += (_, _) => _ = LitSSHmcp.Agent.McpBuiltinHostPool.ShutdownAsync();
 
         // 远程桌面：退出时拆除活动隧道（查看器进程由用户自行关闭）
         Exit += (_, _) => AppServiceFactory.DisposeRemoteDesktopService();
@@ -307,6 +309,7 @@ public partial class App : Application
             _wakeOnLanScheduler.Start();
 
             _ = StartAiTaskSchedulerAsync();
+            _ = AgentStartupPrewarm.RunAsync();
 
             Exit += (_, _) =>
             {

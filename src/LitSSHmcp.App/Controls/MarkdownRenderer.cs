@@ -19,6 +19,10 @@ public static class MarkdownRenderer
 
     private sealed class Renderer
     {
+        // 字体对象可复用：每次渲染都 new FontFamily 会产生多余分配。
+        private static readonly FontFamily UiFont = new("Microsoft YaHei");
+        private static readonly FontFamily MonoFont = new("Consolas");
+
         private static readonly Regex InlinePattern = new(
             @"(\*\*[^*]+\*\*)|(`[^`]+`)|(~~[^~]+~~)|(\*[^*]+\*)|(_[^_]+_)|(\[[^\]]+\]\([^)]+\))|(\[\^[^\]]+\])",
             RegexOptions.Compiled);
@@ -37,7 +41,7 @@ public static class MarkdownRenderer
             var doc = new FlowDocument
             {
                 PagePadding = new Thickness(0),
-                FontFamily = new FontFamily("Microsoft YaHei"),
+                FontFamily = UiFont,
                 FontSize = 13,
                 Foreground = ThemeBrushes.TextPrimary
             };
@@ -156,7 +160,7 @@ public static class MarkdownRenderer
 
             var text = new TextBlock
             {
-                FontFamily = new FontFamily("Consolas"),
+                FontFamily = MonoFont,
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = ThemeBrushes.CodeText,
@@ -452,7 +456,7 @@ public static class MarkdownRenderer
                 else if (token.StartsWith('`'))
                     paragraph.Inlines.Add(new Run(token[1..^1])
                     {
-                        FontFamily = new FontFamily("Consolas"),
+                        FontFamily = MonoFont,
                         Foreground = ThemeBrushes.CodeText,
                         Background = ThemeBrushes.CodeBg
                     });

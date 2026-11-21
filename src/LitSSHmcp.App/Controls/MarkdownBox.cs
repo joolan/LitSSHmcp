@@ -14,10 +14,33 @@ public sealed class MarkdownBox : FlowDocumentScrollViewer
         nameof(Markdown), typeof(string), typeof(MarkdownBox),
         new PropertyMetadata(string.Empty, OnMarkdownChanged));
 
+    /// <summary>
+    /// 是否处于流式输出中。长文本流式输出时不再每个增量都做一次完整 Markdown 解析
+    /// （否则整体复杂度是 O(n²)，长回答会明显卡顿），而是用纯文本增量刷新，
+    /// 流式结束后再做一次完整渲染。
+    /// </summary>
+    public static readonly DependencyProperty IsStreamingProperty = DependencyProperty.Register(
+        nameof(IsStreaming), typeof(bool), typeof(MarkdownBox),
+        new PropertyMetadata(false, OnIsStreamingChanged));
+
+    /// <summary>流式输出超过该长度后切换为轻量纯文本预览；短回答仍保持实时 Markdown。</summary>
+    private const int StreamingPlainTextThreshold = 12000;
+
+    private static readonly FontFamily StreamFont = new("Microsoft YaHei");
+
+    private FlowDocument? _streamDocument;
+    private Run? _streamRun;
+
     public string Markdown
     {
         get => (string)GetValue(MarkdownProperty);
         set => SetValue(MarkdownProperty, value);
+    }
+
+    public bool IsStreaming
+    {
+        get => (bool)GetValue(IsStreamingProperty);
+        set => SetValue(IsStreamingProperty, value);
     }
 
     public MarkdownBox()
@@ -41,7 +64,10 @@ public sealed class MarkdownBox : FlowDocumentScrollViewer
             Dispatcher.Invoke(OnThemeChanged);
             return;
         }
-        Document = MarkdownRenderer.Render(Markdown);
+        // 主题切换后重建流式预览文档，让纯文本预览也使用新主题画刷。
+        _streamDocument = null;
+        _streamRun = null;
+        UpdateDocument();
     }
 
     // 本控件不自行滚动（内容随外层聊天区滚动），把滚轮事件转发给父级，避免鼠标停在 Markdown 上时外层无法滚动。
@@ -59,5 +85,40 @@ public sealed class MarkdownBox : FlowDocumentScrollViewer
     }
 
     private static void OnMarkdownChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
-        ((MarkdownBox)d).Document = MarkdownRenderer.Render(e.NewValue as string);
+        ((MarkdownBox)d).UpdateDocument();
+
+    private static void OnIsStreamingChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
+        ((MarkdownBox)d).UpdateDocument();
+
+    private void UpdateDocument()
+    {
+        var text = Markdown ?? string.Empty;
+
+        // 短文本的 Markdown 渲染很便宜，保持实时格式化体验；
+        // 长文本改用单段落纯文本预览，避免流式期间反复解析/重建整个文档。
+        if (IsStreaming && text.Length > StreamingPlainTextThreshold)
+        {
+            if (_streamDocument is null)
+            {
+                _streamRun = new Run();
+                _streamDocument = new FlowDocument
+                {
+                    PagePadding = new Thickness(0),
+                    FontFamily = StreamFont,
+                    FontSize = 13,
+                    Foreground = ThemeBrushes.TextPrimary
+                };
+                _streamDocument.Blocks.Add(new Paragraph(_streamRun) { Margin = new Thickness(0, 2, 0, 2) });
+            }
+
+            _streamRun!.Text = text;
+            if (!ReferenceEquals(Document, _streamDocument))
+                Document = _streamDocument;
+            return;
+        }
+
+        _streamDocument = null;
+        _streamRun = null;
+        Document = MarkdownRenderer.Render(text);
+    }
 }

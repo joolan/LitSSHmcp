@@ -469,6 +469,78 @@ public class ContextStoreTests : IDisposable
         return Convert.ToInt64(await cmd.ExecuteScalarAsync() ?? 0L);
     }
 
+    [Fact]
+    public async Task Message_page_returns_complete_user_turns_and_pages_backwards()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("分页");
+
+        for (var i = 1; i <= 5; i++)
+        {
+            await store.AppendMessageAsync(id, "user", $"u{i}");
+            await store.AppendMessageAsync(id, "tool", $"{{\"id\":{i}}}");
+            await store.AppendMessageAsync(id, "assistant", $"a{i}");
+        }
+
+        var page1 = await store.GetMessagePageAsync(id, 2);
+        Assert.True(page1.HasMore);
+        Assert.NotNull(page1.OldestUserId);
+        Assert.Equal(6, page1.Rows.Count);
+        Assert.Equal("u4", page1.Rows.First(r => r.Role == "user").Content);
+        Assert.DoesNotContain(page1.Rows, r => r.Content == "u3");
+
+        var page2 = await store.GetMessagePageAsync(id, 2, page1.OldestUserId);
+        Assert.True(page2.HasMore);
+        Assert.Equal(6, page2.Rows.Count);
+        Assert.Equal("u2", page2.Rows.First(r => r.Role == "user").Content);
+
+        var page3 = await store.GetMessagePageAsync(id, 2, page2.OldestUserId);
+        Assert.False(page3.HasMore);
+        Assert.Equal(3, page3.Rows.Count);
+        Assert.Equal("u1", page3.Rows.First(r => r.Role == "user").Content);
+    }
+
+    [Fact]
+    public async Task Message_page_falls_back_when_session_has_no_user_rows()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("无用户行");
+        await store.AppendMessageAsync(id, "assistant", "只有回答");
+
+        var page = await store.GetMessagePageAsync(id, 3);
+        Assert.False(page.HasMore);
+        Assert.Null(page.OldestUserId);
+        Assert.Single(page.Rows);
+        Assert.Equal("只有回答", page.Rows[0].Content);
+    }
+
+    [Fact]
+    public async Task Replace_messages_from_preserves_older_rows()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        var id = await store.CreateSessionAsync("增量落库");
+        await store.AppendMessageAsync(id, "user", "u1");
+        await store.AppendMessageAsync(id, "assistant", "a1");
+        await store.AppendMessageAsync(id, "user", "u2");
+        await store.AppendMessageAsync(id, "assistant", "a2");
+
+        var page = await store.GetMessagePageAsync(id, 1);
+        Assert.NotNull(page.OldestUserId);
+
+        await store.ReplaceMessagesFromAsync(id, page.OldestUserId!.Value,
+            new[] { ("user", "u2b"), ("assistant", "a2b") });
+
+        var after = await store.GetMessagesAsync(id);
+        Assert.Equal(4, after.Count);
+        Assert.Equal("u1", after[0].Content);
+        Assert.Equal("a1", after[1].Content);
+        Assert.Equal("u2b", after[2].Content);
+        Assert.Equal("a2b", after[3].Content);
+    }
+
     public void Dispose()
     {
         try { File.Delete(_dbPath); } catch { /* ignore */ }

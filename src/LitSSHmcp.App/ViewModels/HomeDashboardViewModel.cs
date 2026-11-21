@@ -87,7 +87,7 @@ public sealed class HomeDashboardViewModel : INotifyPropertyChanged, IDisposable
     public ICommand SetProcessSortCommand { get; }
 
 
-    public ObservableCollection<HomeProcessRow> Processes { get; } = new();
+    public RangeObservableCollection<HomeProcessRow> Processes { get; } = new();
 
     public string MachineName => _machineName;
     public string MachineSummaryText => string.IsNullOrWhiteSpace(_osName)
@@ -414,13 +414,16 @@ public sealed class HomeDashboardViewModel : INotifyPropertyChanged, IDisposable
 
     private void UpdateProcesses()
     {
-        Processes.Clear();
         if (_snapshot is null)
+        {
+            Processes.ReplaceRange(Array.Empty<HomeProcessRow>());
             return;
+        }
 
         var byMemory = string.Equals(_processSortMode, "内存", StringComparison.Ordinal);
         var source = byMemory ? _snapshot.TopMemoryProcesses : _snapshot.TopCpuProcesses;
         var totalMemory = Math.Max(1, _snapshot.MemoryTotalBytes);
+        var rows = new List<HomeProcessRow>(source.Count);
         for (var i = 0; i < source.Count; i++)
         {
             var process = source[i];
@@ -430,8 +433,11 @@ public sealed class HomeDashboardViewModel : INotifyPropertyChanged, IDisposable
             var bar = byMemory
                 ? Math.Clamp(process.WorkingSetBytes * 100.0 / totalMemory, 0, 100)
                 : process.CpuPercent;
-            Processes.Add(new HomeProcessRow(i + 1, process.Name, value, bar));
+            rows.Add(new HomeProcessRow(i + 1, process.Name, value, bar));
         }
+
+        // 每 2 秒刷新一次：一次性 Reset，避免逐项 Add 触发多次布局。
+        Processes.ReplaceRange(rows);
     }
 
     private void NotifyDashboardChanged()

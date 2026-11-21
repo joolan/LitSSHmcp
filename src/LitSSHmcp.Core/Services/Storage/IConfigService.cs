@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 
@@ -70,13 +71,35 @@ public class ConfigService : IConfigService, IStrictConfigService
     private static readonly ConcurrentDictionary<string, PathCache> LoadCache =
         new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>深拷贝/指纹用的紧凑序列化选项：不需要缩进，减少 CPU 与临时字符串。</summary>
+    private static readonly JsonSerializerOptions CloneOptions = new()
+    {
+        WriteIndented = false,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
     private readonly string _configPath;
     private readonly ISecretProtector _protector;
 
-    private sealed class ConfigSnapshot(AppConfig config, string fingerprint)
+    private sealed class ConfigSnapshot(AppConfig config)
     {
+        private readonly object _fingerprintGate = new();
+        private string? _fingerprint;
+
         public AppConfig Config { get; } = config;
-        public string Fingerprint { get; } = fingerprint;
+
+        /// <summary>指纹只在保存时用到：惰性计算并缓存，避免每次读配置都序列化 + SHA-256。</summary>
+        public string GetFingerprint()
+        {
+            var fingerprint = _fingerprint;
+            if (fingerprint is not null)
+                return fingerprint;
+
+            lock (_fingerprintGate)
+                return _fingerprint ??= Fingerprint(Config);
+        }
     }
 
     private sealed class PathCache
@@ -191,7 +214,7 @@ public class ConfigService : IConfigService, IStrictConfigService
         }
 
         config = Clone(cached!);
-        Remember(config, persisted!);
+        Remember(config, persisted!, snapshotIsImmutable: true);
         return true;
     }
 
@@ -220,7 +243,7 @@ public class ConfigService : IConfigService, IStrictConfigService
 
             if (current is not null &&
                 Snapshots.TryGetValue(config, out var snapshot) &&
-                !string.Equals(snapshot.Fingerprint, Fingerprint(current), StringComparison.Ordinal))
+                !string.Equals(snapshot.GetFingerprint(), Fingerprint(current), StringComparison.Ordinal))
             {
                 // 其他窗口/进程已写入新配置：把本地修改三路合并到最新内容；
                 // 同一字段双方都改则抛 ConfigConflictException，禁止静默覆盖。
@@ -304,17 +327,19 @@ public class ConfigService : IConfigService, IStrictConfigService
 
     private static AppConfig Clone(AppConfig config)
         => JsonSerializer.Deserialize<AppConfig>(
-               JsonSerializer.Serialize(config, AppConfigJson.Options), AppConfigJson.Options)
+               JsonSerializer.Serialize(config, CloneOptions), CloneOptions)
            ?? new AppConfig();
 
     private static string Fingerprint(AppConfig config)
         => Convert.ToHexString(SHA256.HashData(
-            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(config, AppConfigJson.Options))));
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(config, CloneOptions))));
 
-    private static void Remember(AppConfig config, AppConfig persisted)
+    private static void Remember(AppConfig config, AppConfig persisted, bool snapshotIsImmutable = false)
     {
-        var snapshot = Clone(persisted);
-        Snapshots.AddOrUpdate(config, new ConfigSnapshot(snapshot, Fingerprint(snapshot)));
+        // snapshot 只在保存时用于三路合并/冲突判定，必须与调用方后续修改隔离。
+        // 缓存命中时 persisted 本身就是内部副本（不会外泄），可直接共享，省一次深拷贝。
+        var snapshot = snapshotIsImmutable ? persisted : Clone(persisted);
+        Snapshots.AddOrUpdate(config, new ConfigSnapshot(snapshot));
     }
 
     private async Task WriteAtomicAsync(string json)

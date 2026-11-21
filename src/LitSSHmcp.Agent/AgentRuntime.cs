@@ -76,6 +76,7 @@ public sealed class AgentRuntime : IAsyncDisposable
     private AgentPromptContext? _activeAgent;
     private bool _planMode;
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
+    private readonly McpHostLease? _builtinHostLease;
 
     private const string ReadOnlyNote =
         "\n\n【只读模式（全局配置）】仅可调用只读工具；禁止任何写操作（命令/SQL/文件写入/重启等）。"
@@ -106,9 +107,11 @@ public sealed class AgentRuntime : IAsyncDisposable
         IEnumerable<ChatMessage>? history,
         string? assetGraph = null,
         AgentSession.ToolLimitContinuation? toolLimitContinuation = null,
-        string? workingMemoryJson = null)
+        string? workingMemoryJson = null,
+        McpHostLease? builtinHostLease = null)
     {
         Hosts = hosts;
+        _builtinHostLease = builtinHostLease;
         McpWarnings = mcpWarnings;
         McpHostStatuses = mcpHostStatuses;
         Provider = provider;
@@ -312,7 +315,9 @@ public sealed class AgentRuntime : IAsyncDisposable
         long? sessionId = null,
         IFleetPlanStore? fleetPlanStore = null,
         AgentSession.ToolLimitContinuation? toolLimitContinuation = null,
-        string? workingMemoryJson = null)
+        string? workingMemoryJson = null,
+        bool shareBuiltinHost = false,
+        int configGeneration = 0)
     {
         // D8 启用层：会话级连接器子集只在全局启用集合内收窄（null=继承全局默认集合；全局停用恒出局）
         var servers = McpSubsetPolicy.EffectiveServers(AgentMcpServerConfig.Normalize(config.McpServers), enabledMcpIds);
@@ -323,10 +328,15 @@ public sealed class AgentRuntime : IAsyncDisposable
         var infoById = new Dictionary<string, ExternalMcpServerInfo>(StringComparer.Ordinal);
         var serverInstructions = new List<string>();
         McpToolHost? builtinHost = null;
+        McpToolHost? builtinConnecting = null;
+        Task? builtinConnectTask = null;
+        McpHostLease? builtinLease = null;
+        Task<McpHostLease>? builtinLeaseTask = null;
 
         try
         {
             // 1) 内置 LitSSH MCP：默认启用；停用则**跳过 exe 解析**（缺 exe 不再导致整个助手不可用）
+            //    与外部 MCP 并行连接：内置常见 1~2s，外部服务器可能更慢，串行会叠加首开时间。
             if (builtin is { Enabled: true })
             {
                 var launch = AgentPaths.ResolveLaunch(config.McpServerPath)
@@ -334,20 +344,18 @@ public sealed class AgentRuntime : IAsyncDisposable
                         "未找到 MCP 服务器(LitSSHmcp.McpServer.exe): 请将服务器放到 App 的 mcp/ 目录, 或在「AI 助手设置」中指定路径。");
                 // 归因身份与会话工作目录都由宿主 spawn 时注入（评估报告 D1 / §10.A.5、需求 D / §5.3.1），子进程不自行决定；
                 // ownerUsername/ownerRole 供子进程匹配授权矩阵与数据可见范围（M3-4 / P0-2，仅 Web 宿主注入）
-                var host = McpToolHost.ForBuiltin(launch, ownerUserId, sessionWorkspaceDir, ownerUsername, ownerRole);
-                try
+                if (shareBuiltinHost)
                 {
-                    await host.ConnectAsync(ct);
+                    // 进程级宿主池：相同身份 + 工作目录 + 配置代际复用已连接子进程（约省 1.5s）。
+                    var key = McpBuiltinHostPool.CreateKey(launch, ownerUserId, sessionWorkspaceDir,
+                        ownerUsername, ownerRole, configGeneration);
+                    builtinLeaseTask = McpBuiltinHostPool.AcquireAsync(key, launch, ct);
                 }
-                catch
+                else
                 {
-                    await host.DisposeAsync();
-                    throw;
+                    builtinConnecting = McpToolHost.ForBuiltin(launch, ownerUserId, sessionWorkspaceDir, ownerUsername, ownerRole);
+                    builtinConnectTask = builtinConnecting.ConnectAsync(ct);
                 }
-                builtinHost = host;
-                hosts.Add(host);
-                if (!string.IsNullOrWhiteSpace(host.ServerInstructions))
-                    serverInstructions.Add(host.ServerInstructions!.Trim());
             }
 
             // 2) 外部 MCP：并行连接 + 单台 10 秒超时；单个失败只降级为警告（不阻断会话启动）
@@ -376,10 +384,59 @@ public sealed class AgentRuntime : IAsyncDisposable
                 }
             }
 
+            // 内置连接失败仍按原语义抛错（外部已连上的 host 由下方 catch 统一释放）
+            if (builtinLeaseTask is not null)
+            {
+                builtinLease = await builtinLeaseTask;
+                builtinHost = builtinLease.Host;
+                hosts.Add(builtinHost);
+                if (!string.IsNullOrWhiteSpace(builtinHost.ServerInstructions))
+                    serverInstructions.Add(builtinHost.ServerInstructions!.Trim());
+            }
+            else if (builtinConnectTask is not null && builtinConnecting is not null)
+            {
+                try
+                {
+                    await builtinConnectTask;
+                }
+                catch
+                {
+                    await builtinConnecting.DisposeAsync();
+                    throw;
+                }
+
+                builtinHost = builtinConnecting;
+                hosts.Add(builtinConnecting);
+                if (!string.IsNullOrWhiteSpace(builtinConnecting.ServerInstructions))
+                    serverInstructions.Add(builtinConnecting.ServerInstructions!.Trim());
+            }
+
             ct.ThrowIfCancellationRequested();
         }
         catch
         {
+            // 池化内置宿主只归还租约；未池化宿主仍需显式关停。
+            if (builtinLeaseTask is not null && builtinLease is null)
+            {
+                try { builtinLease = await builtinLeaseTask; } catch { /* 连接失败无需释放 */ }
+            }
+            if (builtinLease is not null)
+            {
+                hosts.Remove(builtinLease.Host);
+                try { await builtinLease.DisposeAsync(); } catch { /* 忽略归还失败 */ }
+                builtinLease = null;
+            }
+
+            // 内置连接可能在外部连接期间仍在进行：先等它结束再释放，避免子进程泄漏。
+            if (builtinConnecting is not null && !hosts.Contains(builtinConnecting))
+            {
+                if (builtinConnectTask is not null)
+                {
+                    try { await builtinConnectTask; } catch { /* 失败已在主流程处理 */ }
+                }
+                try { await builtinConnecting.DisposeAsync(); } catch { /* 忽略关停失败 */ }
+            }
+
             foreach (var h in hosts)
             {
                 try { await h.DisposeAsync(); } catch { /* 忽略关停失败 */ }
@@ -619,7 +676,7 @@ public sealed class AgentRuntime : IAsyncDisposable
                 hostStatuses.Add(new McpHostStatus(s.Id, s.Name, false, info.Error is null, info.ToolCount, info.Error));
         }
 
-        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, fleetPlans, ownerUserId ?? "local", sessionId, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, graphContext, spill, workLog, history, assetGraph, toolLimitContinuation, workingMemoryJson);
+        var runtime = new AgentRuntime(hosts, mcpWarnings, hostStatuses, provider, memory, fleetPlans, ownerUserId ?? "local", sessionId, memoryDisabledReason, config, promptBuilder, activeAgent, baseTools, subTools, roundNotifier, onPlan, recall, graphContext, spill, workLog, history, assetGraph, toolLimitContinuation, workingMemoryJson, builtinLease);
         fleetRuntime = runtime;
         runtime.WorkspaceRoot = workspaceRoot;
         if (activeSkillIds is { Count: > 0 })
@@ -802,7 +859,15 @@ public sealed class AgentRuntime : IAsyncDisposable
     {
         foreach (var host in Hosts)
         {
+            // 池化内置宿主由池统一管理，这里只归还租约。
+            if (ReferenceEquals(host, _builtinHostLease?.Host))
+                continue;
             try { await host.DisposeAsync(); } catch { /* 关停子进程失败忽略 */ }
+        }
+
+        if (_builtinHostLease is not null)
+        {
+            try { await _builtinHostLease.DisposeAsync(); } catch { /* 忽略归还失败 */ }
         }
     }
 }

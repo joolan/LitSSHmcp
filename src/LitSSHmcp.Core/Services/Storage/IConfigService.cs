@@ -352,6 +352,13 @@ public class ConfigService : IConfigService, IStrictConfigService
         foreach (var rd in config.RemoteDesktops ?? Array.Empty<RemoteDesktopConfig>())
             rd.Password = _protector.Protect(rd.Password);
 
+        foreach (var site in config.FileTransferSites ?? Array.Empty<FileTransferSiteConfig>())
+        {
+            site.Password = _protector.Protect(site.Password);
+            site.ClientCertificatePassword = _protector.Protect(site.ClientCertificatePassword);
+            site.ProxyPassword = _protector.Protect(site.ProxyPassword);
+        }
+
         foreach (var jenkins in config.Jenkins?.Connections ?? Array.Empty<JenkinsConnectionConfig>())
             jenkins.ApiToken = _protector.Protect(jenkins.ApiToken) ?? string.Empty;
 
@@ -402,6 +409,13 @@ public class ConfigService : IConfigService, IStrictConfigService
 
         foreach (var rd in config.RemoteDesktops ?? Array.Empty<RemoteDesktopConfig>())
             rd.Password = _protector.Unprotect(rd.Password);
+
+        foreach (var site in config.FileTransferSites ?? Array.Empty<FileTransferSiteConfig>())
+        {
+            site.Password = _protector.Unprotect(site.Password);
+            site.ClientCertificatePassword = _protector.Unprotect(site.ClientCertificatePassword);
+            site.ProxyPassword = _protector.Unprotect(site.ProxyPassword);
+        }
 
         foreach (var jenkins in config.Jenkins?.Connections ?? Array.Empty<JenkinsConnectionConfig>())
             jenkins.ApiToken = _protector.Unprotect(jenkins.ApiToken) ?? string.Empty;
@@ -460,6 +474,9 @@ public class ConfigService : IConfigService, IStrictConfigService
 
         return config.DataSources.Any(ds => HasPlaintext(ds.Password)) ||
                (config.RemoteDesktops ?? Array.Empty<RemoteDesktopConfig>()).Any(rd => HasPlaintext(rd.Password)) ||
+               (config.FileTransferSites ?? Array.Empty<FileTransferSiteConfig>()).Any(site =>
+                   HasPlaintext(site.Password) || HasPlaintext(site.ClientCertificatePassword) ||
+                   HasPlaintext(site.ProxyPassword)) ||
                (config.Agent?.Providers ?? Array.Empty<AgentProviderGroupConfig>()).Any(p => HasPlaintext(p.ApiKey)) ||
                (config.Agent?.Memory is not null && HasPlaintext(config.Agent.Memory.ApiKey)) ||
                (config.Web?.Https is not null && HasPlaintext(config.Web.Https.CertificatePassword)) ||

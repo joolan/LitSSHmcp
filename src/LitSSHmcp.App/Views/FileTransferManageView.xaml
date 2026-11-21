@@ -1,0 +1,180 @@
+<UserControl x:Class="LitSSHmcp.App.Views.FileTransferManageView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+    <Grid Margin="{DynamicResource AppPageMargin}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <controls:PageHeader x:Name="Header" Grid.Row="0" Icon="CloudArrowUp24" Title="文件传输"
+                             Subtitle="FTP / FTPS / SFTP 站点；密码仅在本机 DPAPI 加密保存">
+            <controls:PageHeader.Actions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:TextBox Style="{DynamicResource PageSearchBoxStyle}"
+                                Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                PlaceholderText="搜索名称 / 主机 / 分组" VerticalAlignment="Center"
+                                AutomationProperties.Name="搜索文件传输站点"/>
+                    <CheckBox Content="卡片视图" IsChecked="{Binding IsCardView}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                    <ui:Button Content="添加 FTP 站点" Icon="{ui:SymbolIcon Add24}" Appearance="Primary"
+                               Padding="12,4" Margin="8,0,0,0" Click="OnAddClick"/>
+                </StackPanel>
+            </controls:PageHeader.Actions>
+        </controls:PageHeader>
+
+        <DockPanel Grid.Row="1" Margin="0,0,0,10">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <ui:Button Content="刷新" Icon="{ui:SymbolIcon ArrowSync24}" Padding="12,4"
+                           Click="OnRefreshClick"/>
+            </StackPanel>
+            <TextBlock Text="SFTP 复用「SSH 服务器管理」中的服务器配置；FTP/FTPS 站点在此维护。"
+                       VerticalAlignment="Center" Style="{DynamicResource MutedTextStyle}"/>
+        </DockPanel>
+
+        <Border Grid.Row="2">
+            <Grid>
+                <ListView x:Name="SiteList" ItemsSource="{Binding FilteredSites}"
+                          SelectedItem="{Binding SelectedItem}"
+                          Visibility="{Binding IsListView, Converter={StaticResource BoolToVis}}"
+                          Padding="3" MouseDoubleClick="OnItemDoubleClick"
+                          PreviewMouseRightButtonDown="OnListPreviewRightClick"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          ScrollViewer.CanContentScroll="False">
+                    <ListView.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="打开" Click="OnOpenClick"/>
+                            <MenuItem Header="测试连接" Click="OnTestClick"/>
+                            <MenuItem Header="编辑" Click="OnEditClick"/>
+                            <Separator/>
+                            <MenuItem Header="删除" Foreground="{DynamicResource AppDangerBrush}" Click="OnDeleteClick"/>
+                        </ContextMenu>
+                    </ListView.ContextMenu>
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="名称" Width="170" DisplayMemberBinding="{Binding Name}"/>
+                            <GridViewColumn Header="协议" Width="60" DisplayMemberBinding="{Binding ProtocolText}"/>
+                            <GridViewColumn Header="主机" Width="180" DisplayMemberBinding="{Binding Host}"/>
+                            <GridViewColumn Header="端口" Width="70">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Port}" HorizontalAlignment="Right" Margin="0,0,8,0"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="账号" Width="130" DisplayMemberBinding="{Binding Username}"/>
+                            <GridViewColumn Header="安全" Width="80" DisplayMemberBinding="{Binding SecurityText}"/>
+                            <GridViewColumn Header="分组" Width="100" DisplayMemberBinding="{Binding Group}"/>
+                            <GridViewColumn Header="来源" Width="100" DisplayMemberBinding="{Binding SourceText}"/>
+                            <GridViewColumn Header="最近连接" Width="130" DisplayMemberBinding="{Binding LastConnectedText}"/>
+                            <GridViewColumn Header="操作" Width="250">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:Button Content="打开" Padding="8,2" Margin="0,0,4,0"
+                                                       Click="OnOpenItemClick"/>
+                                            <ui:Button Content="测试" Padding="8,2" Margin="0,0,4,0"
+                                                       Click="OnTestItemClick"/>
+                                            <ui:Button Content="编辑" Padding="8,2" Margin="0,0,4,0"
+                                                       IsEnabled="{Binding CanEdit}"
+                                                       Click="OnEditItemClick"/>
+                                            <ui:Button Content="删除" Padding="8,2"
+                                                       Foreground="{DynamicResource AppDangerBrush}"
+                                                       IsEnabled="{Binding CanDelete}"
+                                                       Click="OnDeleteItemClick"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              Visibility="{Binding IsCardView, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl ItemsSource="{Binding FilteredSites}" HorizontalAlignment="Stretch">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{DynamicResource CardBorderStyle}" Width="310" Margin="0,0,10,10">
+                                    <StackPanel>
+                                        <DockPanel>
+                                            <Border DockPanel.Dock="Left" Background="{DynamicResource AppAccentSubtleBrush}"
+                                                    CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                                                <TextBlock Text="{Binding ProtocolText}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                           Foreground="{DynamicResource AppAccentBrush}"/>
+                                            </Border>
+                                            <Border DockPanel.Dock="Right" Background="{DynamicResource AppDangerSubtleBrush}"
+                                                    CornerRadius="4" Padding="6,2"
+                                                    Visibility="{Binding IsInsecure, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="明文" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                           Foreground="{DynamicResource AppDangerBrush}"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding Name}" FontSize="{DynamicResource AppFontSizeSubtitle}"
+                                                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                        <TextBlock Text="{Binding Host}" FontFamily="{DynamicResource AppFontMonoFamily}" Margin="0,8,0,2"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}">
+                                            <Run Text="端口 "/><Run Text="{Binding Port, Mode=OneWay}"/>
+                                            <Run Text=" · "/><Run Text="{Binding Username, Mode=OneWay}"/>
+                                        </TextBlock>
+                                        <TextBlock FontSize="{DynamicResource AppFontSizeMicro}" Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,2,0,0">
+                                            <Run Text="{Binding AuthText, Mode=OneWay}"/>
+                                            <Run Text=" · "/><Run Text="{Binding Group, Mode=OneWay}"/>
+                                            <Run Text=" · "/><Run Text="{Binding SourceText, Mode=OneWay}"/>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Description}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,6,0,0"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding LastConnectedText}" FontSize="{DynamicResource AppFontSizeMicro}" Margin="0,4,0,0"
+                                                   Foreground="{DynamicResource AppTextTertiaryBrush}"/>
+                                        <WrapPanel Margin="0,10,0,0">
+                                            <ui:Button Content="打开" Appearance="Primary" Padding="10,3" Margin="0,0,6,6"
+                                                       Click="OnOpenItemClick"/>
+                                            <ui:Button Content="测试" Padding="10,3" Margin="0,0,6,6"
+                                                       Click="OnTestItemClick"/>
+                                            <ui:Button Content="编辑" Padding="10,3" Margin="0,0,6,6"
+                                                       IsEnabled="{Binding CanEdit}" Click="OnEditItemClick"/>
+                                            <ui:Button Content="删除" Padding="10,3" Margin="0,0,0,6"
+                                                       Foreground="{DynamicResource AppDangerBrush}"
+                                                       IsEnabled="{Binding CanDelete}" Click="OnDeleteItemClick"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="430"
+                            Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
+                    <ui:SymbolIcon Symbol="CloudArrowUp24" FontSize="36" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource AppTextTertiaryBrush}" Margin="0,0,0,10"/>
+                    <TextBlock Text="还没有文件传输站点" Style="{DynamicResource EmptyStateTitleStyle}"/>
+                    <TextBlock Text="添加 FTP/FTPS 站点，或先在「SSH 服务器管理」中添加 SFTP 服务器。"
+                               Style="{DynamicResource EmptyStateHintStyle}" Margin="0,6,0,12"/>
+                    <ui:Button Content="添加 FTP 站点" Icon="{ui:SymbolIcon Add24}" Appearance="Primary"
+                               Padding="14,5" HorizontalAlignment="Center" Click="OnAddClick"/>
+                </StackPanel>
+
+                <Border Background="{DynamicResource AppCardBrush}" Opacity="0.72" Panel.ZIndex="10"
+                        Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                    <ui:ProgressRing IsIndeterminate="True" Width="36" Height="36"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     Foreground="{DynamicResource AppAccentBrush}"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Margin="0,8,0,0"
+                   Style="{DynamicResource MutedTextStyle}" TextWrapping="Wrap"/>
+    </Grid>
+</UserControl>

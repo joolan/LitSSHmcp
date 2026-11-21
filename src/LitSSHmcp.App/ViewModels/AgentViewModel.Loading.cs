@@ -79,8 +79,11 @@ public partial class AgentViewModel
         var (cts, ct) = BeginLoading("正在初始化", "读取本地配置…");
         try
         {
-            await _store.InitializeAsync();
-            var config = await _configService.LoadConfigAsync();
+            using (PerfLog.Scope("agent.init.store"))
+                await _store.InitializeAsync();
+            AppConfig config;
+            using (PerfLog.Scope("agent.init.config"))
+                config = await _configService.LoadConfigAsync();
             _fullConfig = config;
             _agentConfig = config.Agent ?? new AgentConfig();
             _agentConfig.LocalTerminal ??= new LocalTerminalConfig();
@@ -103,8 +106,10 @@ public partial class AgentViewModel
             SelectedAgent = PickAgent(_agentConfig.ActiveAgentId);
 
             SetLoadingStage("正在加载会话列表", "读取会话数据库…");
-            await ReloadGroupsAsync();
-            await ReloadSessionsAsync();
+            using (PerfLog.Scope("agent.init.groups"))
+                await ReloadGroupsAsync();
+            using (PerfLog.Scope("agent.init.sessions"))
+                await ReloadSessionsAsync();
             _suppressSelection = false;
             var target = Sessions.FirstOrDefault();
             if (target is not null)
@@ -113,7 +118,8 @@ public partial class AgentViewModel
                 SelectedSession = target;
                 _suppressSelection = false;
                 SyncSidebarSelection();
-                await LoadSessionCoreAsync(target.Id, ct);
+                using (PerfLog.Scope("agent.init.session"))
+                    await LoadSessionCoreAsync(target.Id, ct);
             }
             else
             {

@@ -11,6 +11,7 @@ public class AppServicesTests
         var services = new AppServices();
         Assert.Same(services.Config, services.Config);
         Assert.Same(services.PortForward, services.PortForward);
+        Assert.Same(services.Ssh, services.Ssh);
         Assert.NotNull(services.Dialogs);
         Assert.NotNull(services.Windows);
         Assert.NotNull(services.CreateSshService());

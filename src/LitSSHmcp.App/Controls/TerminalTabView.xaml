@@ -36,38 +36,6 @@
         </Style>
     </UserControl.Resources>
     <DockPanel>
-        <DockPanel DockPanel.Dock="Top" Margin="6,6,6,0">
-            <ui:Button DockPanel.Dock="Left" Icon="{ui:SymbolIcon Folder24}" Padding="8,3" Margin="0,0,8,4"
-                       ToolTip="显示 / 隐藏远程文件" AutomationProperties.Name="显示或隐藏远程文件"
-                       Command="{Binding ToggleFileBrowserCommand}"/>
-            <ui:Button DockPanel.Dock="Left" Icon="{ui:SymbolIcon ArrowSync24}" Padding="8,3" Margin="0,0,8,4"
-                       ToolTip="重新连接" AutomationProperties.Name="重新连接"
-                       Command="{Binding ReconnectCommand}"/>
-            <ui:Button DockPanel.Dock="Left" Icon="{ui:SymbolIcon Code24}" Padding="8,3" Margin="0,0,8,4"
-                       ToolTip="命令片段" AutomationProperties.Name="命令片段" Click="OnSnippets"/>
-            <ui:Button x:Name="AiButton" DockPanel.Dock="Left" Content="AI 助手"
-                       Icon="{ui:SymbolIcon Chat24}" Padding="8,3"
-                       Margin="0,0,8,4" ToolTip="终端 AI 助手（仅当前服务器，Ctrl+Shift+A）"
-                       AutomationProperties.Name="终端 AI 助手" Click="OnToggleAi"/>
-            <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource TileCloseButton}" Margin="4,0,0,0"
-                    ToolTip="关闭会话"
-                    Visibility="{Binding DataContext.IsSshTiled, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"
-                    Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                    CommandParameter="{Binding}"/>
-            <TextBlock DockPanel.Dock="Right" Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                       VerticalAlignment="Center" Margin="6,0" TextTrimming="CharacterEllipsis"/>
-            <StackPanel x:Name="SyncPanel" DockPanel.Dock="Right" Orientation="Horizontal"
-                        VerticalAlignment="Center" Margin="6,0" Visibility="Collapsed"
-                        ToolTip="{Binding DataContext.CommandSyncToolTip, RelativeSource={RelativeSource AncestorType=Window}}">
-                <ui:ToggleSwitch IsChecked="{Binding IsSyncEnabled, Mode=TwoWay}"
-                                 AutomationProperties.Name="开启命令同步"/>
-                <TextBlock Text="{Binding DataContext.CommandSyncEffectiveCount, RelativeSource={RelativeSource AncestorType=Window}, StringFormat=同步 {0}}"
-                           VerticalAlignment="Center" Margin="4,0,0,0"
-                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-            </StackPanel>
-            <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-        </DockPanel>
 
         <Grid Margin="6">
             <Grid.ColumnDefinitions>
@@ -97,6 +65,70 @@
                 <Border Background="{DynamicResource AppTerminalBgBrush}" CornerRadius="{DynamicResource AppRadiusS}">
                     <controls:TerminalView x:Name="Terminal" Session="{Binding}" Margin="4,8,4,4"/>
                 </Border>
+                <Border x:Name="FloatingActions" HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Margin="6" Padding="6,3" CornerRadius="6" Panel.ZIndex="6"
+                        Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                        BorderThickness="1">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Setter Property="Opacity" Value="0.7"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Opacity" Value="0.96"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Thumb Width="10" Cursor="SizeAll" DragDelta="OnFloatingDrag"
+                               DragCompleted="OnFloatingDragCompleted" ToolTip="拖动操作栏">
+                            <Thumb.Template>
+                                <ControlTemplate TargetType="Thumb">
+                                    <Border Background="Transparent">
+                                        <TextBlock Text="⋮" FontSize="13" HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource AppTextTertiaryBrush}"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Thumb.Template>
+                        </Thumb>
+                        <ui:Button Icon="{ui:SymbolIcon Folder24}" Appearance="Transparent" Padding="6,2" Margin="2,0,4,0"
+                                   ToolTip="显示 / 隐藏远程文件" AutomationProperties.Name="显示或隐藏远程文件"
+                                   Command="{Binding ToggleFileBrowserCommand}"/>
+                        <ui:Button Icon="{ui:SymbolIcon ArrowSync24}" Appearance="Transparent" Padding="6,2" Margin="0,0,4,0"
+                                   ToolTip="重新连接" AutomationProperties.Name="重新连接"
+                                   Command="{Binding ReconnectCommand}"/>
+                        <ui:Button Icon="{ui:SymbolIcon Code24}" Appearance="Transparent" Padding="6,2" Margin="0,0,4,0"
+                                   ToolTip="命令片段" AutomationProperties.Name="命令片段" Click="OnSnippets"/>
+                        <ui:Button x:Name="AiButton" Content="AI 助手" Icon="{ui:SymbolIcon Chat24}"
+                                   Appearance="Transparent" Padding="6,2" Margin="0,0,4,0"
+                                   ToolTip="终端 AI 助手（仅当前服务器，Ctrl+Shift+A）"
+                                   AutomationProperties.Name="终端 AI 助手" Click="OnToggleAi"/>
+                        <StackPanel x:Name="SyncPanel" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0"
+                                    Visibility="Collapsed"
+                                    ToolTip="{Binding DataContext.CommandSyncToolTip, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <ui:ToggleSwitch IsChecked="{Binding IsSyncEnabled, Mode=TwoWay}"
+                                             AutomationProperties.Name="开启命令同步"/>
+                            <TextBlock Text="{Binding DataContext.CommandSyncEffectiveCount, RelativeSource={RelativeSource AncestorType=Window}, StringFormat=同步 {0}}"
+                                       VerticalAlignment="Center" Margin="4,0,0,0"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   VerticalAlignment="Center" MaxWidth="120" Margin="6,0" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   VerticalAlignment="Center" MaxWidth="160" Margin="0,0,6,0" TextTrimming="CharacterEllipsis"/>
+                        <Button Content="×" Style="{StaticResource TileCloseButton}" Margin="2,0,0,0"
+                                ToolTip="关闭会话"
+                                Visibility="{Binding DataContext.IsSshTiled, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"
+                                Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}"/>
+                    </StackPanel>
+                </Border>
+
                 <Border VerticalAlignment="Top" Margin="6" Padding="10,6" CornerRadius="6"
                         Background="{DynamicResource AppDangerSubtleBrush}" BorderBrush="{DynamicResource AppDangerBrush}"
                         BorderThickness="1" Panel.ZIndex="5">

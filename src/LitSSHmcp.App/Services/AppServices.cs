@@ -19,6 +19,7 @@ public interface IAppServices
     IUserDialogService Dialogs { get; }
     IWindowService Windows { get; }
     PortForwardService PortForward { get; }
+    ISshService Ssh { get; }
 
     ISshService CreateSshService();
     IAuditLogService CreateAuditLog();
@@ -38,6 +39,7 @@ public sealed class AppServices : IAppServices
 {
     private readonly Lazy<IConfigService> _config = new(AppServiceFactory.CreateConfigService);
     private readonly Lazy<PortForwardService> _portForward = new(() => AppServiceFactory.PortForwardService);
+    private readonly Lazy<ISshService> _ssh = new(AppServiceFactory.CreateSshService);
 
     public AppServices(IUserDialogService? dialogs = null, IWindowService? windows = null)
     {
@@ -57,6 +59,7 @@ public sealed class AppServices : IAppServices
     public IUserDialogService Dialogs { get; }
     public IWindowService Windows { get; }
     public PortForwardService PortForward => _portForward.Value;
+    public ISshService Ssh => _ssh.Value;
 
     public ISshService CreateSshService() => AppServiceFactory.CreateSshService();
     public IAuditLogService CreateAuditLog() => new AuditLogService();

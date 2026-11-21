@@ -96,7 +96,7 @@ public sealed class TriggerViewModel : INotifyPropertyChanged, IConfigReloadable
     {
         _config = services?.Config ?? AppServiceFactory.CreateConfigService();
         _runner = new TriggerRunner(
-            services?.CreateSshService() ?? AppServiceFactory.CreateSshService(),
+            services?.Ssh ?? AppServiceFactory.CreateSshService(),
             services?.CreateAuditLog() ?? new AuditLogService(),
             TriggerStateStore.Default);
         _dialogs = dialogs ?? new UserDialogService();

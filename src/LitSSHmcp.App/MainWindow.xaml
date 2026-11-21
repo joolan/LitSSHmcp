@@ -114,7 +114,7 @@
             <Border Grid.Column="0" Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,1,0">
                 <DockPanel Margin="0,8">
                     <StackPanel DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Margin="0,0,0,4">
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="46" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="设置（安全 / 工具分组 / 导入导出）"
                                    AutomationProperties.Name="设置" Command="{Binding OpenSettingsCommand}">
                             <StackPanel VerticalAlignment="Center">
@@ -129,11 +129,11 @@
                             <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource SideNavScrollBarStyle}"/>
                         </ScrollViewer.Resources>
                     <StackPanel>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="46" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="主页（快捷入口 / 数据看板）" AutomationProperties.Name="主页"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateHomeCommand}">
-                            <Grid Width="56" Height="54">
+                            <Grid Width="56" Height="46">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Home}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
@@ -145,12 +145,12 @@
                                 </StackPanel>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="46" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="AI 运维助手"
                                    AutomationProperties.Name="AI 运维助手"
                                    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding OpenAgentCommand}">
-                            <Grid Width="56" Height="54">
+                            <Grid Width="56" Height="46">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Agent}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
@@ -171,10 +171,10 @@
                                 </Border>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="46" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="通知中心"
                                    AutomationProperties.Name="通知中心" Command="{Binding OpenNotificationCenterCommand}">
-                            <Grid Width="56" Height="54">
+                            <Grid Width="56" Height="46">
                                 <StackPanel VerticalAlignment="Center">
                                     <ui:SymbolIcon Symbol="Alert24" FontSize="19" HorizontalAlignment="Center"/>
                                     <TextBlock Text="通知" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
@@ -188,7 +188,7 @@
                                 </Border>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="46" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="打开 SSH 会话管理"
                                    AutomationProperties.Name="SSH 会话管理" Command="{Binding OpenSessionManagerCommand}">
                             <StackPanel VerticalAlignment="Center">
@@ -197,11 +197,11 @@
                             </StackPanel>
                         </ui:Button>
                         <Separator Margin="10,4,10,6"/>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="46" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="SSH 服务器管理" AutomationProperties.Name="SSH 服务器管理"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateServersCommand}">
-                            <Grid Width="56" Height="54">
+                            <Grid Width="56" Height="46">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Servers}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
@@ -213,11 +213,27 @@
                                 </StackPanel>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="46" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                                   ToolTip="文件传输（FTP / FTPS / SFTP）" AutomationProperties.Name="文件传输"
+                                   Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                   Command="{Binding NavigateFileTransferCommand}">
+                            <Grid Width="56" Height="46">
+                                <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=FileTransfer}"/>
+                                <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
+                                        HorizontalAlignment="Left" Margin="4,10"
+                                        Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=FileTransfer}"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Folder24" FontSize="19" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="传输" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </ui:Button>
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="46" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="数据源管理" AutomationProperties.Name="数据源管理"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateDataSourcesCommand}">
-                            <Grid Width="56" Height="54">
+                            <Grid Width="56" Height="46">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=DataSources}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
@@ -229,11 +245,11 @@
                                 </StackPanel>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="46" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="应用管理" AutomationProperties.Name="应用管理"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateApplicationsCommand}">
-                            <Grid Width="56" Height="54">
+                            <Grid Width="56" Height="46">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Applications}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
@@ -245,11 +261,11 @@
                                 </StackPanel>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="46" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="远程桌面（RDP / VNC）" AutomationProperties.Name="远程桌面"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateRemoteDesktopsCommand}">
-                            <Grid Width="56" Height="54">
+                            <Grid Width="56" Height="46">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=RemoteDesktops}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
@@ -261,11 +277,11 @@
                                 </StackPanel>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="46" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="Jenkins 多连接" AutomationProperties.Name="Jenkins"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateJenkinsCommand}">
-                            <Grid Width="56" Height="54">
+                            <Grid Width="56" Height="46">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Jenkins}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
@@ -286,11 +302,11 @@
                                 </Border>
                             </Grid>
                         </ui:Button>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="46" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="Kubernetes 多集群只读视图" AutomationProperties.Name="Kubernetes"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateKubernetesCommand}">
-                            <Grid Width="56" Height="54">
+                            <Grid Width="56" Height="46">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Kubernetes}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
@@ -303,7 +319,7 @@
                             </Grid>
                         </ui:Button>
                         <Separator Margin="10,4,10,6"/>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="46" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="资产拓扑（独立窗口）"
                                    AutomationProperties.Name="资产拓扑" Command="{Binding OpenTopologyCommand}">
                             <StackPanel VerticalAlignment="Center">
@@ -311,7 +327,7 @@
                                 <TextBlock Text="拓扑" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                             </StackPanel>
                         </ui:Button>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="54" Padding="0" Margin="0,0,0,2"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Appearance="Transparent" Width="56" Height="46" Padding="0" Margin="0,0,0,2"
                                    HorizontalAlignment="Center" ToolTip="审计日志（独立窗口）"
                                    AutomationProperties.Name="审计日志" Command="{Binding OpenAuditCommand}">
                             <StackPanel VerticalAlignment="Center">
@@ -319,11 +335,11 @@
                                 <TextBlock Text="审计" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                             </StackPanel>
                         </ui:Button>
-                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="54" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
+                        <ui:Button Style="{StaticResource SideNavButtonStyle}" Width="56" Height="46" Padding="0" Margin="0,0,0,2" HorizontalAlignment="Center"
                                    ToolTip="工具箱（本地工具启动器）" AutomationProperties.Name="工具箱"
                                    Appearance="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                                    Command="{Binding NavigateToolboxCommand}">
-                            <Grid Width="56" Height="54">
+                            <Grid Width="56" Height="46">
                                 <Border Background="{DynamicResource AppSelectionBrush}" CornerRadius="6"
                                         Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Toolbox}"/>
                                 <Border Width="3" Background="{DynamicResource AppAccentBrush}" CornerRadius="2"
@@ -381,25 +397,31 @@
                 <!-- SSH 服务器管理 -->
                 <Grid x:Name="ServersView"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Servers}">
-                    <views:ServerManageView/>
+                    <ContentControl Content="{Binding ServerPageView}"/>
+                </Grid>
+
+                <!-- 文件传输 -->
+                <Grid x:Name="FileTransferView"
+                      Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=FileTransfer}">
+                    <ContentControl Content="{Binding FileTransferPageView}"/>
                 </Grid>
 
                 <!-- 数据源管理 -->
                 <Grid x:Name="DataSourcesView"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=DataSources}">
-                    <views:DatasourceManageView DataContext="{Binding DatasourcePage}"/>
+                    <ContentControl Content="{Binding DatasourcePageView}"/>
                 </Grid>
 
                 <!-- 应用管理 -->
                 <Grid x:Name="ApplicationsView"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=Applications}">
-                    <views:ApplicationManageView DataContext="{Binding ApplicationPage}"/>
+                    <ContentControl Content="{Binding ApplicationPageView}"/>
                 </Grid>
 
                 <!-- 远程桌面（RDP / VNC） -->
                 <Grid x:Name="RemoteDesktopsView"
                       Visibility="{Binding CurrentPage, Converter={StaticResource PageVis}, ConverterParameter=RemoteDesktops}">
-                    <views:RemoteDesktopManageView DataContext="{Binding RemoteDesktopPage}"/>
+                    <ContentControl Content="{Binding RemoteDesktopPageView}"/>
                 </Grid>
 
                 <!-- Jenkins 多连接 -->

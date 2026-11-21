@@ -15,6 +15,8 @@ public partial class TerminalTabView : UserControl
 {
     private const string WidthKey = "ssh.filepanel.width";
     private const string AiWidthKey = "ssh.ai.width";
+    private const string FloatingXKey = "ssh.floatingBar.x.";
+    private const string FloatingYKey = "ssh.floatingBar.y.";
     private const double DefaultWidth = 300;
     private const double MinPanelWidth = 120;
     private const double DefaultAiWidth = 400;
@@ -37,6 +39,7 @@ public partial class TerminalTabView : UserControl
     {
         HookWindowViewModel();
         ApplyLayout();
+        ApplyFloatingPosition();
         UpdateSyncVisibility();
     }
 
@@ -127,6 +130,7 @@ public partial class TerminalTabView : UserControl
         if (!ReferenceEquals(previous, _hookedVm))
             SyncAiForCurrentTerminal();
         ApplyLayout();
+        ApplyFloatingPosition();
         UpdateSyncVisibility();
     }
 
@@ -161,6 +165,46 @@ public partial class TerminalTabView : UserControl
     {
         var text = Terminal.GetSelectedText();
         _aiVm?.AppendContextSelection(text);
+    }
+
+    private void OnFloatingDrag(object sender, DragDeltaEventArgs e)
+    {
+        if (FloatingActions.RenderTransform is not System.Windows.Media.TranslateTransform transform)
+        {
+            transform = new System.Windows.Media.TranslateTransform();
+            FloatingActions.RenderTransform = transform;
+        }
+        transform.X += e.HorizontalChange;
+        transform.Y += e.VerticalChange;
+    }
+
+    private void OnFloatingDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (Vm is not { } vm ||
+            FloatingActions.RenderTransform is not System.Windows.Media.TranslateTransform transform)
+            return;
+
+        UiPrefs.SetDouble(FloatingXKey + vm.LayoutKey, transform.X);
+        UiPrefs.SetDouble(FloatingYKey + vm.LayoutKey, transform.Y);
+    }
+
+    private void ApplyFloatingPosition()
+    {
+        if (FloatingActions.RenderTransform is not System.Windows.Media.TranslateTransform transform)
+        {
+            transform = new System.Windows.Media.TranslateTransform();
+            FloatingActions.RenderTransform = transform;
+        }
+
+        if (Vm is not { } vm)
+        {
+            transform.X = 0;
+            transform.Y = 0;
+            return;
+        }
+
+        transform.X = UiPrefs.GetDouble(FloatingXKey + vm.LayoutKey, 0);
+        transform.Y = UiPrefs.GetDouble(FloatingYKey + vm.LayoutKey, 0);
     }
 
     private void OnToggleAi(object sender, RoutedEventArgs e)

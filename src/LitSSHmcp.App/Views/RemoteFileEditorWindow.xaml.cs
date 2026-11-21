@@ -34,6 +34,7 @@ public partial class RemoteFileEditorWindow : Wpf.Ui.Controls.FluentWindow
     private bool _suppressEncoding;
     private bool _forceClose;
     private bool _closeInProgress;
+    private bool _closeScheduled;
     private bool _saveAllInProgress;
     private RemoteFileEditTab? _dragTab;
     private Point _dragStart;
@@ -1018,16 +1019,7 @@ public partial class RemoteFileEditorWindow : Wpf.Ui.Controls.FluentWindow
         UpdateEditorFromSelected();
         PersistTabsState();
         if (_vm.Tabs.Count == 0 && !_closeInProgress)
-        {
-            // 等当前 Tab 容器完成重排后再关闭窗口，避免在 SelectionChanged 回调里直接 Close 被忽略。
-            _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                if (_vm.Tabs.Count != 0 || _closeInProgress)
-                    return;
-                _forceClose = true;
-                Close();
-            }));
-        }
+            ScheduleClose();
         return true;
     }
 
@@ -1068,10 +1060,31 @@ public partial class RemoteFileEditorWindow : Wpf.Ui.Controls.FluentWindow
         }
 
         if (_vm.Tabs.Count == 0)
+            ScheduleClose();
+    }
+
+    private void ScheduleClose()
+    {
+        if (_forceClose || _closeScheduled)
+            return;
+
+        _closeScheduled = true;
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
         {
+            _closeScheduled = false;
+            if (_forceClose || _vm.Tabs.Count != 0)
+                return;
+
             _forceClose = true;
-            _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(Close));
-        }
+            try
+            {
+                Close();
+            }
+            catch (InvalidOperationException)
+            {
+                // 窗口已进入关闭流程时不再重复 Close。
+            }
+        }));
     }
 
     private string TabsStateKey => "fileEditor.tabs." + _vm.Server.Id;

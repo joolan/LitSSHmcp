@@ -4,7 +4,7 @@ namespace LitSSHmcp.Core.Models;
 
 public class AppConfig
 {
-    public const int CurrentSchemaVersion = 7;
+    public const int CurrentSchemaVersion = 8;
 
     /// <summary>配置结构版本。缺失该字段的旧文件反序列化为 0，由 ConfigMigrator 迁移到当前版本。</summary>
     public int SchemaVersion { get; set; }
@@ -28,6 +28,9 @@ public class AppConfig
 
     /// <summary>远程桌面连接定义（RDP / VNC；可选经 SSH 隧道）。</summary>
     public RemoteDesktopConfig[] RemoteDesktops { get; set; } = Array.Empty<RemoteDesktopConfig>();
+
+    /// <summary>文件传输站点定义（FTP / FTPS；SFTP 复用 SSH 服务器配置）。</summary>
+    public FileTransferSiteConfig[] FileTransferSites { get; set; } = Array.Empty<FileTransferSiteConfig>();
 
     /// <summary>Jenkins 连接定义（可配置任意数量：测试、预发布、生产、第三方、自定义）</summary>
     public JenkinsConfig Jenkins { get; set; } = new();

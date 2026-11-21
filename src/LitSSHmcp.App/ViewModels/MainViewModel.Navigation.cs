@@ -51,8 +51,11 @@ public partial class MainViewModel
     private void NavigateDataSources()
     {
         CurrentPage = MainPage.DataSources;
+        var created = DatasourcePage is null;
         DatasourcePage ??= CreateDatasourcePage();
-        DatasourcePage.RefreshCommand.Execute(null);
+        EnsureDatasourcePageView();
+        if (!created)
+            DatasourcePage.RefreshCommand.Execute(null);
     }
 
     // 应用管理：主区域页面
@@ -66,8 +69,11 @@ public partial class MainViewModel
     private void NavigateApplications()
     {
         CurrentPage = MainPage.Applications;
+        var created = ApplicationPage is null;
         ApplicationPage ??= new ApplicationManageViewModel(_configService, Application.Current.MainWindow);
-        ApplicationPage.RefreshCommand.Execute(null);
+        EnsureApplicationPageView();
+        if (!created)
+            ApplicationPage.RefreshCommand.Execute(null);
     }
 
     // 远程桌面（RDP / VNC）：主区域页面
@@ -81,8 +87,11 @@ public partial class MainViewModel
     private void NavigateRemoteDesktops()
     {
         CurrentPage = MainPage.RemoteDesktops;
+        var created = RemoteDesktopPage is null;
         RemoteDesktopPage ??= new RemoteDesktopManageViewModel(_configService, services: _services);
-        RemoteDesktopPage.RefreshCommand.Execute(null);
+        EnsureRemoteDesktopPageView();
+        if (!created)
+            RemoteDesktopPage.RefreshCommand.Execute(null);
     }
 
     // Jenkins：主区域页面；连接数量不设上限，环境只是标签

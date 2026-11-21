@@ -1,0 +1,258 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.FtpSiteEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="FTP 站点" Width="700" Height="760" MinHeight="600"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar x:Name="TitleBarControl" Title="添加 FTP / FTPS 站点"/>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,8,20,8">
+            <StackPanel>
+                <TextBlock Text="名称" Style="{DynamicResource FormLabelStyle}"/>
+                <ui:TextBox x:Name="NameBox" Margin="0,4,0,12" PlaceholderText="例如：客户生产 FTP"/>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="协议" Style="{DynamicResource FormLabelStyle}"/>
+                        <ComboBox x:Name="ProtocolBox" Margin="0,4,0,12" SelectionChanged="OnProtocolChanged">
+                            <ComboBoxItem Content="FTP（明文）" Tag="Ftp"/>
+                            <ComboBoxItem Content="FTPS" Tag="Ftps"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="FTPS 模式" Style="{DynamicResource FormLabelStyle}"/>
+                        <ComboBox x:Name="FtpsModeBox" Margin="0,4,0,12" SelectionChanged="OnFtpsModeChanged">
+                            <ComboBoxItem Content="显式（AUTH TLS，端口 21）" Tag="Explicit"/>
+                            <ComboBoxItem Content="隐式（端口 990）" Tag="Implicit"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="110"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="主机" Style="{DynamicResource FormLabelStyle}"/>
+                        <ui:TextBox x:Name="HostBox" Margin="0,4,0,12" PlaceholderText="ftp.example.com"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="端口" Style="{DynamicResource FormLabelStyle}"/>
+                        <ui:TextBox x:Name="PortBox" Margin="0,4,0,12" Text="21"/>
+                    </StackPanel>
+                </Grid>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="认证方式" Style="{DynamicResource FormLabelStyle}"/>
+                        <ComboBox x:Name="AuthBox" Margin="0,4,0,12" SelectionChanged="OnAuthChanged">
+                            <ComboBoxItem Content="账号密码" Tag="Password"/>
+                            <ComboBoxItem Content="匿名" Tag="Anonymous"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="用户名" Style="{DynamicResource FormLabelStyle}"/>
+                        <ui:TextBox x:Name="UsernameBox" Margin="0,4,0,12"/>
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Text="密码" Style="{DynamicResource FormLabelStyle}"/>
+                <PasswordBox x:Name="PasswordBox" Height="34" Padding="8,4" Margin="0,4,0,4"/>
+                <TextBlock Text="留空表示保持原密码；新站点留空则使用空密码。密码仅以 DPAPI 加密保存。"
+                           Style="{DynamicResource MutedTextStyle}" Margin="0,0,0,12"/>
+
+                <TextBlock Text="初始目录" Style="{DynamicResource FormLabelStyle}"/>
+                <ui:TextBox x:Name="InitialPathBox" Margin="0,4,0,12" Text="/"/>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="编码" Style="{DynamicResource FormLabelStyle}"/>
+                        <ComboBox x:Name="EncodingBox" Margin="0,4,0,12">
+                            <ComboBoxItem Content="utf-8" Tag="utf-8"/>
+                            <ComboBoxItem Content="gb18030" Tag="gb18030"/>
+                            <ComboBoxItem Content="gbk" Tag="gbk"/>
+                            <ComboBoxItem Content="auto（按 UTF-8）" Tag="auto"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="超时（秒）" Style="{DynamicResource FormLabelStyle}"/>
+                        <ui:TextBox x:Name="TimeoutBox" Margin="0,4,0,12" Text="30"/>
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <CheckBox x:Name="PassiveBox" Content="被动模式（推荐）" IsChecked="True" Margin="0,0,18,0"/>
+                    <CheckBox x:Name="PassiveFallbackBox" Content="被动失败时尝试主动模式" IsChecked="True" Margin="0,0,18,0"/>
+                    <CheckBox x:Name="ValidateCertificateBox" Content="校验 FTPS 证书" IsChecked="True"/>
+                </StackPanel>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="TLS 版本" Style="{DynamicResource FormLabelStyle}"/>
+                        <ComboBox x:Name="TlsVersionBox" Margin="0,4,0,12">
+                            <ComboBoxItem Content="系统默认" Tag="auto"/>
+                            <ComboBoxItem Content="TLS 1.2" Tag="tls12"/>
+                            <ComboBoxItem Content="TLS 1.3" Tag="tls13"/>
+                            <ComboBoxItem Content="TLS 1.2 + 1.3" Tag="tls12+13"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="并发传输数" Style="{DynamicResource FormLabelStyle}"/>
+                        <ui:TextBox x:Name="ConcurrentBox" Margin="0,4,0,12" Text="2"/>
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Text="自定义 CA / 证书固定" Style="{DynamicResource FormLabelStyle}"/>
+                <Grid Margin="0,4,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="92"/>
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBox x:Name="CaPathBox" Grid.Column="0" PlaceholderText="内部 CA 证书路径（PEM/CRT），可选"/>
+                    <ui:Button Grid.Column="2" Content="浏览…" Padding="8,3" Click="OnBrowseCa"/>
+                </Grid>
+                <ui:TextBox x:Name="PinsBox" Margin="0,0,0,4"
+                            PlaceholderText="证书 SHA-256 指纹，多个用逗号/分号分隔（可选）"/>
+                <TextBlock Text="配置固定指纹后，只接受匹配证书；不配置则按系统信任或自定义 CA 校验。"
+                           Style="{DynamicResource MutedTextStyle}" Margin="0,0,0,12"/>
+
+                <TextBlock Text="客户端证书（双向 TLS）" Style="{DynamicResource FormLabelStyle}"/>
+                <Grid Margin="0,4,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="92"/>
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBox x:Name="ClientCertPathBox" Grid.Column="0" PlaceholderText="PFX/P12 或 PEM 证书路径，可选"/>
+                    <ui:Button Grid.Column="2" Content="浏览…" Padding="8,3" Click="OnBrowseClientCert"/>
+                </Grid>
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="92"/>
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBox x:Name="ClientKeyPathBox" Grid.Column="0" PlaceholderText="PEM 私钥路径（PEM 证书时必填）"/>
+                    <ui:Button Grid.Column="2" Content="浏览…" Padding="8,3" Click="OnBrowseClientKey"/>
+                </Grid>
+                <PasswordBox x:Name="ClientCertPasswordBox" Height="34" Padding="8,4" Margin="0,0,0,4"/>
+                <TextBlock Text="客户端证书密码留空表示保持原密码。"
+                           Style="{DynamicResource MutedTextStyle}" Margin="0,0,0,12"/>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="限速（KB/s，0=不限）" Style="{DynamicResource FormLabelStyle}"/>
+                        <ui:TextBox x:Name="SpeedLimitBox" Margin="0,4,0,12" Text="0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Keep-alive（秒，0=关闭）" Style="{DynamicResource FormLabelStyle}"/>
+                        <ui:TextBox x:Name="KeepAliveBox" Margin="0,4,0,12" Text="30"/>
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <CheckBox x:Name="AutoReconnectBox" Content="自动重连 / 重试" IsChecked="True" Margin="0,0,24,0"/>
+                    <TextBlock Text="覆盖策略" VerticalAlignment="Center" Margin="0,0,6,0"
+                               Style="{DynamicResource FormLabelStyle}"/>
+                    <ComboBox x:Name="ConflictPolicyBox" Width="110">
+                        <ComboBoxItem Content="询问" Tag="Ask"/>
+                        <ComboBoxItem Content="覆盖" Tag="Overwrite"/>
+                        <ComboBoxItem Content="跳过" Tag="Skip"/>
+                        <ComboBoxItem Content="自动重命名" Tag="Rename"/>
+                        <ComboBoxItem Content="续传" Tag="Resume"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <TextBlock Text="代理（SOCKS / HTTP）" Style="{DynamicResource FormLabelStyle}"/>
+                <Grid Margin="0,4,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="90"/>
+                    </Grid.ColumnDefinitions>
+                    <ComboBox x:Name="ProxyTypeBox" Grid.Column="0">
+                        <ComboBoxItem Content="不使用" Tag="None"/>
+                        <ComboBoxItem Content="HTTP" Tag="Http"/>
+                        <ComboBoxItem Content="SOCKS5" Tag="Socks5"/>
+                        <ComboBoxItem Content="SOCKS4" Tag="Socks4"/>
+                        <ComboBoxItem Content="SOCKS4a" Tag="Socks4a"/>
+                    </ComboBox>
+                    <ui:TextBox x:Name="ProxyHostBox" Grid.Column="2" PlaceholderText="代理主机"/>
+                    <ui:TextBox x:Name="ProxyPortBox" Grid.Column="4" PlaceholderText="端口"/>
+                </Grid>
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBox x:Name="ProxyUsernameBox" Grid.Column="0" PlaceholderText="代理用户名（可选）"/>
+                    <PasswordBox x:Name="ProxyPasswordBox" Grid.Column="2" Height="34" Padding="8,4"/>
+                </Grid>
+
+                <TextBlock Text="分组" Style="{DynamicResource FormLabelStyle}"/>
+                <ui:TextBox x:Name="GroupBox" Margin="0,4,0,12" PlaceholderText="例如：客户 / 生产"/>
+
+                <TextBlock Text="标签" Style="{DynamicResource FormLabelStyle}"/>
+                <ui:TextBox x:Name="TagsBox" Margin="0,4,0,12" PlaceholderText="多个标签用逗号分隔"/>
+
+                <TextBlock Text="描述" Style="{DynamicResource FormLabelStyle}"/>
+                <ui:TextBox x:Name="DescriptionBox" Margin="0,4,0,12" Height="70"
+                            AcceptsReturn="True" TextWrapping="Wrap"/>
+
+                <Border Padding="10,8" CornerRadius="6"
+                        Background="{DynamicResource AppWarningSubtleBrush}"
+                        BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1">
+                    <TextBlock Text="FTP 为明文协议，账号密码和文件内容不加密。建议优先使用 FTPS；SFTP 请从 SSH 服务器管理打开。"
+                               TextWrapping="Wrap" Foreground="{DynamicResource AppWarningBrush}"/>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Padding="20,12" BorderBrush="{DynamicResource AppBorderBrush}"
+                BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <ui:Button Content="取消" Padding="18,5" Margin="0,0,8,0" Click="OnCancel"/>
+                <ui:Button Content="保存" Appearance="Primary" Padding="18,5" Click="OnSave"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

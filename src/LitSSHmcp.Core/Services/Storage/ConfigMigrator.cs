@@ -158,6 +158,13 @@ public static class ConfigMigrator
             changed = true;
         }
 
+        // v7→v8：新增 FTP / FTPS 文件传输站点；SFTP 继续复用 SSH 服务器。
+        if (config.FileTransferSites == null)
+        {
+            config.FileTransferSites = Array.Empty<FileTransferSiteConfig>();
+            changed = true;
+        }
+
         // v4→v5：新增 Jenkins 多连接配置；连接数量和环境类型均不固定。
         if (config.Jenkins == null)
         {

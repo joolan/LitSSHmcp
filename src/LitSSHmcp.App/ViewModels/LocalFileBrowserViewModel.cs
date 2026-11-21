@@ -45,6 +45,13 @@ public sealed class LocalFileBrowserViewModel : INotifyPropertyChanged
         set { _selectedItem = value; OnPropertyChanged(); }
     }
 
+    private IReadOnlyList<LocalFsItem> _selectedItems = Array.Empty<LocalFsItem>();
+    public IReadOnlyList<LocalFsItem> SelectedItems
+    {
+        get => _selectedItems;
+        set { _selectedItems = value; OnPropertyChanged(); }
+    }
+
     private string _currentPath = string.Empty;
     public string CurrentPath
     {

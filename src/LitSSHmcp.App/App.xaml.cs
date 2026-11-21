@@ -55,6 +55,7 @@ public partial class App : Application
         }
 
         PasswordVaultTempFiles.Cleanup();
+        PerfLog.Write("app.startup.begin");
 
         // 兜底：任何未处理异常都不应让整个 APP 直接退出（例如终端断开时的边界情况）
         DispatcherUnhandledException += OnDispatcherUnhandledException;
@@ -86,53 +87,6 @@ public partial class App : Application
         catch
         {
             // 非关键路径
-        }
-
-        // 文件/文件夹同步调度器：仅 App 运行期间执行
-        try
-        {
-            _syncScheduler = new SyncScheduler(new ConfigService());
-            _syncScheduler.Start();
-
-            // 触发事件调度器：定时 + 订阅同步任务完成事件做联动；仅 App 运行期间执行
-            _triggerScheduler = new TriggerScheduler(new ConfigService());
-            _syncScheduler.TaskCompleted += _triggerScheduler.OnSyncCompleted;
-            _triggerScheduler.Start();
-
-            _backupScheduler = new BackupScheduler(AppServiceFactory.CreateConfigService());
-            _backupScheduler.Completed += (plan, result) =>
-            {
-                var severity = result.Success
-                    ? (result.UploadMessage is null || result.Uploaded
-                        ? NotificationSeverity.Success
-                        : NotificationSeverity.Warning)
-                    : NotificationSeverity.Error;
-                var type = result.Success && (result.UploadMessage is null || result.Uploaded)
-                    ? LitSSHmcp.Core.Models.NotificationTypes.BackupSucceeded
-                    : LitSSHmcp.Core.Models.NotificationTypes.BackupFailed;
-                NotificationCenterService.Add("备份", plan.Name,
-                    result.Success ? result.Message : result.Message, severity, type);
-            };
-            _backupScheduler.Start();
-
-            _wakeOnLanScheduler = new WakeOnLanScheduler();
-            _wakeOnLanScheduler.Start();
-
-            // AI 定时任务调度器：桌面 App 为主宿主；启动时自然补跑到期任务。
-            _ = StartAiTaskSchedulerAsync();
-
-            Exit += (_, _) =>
-            {
-                _aiTaskScheduler?.Dispose();
-                _wakeOnLanScheduler?.Dispose();
-                _backupScheduler?.Dispose();
-                _triggerScheduler?.Dispose();
-                _syncScheduler?.Dispose();
-            };
-        }
-        catch
-        {
-            // 调度器启动失败不影响 App
         }
 
         // 端口转发：退出时统一停止活动隧道并断开 SSH 连接
@@ -316,6 +270,75 @@ public partial class App : Application
     private static BackupScheduler? _backupScheduler;
     private static WakeOnLanScheduler? _wakeOnLanScheduler;
     private static AiTaskScheduler? _aiTaskScheduler;
+    private bool _backgroundSchedulersStarted;
+
+    private void StartBackgroundSchedulers()
+    {
+        if (_backgroundSchedulersStarted)
+            return;
+        _backgroundSchedulersStarted = true;
+
+        try
+        {
+            _syncScheduler = new SyncScheduler(new ConfigService());
+            _syncScheduler.Start();
+
+            _triggerScheduler = new TriggerScheduler(new ConfigService());
+            _syncScheduler.TaskCompleted += _triggerScheduler.OnSyncCompleted;
+            _triggerScheduler.Start();
+
+            _backupScheduler = new BackupScheduler(AppServiceFactory.CreateConfigService());
+            _backupScheduler.Completed += (plan, result) =>
+            {
+                var severity = result.Success
+                    ? (result.UploadMessage is null || result.Uploaded
+                        ? NotificationSeverity.Success
+                        : NotificationSeverity.Warning)
+                    : NotificationSeverity.Error;
+                var type = result.Success && (result.UploadMessage is null || result.Uploaded)
+                    ? LitSSHmcp.Core.Models.NotificationTypes.BackupSucceeded
+                    : LitSSHmcp.Core.Models.NotificationTypes.BackupFailed;
+                NotificationCenterService.Add("备份", plan.Name,
+                    result.Success ? result.Message : result.Message, severity, type);
+            };
+            _backupScheduler.Start();
+
+            _wakeOnLanScheduler = new WakeOnLanScheduler();
+            _wakeOnLanScheduler.Start();
+
+            _ = StartAiTaskSchedulerAsync();
+
+            Exit += (_, _) =>
+            {
+                _aiTaskScheduler?.Dispose();
+                _wakeOnLanScheduler?.Dispose();
+                _backupScheduler?.Dispose();
+                _triggerScheduler?.Dispose();
+                _syncScheduler?.Dispose();
+            };
+        }
+        catch
+        {
+            // 调度器启动失败不影响 App
+        }
+    }
+
+    private void OnMainWindowContentRendered(object? sender, EventArgs e)
+    {
+        if (sender is Window window)
+            window.ContentRendered -= OnMainWindowContentRendered;
+
+        var timer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(2)
+        };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            StartBackgroundSchedulers();
+        };
+        timer.Start();
+    }
 
     private static bool TryGetAiTaskId(string[] args, out string taskId)
     {
@@ -483,12 +506,15 @@ public partial class App : Application
 
     private void CreateMainWindow()
     {
+        using var perf = PerfLog.Scope("mainwindow.create");
         // 主窗口真正关闭（「退出程序」）即连同所有独立窗口一起退出；
         // 托盘「最小化到托盘」走 Closing 取消，不触发。
         ShutdownMode = ShutdownMode.OnMainWindowClose;
         var mainWindow = new MainWindow();
         MainWindow = mainWindow;
+        mainWindow.ContentRendered += OnMainWindowContentRendered;
         mainWindow.Show();
+        PerfLog.Write("mainwindow.shown");
         AppLockMonitor.Attach(this, mainWindow);   // 跟随 Windows 锁屏：回来时重新上锁
     }
 

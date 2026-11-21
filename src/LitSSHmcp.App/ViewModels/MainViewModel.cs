@@ -91,7 +91,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         _snapshotStore = _services.CreateSnapshotStore();
         // 与数据源 / 端口转发 / 拓扑发现一致：携带 known-hosts 与安全设置（Tofu/Strict/Off），
         // 避免主界面终端绕过主机密钥校验、而弹窗"测试连接"走另一套策略。
-        _sshService = _services.CreateSshService();
+        _sshService = _services.Ssh;
         AiTerminals = new Services.LocalTerminal.AiTerminalBroker(
             name => CreateLocalTerminal(isAi: true, aiName: name),
             RemoveLocalTerminal,
@@ -112,7 +112,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         OpenAgentCommand = new RelayCommand(_ => OpenAgent());
         NewAiSessionCommand = new RelayCommand(_ => NewAiSessionForServer(SelectedServer), _ => SelectedServer != null);
         NavigateHomeCommand = new RelayCommand(_ => NavigateHome());
-        NavigateServersCommand = new RelayCommand(_ => CurrentPage = MainPage.Servers);
+        NavigateServersCommand = new RelayCommand(_ => NavigateServers());
         NavigateDataSourcesCommand = new RelayCommand(_ => NavigateDataSources());
         NavigateApplicationsCommand = new RelayCommand(_ => NavigateApplications());
         NavigateRemoteDesktopsCommand = new RelayCommand(_ => NavigateRemoteDesktops());
@@ -389,9 +389,17 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         {
             if (_sshLayout == value) return;
             _sshLayout = value;
+            if (value != SessionLayout.Tabs && _isSshTreeNavigation)
+            {
+                _isSshTreeNavigation = false;
+                UiPrefs.SetString("ssh.navigation", "tabs");
+                OnPropertyChanged(nameof(IsSshTreeNavigation));
+                OnPropertyChanged(nameof(IsSshTabNavigation));
+            }
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsSshTabbed));
             OnPropertyChanged(nameof(IsSshTiled));
+            OnPropertyChanged(nameof(IsSshTabViewVisible));
             OnPropertyChanged(nameof(SshTileColumns));
         }
     }
@@ -690,6 +698,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
         }
 
         OnPropertyChanged(nameof(HasDockedSessions));
+        RebuildSessionTree();
     }
 
     private void EnsureDockedSelection(int? preferredIndex = null)
@@ -754,6 +763,7 @@ public partial class MainViewModel : INotifyPropertyChanged, IConfigReloadable
 
         StatusMessage = Sessions.Count == 0 ? "已关闭全部会话" : $"已关闭会话: {name}";
     }
+
 
     public void ReloadConfig()
     {
@@ -1330,6 +1340,7 @@ public enum MainPage
 {
     Home,
     Servers,
+    FileTransfer,
     DataSources,
     Applications,
     RemoteDesktops,

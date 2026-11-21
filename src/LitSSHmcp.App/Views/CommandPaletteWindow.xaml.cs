@@ -28,6 +28,7 @@ public partial class CommandPaletteWindow : FluentWindow
     {
         new("主页", "页面 · 快捷入口 / 数据看板", SymbolRegular.Home24, () => vm.NavigateHomeCommand.Execute(null)),
         new("SSH 服务器", "页面 · 服务器管理", SymbolRegular.Server24, () => vm.NavigateServersCommand.Execute(null)),
+        new("文件传输", "页面 · FTP / FTPS / SFTP 站点", SymbolRegular.Folder24, () => vm.NavigateFileTransferCommand.Execute(null)),
         new("数据源", "页面 · MySQL / PostgreSQL / Redis", SymbolRegular.Database24, () => vm.NavigateDataSourcesCommand.Execute(null)),
         new("应用", "页面 · app: 拓扑节点", SymbolRegular.Apps24, () => vm.NavigateApplicationsCommand.Execute(null)),
         new("远程桌面", "页面 · RDP / VNC", SymbolRegular.Desktop24, () => vm.NavigateRemoteDesktopsCommand.Execute(null)),

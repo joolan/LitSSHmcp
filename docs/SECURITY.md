@@ -11,6 +11,7 @@
 - **授权确认弹窗**：置顶确认框，默认 **45 秒无操作自动拒绝**；可选独立子进程 / 原生弹窗样式（`security.approval`）
 - **审批通道与模式**：`security.approval.channels` / `security.approval.mode`（`manual` / `auto-approve` / `auto-reject`）
 - **文件传输审批**：上传 / 下载需用户确认，并受**本地 / 远程路径白名单**与大小上限约束（`allowedLocalPaths` / `allowedRemotePaths` / `maxFileSizeBytes`）；单文件 / 多文件 / 文件夹统一用 `ssh_upload` / `ssh_download`（一条 SFTP 连接、整批一次确认、保留子目录层级）
+- **文件传输客户端**：FTP / FTPS 站点密码、客户端证书口令、代理密码仅本机 DPAPI 加密保存；FTPS 默认校验证书，可配置自定义 CA、SHA-256 指纹固定、客户端证书和 TLS 1.2/1.3；明文 FTP 在 UI 明确提示风险；SFTP 复用 SSH 主机密钥与认证；连接、上传、下载、重命名、删除写审计
 - **主机密钥校验 (TOFU)**：首次连接记录 SSH 主机指纹，之后指纹变化即拒绝（`security.sshHostKey.mode = tofu|strict|off`）
 - **按目标限流**：单服务器 / 数据源的并发数与每分钟调用上限（`security.limits`）
 - **SSH 连接复用池**：每服务器复用一条 SSH 连接、执行完不断开、空闲自动断开（`connectionPool.*`；默认开、空闲 300s、每服务器 1 条），避免 AI / 密集调用反复"连-断"触发目标机登录告警

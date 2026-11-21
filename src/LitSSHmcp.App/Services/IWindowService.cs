@@ -35,8 +35,8 @@ public interface IWindowService
     PortForwardWindow CreatePortForwardWindow(PortForwardViewModel viewModel);
     SyncWindow CreateSyncWindow();
     TriggerWindow CreateTriggerWindow();
-
     SftpManagerWindow CreateSftpManagerWindow(SftpManagerViewModel viewModel);
+    FtpManagerWindow CreateFtpManagerWindow(FtpManagerViewModel viewModel);
     RemoteCopyWindow CreateRemoteCopyWindow(SshServerConfig server);
 
     AppSettingsWindow CreateAppSettingsWindow(IConfigService configService);

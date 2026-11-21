@@ -60,14 +60,15 @@
 | 组成 | 项目 | 说明 |
 |------|------|------|
 | **MCP 服务** | `LitSSHmcp.McpServer` | stdio MCP 服务器，向 Claude Desktop / Cursor / Cline / CodeBuddy / opencode 等客户端暴露运维工具。 |
-| **桌面 App** | `LitSSHmcp.App` | WPF 管理端（单实例）：服务器、数据源、应用、拓扑、远程桌面、Jenkins、Kubernetes、审计、在线文件编辑、桌面宠物、托盘常驻和内置 AI 助手（含 AI 定时任务）。 |
+| **桌面 App** | `LitSSHmcp.App` | WPF 管理端（单实例）：服务器、文件传输（FTP / FTPS / SFTP）、数据源、应用、拓扑、远程桌面、Jenkins、Kubernetes、审计、在线文件编辑、桌面宠物、托盘常驻和内置 AI 助手（含 AI 定时任务）。 |
 | **Web 助手** | `LitSSHmcp.Web` | 浏览器 AI 运维助手：独立账号、每会话独立子进程、流式聊天、Web 审批与文件下载。 |
 
 ## 核心能力
 
 | 能力域 | 说明 |
 |--------|------|
-| SSH 运维 | 命令执行、sudo、连接测试、文件上传下载、目录浏览、整机快照 |
+| SSH 运维 | 命令执行、sudo、连接测试、文件上传下载、目录浏览、整机快照；会话管理支持标签/目录树、悬浮操作栏与平铺布局 |
+| 文件传输 | FTP / FTPS / SFTP 站点管理、双栏浏览、上传下载、传输队列；FTPS 支持自定义 CA、证书指纹固定、客户端证书、TLS 版本、SOCKS/HTTP 代理；支持并发、续传、暂停、限速和覆盖/跳过/重命名策略 |
 | 远程文件 | SFTP 浏览与远程回收站；在线编辑器支持多 Tab、编码/换行转换、查找替换、冲突检测、Diff、备份历史与文件权限保留 |
 | 长任务 | `job_start` 后台执行、逐台进度、结构化结果、事件断点续读、取消与任务列表 |
 | AI 运维助手 | Ops 专注 profile、统一意图路由、`ops_record` 知识沉淀、事件/资产画像、可信脚本哈希；SSH 终端内 AI 侧栏限定当前服务器与命令/提权工具 |
@@ -205,7 +206,7 @@ litssh deny <审批ID>               # 拒绝
 
 | 文档 | 内容 |
 |------|------|
-| [docs/APP_GUIDE.md](docs/APP_GUIDE.md) | 桌面 App 使用指南：页面、终端、远程文件在线编辑、数据源、拓扑、AI 助手、设置 |
+| [docs/APP_GUIDE.md](docs/APP_GUIDE.md) | 桌面 App 使用指南：页面、终端、文件传输、远程文件在线编辑、数据源、拓扑、AI 助手、设置 |
 | [docs/WEB_GUIDE.md](docs/WEB_GUIDE.md) | Web 助手：启动、账号、安全边界 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计：分层、模块、安全、拓扑、线程模型、扩展点 |
 | [docs/TOOLS.md](docs/TOOLS.md) | 41 个常规工具 + 1 个宿主内部工具完整参考 |

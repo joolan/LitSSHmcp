@@ -126,7 +126,45 @@
 
 ```json
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
+  "fileTransferSites": [
+    {
+      "id": "ftp-example",
+      "name": "Example FTP",
+      "protocol": "Ftps",
+      "host": "ftp.example.com",
+      "port": 21,
+      "username": "deploy",
+      "authType": "Password",
+      "password": "enc:...",
+      "ftpsMode": "Explicit",
+      "validateCertificate": true,
+      "tlsVersion": "auto",
+      "caCertificatePath": "",
+      "certificatePins": [],
+      "clientCertificatePath": "",
+      "clientCertificateKeyPath": "",
+      "clientCertificatePassword": null,
+      "passive": true,
+      "passiveFallback": true,
+      "keepAliveSeconds": 30,
+      "autoReconnect": true,
+      "encoding": "utf-8",
+      "initialPath": "/",
+      "timeoutSeconds": 30,
+      "maxConcurrentTransfers": 2,
+      "speedLimitKBps": 0,
+      "conflictPolicy": "Ask",
+      "proxyType": "None",
+      "proxyHost": null,
+      "proxyPort": 0,
+      "proxyUsername": null,
+      "proxyPassword": null,
+      "group": "Example",
+      "tags": ["ftp"],
+      "description": "FTP / FTPS 站点；SFTP 直接复用 servers 中的 SSH 配置"
+    }
+  ],
   "snapshot": {
     "useSudo": true,
     "retentionPerServer": 30,

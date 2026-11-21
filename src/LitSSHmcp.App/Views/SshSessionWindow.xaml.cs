@@ -14,6 +14,10 @@ namespace LitSSHmcp.App.Views;
 /// <summary>SSH 会话管理：多标签窗口（每个服务器一个标签），非模态、不置顶。</summary>
 public partial class SshSessionWindow : FluentWindow
 {
+    private const string TreeWidthKey = "ssh.tree.width";
+    private const double DefaultTreeWidth = 210;
+    private const double MinTreeWidth = 150;
+
     public SshSessionWindow()
     {
         InitializeComponent();
@@ -39,15 +43,234 @@ public partial class SshSessionWindow : FluentWindow
         TilingScroll.SizeChanged -= OnTilingSizeChanged;
         TilingScroll.SizeChanged += OnTilingSizeChanged;
         UpdateTileHeight();
+        UpdateTreeLayout();
+        SyncTreeSelection();
     }
 
     private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(MainViewModel.SshLayout) or nameof(MainViewModel.SshTileHeight))
             UpdateTileHeight();
+        if (e.PropertyName is nameof(MainViewModel.IsSshTreeNavigation))
+            UpdateTreeLayout();
+        if (e.PropertyName is nameof(MainViewModel.SelectedSession) or nameof(MainViewModel.IsSshTreeNavigation))
+            SyncTreeSelection();
     }
 
-    private void OnSessionsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => UpdateTileHeight();
+    private void OnSessionsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        UpdateTileHeight();
+        Dispatcher.BeginInvoke(new Action(SyncTreeSelection),
+            System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    private void UpdateTreeLayout()
+    {
+        if (DataContext is not MainViewModel vm)
+            return;
+
+        var show = vm.IsSshTreeNavigation;
+        SessionTreeSplitter.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        SessionTreeColumn.Width = show
+            ? new GridLength(Math.Max(MinTreeWidth, UiPrefs.GetDouble(TreeWidthKey, DefaultTreeWidth)))
+            : new GridLength(0);
+    }
+
+    private void OnTreeSplitterDragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (SessionTreeColumn.ActualWidth >= MinTreeWidth)
+            UiPrefs.SetDouble(TreeWidthKey, SessionTreeColumn.ActualWidth);
+    }
+
+    private bool _syncingTreeSelection;
+    private SessionTreeNode? _selectedTreeNode;
+    private SessionTreeNode? _treeContextNode;
+
+    private void OnTreeSelectionChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+    {
+        if (_syncingTreeSelection || DataContext is not MainViewModel vm)
+            return;
+        if (e.NewValue is SessionTreeNode { Session: { } session })
+        {
+            vm.SelectedSession = session;
+            Dispatcher.BeginInvoke(new Action(FocusActiveInput),
+                System.Windows.Threading.DispatcherPriority.Input);
+            return;
+        }
+
+        SyncTreeSelection();
+    }
+
+    private void SyncTreeSelection()
+    {
+        if (DataContext is not MainViewModel vm || !vm.IsSshTreeNavigation)
+            return;
+
+        var node = FindTreeNode(vm.SessionTree, vm.SelectedSession);
+        _syncingTreeSelection = true;
+        try
+        {
+            foreach (var treeNode in FlattenTree(vm.SessionTree))
+                treeNode.IsSelected = false;
+            _selectedTreeNode = node;
+            if (node is not null)
+            {
+                foreach (var parent in FindTreePath(vm.SessionTree, node))
+                    parent.IsExpanded = true;
+                node.IsSelected = true;
+            }
+        }
+        finally
+        {
+            _syncingTreeSelection = false;
+        }
+    }
+
+    private static IEnumerable<SessionTreeNode> FlattenTree(
+        IEnumerable<SessionTreeNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            yield return node;
+            foreach (var child in FlattenTree(node.Children))
+                yield return child;
+        }
+    }
+
+    private void OnTreePreviewLeftClick(object sender, MouseButtonEventArgs e)
+    {
+        if (FindAncestor<System.Windows.Controls.Primitives.ToggleButton>(
+                e.OriginalSource as DependencyObject) is not null)
+            return;
+
+        _treeContextNode = null;
+        var item = FindAncestor<System.Windows.Controls.TreeViewItem>(e.OriginalSource as DependencyObject);
+        if (item?.DataContext is not SessionTreeNode node)
+            return;
+
+        if (node.IsSession && node.Session is not null && DataContext is MainViewModel vm)
+        {
+            item.IsSelected = true;
+            vm.SelectedSession = node.Session;
+        }
+        else
+        {
+            node.IsExpanded = !node.IsExpanded;
+            item.IsSelected = false;
+            e.Handled = true;
+        }
+    }
+
+    private void OnTreePreviewRightClick(object sender, MouseButtonEventArgs e)
+    {
+        var item = FindAncestor<System.Windows.Controls.TreeViewItem>(e.OriginalSource as DependencyObject);
+        _treeContextNode = item?.DataContext as SessionTreeNode;
+        if (_treeContextNode is { IsSession: true })
+            item!.IsSelected = true;
+        else if (item is not null)
+            item.IsSelected = false;
+    }
+
+    private void OnTreeContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm || _treeContextNode is not { } node)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        var menu = new ContextMenu();
+        if (node.IsSession && node.Session is not null)
+        {
+            var detach = new System.Windows.Controls.MenuItem { Header = "分离为独立窗口" };
+            detach.Click += (_, _) => OnTreeDetach(this, new RoutedEventArgs());
+            menu.Items.Add(detach);
+
+            var close = new System.Windows.Controls.MenuItem
+            {
+                Header = "关闭会话",
+                Foreground = FindResource("AppDangerBrush") as System.Windows.Media.Brush
+            };
+            close.Click += (_, _) => OnTreeClose(this, new RoutedEventArgs());
+            menu.Items.Add(close);
+        }
+        else if (node.IsServer && node.Server is not null)
+        {
+            var open = new System.Windows.Controls.MenuItem { Header = "打开新会话" };
+            open.Click += (_, _) => vm.ConnectTerminal(node.Server);
+            menu.Items.Add(open);
+
+            var count = vm.Sessions.OfType<TerminalSessionViewModel>()
+                .Count(session => string.Equals(session.Server.Id, node.Server.Id, StringComparison.Ordinal));
+            var closeAll = new System.Windows.Controls.MenuItem
+            {
+                Header = "关闭下属会话",
+                IsEnabled = count > 0,
+                Foreground = FindResource("AppDangerBrush") as System.Windows.Media.Brush
+            };
+            closeAll.Click += (_, _) => vm.CloseSessionsForServer(node.Server);
+            menu.Items.Add(closeAll);
+        }
+        else
+        {
+            e.Handled = true;
+            return;
+        }
+
+        SessionTree.ContextMenu = menu;
+        menu.PlacementTarget = SessionTree;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private void OnTreeDetach(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm &&
+            SessionTree.SelectedItem is SessionTreeNode { Session: { } session })
+            vm.FloatSession(session);
+    }
+
+    private void OnTreeClose(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm &&
+            SessionTree.SelectedItem is SessionTreeNode { Session: { } session })
+            vm.CloseSessionCommand.Execute(session);
+    }
+
+    private static SessionTreeNode? FindTreeNode(
+        IEnumerable<SessionTreeNode> nodes, object? session)
+    {
+        if (session is null)
+            return null;
+        foreach (var node in nodes)
+        {
+            if (ReferenceEquals(node.Session, session))
+                return node;
+            var found = FindTreeNode(node.Children, session);
+            if (found is not null)
+                return found;
+        }
+        return null;
+    }
+
+    private static IEnumerable<SessionTreeNode> FindTreePath(
+        IEnumerable<SessionTreeNode> nodes, SessionTreeNode target)
+    {
+        foreach (var node in nodes)
+        {
+            if (ReferenceEquals(node, target))
+                yield break;
+            var path = FindTreePath(node.Children, target).ToList();
+            if (path.Count > 0 || node.Children.Any(child => ReferenceEquals(child, target)))
+            {
+                yield return node;
+                foreach (var parent in path)
+                    yield return parent;
+                yield break;
+            }
+        }
+    }
 
     private void OnTilingSizeChanged(object sender, SizeChangedEventArgs e) => UpdateTileHeight();
 
@@ -230,6 +453,75 @@ public partial class SshSessionWindow : FluentWindow
         var up = new System.Windows.Controls.MenuItem { Header = "行高 +" };
         up.Click += (_, _) => vm.SshTileHeight += 40;
         menu.Items.Add(up);
+
+        menu.PlacementTarget = sender as UIElement;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    private void OnSessionMoreMenu(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm)
+            return;
+
+        var menu = new ContextMenu();
+
+        var batch = new System.Windows.Controls.MenuItem { Header = "批量执行", IsEnabled = vm.HasSessions };
+        batch.Click += (_, _) => OnBatchExec(this, new RoutedEventArgs());
+        menu.Items.Add(batch);
+
+        var layout = new System.Windows.Controls.MenuItem { Header = "会话布局" };
+        void AddLayout(string header, SessionLayout value)
+        {
+            var item = new System.Windows.Controls.MenuItem { Header = header, IsCheckable = true, IsChecked = vm.SshLayout == value };
+            item.Click += (_, _) => vm.SshLayout = value;
+            layout.Items.Add(item);
+        }
+        AddLayout("标签切换", SessionLayout.Tabs);
+        AddLayout("平铺 1 列", SessionLayout.Tile1);
+        AddLayout("平铺 2 列", SessionLayout.Tile2);
+        AddLayout("平铺 3 列", SessionLayout.Tile3);
+        menu.Items.Add(layout);
+
+        var navigation = new System.Windows.Controls.MenuItem { Header = "会话导航" };
+        var tabsNavigation = new System.Windows.Controls.MenuItem
+        {
+            Header = "标签",
+            IsCheckable = true,
+            IsChecked = !vm.IsSshTreeNavigation
+        };
+        tabsNavigation.Click += (_, _) => vm.IsSshTreeNavigation = false;
+        navigation.Items.Add(tabsNavigation);
+        var treeNavigation = new System.Windows.Controls.MenuItem
+        {
+            Header = "目录树",
+            IsCheckable = true,
+            IsChecked = vm.IsSshTreeNavigation
+        };
+        treeNavigation.Click += (_, _) => vm.IsSshTreeNavigation = true;
+        navigation.Items.Add(treeNavigation);
+        menu.Items.Add(navigation);
+
+        menu.Items.Add(new Separator());
+        var sync = new System.Windows.Controls.MenuItem
+        {
+            Header = vm.CommandSyncEnabledCount == 0 ? "开启全部命令同步" : "关闭全部命令同步",
+            IsEnabled = vm.HasCommandSyncSessions,
+            ToolTip = vm.CommandSyncToolTip
+        };
+        sync.Click += (_, _) => OnCommandSyncAll(this, new RoutedEventArgs());
+        menu.Items.Add(sync);
+
+        if (vm.IsSshTiled)
+        {
+            menu.Items.Add(new Separator());
+            var down = new System.Windows.Controls.MenuItem { Header = "平铺行高 -" };
+            down.Click += (_, _) => vm.SshTileHeight -= 40;
+            menu.Items.Add(down);
+            var up = new System.Windows.Controls.MenuItem { Header = "平铺行高 +" };
+            up.Click += (_, _) => vm.SshTileHeight += 40;
+            menu.Items.Add(up);
+        }
 
         menu.PlacementTarget = sender as UIElement;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;

@@ -1,0 +1,69 @@
+<UserControl x:Class="LitSSHmcp.App.Controls.HomeTrendPanel"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:controls="clr-namespace:LitSSHmcp.App.Controls">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/LitSSHmcp.App;component/Themes/HomeSegmentStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Border Style="{DynamicResource CardBorderStyle}" Padding="14,12">
+        <DockPanel>
+            <DockPanel DockPanel.Dock="Top" LastChildFill="False">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Left">
+                    <ui:SymbolIcon Symbol="History24" FontSize="16"
+                                   Foreground="{DynamicResource AppAccentBrush}"/>
+                    <TextBlock Text="本机趋势" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Border DockPanel.Dock="Right" Style="{StaticResource SegmentGroupStyle}">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="1 分钟" Command="{Binding SetTrendRangeCommand}" CommandParameter="1 分钟">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsTrendRange1m}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource AppAccentSubtleBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="5 分钟" Command="{Binding SetTrendRangeCommand}" CommandParameter="5 分钟">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsTrendRange5m}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource AppAccentSubtleBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="15 分钟" Command="{Binding SetTrendRangeCommand}" CommandParameter="15 分钟">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsTrendRange15m}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource AppAccentSubtleBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </DockPanel>
+            <controls:MetricTrendChart Series="{Binding TrendSeries}" StartLabel="{Binding TrendStartLabel}"
+                                       MinHeight="190" Margin="0,8,0,0"/>
+        </DockPanel>
+    </Border>
+</UserControl>

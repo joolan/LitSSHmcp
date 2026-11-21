@@ -41,15 +41,24 @@ public partial class MainWindow : FluentWindow
 
     public MainWindow()
     {
-        InitializeComponent();
+        using var perf = PerfLog.Scope("mainwindow.ctor");
+        using (PerfLog.Scope("mainwindow.ctor.xaml"))
+            InitializeComponent();
         ClampInitialSizeToWorkArea();
-        _ = PetService.ApplyAsync(AppServiceFactory.CreateConfigService());
-        DataContext = new MainViewModel();
+        using (PerfLog.Scope("mainwindow.ctor.viewmodel"))
+            DataContext = new MainViewModel();
         // 托盘图标随主窗口启动常驻，而不是等用户关闭窗口并选择“最小化到托盘”才创建。
-        Loaded += (_, _) => EnsureTray();
+        Loaded += (_, _) =>
+        {
+            EnsureTray();
+            Dispatcher.BeginInvoke(new Action(NetworkStatus.EnsureStarted),
+                System.Windows.Threading.DispatcherPriority.Background);
+            Dispatcher.BeginInvoke(new Action(() =>
+                    _ = PetService.ApplyAsync(AppServiceFactory.CreateConfigService())),
+                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        };
         ViewModel.BackgroundQueueCompleted += OnBackgroundQueueCompleted;
         ViewModel.JenkinsBuildCompleted += OnJenkinsBuildCompleted;
-        NetworkStatus.EnsureStarted();
         NetworkStatus.AvailabilityChanged += OnNetworkAvailabilityChanged;
         WindowLayout.Attach(this, "main.v2");
         SourceInitialized += (_, _) => RegisterToolboxHotkey();

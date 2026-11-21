@@ -36,7 +36,7 @@ public sealed class RemoteCopyViewModel : INotifyPropertyChanged
         _source = source;
         _dialogs = dialogs ?? new UserDialogService();
         _services = services;
-        _ssh = services?.CreateSshService() ?? AppServiceFactory.CreateSshService();
+        _ssh = services?.Ssh ?? AppServiceFactory.CreateSshService();
         IsBrowserMode = items is null;
         Sources = new ObservableCollection<RemoteFileItem>(items ?? Enumerable.Empty<RemoteFileItem>());
         Targets = new ObservableCollection<SshServerConfig>();

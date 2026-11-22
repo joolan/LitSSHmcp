@@ -49,6 +49,8 @@ public static class BackupItemCatalog
     public static IReadOnlyList<BackupItemDescriptor> Descriptors { get; } = new[]
     {
         FileItem("config", "配置 config.json", "服务器、工具与安全配置", "config.json"),
+        FileItem("proxy-config", "局域网代理 http-socks-proxy.json",
+            "HTTP/SOCKS5 监听、账号与访问策略", "http-socks-proxy.json"),
         SqliteItem("agent-db", "AI 会话 / 记忆 agent.db", "会话、消息、记忆与队列", "agent.db"),
         SqliteItem("audit-db", "审计 audit.db", "命令审计与哈希链", "audit.db"),
         SqliteItem("snapshot-db", "快照 snapshots.db", "服务器快照与历史", "snapshots.db"),

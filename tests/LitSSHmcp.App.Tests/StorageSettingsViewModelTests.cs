@@ -28,6 +28,7 @@ public class StorageSettingsViewModelTests : IDisposable
         Directory.CreateDirectory(Path.Combine(_root, "password-vault"));
         Directory.CreateDirectory(Path.Combine(_root, "pet-assets"));
         await File.WriteAllBytesAsync(Path.Combine(_root, "config.json"), new byte[10]);
+        await File.WriteAllBytesAsync(Path.Combine(_root, "http-socks-proxy.json"), new byte[5]);
         await File.WriteAllBytesAsync(Path.Combine(_root, "agent.db"), new byte[20]);
         await File.WriteAllBytesAsync(Path.Combine(_root, "audit.db"), new byte[30]);
         await File.WriteAllBytesAsync(Path.Combine(_root, "spills", "x.txt"), new byte[40]);
@@ -41,15 +42,16 @@ public class StorageSettingsViewModelTests : IDisposable
         var vm = CreateVm(new AgentConfig { WorkspaceDir = ws });
         await vm.RefreshAsync();
 
-        Assert.Equal(15, vm.Stats.Count);
+        Assert.Equal(16, vm.Stats.Count);
         Assert.Equal(10, vm.Stats.Single(s => s.Name.Contains("config.json")).Bytes);
+        Assert.Equal(5, vm.Stats.Single(s => s.Name.Contains("http-socks-proxy.json")).Bytes);
         Assert.Equal(20, vm.Stats.Single(s => s.Name.Contains("agent.db")).Bytes);
         Assert.Equal(40, vm.Stats.Single(s => s.Name.Contains("spill")).Bytes);
         Assert.Equal(50, vm.Stats.Single(s => s.Name.Contains("jobs")).Bytes);
         Assert.Equal(80, vm.Stats.Single(s => s.Name.Contains("密码保管箱")).Bytes);
         Assert.Equal(90, vm.Stats.Single(s => s.Name.Contains("桌面宠物素材")).Bytes);
         Assert.Equal(20, vm.Stats.Single(s => s.Name.Contains("terminal-logs")).Bytes);
-        Assert.Equal(470, vm.Stats.Single(s => s.Name.Contains("数据目录合计")).Bytes);
+        Assert.Equal(475, vm.Stats.Single(s => s.Name.Contains("数据目录合计")).Bytes);
     }
 
     [Fact]

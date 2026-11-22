@@ -92,6 +92,8 @@ public partial class App : Application
         // 端口转发：退出时统一停止活动隧道并断开 SSH 连接
         Exit += (_, _) => PetService.Close();
         Exit += (_, _) => AppServiceFactory.DisposePortForwardService();
+        // 局域网 HTTP / SOCKS5 代理：退出时停止监听并关闭所有连接
+        Exit += (_, _) => AppServiceFactory.DisposeProxyHost();
         // 内置 MCP 宿主池：退出时结束池内常驻子进程（进程级，需在退出前统一释放）
         Exit += (_, _) => _ = LitSSHmcp.Agent.McpBuiltinHostPool.ShutdownAsync();
 
@@ -279,6 +281,9 @@ public partial class App : Application
         if (_backgroundSchedulersStarted)
             return;
         _backgroundSchedulersStarted = true;
+
+        // 局域网代理：只有配置 Enabled=true 才启动；失败不阻断 App。
+        _ = AppServiceFactory.ProxyHost.StartIfEnabledAsync();
 
         try
         {

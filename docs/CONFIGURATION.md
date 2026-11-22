@@ -2,6 +2,8 @@
 
 配置文件位置：`%APPDATA%\LitSSH\config.json`
 
+> 局域网 HTTP / SOCKS5 代理使用独立文件 `%APPDATA%\LitSSH\http-socks-proxy.json`（监听、账号 PBKDF2 哈希、白名单与目标策略），不参与 `config.json` 的合并/冲突流程；该文件已纳入存储维护统计和定时备份项目。
+
 ```json
 {
   "servers": [

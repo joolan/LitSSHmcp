@@ -26,7 +26,7 @@ public partial class BackupPlanEditWindow : FluentWindow
             {
                 Item = item,
                 IsSelected = _isNew
-                    ? item.Id is "config" or "agent-db" or "audit-db" or "snapshot-db" or "skills" or "vaults" or "password-vault"
+                    ? item.Id is "config" or "proxy-config" or "agent-db" or "audit-db" or "snapshot-db" or "skills" or "vaults" or "password-vault"
                     : _plan.Items.Contains(item.Id, StringComparer.Ordinal)
             })
             .ToList();

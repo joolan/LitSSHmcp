@@ -23,6 +23,7 @@ public partial class ToolboxView : UserControl
     private SshKeyToolWindow? _sshKeyWindow;
     private LocalPortToolWindow? _localPortWindow;
     private WakeOnLanToolWindow? _wakeOnLanWindow;
+    private ProxyToolWindow? _proxyWindow;
     private ToolboxItemViewModel? _dragItem;
     private ToolboxItemViewModel? _dropTarget;
     private Point _dragStart;
@@ -210,6 +211,18 @@ public partial class ToolboxView : UserControl
             _wakeOnLanWindow = new WakeOnLanToolWindow { Owner = Window.GetWindow(this) };
             _wakeOnLanWindow.Closed += (_, _) => _wakeOnLanWindow = null;
             _wakeOnLanWindow.Show();
+        }
+        if (string.Equals(id, "http-proxy", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_proxyWindow is { IsLoaded: true })
+            {
+                _proxyWindow.Activate();
+                return;
+            }
+
+            _proxyWindow = new ProxyToolWindow { Owner = Window.GetWindow(this) };
+            _proxyWindow.Closed += (_, _) => _proxyWindow = null;
+            _proxyWindow.Show();
         }
     }
 

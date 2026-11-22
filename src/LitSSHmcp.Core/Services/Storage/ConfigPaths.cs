@@ -40,6 +40,9 @@ public static class ConfigPaths
 
     public static string KnownHostsFile => Path.Combine(AppDataDir, "known_hosts.json");
 
+    /// <summary>局域网 HTTP / SOCKS5 代理配置（监听、账号、访问策略）。</summary>
+    public static string ProxyConfigFile => Path.Combine(AppDataDir, "http-socks-proxy.json");
+
     public static string LogsDir => Path.Combine(AppDataDir, "logs");
 
     private static string Initialize()

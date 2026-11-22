@@ -42,6 +42,26 @@ public static class AppServiceFactory
     public static void DisposePortForwardService()
         => Interlocked.Exchange(ref _portForwardService, null)?.Dispose();
 
+    private static ProxyHostService? _proxyHostService;
+
+    /// <summary>
+    /// 局域网 HTTP / SOCKS5 代理（进程级单例）：App 启动后按配置自动开启，退出时统一停止。
+    /// 工具箱窗口与后台生命周期共用该实例，避免重复监听端口。
+    /// </summary>
+    public static ProxyHostService ProxyHost
+    {
+        get
+        {
+            if (_proxyHostService is null)
+                Interlocked.CompareExchange(ref _proxyHostService, new ProxyHostService(), null);
+            return _proxyHostService!;
+        }
+    }
+
+    /// <summary>App 退出时停止代理并释放 HTTP / SOCKS5 监听端口。</summary>
+    public static void DisposeProxyHost()
+        => Interlocked.Exchange(ref _proxyHostService, null)?.Dispose();
+
     private static RemoteDesktopService? _remoteDesktopService;
 
     /// <summary>

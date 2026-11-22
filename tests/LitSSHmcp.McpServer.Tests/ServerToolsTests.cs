@@ -5,6 +5,7 @@ using Xunit;
 
 namespace LitSSHmcp.McpServer.Tests;
 
+[Collection("AuthzEnvironment")]
 public class ServerToolsTests
 {
     [Fact]

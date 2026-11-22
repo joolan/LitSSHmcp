@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using LitSSHmcp.App.Services.Toolbox;
@@ -24,6 +25,9 @@ public sealed class ToolboxItemEditViewModel : INotifyPropertyChanged
         Tags = _source.Tags;
         RunAsAdmin = _source.RunAsAdmin;
         IsPinned = _source.IsPinned;
+        EnvironmentVariables = new ObservableCollection<ToolboxEnvironmentVariable>(
+            (_source.EnvironmentVariables ?? new List<ToolboxEnvironmentVariable>())
+            .Select(variable => variable.Clone()));
     }
 
     public bool IsNew => string.IsNullOrWhiteSpace(_source.Name);
@@ -63,6 +67,7 @@ public sealed class ToolboxItemEditViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsScript));
             OnPropertyChanged(nameof(IsPathTarget));
+            OnPropertyChanged(nameof(IsEnvSupported));
             OnPropertyChanged(nameof(TargetHint));
         }
     }
@@ -123,7 +128,10 @@ public sealed class ToolboxItemEditViewModel : INotifyPropertyChanged
         set { _tags = value; OnPropertyChanged(); }
     }
 
+    public ObservableCollection<ToolboxEnvironmentVariable> EnvironmentVariables { get; }
+
     public bool IsScript => Type == ToolboxItemType.Script;
+    public bool IsEnvSupported => Type is ToolboxItemType.Application or ToolboxItemType.Script;
     public bool IsPathTarget => Type is ToolboxItemType.Application or ToolboxItemType.File or ToolboxItemType.Folder or ToolboxItemType.Script;
     public string TargetHint => Type switch
     {
@@ -146,10 +154,26 @@ public sealed class ToolboxItemEditViewModel : INotifyPropertyChanged
         item.Group = Group.Trim();
         item.Tags = Tags.Trim();
         item.RunAsAdmin = RunAsAdmin;
+        item.EnvironmentVariables = IsEnvSupported
+            ? EnvironmentVariables
+                .Where(variable => !string.IsNullOrWhiteSpace(variable.Name))
+                .Select(variable => new ToolboxEnvironmentVariable
+                {
+                    Name = variable.Name.Trim(),
+                    Value = variable.Value ?? string.Empty
+                })
+                .ToList()
+            : new List<ToolboxEnvironmentVariable>();
         item.IsPinned = IsPinned;
         item.UpdatedAt = DateTimeOffset.Now;
         return item;
     }
+
+    public void AddEnvironmentVariable() =>
+        EnvironmentVariables.Add(new ToolboxEnvironmentVariable());
+
+    public void RemoveEnvironmentVariable(ToolboxEnvironmentVariable variable) =>
+        EnvironmentVariables.Remove(variable);
 
     public string? Validate()
     {
@@ -161,6 +185,30 @@ public sealed class ToolboxItemEditViewModel : INotifyPropertyChanged
             (!Uri.TryCreate(Target, UriKind.Absolute, out var uri) ||
              uri.Scheme is not ("http" or "https" or "mailto")))
             return "URL 仅支持 http / https / mailto。";
+
+        if (IsEnvSupported)
+        {
+            if (EnvironmentVariables.Count > 128)
+                return "环境变量数量不能超过 128 个。";
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var variable in EnvironmentVariables)
+            {
+                var name = variable.Name?.Trim() ?? string.Empty;
+                if (name.Length == 0 && string.IsNullOrEmpty(variable.Value))
+                    continue;
+                if (!ToolboxEnvironmentVariable.IsValidName(name))
+                    return $"环境变量名“{name}”不合法；请使用字母、数字、下划线，且不能以数字开头。";
+                if (!names.Add(name))
+                    return $"环境变量名“{name}”重复（不区分大小写）。";
+                if ((variable.Value?.Length ?? 0) > 16 * 1024)
+                    return $"环境变量“{name}”的值超过 16 KB。";
+            }
+
+            if (RunAsAdmin && EnvironmentVariables.Any(variable =>
+                    !string.IsNullOrWhiteSpace(variable.Name)))
+                return "“以管理员身份运行”暂不支持按工具注入环境变量；请关闭管理员运行，或删除环境变量。";
+        }
+
         return null;
     }
 

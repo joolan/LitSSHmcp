@@ -174,7 +174,8 @@ LitSSHmcp/
 - `DpapiSecretProtector`（`ISecretProtector.cs`）：`ProtectedData`，`LocalMachine`/`CurrentUser` 范围，前缀 `enc:` 标识。DPAPI 密文与当前 Windows 用户配置文件绑定，跨电脑恢复后需重新填写对应密钥。
 - `PasswordVaultService` / `PasswordVaultViewModel`：独立主密码密码保管箱，加密索引与附件，支持 TOTP/HOTP、密码历史、自动锁定和加密包备份；与文件柜互不共用主密码。
 - `BackupService` / `BackupScheduler`：存储维护定时备份，按计划多选存储项目，SQLite 使用 `BackupDatabase` 一致性备份，zip 可选 `.lsbak` 加密（PBKDF2-SHA256 + 分块 AES-GCM），本地完成后可上传阿里云 OSS；支持启动兜底、Windows 计划任务、历史、完整性校验与恢复向导。`http-socks-proxy.json` 作为独立备份项目。
-- `ProxyServerHost` / `ProxyHostService`：局域网 HTTP + SOCKS5 正向代理（Core `Services/Proxy`）。HTTP 支持 CONNECT 与绝对 URI 转发，SOCKS5 支持 RFC 1929 和 CONNECT；两者共享 PBKDF2 账号、客户端 CIDR、目标端口、私有地址策略、并发/空闲超时、流量统计和 500 条环形日志。临时到期自动停止；App 通过进程级 `ProxyHostService` 单例启动/停止，工具箱窗口只做配置与状态展示。配置独立保存为 `http-socks-proxy.json`（原子写入 + `.bak` 回退），不进入 `config.json` 的合并/冲突流程。
+- `ProxyServerHost` / `ProxyHostService`：局域网 HTTP + SOCKS5 正向代理（Core `Services/Proxy`）。HTTP 支持 CONNECT 与绝对 URI 转发，SOCKS5 支持 RFC 1929 和 CONNECT；两者共享 PBKDF2 账号、客户端 CIDR、域名白/黑名单、目标端口、私有地址策略、并发/空闲超时、流量统计和 500 条环形日志。支持活动连接快照/断开、账号与策略热更新（监听地址/端口变更需重启）、按客户端 IP 的认证失败限速与审计、经上游 HTTP/SOCKS5 代理链访问目标。临时到期自动停止；App 通过进程级 `ProxyHostService` 单例启动/停止，工具箱窗口负责配置、状态、防火墙规则检测与网卡地址选择。配置独立保存为 `http-socks-proxy.json`（原子写入 + `.bak` 回退），上游密码 DPAPI 加密，不进入 `config.json` 的合并/冲突流程。
+- `EnvironmentVariableService` / `EnvironmentVariablesWindow`：工具箱环境变量管理。用户变量读写 `HKCU\Environment`；系统变量默认只读，经 UAC 探测解锁后，保存时把加密变更载荷交给 App 的提权助手（`--apply-environment`）写 `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment`。支持字符串/可展开字符串、PATH 逐行编辑与空段校验、关键变量删除/置空保护、DPAPI 加密备份/恢复、`WM_SETTINGCHANGE` 广播和当前进程环境同步；每次变更按变量名/范围写审计，不记录值。提权助手只返回状态，不写审计，避免重复。
 - `RemoteTrashService`：远程文件可视删除移动到 `~/.litssh-trash`，保留原始路径清单，支持恢复、彻底删除和清空；不修改终端 `rm` 等底层命令。
 - `RemoteTextFileService` / `RemoteFileEditorWindow` / `RemoteFileEditorViewModel`：远程文本在线编辑。读取按 UTF-8/BOM、UTF-16 LE、GB18030、GBK、Latin1 解码并识别 LF/CRLF/CR；保存前用大小、mtime 与 SHA-256 校验版本，冲突时提供本地/远端 Diff；自动备份到 `~/.litssh-backups/` 并支持历史恢复；写入后 best-effort 恢复权限、属主、ACL、xattr、SELinux。软限制 2 MiB、硬限制 10 MiB，拒绝二进制与符号链接；保存操作写审计。窗口按服务器复用，支持多 Tab、查找替换、外部变更检测和 Tab 状态持久化。
 - `FtpFileService` / `FtpSession` / `FtpManagerViewModel`：FTP / FTPS 文件传输，使用 MIT 许可的 FluentFTP；支持显式/隐式 TLS、自定义 CA、SHA-256 证书固定、客户端证书、TLS 版本、被动/主动数据连接及失败回退、Keep-alive、自动重连、HTTP/SOCKS 代理、并发传输、断点续传、暂停/继续、限速、覆盖/跳过/自动重命名策略、目录递归上传下载和进度回调；目录同步仍暂未纳入第一版。`FileTransferSiteConfig` 保存 FTP/FTPS 站点，密码、客户端证书口令和代理密码经 ConfigService DPAPI 加密；SFTP 不新建协议实现，直接复用 SSH 服务器与现有 `SftpManagerWindow`。第一版不含目录同步、站点导入和 FTP 在线编辑。
@@ -338,7 +339,7 @@ topology_query(action=overview) (全局拓扑) → topology_query(action=depende
 | Redis | 只读白名单放行；危险/阻塞命令硬拒绝；其余写命令一律用户确认（第一期） | `RedisCommandPolicy` + `RedisTools` |
 | 凭据 | DPAPI 加密落盘（`enc:`）；工具入参只用 `datasourceId`；出参永不含密码 | `ConfigService` + `DpapiSecretProtector` |
 | 隧道 | MySQL/PostgreSQL/Redis 密码只发给对应数据库，不经过跳板机配置 | `SshTunnel` |
-| 局域网代理 | 默认仅监听 `127.0.0.1`、匿名关闭、PBKDF2 账号、客户端 CIDR、目标端口默认 `80/443`、默认禁止私有/回环/保留地址、临时默认 2 小时、关闭 App 即停止；配置独立 `http-socks-proxy.json` | `ProxyServerHost` + `ProxyPolicy` + `ProxyHostService` |
+| 局域网代理 | 默认仅监听 `127.0.0.1`、匿名关闭、PBKDF2 账号、客户端 CIDR、域名白/黑名单、目标端口默认 `80/443`、默认禁止私有/回环/保留地址、临时默认 2 小时、关闭 App 即停止；认证失败按客户端 IP 限速/封禁并写审计；上游代理密码 DPAPI 加密 | `ProxyServerHost` + `ProxyPolicy` + `ProxyAuthFailureTracker` + `ProxyHostService` |
 | 主机密钥 | TOFU 校验 SSH 指纹，变化即拒绝（`security.sshHostKey.mode`）；桌面主界面/终端/远程文件夹选择/同步与数据源、端口转发、拓扑发现统一经 `SshClientFactory`，无绕过路径；「测试连接」返回 `auth`/`host_key`/`timeout`/`network` 根因 | `SshClientFactory` + `FileSshKnownHostsStore` + `AppServiceFactory` |
 | 限流 | 按目标限制并发/每分钟调用（`security.limits`） | `TargetLimiter` |
 | 拓扑发现 | 扫描路径受白名单约束（`security.discovery.allowedSearchPaths`） | `TopologyTools` + `PathPolicy` |

@@ -102,6 +102,12 @@ public static class ProxyPolicy
     {
         if (string.IsNullOrWhiteSpace(host))
             return ProxyTargetDecision.Reject("目标地址为空。");
+
+        var domainError = ProxyDomainMatcher.Evaluate(host, options.AllowedDomains,
+            options.BlockedDomains);
+        if (domainError is not null)
+            return ProxyTargetDecision.Reject(domainError);
+
         if (port is < 1 or > 65535)
             return ProxyTargetDecision.Reject($"目标端口 {port} 不合法。");
 

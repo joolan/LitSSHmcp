@@ -1,0 +1,123 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.Tools.EnvironmentVariablesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="环境变量" Height="720" Width="1040" MinHeight="560" MinWidth="820"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="环境变量"/>
+
+        <Grid Grid.Row="1" Margin="12,4,12,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                <DockPanel LastChildFill="False">
+                    <StackPanel DockPanel.Dock="Left">
+                        <TextBlock Text="用户 / 系统环境变量" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSizeSubtitle}"/>
+                        <TextBlock Text="保存后写入注册表并通知系统。新启动的程序会使用新值；已运行的程序、终端和服务需要重启。"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeCaption}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:Button Content="刷新" Padding="12,4" Margin="0,0,6,0" Click="OnRefresh"/>
+                        <ui:Button Content="备份当前" Padding="12,4" Margin="0,0,6,0" Click="OnBackup"/>
+                        <ui:Button Content="恢复最近备份" Padding="12,4" Margin="0,0,6,0" Click="OnRestore"/>
+                        <ui:Button Content="打开新终端验证" Padding="12,4" Click="OnOpenVerificationTerminal"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Row="1" x:Name="SystemLockBanner" Visibility="Collapsed"
+                    Margin="0,0,0,8" Padding="12,8"
+                    Background="{DynamicResource AppWarningSubtleBrush}"
+                    BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1"
+                    CornerRadius="{DynamicResource AppRadiusS}">
+                <DockPanel LastChildFill="False">
+                    <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" TextWrapping="Wrap"
+                               Text="系统变量默认只读。点击“解锁编辑”后才能修改；保存时会再次提权写入 HKLM。若当前已具备管理员权限，解锁不会弹 UAC。"/>
+                    <ui:Button x:Name="UnlockButton" DockPanel.Dock="Right" Content="解锁编辑（UAC）"
+                               Padding="14,4" Click="OnUnlockSystem"/>
+                </DockPanel>
+            </Border>
+
+            <Grid Grid.Row="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                    <ui:Button x:Name="AddButton" Content="新增" Padding="14,4" Margin="0,0,6,0" Click="OnAdd"/>
+                    <ui:Button x:Name="EditButton" Content="编辑" Padding="14,4" Margin="0,0,6,0" Click="OnEdit"/>
+                    <ui:Button x:Name="DeleteButton" Content="删除" Padding="14,4" Margin="0,0,6,0" Click="OnDelete"/>
+                    <ui:Button x:Name="SaveButton" Content="保存并应用" Padding="16,4" Appearance="Primary"
+                               Click="OnSave"/>
+                </StackPanel>
+
+                <TabControl Grid.Row="1" x:Name="ScopeTabs" SelectionChanged="OnScopeChanged">
+                    <TabItem Header="用户变量">
+                        <DataGrid x:Name="UserGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                  SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal" CanUserAddRows="False"
+                                  CanUserDeleteRows="False" RowHeight="30" Margin="0,8,0,0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="变量名" Binding="{Binding Name}" Width="240"/>
+                                <DataGridTemplateColumn Header="值" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Value}" TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Value}" VerticalAlignment="Center"
+                                                       Margin="4,0"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="类型" Binding="{Binding TypeText}" Width="90"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                    <TabItem Header="系统变量">
+                        <DataGrid x:Name="SystemGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                  SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal" CanUserAddRows="False"
+                                  CanUserDeleteRows="False" RowHeight="30" Margin="0,8,0,0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="变量名" Binding="{Binding Name}" Width="240"/>
+                                <DataGridTemplateColumn Header="值" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Value}" TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Value}" VerticalAlignment="Center"
+                                                       Margin="4,0"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="类型" Binding="{Binding TypeText}" Width="90"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                </TabControl>
+            </Grid>
+        </Grid>
+
+        <DockPanel Grid.Row="2" Margin="14,0,14,12" LastChildFill="False">
+            <TextBlock x:Name="StatusText" DockPanel.Dock="Left" VerticalAlignment="Center"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"
+                       MaxWidth="760"/>
+            <TextBlock x:Name="EffectNote" DockPanel.Dock="Right" VerticalAlignment="Center"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       FontSize="{DynamicResource AppFontSizeCaption}"
+                       Text="环境变量不是密钥保险箱；敏感值请使用密码保管箱。"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

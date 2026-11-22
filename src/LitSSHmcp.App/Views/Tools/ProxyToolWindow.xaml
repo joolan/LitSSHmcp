@@ -63,9 +63,11 @@
                                     </Grid.RowDefinitions>
 
                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="监听地址" VerticalAlignment="Center"/>
-                                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="BindAddressBox" Height="34"
-                                             Margin="0,4,12,4" VerticalContentAlignment="Center" Padding="8,0"
-                                             ToolTip="127.0.0.1 仅本机；0.0.0.0 或局域网 IPv4 允许其他设备访问"/>
+                                    <ComboBox Grid.Row="0" Grid.Column="1" x:Name="BindAddressBox" Height="34"
+                                              Margin="0,4,12,4" IsEditable="True"
+                                              DisplayMemberPath="Display" SelectedValuePath="Value"
+                                              VerticalContentAlignment="Center" Padding="8,0"
+                                              ToolTip="可输入 127.0.0.1、0.0.0.0 或选择本机局域网 IPv4"/>
                                     <TextBlock Grid.Row="0" Grid.Column="2" Text="HTTP 端口" VerticalAlignment="Center"/>
                                     <TextBox Grid.Row="0" Grid.Column="3" x:Name="HttpPortBox" Height="34"
                                              Margin="0,4,0,4" VerticalContentAlignment="Center" Padding="8,0"/>
@@ -115,6 +117,32 @@
                                                   Checked="OnAllowAllPortsChanged" Unchecked="OnAllowAllPortsChanged"/>
                                     </Grid>
 
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="12"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="域名白名单（每行一个；留空不限制）"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       FontSize="{DynamicResource AppFontSizeCaption}"/>
+                                            <TextBox x:Name="AllowedDomainsBox" Height="58" Margin="0,4,0,0"
+                                                     AcceptsReturn="True" TextWrapping="Wrap"
+                                                     VerticalScrollBarVisibility="Auto" Padding="8,6"
+                                                     ToolTip="example.com 匹配自身及子域；*.example.com 只匹配子域；* 匹配所有"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="域名黑名单（每行一个；优先于白名单）"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       FontSize="{DynamicResource AppFontSizeCaption}"/>
+                                            <TextBox x:Name="BlockedDomainsBox" Height="58" Margin="0,4,0,0"
+                                                     AcceptsReturn="True" TextWrapping="Wrap"
+                                                     VerticalScrollBarVisibility="Auto" Padding="8,6"
+                                                     ToolTip="例如 *.doubleclick.net 或 tracker.example.com"/>
+                                        </StackPanel>
+                                    </Grid>
+
                                     <CheckBox x:Name="BlockPrivateCheck" Margin="0,10,0,0"
                                               Content="阻止访问内网 / 回环 / 链路本地 / 保留地址（默认开启）"
                                               IsChecked="True"/>
@@ -136,6 +164,7 @@
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
@@ -163,7 +192,74 @@
                                                      VerticalContentAlignment="Center" Margin="0,0,4,0"/>
                                             <TextBlock Text="秒" VerticalAlignment="Center"/>
                                         </StackPanel>
+
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="认证保护" VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3"
+                                                    Orientation="Horizontal" Margin="0,8,0,0">
+                                            <TextBlock Text="失败上限" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                            <TextBox x:Name="AuthFailureLimitBox" Width="56" Height="32" Padding="6,0"
+                                                     VerticalContentAlignment="Center" Margin="0,0,4,0"/>
+                                            <TextBlock Text="次 / 窗口" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                            <TextBox x:Name="AuthFailureWindowBox" Width="64" Height="32" Padding="6,0"
+                                                     VerticalContentAlignment="Center" Margin="0,0,4,0"/>
+                                            <TextBlock Text="秒 / 封禁" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                            <TextBox x:Name="AuthFailureBlockBox" Width="64" Height="32" Padding="6,0"
+                                                     VerticalContentAlignment="Center" Margin="0,0,4,0"/>
+                                            <TextBlock Text="秒（0=关闭限速）" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       FontSize="{DynamicResource AppFontSizeCaption}"/>
+                                        </StackPanel>
                                     </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <CheckBox x:Name="UpstreamEnabledCheck"
+                                              Content="经上游代理访问目标（代理链）"
+                                              Checked="OnUpstreamChanged" Unchecked="OnUpstreamChanged"/>
+                                    <Grid x:Name="UpstreamPanel" Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="100"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="110"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="上游类型" VerticalAlignment="Center"/>
+                                        <ComboBox Grid.Row="0" Grid.Column="1" x:Name="UpstreamTypeBox" Height="32"
+                                                  Margin="0,3,12,3" VerticalContentAlignment="Center" Padding="8,0">
+                                            <ComboBoxItem Content="HTTP" Tag="http"/>
+                                            <ComboBoxItem Content="SOCKS5" Tag="socks5"/>
+                                        </ComboBox>
+                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="上游端口" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Row="0" Grid.Column="3" x:Name="UpstreamPortBox" Height="32"
+                                                 Margin="0,3,0,3" VerticalContentAlignment="Center" Padding="8,0"/>
+
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="上游地址" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" x:Name="UpstreamHostBox" Height="32"
+                                                 Margin="0,3,12,3" VerticalContentAlignment="Center" Padding="8,0"
+                                                 ToolTip="上游 HTTP/SOCKS5 代理主机名或 IP"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="2" Text="用户名" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Row="1" Grid.Column="3" x:Name="UpstreamUsernameBox" Height="32"
+                                                 Margin="0,3,0,3" VerticalContentAlignment="Center" Padding="8,0"/>
+
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="密码" VerticalAlignment="Center"/>
+                                        <PasswordBox Grid.Row="2" Grid.Column="1" x:Name="UpstreamPasswordBox" Height="32"
+                                                     Margin="0,3,12,3" VerticalContentAlignment="Center" Padding="8,0"/>
+                                        <ui:Button Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2" Content="清除已保存密码"
+                                                   Padding="10,4" HorizontalAlignment="Left" Margin="0,3,0,3"
+                                                   Click="OnClearUpstreamPassword"/>
+                                    </Grid>
+                                    <TextBlock x:Name="UpstreamPasswordHint" Margin="0,2,0,0" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeCaption}"
+                                               Text="密码留空表示保持已保存密码；保存时使用 DPAPI 加密。"/>
                                 </StackPanel>
                             </Border>
 
@@ -177,11 +273,15 @@
                                                    Click="OnAddFirewall"/>
                                         <ui:Button Content="删除规则" Padding="12,4" Margin="0,0,6,0"
                                                    Click="OnRemoveFirewall"/>
+                                        <ui:Button Content="检测状态" Padding="12,4" Margin="0,0,6,0"
+                                                   Click="OnCheckFirewall"/>
                                         <ui:Button Content="复制命令" Padding="12,4" Margin="0,0,6,0"
                                                    Click="OnCopyFirewall"/>
                                         <ui:Button Content="保存设置" Padding="14,4" Appearance="Primary"
                                                    Click="OnSave"/>
                                     </StackPanel>
+                                    <TextBlock x:Name="FirewallStatusText" Margin="0,0,0,6" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                     <TextBox x:Name="FirewallCommandsBox" IsReadOnly="True" Height="78"
                                              AcceptsReturn="True" TextWrapping="NoWrap"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
@@ -260,6 +360,44 @@
                                  TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto" FontFamily="{DynamicResource AppFontMonoFamily}"
                                  Padding="10,8"/>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="活动连接">
+                    <Grid Margin="2,8,2,2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                            <DockPanel LastChildFill="False">
+                                <TextBlock DockPanel.Dock="Left" Text="显示当前 HTTP / SOCKS5 连接；可断开选中或全部断开。"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <ui:Button Content="刷新" Padding="12,4" Margin="0,0,6,0" Click="OnRefreshConnections"/>
+                                    <ui:Button Content="断开选中" Padding="12,4" Margin="0,0,6,0"
+                                               Click="OnDisconnectSelected"/>
+                                    <ui:Button Content="全部断开" Padding="12,4" Click="OnDisconnectAll"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                        <DataGrid Grid.Row="1" x:Name="ConnectionsGrid" AutoGenerateColumns="False"
+                                  IsReadOnly="True" SelectionMode="Single" SelectionUnit="FullRow"
+                                  HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                  CanUserAddRows="False" CanUserDeleteRows="False" RowHeight="28">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="开始" Binding="{Binding StartedText}" Width="76"/>
+                                <DataGridTextColumn Header="协议" Binding="{Binding Protocol}" Width="72"/>
+                                <DataGridTextColumn Header="客户端" Binding="{Binding Client}" Width="140"/>
+                                <DataGridTextColumn Header="账号" Binding="{Binding Username}" Width="110"/>
+                                <DataGridTextColumn Header="目标" Binding="{Binding Target}" Width="*"/>
+                                <DataGridTextColumn Header="状态" Binding="{Binding State}" Width="90"/>
+                                <DataGridTextColumn Header="持续" Binding="{Binding DurationText}" Width="84"/>
+                                <DataGridTextColumn Header="上行" Binding="{Binding BytesIn, StringFormat={}{0:N0}}" Width="90"/>
+                                <DataGridTextColumn Header="下行" Binding="{Binding BytesOut, StringFormat={}{0:N0}}" Width="90"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </Grid>
                 </TabItem>
 

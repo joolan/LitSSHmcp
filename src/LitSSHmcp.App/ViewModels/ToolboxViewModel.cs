@@ -337,6 +337,9 @@ public sealed class ToolboxItemViewModel : INotifyPropertyChanged
     {
         string.IsNullOrWhiteSpace(Model.Group) ? null : "分组：" + Model.Group,
         string.IsNullOrWhiteSpace(Model.Tags) ? null : "标签：" + Model.Tags,
+        Model.EnvironmentVariables is { Count: > 0 }
+            ? $"环境变量：{Model.EnvironmentVariables.Count} 个"
+            : null,
         "目标：" + Model.Target
     }.Where(v => v is not null));
 
@@ -380,6 +383,7 @@ public sealed class ToolboxItemViewModel : INotifyPropertyChanged
             "vault" => SymbolRegular.LockClosed24,
             "wake-on-lan" => SymbolRegular.Power24,
             "http-proxy" => SymbolRegular.Globe24,
+            "environment-variables" => SymbolRegular.Settings24,
             _ => SymbolRegular.Wrench24
         }
     };

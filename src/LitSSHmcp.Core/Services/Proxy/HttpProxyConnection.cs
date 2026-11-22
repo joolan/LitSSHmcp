@@ -20,14 +20,6 @@ internal static class HttpProxyConnection
         var stream = client.GetStream();
         var reader = new ProxyBufferedReader(stream);
 
-        if (!ProxyPolicy.IsClientAllowed(clientAddress, runtime.Options.AllowedClientCidrs))
-        {
-            runtime.RecordRequest();
-            runtime.AddLog("HTTP", clientText, null, "-", "客户端白名单拒绝");
-            await WriteErrorAsync(stream, 403, "Forbidden", "客户端地址不在白名单内。", ct);
-            return;
-        }
-
         byte[]? headerBytes;
         try
         {
@@ -78,6 +70,14 @@ internal static class HttpProxyConnection
                 line[..colon].Trim(), line[(colon + 1)..].Trim()));
         }
 
+        if (!ProxyPolicy.IsClientAllowed(clientAddress, runtime.Options.AllowedClientCidrs))
+        {
+            runtime.RecordRequest();
+            runtime.AddLog("HTTP", clientText, null, "-", "客户端白名单拒绝");
+            await WriteErrorAsync(stream, 403, "Forbidden", "客户端地址不在白名单内。", ct);
+            return;
+        }
+
         string? Header(string name)
         {
             foreach (var header in headers)
@@ -90,14 +90,30 @@ internal static class HttpProxyConnection
 
         runtime.RecordRequest();
 
-        if (!TryAuthenticate(Header("Proxy-Authorization"), runtime, out var account))
+        if (!TryAuthenticate(Header("Proxy-Authorization"), runtime, out var account,
+                out var authError))
         {
-            runtime.AddLog("HTTP", clientText, null, "-", "认证失败");
+            if (runtime.IsAuthBlocked(out var retryAfter))
+            {
+                var seconds = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds));
+                runtime.AddLog("HTTP", clientText, null, "-", "认证失败次数过多");
+                await WriteErrorAsync(stream, 429, "Too Many Requests",
+                    authError ?? "认证失败次数过多，请稍后重试。", ct,
+                    $"Retry-After: {seconds}\r\n");
+                return;
+            }
+
+            runtime.AddLog("HTTP", clientText, null, "-",
+                "认证失败: " + (authError ?? "用户名或密码错误"));
             await WriteErrorAsync(stream, 407, "Proxy Authentication Required",
-                "需要代理账号与密码。", ct,
+                authError ?? "需要代理账号与密码。", ct,
                 "Proxy-Authenticate: Basic realm=\"LitSSH LAN Proxy\"\r\n");
             return;
         }
+
+        if (account is null)
+            runtime.Connection.SetUsername("(anonymous)");
+        runtime.Connection.SetState("已认证");
 
         string host;
         int port;
@@ -127,6 +143,9 @@ internal static class HttpProxyConnection
             pathAndQuery = string.IsNullOrEmpty(uri.PathAndQuery) ? "/" : uri.PathAndQuery;
         }
 
+        runtime.Connection.SetTarget($"{host}:{port}");
+        runtime.Connection.SetState("目标校验");
+
         ProxyTargetDecision decision;
         try
         {
@@ -145,8 +164,9 @@ internal static class HttpProxyConnection
             return;
         }
 
-        var connect = await ProxyTunnel.ConnectAsync(decision.Addresses, port,
-            runtime.Options.ConnectTimeoutSeconds, ct);
+        runtime.Connection.SetState("连接中");
+        var connect = await ProxyTargetConnector.ConnectAsync(runtime.Options, host, port,
+            decision.Addresses, ct);
         if (!connect.Success)
         {
             var status = connect.TimedOut ? 504 : 502;
@@ -164,6 +184,7 @@ internal static class HttpProxyConnection
         {
             try
             {
+                runtime.Connection.SetState("隧道");
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(
                     "HTTP/1.1 200 Connection Established\r\nProxy-Agent: LitSSH\r\n\r\n"), ct);
                 await reader.FlushBufferedAsync(upstreamStream, ct);
@@ -202,6 +223,7 @@ internal static class HttpProxyConnection
         using var bodyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var idle = TimeSpan.FromSeconds(runtime.Options.IdleTimeoutSeconds);
         bodyCts.CancelAfter(idle);
+        runtime.Connection.SetState("请求中");
         void Touch()
         {
             try { bodyCts.CancelAfter(idle); }
@@ -359,15 +381,19 @@ internal static class HttpProxyConnection
     }
 
     private static bool TryAuthenticate(string? authorization, ProxyRuntime runtime,
-        out ProxyAccount? account)
+        out ProxyAccount? account, out string? error)
     {
         account = null;
+        error = null;
         if (string.IsNullOrWhiteSpace(authorization))
             return runtime.Options.AllowAnonymous;
 
         const string prefix = "Basic ";
         if (!authorization.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            return false;
+        {
+            error = "仅支持 Proxy-Authorization: Basic。";
+            return runtime.TryAuthenticate("(unsupported)", string.Empty, out account, out error);
+        }
 
         try
         {
@@ -375,15 +401,18 @@ internal static class HttpProxyConnection
                 Convert.FromBase64String(authorization[prefix.Length..].Trim()));
             var colon = decoded.IndexOf(':');
             if (colon < 0)
-                return false;
+            {
+                error = "Proxy-Authorization 格式无效。";
+                return runtime.TryAuthenticate("(malformed)", string.Empty, out account, out error);
+            }
             var username = decoded[..colon];
             var password = decoded[(colon + 1)..];
-            account = runtime.Authenticate(username, password);
-            return account is not null;
+            return runtime.TryAuthenticate(username, password, out account, out error);
         }
         catch
         {
-            return false;
+            error = "Proxy-Authorization 不是合法的 Base64。";
+            return runtime.TryAuthenticate("(malformed)", string.Empty, out account, out error);
         }
     }
 

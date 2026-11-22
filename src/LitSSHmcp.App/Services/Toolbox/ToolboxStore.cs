@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 
 namespace LitSSHmcp.App.Services.Toolbox;
@@ -16,11 +17,13 @@ public sealed class ToolboxStore
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly string _path;
     private readonly string _backupPath;
+    private readonly ISecretProtector _protector;
 
-    public ToolboxStore(string? path = null)
+    public ToolboxStore(string? path = null, ISecretProtector? protector = null)
     {
         _path = path ?? Path.Combine(ConfigPaths.AppDataDir, "toolbox.json");
         _backupPath = _path + ".bak";
+        _protector = protector ?? new DpapiSecretProtector();
     }
 
     public async Task<ToolboxDocument> LoadAsync()
@@ -53,7 +56,19 @@ public sealed class ToolboxStore
             if (!string.IsNullOrEmpty(directory))
                 Directory.CreateDirectory(directory);
 
-            var json = JsonSerializer.Serialize(document, JsonOptions);
+            // 不修改内存中的工具对象：序列化副本中的环境变量值用 DPAPI 加密。
+            var persisted = new ToolboxDocument
+            {
+                SchemaVersion = ToolboxDocument.CurrentSchemaVersion,
+                Items = (document.Items ?? new List<ToolboxItem>()).Select(item =>
+                {
+                    var clone = item.Clone();
+                    foreach (var variable in clone.EnvironmentVariables)
+                        variable.Value = _protector.Protect(variable.Value) ?? string.Empty;
+                    return clone;
+                }).ToList()
+            };
+            var json = JsonSerializer.Serialize(persisted, JsonOptions);
             var temp = _path + ".tmp";
             await File.WriteAllTextAsync(temp, json);
 
@@ -85,7 +100,7 @@ public sealed class ToolboxStore
         }
     }
 
-    private static ToolboxDocument Normalize(ToolboxDocument document)
+    private ToolboxDocument Normalize(ToolboxDocument document)
     {
         document.SchemaVersion = ToolboxDocument.CurrentSchemaVersion;
         document.Items ??= new List<ToolboxItem>();
@@ -100,7 +115,22 @@ public sealed class ToolboxStore
             item.Group = item.Group?.Trim() ?? string.Empty;
             item.Tags = item.Tags?.Trim() ?? string.Empty;
             item.ScriptShell = string.IsNullOrWhiteSpace(item.ScriptShell) ? "cmd" : item.ScriptShell;
+            item.EnvironmentVariables = (item.EnvironmentVariables ?? new List<ToolboxEnvironmentVariable>())
+                .Where(variable => !string.IsNullOrWhiteSpace(variable.Name))
+                .Select(variable => new ToolboxEnvironmentVariable
+                {
+                    Name = variable.Name.Trim(),
+                    // DPAPI 跨用户/跨机器解密失败时返回原密文，此时清空以避免把密文注入子进程。
+                    Value = NormalizeEnvironmentValue(variable.Value)
+                })
+                .ToList();
         }
         return document;
+    }
+
+    private string NormalizeEnvironmentValue(string? value)
+    {
+        var decrypted = _protector.Unprotect(value) ?? string.Empty;
+        return _protector.IsProtected(decrypted) ? string.Empty : decrypted;
     }
 }

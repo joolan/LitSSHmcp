@@ -7,6 +7,13 @@ namespace LitSSHmcp.App.Services;
 
 public sealed record ProxyFirewallResult(bool Success, string Message, string Commands);
 
+public sealed record ProxyFirewallRuleStatus(
+    string Protocol,
+    int Port,
+    string RuleName,
+    bool Exists,
+    string? Detail);
+
 /// <summary>
 /// Windows 防火墙规则：只放行 private 配置文件的 HTTP / SOCKS5 入站端口。
 /// 同时提供可复制命令和 UAC 自动执行入口。
@@ -51,6 +58,56 @@ public sealed class ProxyFirewallService
             return new ProxyFirewallResult(false, "没有启用的代理端口。", commands);
         return await RunElevatedAsync(commands, "已请求删除防火墙规则。", ct)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>检测规则是否存在；netsh show rule 不需要管理员权限。</summary>
+    public async Task<IReadOnlyList<ProxyFirewallRuleStatus>> GetStatusAsync(
+        ProxyOptions options, CancellationToken ct = default)
+    {
+        var result = new List<ProxyFirewallRuleStatus>();
+        if (options.HttpEnabled)
+            result.Add(await CheckRuleAsync("HTTP", options.HttpPort, ct).ConfigureAwait(false));
+        if (options.Socks5Enabled)
+            result.Add(await CheckRuleAsync("SOCKS5", options.Socks5Port, ct).ConfigureAwait(false));
+        return result;
+    }
+
+    private static async Task<ProxyFirewallRuleStatus> CheckRuleAsync(string protocol,
+        int port, CancellationToken ct)
+    {
+        var name = RuleName(protocol, port);
+        try
+        {
+            var info = new ProcessStartInfo
+            {
+                FileName = "netsh",
+                Arguments = $"advfirewall firewall show rule name=\"{name}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            using var process = NativeShell.Start(info);
+            if (process is null)
+                return new ProxyFirewallRuleStatus(protocol, port, name, false, "无法启动 netsh");
+
+            var output = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+            var error = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
+            await process.WaitForExitAsync(ct).ConfigureAwait(false);
+
+            if (process.ExitCode == 0)
+                return new ProxyFirewallRuleStatus(protocol, port, name, true, "规则存在");
+            var detail = string.IsNullOrWhiteSpace(error) ? "规则不存在" : error.Trim();
+            return new ProxyFirewallRuleStatus(protocol, port, name, false, detail);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new ProxyFirewallRuleStatus(protocol, port, name, false, ex.Message);
+        }
     }
 
     private static string AddCommand(string protocol, int port) =>

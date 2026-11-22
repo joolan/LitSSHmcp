@@ -1,0 +1,63 @@
+<Window x:Class="LitSSHmcp.App.Views.DisclaimerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="免责声明" Height="640" Width="720" MinHeight="520" MinWidth="620"
+        WindowStartupLocation="CenterScreen" WindowStyle="None"
+        ResizeMode="NoResize" ShowInTaskbar="True"
+        Background="{DynamicResource AppSurfaceBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" Margin="20,20,20,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="LitSSH MCP · 使用免责声明"
+                           FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="SemiBold"/>
+                <TextBlock Text="请在继续使用前阅读以下内容。" Margin="0,6,0,14"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+
+                <Border Style="{DynamicResource CardBorderStyle}" Padding="14,12" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock TextWrapping="Wrap" Margin="0,0,0,8">
+                            <Run Text="本项目完全开源，开源地址："/>
+                            <Hyperlink NavigateUri="https://github.com/joolan/LitSSHmcp"
+                                       RequestNavigate="OnRequestNavigate">https://github.com/joolan/LitSSHmcp</Hyperlink>
+                        </TextBlock>
+                        <TextBlock TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Text="本项目仅供学习、交流与技术研究使用，不构成任何形式的商业承诺、服务保证或生产级交付。"/>
+                        <TextBlock TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Text="项目未经严格的安全审计、压力测试和完整生产验证，可能存在缺陷、数据丢失、服务中断或安全风险。请勿将本项目用于生产环境或承载关键业务。"/>
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="使用本程序即表示你理解并自行承担相关风险。因使用或无法使用本程序造成的任何直接或间接损失，作者及贡献者不承担责任。请遵守当地法律法规，并仅对你拥有或已获得明确授权的系统进行操作。"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="12,10" Margin="0,0,0,10"
+                        Background="{DynamicResource AppWarningSubtleBrush}"
+                        BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1"
+                        CornerRadius="{DynamicResource AppRadiusS}">
+                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold"
+                               Text="重要：本项目未经严格验证，请勿用于生产环境。"/>
+                </Border>
+
+                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           FontSize="{DynamicResource AppFontSizeCaption}"
+                           Text="提示：选择“本月不再提示”后，本自然月内启动将不再展示；下个月首次启动会再次提示。"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="1" Margin="20,14,20,16" LastChildFill="False">
+            <CheckBox x:Name="SkipMonthCheck" DockPanel.Dock="Left" VerticalAlignment="Center"
+                      Content="本月不再提示（下个月会再次提示）"/>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="继续" Appearance="Primary" Padding="20,5"
+                           Click="OnContinue"/>
+                <ui:Button Content="不同意并退出" Margin="8,0,0,0" Padding="16,5"
+                           Click="OnDecline"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

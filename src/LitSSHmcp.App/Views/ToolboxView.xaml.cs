@@ -24,6 +24,7 @@ public partial class ToolboxView : UserControl
     private LocalPortToolWindow? _localPortWindow;
     private WakeOnLanToolWindow? _wakeOnLanWindow;
     private ProxyToolWindow? _proxyWindow;
+    private EnvironmentVariablesWindow? _environmentVariablesWindow;
     private ToolboxItemViewModel? _dragItem;
     private ToolboxItemViewModel? _dropTarget;
     private Point _dragStart;
@@ -223,6 +224,18 @@ public partial class ToolboxView : UserControl
             _proxyWindow = new ProxyToolWindow { Owner = Window.GetWindow(this) };
             _proxyWindow.Closed += (_, _) => _proxyWindow = null;
             _proxyWindow.Show();
+        }
+        if (string.Equals(id, "environment-variables", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_environmentVariablesWindow is { IsLoaded: true })
+            {
+                _environmentVariablesWindow.Activate();
+                return;
+            }
+
+            _environmentVariablesWindow = new EnvironmentVariablesWindow { Owner = Window.GetWindow(this) };
+            _environmentVariablesWindow.Closed += (_, _) => _environmentVariablesWindow = null;
+            _environmentVariablesWindow.Show();
         }
     }
 

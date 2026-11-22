@@ -4,6 +4,11 @@ using System.Net.Sockets;
 
 namespace LitSSHmcp.Core.Services.Proxy;
 
+internal sealed record ProxyRuntimeSettings(
+    ProxyOptions Options,
+    IReadOnlyList<ProxyAccount> Accounts,
+    ProxyAuthFailureTracker AuthFailures);
+
 /// <summary>
 /// 同时托管 HTTP 与 SOCKS5 两个监听器的代理宿主。
 /// 两个协议共享账号、客户端白名单、目标策略、并发限制、流量统计和临时到期时间。
@@ -13,8 +18,9 @@ public sealed class ProxyServerHost : IDisposable, IAsyncDisposable
     private readonly object _gate = new();
     private readonly ProxyConnectionLimiter _limiter = new();
     private readonly ProxyRequestLog _log = new(500);
+    private readonly ProxyAuthFailureTracker _authFailures = new();
     private readonly List<TcpListener> _listeners = new();
-    private readonly ConcurrentDictionary<long, TcpClient> _connections = new();
+    private readonly ConcurrentDictionary<long, ProxyConnectionState> _connections = new();
     private CancellationTokenSource? _cts;
     private Task[] _acceptTasks = Array.Empty<Task>();
     private IReadOnlyList<ProxyAccount> _accounts = Array.Empty<ProxyAccount>();
@@ -39,6 +45,12 @@ public sealed class ProxyServerHost : IDisposable, IAsyncDisposable
     {
         get { lock (_gate) return _accounts; }
     }
+
+    public IReadOnlyList<ProxyConnectionSnapshot> ActiveConnections =>
+        _connections.Values
+            .Select(state => state.Snapshot())
+            .OrderByDescending(state => state.StartedAt)
+            .ToArray();
 
     public ProxyStatus Status
     {
@@ -89,7 +101,7 @@ public sealed class ProxyServerHost : IDisposable, IAsyncDisposable
 
             lock (_gate)
             {
-                _options = options;
+                _options = options.Clone();
                 _accounts = accountSnapshot;
                 _cts = cts;
                 _listeners.Clear();
@@ -102,13 +114,13 @@ public sealed class ProxyServerHost : IDisposable, IAsyncDisposable
                 _expiresAt = expiresAt;
                 _lastError = null;
                 _running = true;
+                _authFailures.Clear();
                 Interlocked.Exchange(ref _totalRequests, 0);
                 Interlocked.Exchange(ref _bytesIn, 0);
                 Interlocked.Exchange(ref _bytesOut, 0);
                 Volatile.Write(ref _active, 0);
                 _acceptTasks = started
-                    .Select(item => AcceptLoopAsync(item.Listener, item.Protocol, options,
-                        accountSnapshot, cts.Token))
+                    .Select(item => AcceptLoopAsync(item.Listener, item.Protocol, cts.Token))
                     .ToArray();
             }
 
@@ -133,12 +145,96 @@ public sealed class ProxyServerHost : IDisposable, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 热更新账号、客户端白名单、域名/端口/私有地址策略、认证限速和上游代理等。
+    /// 监听地址/端口变化不会重启监听，而是返回 RestartRequired=true。
+    /// </summary>
+    public ProxyRuntimeUpdateResult UpdateRuntime(ProxyOptions options,
+        IReadOnlyList<ProxyAccount> accounts)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(accounts);
+
+        options.Normalize();
+        var errors = options.Validate();
+        if (errors.Count > 0)
+            throw new ArgumentException(string.Join("；", errors));
+
+        bool restartRequired;
+        lock (_gate)
+        {
+            if (!_running || _options is null)
+                return new ProxyRuntimeUpdateResult(false, false, "代理未运行，配置已保存，下次启动生效。");
+
+            restartRequired = ListenerChanged(_options, options);
+            var applied = options.Clone();
+            if (restartRequired)
+            {
+                // 监听参数不能热切换：保留实际监听值，避免状态与实际端口不一致。
+                applied.BindAddress = _options.BindAddress;
+                applied.HttpEnabled = _options.HttpEnabled;
+                applied.HttpPort = _options.HttpPort;
+                applied.Socks5Enabled = _options.Socks5Enabled;
+                applied.Socks5Port = _options.Socks5Port;
+            }
+            _options = applied;
+            _accounts = accounts.Select(account =>
+            {
+                var clone = account.Clone();
+                var previous = _accounts.FirstOrDefault(item =>
+                    string.Equals(item.Id, account.Id, StringComparison.Ordinal) ||
+                    string.Equals(item.Username, account.Username, StringComparison.OrdinalIgnoreCase));
+                if (previous is not null)
+                {
+                    clone.RequestCount = previous.RequestCount;
+                    clone.BytesIn = previous.BytesIn;
+                    clone.BytesOut = previous.BytesOut;
+                    clone.LastUsedAt = previous.LastUsedAt;
+                }
+                return clone;
+            }).ToArray();
+            _lastError = null;
+        }
+
+        _log.Add(new ProxyLogEntry(DateTimeOffset.Now, "SYSTEM", "-", "-", "-",
+            restartRequired
+                ? "账号/策略已热更新；监听地址或端口变化需重启代理生效"
+                : "账号/白名单/目标策略已热更新", 0, 0));
+        StateChanged?.Invoke(this, EventArgs.Empty);
+
+        return new ProxyRuntimeUpdateResult(true, restartRequired,
+            restartRequired
+                ? "账号与策略已热更新；监听地址/端口变化需停止后重新启动代理。"
+                : "账号、白名单与目标策略已热更新，新连接立即生效。");
+    }
+
+    public bool Disconnect(long connectionId)
+    {
+        if (!_connections.TryGetValue(connectionId, out var state))
+            return false;
+        state.SetState("断开中");
+        state.Dispose();
+        return true;
+    }
+
+    public int DisconnectAll()
+    {
+        var count = 0;
+        foreach (var state in _connections.Values)
+        {
+            state.SetState("断开中");
+            state.Dispose();
+            count++;
+        }
+        return count;
+    }
+
     public async Task StopAsync()
     {
         CancellationTokenSource? cts;
         Task[] tasks;
         TcpListener[] listeners;
-        TcpClient[] connections;
+        ProxyConnectionState[] connections;
         bool wasRunning;
 
         lock (_gate)
@@ -185,8 +281,17 @@ public sealed class ProxyServerHost : IDisposable, IAsyncDisposable
 
     public ValueTask DisposeAsync() => new(StopAsync());
 
-    private async Task AcceptLoopAsync(TcpListener listener, string protocol,
-        ProxyOptions options, IReadOnlyList<ProxyAccount> accounts, CancellationToken ct)
+    private ProxyRuntimeSettings? SnapshotSettings()
+    {
+        lock (_gate)
+        {
+            if (!_running || _options is null)
+                return null;
+            return new ProxyRuntimeSettings(_options.Clone(), _accounts, _authFailures);
+        }
+    }
+
+    private async Task AcceptLoopAsync(TcpListener listener, string protocol, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -215,21 +320,30 @@ public sealed class ProxyServerHost : IDisposable, IAsyncDisposable
                 continue;
             }
 
-            _ = HandleClientAsync(client, protocol, options, accounts, ct);
+            var settings = SnapshotSettings();
+            if (settings is null)
+            {
+                try { client.Dispose(); } catch { /* ignore */ }
+                return;
+            }
+            _ = HandleClientAsync(client, protocol, settings, ct);
         }
     }
 
     private async Task HandleClientAsync(TcpClient client, string protocol,
-        ProxyOptions options, IReadOnlyList<ProxyAccount> accounts, CancellationToken ct)
+        ProxyRuntimeSettings settings, CancellationToken ct)
     {
         var id = Interlocked.Increment(ref _connectionSequence);
-        _connections[id] = client;
-        var remote = client.Client.RemoteEndPoint;
+        EndPoint? remote = null;
+        try { remote = client.Client.RemoteEndPoint; } catch { /* 客户端可能已断开 */ }
         var clientKey = ProxyTunnel.ClientKey(remote);
         var clientText = ProxyTunnel.EndpointText(remote);
+        var state = new ProxyConnectionState(id, protocol, clientText,
+            clientKey ?? "unknown", client);
+        _connections[id] = state;
 
-        if (!_limiter.TryAcquire(clientKey, options.MaxTotalConnections,
-                options.MaxConnectionsPerClient, out var lease, out var reason))
+        if (!_limiter.TryAcquire(clientKey, settings.Options.MaxTotalConnections,
+                settings.Options.MaxConnectionsPerClient, out var lease, out var reason))
         {
             _log.Add(new ProxyLogEntry(DateTimeOffset.Now, protocol, clientText, "-", "-",
                 "并发限制: " + reason, 0, 0));
@@ -241,7 +355,8 @@ public sealed class ProxyServerHost : IDisposable, IAsyncDisposable
         Interlocked.Increment(ref _active);
         try
         {
-            var runtime = new ProxyRuntime(options, accounts, _log,
+            var runtime = new ProxyRuntime(settings.Options, settings.Accounts, _log,
+                settings.AuthFailures, state,
                 (bytesIn, bytesOut) =>
                 {
                     Interlocked.Add(ref _bytesIn, bytesIn);
@@ -287,6 +402,13 @@ public sealed class ProxyServerHost : IDisposable, IAsyncDisposable
         await StopAsync().ConfigureAwait(false);
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    private static bool ListenerChanged(ProxyOptions current, ProxyOptions next) =>
+        !string.Equals(current.BindAddress, next.BindAddress, StringComparison.OrdinalIgnoreCase) ||
+        current.HttpEnabled != next.HttpEnabled ||
+        current.HttpPort != next.HttpPort ||
+        current.Socks5Enabled != next.Socks5Enabled ||
+        current.Socks5Port != next.Socks5Port;
 
     private static TcpListener StartListener(IPAddress address, int port)
     {

@@ -32,6 +32,13 @@ internal static class Socks5ProxyConnection
             return;
         }
 
+        if (runtime.IsAuthBlocked(out _))
+        {
+            runtime.RecordRequest();
+            runtime.AddLog("SOCKS5", clientText, null, "-", "客户端处于认证失败封禁期");
+            return;
+        }
+
         try
         {
             var greeting = new byte[2];
@@ -60,8 +67,11 @@ internal static class Socks5ProxyConnection
             }
 
             ProxyAccount? account = null;
+            if (selected == MethodNoAuth)
+                runtime.Connection.SetState("已认证");
             if (selected == MethodUserPass)
             {
+                runtime.Connection.SetState("认证中");
                 var authHead = new byte[2];
                 if (!await ReadExactAsync(stream, authHead, ct) || authHead[0] != 0x01)
                     return;
@@ -88,12 +98,12 @@ internal static class Socks5ProxyConnection
 
                 var username = Encoding.UTF8.GetString(usernameBytes);
                 var password = Encoding.UTF8.GetString(passwordBytes);
-                account = runtime.Authenticate(username, password);
-                if (account is null)
+                if (!runtime.TryAuthenticate(username, password, out account, out var authError))
                 {
                     await WriteAuthFailureAsync(stream, ct);
                     runtime.RecordRequest();
-                    runtime.AddLog("SOCKS5", clientText, null, "-", "认证失败");
+                    runtime.AddLog("SOCKS5", clientText, null, "-",
+                        "认证失败: " + (authError ?? "用户名或密码错误"));
                     return;
                 }
                 await stream.WriteAsync(new byte[] { 0x01, 0x00 }, ct);
@@ -149,6 +159,8 @@ internal static class Socks5ProxyConnection
             var port = (portBytes[0] << 8) | portBytes[1];
 
             runtime.RecordRequest();
+            runtime.Connection.SetTarget($"{host}:{port}");
+            runtime.Connection.SetState("目标校验");
 
             if (command != CmdConnect)
             {
@@ -176,8 +188,9 @@ internal static class Socks5ProxyConnection
                 return;
             }
 
-            var connect = await ProxyTunnel.ConnectAsync(decision.Addresses, port,
-                runtime.Options.ConnectTimeoutSeconds, ct);
+            runtime.Connection.SetState("连接中");
+            var connect = await ProxyTargetConnector.ConnectAsync(runtime.Options, host, port,
+                decision.Addresses, ct);
             if (!connect.Success)
             {
                 var reply = connect.Refused ? (byte)0x05 : connect.TimedOut ? (byte)0x06 : (byte)0x04;
@@ -189,6 +202,7 @@ internal static class Socks5ProxyConnection
 
             using var upstream = connect.Client!;
             var upstreamStream = upstream.GetStream();
+            runtime.Connection.SetState("隧道");
             await WriteReplyAsync(stream, 0x00,
                 upstream.Client.LocalEndPoint as IPEndPoint, ct);
 

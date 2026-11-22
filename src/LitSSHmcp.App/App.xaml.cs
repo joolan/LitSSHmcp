@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Windows;
 using System.Windows.Media;
@@ -40,6 +41,21 @@ public partial class App : Application
             base.OnStartup(e);
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             _ = RunHeadlessAiTaskAsync(aiTaskId);
+            return;
+        }
+        if (TryGetEnvironmentApplyPath(e.Args, out var environmentApplyPath))
+        {
+            base.OnStartup(e);
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = RunHeadlessEnvironmentApplyAsync(environmentApplyPath);
+            return;
+        }
+        if (e.Args.Any(argument => string.Equals(argument,
+                "--environment-elevation-check", StringComparison.OrdinalIgnoreCase)))
+        {
+            base.OnStartup(e);
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Shutdown(0);
             return;
         }
 
@@ -224,6 +240,50 @@ public partial class App : Application
             return !string.IsNullOrWhiteSpace(planId);
         }
         return false;
+    }
+
+    private static bool TryGetEnvironmentApplyPath(string[] args, out string path)
+    {
+        path = string.Empty;
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (!string.Equals(args[i], "--apply-environment", StringComparison.OrdinalIgnoreCase))
+                continue;
+            path = args[i + 1];
+            return !string.IsNullOrWhiteSpace(path);
+        }
+        return false;
+    }
+
+    private static async Task RunHeadlessEnvironmentApplyAsync(string payloadPath)
+    {
+        var exitCode = 1;
+        var resultPath = payloadPath + ".result.json";
+        var result = new EnvironmentVariableElevatedResult(false, "无法读取环境变量变更。");
+        try
+        {
+            var json = EnvironmentVariableService.ReadElevatedPayload(payloadPath);
+            if (!string.IsNullOrWhiteSpace(json))
+            {
+                var payload = JsonSerializer.Deserialize<EnvironmentVariableApplyPayload>(json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (payload is not null)
+                    result = EnvironmentVariableService.ApplySystemChangesDirect(payload.Changes);
+            }
+            exitCode = result.Success ? 0 : 1;
+            await File.WriteAllTextAsync(resultPath, JsonSerializer.Serialize(result));
+        }
+        catch (Exception ex)
+        {
+            result = new EnvironmentVariableElevatedResult(false, ex.Message);
+            try { await File.WriteAllTextAsync(resultPath, JsonSerializer.Serialize(result)); }
+            catch { /* ignore */ }
+            exitCode = 1;
+        }
+        finally
+        {
+            Current.Shutdown(exitCode);
+        }
     }
 
     private static async Task RunHeadlessBackupAsync(string planId)
@@ -478,6 +538,11 @@ public partial class App : Application
             bool.TryParse(UiPrefs.GetString("applock.setupSkipped", "false"), out var skipped) &&
             skipped)
         {
+            if (!await ShowDisclaimerIfNeededAsync())
+            {
+                await Dispatcher.InvokeAsync(Shutdown);
+                return;
+            }
             await Dispatcher.InvokeAsync(CreateMainWindow);
             return;
         }
@@ -505,11 +570,45 @@ public partial class App : Application
         }
         catch (OperationCanceledException)
         {
-            Shutdown();
+            await Dispatcher.InvokeAsync(Shutdown);
             return;
         }
 
+        if (!await ShowDisclaimerIfNeededAsync())
+        {
+            await Dispatcher.InvokeAsync(Shutdown);
+            return;
+        }
         await Dispatcher.InvokeAsync(CreateMainWindow);
+    }
+
+    private async Task<bool> ShowDisclaimerIfNeededAsync()
+    {
+        var skipMonth = UiPrefs.GetString(DisclaimerPolicy.SkipMonthKey, string.Empty);
+        if (!DisclaimerPolicy.ShouldShow(skipMonth, DateTime.Now))
+        {
+            PerfLog.Write("disclaimer.skip");
+            return true;
+        }
+
+        var accepted = false;
+        PerfLog.Write("disclaimer.show.begin");
+        await Dispatcher.InvokeAsync(() =>
+        {
+            var window = new Views.DisclaimerWindow();
+            try
+            {
+                window.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                PerfLog.Write("disclaimer.show.error: " + ex);
+                throw;
+            }
+            accepted = window.Accepted;
+            PerfLog.Write("disclaimer.show.end accepted=" + accepted);
+        });
+        return accepted;
     }
 
     private void CreateMainWindow()

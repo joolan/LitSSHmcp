@@ -1,8 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Net;
-using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -24,6 +22,7 @@ public partial class ProxyToolWindow : FluentWindow
     private ObservableCollection<ProxyAccount> _accounts = new();
     private bool _loading;
     private bool _starting;
+    private bool _clearUpstreamPassword;
 
     public ProxyToolWindow()
     {
@@ -33,6 +32,8 @@ public partial class ProxyToolWindow : FluentWindow
         {
             RefreshStatus();
             if (MainTabs.SelectedIndex == 3)
+                RefreshConnections();
+            else if (MainTabs.SelectedIndex == 4)
                 RefreshLogs();
         };
         Loaded += OnLoaded;
@@ -59,8 +60,10 @@ public partial class ProxyToolWindow : FluentWindow
             UpdateAccountsHint();
             UpdateClientConfig();
             RefreshStatus();
+            RefreshConnections();
             RefreshLogs();
             FooterStatus.Text = "配置文件：" + _service.ConfigPath;
+            _ = RefreshFirewallStatusAsync();
         }
         catch (Exception ex)
         {
@@ -75,7 +78,10 @@ public partial class ProxyToolWindow : FluentWindow
     private void PopulateControls()
     {
         var options = _document.Options;
-        BindAddressBox.Text = options.BindAddress;
+        BindAddressBox.ItemsSource = ProxyNetworkInterfaces.GetBindAddressOptions(options.BindAddress);
+        BindAddressBox.SelectedValue = options.BindAddress;
+        if (BindAddressBox.SelectedValue is null)
+            BindAddressBox.Text = options.BindAddress;
         HttpPortBox.Text = options.HttpPort.ToString();
         Socks5PortBox.Text = options.Socks5Port.ToString();
         HttpEnabledCheck.IsChecked = options.HttpEnabled;
@@ -83,14 +89,35 @@ public partial class ProxyToolWindow : FluentWindow
         EnabledCheck.IsChecked = options.Enabled;
         AnonymousCheck.IsChecked = options.AllowAnonymous;
         AllowedClientsBox.Text = string.Join(Environment.NewLine, options.AllowedClientCidrs);
+        AllowedDomainsBox.Text = string.Join(Environment.NewLine, options.AllowedDomains);
+        BlockedDomainsBox.Text = string.Join(Environment.NewLine, options.BlockedDomains);
         AllowedPortsBox.Text = string.Join(",", options.AllowedPorts);
         AllowAllPortsCheck.IsChecked = options.AllowAllPorts;
         BlockPrivateCheck.IsChecked = options.BlockPrivateDestinations;
         TemporaryBox.Text = options.TemporaryEnableMinutes.ToString();
+        AuthFailureLimitBox.Text = options.AuthFailureLimit.ToString();
+        AuthFailureWindowBox.Text = options.AuthFailureWindowSeconds.ToString();
+        AuthFailureBlockBox.Text = options.AuthFailureBlockSeconds.ToString();
         MaxTotalBox.Text = options.MaxTotalConnections.ToString();
         MaxPerClientBox.Text = options.MaxConnectionsPerClient.ToString();
         IdleTimeoutBox.Text = options.IdleTimeoutSeconds.ToString();
         AllowedPortsBox.IsEnabled = !options.AllowAllPorts;
+
+        UpstreamEnabledCheck.IsChecked = options.UpstreamProxyEnabled;
+        UpstreamTypeBox.SelectedIndex =
+            string.Equals(options.UpstreamProxyType, "socks5", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        UpstreamHostBox.Text = options.UpstreamProxyHost;
+        UpstreamPortBox.Text = options.UpstreamProxyPort > 0
+            ? options.UpstreamProxyPort.ToString()
+            : string.Empty;
+        UpstreamUsernameBox.Text = options.UpstreamProxyUsername;
+        UpstreamPasswordBox.Password = string.Empty;
+        _clearUpstreamPassword = false;
+        UpstreamPasswordHint.Text = string.IsNullOrWhiteSpace(options.UpstreamProxyPasswordProtected)
+            ? "密码留空表示不设置或保持为空；保存时使用 DPAPI 加密。"
+            : "已保存上游密码；留空保持不变，输入新密码则覆盖。保存时使用 DPAPI 加密。";
+        UpdateUpstreamEnabledState();
+
         FirewallCommandsBox.Text = _firewall.BuildAddCommands(options);
         FooterVersion.Text = $"HTTP/SOCKS5 · {options.BindAddress}";
     }
@@ -100,7 +127,7 @@ public partial class ProxyToolWindow : FluentWindow
         var errors = new List<string>();
         var options = _document.Options;
 
-        options.BindAddress = BindAddressBox.Text.Trim();
+        options.BindAddress = GetBindAddress();
         options.HttpEnabled = HttpEnabledCheck.IsChecked == true;
         options.Socks5Enabled = Socks5EnabledCheck.IsChecked == true;
         options.Enabled = EnabledCheck.IsChecked == true;
@@ -111,6 +138,9 @@ public partial class ProxyToolWindow : FluentWindow
         options.HttpPort = ReadInt(HttpPortBox, "HTTP 端口", 1, 65535, errors);
         options.Socks5Port = ReadInt(Socks5PortBox, "SOCKS5 端口", 1, 65535, errors);
         options.TemporaryEnableMinutes = ReadInt(TemporaryBox, "临时开启分钟数", 0, 10080, errors);
+        options.AuthFailureLimit = ReadInt(AuthFailureLimitBox, "认证失败上限", 0, 1000, errors);
+        options.AuthFailureWindowSeconds = ReadInt(AuthFailureWindowBox, "认证失败统计窗口", 30, 86400, errors);
+        options.AuthFailureBlockSeconds = ReadInt(AuthFailureBlockBox, "认证失败封禁时长", 30, 86400, errors);
         options.MaxTotalConnections = ReadInt(MaxTotalBox, "总并发", 1, 4096, errors);
         options.MaxConnectionsPerClient = ReadInt(MaxPerClientBox, "单 IP 并发", 1, 1024, errors);
         options.IdleTimeoutSeconds = ReadInt(IdleTimeoutBox, "空闲超时", 5, 3600, errors);
@@ -156,6 +186,47 @@ public partial class ProxyToolWindow : FluentWindow
         }
         options.AllowedClientCidrs = clients;
 
+        options.AllowedDomains = ParseDomainList(AllowedDomainsBox.Text, "白名单", errors);
+        options.BlockedDomains = ParseDomainList(BlockedDomainsBox.Text, "黑名单", errors);
+
+        options.UpstreamProxyEnabled = UpstreamEnabledCheck.IsChecked == true;
+        options.UpstreamProxyType = (UpstreamTypeBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "http";
+        options.UpstreamProxyHost = UpstreamHostBox.Text.Trim();
+        var upstreamPort = 0;
+        if (!string.IsNullOrWhiteSpace(UpstreamPortBox.Text))
+        {
+            if (int.TryParse(UpstreamPortBox.Text.Trim(), out upstreamPort) &&
+                upstreamPort is >= 1 and <= 65535)
+            {
+                // 有效端口
+            }
+            else
+            {
+                errors.Add("上游代理端口应为 1~65535");
+                upstreamPort = 0;
+            }
+        }
+        options.UpstreamProxyPort = upstreamPort;
+        options.UpstreamProxyUsername = UpstreamUsernameBox.Text.Trim();
+        if (!string.IsNullOrEmpty(UpstreamPasswordBox.Password))
+        {
+            options.UpstreamProxyPassword = UpstreamPasswordBox.Password;
+            options.UpstreamProxyPasswordProtected = string.Empty;
+            _clearUpstreamPassword = false;
+        }
+        if (_clearUpstreamPassword)
+        {
+            options.UpstreamProxyPassword = string.Empty;
+            options.UpstreamProxyPasswordProtected = string.Empty;
+        }
+        if (options.UpstreamProxyEnabled)
+        {
+            if (string.IsNullOrWhiteSpace(options.UpstreamProxyHost))
+                errors.Add("启用上游代理时，上游地址不能为空");
+            if (options.UpstreamProxyPort is < 1 or > 65535)
+                errors.Add("启用上游代理时，上游端口应为 1~65535");
+        }
+
         options.Normalize();
         _document.Accounts = _accounts.ToList();
 
@@ -176,11 +247,10 @@ public partial class ProxyToolWindow : FluentWindow
             return;
         try
         {
-            await _service.SaveAsync(_document);
+            var result = await _service.SaveAndApplyAsync(_document);
             FirewallCommandsBox.Text = _firewall.BuildAddCommands(_document.Options);
-            FooterStatus.Text = _service.Status.Running
-                ? "设置已保存；监听地址/端口或账号变更需要停止后重新启动代理才会生效。"
-                : "设置已保存。";
+            FooterStatus.Text = result.Message;
+            _ = RefreshFirewallStatusAsync();
         }
         catch (Exception ex)
         {
@@ -222,6 +292,7 @@ public partial class ProxyToolWindow : FluentWindow
             await _service.StartAsync(_document);
             FirewallCommandsBox.Text = _firewall.BuildAddCommands(_document.Options);
             FooterStatus.Text = "代理已启动。";
+            RefreshConnections();
         }
         catch (Exception ex)
         {
@@ -254,6 +325,7 @@ public partial class ProxyToolWindow : FluentWindow
         finally
         {
             RefreshStatus();
+            RefreshConnections();
         }
     }
 
@@ -322,6 +394,70 @@ public partial class ProxyToolWindow : FluentWindow
 
         if (changed && AccountsGrid.ItemsSource is not null)
             AccountsGrid.Items.Refresh();
+    }
+
+    private void RefreshConnections()
+    {
+        var selected = (ConnectionsGrid.SelectedItem as ProxyConnectionSnapshot)?.Id;
+        var list = _service.ActiveConnections;
+        ConnectionsGrid.ItemsSource = list;
+        if (selected is { } id)
+            ConnectionsGrid.SelectedItem = list.FirstOrDefault(item => item.Id == id);
+    }
+
+    private void OnRefreshConnections(object sender, RoutedEventArgs e) => RefreshConnections();
+
+    private void OnDisconnectSelected(object sender, RoutedEventArgs e)
+    {
+        if (ConnectionsGrid.SelectedItem is not ProxyConnectionSnapshot connection)
+        {
+            _dialogs.Warn("请先选择一条活动连接。", "断开连接");
+            return;
+        }
+        if (!_dialogs.Confirm($"断开 {connection.Protocol} 连接 {connection.Client} → {connection.Target}？",
+                "断开连接", warning: true, defaultNo: true))
+            return;
+        _service.Disconnect(connection.Id);
+        RefreshConnections();
+        FooterStatus.Text = "已请求断开选中连接。";
+    }
+
+    private void OnDisconnectAll(object sender, RoutedEventArgs e)
+    {
+        var count = _service.ActiveConnections.Count;
+        if (count == 0)
+        {
+            FooterStatus.Text = "当前没有活动连接。";
+            return;
+        }
+        if (!_dialogs.Confirm($"确定断开全部 {count} 条活动连接？", "全部断开",
+                warning: true, defaultNo: true))
+            return;
+        var removed = _service.DisconnectAll();
+        RefreshConnections();
+        FooterStatus.Text = $"已请求断开 {removed} 条连接。";
+    }
+
+    private void OnCheckFirewall(object sender, RoutedEventArgs e) =>
+        AsyncOperation.Run("检测防火墙状态", RefreshFirewallStatusAsync);
+
+    private async Task RefreshFirewallStatusAsync()
+    {
+        try
+        {
+            if (!ApplyUiToDocument())
+                return;
+            var statuses = await _firewall.GetStatusAsync(_document.Options);
+            FirewallStatusText.Text = statuses.Count == 0
+                ? "没有启用的代理端口。"
+                : string.Join("；", statuses.Select(item =>
+                    $"{item.Protocol} {item.Port}：{(item.Exists ? "已放行" : "未放行")}" +
+                    (string.IsNullOrWhiteSpace(item.Detail) ? string.Empty : $"（{item.Detail}）")));
+        }
+        catch (Exception ex)
+        {
+            FirewallStatusText.Text = "检测失败：" + ex.Message;
+        }
     }
 
     private void RefreshLogs()
@@ -457,6 +593,7 @@ public partial class ProxyToolWindow : FluentWindow
         var result = await _firewall.AddRulesAsync(_document.Options);
         FirewallCommandsBox.Text = result.Commands;
         FooterStatus.Text = result.Message;
+        await RefreshFirewallStatusAsync();
         if (result.Success)
             _dialogs.Info(result.Message, "防火墙");
         else
@@ -477,6 +614,7 @@ public partial class ProxyToolWindow : FluentWindow
         var result = await _firewall.RemoveRulesAsync(_document.Options);
         FirewallCommandsBox.Text = _firewall.BuildAddCommands(_document.Options);
         FooterStatus.Text = result.Message;
+        await RefreshFirewallStatusAsync();
         if (result.Success)
             _dialogs.Info(result.Message, "防火墙");
         else
@@ -539,11 +677,29 @@ public partial class ProxyToolWindow : FluentWindow
             AllowedPortsBox.IsEnabled = AllowAllPortsCheck.IsChecked != true;
     }
 
+    private void OnUpstreamChanged(object sender, RoutedEventArgs e) =>
+        UpdateUpstreamEnabledState();
+
+    private void UpdateUpstreamEnabledState()
+    {
+        if (UpstreamPanel is not null)
+            UpstreamPanel.IsEnabled = UpstreamEnabledCheck.IsChecked == true;
+    }
+
+    private void OnClearUpstreamPassword(object sender, RoutedEventArgs e)
+    {
+        _clearUpstreamPassword = true;
+        UpstreamPasswordBox.Clear();
+        UpstreamPasswordHint.Text = "已标记清除上游密码；点击保存后生效。";
+    }
+
     private void OnTabChanged(object sender, SelectionChangedEventArgs e)
     {
         if (MainTabs.SelectedIndex == 2)
             UpdateClientConfig();
         else if (MainTabs.SelectedIndex == 3)
+            RefreshConnections();
+        else if (MainTabs.SelectedIndex == 4)
             RefreshLogs();
     }
 
@@ -626,7 +782,7 @@ public partial class ProxyToolWindow : FluentWindow
         if (!string.IsNullOrWhiteSpace(bind) &&
             bind is not ("0.0.0.0" or "::" or "*" or "127.0.0.1" or "localhost"))
             return bind;
-        return FindLanIpv4() ?? "127.0.0.1";
+        return ProxyNetworkInterfaces.FindLanIpv4() ?? "127.0.0.1";
     }
 
     private string? FirstEnabledUsername() =>
@@ -643,33 +799,6 @@ public partial class ProxyToolWindow : FluentWindow
 
     private string UserInfo(string? username) =>
         _document.Options.AllowAnonymous ? string.Empty : $"{username ?? "user"}:<密码>@";
-
-    private static string? FindLanIpv4()
-    {
-        try
-        {
-            foreach (var network in NetworkInterface.GetAllNetworkInterfaces())
-            {
-                if (network.OperationalStatus != OperationalStatus.Up ||
-                    network.NetworkInterfaceType == NetworkInterfaceType.Loopback)
-                    continue;
-                foreach (var unicast in network.GetIPProperties().UnicastAddresses)
-                {
-                    var address = unicast.Address;
-                    if (address.AddressFamily != AddressFamily.InterNetwork ||
-                        IPAddress.IsLoopback(address) ||
-                        address.ToString().StartsWith("169.254.", StringComparison.Ordinal))
-                        continue;
-                    return address.ToString();
-                }
-            }
-        }
-        catch
-        {
-            // 网络接口枚举失败时回退到本机
-        }
-        return null;
-    }
 
     private static bool IsValidBindAddress(string value)
     {
@@ -700,12 +829,39 @@ public partial class ProxyToolWindow : FluentWindow
         }
     }
 
+    private string GetBindAddress()
+    {
+        var text = BindAddressBox.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(text) &&
+            (IPAddress.TryParse(text, out _) || text is "0.0.0.0" or "::" or "*" or "localhost"))
+            return text;
+        return (BindAddressBox.SelectedValue as string ?? text).Trim();
+    }
+
     private static int ReadInt(WpfTextBox box, string name, int min, int max, List<string> errors)
     {
         if (int.TryParse(box.Text.Trim(), out var value) && value >= min && value <= max)
             return value;
         errors.Add($"{name}应为 {min}~{max} 的整数");
         return Math.Clamp(value, min, max);
+    }
+
+    private static List<string> ParseDomainList(string text, string label, List<string> errors)
+    {
+        var result = new List<string>();
+        foreach (var value in text.Split(
+                     new[] { '\r', '\n', ',', '，', ';', '；' },
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = value.Trim();
+            if (trimmed.Length == 0)
+                continue;
+            if (!ProxyDomainMatcher.IsValidPattern(trimmed))
+                errors.Add($"{label}域名规则“{trimmed}”不合法");
+            else
+                result.Add(trimmed);
+        }
+        return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private static string FormatRemaining(TimeSpan remaining)

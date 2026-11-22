@@ -103,6 +103,81 @@ public class ProxySecurityTests
         Assert.Single(privateAllowed.Addresses);
     }
 
+    [Theory]
+    [InlineData("example.com", "example.com", true)]
+    [InlineData("api.example.com", "example.com", true)]
+    [InlineData("example.com", "*.example.com", false)]
+    [InlineData("api.example.com", "*.example.com", true)]
+    [InlineData("evil-example.com", "example.com", false)]
+    [InlineData("anything.example", "*", true)]
+    public void Domain_matcher_handles_apex_subdomain_and_wildcard(
+        string host, string pattern, bool expected)
+    {
+        Assert.Equal(expected, ProxyDomainMatcher.IsMatch(host, pattern));
+    }
+
+    [Fact]
+    public void Domain_lists_apply_block_first_then_allow()
+    {
+        Assert.Null(ProxyDomainMatcher.Evaluate("api.example.com",
+            new[] { "example.com" }, new[] { "blocked.example.com" }));
+        Assert.Contains("白名单", ProxyDomainMatcher.Evaluate("other.com",
+            new[] { "example.com" }, null));
+        Assert.Contains("黑名单", ProxyDomainMatcher.Evaluate("tracker.example.com",
+            null, new[] { "*.example.com" }));
+    }
+
+    [Fact]
+    public async Task Target_policy_honors_domain_allow_and_block_lists()
+    {
+        var options = new ProxyOptions
+        {
+            AllowedPorts = new List<int> { 443 },
+            BlockPrivateDestinations = false,
+            AllowedDomains = new List<string> { "example.com", "8.8.8.8" },
+            BlockedDomains = new List<string> { "*.blocked.example.com" }
+        };
+
+        var notAllowed = await ProxyPolicy.EvaluateAsync("other.com", 443, options);
+        Assert.False(notAllowed.Allowed);
+        Assert.Contains("白名单", notAllowed.Reason);
+
+        var blocked = await ProxyPolicy.EvaluateAsync("a.blocked.example.com", 443, options);
+        Assert.False(blocked.Allowed);
+        Assert.Contains("黑名单", blocked.Reason);
+
+        var allowed = await ProxyPolicy.EvaluateAsync("8.8.8.8", 443, options);
+        Assert.True(allowed.Allowed);
+    }
+
+    [Fact]
+    public void Auth_failure_tracker_blocks_after_limit_and_resets()
+    {
+        var tracker = new ProxyAuthFailureTracker();
+        ProxyAuthFailureResult result = null!;
+        for (var i = 0; i < 3; i++)
+            result = tracker.RecordFailure("192.168.1.10", 3, 300, 300);
+
+        Assert.True(result.Blocked);
+        Assert.True(result.ShouldAudit);
+        Assert.True(tracker.IsBlocked("192.168.1.10", out var retryAfter));
+        Assert.True(retryAfter > TimeSpan.Zero);
+
+        tracker.Reset("192.168.1.10");
+        Assert.False(tracker.IsBlocked("192.168.1.10", out _));
+    }
+
+    [Fact]
+    public void Auth_failure_tracker_can_be_disabled()
+    {
+        var tracker = new ProxyAuthFailureTracker();
+        ProxyAuthFailureResult result = null!;
+        for (var i = 0; i < 20; i++)
+            result = tracker.RecordFailure("192.168.1.10", 0, 300, 300);
+        Assert.False(result.Blocked);
+        Assert.False(tracker.IsBlocked("192.168.1.10", out _));
+    }
+
     [Fact]
     public async Task Store_round_trips_document()
     {
@@ -121,7 +196,12 @@ public class ProxySecurityTests
                     HttpPort = 18888,
                     Socks5Port = 11080,
                     AllowAnonymous = true,
-                    AllowedPorts = new List<int> { 80, 443, 8443 }
+                    AllowedPorts = new List<int> { 80, 443, 8443 },
+                    AllowedDomains = new List<string> { "example.com", "*.example.org" },
+                    BlockedDomains = new List<string> { "*.ads.example" },
+                    AuthFailureLimit = 5,
+                    AuthFailureWindowSeconds = 120,
+                    AuthFailureBlockSeconds = 600
                 },
                 Accounts = new List<ProxyAccount> { account }
             };
@@ -134,6 +214,10 @@ public class ProxySecurityTests
             Assert.Equal(18888, loaded.Options.HttpPort);
             Assert.Equal(11080, loaded.Options.Socks5Port);
             Assert.True(loaded.Options.AllowAnonymous);
+            Assert.Contains("example.com", loaded.Options.AllowedDomains);
+            Assert.Contains("*.ads.example", loaded.Options.BlockedDomains);
+            Assert.Equal(5, loaded.Options.AuthFailureLimit);
+            Assert.Equal(600, loaded.Options.AuthFailureBlockSeconds);
             Assert.Single(loaded.Accounts);
             Assert.Equal("ops", loaded.Accounts[0].Username);
             Assert.True(loaded.Accounts[0].VerifyPassword("password"));

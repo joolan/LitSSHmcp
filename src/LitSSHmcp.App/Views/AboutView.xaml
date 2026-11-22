@@ -24,10 +24,14 @@
                 <StackPanel>
                     <TextBlock Text="最近更新亮点" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 文件传输：新增 FTP / FTPS / SFTP 站点管理、双栏传输、并发/续传/暂停/限速和覆盖策略；FTPS 支持自定义 CA、SHA-256 证书固定、客户端证书、TLS 1.2/1.3 与 HTTP/SOCKS 代理。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 局域网代理：工具箱新增 HTTP / SOCKS5 双协议正向代理，支持账号 PBKDF2 哈希、匿名开关、客户端 IP/CIDR 白名单、域名白/黑名单、目标端口/私有地址策略、临时 2 小时自动停止与防火墙 UAC 一键放行；支持活动连接查看/断开、账号与策略热更新、认证失败限速与审计、网卡地址选择、上游 HTTP/SOCKS5 代理链；配置 http-socks-proxy.json 已纳入存储统计和定时备份。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 工具箱环境变量：程序与脚本可按工具配置环境变量，只注入本次启动进程及子进程，不写入系统全局；值保存时 DPAPI 加密，脚本确认框只显示变量名；支持 exe/bat/cmd/ps1 与 cmd/PowerShell 脚本片段。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 环境变量工具箱：集中查看/编辑用户环境变量；系统变量默认只读，需显式解锁（普通权限会弹 UAC）。支持 PATH 专用校验、备份/恢复、关键变量保护，保存后广播 WM_SETTINGCHANGE 并更新当前进程；已运行程序/终端/服务仍需重启。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程文件在线编辑：SSH 文件面板与 SFTP 管理器支持多 Tab 编辑、编码/换行转换、查找替换、冲突 Diff、远端备份历史与权限保留。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源 AI 助手：数据库工作台支持数据源专属 AI 会话、表结构检索、只读查询与执行计划分析，写操作执行前需 SQL 确认。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 会话管理优化：标签/目录树两种导航，目录树按服务器分组；标签更紧凑，操作栏改为可拖动、可记忆位置的半透明悬浮栏。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 启动性能：主页面 View 懒创建、调度器延迟启动、网络状态与宠物后置加载，并共享进程级 SSH 服务与连接池。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 性能诊断：设置新增性能诊断页，展示进程/GC/MCP 宿主池与启动、AI、Jenkins、K8s 刷新耗时；新增发布性能门禁脚本，便于回归启动与内存预算。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 稳定性：托盘图标改为进程级单例，修复重复图标；远程回收站大小显示更准确，在线编辑器关闭流程增加防重入。"/>
                 </StackPanel>
             </Border>
@@ -44,6 +48,8 @@
                         <Run FontWeight="SemiBold" Text="MIT 许可证（MIT License）"/>
                         <Run Text="，可自由使用、修改、分发与商用，请保留原始版权与许可声明。"/>
                     </TextBlock>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,4"
+                               Text="启动时会展示无标题栏免责声明：本项目仅供学习交流，未经严格验证，请勿用于生产环境；只有“继续”会进入程序，关闭窗口或“不同意并退出”会退出；可选择“本月不再提示”，下个月会再次提示。"/>
                     <TextBlock Text="Copyright (c) 2026 LitSSH" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                 </StackPanel>
             </Border>
@@ -75,7 +81,7 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程文件在线编辑：多 Tab、编码/换行转换、查找替换、冲突 Diff、远端备份历史、恢复与文件权限保留。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程文件回收站：SFTP 与远程文件面板删除移到 ~/.litssh-trash，支持恢复、彻底删除、清空和大小提示。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 密码保管箱：独立主密码、账号密码与附属信息、TOTP / HOTP、附件、密码历史、TOTP 二维码导入、自动锁定和加密备份。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 存储维护定时备份：多计划、存储项目多选、加密 .lsbak、本地压缩、阿里云 OSS、启动兜底、Windows 计划任务、备份历史、完整性校验和恢复向导。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 存储维护定时备份：多计划、存储项目多选、加密 .lsbak、本地压缩、阿里云 OSS、启动兜底、Windows 计划任务、备份历史、完整性校验和恢复向导；局域网代理配置 http-socks-proxy.json 已纳入存储统计和备份项目。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 命令同步：任一已开启同步的终端输入会广播到其他已开启且已连接的 SSH 终端；支持平铺 / 独立窗口开关、全量开关与有效会话计数，本机 PowerShell 不参与。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 服务器连接增强：跳板机（ProxyJump，经另一台已配置服务器中转）、SSH 密钥生成（ed25519 / rsa，公钥一键复制）、凭据轮换提醒。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• Jenkins：多连接 CI 页面，支持 View、任务搜索、收藏/最近访问、参数构建、队列/状态/日志、阶段/产物/测试报告、SSH SOCKS5 隧道与操作审计。"/>
@@ -83,7 +89,10 @@
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 远程桌面：RDP / VNC 连接管理（密码仅本机 DPAPI 加密、可经 SSH 隧道访问内网桌面），内嵌多标签查看器（标签可分离 / 收回）与外部客户端打开。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 本机终端：ConPTY 真实本机 PowerShell 终端；AI 本地 CLI 在白名单内执行本机命令（人工审批、超时与进程树清理），单个 AI 会话最多并行管理 4 个独立终端。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• SSH 终端 AI 助手：按终端绑定当前服务器，只暴露 terminal_exec / terminal_sudo / terminal_job；共享当前 PTY 的 cwd/env/alias，支持上下文确认、sudo 手动/自动提权、后台长任务与审计。"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 工具箱：程序/文件/脚本启动、Hosts、密码与加密保管、证书/TLS 批量检测、文本/编码转换、SSH 密钥、本地端口/进程检查、网络唤醒（Wake-on-LAN）。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 工具箱：程序/文件/脚本启动、Hosts、密码与加密保管、证书/TLS 批量检测、文本/编码转换、SSH 密钥、本地端口/进程检查、网络唤醒（Wake-on-LAN）、局域网 HTTP / SOCKS5 代理、环境变量管理。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 局域网 HTTP / SOCKS5 代理：临时让局域网设备经本机上网；默认仅本机、账号认证、只允许 80/443 且禁止私有目标，临时默认 2 小时；支持客户端白名单、域名白/黑名单、匿名开关、PBKDF2 账号、双端口、活动连接查看/断开、账号与策略热更新、认证失败限速与审计、防火墙规则检测、网卡地址选择、上游 HTTP/SOCKS5 代理链、最近日志与 UAC 防火墙规则；关闭 App 即停止。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 程序 / 脚本环境变量：为工具箱中的程序或脚本单独配置环境变量，仅注入本次启动进程及子进程，不写入系统全局；值保存时 DPAPI 加密，脚本确认框只显示变量名。支持 exe/bat/cmd/ps1 与 cmd/PowerShell 脚本片段；快捷方式和管理员运行暂不支持。"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 环境变量管理：用户变量可直接编辑；系统变量默认只读，需显式解锁（普通权限会弹 UAC）后才能编辑。支持 PATH 专用校验、关键变量保护、保存前备份/恢复、变更写审计；保存后广播系统并更新当前进程。已运行程序/终端/服务需要重启。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 批量执行 / 快速命令：多台服务器并行下发命令；内置快速命令（一键巡检、磁盘/inode/内存/端口/进程/大目录/日志/容器/网络）与「一键巡检」，写操作执行前确认。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 数据源 / 应用管理 + 数据库工作台：维护数据源与应用；工作台支持 SQL 查询/对象浏览/表数据分页预览、Redis 键浏览（分批扫描、补全类型/TTL/大小、DB 切换、大结果集警告）、只读/写入模式与审计。"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,0,0,3" Text="• 资产拓扑：旧版可视化编辑（拖动/缩放、拖线建关系、正交避障连线、网格吸附、撤销重做、导出图片）+ 新版只读结构化视图（服务器泳道 / 应用链路 / 依赖矩阵 / 配置建议）与配置体检。"/>
@@ -102,7 +111,7 @@
                 <StackPanel>
                     <TextBlock Text="技术栈" FontWeight="SemiBold" Margin="0,0,0,6"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                               Text=".NET 8（桌面 App、MCP 服务器与 Web 助手）· .NET 10（CLI）· WPF + WPF-UI（Fluent）· ASP.NET Core / Kestrel + WebSocket（Web 助手）· Microsoft.Extensions.AI + ModelContextProtocol SDK · OpenAI 兼容大模型（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等）· SSH.NET · FluentFTP · MySQL / PostgreSQL / Redis 驱动 · SQLite（审计 / 快照 / 会话 / 记忆 / 账号 / 身份）· PBKDF2-SHA256 + DPAPI（密码 / 凭据加密）· kubectl（Kubernetes 多集群视图）· AvalonEdit（SQL 编辑器）· RDP ActiveX / WebView2 + noVNC（远程桌面查看器）。"/>
+                               Text=".NET 8（桌面 App、MCP 服务器与 Web 助手）· .NET 10（CLI）· WPF + WPF-UI（Fluent）· ASP.NET Core / Kestrel + WebSocket（Web 助手）· Microsoft.Extensions.AI + ModelContextProtocol SDK · OpenAI 兼容大模型（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 硅基流动 / 本地 Ollama 等）· SSH.NET · FluentFTP · 自研 HTTP / SOCKS5 正向代理（TcpListener + RFC 1929）· MySQL / PostgreSQL / Redis 驱动 · SQLite（审计 / 快照 / 会话 / 记忆 / 账号 / 身份）· PBKDF2-SHA256 + DPAPI（密码 / 凭据加密）· kubectl（Kubernetes 多集群视图）· AvalonEdit（SQL 编辑器）· RDP ActiveX / WebView2 + noVNC（远程桌面查看器）。"/>
                 </StackPanel>
             </Border>
 

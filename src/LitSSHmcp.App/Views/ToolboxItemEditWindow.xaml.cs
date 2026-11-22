@@ -45,7 +45,7 @@ public partial class ToolboxItemEditWindow : FluentWindow
             Filter = type == ToolboxItemType.Script
                 ? "脚本|*.bat;*.cmd;*.ps1|所有文件|*.*"
                 : type == ToolboxItemType.Application
-                    ? "程序|*.exe;*.lnk|所有文件|*.*"
+                    ? "程序|*.exe;*.bat;*.cmd;*.ps1;*.lnk|所有文件|*.*"
                     : "所有文件|*.*",
             CheckFileExists = true,
             Multiselect = false
@@ -68,6 +68,15 @@ public partial class ToolboxItemEditWindow : FluentWindow
         };
         if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             ViewModel.WorkingDirectory = dialog.SelectedPath;
+    }
+
+    private void OnAddEnvironmentVariable(object sender, RoutedEventArgs e) =>
+        ViewModel.AddEnvironmentVariable();
+
+    private void OnRemoveEnvironmentVariable(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ToolboxEnvironmentVariable variable })
+            ViewModel.RemoveEnvironmentVariable(variable);
     }
 
     private void OnSave(object sender, RoutedEventArgs e)

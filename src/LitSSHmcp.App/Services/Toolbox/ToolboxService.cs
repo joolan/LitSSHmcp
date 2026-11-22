@@ -16,6 +16,7 @@ public sealed class ToolboxService
     private static readonly Guid LocalPortBuiltinId = Guid.Parse("F7B1D5C4-2E6A-4D9B-8F5C-9A4E8D2B3C96");
     private static readonly Guid WakeOnLanBuiltinId = Guid.Parse("0A2C4E6F-8B1D-4A3C-9E5F-7D9B1C3E5A70");
     private static readonly Guid ProxyBuiltinId = Guid.Parse("1B3D5F70-9C2E-4B4D-8F6A-0E1C3D5B7A92");
+    private static readonly Guid EnvironmentBuiltinId = Guid.Parse("2C4E6A81-0D3F-4C5E-9A7B-1F2D4E6C8B03");
 
     private readonly ToolboxStore _store;
     private readonly ToolboxLauncher _launcher;
@@ -75,6 +76,8 @@ public sealed class ToolboxService
             "按 MAC 发送魔术包唤醒设备，支持局域网扫描添加与原理说明", order + 80);
         changed |= EnsureBuiltin("http-proxy", ProxyBuiltinId, "局域网 HTTP / SOCKS5 代理",
             "临时让局域网设备经本机上网，支持账号、白名单、目标策略与临时到期", order + 90);
+        changed |= EnsureBuiltin("environment-variables", EnvironmentBuiltinId, "环境变量",
+            "查看、编辑用户/系统环境变量，支持备份恢复、PATH 校验与立即通知系统", order + 100);
 
         if (changed)
             await PersistAsync();

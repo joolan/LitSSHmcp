@@ -20,6 +20,7 @@ public partial class ProxyToolWindow : FluentWindow
     private readonly DispatcherTimer _timer;
     private ProxyDocument _document = new();
     private ObservableCollection<ProxyAccount> _accounts = new();
+    private bool _loaded;
     private bool _loading;
     private bool _starting;
     private bool _clearUpstreamPassword;
@@ -63,6 +64,7 @@ public partial class ProxyToolWindow : FluentWindow
             RefreshConnections();
             RefreshLogs();
             FooterStatus.Text = "配置文件：" + _service.ConfigPath;
+            _loaded = true;
             _ = RefreshFirewallStatusAsync();
         }
         catch (Exception ex)
@@ -471,7 +473,7 @@ public partial class ProxyToolWindow : FluentWindow
     {
         AccountsHint.Text = _accounts.Count == 0
             ? "当前没有账号。匿名模式关闭时必须至少新增一个账号，否则代理无法启动。"
-            : "匿名模式关闭时，至少需要一个启用账号；修改账号后请保存并重启代理。密码只能重置，无法查看。";
+            : "匿名模式关闭时，至少需要一个启用账号；账号修改后自动保存并热更新。密码只能重置，无法查看。";
     }
 
     private void RefreshAccounts()
@@ -507,7 +509,7 @@ public partial class ProxyToolWindow : FluentWindow
         account.SetPassword(result.Password);
         _accounts.Add(account);
         RefreshAccounts();
-        FooterStatus.Text = "账号已添加；请点击“保存设置”或直接启动代理以持久化。";
+        SaveAccounts("账号已添加并保存。");
     }
 
     private void OnEditAccount(object sender, RoutedEventArgs e)
@@ -528,13 +530,20 @@ public partial class ProxyToolWindow : FluentWindow
             return;
         }
 
+        if (account.Enabled && !result.Enabled && IsLastEnabledAccount(account))
+        {
+            _dialogs.Warn("匿名模式关闭且代理正在运行，至少需要一个启用账号；请先启用其他账号或开启匿名模式。",
+                "编辑账号");
+            return;
+        }
+
         account.Username = result.Username;
         account.Note = result.Note;
         account.Enabled = result.Enabled;
         if (!string.IsNullOrEmpty(result.Password))
             account.SetPassword(result.Password);
         RefreshAccounts();
-        FooterStatus.Text = "账号已更新；请保存并重启代理使变更生效。";
+        SaveAccounts("账号已更新并保存。");
     }
 
     private void OnResetPassword(object sender, RoutedEventArgs e)
@@ -556,7 +565,7 @@ public partial class ProxyToolWindow : FluentWindow
         }
         account.SetPassword(result.Password);
         RefreshAccounts();
-        FooterStatus.Text = "密码已重置；请保存并重启代理使变更生效。";
+        SaveAccounts("密码已重置并保存。");
     }
 
     private void OnDeleteAccount(object sender, RoutedEventArgs e)
@@ -566,13 +575,60 @@ public partial class ProxyToolWindow : FluentWindow
             _dialogs.Warn("请先选择一个账号。", "删除账号");
             return;
         }
+        if (IsLastEnabledAccount(account))
+        {
+            _dialogs.Warn("匿名模式关闭且代理正在运行，至少需要一个启用账号；请先启用其他账号或开启匿名模式。",
+                "删除账号");
+            return;
+        }
         if (!_dialogs.Confirm($"确定删除账号“{account.Username}”？", "删除账号",
                 warning: true, defaultNo: true))
             return;
         _accounts.Remove(account);
         RefreshAccounts();
-        FooterStatus.Text = "账号已删除；请保存并重启代理使变更生效。";
+        SaveAccounts("账号已删除并保存。");
     }
+
+    /// <summary>
+    /// 账号独立于其他页面的表单，增删改后立即持久化并热更新，
+    /// 避免用户误以为还要到「监听与策略」里点保存。
+    /// </summary>
+    private void SaveAccounts(string message)
+    {
+        if (!_loaded)
+        {
+            FooterStatus.Text = "配置尚未加载完成，请稍后再试。";
+            return;
+        }
+        FooterStatus.Text = "正在保存代理账号…";
+        AsyncOperation.Run("保存代理账号", () => SaveAccountsAsync(message));
+    }
+
+    private async Task SaveAccountsAsync(string message)
+    {
+        try
+        {
+            var document = new ProxyDocument
+            {
+                Options = _document.Options.Clone(),
+                Accounts = _accounts.Select(account => account.Clone()).ToList()
+            };
+            var result = await _service.SaveAndApplyAsync(document);
+            _document.Accounts = _accounts.ToList();
+            FooterStatus.Text = message + result.Message;
+            UpdateAccountsHint();
+        }
+        catch (Exception ex)
+        {
+            FooterStatus.Text = "账号保存失败：" + ex.Message;
+        }
+    }
+
+    private bool IsLastEnabledAccount(ProxyAccount account) =>
+        account.Enabled &&
+        _service.Status.Running &&
+        !_document.Options.AllowAnonymous &&
+        _accounts.Count(item => item.Enabled && !ReferenceEquals(item, account)) == 0;
 
     private bool IsDuplicateUsername(string username, ProxyAccount? except) =>
         _accounts.Any(account => !ReferenceEquals(account, except) &&
@@ -659,6 +715,11 @@ public partial class ProxyToolWindow : FluentWindow
 
     private async Task OpenConfigFolderAsync()
     {
+        if (!_loaded)
+        {
+            FooterStatus.Text = "配置尚未加载完成，请稍后再试。";
+            return;
+        }
         try
         {
             if (!File.Exists(_service.ConfigPath))
@@ -690,7 +751,7 @@ public partial class ProxyToolWindow : FluentWindow
     {
         _clearUpstreamPassword = true;
         UpstreamPasswordBox.Clear();
-        UpstreamPasswordHint.Text = "已标记清除上游密码；点击保存后生效。";
+        UpstreamPasswordHint.Text = "已标记清除上游密码；点击顶部「保存设置」后生效。";
     }
 
     private void OnTabChanged(object sender, SelectionChangedEventArgs e)

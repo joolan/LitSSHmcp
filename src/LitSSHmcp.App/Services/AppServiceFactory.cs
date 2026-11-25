@@ -62,6 +62,26 @@ public static class AppServiceFactory
     public static void DisposeProxyHost()
         => Interlocked.Exchange(ref _proxyHostService, null)?.Dispose();
 
+    private static DnsHostService? _dnsHostService;
+
+    /// <summary>
+    /// 轻量 DNS 服务器（进程级单例）：App 启动后按配置自动开启，退出时统一停止。
+    /// 工具箱窗口与后台生命周期共用该实例，避免重复监听 53 端口。
+    /// </summary>
+    public static DnsHostService DnsHost
+    {
+        get
+        {
+            if (_dnsHostService is null)
+                Interlocked.CompareExchange(ref _dnsHostService, new DnsHostService(), null);
+            return _dnsHostService!;
+        }
+    }
+
+    /// <summary>App 退出时停止 DNS 并释放 UDP/TCP 监听端口。</summary>
+    public static void DisposeDnsHost()
+        => Interlocked.Exchange(ref _dnsHostService, null)?.Dispose();
+
     private static RemoteDesktopService? _remoteDesktopService;
 
     /// <summary>

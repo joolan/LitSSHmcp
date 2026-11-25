@@ -300,6 +300,12 @@ public sealed class RemoteFileEditorViewModel : INotifyPropertyChanged
             ? Task.FromResult(new CommandResult { Success = false, Error = "文件尚未命名。" })
             : _files.RestoreBackupAsync(Server, backupPath, tab.RemotePath, ct);
 
+    public Task<CommandResult> DeleteBackupAsync(
+        RemoteFileEditTab tab, string backupPath, CancellationToken ct = default)
+        => string.IsNullOrWhiteSpace(tab.RemotePath)
+            ? Task.FromResult(new CommandResult { Success = false, Error = "文件尚未命名。" })
+            : _files.DeleteBackupAsync(Server, backupPath, tab.RemotePath, ct);
+
     public void RemoveTab(RemoteFileEditTab tab)
     {
         var index = Tabs.IndexOf(tab);

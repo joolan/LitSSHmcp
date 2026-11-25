@@ -4,6 +4,9 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="{Binding Title}" Height="720" Width="1180"
         WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </ui:FluentWindow.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -100,7 +103,17 @@
         </Grid>
 
         <DockPanel Grid.Row="3" Margin="10,0,10,10">
-            <TextBlock DockPanel.Dock="Top" Text="传输队列" FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+                <TextBlock Text="传输队列" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBlock Text="{Binding Queue.QueueStateText}" VerticalAlignment="Center" Margin="0,0,10,0"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeMicro}"/>
+                    <ui:Button Content="{Binding Queue.PauseButtonText}" Padding="10,3" Margin="0,0,6,0"
+                               ToolTip="暂停后当前文件会继续传完，之后不再开始新任务" Click="OnPauseResumeTransfers"/>
+                    <ui:Button Content="取消全部" Padding="10,3" Click="OnCancelTransfers"
+                               ToolTip="取消排队任务；正在传输的文件会尽快停止"/>
+                </StackPanel>
+            </Grid>
             <Border Style="{DynamicResource CardBorderStyle}" Padding="8,4">
             <ListBox ItemsSource="{Binding Queue.Items}" Background="Transparent" BorderThickness="0"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -119,6 +132,7 @@
                                 <ColumnDefinition Width="64"/>
                                 <ColumnDefinition Width="220"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{Binding Direction}" Foreground="{DynamicResource AppAccentBrush}"/>
                             <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
@@ -128,6 +142,10 @@
                                          IsIndeterminate="{Binding IsIndeterminate}" Margin="0,0,8,0"/>
                             <TextBlock Grid.Column="5" Text="{Binding Status}" TextTrimming="CharacterEllipsis"
                                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <ui:Button Grid.Column="6" Content="取消" Padding="8,1" Margin="8,0,0,0"
+                                       FontSize="{DynamicResource AppFontSizeMicro}"
+                                       Visibility="{Binding CanCancel, Converter={StaticResource BoolToVis}}"
+                                       Tag="{Binding}" Click="OnCancelItemTransfers"/>
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>

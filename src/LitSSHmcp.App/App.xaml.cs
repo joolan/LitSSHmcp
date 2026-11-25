@@ -110,6 +110,8 @@ public partial class App : Application
         Exit += (_, _) => AppServiceFactory.DisposePortForwardService();
         // 局域网 HTTP / SOCKS5 代理：退出时停止监听并关闭所有连接
         Exit += (_, _) => AppServiceFactory.DisposeProxyHost();
+        // 轻量 DNS：退出时停止监听并释放 UDP/TCP 端口
+        Exit += (_, _) => AppServiceFactory.DisposeDnsHost();
         // 内置 MCP 宿主池：退出时结束池内常驻子进程（进程级，需在退出前统一释放）
         Exit += (_, _) => _ = LitSSHmcp.Agent.McpBuiltinHostPool.ShutdownAsync();
 
@@ -344,6 +346,9 @@ public partial class App : Application
 
         // 局域网代理：只有配置 Enabled=true 才启动；失败不阻断 App。
         _ = AppServiceFactory.ProxyHost.StartIfEnabledAsync();
+
+        // 轻量 DNS：只有配置 Enabled=true 才启动；失败不阻断 App。
+        _ = AppServiceFactory.DnsHost.StartIfEnabledAsync();
 
         try
         {

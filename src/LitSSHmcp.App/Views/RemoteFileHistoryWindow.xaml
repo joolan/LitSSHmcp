@@ -20,7 +20,7 @@
         </Border>
 
         <ListBox Grid.Row="2" x:Name="BackupList" Margin="12,0,12,0" BorderThickness="0"
-                 Background="Transparent" ItemsSource="{Binding Backups}">
+                 SelectionMode="Extended" Background="Transparent" ItemsSource="{Binding Backups}">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <TextBlock Text="{Binding}" FontFamily="{DynamicResource AppFontMonoFamily}"
@@ -32,6 +32,8 @@
         <DockPanel Grid.Row="3" Margin="12,8,12,10">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <ui:Button Content="关闭" Padding="14,4" Margin="0,0,8,0" IsCancel="True" Click="OnClose"/>
+                <ui:Button Content="删除所选" Padding="14,4" Margin="0,0,8,0" Click="OnDeleteSelected"
+                           ToolTip="永久删除选中的历史备份（可多选）"/>
                 <ui:Button Content="比较" Padding="14,4" Margin="0,0,8,0" Click="OnCompare"/>
                 <ui:Button Content="恢复此备份" Appearance="Primary" Padding="14,4" Click="OnRestore"/>
             </StackPanel>

@@ -471,6 +471,22 @@ public sealed class RemoteTextFileService
         => _ssh.ExecuteCommandAsync(server,
             $"cp -p -- {Quote(backupPath)} {Quote(path)}", ct, 20);
 
+    public Task<CommandResult> DeleteBackupAsync(
+        SshServerConfig server, string backupPath, string path, CancellationToken ct = default)
+        => _ssh.ExecuteCommandAsync(server, BuildDeleteBackupCommand(backupPath, path), ct, 20);
+
+    /// <summary>
+    /// 删除历史备份的 shell 命令：只允许删除当前文件备份目录内的文件，
+    /// 防止传入任意路径时误删服务器上的其它文件。
+    /// </summary>
+    internal static string BuildDeleteBackupCommand(string backupPath, string path)
+    {
+        var dir = BackupDirShell(path);
+        return $"dir=\"{dir}\"; case {Quote(backupPath)} in \"$dir\"/*) " +
+               $"rm -f -- {Quote(backupPath)} ;; " +
+               "*) echo '拒绝删除：备份路径不在当前文件的备份目录' >&2; exit 1 ;; esac";
+    }
+
     private static string BackupDirShell(string path)
         => "$HOME/.litssh-backups/" + Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(path))).ToLowerInvariant()[..16];

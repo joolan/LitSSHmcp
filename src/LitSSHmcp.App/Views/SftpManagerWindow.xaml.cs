@@ -19,6 +19,7 @@ public partial class SftpManagerWindow : FluentWindow
         DataContext = vm;
         WindowLayout.Attach(this, "sftp-manager");
         Loaded += (_, _) => _vm.Initialize();
+        Closing += (_, _) => _vm.Queue.CancelAll();
     }
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
@@ -108,6 +109,16 @@ public partial class SftpManagerWindow : FluentWindow
     private void OnUpload(object sender, RoutedEventArgs e) => _vm.UploadSelected();
 
     private void OnDownload(object sender, RoutedEventArgs e) => _vm.DownloadSelected();
+
+    private void OnPauseResumeTransfers(object sender, RoutedEventArgs e) => _vm.Queue.TogglePause();
+
+    private void OnCancelTransfers(object sender, RoutedEventArgs e) => _vm.Queue.CancelAll();
+
+    private void OnCancelItemTransfers(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: TransferItem item })
+            _vm.Queue.Cancel(item);
+    }
 
     private void OnBookmarks(object sender, RoutedEventArgs e)
     {

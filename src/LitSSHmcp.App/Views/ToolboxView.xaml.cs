@@ -24,6 +24,7 @@ public partial class ToolboxView : UserControl
     private LocalPortToolWindow? _localPortWindow;
     private WakeOnLanToolWindow? _wakeOnLanWindow;
     private ProxyToolWindow? _proxyWindow;
+    private DnsToolWindow? _dnsWindow;
     private EnvironmentVariablesWindow? _environmentVariablesWindow;
     private ToolboxItemViewModel? _dragItem;
     private ToolboxItemViewModel? _dropTarget;
@@ -224,6 +225,18 @@ public partial class ToolboxView : UserControl
             _proxyWindow = new ProxyToolWindow { Owner = Window.GetWindow(this) };
             _proxyWindow.Closed += (_, _) => _proxyWindow = null;
             _proxyWindow.Show();
+        }
+        if (string.Equals(id, "dns-server", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_dnsWindow is { IsLoaded: true })
+            {
+                _dnsWindow.Activate();
+                return;
+            }
+
+            _dnsWindow = new DnsToolWindow { Owner = Window.GetWindow(this) };
+            _dnsWindow.Closed += (_, _) => _dnsWindow = null;
+            _dnsWindow.Show();
         }
         if (string.Equals(id, "environment-variables", StringComparison.OrdinalIgnoreCase))
         {

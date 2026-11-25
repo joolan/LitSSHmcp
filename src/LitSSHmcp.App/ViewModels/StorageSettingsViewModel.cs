@@ -74,7 +74,7 @@ public class StorageSettingsViewModel : INotifyPropertyChanged, IConfigReloadabl
             {
                 Stat("数据目录合计", _dataDir),
                 Stat("配置 config.json", Path.Combine(_dataDir, "config.json")),
-                Stat("局域网代理 http-socks-proxy.json", Path.Combine(_dataDir, "http-socks-proxy.json")),
+                Stat("局域网代理 http-socks-proxy.json", Path.Combine(_dataDir, "http-socks-proxy.json")), Stat("轻量 DNS dns-server.json", Path.Combine(_dataDir, "dns-server.json")),
                 Stat("AI 会话/记忆 agent.db", Path.Combine(_dataDir, "agent.db"), includeSidecars: true),
                 Stat("审计 audit.db", Path.Combine(_dataDir, "audit.db"), includeSidecars: true),
                 Stat("快照 snapshots.db", Path.Combine(_dataDir, "snapshots.db"), includeSidecars: true),

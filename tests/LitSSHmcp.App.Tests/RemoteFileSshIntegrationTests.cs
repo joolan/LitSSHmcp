@@ -63,6 +63,14 @@ public class RemoteFileSshIntegrationTests
 
             var restore = await service.RestoreBackupAsync(server, backups[0], remotePath);
             Assert.True(restore.Success, restore.Error);
+
+            var denied = await service.DeleteBackupAsync(server, "/tmp/not-a-litssh-backup.txt", remotePath);
+            Assert.False(denied.Success);
+
+            var delete = await service.DeleteBackupAsync(server, backups[0], remotePath);
+            Assert.True(delete.Success, delete.Error);
+            var afterDelete = await service.ListBackupsAsync(server, remotePath);
+            Assert.DoesNotContain(backups[0], afterDelete);
         }
         finally
         {

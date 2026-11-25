@@ -444,7 +444,7 @@ public sealed class TerminalView : Grid
         if (baseIndex < 0)
         {
             for (var col = 0; col < _cols; col++)
-                cells[col] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
+                cells[col] = new TerminalCell { Ch = '\0', Attr = TerminalAttributes.Default };
         }
         else if (fromScrollback)
         {
@@ -986,31 +986,47 @@ public sealed class TerminalView : Grid
         if (!_hasSelection || _session is null)
             return string.Empty;
 
-        var model = _session.Model;
         var (r1, c1, r2, c2) = NormalizedSelection();
+        return ExtractText(_session.Model, r1, c1, r2, c2, _scrollOffset, _cols);
+    }
+
+    /// <summary>
+    /// 按逻辑行提取选中文本：终端宽度造成的软换行不插入换行符，只有真实行尾才换行，
+    /// 这样复制一条被回绕的长命令/路径时仍然是一整行。
+    /// </summary>
+    internal static string ExtractText(TerminalModel model, int r1, int c1, int r2, int c2, int scrollOffset, int cols)
+    {
         var sb = new System.Text.StringBuilder();
         for (var row = r1; row <= r2; row++)
         {
-            var baseIndex = model.ScrollbackCount + row - _scrollOffset;
+            var baseIndex = model.ScrollbackCount + row - scrollOffset;
             if (baseIndex < 0)
                 continue;
 
-            var line = baseIndex < model.ScrollbackCount
+            var fromScrollback = baseIndex < model.ScrollbackCount;
+            var line = fromScrollback
                 ? model.ScrollbackLine(model.ScrollbackCount - baseIndex)
                 : null;
 
             var start = row == r1 ? c1 : 0;
-            var end = row == r2 ? c2 : _cols - 1;
+            var end = row == r2 ? c2 : cols - 1;
             var rowText = new System.Text.StringBuilder();
-            for (var col = start; col <= end && col < _cols; col++)
+            for (var col = start; col <= end && col < cols; col++)
             {
                 var cell = line is not null ? line[col] : model.CellAt(col, baseIndex - model.ScrollbackCount);
                 if (cell.WideContinuation)
                     continue;
                 rowText.Append(cell.Text);
             }
-            sb.Append(rowText.ToString().TrimEnd());
-            if (row != r2)
+
+            var wrapped = fromScrollback
+                ? model.IsScrollbackRowWrapped(model.ScrollbackCount - baseIndex)
+                : model.IsScreenRowWrapped(baseIndex - model.ScrollbackCount);
+            var isLastRow = row == r2;
+            // 软换行的行末空格属于原内容，保留；真实行尾仍按长按习惯去掉尾部空白。
+            var text = wrapped && !isLastRow ? rowText.ToString() : rowText.ToString().TrimEnd();
+            sb.Append(text);
+            if (!isLastRow && !wrapped)
                 sb.Append('\n');
         }
         return sb.ToString();

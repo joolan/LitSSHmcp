@@ -1,0 +1,534 @@
+<ui:FluentWindow x:Class="LitSSHmcp.App.Views.Tools.DnsToolWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="轻量 DNS 服务器" Height="860" Width="1160" MinHeight="640" MinWidth="940"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="轻量 DNS 服务器"/>
+
+        <Grid Grid.Row="1" Margin="12,4,12,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock x:Name="StatusTitle" Text="DNS 未启动" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSizeSubtitle}"/>
+                        <TextBlock x:Name="StatusDetail" Margin="0,3,0,0" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        <TextBlock x:Name="StatusError" Margin="0,3,0,0" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource AppDangerBrush}" Visibility="Collapsed"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:Button x:Name="StartButton" Content="启动 DNS" Appearance="Primary"
+                                   Padding="16,4" Margin="0,0,8,0" Click="OnStart"/>
+                        <ui:Button x:Name="StopButton" Content="停止" Padding="16,4" Margin="0,0,8,0"
+                                   Click="OnStop" IsEnabled="False"/>
+                        <ui:Button Content="保存设置" Padding="14,4" Margin="0,0,8,0" Click="OnSave"
+                                   ToolTip="保存所有页面的设置；本地记录的修改会自动保存"/>
+                        <ui:Button Content="打开配置目录" Padding="12,4" Click="OnOpenConfigFolder"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <TabControl Grid.Row="1" x:Name="MainTabs" SelectionChanged="OnTabChanged">
+                <TabItem Header="监听与上游">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="2,8,2,2">
+                        <StackPanel>
+                            <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock Text="监听" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="110"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="110"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="监听地址" VerticalAlignment="Center"/>
+                                        <ComboBox Grid.Row="0" Grid.Column="1" x:Name="BindAddressBox" Height="34"
+                                                  Margin="0,4,12,4" IsEditable="True"
+                                                  DisplayMemberPath="Display" SelectedValuePath="Value"
+                                                  VerticalContentAlignment="Center" Padding="8,0"
+                                                  ToolTip="可输入 127.0.0.1、0.0.0.0 或选择本机局域网 IPv4"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="端口" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Row="0" Grid.Column="3" x:Name="PortBox" Height="34"
+                                                 Margin="0,4,0,4" VerticalContentAlignment="Center" Padding="8,0"
+                                                 ToolTip="默认 53；如被 Hyper-V/Docker/ICS 占用可改用 5353"/>
+
+                                        <CheckBox Grid.Row="1" Grid.Column="1" x:Name="UdpEnabledCheck"
+                                                  Content="启用 UDP" Margin="0,6,12,2" IsChecked="True"/>
+                                        <CheckBox Grid.Row="1" Grid.Column="3" x:Name="TcpEnabledCheck"
+                                                  Content="启用 TCP（截断回退）" Margin="0,6,0,2" IsChecked="True"/>
+
+                                        <CheckBox Grid.Row="2" Grid.Column="1" x:Name="EnabledCheck"
+                                                  Content="随 App 启动自动开启" Margin="0,8,12,2"/>
+                                        <StackPanel Grid.Row="2" Grid.Column="3" Orientation="Horizontal" Margin="0,8,0,2">
+                                            <TextBlock Text="临时开启" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBox x:Name="TemporaryBox" Width="64" Height="30" Padding="6,0"
+                                                     VerticalContentAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="分钟（0=不自动关）" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       FontSize="{DynamicResource AppFontSizeCaption}"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <CheckBox x:Name="AllowPublicCheck" Margin="0,10,0,0"
+                                              Content="允许公网客户端（危险；默认仅回环与私有网段）"/>
+                                    <TextBlock Margin="0,4,0,0" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeCaption}"
+                                               Text="DNS 比代理更关键：App 退出、休眠或 Windows 重启会停止解析。请只作为临时/小团队 DNS，并为客户端保留备用 DNS。"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock Text="客户端与上游" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                    <TextBlock Text="客户端白名单（每行一个 IP 或 CIDR；留空时仅允许回环与私有网段）"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeCaption}"/>
+                                    <TextBox x:Name="AllowedClientsBox" Height="58" Margin="0,4,0,10"
+                                             AcceptsReturn="True" TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto" Padding="8,6"
+                                             ToolTip="例如 192.168.1.0/24 或 192.168.1.50"/>
+
+                                    <TextBlock Text="上游 DNS（每行一个；留空使用系统 DNS；支持 udp://、tcp://、IP:端口）"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeCaption}"/>
+                                    <TextBox x:Name="UpstreamsBox" Height="72" Margin="0,4,0,10"
+                                             AcceptsReturn="True" TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto" Padding="8,6"
+                                             ToolTip="例如 223.5.5.5、119.29.29.29:53、tcp://1.1.1.1:53"/>
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <ui:Button Content="检测上游" Padding="12,4" Margin="0,0,8,0"
+                                                   Click="OnProbeUpstreams"/>
+                                        <TextBlock x:Name="UpstreamProbeHint" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeCaption}"
+                                                   Text="逐个发送 example.com A 查询并测往返耗时"/>
+                                    </StackPanel>
+                                    <DataGrid x:Name="UpstreamProbeGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                              Height="96" Margin="0,0,0,10" HeadersVisibility="Column"
+                                              GridLinesVisibility="Horizontal" RowHeight="26"
+                                              CanUserAddRows="False" CanUserDeleteRows="False"
+                                              SelectionMode="Single" SelectionUnit="FullRow">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="上游" Binding="{Binding Endpoint}" Width="*"/>
+                                            <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="70"/>
+                                            <DataGridTextColumn Header="延迟(ms)" Binding="{Binding LatencyMs}" Width="80"/>
+                                            <DataGridTextColumn Header="返回码" Binding="{Binding RcodeText}" Width="90"/>
+                                            <DataGridTextColumn Header="错误" Binding="{Binding Error}" Width="170"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="在途上限" VerticalAlignment="Center"
+                                                   Margin="0,0,6,0"/>
+                                        <TextBox Grid.Row="0" Grid.Column="1" x:Name="MaxInFlightBox" Width="70"
+                                                 Height="30" Padding="6,0" VerticalContentAlignment="Center"
+                                                 Margin="0,0,16,6"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="单客户端 QPS" VerticalAlignment="Center"
+                                                   Margin="0,0,6,0"/>
+                                        <TextBox Grid.Row="0" Grid.Column="3" x:Name="MaxQpsBox" Width="70"
+                                                 Height="30" Padding="6,0" VerticalContentAlignment="Center"
+                                                 Margin="0,0,0,6"/>
+
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="UDP 响应上限" VerticalAlignment="Center"
+                                                   Margin="0,0,6,0"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" x:Name="MaxUdpBox" Width="70"
+                                                 Height="30" Padding="6,0" VerticalContentAlignment="Center"
+                                                 Margin="0,0,16,0"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="2" Text="上游超时" VerticalAlignment="Center"
+                                                   Margin="0,0,6,0"/>
+                                        <TextBox Grid.Row="1" Grid.Column="3" x:Name="UpstreamTimeoutBox" Width="70"
+                                                 Height="30" Padding="6,0" VerticalContentAlignment="Center"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock Text="性能与防护" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                    <CheckBox x:Name="ReuseConnectionsCheck" IsChecked="True"
+                                              Content="复用上游连接（UDP/TCP，高并发时减少 socket 与握手开销）"/>
+                                    <CheckBox x:Name="RrlEnabledCheck" Margin="0,8,0,0"
+                                              Content="启用响应速率限制 RRL（仅 UDP；超限返回截断，让客户端改走 TCP）"/>
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="每秒响应数" VerticalAlignment="Center"
+                                                   Margin="0,0,6,0"/>
+                                        <TextBox Grid.Column="1" x:Name="RrlRateBox" Width="80" Height="30"
+                                                 Padding="6,0" VerticalContentAlignment="Center"
+                                                 Margin="0,0,16,0"/>
+                                        <TextBlock Grid.Column="2" Text="突发容量" VerticalAlignment="Center"
+                                                   Margin="0,0,6,0"/>
+                                        <TextBox Grid.Column="3" x:Name="RrlBurstBox" Width="80" Height="30"
+                                                 Padding="6,0" VerticalContentAlignment="Center"/>
+                                    </Grid>
+                                    <TextBlock Margin="0,6,0,0" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeCaption}"
+                                               Text="RRL 按客户端网段（IPv4 /24、IPv6 /56）+ 域名 + 类型聚合，默认关闭；同域名高并发场景建议先观察查询日志再启用。"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10">
+                                <StackPanel>
+                                    <TextBlock Text="Windows 防火墙" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               Text="绑定 0.0.0.0 或局域网地址时，需要放行入站 UDP/TCP 端口。自动添加会弹出 UAC，仅对 private 配置文件放行。"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,6">
+                                        <ui:Button Content="自动添加规则" Padding="12,4" Margin="0,0,6,0"
+                                                   Click="OnAddFirewall"/>
+                                        <ui:Button Content="删除规则" Padding="12,4" Margin="0,0,6,0"
+                                                   Click="OnRemoveFirewall"/>
+                                        <ui:Button Content="检测状态" Padding="12,4" Margin="0,0,6,0"
+                                                   Click="OnCheckFirewall"/>
+                                        <ui:Button Content="复制命令" Padding="12,4"
+                                                   Click="OnCopyFirewall"/>
+                                    </StackPanel>
+                                    <TextBlock Margin="0,0,0,6" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeCaption}"
+                                               Text="防火墙规则会立即执行；监听、上游、缓存等设置修改后请点击顶部「保存设置」。"/>
+                                    <TextBlock x:Name="FirewallStatusText" Margin="0,0,0,6" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                    <TextBox x:Name="FirewallCommandsBox" IsReadOnly="True" Height="86"
+                                             AcceptsReturn="True" TextWrapping="NoWrap"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             FontFamily="{DynamicResource AppFontMonoFamily}"
+                                             FontSize="{DynamicResource AppFontSizeCaption}" Padding="8,6"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="本地记录">
+                    <Grid Margin="2,8,2,2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                            <DockPanel LastChildFill="False">
+                                <StackPanel DockPanel.Dock="Left">
+                                    <TextBlock Text="本地 A / AAAA / CNAME / PTR 记录" FontWeight="SemiBold"/>
+                                    <TextBlock Text="本地记录优先于缓存和上游；名称支持 *.lab 通配符；修改后自动保存并热更新。"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeCaption}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:Button Content="新增" Padding="14,4" Margin="0,0,6,0" Click="OnAddRecord"/>
+                                    <ui:Button Content="编辑" Padding="14,4" Margin="0,0,6,0" Click="OnEditRecord"/>
+                                    <ui:Button Content="删除" Padding="14,4" Margin="0,0,6,0" Click="OnDeleteRecord"/>
+                                    <ui:Button Content="复制示例" Padding="14,4" Click="OnCopyRecordExample"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <DataGrid Grid.Row="1" x:Name="RecordsGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                  CanUserAddRows="False" CanUserDeleteRows="False" RowHeight="30"
+                                  HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                  SelectionMode="Single" SelectionUnit="FullRow"
+                                  MouseDoubleClick="OnRecordsDoubleClick">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="220"/>
+                                <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="90"/>
+                                <DataGridTextColumn Header="值" Binding="{Binding Value}" Width="*"/>
+                                <DataGridTextColumn Header="TTL" Binding="{Binding Ttl}" Width="80"/>
+                                <DataGridCheckBoxColumn Header="启用" Binding="{Binding Enabled}" Width="60"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <DockPanel Grid.Row="2" Margin="2,8,2,0" LastChildFill="False">
+                            <TextBlock x:Name="RecordsHint" DockPanel.Dock="Left" TextWrapping="Wrap"
+                                       VerticalAlignment="Center" MaxWidth="760"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       Text="类型填写 A、AAAA、CNAME 或 PTR；A/AAAA 的值填写 IP，CNAME/PTR 的值填写目标域名。"/>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <ui:Button Content="导入 hosts" Padding="12,4" Margin="0,0,6,0" Click="OnImportHosts"/>
+                                <ui:Button Content="导出 hosts" Padding="12,4" Click="OnExportHosts"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="拦截与缓存">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="2,8,2,2">
+                        <StackPanel>
+                            <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock Text="规则测试" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                    <TextBlock Text="输入域名，按当前黑白名单、本地记录与缓存判断会走哪条路径（不会实际发送查询）。"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeCaption}"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <TextBox x:Name="RuleTestBox" Width="300" Height="32" Padding="8,0"
+                                                 VerticalContentAlignment="Center"
+                                                 ToolTip="例如 nas.lab 或 ads.example.com"/>
+                                        <ComboBox x:Name="RuleTestTypeBox" Width="100" Height="32" Margin="8,0,0,0"
+                                                  VerticalContentAlignment="Center" Padding="8,0" SelectedIndex="0">
+                                            <ComboBoxItem Content="A" Tag="A"/>
+                                            <ComboBoxItem Content="AAAA" Tag="AAAA"/>
+                                            <ComboBoxItem Content="CNAME" Tag="CNAME"/>
+                                            <ComboBoxItem Content="PTR" Tag="PTR"/>
+                                            <ComboBoxItem Content="ANY" Tag="ANY"/>
+                                        </ComboBox>
+                                        <ui:Button Content="测试" Padding="14,4" Margin="8,0,0,0" Click="OnTestRule"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="RuleTestResult" Margin="0,8,0,0" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock Text="域名拦截" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="12"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="黑名单（每行一个；支持 *.example.com）"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       FontSize="{DynamicResource AppFontSizeCaption}"/>
+                                            <TextBox x:Name="BlockedDomainsBox" Height="92" Margin="0,4,0,0"
+                                                     AcceptsReturn="True" TextWrapping="Wrap"
+                                                     VerticalScrollBarVisibility="Auto" Padding="8,6"
+                                                     ToolTip="例如 ads.example.com 或 *.doubleclick.net"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="白名单（每行一个；留空不限制）"
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       FontSize="{DynamicResource AppFontSizeCaption}"/>
+                                            <TextBox x:Name="AllowedDomainsBox" Height="92" Margin="0,4,0,0"
+                                                     AcceptsReturn="True" TextWrapping="Wrap"
+                                                     VerticalScrollBarVisibility="Auto" Padding="8,6"
+                                                     ToolTip="非空时只解析白名单内的域名"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                        <TextBlock Text="拦截返回" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <ComboBox x:Name="BlockModeBox" Width="220" Height="32"
+                                                  VerticalContentAlignment="Center" Padding="8,0">
+                                            <ComboBoxItem Content="NXDOMAIN（域名不存在）" Tag="nxdomain"/>
+                                            <ComboBoxItem Content="0.0.0.0 / ::（A/AAAA）" Tag="zero"/>
+                                        </ComboBox>
+                                        <CheckBox x:Name="RefuseAnyCheck" Content="拒绝 ANY 查询（推荐）"
+                                                  VerticalAlignment="Center" Margin="20,0,0,0" IsChecked="True"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{DynamicResource CardBorderStyle}" Padding="12,10">
+                                <StackPanel>
+                                    <TextBlock Text="缓存" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                    <CheckBox x:Name="CacheEnabledCheck" Content="启用缓存" IsChecked="True"/>
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="最大条目" VerticalAlignment="Center"
+                                                   Margin="0,0,6,6"/>
+                                        <TextBox Grid.Row="0" Grid.Column="1" x:Name="MaxEntriesBox" Width="90"
+                                                 Height="30" Padding="6,0" VerticalContentAlignment="Center"
+                                                 Margin="0,0,16,6"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="最小 TTL" VerticalAlignment="Center"
+                                                   Margin="0,0,6,6"/>
+                                        <TextBox Grid.Row="0" Grid.Column="3" x:Name="MinTtlBox" Width="90"
+                                                 Height="30" Padding="6,0" VerticalContentAlignment="Center"
+                                                 Margin="0,0,0,6"/>
+
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="最大 TTL" VerticalAlignment="Center"
+                                                   Margin="0,0,6,6"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" x:Name="MaxTtlBox" Width="90"
+                                                 Height="30" Padding="6,0" VerticalContentAlignment="Center"
+                                                 Margin="0,0,16,6"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="2" Text="负缓存 TTL" VerticalAlignment="Center"
+                                                   Margin="0,0,6,6"/>
+                                        <TextBox Grid.Row="1" Grid.Column="3" x:Name="NegativeTtlBox" Width="90"
+                                                 Height="30" Padding="6,0" VerticalContentAlignment="Center"
+                                                 Margin="0,0,0,6"/>
+
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="过期返回 TTL" VerticalAlignment="Center"
+                                                   Margin="0,0,6,0"/>
+                                        <TextBox Grid.Row="2" Grid.Column="1" x:Name="StaleTtlBox" Width="90"
+                                                 Height="30" Padding="6,0" VerticalContentAlignment="Center"
+                                                 Margin="0,0,16,0"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="2" Text="过期保留上限" VerticalAlignment="Center"
+                                                   Margin="0,0,6,0"/>
+                                        <TextBox Grid.Row="2" Grid.Column="3" x:Name="StaleMaxBox" Width="90"
+                                                 Height="30" Padding="6,0" VerticalContentAlignment="Center"/>
+                                    </Grid>
+                                    <CheckBox x:Name="ServeStaleCheck" Content="上游故障时返回过期缓存（serve-stale）"
+                                              Margin="0,10,0,0" IsChecked="True"/>
+                                    <DockPanel Margin="0,10,0,0" LastChildFill="False">
+                                        <TextBlock x:Name="CacheStatusText" DockPanel.Dock="Left"
+                                                   VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="700"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                   Text="当前缓存 0 条。"/>
+                                        <ui:Button DockPanel.Dock="Right" Content="清空缓存" Padding="12,4"
+                                                   Click="OnClearCache"/>
+                                    </DockPanel>
+                                    <TextBlock Margin="0,6,0,0" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeCaption}"
+                                               Text="TTL 单位为秒。缓存键包含域名、类型、QCLASS 与 DO 位；带 EDNS 选项的查询不缓存。"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="查询日志">
+                    <Grid Margin="2,8,2,2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <DockPanel Grid.Row="0" LastChildFill="False">
+                                    <TextBlock DockPanel.Dock="Left" Text="只保留最近 2000 条；默认仅内存，不落盘。"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                        <CheckBox x:Name="LogPauseCheck" Content="暂停刷新"
+                                                  VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <ui:Button Content="刷新" Padding="12,4" Margin="0,0,6,0" Click="OnRefreshLogs"/>
+                                        <ui:Button Content="导出 CSV" Padding="12,4" Margin="0,0,6,0"
+                                                   Click="OnExportLogs"/>
+                                        <ui:Button Content="复制" Padding="12,4" Margin="0,0,6,0" Click="OnCopyLogs"/>
+                                        <ui:Button Content="清空" Padding="12,4" Click="OnClearLogs"/>
+                                    </StackPanel>
+                                </DockPanel>
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="筛选" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <ComboBox x:Name="LogFilterBox" Width="140" Height="30"
+                                              VerticalContentAlignment="Center" Padding="8,0"
+                                              SelectedIndex="0" SelectionChanged="OnLogFilterChanged">
+                                        <ComboBoxItem Content="全部" Tag=""/>
+                                        <ComboBoxItem Content="本地记录" Tag="本地"/>
+                                        <ComboBoxItem Content="缓存命中" Tag="缓存命中"/>
+                                        <ComboBoxItem Content="过期缓存" Tag="过期缓存"/>
+                                        <ComboBoxItem Content="转发" Tag="转发"/>
+                                        <ComboBoxItem Content="拦截" Tag="拦截"/>
+                                        <ComboBoxItem Content="限速" Tag="限速"/>
+                                        <ComboBoxItem Content="失败" Tag="失败"/>
+                                        <ComboBoxItem Content="拒绝" Tag="拒绝"/>
+                                    </ComboBox>
+                                    <TextBox x:Name="LogSearchBox" Width="280" Height="30" Margin="8,0,0,0"
+                                             Padding="8,0" VerticalContentAlignment="Center"
+                                             TextChanged="OnLogSearchChanged"
+                                             ToolTip="按域名或客户端地址筛选"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <DataGrid Grid.Row="1" x:Name="LogGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                  SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal" CanUserAddRows="False" CanUserDeleteRows="False"
+                                  RowHeight="28">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="时间" Binding="{Binding Timestamp, StringFormat=HH:mm:ss}" Width="80"/>
+                                <DataGridTextColumn Header="客户端" Binding="{Binding Client}" Width="130"/>
+                                <DataGridTextColumn Header="域名" Binding="{Binding Question}" Width="*"/>
+                                <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="70"/>
+                                <DataGridTextColumn Header="结果" Binding="{Binding Result}" Width="110"/>
+                                <DataGridTextColumn Header="上游" Binding="{Binding Upstream}" Width="170"/>
+                                <DataGridTextColumn Header="耗时(ms)" Binding="{Binding DurationMs}" Width="80"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="客户端配置">
+                    <Grid Margin="2,8,2,2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,8">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:Button Content="复制全部" Padding="12,4" Margin="0,0,6,0" Appearance="Primary"
+                                           Click="OnCopyClientConfig"/>
+                                <ui:Button Content="复制 netsh" Padding="12,4" Margin="0,0,6,0"
+                                           Click="OnCopyNetsh"/>
+                                <ui:Button Content="复制 PowerShell" Padding="12,4"
+                                           Click="OnCopyPowerShell"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBox Grid.Row="1" x:Name="ClientConfigBox" IsReadOnly="True" AcceptsReturn="True"
+                                 TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto" FontFamily="{DynamicResource AppFontMonoFamily}"
+                                 Padding="10,8"/>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+        </Grid>
+
+        <DockPanel Grid.Row="2" Margin="14,0,14,12" LastChildFill="False">
+            <TextBlock x:Name="FooterStatus" DockPanel.Dock="Left" VerticalAlignment="Center"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"
+                       MaxWidth="780"/>
+            <TextBlock x:Name="FooterVersion" DockPanel.Dock="Right" VerticalAlignment="Center"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

@@ -257,11 +257,12 @@ public class TerminalModelTests
     {
         var model = new TerminalModel(10, 3);
         model.Feed("ABCDEF\u001b[2K");
-        Assert.Equal(' ', model.CellAt(0, 0).Ch);
+        Assert.Equal('\0', model.CellAt(0, 0).Ch);
+        Assert.Equal(" ", model.CellAt(0, 0).Text);
 
         model.Feed("XY\u001b[2J");
-        Assert.Equal(' ', model.CellAt(0, 0).Ch);
-        Assert.Equal(' ', model.CellAt(1, 0).Ch);
+        Assert.Equal('\0', model.CellAt(0, 0).Ch);
+        Assert.Equal('\0', model.CellAt(1, 0).Ch);
     }
 
     [Fact]
@@ -426,5 +427,153 @@ public class TerminalModelTests
         var model = new TerminalModel(20, 3);
         model.Feed("\u001b]7;file://host/home/user\u0007");
         Assert.Equal("/home/user", model.CurrentDirectory);
+    }
+
+    [Fact]
+    public void Osc_title_with_non_ascii_is_not_rendered()
+    {
+        // 服务器把中文主机名写进 OSC 0/2 标题时，标题内容必须整体吞掉，
+        // 不能按 grapheme 画到光标处（会在提示符前留下乱码）。
+        var model = new TerminalModel(20, 3);
+        model.Feed("\u001b]0;我的主机\u0007$ ");
+
+        Assert.Equal('$', model.CellAt(0, 0).Ch);
+        Assert.Equal(' ', model.CellAt(1, 0).Ch);
+        Assert.Equal(2, model.CursorX);
+    }
+
+    [Fact]
+    public void Dcs_payload_with_non_ascii_is_not_rendered()
+    {
+        var model = new TerminalModel(20, 3);
+        model.Feed("\u001bP我的负载\u001b\\AB");
+
+        Assert.Equal('A', model.CellAt(0, 0).Ch);
+        Assert.Equal('B', model.CellAt(1, 0).Ch);
+        Assert.Equal(2, model.CursorX);
+    }
+
+    [Fact]
+    public void Cursor_style_sequence_is_consumed_without_rendering_q()
+    {
+        // DECSCUSR：CSI Ps SP q（zsh/fish 切换 vi 模式时常发），终结字节 q 不能显示。
+        var model = new TerminalModel(20, 3);
+        model.Feed("AB\u001b[2 qCD");
+
+        Assert.Equal("ABCD", model.LastNonEmptyLineText());
+        Assert.Equal(4, model.CursorX);
+    }
+
+    [Fact]
+    public void Mode_query_is_answered_without_rendering()
+    {
+        var model = new TerminalModel(20, 3);
+        var responses = new List<string>();
+        model.ResponseRequested += responses.Add;
+
+        model.Feed("\u001b[?2026$p");
+        model.Feed("\u001b[?2026h");
+        model.Feed("\u001b[?2026$p");
+
+        Assert.Contains("\u001b[?2026;2$y", responses);
+        Assert.Contains("\u001b[?2026;1$y", responses);
+        Assert.Equal(0, model.CursorX);
+        Assert.Equal("", model.LastNonEmptyLineText());
+    }
+
+    [Fact]
+    public void Overwriting_half_of_wide_char_clears_the_pair()
+    {
+        var model = new TerminalModel(10, 2);
+        model.Feed("中");
+        Assert.True(model.CellAt(1, 0).WideContinuation);
+
+        model.Feed("\rA");
+
+        Assert.Equal('A', model.CellAt(0, 0).Ch);
+        Assert.False(model.CellAt(1, 0).WideContinuation);
+        Assert.Equal('\0', model.CellAt(1, 0).Ch);
+    }
+
+    [Fact]
+    public void Deleting_one_cell_does_not_leave_orphan_wide_continuation()
+    {
+        var model = new TerminalModel(10, 2);
+        model.Feed("A中B");
+        model.Feed("\u001b[2G\u001b[1P");
+
+        Assert.Equal('A', model.CellAt(0, 0).Ch);
+        Assert.False(model.CellAt(1, 0).WideContinuation);
+        Assert.Equal('\0', model.CellAt(1, 0).Ch);
+        Assert.Equal('B', model.CellAt(2, 0).Ch);
+    }
+
+    [Fact]
+    public void Insert_mode_shifts_existing_text()
+    {
+        var model = new TerminalModel(10, 2);
+        model.Feed("AB");
+        model.Feed("\u001b[2G\u001b[4hX");
+
+        Assert.Equal('A', model.CellAt(0, 0).Ch);
+        Assert.Equal('X', model.CellAt(1, 0).Ch);
+        Assert.Equal('B', model.CellAt(2, 0).Ch);
+
+        // 关闭插入模式后恢复覆盖行为。
+        model.Feed("\u001b[4l\u001b[1GY");
+        Assert.Equal('Y', model.CellAt(0, 0).Ch);
+        Assert.Equal('X', model.CellAt(1, 0).Ch);
+    }
+
+    [Fact]
+    public void Auto_wrap_mode_change_clears_pending_wrap()
+    {
+        var model = new TerminalModel(5, 3);
+        model.Feed("12345");
+        Assert.Equal(4, model.CursorX);
+
+        model.Feed("\u001b[?7lX");
+
+        Assert.Equal('X', model.CellAt(4, 0).Ch);
+        Assert.Equal(0, model.CursorY);
+        Assert.Equal(0, model.ScrollbackCount);
+    }
+
+    [Fact]
+    public void Soft_wrap_flag_survives_lf_and_is_cleared_by_erase()
+    {
+        var model = new TerminalModel(5, 3);
+        model.Feed("abcdefg");
+        Assert.True(model.IsScreenRowWrapped(0));
+        Assert.False(model.IsScreenRowWrapped(1));
+
+        // readline/zsh 重绘时会用 \n 在软换行的两行之间移动，不能因此丢掉标记。
+        model.Feed("\r\n");
+        Assert.True(model.IsScreenRowWrapped(0));
+
+        model.Feed("\u001b[1;1H\u001b[2K");
+        Assert.False(model.IsScreenRowWrapped(0));
+    }
+
+    [Fact]
+    public void Repeat_last_char_sequence_writes_the_character_n_times()
+    {
+        var model = new TerminalModel(20, 3);
+        model.Feed("A\u001b[4bB");
+
+        Assert.Equal('B', model.CellAt(5, 0).Ch);
+        Assert.Equal("AAAAAB", model.LastNonEmptyLineText());
+    }
+
+    [Fact]
+    public void Decstr_resets_modes_but_keeps_screen()
+    {
+        var model = new TerminalModel(20, 3);
+        var responses = new List<string>();
+        model.ResponseRequested += responses.Add;
+        model.Feed("keep\u001b[4h\u001b[!p\u001b[4$p");
+
+        Assert.Contains("\u001b[4;2$y", responses);
+        Assert.Equal('k', model.CellAt(0, 0).Ch);
     }
 }

@@ -36,6 +36,17 @@ public class RemoteFileEditorTests
     }
 
     [Fact]
+    public void Delete_backup_command_is_scoped_to_current_file_backup_directory()
+    {
+        const string backup = "/home/u/.litssh-backups/0123456789abcdef/20260101-120000-000-a.txt";
+        var command = RemoteTextFileService.BuildDeleteBackupCommand(backup, "/home/u/notes/a.txt");
+
+        Assert.Contains($"rm -f -- '{backup}'", command);
+        Assert.Contains($"case '{backup}' in \"$dir\"/*", command);
+        Assert.Contains("exit 1", command);
+    }
+
+    [Fact]
     public void Editor_window_parses_xaml()
     {
         var ex = RunSta(() => _ = new RemoteFileEditorWindow(

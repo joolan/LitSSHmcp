@@ -38,6 +38,8 @@
                                    Padding="16,4" Margin="0,0,8,0" Click="OnStart"/>
                         <ui:Button x:Name="StopButton" Content="停止" Padding="16,4" Margin="0,0,8,0"
                                    Click="OnStop" IsEnabled="False"/>
+                        <ui:Button Content="保存设置" Padding="14,4" Margin="0,0,8,0" Click="OnSave"
+                                   ToolTip="保存所有页面的设置；账号修改会自动保存"/>
                         <ui:Button Content="打开配置目录" Padding="12,4" Click="OnOpenConfigFolder"/>
                     </StackPanel>
                 </Grid>
@@ -275,11 +277,13 @@
                                                    Click="OnRemoveFirewall"/>
                                         <ui:Button Content="检测状态" Padding="12,4" Margin="0,0,6,0"
                                                    Click="OnCheckFirewall"/>
-                                        <ui:Button Content="复制命令" Padding="12,4" Margin="0,0,6,0"
+                                        <ui:Button Content="复制命令" Padding="12,4"
                                                    Click="OnCopyFirewall"/>
-                                        <ui:Button Content="保存设置" Padding="14,4" Appearance="Primary"
-                                                   Click="OnSave"/>
                                     </StackPanel>
+                                    <TextBlock Margin="0,0,0,6" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeCaption}"
+                                               Text="防火墙规则会立即执行；监听、策略等设置修改后请点击顶部「保存设置」。"/>
                                     <TextBlock x:Name="FirewallStatusText" Margin="0,0,0,6" TextWrapping="Wrap"
                                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                                     <TextBox x:Name="FirewallCommandsBox" IsReadOnly="True" Height="78"
@@ -336,7 +340,7 @@
 
                         <TextBlock Grid.Row="2" x:Name="AccountsHint" Margin="2,8,2,0" TextWrapping="Wrap"
                                    Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                   Text="匿名模式关闭时，至少需要一个启用账号；修改账号后需要保存并重启代理才会生效。"/>
+                                   Text="匿名模式关闭时，至少需要一个启用账号；账号修改后自动保存并热更新。"/>
                     </Grid>
                 </TabItem>
 

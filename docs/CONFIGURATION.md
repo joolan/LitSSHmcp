@@ -4,6 +4,8 @@
 
 > 局域网 HTTP / SOCKS5 代理使用独立文件 `%APPDATA%\LitSSH\http-socks-proxy.json`（监听、账号 PBKDF2 哈希、客户端/IP 与域名白黑名单、目标策略、认证失败限速、上游代理；上游密码以 DPAPI 保护），不参与 `config.json` 的合并/冲突流程；该文件已纳入存储维护统计和定时备份项目。
 >
+> 工具箱「轻量 DNS」使用独立文件 `%APPDATA%\LitSSH\dns-server.json`（监听地址/端口、上游、缓存、本地记录、客户端 ACL、域名黑白名单、QPS/RRL 等），同样不参与 `config.json`，并纳入存储维护统计和定时备份项目。
+>
 > 工具箱「环境变量」直接管理 Windows 用户/系统环境变量注册表，不属于 `config.json`；变更审计写入 `audit.db`，自动备份以 DPAPI 加密保存到 `%APPDATA%\LitSSH\env-var-backups`。
 
 ```json

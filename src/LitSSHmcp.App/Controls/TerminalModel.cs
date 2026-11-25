@@ -60,8 +60,15 @@ public sealed class TerminalModel
 
     private bool _cursorVisible = true;
     private bool _autoWrap = true;
+    private bool _insertMode;
     private bool _wrapPending;
     private bool _altScreen;
+
+    // REP（CSI Ps b）重复的前一个图形字符；按字符/字素分开保存，避免热路径分配字符串。
+    private bool _hasLastPrinted;
+    private char _lastPrintedChar;
+    private string? _lastPrintedGrapheme;
+    private TerminalAttributes _lastPrintedAttr;
     private int _scrollTop;
     private int _scrollBottom;
 
@@ -123,6 +130,7 @@ public sealed class TerminalModel
     private enum ParseState { Ground, Esc, Csi, Osc, OscEsc, Dcs, DcsEsc, Charset }
     private ParseState _state = ParseState.Ground;
     private readonly StringBuilder _param = new();
+    private readonly StringBuilder _intermediate = new();
     private readonly StringBuilder _osc = new();
     private string? _activeHyperlink;
 
@@ -170,6 +178,17 @@ public sealed class TerminalModel
         return line;
     }
 
+    /// <summary>屏幕行是否软换行到下一行（复制时按逻辑行合并，而不是插入真实换行）。</summary>
+    public bool IsScreenRowWrapped(int row)
+        => !_altScreen && row >= 0 && row < _lineWrapped.Length && _lineWrapped[row];
+
+    /// <summary>回看行（indexFromEnd：1=最近滚出的一行）是否软换行到下一行。</summary>
+    public bool IsScrollbackRowWrapped(int indexFromEnd)
+    {
+        var idx = _scrollback.Count - indexFromEnd;
+        return idx >= 0 && idx < _scrollbackWrapped.Count && _scrollbackWrapped[idx];
+    }
+
     /// <summary>当前屏幕最后一行非空文本（用于判断是否已回到提示符）。</summary>
     public string LastNonEmptyLineText()
     {
@@ -189,7 +208,7 @@ public sealed class TerminalModel
     {
         var line = new TerminalCell[_cols];
         for (var i = 0; i < _cols; i++)
-            line[i] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
+            line[i] = BlankCell(TerminalAttributes.Default);
         return line;
     }
 
@@ -319,7 +338,7 @@ public sealed class TerminalModel
             {
                 var cells = new TerminalCell[cols];
                 for (var x = 0; x < cols; x++)
-                    cells[x] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
+                    cells[x] = BlankCell(TerminalAttributes.Default);
                 for (var x = 0; x < cols; x++)
                 {
                     var source = chunk * cols + x;
@@ -379,10 +398,13 @@ public sealed class TerminalModel
             Math.Clamp(cursorNewRow - screenStart, 0, rows - 1));
     }
 
+    /// <summary>空白单元格用 '\0' 标记，以便区分“从未写入”和用户/程序打印的真实空格。</summary>
+    private static TerminalCell BlankCell(TerminalAttributes attr) => new() { Ch = '\0', Attr = attr };
+
     private static void Fill(TerminalCell[] cells, int cols, int rows, TerminalAttributes attr)
     {
         for (var i = 0; i < cells.Length; i++)
-            cells[i] = new TerminalCell { Ch = ' ', Attr = attr };
+            cells[i] = BlankCell(attr);
     }
 
     /// <summary>把远端字节按 UTF-8 解码后送入解析器。</summary>
@@ -418,6 +440,7 @@ public sealed class TerminalModel
                     // 单个异常序列不应让整屏内容停在未刷新状态。
                     _state = ParseState.Ground;
                     _param.Clear();
+                    _intermediate.Clear();
                     _osc.Clear();
                 }
                 continue;
@@ -442,7 +465,9 @@ public sealed class TerminalModel
             {
                 // ASCII（含控制字符）走状态机；非 ASCII 单字符/组合字符走 grapheme 处理，
                 // 否则基础字符被 ASCII 快路径提前消费后，后续 combining mark 会被当成独立字符。
-                if (element.Length == 1 && element[0] < '\u007f')
+                // 非 Ground 状态（OSC/DCS 等）的内容必须整体交给状态机：其中的中文标题、
+                // DCS 负载不能按 grapheme 画到屏幕上，否则会在光标处留下乱码。
+                if (_state != ParseState.Ground || (element.Length == 1 && element[0] < '\u007f'))
                     Process(element[0]);
                 else
                     ProcessGrapheme(element);
@@ -452,6 +477,7 @@ public sealed class TerminalModel
                 // 单个异常序列不应让整屏内容停在未刷新状态。
                 _state = ParseState.Ground;
                 _param.Clear();
+                _intermediate.Clear();
                 _osc.Clear();
             }
 
@@ -466,6 +492,7 @@ public sealed class TerminalModel
     {
         if (x < 0 || y < 0 || x >= _cols || y >= _rows)
             return;
+        PrepareCellOverwrite(x, y);
         Active[y * _cols + x] = new TerminalCell
         {
             Ch = ch,
@@ -479,6 +506,7 @@ public sealed class TerminalModel
     {
         if (x < 0 || y < 0 || x >= _cols || y >= _rows || text.Length == 0)
             return;
+        PrepareCellOverwrite(x, y);
         Active[y * _cols + x] = new TerminalCell
         {
             Ch = text[0],
@@ -487,6 +515,84 @@ public sealed class TerminalModel
             Attr = attr,
             WideContinuation = wideContinuation
         };
+    }
+
+    /// <summary>
+    /// 覆盖单元格前先拆掉可能存在的双宽字符配对：直接覆盖汉字左/右半格会留下孤儿续格，
+    /// 渲染时续格会被跳过，表现为“漏字/串字”。
+    /// </summary>
+    private void PrepareCellOverwrite(int x, int y)
+    {
+        if (x < 0 || y < 0 || x >= _cols || y >= _rows)
+            return;
+        var cells = Active;
+        var index = y * _cols + x;
+        if (cells[index].WideContinuation)
+        {
+            if (x > 0)
+                cells[index - 1] = BlankCell(cells[index - 1].Attr);
+        }
+        else if (x + 1 < _cols && cells[index + 1].WideContinuation)
+        {
+            cells[index + 1] = BlankCell(cells[index + 1].Attr);
+        }
+    }
+
+    /// <summary>清空一个单元格，同时拆掉它的双宽字符配对，避免留下半个汉字。</summary>
+    private void BlankAt(int x, int y, TerminalAttributes attr)
+    {
+        if (x < 0 || y < 0 || x >= _cols || y >= _rows)
+            return;
+        PrepareCellOverwrite(x, y);
+        Active[y * _cols + x] = BlankCell(attr);
+    }
+
+    private void BlankRow(int y, TerminalAttributes attr)
+    {
+        if (y < 0 || y >= _rows)
+            return;
+        for (var x = 0; x < _cols; x++)
+            Active[y * _cols + x] = BlankCell(attr);
+    }
+
+    /// <summary>插入/删除字符后修复行内被拆散的宽字符配对。</summary>
+    private void RepairRow(int y)
+    {
+        if (y < 0 || y >= _rows)
+            return;
+        var cells = Active;
+        var row = y * _cols;
+        for (var x = 0; x < _cols; x++)
+        {
+            var cell = cells[row + x];
+            if (cell.WideContinuation)
+            {
+                if (x == 0 || !IsWideBaseCell(cells[row + x - 1]))
+                    cells[row + x] = BlankCell(cell.Attr);
+            }
+            else if (x + 1 < _cols && IsWideBaseCell(cell) && !cells[row + x + 1].WideContinuation)
+            {
+                cells[row + x] = BlankCell(cell.Attr);
+            }
+        }
+    }
+
+    private static bool IsWideBaseCell(TerminalCell cell)
+        => !cell.WideContinuation && cell.Ch != '\0' && GraphemeWidth(cell.Text) >= 2;
+
+    /// <summary>IRM（插入模式）下在光标处右移一行内容，为待写字符腾位。</summary>
+    private void ShiftCellsRight(int x, int y, int count)
+    {
+        if (y < 0 || y >= _rows)
+            return;
+        count = Math.Clamp(count, 1, _cols);
+        var cells = Active;
+        var row = y * _cols;
+        for (var i = _cols - 1; i >= x + count; i--)
+            cells[row + i] = cells[row + i - count];
+        for (var i = x; i < x + count && i < _cols; i++)
+            cells[row + i] = BlankCell(_attr);
+        RepairRow(y);
     }
 
     private void Process(char ch)
@@ -570,15 +676,36 @@ public sealed class TerminalModel
                 active = Active;
             }
 
+            if (_insertMode)
+            {
+                ShiftCellsRight(_cx, _cy, 1);
+                active = Active;
+            }
+
             var index = _cy * _cols + _cx;
             if ((uint)index < (uint)active.Length)
             {
+                // 覆盖双宽字符的左/右半格时拆掉配对，避免留下孤儿续格（渲染时会被跳过而“漏字”）。
+                if (active[index].WideContinuation)
+                {
+                    if (_cx > 0)
+                        active[index - 1] = BlankCell(active[index - 1].Attr);
+                }
+                else if (_cx + 1 < _cols && active[index + 1].WideContinuation)
+                {
+                    active[index + 1] = BlankCell(active[index + 1].Attr);
+                }
+
                 active[index] = new TerminalCell
                 {
                     Ch = ch,
                     Hyperlink = _activeHyperlink,
                     Attr = _attr
                 };
+                _hasLastPrinted = true;
+                _lastPrintedChar = ch;
+                _lastPrintedGrapheme = null;
+                _lastPrintedAttr = _attr;
             }
 
             if (_cx + 1 >= _cols)
@@ -643,9 +770,16 @@ public sealed class TerminalModel
             LineFeed(wrapped: true);
         }
 
+        if (_insertMode)
+            ShiftCellsRight(_cx, _cy, width);
+
         SetCell(_cx, _cy, ch, _attr);
         if (width == 2 && _cx + 1 < _cols)
             SetCell(_cx + 1, _cy, ' ', _attr, wideContinuation: true);
+        _hasLastPrinted = true;
+        _lastPrintedChar = ch;
+        _lastPrintedGrapheme = null;
+        _lastPrintedAttr = _attr;
 
         if (_cx + width >= _cols)
         {
@@ -683,9 +817,16 @@ public sealed class TerminalModel
             LineFeed(wrapped: true);
         }
 
+        if (_insertMode)
+            ShiftCellsRight(_cx, _cy, width);
+
         SetCell(_cx, _cy, text, _attr);
         if (width == 2 && _cx + 1 < _cols)
             SetCell(_cx + 1, _cy, ' ', _attr, wideContinuation: true);
+        _hasLastPrinted = true;
+        _lastPrintedChar = text[0];
+        _lastPrintedGrapheme = text.Length > 1 ? text : null;
+        _lastPrintedAttr = _attr;
 
         if (_cx + width >= _cols)
         {
@@ -697,6 +838,55 @@ public sealed class TerminalModel
         else
         {
             _cx += width;
+        }
+    }
+
+    /// <summary>REP（CSI Ps b）：把上一个图形字符再写 Ps 次。ncurses/xterm 的 terminfo 会用到。</summary>
+    private void RepeatLastChar(int count)
+    {
+        if (!_hasLastPrinted)
+            return;
+
+        var text = _lastPrintedGrapheme ?? _lastPrintedChar.ToString();
+        var width = GraphemeWidth(text);
+        if (width <= 0)
+            return;
+
+        count = Math.Clamp(count, 1, _cols * _rows);
+        for (var i = 0; i < count; i++)
+        {
+            if (_wrapPending)
+            {
+                _cx = 0;
+                LineFeed(wrapped: true);
+                _wrapPending = false;
+            }
+
+            if (width == 2 && _cx >= _cols - 1 && _autoWrap)
+            {
+                _cx = 0;
+                LineFeed(wrapped: true);
+            }
+
+            if (_insertMode)
+                ShiftCellsRight(_cx, _cy, width);
+
+            if (text.Length == 1)
+                SetCell(_cx, _cy, text[0], _lastPrintedAttr);
+            else
+                SetCell(_cx, _cy, text, _lastPrintedAttr);
+
+            if (_cx + width >= _cols)
+            {
+                if (_autoWrap)
+                    _wrapPending = true;
+                else
+                    _cx = _cols - 1;
+            }
+            else
+            {
+                _cx += width;
+            }
         }
     }
 
@@ -875,6 +1065,7 @@ public sealed class TerminalModel
         {
             case '[':
                 _param.Clear();
+                _intermediate.Clear();
                 _state = ParseState.Csi;
                 return;
             case ']':
@@ -932,13 +1123,23 @@ public sealed class TerminalModel
 
     private void ProcessCsi(char ch)
     {
-        if (ch == '?' || ch == '>' || ch == '<' || ch == '!' || ch == '=' || (ch >= '0' && ch <= '9') || ch == ';' || ch == ':')
+        // 0x20-0x2F 是 CSI 的中间字节（如 DECSCUSR 的 "CSI Ps SP q"、DECRQM 的 "$"）。
+        // 必须收集到终结字节再处理，否则终结字节会被当成普通字符画到屏幕上（常见于 zsh 光标形状）。
+        if (ch >= '\u0020' && ch <= '\u002f')
+        {
+            _intermediate.Append(ch);
+            return;
+        }
+
+        if (ch == '?' || ch == '>' || ch == '<' || ch == '=' || (ch >= '0' && ch <= '9') || ch == ';' || ch == ':')
         {
             _param.Append(ch);
             return;
         }
 
         _state = ParseState.Ground;
+        var intermediate = _intermediate.ToString();
+        _intermediate.Clear();
         var isPrivate = _param.Length > 0 && _param[0] == '?';
         var body = isPrivate ? _param.ToString(1, _param.Length - 1) : _param.ToString();
         var args = ParseArgs(body);
@@ -976,6 +1177,7 @@ public sealed class TerminalModel
             case '@': InsertChars(Arg(args, 0, 1)); break;
             case 'S': ScrollUp(Arg(args, 0, 1)); break;
             case 'T': ScrollDown(Arg(args, 0, 1)); break;
+            case 'b': RepeatLastChar(Arg(args, 0, 1)); break;
             case 'm': ApplySgr(args); break;
             case 'r': SetScrollRegion(args); break;
             case 's': _savedCx = _cx; _savedCy = _cy; _savedAttr = _attr; break;
@@ -1001,6 +1203,16 @@ public sealed class TerminalModel
             case 'l': SetMode(isPrivate, args, false); break;
             case 'n' when !isPrivate && Arg(args, 0, 0) == 6:
                 ResponseRequested?.Invoke($"\u001b[{_cy + 1};{_cx + 1}R");
+                break;
+            case 'p' when intermediate == "!":
+                // DECSTR 软复位：只复位终端状态，不清屏/不清滚动历史。
+                SoftReset();
+                break;
+            case 'p' when intermediate == "$":
+                RespondModeReport(isPrivate, args);
+                break;
+            case 'q' when intermediate == " ":
+                // DECSCUSR 光标样式由本机“终端设置”决定；吞掉序列，不能把 q 画到屏幕。
                 break;
             case 'c':
                 // DA1(CSI c) 应回 "CSI ? 1;2 c"（VT100+AVO），DA2(CSI > c) 应回 "CSI > ..."。
@@ -1042,8 +1254,13 @@ public sealed class TerminalModel
     private void LineFeed(bool wrapped)
     {
         _wrapPending = false;
-        if (!_altScreen && _cy >= 0 && _cy < _lineWrapped.Length)
-            _lineWrapped[_cy] = wrapped;
+        if (wrapped && !_altScreen && _cy >= 0 && _cy < _lineWrapped.Length)
+        {
+            // 只标记“本行内容延续到下一行”。不能用普通 LF 清除标记：
+            // bash/zsh 重绘长命令行时会用 \n 在软换行的两行之间移动，清除会把同一逻辑行拆开。
+            // 行内容被擦除时由 EraseInLine/EraseInDisplay 清除标记。
+            _lineWrapped[_cy] = true;
+        }
         if (_cy == _scrollBottom)
             ScrollUp(1);
         else if (_cy < _rows - 1)
@@ -1094,8 +1311,7 @@ public sealed class TerminalModel
         }
         var blank = TerminalAttributes.Default;
         for (var y = _scrollBottom - n + 1; y <= _scrollBottom; y++)
-            for (var x = 0; x < _cols; x++)
-                active[y * _cols + x] = new TerminalCell { Ch = ' ', Attr = blank };
+            BlankRow(y, blank);
     }
 
     private void ScrollDown(int n)
@@ -1116,8 +1332,7 @@ public sealed class TerminalModel
                 _lineWrapped[y] = false;
         }
         for (var y = _scrollTop; y < _scrollTop + n; y++)
-            for (var x = 0; x < _cols; x++)
-                active[y * _cols + x] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
+            BlankRow(y, TerminalAttributes.Default);
     }
 
     private TerminalCell[] GetScreenLine(TerminalCell[] active, int y)
@@ -1127,48 +1342,69 @@ public sealed class TerminalModel
         return line;
     }
 
+    private void ClearWrappedRow(int y)
+    {
+        if (!_altScreen && y >= 0 && y < _lineWrapped.Length)
+            _lineWrapped[y] = false;
+    }
+
+    private void ClearWrappedRows(int from, int to)
+    {
+        if (_altScreen)
+            return;
+        for (var y = Math.Max(0, from); y <= to && y < _lineWrapped.Length; y++)
+            _lineWrapped[y] = false;
+    }
+
     private void EraseInDisplay(int mode)
     {
-        var active = Active;
-        void Blank(int x, int y) => active[y * _cols + x] = new TerminalCell { Ch = ' ', Attr = _attr };
-
         switch (mode)
         {
             case 0:
-                for (var x = _cx; x < _cols; x++) Blank(x, _cy);
+                for (var x = _cx; x < _cols; x++) BlankAt(x, _cy, _attr);
                 for (var y = _cy + 1; y < _rows; y++)
-                    for (var x = 0; x < _cols; x++) Blank(x, y);
+                    BlankRow(y, _attr);
+                ClearWrappedRows(_cy, _rows - 1);
                 break;
             case 1:
                 for (var y = 0; y < _cy; y++)
-                    for (var x = 0; x < _cols; x++) Blank(x, y);
-                for (var x = 0; x <= _cx; x++) Blank(x, _cy);
+                    BlankRow(y, _attr);
+                for (var x = 0; x <= _cx; x++) BlankAt(x, _cy, _attr);
+                ClearWrappedRows(0, _cy);
                 break;
             case 2:
             case 3:
                 for (var y = 0; y < _rows; y++)
-                    for (var x = 0; x < _cols; x++) Blank(x, y);
+                    BlankRow(y, _attr);
+                ClearWrappedRows(0, _rows - 1);
                 break;
         }
     }
 
     private void EraseInLine(int mode)
     {
-        var active = Active;
-        void Blank(int x) => active[_cy * _cols + x] = new TerminalCell { Ch = ' ', Attr = _attr };
         switch (mode)
         {
-            case 0: for (var x = _cx; x < _cols; x++) Blank(x); break;
-            case 1: for (var x = 0; x <= _cx; x++) Blank(x); break;
-            case 2: for (var x = 0; x < _cols; x++) Blank(x); break;
+            case 0:
+                for (var x = _cx; x < _cols; x++) BlankAt(x, _cy, _attr);
+                ClearWrappedRow(_cy);
+                break;
+            case 1:
+                for (var x = 0; x <= _cx; x++) BlankAt(x, _cy, _attr);
+                break;
+            case 2:
+                BlankRow(_cy, _attr);
+                ClearWrappedRow(_cy);
+                break;
         }
     }
 
     private void EraseChars(int n)
     {
-        var active = Active;
         for (var i = 0; i < n && _cx + i < _cols; i++)
-            active[_cy * _cols + _cx + i] = new TerminalCell { Ch = ' ', Attr = _attr };
+            BlankAt(_cx + i, _cy, _attr);
+        if (_cx + n >= _cols)
+            ClearWrappedRow(_cy);
     }
 
     private void InsertLines(int n)
@@ -1186,8 +1422,7 @@ public sealed class TerminalModel
                 _lineWrapped[y] = false;
         }
         for (var y = _cy; y < _cy + n && y <= _scrollBottom; y++)
-            for (var x = 0; x < _cols; x++)
-                active[y * _cols + x] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
+            BlankRow(y, TerminalAttributes.Default);
     }
 
     private void DeleteLines(int n)
@@ -1205,8 +1440,7 @@ public sealed class TerminalModel
                 _lineWrapped[y] = false;
         }
         for (var y = _scrollBottom - n + 1; y <= _scrollBottom; y++)
-            for (var x = 0; x < _cols; x++)
-                active[y * _cols + x] = new TerminalCell { Ch = ' ', Attr = TerminalAttributes.Default };
+            BlankRow(y, TerminalAttributes.Default);
     }
 
     private void InsertChars(int n)
@@ -1216,7 +1450,8 @@ public sealed class TerminalModel
         for (var x = _cols - 1; x >= _cx + n; x--)
             active[_cy * _cols + x] = active[_cy * _cols + x - n];
         for (var x = _cx; x < _cx + n && x < _cols; x++)
-            active[_cy * _cols + x] = new TerminalCell { Ch = ' ', Attr = _attr };
+            active[_cy * _cols + x] = BlankCell(_attr);
+        RepairRow(_cy);
     }
 
     private void DeleteChars(int n)
@@ -1226,7 +1461,8 @@ public sealed class TerminalModel
         for (var x = _cx; x < _cols - n; x++)
             active[_cy * _cols + x] = active[_cy * _cols + x + n];
         for (var x = Math.Max(_cx, _cols - n); x < _cols; x++)
-            active[_cy * _cols + x] = new TerminalCell { Ch = ' ', Attr = _attr };
+            active[_cy * _cols + x] = BlankCell(_attr);
+        RepairRow(_cy);
     }
 
     private void SetScrollRegion(int[] args)
@@ -1247,13 +1483,26 @@ public sealed class TerminalModel
     private void SetMode(bool priv, int[] args, bool enable)
     {
         if (!priv)
+        {
+            // IRM（插入模式，CSI 4 h/l）是非私有模式，不能和 DEC 私有模式一起丢弃。
+            foreach (var a in args)
+            {
+                if (a == 4)
+                    _insertMode = enable;
+            }
             return;
+        }
         foreach (var a in args)
         {
             switch (a)
             {
                 case 25: _cursorVisible = enable; break;
-                case 7: _autoWrap = enable; break;
+                case 4: _insertMode = enable; break;              // IRM 插入模式
+                case 7:
+                    _autoWrap = enable;
+                    // 关闭/开启自动换行时清除待换行状态，避免下一个字符仍按旧模式换行。
+                    _wrapPending = false;
+                    break;
                 case 1: ApplicationCursorKeys = enable; break;   // DECCKM
                 case 47:
                 case 1047:
@@ -1324,6 +1573,51 @@ public sealed class TerminalModel
         }
     }
 
+    /// <summary>DECSTR（CSI ! p）：复位模式与属性，但保留屏幕内容。</summary>
+    private void SoftReset()
+    {
+        _attr = TerminalAttributes.Default;
+        _scrollTop = 0;
+        _scrollBottom = _rows - 1;
+        _autoWrap = true;
+        _cursorVisible = true;
+        _insertMode = false;
+        ApplicationCursorKeys = false;
+        BracketedPasteEnabled = false;
+        MouseTracking = MouseTrackingMode.None;
+        MouseSgr = false;
+        FocusReporting = false;
+        SynchronizedOutput = false;
+        _wrapPending = false;
+        _activeHyperlink = null;
+    }
+
+    /// <summary>DECRQM（CSI ? Ps $ p / CSI Ps $ p）：按 xterm 语义回复模式状态（1=set，2=reset，0=未知）。</summary>
+    private void RespondModeReport(bool priv, int[] args)
+    {
+        if (args.Length == 0)
+            return;
+        var mode = args[0];
+        var state = priv
+            ? mode switch
+            {
+                1 => ApplicationCursorKeys ? 1 : 2,
+                4 => _insertMode ? 1 : 2,
+                7 => _autoWrap ? 1 : 2,
+                25 => _cursorVisible ? 1 : 2,
+                1000 => MouseTracking == MouseTrackingMode.X10 ? 1 : 2,
+                1002 => MouseTracking == MouseTrackingMode.Button ? 1 : 2,
+                1003 => MouseTracking == MouseTrackingMode.Any ? 1 : 2,
+                1004 => FocusReporting ? 1 : 2,
+                1006 => MouseSgr ? 1 : 2,
+                2004 => BracketedPasteEnabled ? 1 : 2,
+                2026 => SynchronizedOutput ? 1 : 2,
+                _ => 0
+            }
+            : mode == 4 ? (_insertMode ? 1 : 2) : 0;
+        ResponseRequested?.Invoke($"\u001b[{(priv ? "?" : string.Empty)}{mode};{state}$y");
+    }
+
     private void Reset()
     {
         Fill(_cells, _cols, _rows, TerminalAttributes.Default);
@@ -1338,6 +1632,7 @@ public sealed class TerminalModel
         _scrollBottom = _rows - 1;
         _cursorVisible = true;
         _autoWrap = true;
+        _insertMode = false;
         _wrapPending = false;
         BracketedPasteEnabled = false;
         MouseTracking = MouseTrackingMode.None;
@@ -1350,6 +1645,9 @@ public sealed class TerminalModel
         CurrentDirectory = null;
         _activeHyperlink = null;
         _osc.Clear();
+        _param.Clear();
+        _intermediate.Clear();
+        _hasLastPrinted = false;
         ShellStateChanged?.Invoke();
     }
 

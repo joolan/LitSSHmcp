@@ -43,6 +43,9 @@ public static class ConfigPaths
     /// <summary>局域网 HTTP / SOCKS5 代理配置（监听、账号、访问策略）。</summary>
     public static string ProxyConfigFile => Path.Combine(AppDataDir, "http-socks-proxy.json");
 
+    /// <summary>轻量 DNS 服务器配置（监听、上游、本地记录、缓存与拦截策略）。</summary>
+    public static string DnsConfigFile => Path.Combine(AppDataDir, "dns-server.json");
+
     public static string LogsDir => Path.Combine(AppDataDir, "logs");
 
     private static string Initialize()

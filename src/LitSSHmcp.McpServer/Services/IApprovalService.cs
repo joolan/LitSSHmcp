@@ -216,7 +216,13 @@ public class DesktopApprovalService : IApprovalService
                 var result = dialog.ShowDialog();
                 sw.Stop();
 
-                _logger?.LogInformation("自绘授权弹窗关闭: 结果={Result} 耗时={ElapsedMs}ms 范围={Scope}", result, sw.ElapsedMilliseconds, dialog.Scope);
+                // DialogResult.Cancel 同时覆盖“人工拒绝”和“超时自动拒绝”，
+                // 日志必须记录语义结论，否则安全复盘时无法区分“有人拒绝”和“没人值守”。
+                var closeOutcome = result == DialogResult.OK
+                    ? "Approved"
+                    : dialog.TimedOut ? "Timeout" : "Rejected";
+                _logger?.LogInformation("自绘授权弹窗关闭: 结论={Outcome} 原始结果={Result} 耗时={ElapsedMs}ms 范围={Scope}",
+                    closeOutcome, result, sw.ElapsedMilliseconds, dialog.Scope);
                 tcs.TrySetResult(result == DialogResult.OK
                     ? (ApprovalOutcome.Approved, dialog.Scope)
                     : dialog.TimedOut ? (ApprovalOutcome.Timeout, ApprovalScope.Once) : (ApprovalOutcome.Rejected, ApprovalScope.Once));

@@ -51,7 +51,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <!-- 应用版本（发布脚本会以 -p:Version=<tag> 覆盖）；「设置 → 关于」页面显示该值 -->
-    <Version>1.8.0</Version>
+    <Version>1.8.1</Version>
     <!-- 应用图标：exe 文件图标 + 窗口/托盘运行时图标来源 -->
     <ApplicationIcon>Assets\LitSSH.ico</ApplicationIcon>
     <!-- 使用 WinForms 仅为了托盘 NotifyIcon；WPF 代码内通过 using 别名隔离类型 -->

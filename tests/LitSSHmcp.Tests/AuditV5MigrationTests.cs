@@ -6,7 +6,7 @@ using Xunit;
 namespace LitSSHmcp.Tests;
 
 /// <summary>
-/// 审计格式迁移：任意旧版本 → v6 均保留记录（补齐缺失列 + 按 v6 payload 重建链）。
+/// 审计格式迁移：任意旧版本 → v7 均保留记录（补齐缺失列 + 按 v7 payload 重建链/回填算法）。
 /// </summary>
 public class AuditV5MigrationTests
 {
@@ -28,7 +28,7 @@ public class AuditV5MigrationTests
                 Sql = "select 1", UserId = "1", Status = CommandStatus.Executed
             });
 
-            // 模拟 v5 库：去掉 UserId 列、版本置 5、链清空（旧链 payload 与 v6 不同）
+            // 模拟 v5 库：去掉 UserId 列、版本置 5、链清空（旧链 payload 与 v7 不同）
             using (var conn = new SqliteConnection($"Data Source={db}"))
             {
                 conn.Open();
@@ -69,9 +69,10 @@ public class AuditV5MigrationTests
                 conn.Open();
                 using var version = conn.CreateCommand();
                 version.CommandText = "PRAGMA user_version;";
-                Assert.Equal(6L, Convert.ToInt64(version.ExecuteScalar()));
+                Assert.Equal(7L, Convert.ToInt64(version.ExecuteScalar()));
                 Assert.Contains("UserId", Columns(conn, "AuditLogs"));
                 Assert.Contains("UserId", Columns(conn, "SqlAuditLogsHistory"));
+                Assert.Contains("Algorithm", Columns(conn, "AuditChain"));
             }
         }
         finally
@@ -137,7 +138,7 @@ public class AuditV5MigrationTests
                 conn.Open();
                 using var version = conn.CreateCommand();
                 version.CommandText = "PRAGMA user_version;";
-                Assert.Equal(6L, Convert.ToInt64(version.ExecuteScalar()));
+                Assert.Equal(7L, Convert.ToInt64(version.ExecuteScalar()));
                 foreach (var column in new[] { "SessionId", "Tool", "Category", "Decision", "UserId" })
                 {
                     Assert.Contains(column, Columns(conn, "AuditLogs"));

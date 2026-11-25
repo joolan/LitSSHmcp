@@ -228,10 +228,12 @@ public partial class AppLockWindow : FluentWindow
     /// <summary>解锁/设置结果写入审计（best-effort，失败不影响解锁流程）。</summary>
     private static void Audit(string command, bool success, string method)
     {
-        try
+        // 不在这里同步等待：首次写入会触发审计库初始化/密钥加载，
+        // 在 UI 线程上 .GetAwaiter().GetResult() 可能因异步续体回到 UI 线程而死锁。
+        AsyncOperation.Run("写入应用锁审计", () =>
         {
             var audit = new AuditLogService();
-            audit.LogCommandAsync(new CommandAuditLog
+            return audit.LogCommandAsync(new CommandAuditLog
             {
                 ServerId = "app-lock",
                 ServerName = "应用锁",
@@ -241,11 +243,7 @@ public partial class AppLockWindow : FluentWindow
                 Decision = success ? "auto-approve" : "auto-reject",
                 Result = method,
                 Tool = "app_lock"
-            }).GetAwaiter().GetResult();
-        }
-        catch
-        {
-            // 审计失败不影响解锁
-        }
+            });
+        }, _ => { /* 审计失败不影响解锁 */ });
     }
 }

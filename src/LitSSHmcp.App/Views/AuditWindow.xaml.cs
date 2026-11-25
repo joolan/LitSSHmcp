@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
 using LitSSHmcp.Core.Models;
 using Microsoft.Win32;
@@ -133,7 +134,37 @@ public partial class AuditWindow : Wpf.Ui.Controls.FluentWindow
         }
     }
 
-    private void OnVerify(object sender, RoutedEventArgs e) => _viewModel.VerifyIntegrity();
+    private void OnVerify(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || !button.IsEnabled)
+            return;
+
+        AsyncOperation.Run("校验审计链", async () =>
+        {
+            button.IsEnabled = false;
+            try
+            {
+                _viewModel.StatusMessage = "正在校验审计链…";
+                var result = await _viewModel.VerifyIntegrityAsync();
+                if (result is null)
+                    return;
+
+                var body = result.Message;
+                if (result.FirstBadSeq is { } badSeq)
+                    body += $"\n首个异常 Seq={badSeq}";
+                body += $"\n已校验 {result.Checked} 条链记录。";
+
+                var headline = result.Ok
+                    ? result.WeakUnkeyed > 0 ? "校验通过（有警告）" : "校验通过"
+                    : result.MissingKey ? "无法完成校验" : "校验失败";
+                ResultDialog.Show(this, "审计完整性", headline, body, isError: !result.Ok);
+            }
+            finally
+            {
+                button.IsEnabled = true;
+            }
+        });
+    }
 
     private void OnExport(object sender, RoutedEventArgs e)
     {

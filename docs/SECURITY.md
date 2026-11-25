@@ -22,7 +22,7 @@
 - **SQL 安全过滤**：`mysql_query` / `postgres_query` 仅允许只读语句；写语句中无 WHERE 的 DELETE / UPDATE、DROP TABLE / DATABASE、GRANT 等直接拒绝，其余敏感写语句需桌面确认
 - **Redis 安全策略**：`redis_read` 只放行只读白名单命令；`redis_execute` **所有写操作一律桌面审批**，FLUSHALL / SHUTDOWN / DEBUG / SUBSCRIBE 等危险与阻塞类命令直接拒绝
 - **Docker 安全规则**：默认拒绝 `docker system prune` / `docker volume rm` / `docker network prune` / `docker run --privileged` 等；`docker rm/rmi/kill/stop/restart/run/exec/compose down` 等写操作需桌面确认（只读的 `docker ps/logs/inspect/stats` 不受限）
-- **审计日志**：记录所有命令与 SQL（含被拒绝的），支持 SQL 原文开关、字面量脱敏、**超期记录归档到历史表永久保留**；落盘前统一脱敏密码/token/连接串/私钥等敏感内容（命中追加“敏感内容已自动脱敏”标记），审计写入 **HMAC-SHA256 哈希链**，可在「审计日志」中**校验完整性**检测篡改（`security.audit`）；每条记录带 **MCP 会话 ID**，便于按会话区分
+- **审计日志**：记录所有命令与 SQL（含被拒绝的），支持 SQL 原文开关、字面量脱敏、**超期记录归档到历史表永久保留**；落盘前统一脱敏密码/token/连接串/私钥等敏感内容（命中追加“敏感内容已自动脱敏”标记），审计写入 **HMAC-SHA256 哈希链**（签名密钥 DPAPI 保护于 `audit.db.key`；缺失时明确提示无法校验），可在「审计日志」中**校验完整性**检测篡改（`security.audit`）。审计格式 v7 为每环记录 `Algorithm`；历史无密钥 SHA-256 记录会显示“强度降级”警告而不是误报篡改，v6→v7 只回填算法、不重建历史链。每条记录带 **MCP 会话 ID**，便于按会话区分
 - **提权执行**：权限不足时可使用 sudo 提权（见 [提权配置](#提权配置)）
 
 ### Web 助手安全

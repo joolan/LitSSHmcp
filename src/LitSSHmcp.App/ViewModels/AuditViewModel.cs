@@ -189,7 +189,7 @@ public class AuditViewModel : INotifyPropertyChanged
         });
     }
 
-    public void VerifyIntegrity() => AsyncOperation.Run("校验审计链", async () =>
+    public async Task<AuditVerifyResult?> VerifyIntegrityAsync()
     {
         try
         {
@@ -201,14 +201,20 @@ public class AuditViewModel : INotifyPropertyChanged
 
             var result = await _audit.VerifyChainAsync();
             StatusMessage = result.Ok
-                ? $"审计完整性校验: 通过（{result.Checked} 条链记录）"
-                : $"审计完整性校验: 失败！首个异常 Seq={result.FirstBadSeq}：{result.Message}";
+                ? result.WeakUnkeyed > 0
+                    ? $"审计完整性校验: 通过（{result.Checked} 条，其中 {result.WeakUnkeyed} 条为历史弱签名）"
+                    : $"审计完整性校验: 通过（{result.Checked} 条链记录）"
+                : result.MissingKey
+                    ? $"审计完整性校验: 无法完成 — {result.Message}"
+                    : $"审计完整性校验: 失败！首个异常 Seq={result.FirstBadSeq}：{result.Message}";
+            return result;
         }
         catch (Exception ex)
         {
             StatusMessage = $"完整性校验异常: {ex.Message}";
+            return new AuditVerifyResult { Ok = false, Message = "完整性校验异常：" + ex.Message };
         }
-    });
+    }
 
     public string BuildCommandsCsv()
     {

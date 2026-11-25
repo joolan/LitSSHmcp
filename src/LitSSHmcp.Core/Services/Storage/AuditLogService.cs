@@ -19,15 +19,25 @@ public class AuditLogService : IAuditLogService
     /// v4：新增 Category（执行/审批/探测/列表/传输）与 Decision（审批决策），并纳入哈希链。
     /// v5：SQL/Redis 审计同样新增 Category 与 Decision，并纳入哈希链。
     /// v6：新增 UserId（操作用户归因：Web 登录用户 Id / 桌面未登录 "local"），并纳入哈希链 payload。
-    /// 版本落后时启动会补齐缺失列并**保留记录**，再按当前 payload 重建哈希链（链首重新从 Genesis 开始）；
+    /// v7：AuditChain 新增 Algorithm 列（hmac-sha256 / sha256），不再依赖实例是否初始化过密钥；
+    ///     历史无密钥记录保留原哈希并标记为强度降级，校验时给出警告而不是误报篡改。
+    /// 版本落后时启动会补齐缺失列并**保留记录**，再按当前 payload 重建/回填哈希链；
     /// 更老版本不再清空审计库（避免升级丢历史）。
     /// </summary>
-    private const int AuditFormatVersion = 6;
+    private const int AuditFormatVersion = 7;
+
+    /// <summary>v6 及更早版本的链结构版本：低于它才需要按当前 payload 重建整条链。</summary>
+    private const int ChainRebuildVersion = 6;
+
+    private const string AlgorithmHmac = "hmac-sha256";
+    private const string AlgorithmSha256 = "sha256";
 
     private readonly string _dbPath;
     private readonly string _lockPath;
     private readonly ISecurityOptionsProvider? _securityOptions;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private readonly SemaphoreSlim _initGate = new(1, 1);
+    private bool _initialized;
     private byte[]? _signingKey;   // 为 null 时退化为纯 SHA-256
 
     /// <summary>跨进程写锁（<c>audit.db.chain.lock</c>）的等待上限；超过视为异常，宁可写失败也不允许链分叉。</summary>
@@ -85,6 +95,7 @@ public class AuditLogService : IAuditLogService
         await cmd.ExecuteNonQueryAsync();
     }
 
+    /// <summary>初始化（可重复调用）：建表/迁移/密钥加载/归档搬迁。</summary>
     public async Task InitializeAsync()
     {
         // 初始化包含建表/版本重置/密钥文件创建/归档搬迁，必须跨进程串行：
@@ -93,10 +104,32 @@ public class AuditLogService : IAuditLogService
         try
         {
             await InitializeCoreAsync();
+            _initialized = true;
         }
         finally
         {
             ExitWrite(gate);
+        }
+    }
+
+    /// <summary>
+    /// 首次写入/校验/清理前确保初始化完成。审计签名不应取决于调用方是否提前 await 过 InitializeAsync：
+    /// 应用锁、终端 AI、触发器等短生命周期实例可能直接写入，之前会静默退化为无密钥 SHA-256。
+    /// </summary>
+    private async Task EnsureInitializedAsync(CancellationToken ct = default)
+    {
+        if (_initialized)
+            return;
+
+        await _initGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (!_initialized)
+                await InitializeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _initGate.Release();
         }
     }
 
@@ -219,9 +252,13 @@ public class AuditLogService : IAuditLogService
                 RowId INTEGER NOT NULL,
                 RecordHash TEXT NOT NULL,
                 PrevHash TEXT NOT NULL,
-                CreatedAt TEXT NOT NULL
+                CreatedAt TEXT NOT NULL,
+                Algorithm TEXT
             )";
         await cmd.ExecuteNonQueryAsync();
+
+        // v7：为旧链补算法列（不重建链；旧行 NULL，由迁移回填或校验时自动识别）。
+        EnsureColumn(connection, "AuditChain", "Algorithm", "TEXT");
 
         // 旧库迁移：为已存在的表补 SessionId 列（新库在 CREATE 时已包含；ALTER ADD 加在末尾，
         // 保证活动表/历史表列顺序一致，`INSERT ... SELECT *` 才能继续工作）。
@@ -270,7 +307,7 @@ public class AuditLogService : IAuditLogService
         await cmd.ExecuteNonQueryAsync();
 
         // 签名密钥必须先加载：v5→v6 迁移要用它与后续校验一致的 HMAC 重算链哈希。
-        _signingKey = LoadOrCreateSigningKey();
+        _signingKey = LoadOrCreateSigningKey(connection);
 
         // 审计格式版本升级：
         // v5 → v6：保留全部历史记录（补 UserId 列并按新 payload 重建哈希链，链连续性从头开始）；
@@ -284,6 +321,7 @@ public class AuditLogService : IAuditLogService
 
     public async Task LogCommandAsync(CommandAuditLog log)
     {
+        await EnsureInitializedAsync();
         var gate = await EnterWriteAsync();
         try
         {
@@ -336,6 +374,7 @@ public class AuditLogService : IAuditLogService
 
     public async Task LogSqlAsync(SqlAuditLog log)
     {
+        await EnsureInitializedAsync();
         var gate = await EnterWriteAsync();
         try
         {
@@ -543,6 +582,7 @@ public class AuditLogService : IAuditLogService
         if (string.IsNullOrWhiteSpace(session.SessionId))
             return;
 
+        await EnsureInitializedAsync();
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync();
 
@@ -598,6 +638,7 @@ public class AuditLogService : IAuditLogService
 
     public async Task<AuditVerifyResult> VerifyChainAsync(CancellationToken ct = default)
     {
+        await EnsureInitializedAsync(ct).ConfigureAwait(false);
         await _writeGate.WaitAsync(ct);
         try
         {
@@ -605,10 +646,11 @@ public class AuditLogService : IAuditLogService
             await connection.OpenAsync(ct);
 
             var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT Seq, Kind, RowId, RecordHash, PrevHash FROM AuditChain ORDER BY Seq";
+            cmd.CommandText = "SELECT Seq, Kind, RowId, RecordHash, PrevHash, Algorithm FROM AuditChain ORDER BY Seq";
 
             var prev = Genesis;
             long checkedCount = 0;
+            long weakUnkeyed = 0;
 
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
@@ -618,30 +660,94 @@ public class AuditLogService : IAuditLogService
                 var rowId = reader.GetInt64(2);
                 var hash = reader.GetString(3);
                 var prevHash = reader.GetString(4);
+                var algorithm = reader.IsDBNull(5) ? null : reader.GetString(5);
 
                 if (!string.Equals(prevHash, prev, StringComparison.Ordinal))
-                    return Bad(seq, checkedCount, "PrevHash 链接不连续（审计记录被删除或插入）");
+                    return Bad(seq, checkedCount, "PrevHash 链接不连续（审计记录被删除或插入）", weakUnkeyed);
 
                 var payload = kind == "cmd"
                     ? await ReadCommandPayloadAsync(connection, null, rowId)
                     : await ReadSqlPayloadAsync(connection, null, rowId);
 
                 if (payload is null)
-                    return Bad(seq, checkedCount, "链引用的审计记录缺失");
+                    return Bad(seq, checkedCount, "链引用的审计记录缺失", weakUnkeyed);
 
-                var expected = ComputeHash(kind, rowId, payload, prev);
+                string? expected;
+                if (string.Equals(algorithm, AlgorithmSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    expected = ComputePlainHash(kind, rowId, payload, prev);
+                    weakUnkeyed++;
+                }
+                else if (string.Equals(algorithm, AlgorithmHmac, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_signingKey is not { Length: > 0 })
+                        return Bad(seq, checkedCount, "缺少签名密钥 audit.db.key，无法校验 HMAC 记录（不能据此判定被篡改）", weakUnkeyed, missingKey: true);
+                    expected = ComputeHmacHash(kind, rowId, payload, prev);
+                }
+                else if (string.IsNullOrEmpty(algorithm))
+                {
+                    // v6 及更早的链没有 Algorithm 列：先按 HMAC 验，失败再按纯 SHA-256 验。
+                    // 后者说明是历史弱签名，内容未改但强度降级，单列警告而不是报“被篡改”。
+                    if (_signingKey is { Length: > 0 })
+                    {
+                        var hmac = ComputeHmacHash(kind, rowId, payload, prev);
+                        if (string.Equals(hmac, hash, StringComparison.OrdinalIgnoreCase))
+                        {
+                            expected = hmac;
+                        }
+                        else
+                        {
+                            var plain = ComputePlainHash(kind, rowId, payload, prev);
+                            if (string.Equals(plain, hash, StringComparison.OrdinalIgnoreCase))
+                            {
+                                expected = plain;
+                                weakUnkeyed++;
+                            }
+                            else
+                            {
+                                expected = hmac;   // 内容不匹配：按篡改处理
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var plain = ComputePlainHash(kind, rowId, payload, prev);
+                        if (string.Equals(plain, hash, StringComparison.OrdinalIgnoreCase))
+                        {
+                            expected = plain;
+                            weakUnkeyed++;
+                        }
+                        else
+                        {
+                            return Bad(seq, checkedCount,
+                                "缺少签名密钥 audit.db.key，无法校验该记录（不能据此判定被篡改）",
+                                weakUnkeyed, missingKey: true);
+                        }
+                    }
+                }
+                else
+                {
+                    return Bad(seq, checkedCount, $"未知的签名算法：{algorithm}", weakUnkeyed);
+                }
+
                 if (!string.Equals(expected, hash, StringComparison.OrdinalIgnoreCase))
-                    return Bad(seq, checkedCount, "记录哈希不匹配（审计记录被篡改）");
+                    return Bad(seq, checkedCount, "记录哈希不匹配（审计记录被篡改）", weakUnkeyed);
 
                 prev = hash;
                 checkedCount++;
             }
 
+            var message = checkedCount == 0
+                ? "链为空"
+                : $"校验通过：{checkedCount} 条链记录完整且未被篡改";
+            if (weakUnkeyed > 0)
+                message += $"；其中 {weakUnkeyed} 条为历史无密钥 SHA-256 签名（强度降级，建议保留 audit.db.key）";
             return new AuditVerifyResult
             {
                 Ok = true,
                 Checked = checkedCount,
-                Message = checkedCount == 0 ? "链为空" : $"校验通过：{checkedCount} 条链记录完整且未被篡改"
+                WeakUnkeyed = weakUnkeyed,
+                Message = message
             };
         }
         finally
@@ -658,10 +764,10 @@ public class AuditLogService : IAuditLogService
     /// </summary>
     public async Task<int> PruneHistoryAsync(DateTime cutoffUtc, CancellationToken ct = default)
     {
+        await EnsureInitializedAsync(ct).ConfigureAwait(false);
         var gate = await EnterWriteAsync(ct);
         try
         {
-            await InitializeCoreAsync();
             await using var connection = new SqliteConnection(WriteConnectionString);
             await connection.OpenAsync(ct);
             await SetBusyTimeoutAsync(connection);
@@ -679,7 +785,7 @@ public class AuditLogService : IAuditLogService
 
             // 归档行删掉后原链会缺记录；按剩余记录重建，保证校验只覆盖保留区间且仍连续。
             if (removed > 0)
-                RebuildChainV6(connection);
+                RebuildChain(connection);
             return removed;
         }
         finally
@@ -688,8 +794,17 @@ public class AuditLogService : IAuditLogService
         }
     }
 
-    private static AuditVerifyResult Bad(long seq, long checkedCount, string message) =>
-        new() { Ok = false, Checked = checkedCount, FirstBadSeq = seq, Message = message };
+    private static AuditVerifyResult Bad(long seq, long checkedCount, string message,
+        long weakUnkeyed = 0, bool missingKey = false) =>
+        new()
+        {
+            Ok = false,
+            Checked = checkedCount,
+            FirstBadSeq = seq,
+            WeakUnkeyed = weakUnkeyed,
+            MissingKey = missingKey,
+            Message = message
+        };
 
     /// <summary>把超过保留天数的活动记录移动到历史归档表（永久保留），链不删除、记录 Id 不变。</summary>
     private void ArchiveExpired(SqliteConnection connection)
@@ -737,11 +852,10 @@ public class AuditLogService : IAuditLogService
     }
 
     /// <summary>
-    /// 审计格式版本升级入口（任意旧版本 → v6）：
+    /// 审计格式版本升级入口（任意旧版本 → v7）：
     /// <list type="bullet">
-    /// <item><b>保留数据</b>——v2~v6 缺失的 SessionId/Tool/Category/Decision/UserId 列已由
-    /// <see cref="EnsureColumn"/> 补齐；清空旧链后，按当前 payload 对所有活动+归档记录按时间重建哈希链
-    /// （链从 Genesis 重新开始，历史记录不丢）；</item>
+    /// <item>v6 → v7：只补 <c>Algorithm</c> 列并回填每环算法，<b>不重建链</b>，现有 RecordHash/Seq 全部保留；</item>
+    /// <item>v5 及更早：沿用原迁移策略——补齐缺失列后按当前 payload 重建哈希链（链从 Genesis 重新开始，历史记录不丢）；</item>
     /// <item>旧记录缺失的归因/分类列保持 NULL（UI 按既有规则显示为空或 local）。</item>
     /// </list>
     /// </summary>
@@ -757,11 +871,73 @@ public class AuditLogService : IAuditLogService
         if (version >= AuditFormatVersion)
             return;
 
-        RebuildChainV6(connection);
+        if (version < ChainRebuildVersion)
+        {
+            RebuildChain(connection);
+            return;
+        }
+
+        BackfillChainAlgorithms(connection);
     }
 
-    /// <summary>旧版本 → v6：保留记录，按新 payload 重建哈希链（链首重新从 Genesis 开始）。</summary>
-    private void RebuildChainV6(SqliteConnection connection)
+    /// <summary>v6 → v7：保留原链，按现有 RecordHash 反推每环使用的算法并回填。</summary>
+    private void BackfillChainAlgorithms(SqliteConnection connection)
+    {
+        using var tx = connection.BeginTransaction();
+
+        var rows = new List<(long Seq, string Kind, long RowId, string RecordHash, string PrevHash)>();
+        using (var read = connection.CreateCommand())
+        {
+            read.Transaction = tx;
+            read.CommandText = "SELECT Seq, Kind, RowId, RecordHash, PrevHash FROM AuditChain ORDER BY Seq;";
+            using var reader = read.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add((reader.GetInt64(0), reader.GetString(1), reader.GetInt64(2),
+                    reader.GetString(3), reader.GetString(4)));
+            }
+        }
+
+        foreach (var row in rows)
+        {
+            var payload = row.Kind == "cmd"
+                ? ReadCommandPayload(connection, tx, row.RowId)
+                : ReadSqlPayload(connection, tx, row.RowId);
+            if (payload is null)
+                continue;
+
+            var algorithm = DetectAlgorithm(row.Kind, row.RowId, payload, row.PrevHash, row.RecordHash);
+            if (algorithm is null)
+                continue;
+
+            using var update = connection.CreateCommand();
+            update.Transaction = tx;
+            update.CommandText = "UPDATE AuditChain SET Algorithm = @Algorithm WHERE Seq = @Seq;";
+            update.Parameters.AddWithValue("@Algorithm", algorithm);
+            update.Parameters.AddWithValue("@Seq", row.Seq);
+            update.ExecuteNonQuery();
+        }
+
+        StampFormatVersion(connection, tx);
+        tx.Commit();
+    }
+
+    /// <summary>按历史 RecordHash 判断当时使用的算法；两者都不匹配时返回 null（保留待校验时报告）。</summary>
+    private string? DetectAlgorithm(string kind, long rowId, string payload, string prev, string recordHash)
+    {
+        if (_signingKey is { Length: > 0 })
+        {
+            var hmac = ComputeHmacHash(kind, rowId, payload, prev);
+            if (string.Equals(hmac, recordHash, StringComparison.OrdinalIgnoreCase))
+                return AlgorithmHmac;
+        }
+
+        var plain = ComputePlainHash(kind, rowId, payload, prev);
+        return string.Equals(plain, recordHash, StringComparison.OrdinalIgnoreCase) ? AlgorithmSha256 : null;
+    }
+
+    /// <summary>v5 及更早 → v7：保留记录，按当前 payload 重建哈希链（链首重新从 Genesis 开始）。</summary>
+    private void RebuildChain(SqliteConnection connection)
     {
         using var tx = connection.BeginTransaction();
 
@@ -777,7 +953,8 @@ public class AuditLogService : IAuditLogService
                     RowId INTEGER NOT NULL,
                     RecordHash TEXT NOT NULL,
                     PrevHash TEXT NOT NULL,
-                    CreatedAt TEXT NOT NULL
+                    CreatedAt TEXT NOT NULL,
+                    Algorithm TEXT
                 );";
             clear.ExecuteNonQuery();
         }
@@ -798,6 +975,7 @@ public class AuditLogService : IAuditLogService
         }
 
         var prev = Genesis;
+        var algorithm = CurrentAlgorithm;
         var seen = new HashSet<(string, long)>();
         foreach (var (kind, id, timestamp) in rows)
         {
@@ -812,24 +990,27 @@ public class AuditLogService : IAuditLogService
             var hash = ComputeHash(kind, id, payload, prev);
             using var insert = connection.CreateCommand();
             insert.Transaction = tx;
-            insert.CommandText = "INSERT INTO AuditChain (Kind, RowId, RecordHash, PrevHash, CreatedAt) VALUES (@Kind, @RowId, @Hash, @Prev, @CreatedAt)";
+            insert.CommandText = "INSERT INTO AuditChain (Kind, RowId, RecordHash, PrevHash, CreatedAt, Algorithm) VALUES (@Kind, @RowId, @Hash, @Prev, @CreatedAt, @Algorithm)";
             insert.Parameters.AddWithValue("@Kind", kind);
             insert.Parameters.AddWithValue("@RowId", id);
             insert.Parameters.AddWithValue("@Hash", hash);
             insert.Parameters.AddWithValue("@Prev", prev);
             insert.Parameters.AddWithValue("@CreatedAt", timestamp);
+            insert.Parameters.AddWithValue("@Algorithm", algorithm);
             insert.ExecuteNonQuery();
             prev = hash;
         }
 
-        using (var stamp = connection.CreateCommand())
-        {
-            stamp.Transaction = tx;
-            stamp.CommandText = $"PRAGMA user_version = {AuditFormatVersion};";
-            stamp.ExecuteNonQuery();
-        }
-
+        StampFormatVersion(connection, tx);
         tx.Commit();
+    }
+
+    private static void StampFormatVersion(SqliteConnection connection, SqliteTransaction tx)
+    {
+        using var stamp = connection.CreateCommand();
+        stamp.Transaction = tx;
+        stamp.CommandText = $"PRAGMA user_version = {AuditFormatVersion};";
+        stamp.ExecuteNonQuery();
     }
 
     private const string CommandPayloadColumns =
@@ -838,20 +1019,20 @@ public class AuditLogService : IAuditLogService
     private const string SqlPayloadColumns =
         "DataSourceId, DataSourceName, Operation, Sql, Status, Result, RowsAffected, DurationMs, Timestamp, SessionId, Tool, Category, Decision, UserId";
 
-    private static string? ReadCommandPayload(SqliteConnection connection, SqliteTransaction tx, long id)
+    private static string? ReadCommandPayload(SqliteConnection connection, SqliteTransaction? tx, long id)
         => ReadPayload(connection, tx, "AuditLogs", "AuditLogsHistory", CommandPayloadColumns, id);
 
-    private static string? ReadSqlPayload(SqliteConnection connection, SqliteTransaction tx, long id)
+    private static string? ReadSqlPayload(SqliteConnection connection, SqliteTransaction? tx, long id)
         => ReadPayload(connection, tx, "SqlAuditLogs", "SqlAuditLogsHistory", SqlPayloadColumns, id);
 
-    private static string? ReadPayload(SqliteConnection connection, SqliteTransaction tx,
+    private static string? ReadPayload(SqliteConnection connection, SqliteTransaction? tx,
         string liveTable, string historyTable, string columns, long id)
     {
         var live = ReadPayloadFrom(connection, tx, liveTable, columns, id);
         return live ?? ReadPayloadFrom(connection, tx, historyTable, columns, id);
     }
 
-    private static string? ReadPayloadFrom(SqliteConnection connection, SqliteTransaction tx,
+    private static string? ReadPayloadFrom(SqliteConnection connection, SqliteTransaction? tx,
         string table, string columns, long id)
     {
         using var cmd = connection.CreateCommand();
@@ -879,15 +1060,17 @@ public class AuditLogService : IAuditLogService
         }
 
         var hash = ComputeHash(kind, rowId, payload, prev);
+        var algorithm = CurrentAlgorithm;
 
         await using var insert = connection.CreateCommand();
         insert.Transaction = tx;
-        insert.CommandText = "INSERT INTO AuditChain (Kind, RowId, RecordHash, PrevHash, CreatedAt) VALUES (@Kind, @RowId, @Hash, @Prev, @CreatedAt)";
+        insert.CommandText = "INSERT INTO AuditChain (Kind, RowId, RecordHash, PrevHash, CreatedAt, Algorithm) VALUES (@Kind, @RowId, @Hash, @Prev, @CreatedAt, @Algorithm)";
         insert.Parameters.AddWithValue("@Kind", kind);
         insert.Parameters.AddWithValue("@RowId", rowId);
         insert.Parameters.AddWithValue("@Hash", hash);
         insert.Parameters.AddWithValue("@Prev", prev);
         insert.Parameters.AddWithValue("@CreatedAt", DateTime.UtcNow.ToString("O"));
+        insert.Parameters.AddWithValue("@Algorithm", algorithm);
         await insert.ExecuteNonQueryAsync();
     }
 
@@ -950,19 +1133,27 @@ public class AuditLogService : IAuditLogService
         return sb.ToString();
     }
 
+    private string CurrentAlgorithm => _signingKey is { Length: > 0 } ? AlgorithmHmac : AlgorithmSha256;
+
     private string ComputeHash(string kind, long rowId, string payload, string prev)
+        => _signingKey is { Length: > 0 }
+            ? ComputeHmacHash(kind, rowId, payload, prev)
+            : ComputePlainHash(kind, rowId, payload, prev);
+
+    private string ComputeHmacHash(string kind, long rowId, string payload, string prev)
     {
         var data = Encoding.UTF8.GetBytes($"{kind}|{rowId}|{payload}|{prev}");
-        if (_signingKey is { Length: > 0 })
-        {
-            using var hmac = new HMACSHA256(_signingKey);
-            return Convert.ToHexString(hmac.ComputeHash(data));
-        }
+        using var hmac = new HMACSHA256(_signingKey!);
+        return Convert.ToHexString(hmac.ComputeHash(data));
+    }
 
+    private static string ComputePlainHash(string kind, long rowId, string payload, string prev)
+    {
+        var data = Encoding.UTF8.GetBytes($"{kind}|{rowId}|{payload}|{prev}");
         return Convert.ToHexString(SHA256.HashData(data));
     }
 
-    private byte[]? LoadOrCreateSigningKey()
+    private byte[]? LoadOrCreateSigningKey(SqliteConnection connection)
     {
         var keyPath = _dbPath + ".key";
         try
@@ -974,6 +1165,11 @@ public class AuditLogService : IAuditLogService
                 return string.IsNullOrEmpty(encoded) ? null : Convert.FromBase64String(encoded);
             }
 
+            // 密钥文件丢失时不能静默轮换：若链里已有 HMAC 记录（或无法判断），
+            // 新建密钥会让历史链全部被误判为篡改；此时保持无密钥，校验时明确提示“无法校验”。
+            if (ChainNeedsExistingKey(connection))
+                return null;
+
             var key = RandomNumberGenerator.GetBytes(32);
             Directory.CreateDirectory(Path.GetDirectoryName(keyPath)!);
             File.WriteAllText(keyPath, protector.Protect(Convert.ToBase64String(key)));
@@ -983,6 +1179,50 @@ public class AuditLogService : IAuditLogService
         {
             // 无法建立签名密钥时退化为纯 SHA-256（仍可检测常规篡改）
             return null;
+        }
+    }
+
+    /// <summary>链中是否存在必须依赖旧密钥才能验证的记录（HMAC 或无法用纯 SHA-256 复算的行）。</summary>
+    private bool ChainNeedsExistingKey(SqliteConnection connection)
+    {
+        try
+        {
+            var rows = new List<(string Kind, long RowId, string RecordHash, string PrevHash, string? Algorithm)>();
+            using (var read = connection.CreateCommand())
+            {
+                read.CommandText = "SELECT Kind, RowId, RecordHash, PrevHash, Algorithm FROM AuditChain ORDER BY Seq;";
+                using var reader = read.ExecuteReader();
+                while (reader.Read())
+                {
+                    rows.Add((reader.GetString(0), reader.GetInt64(1), reader.GetString(2),
+                        reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4)));
+                }
+            }
+
+            foreach (var row in rows)
+            {
+                if (string.Equals(row.Algorithm, AlgorithmHmac, StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (string.Equals(row.Algorithm, AlgorithmSha256, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var payload = row.Kind == "cmd"
+                    ? ReadCommandPayload(connection, null, row.RowId)
+                    : ReadSqlPayload(connection, null, row.RowId);
+                if (payload is null)
+                    return true;
+
+                var plain = ComputePlainHash(row.Kind, row.RowId, payload, row.PrevHash);
+                if (!string.Equals(plain, row.RecordHash, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+        catch
+        {
+            // 无法判断时保守处理：不创建新密钥。
+            return true;
         }
     }
 

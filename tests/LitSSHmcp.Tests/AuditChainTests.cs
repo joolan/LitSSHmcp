@@ -1,3 +1,4 @@
+using System.Reflection;
 using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
@@ -234,6 +235,117 @@ public class AuditChainTests : IDisposable
 
         var result = await service.VerifyChainAsync();
         Assert.True(result.Ok, result.Message);
+    }
+
+    [Fact]
+    public async Task Write_without_explicit_initialize_uses_hmac_and_verifies()
+    {
+        // 模拟 AppLockWindow：new AuditLogService() 后直接写，不 await InitializeAsync。
+        var writer = NewService();
+        await writer.LogCommandAsync(Command("app_lock_set"));
+
+        Assert.Equal("hmac-sha256", await ReadAlgorithmAsync(1));
+
+        var verifier = NewService();
+        var result = await verifier.VerifyChainAsync();
+        Assert.True(result.Ok, result.Message);
+        Assert.Equal(1, result.Checked);
+        Assert.Equal(0, result.WeakUnkeyed);
+    }
+
+    [Fact]
+    public async Task Legacy_unkeyed_chain_is_warned_not_reported_as_tampered()
+    {
+        var writer = NewService();
+        await writer.InitializeAsync();
+        NullSigningKey(writer);
+        await writer.LogCommandAsync(Command("app_lock_set"));
+
+        // 模拟 v6 旧库：链里没有 Algorithm 列值，格式版本仍为 6。
+        await using (var connection = new SqliteConnection($"Data Source={_dbPath}"))
+        {
+            await connection.OpenAsync();
+            var cmd = connection.CreateCommand();
+            cmd.CommandText = "UPDATE AuditChain SET Algorithm = NULL; PRAGMA user_version = 6;";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var verifier = NewService();
+        await verifier.InitializeAsync();
+        Assert.Equal("sha256", await ReadAlgorithmAsync(1));
+
+        var result = await verifier.VerifyChainAsync();
+        Assert.True(result.Ok, result.Message);
+        Assert.Equal(1, result.WeakUnkeyed);
+        Assert.Contains("强度降级", result.Message);
+
+        // 即使是无密钥历史记录，内容被改也必须能检出。
+        await using (var connection = new SqliteConnection($"Data Source={_dbPath}"))
+        {
+            await connection.OpenAsync();
+            var cmd = connection.CreateCommand();
+            cmd.CommandText = "UPDATE AuditLogs SET Command = 'tampered' WHERE Id = 1";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var tampered = await verifier.VerifyChainAsync();
+        Assert.False(tampered.Ok);
+        Assert.NotNull(tampered.FirstBadSeq);
+    }
+
+    [Fact]
+    public async Task Missing_key_is_reported_as_unverifiable_not_tampered()
+    {
+        var writer = NewService();
+        await writer.InitializeAsync();
+        await writer.LogCommandAsync(Command("df -h"));
+
+        var verifier = NewService();
+        await verifier.InitializeAsync();
+        NullSigningKey(verifier);
+
+        var result = await verifier.VerifyChainAsync();
+        Assert.False(result.Ok);
+        Assert.True(result.MissingKey);
+        Assert.Contains("缺少签名密钥", result.Message);
+        Assert.Contains("无法校验", result.Message);
+    }
+
+    [Fact]
+    public async Task Lost_key_file_is_not_silently_rotated()
+    {
+        var writer = NewService();
+        await writer.InitializeAsync();
+        await writer.LogCommandAsync(Command("df -h"));
+
+        File.Delete(_dbPath + ".key");
+
+        var verifier = NewService();
+        await verifier.InitializeAsync();
+
+        Assert.False(File.Exists(_dbPath + ".key"), "丢失密钥后不应静默生成新密钥");
+        var result = await verifier.VerifyChainAsync();
+        Assert.False(result.Ok);
+        Assert.True(result.MissingKey);
+        Assert.Contains("无法校验", result.Message);
+    }
+
+    private static void NullSigningKey(AuditLogService service)
+    {
+        var field = typeof(AuditLogService).GetField("_signingKey",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        field!.SetValue(service, null);
+    }
+
+    private async Task<string?> ReadAlgorithmAsync(long seq)
+    {
+        await using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Algorithm FROM AuditChain WHERE Seq = @Seq";
+        cmd.Parameters.AddWithValue("@Seq", seq);
+        return await cmd.ExecuteScalarAsync() as string;
     }
 
     public void Dispose()

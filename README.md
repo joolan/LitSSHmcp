@@ -126,7 +126,7 @@ powershell -ExecutionPolicy Bypass -File scripts\perf-baseline.ps1 -Runs 5 -Star
 # 发布前门禁：自动 publish 到 artifacts\perf-gate-app，再跑启动/内存预算
 powershell -ExecutionPolicy Bypass -File scripts\check-perf.ps1 -Runs 3 -StartupBudgetMs 1600 -MemoryBudgetMB 400
 # 或直接对已有发布产物执行
-powershell -ExecutionPolicy Bypass -File scripts\check-perf.ps1 -Exe release\v1.8.0\App\LitSSHmcp.App.exe -Runs 3
+powershell -ExecutionPolicy Bypass -File scripts\check-perf.ps1 -Exe release\v1.8.1\App\LitSSHmcp.App.exe -Runs 3
 ```
 
 ### 发布

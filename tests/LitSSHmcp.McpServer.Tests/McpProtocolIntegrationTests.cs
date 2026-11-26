@@ -67,6 +67,25 @@ public class McpProtocolIntegrationTests
             Assert.True(FindTool(tools, "mysql_query").TryGetProperty("outputSchema", out _));
             Assert.False(FindTool(tools, "mcp_usage_guide").TryGetProperty("outputSchema", out _));
 
+            // 严格 MCP 客户端要求 properties.* 等 schema 位置必须是对象，不能是布尔 schema。
+            // 回归 issue #4：job_start/job_result 的 result 以及 job_status 事件里的 data 曾输出 true。
+            foreach (var tool in tools)
+            {
+                var toolName = tool.GetProperty("name").GetString()!;
+                if (tool.TryGetProperty("outputSchema", out var outputSchema))
+                    AssertNoBooleanSchema(outputSchema, toolName + ".outputSchema");
+                if (tool.TryGetProperty("inputSchema", out var inputSchema))
+                    AssertNoBooleanSchema(inputSchema, toolName + ".inputSchema");
+            }
+            var jobStartResult = FindTool(tools, "job_start")
+                .GetProperty("outputSchema").GetProperty("properties").GetProperty("result");
+            Assert.Equal(JsonValueKind.Object, jobStartResult.ValueKind);
+            var jobStatusData = FindTool(tools, "job_status")
+                .GetProperty("outputSchema").GetProperty("properties")
+                .GetProperty("recentEvents").GetProperty("items")
+                .GetProperty("properties").GetProperty("data");
+            Assert.Equal(JsonValueKind.Object, jobStatusData.ValueKind);
+
             // 3) tools/call: mcp_self_check 应成功
             var selfCheck = await client.RequestAsync("tools/call", new { name = "mcp_self_check", arguments = new { } });
             var selfStructured = selfCheck.GetProperty("result").GetProperty("structuredContent");
@@ -477,6 +496,58 @@ public class McpProtocolIntegrationTests
 
     private static JsonElement FindTool(List<JsonElement> tools, string name) =>
         tools.First(t => t.GetProperty("name").GetString() == name);
+
+    private static readonly HashSet<string> SchemaMapKeywords = new(StringComparer.Ordinal)
+    {
+        "properties", "patternProperties", "dependentSchemas", "$defs", "definitions"
+    };
+
+    private static readonly HashSet<string> SchemaValueKeywords = new(StringComparer.Ordinal)
+    {
+        "items", "contains", "additionalProperties", "unevaluatedProperties", "propertyNames",
+        "not", "if", "then", "else", "contentSchema", "additionalItems", "unevaluatedItems"
+    };
+
+    private static readonly HashSet<string> SchemaArrayKeywords = new(StringComparer.Ordinal)
+    {
+        "prefixItems", "allOf", "anyOf", "oneOf"
+    };
+
+    private static void AssertNoBooleanSchema(JsonElement schema, string path)
+    {
+        if (schema.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            Assert.Fail($"{path} 使用布尔 schema；严格 MCP 客户端会拒绝整个 tools/list");
+
+        if (schema.ValueKind == JsonValueKind.Array)
+        {
+            var index = 0;
+            foreach (var item in schema.EnumerateArray())
+                AssertNoBooleanSchema(item, $"{path}[{index++}]");
+            return;
+        }
+
+        if (schema.ValueKind != JsonValueKind.Object)
+            return;
+
+        foreach (var property in schema.EnumerateObject())
+        {
+            if (SchemaMapKeywords.Contains(property.Name) && property.Value.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var child in property.Value.EnumerateObject())
+                    AssertNoBooleanSchema(child.Value, $"{path}.{property.Name}.{child.Name}");
+            }
+            else if (SchemaValueKeywords.Contains(property.Name))
+            {
+                AssertNoBooleanSchema(property.Value, $"{path}.{property.Name}");
+            }
+            else if (SchemaArrayKeywords.Contains(property.Name) && property.Value.ValueKind == JsonValueKind.Array)
+            {
+                var index = 0;
+                foreach (var item in property.Value.EnumerateArray())
+                    AssertNoBooleanSchema(item, $"{path}.{property.Name}[{index++}]");
+            }
+        }
+    }
 
     private static string LocateServerExecutable()
     {

@@ -453,6 +453,117 @@ public class SnapshotCollectorTests
         Assert.Contains(domains, d => (string?)d["domain"] == "example.com");
     }
 
+    [Fact]
+    public async Task Nginx_collector_uses_process_conf_and_prefix()
+    {
+        const string discover = "##NGX_PROC\t100\t1000\tmaster\t/home/u/nginx/sbin/nginx\t/home/u\t" +
+                                "/home/u/nginx/conf/nginx.conf\t/home/u/nginx\n" +
+                                "##NGINX_BIN /home/u/nginx/sbin/nginx\n" +
+                                "##BIN /home/u/nginx/sbin/nginx\n" +
+                                "nginx version: nginx/1.24.0";
+        const string config = "# configuration file /home/u/nginx/conf/nginx.conf:\n" +
+                              "server {\n listen 80;\n server_name user.example.com;\n}";
+        var commands = new List<string>();
+
+        var context = new SnapshotContext
+        {
+            Server = new SshServerConfig { Id = "s1", Name = "n", Host = "h" },
+            Elevate = true,
+            ExecuteAsync = (command, _, _) =>
+            {
+                commands.Add(command);
+                return Task.FromResult(new CommandResult
+                {
+                    Success = true,
+                    Output = command.Contains("##NGX_PROC", StringComparison.Ordinal) ? discover : config
+                });
+            }
+        };
+
+        var result = await new NginxTlsSnapshotCollector().CollectAsync(context, default);
+
+        Assert.True(result.Success);
+        Assert.False(result.Skipped);
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Data);
+        Assert.Equal(1, data["serverCount"]);
+        Assert.Contains(commands, command =>
+            command.Contains("-p '/home/u/nginx'", StringComparison.Ordinal) &&
+            command.Contains("-c '/home/u/nginx/conf/nginx.conf'", StringComparison.Ordinal));
+
+        var sites = Assert.IsType<List<Dictionary<string, object?>>>(data["sites"]);
+        Assert.Equal("/home/u/nginx/conf/nginx.conf", sites[0]["instance"]);
+        var instances = Assert.IsType<List<Dictionary<string, object?>>>(data["instances"]);
+        Assert.Single(instances);
+        Assert.Equal(100, instances[0]["pid"]);
+        Assert.Equal("/home/u/nginx", instances[0]["prefix"]);
+    }
+
+    [Fact]
+    public async Task Nginx_collector_reports_process_without_binary_as_needs_elevation()
+    {
+        const string discover = "##NGX_PROC\t200\t1000\tmaster\t\t\t\t";
+        var context = new SnapshotContext
+        {
+            Server = new SshServerConfig { Id = "s1", Name = "n", Host = "h" },
+            Elevate = false,
+            ExecuteAsync = (command, _, _) => Task.FromResult(new CommandResult
+            {
+                Success = true,
+                Output = command.Contains("##NGX_PROC", StringComparison.Ordinal) ? discover : string.Empty
+            })
+        };
+
+        var result = await new NginxTlsSnapshotCollector().CollectAsync(context, default);
+
+        Assert.True(result.Success);
+        Assert.True(result.Degraded);
+        Assert.False(result.Skipped);
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Data);
+        Assert.Equal(false, data["available"]);
+        Assert.Equal(true, data["processVisible"]);
+        Assert.Equal(true, data["needsElevation"]);
+        var instances = Assert.IsType<List<Dictionary<string, object?>>>(data["instances"]);
+        Assert.Single(instances);
+        Assert.Equal(200, instances[0]["pid"]);
+        Assert.Null(instances[0]["bin"]);
+    }
+
+    [Fact]
+    public async Task Nginx_collector_merges_multiple_instances()
+    {
+        const string discover =
+            "##NGX_PROC\t100\t1000\tmaster\t/home/a/nginx/sbin/nginx\t/home/a\t/home/a/nginx/conf/nginx.conf\t/home/a/nginx\n" +
+            "##NGX_PROC\t200\t1000\tmaster\t/home/b/nginx/sbin/nginx\t/home/b\t/home/b/nginx/conf/nginx.conf\t/home/b/nginx";
+        const string configA = "# configuration file /home/a/nginx/conf/nginx.conf:\nserver {\n listen 80;\n server_name a.example.com;\n}";
+        const string configB = "# configuration file /home/b/nginx/conf/nginx.conf:\nserver {\n listen 8080;\n server_name b.example.com;\n}";
+
+        var context = new SnapshotContext
+        {
+            Server = new SshServerConfig { Id = "s1", Name = "n", Host = "h" },
+            Elevate = false,
+            ExecuteAsync = (command, _, _) =>
+            {
+                var output = command.Contains("##NGX_PROC", StringComparison.Ordinal)
+                    ? discover
+                    : command.Contains("/home/a/nginx/conf/nginx.conf", StringComparison.Ordinal) ? configA
+                    : command.Contains("/home/b/nginx/conf/nginx.conf", StringComparison.Ordinal) ? configB
+                    : string.Empty;
+                return Task.FromResult(new CommandResult { Success = true, Output = output });
+            }
+        };
+
+        var result = await new NginxTlsSnapshotCollector().CollectAsync(context, default);
+
+        Assert.True(result.Success);
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Data);
+        Assert.Equal(2, data["serverCount"]);
+        var instances = Assert.IsType<List<Dictionary<string, object?>>>(data["instances"]);
+        Assert.Equal(2, instances.Count);
+        var domains = Assert.IsType<List<Dictionary<string, object?>>>(data["domains"]);
+        Assert.Contains(domains, domain => (string?)domain["domain"] == "a.example.com");
+        Assert.Contains(domains, domain => (string?)domain["domain"] == "b.example.com");
+    }
+
     // ---------- docker ----------
 
     [Fact]

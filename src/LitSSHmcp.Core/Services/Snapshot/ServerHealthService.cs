@@ -181,6 +181,11 @@ public static class ServerHealthService
             Add(findings, "low", "nginx 配置解析使用兜底", "建议检查 nginx -T 是否可用");
             return 3;
         }
+        if (data.TryGetProperty("needsElevation", out var needsElevation) && needsElevation.ValueKind == JsonValueKind.True)
+        {
+            Add(findings, "low", "nginx 配置读取受限", "发现 nginx 进程但当前账号无权限读取二进制/配置，建议启用快照 sudo");
+            return 2;
+        }
         return 0;
     }
 

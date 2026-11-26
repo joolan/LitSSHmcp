@@ -34,70 +34,193 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
         public List<string> RootPaths { get; } = new();
         public List<string> ProxyTargets { get; } = new();
         public bool HasTls => CertPaths.Count > 0 || Listens.Any(l => l.Ssl);
+
+        /// <summary>产生该 server 块的实例（二进制/配置路径），多实例合并时便于区分。</summary>
+        public string? Instance { get; set; }
     }
 
     public async Task<CollectorResult> CollectAsync(SnapshotContext context, CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
-        var detect = await context.ExecuteAsync(NginxConfigProbe.DetectCommand, context.Elevate, ct);
-        if (!detect.Success && detect.ErrorKind is not null)
-            return CollectorResult.FromCommandFailure(detect) with { DurationMs = sw.Elapsed.TotalMilliseconds };
+        var discover = await context.ExecuteAsync(NginxConfigProbe.DiscoverCommand, context.Elevate, ct);
+        if (!discover.Success && discover.ErrorKind is not null)
+            return CollectorResult.FromCommandFailure(discover) with { DurationMs = sw.Elapsed.TotalMilliseconds };
 
-        var detected = NginxConfigProbe.ParseDetect(detect.Output);
-        if (detected is null)
-            return CollectorResult.Skip("未检测到 nginx / tengine(进程与 PATH 均无)")
+        var detected = NginxConfigProbe.ParseDetect(discover.Output);
+        var instances = NginxConfigProbe.ParseInstances(discover.Output);
+        if (instances.Count == 0 && detected is null)
+            return CollectorResult.Skip("未检测到 nginx / tengine(进程、PATH 与用户目录均无)")
                 with { DurationMs = sw.Elapsed.TotalMilliseconds };
 
-        var bin = detected.Bin;
-        var serverType = detected.ServerType;
-        var version = detected.Version;
-
-        var configCommand = NginxConfigProbe.BuildConfigCommand(bin);
-        var configResult = await context.ExecuteAsync(configCommand, context.Elevate, ct);
-        if (!configResult.Success && configResult.ErrorKind is not null)
-            return CollectorResult.FromCommandFailure(configResult) with { DurationMs = sw.Elapsed.TotalMilliseconds };
-
-        var configOutput = SanitizeNginxConfig(configResult.Output);
-        var (sites, truncated) = ParseNginxConfig(configOutput,
-            truncationLineLimit: NginxConfigProbe.MaxConfigLines);
-        var configFallback = false;
-
-        // Tengine/不支持 -T 的构建：解析不到 server 块或输出被截断时，按 --conf-path/常见目录读取配置文件。
-        if (sites.Count == 0 || truncated)
+        if (instances.Count == 0 && detected is not null)
         {
-            var fallback = await context.ExecuteAsync(NginxConfigProbe.BuildFallbackConfigCommand(bin),
-                context.Elevate, ct);
-            if (fallback.Success || !string.IsNullOrWhiteSpace(fallback.Output))
+            instances.Add(new NginxInstance(0, null, "path", detected.Bin, null, null, null, "path"));
+        }
+
+        var processVisible = instances.Any(instance =>
+            instance.Source == "process" ||
+            instance.Kind is "master" or "worker" or "process");
+        var readable = instances.Where(instance => instance.HasBinary).Take(4).ToList();
+        var instanceDtos = new List<Dictionary<string, object?>>();
+
+        if (readable.Count == 0)
+        {
+            foreach (var instance in instances)
+                instanceDtos.Add(ToInstanceDto(instance));
+
+            var unavailable = new Dictionary<string, object?>
             {
-                var fallbackText = SanitizeNginxConfig(fallback.Output);
-                var (fallbackSites, fallbackTruncated) =
-                    ParseNginxConfig(fallbackText,
-                        truncationLineLimit: NginxConfigProbe.MaxConfigLines);
-                if (fallbackSites.Count > 0)
+                ["available"] = false,
+                ["processVisible"] = processVisible,
+                ["needsElevation"] = !context.Elevate,
+                ["serverType"] = detected?.ServerType ?? "Nginx",
+                ["version"] = detected?.Version ?? string.Empty,
+                ["serverCount"] = 0,
+                ["sites"] = new List<Dictionary<string, object?>>(),
+                ["domains"] = new List<Dictionary<string, object?>>(),
+                ["certificates"] = new List<Dictionary<string, object?>>(),
+                ["certificateCount"] = 0,
+                ["configFallback"] = false,
+                ["instances"] = instanceDtos
+            };
+            sw.Stop();
+            return CollectorResult.Ok(unavailable, degraded: true,
+                    "发现 nginx 进程但无权限读取二进制/配置；建议启用 snapshot.useSudo 后重试")
+                with { DurationMs = sw.Elapsed.TotalMilliseconds };
+        }
+
+        var sites = new List<NginxSite>();
+        var configChunks = new List<string>();
+        var failures = 0;
+        var permissionDenied = false;
+        var configFallback = false;
+        var truncated = false;
+        string? firstError = null;
+
+        foreach (var instance in readable)
+        {
+            var dto = ToInstanceDto(instance);
+            var configResult = await context.ExecuteAsync(NginxConfigProbe.BuildConfigCommand(instance),
+                context.Elevate, ct);
+
+            if ((!configResult.Success && configResult.ErrorKind is not null) ||
+                IsPermissionDenied(configResult.Output) || IsPermissionDenied(configResult.Error))
+            {
+                dto["configReadable"] = false;
+                dto["error"] = string.IsNullOrWhiteSpace(configResult.Error) ? "无权限读取配置" : configResult.Error.Trim();
+                instanceDtos.Add(dto);
+                permissionDenied = true;
+                failures++;
+                firstError ??= "无权限读取 nginx 配置";
+                if (readable.Count == 1)
+                    return CollectorResult.FromCommandFailure(configResult) with { DurationMs = sw.Elapsed.TotalMilliseconds };
+                continue;
+            }
+
+            var configText = SanitizeNginxConfig(configResult.Output);
+            var (instanceSites, instanceTruncated) = ParseNginxConfig(configText,
+                truncationLineLimit: NginxConfigProbe.MaxConfigLines);
+            var instanceFallback = false;
+            CommandResult? fallback = null;
+
+            if (instanceSites.Count == 0 || instanceTruncated)
+            {
+                fallback = await context.ExecuteAsync(NginxConfigProbe.BuildFallbackConfigCommand(instance),
+                    context.Elevate, ct);
+                if (fallback.Success || !string.IsNullOrWhiteSpace(fallback.Output))
                 {
-                    configOutput = fallbackText;
-                    sites = fallbackSites;
-                    truncated = fallbackTruncated;
-                    configFallback = true;
+                    var fallbackText = SanitizeNginxConfig(fallback.Output);
+                    var (fallbackSites, fallbackTruncated) =
+                        ParseNginxConfig(fallbackText,
+                            truncationLineLimit: NginxConfigProbe.MaxConfigLines);
+                    if (fallbackSites.Count > 0)
+                    {
+                        configText = fallbackText;
+                        instanceSites = fallbackSites;
+                        instanceTruncated = fallbackTruncated;
+                        instanceFallback = true;
+                    }
                 }
             }
+
+            if (instanceSites.Count == 0)
+            {
+                var errorLine = configText.Replace("\r\n", "\n").Split('\n')
+                    .FirstOrDefault(l => l.StartsWith("nginx: [", StringComparison.Ordinal) ||
+                                         l.Contains(":[emerg]", StringComparison.Ordinal));
+                if (errorLine is not null)
+                {
+                    dto["configReadable"] = false;
+                    dto["error"] = errorLine.Trim();
+                    instanceDtos.Add(dto);
+                    failures++;
+                    firstError ??= errorLine.Trim();
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(configText))
+                {
+                    dto["configReadable"] = false;
+                    dto["error"] = "nginx -T 输出为空(配置错误或权限不足)";
+                    instanceDtos.Add(dto);
+                    failures++;
+                    firstError ??= "nginx -T 输出为空(配置错误或权限不足)";
+                    continue;
+                }
+            }
+
+            var label = string.IsNullOrWhiteSpace(instance.ConfPath) ? instance.Bin : instance.ConfPath;
+            foreach (var site in instanceSites)
+                site.Instance = label;
+
+            sites.AddRange(instanceSites);
+            configChunks.Add(
+                $"# litssh nginx instance bin={instance.Bin} " +
+                $"conf={instance.ConfPath ?? "-"} prefix={instance.Prefix ?? "-"} source={instance.Source}\n{configText}");
+            configFallback |= instanceFallback;
+            truncated |= instanceTruncated;
+            if (IsPermissionDenied(fallback?.Output) || IsPermissionDenied(fallback?.Error))
+                permissionDenied = true;
+
+            dto["configReadable"] = true;
+            dto["configSource"] = instanceFallback ? "fallback" : "nginx -T";
+            dto["configFallback"] = instanceFallback;
+            dto["siteCount"] = instanceSites.Count;
+            dto["configChars"] = configText.Length;
+            instanceDtos.Add(dto);
         }
 
-        if (sites.Count == 0)
+        sites = DeduplicateSites(sites);
+
+        if (configChunks.Count == 0)
         {
-            // 空输出或 nginx 自身报错(nginx: [emerg] ...)都算失败——"没解析出站点"必须区分于"环境不具备"
-            var errorLine = configOutput.Replace("\r\n", "\n").Split('\n')
-                .FirstOrDefault(l => l.StartsWith("nginx: [", StringComparison.Ordinal) ||
-                                     l.Contains(":[emerg]", StringComparison.Ordinal));
-            if (errorLine is not null)
-                return CollectorResult.Fail($"nginx -T 失败: {errorLine.Trim()}", configResult.ErrorKind)
-                    with { DurationMs = sw.Elapsed.TotalMilliseconds };
-            if (string.IsNullOrWhiteSpace(configOutput))
-                return CollectorResult.Fail("nginx -T 输出为空(配置错误或权限不足), 无法提取证书", configResult.ErrorKind)
-                    with { DurationMs = sw.Elapsed.TotalMilliseconds };
+            sw.Stop();
+            if (!permissionDenied && firstError is not null)
+                return CollectorResult.Fail(firstError) with { DurationMs = sw.Elapsed.TotalMilliseconds };
+
+            var unavailable = new Dictionary<string, object?>
+            {
+                ["available"] = false,
+                ["processVisible"] = processVisible,
+                ["needsElevation"] = permissionDenied || !context.Elevate,
+                ["serverType"] = detected?.ServerType ?? "Nginx",
+                ["version"] = detected?.Version ?? string.Empty,
+                ["serverCount"] = 0,
+                ["sites"] = new List<Dictionary<string, object?>>(),
+                ["domains"] = new List<Dictionary<string, object?>>(),
+                ["certificates"] = new List<Dictionary<string, object?>>(),
+                ["certificateCount"] = 0,
+                ["configFallback"] = false,
+                ["instances"] = instanceDtos
+            };
+            return CollectorResult.Ok(unavailable, degraded: true,
+                    permissionDenied
+                        ? "发现 nginx 进程但无权限读取配置；建议启用 snapshot.useSudo 后重试"
+                        : "nginx 配置读取失败，未解析出站点")
+                with { DurationMs = sw.Elapsed.TotalMilliseconds };
         }
 
+        var configOutput = string.Join("\n", configChunks);
         var configHash = Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(configOutput)))[..16].ToLowerInvariant();
 
@@ -119,18 +242,38 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
             certificates = ParseCertificateBlocks(certResult.Output, DateTime.UtcNow, out certErrors);
         }
 
-        var degraded = certErrors > 0;
-        var note = certErrors > 0
-            ? $"{certErrors} 个证书读取失败(权限/路径/openssl缺失), 如需完整视图请启用 snapshot.useSudo"
-            : null;
+        var primary = readable[0];
+        var serverType = detected?.ServerType ??
+                         (primary.Bin.Contains("tengine", StringComparison.OrdinalIgnoreCase) ? "Tengine" :
+                          primary.Bin.Contains("openresty", StringComparison.OrdinalIgnoreCase) ? "OpenResty" : "Nginx");
+        var version = detected?.Version ?? string.Empty;
+        var notes = new List<string>();
+        if (certErrors > 0)
+            notes.Add($"{certErrors} 个证书读取失败(权限/路径/openssl缺失), 如需完整视图请启用 snapshot.useSudo");
+        if (failures > 0)
+            notes.Add($"{failures} 个 nginx 实例配置读取失败");
+        if (permissionDenied)
+            notes.Add("部分 nginx 实例无权限读取配置，建议启用 snapshot.useSudo");
+        if (truncated)
+            notes.Add("nginx 配置输出已截断");
+        if (readable.Count > 1)
+            notes.Add($"共发现 {readable.Count} 个 nginx 实例");
+
+        var note = notes.Count == 0 ? null : string.Join("；", notes);
+        var degraded = certErrors > 0 || failures > 0 || permissionDenied || truncated;
 
         var data = new Dictionary<string, object?>
         {
             ["available"] = true,
+            ["processVisible"] = processVisible,
+            ["needsElevation"] = permissionDenied,
             ["serverType"] = serverType,
             ["version"] = version,
             ["configHash"] = configHash,
             ["configFallback"] = configFallback,
+            ["configSource"] = instanceDtos
+                .FirstOrDefault(dto => dto.TryGetValue("configSource", out _))
+                ?["configSource"],
             ["serverCount"] = sites.Count,
             ["sites"] = sites.Select(ToSiteDto).ToList(),
             // 域名列表: 所有 server_name; 启用 SSL 的域名挂上对应证书信息(便于"哪些域名有证书/何时过期")
@@ -142,17 +285,59 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
                 .Select(c => c["path"])
                 .ToList(),
             ["certificateCount"] = certificates.Count,
-            // nginx -T 校验后的完整有效配置(含 include 展开)
+            // nginx -T 校验后的完整有效配置(含 include 展开；多实例时按实例拼接)
             ["effectiveConfig"] = configOutput,
             ["configChars"] = configOutput.Length,
             ["configPreview"] = configOutput.Length <= 8000
                 ? configOutput
                 : configOutput[..8000] + "\n...(预览截断，完整配置用 detail=full)",
-            ["configTruncated"] = truncated
+            ["configTruncated"] = truncated,
+            ["instances"] = instanceDtos
         };
 
         sw.Stop();
         return CollectorResult.Ok(data, degraded, note) with { DurationMs = sw.Elapsed.TotalMilliseconds };
+    }
+
+    private static Dictionary<string, object?> ToInstanceDto(NginxInstance instance) => new()
+    {
+        ["pid"] = instance.Pid > 0 ? instance.Pid : null,
+        ["uid"] = instance.Uid,
+        ["kind"] = instance.Kind,
+        ["bin"] = string.IsNullOrWhiteSpace(instance.Bin) ? null : instance.Bin,
+        ["cwd"] = instance.Cwd,
+        ["configPath"] = string.IsNullOrWhiteSpace(instance.ConfPath) ? null : instance.ConfPath,
+        ["prefix"] = string.IsNullOrWhiteSpace(instance.Prefix) ? null : instance.Prefix,
+        ["source"] = instance.Source,
+        ["configReadable"] = false
+    };
+
+    public static List<NginxSite> DeduplicateSites(IEnumerable<NginxSite> sites)
+    {
+        var result = new List<NginxSite>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var site in sites)
+        {
+            var key = string.Join("\u0001", site.ServerNames.Distinct()) + "|" +
+                      string.Join("|", site.Listens.Select(listen => listen.Raw)) + "|" +
+                      string.Join("|", site.CertPaths.Distinct()) + "|" +
+                      string.Join("|", site.ProxyTargets.Distinct());
+            if (seen.Add(key))
+                result.Add(site);
+        }
+        return result;
+    }
+
+    private static bool IsPermissionDenied(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+        return text.Contains("permission denied", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("operation not permitted", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("you need to be root", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("must be root", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("authorization failed", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("authentication is required", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -227,6 +412,7 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
 
     private static Dictionary<string, object?> ToSiteDto(NginxSite site) => new()
     {
+        ["instance"] = site.Instance,
         ["serverNames"] = site.ServerNames,
         ["listens"] = site.Listens.Select(l => new Dictionary<string, object?>
         {

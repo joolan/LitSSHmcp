@@ -189,8 +189,8 @@ LitSSHmcp/
 - **存储**：独立 SQLite `%APPDATA%\LitSSH\snapshots.db`（`Snapshots` 记录 + `SnapshotEvents` 事件流水；格式版本 v4，版本不一致直接重建）。`SnapshotStore` **惰性建表**（各进程安全），启动 `InitializeAsync` 重置遗留 `running` 孤儿。
 - **账号安全采集器（`accounts`）**：账号/密码状态/特权组/authorized_keys 指纹/最近登录/失败登录/风险发现；复用 `portmap` 与 `security` 的共享缓存，root 直接采集、非 root 有 sudo 提权、无 sudo 标记 degraded。
 - **健康评分**：`ServerHealthService` 从快照 resource/systemd/security/accounts/nginx_tls 计算 0-100 分与 findings；快照历史展示健康评分，快照完成后低于阈值或存在 high findings 时写通知中心。
-- **Tengine 站点**：`nginx_tls` 识别 nginx/tengine/openresty；`-T` 失败或截断时按 `--conf-path`/vhost 读取配置兜底，输出 `serverType`/`version`/`configHash`/`configFallback`。
-- **可插拔采集维度**（`ISnapshotCollector`，DI 注册、按 `Order` 顺序执行）：`resource`（资源态势）、`portmap`（端口↔进程↔用户↔服务三元组 + 程序路径 `exe`/完整启动命令 `cmdline`；无标记解析，兼容 su 交互式 PTY 回显）、`docker`（容器与资源）、`nginx_tls`（与 HTTP 站点探测共用 `NginxConfigProbe`，用"运行中 nginx 的可执行路径"执行 `-T` 取全量有效配置 + 域名/证书，失败时按 `--conf-path`/常见目录兜底）、`systemd`（单元健康 + 全量 service 列表，供图谱生成 `service:` 节点）、`accounts`（账号/密码状态/特权组/authorized_keys 指纹/最近登录/失败登录/风险发现；默认摘要，完整清单需 `detail=full`）、`security`（安全巡检：SSH/防火墙/fail2ban/MySQL 账户/高危端口；`mysql.user` 优先用"匹配该服务器的已配置数据源凭据"核查）。
+- **Tengine / 用户级 nginx 站点**：`nginx_tls` 识别 nginx/tengine/openresty；优先读取运行进程 `/proc/<pid>/exe` 与 `cmdline` 的 `-c/-p`，按真实实例执行 `-T`；没有进程时查 PATH、`$HOME` 常见安装目录与有限深度扫描，支持多实例合并；`-T` 失败或截断时按 `--conf-path`/`--prefix`/vhost 读取配置兜底，输出 `serverType`/`version`/`configHash`/`configFallback`/`instances`。
+- **可插拔采集维度**（`ISnapshotCollector`，DI 注册、按 `Order` 顺序执行）：`resource`（资源态势）、`portmap`（端口↔进程↔用户↔服务三元组 + 程序路径 `exe`/完整启动命令 `cmdline`；无标记解析，兼容 su 交互式 PTY 回显）、`docker`（容器与资源）、`nginx_tls`（与 HTTP 站点探测共用 `NginxConfigProbe`；支持运行实例 `-c/-p`、用户级安装、多实例与权限降级提示）、`systemd`（单元健康 + 全量 service 列表，供图谱生成 `service:` 节点）、`accounts`（账号/密码状态/特权组/authorized_keys 指纹/最近登录/失败登录/风险发现；默认摘要，完整清单需 `detail=full`）、`security`（安全巡检：SSH/防火墙/fail2ban/MySQL 账户/高危端口；`mysql.user` 优先用"匹配该服务器的已配置数据源凭据"核查）。
 - **提权**：`snapshot.useSudo`（默认 `true`）+ 服务器 `SudoType` 决定是否以 sudo/su 执行**内置固定只读命令**；未配置/关闭则降级（section `degraded`），命令仍受命令过滤器约束。
 - **扩展**：新增维度 = 实现 `ISnapshotCollector` 并在 `Program.cs` 注册；`snapshot.retentionPerServer` 控制每机保留份数（级联清理事件）。
 

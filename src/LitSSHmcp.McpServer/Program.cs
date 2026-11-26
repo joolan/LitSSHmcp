@@ -1,4 +1,5 @@
-﻿using LitSSHmcp.Core.Models;
+﻿using System.Text.Json;
+using LitSSHmcp.Core.Models;
 using LitSSHmcp.Core.Services.Datasource;
 using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Snapshot;
@@ -139,6 +140,20 @@ var mcp = builder.Services
         options.Filters.Request.CallToolFilters.Add(McpAuthorizationFilter.CreateFilter());
         // 目标级写互斥（§4.3/M2-1）：写类工具按目标跨进程串行，读类自由并行
         options.Filters.Request.CallToolFilters.Add(McpWriteGateFilter.CreateFilter());
+        // tools/list 规范化：把 JSON Schema 中的布尔 schema（如 JsonElement 属性的 "result": true）
+        // 改写为等价对象 schema。严格客户端会拒绝 properties.* 为布尔值的工具定义。
+        options.Filters.Request.ListToolsFilters.Add(next => async (request, cancellationToken) =>
+        {
+            var result = await next(request, cancellationToken).ConfigureAwait(false);
+            foreach (var tool in result.Tools)
+            {
+                if (tool.OutputSchema is { } output && output.ValueKind != JsonValueKind.Undefined)
+                    tool.OutputSchema = McpSchemaNormalizer.Normalize(output);
+                if (tool.InputSchema is { ValueKind: JsonValueKind.Object } input)
+                    tool.InputSchema = McpSchemaNormalizer.Normalize(input);
+            }
+            return result;
+        });
     })
     .WithStdioServerTransport();
 

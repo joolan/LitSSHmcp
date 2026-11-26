@@ -9,7 +9,7 @@ namespace LitSSHmcp.Core.Services.Snapshot;
 /// </summary>
 public static class SnapshotMeta
 {
-    public const int CollectorVersion = 2;
+    public const int CollectorVersion = 3;
 }
 
 /// <summary>

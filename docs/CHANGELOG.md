@@ -14,11 +14,16 @@
 
 - **DNS / 代理保存体验**：将「保存设置」从防火墙区块移到窗口顶部「打开配置目录」左侧，明确其作用域是全部页面；DNS 本地记录与代理账号的增删改会自动保存并热更新，不再需要先切到「监听与上游 / 监听与策略」再点保存。
 
+### 优化
+
+- **HTTP 站点探测 / nginx 快照支持用户级安装**：nginx 发现改为进程优先，读取 `/proc/<pid>/exe`、`cwd` 与 `cmdline`，用运行实例的 `-c/-p` 执行 `nginx -T`，避免用户级 nginx 用自定义配置启动时读到编译默认配置；补充 `$HOME` 常见安装目录与有限深度扫描，支持多实例合并、配置来源/权限状态；发现进程但无权限读取时提示提权探测。快照 `nginx_tls` 新增 `instances`、`processVisible`、`needsElevation` 与站点 `instance` 字段，采集器版本升至 3。
+
 ### 修复
 
 - **审计完整性误报与弱签名（issue #3）**：`AuditChain` 升级到格式 v7，新增 `Algorithm` 列并回填历史环算法；写入/校验/归档前自动完成初始化，不再依赖调用方是否 await 过 `InitializeAsync`，应用锁等短生命周期实例写出的记录恢复为 HMAC-SHA256。校验时按行算法验证：历史无密钥 SHA-256 记录返回“通过但有 N 条强度降级”警告，`audit.db.key` 缺失时提示无法校验，不再误报“审计记录被篡改”；真实内容篡改仍会定位到首个异常 Seq。v6→v7 只回填算法、不重建历史链，`RecordHash`/`Seq` 保持原值。
 - **审计完整性校验反馈**：点击后按钮进入忙碌状态，结果显示在可复制的模态弹窗中（通过 / 有警告 / 失败 + 首个异常 Seq），不再只写底部灰色状态行。
 - **审批关闭日志区分拒绝与超时**：桌面审批弹窗日志改为 `结论=Approved/Rejected/Timeout`（保留原始 `DialogResult`），安全复盘可区分“人工拒绝”和“无人值守超时”。
+- **MCP tools/list 布尔 schema 导致客户端整批拒载（issue #4）**：tools/list 对全部工具的 input/output JSON Schema 做规范化，把 `properties.*` 等 schema 位置上的 `true`/`false` 改写为等价对象 schema（`{}` / `{"not":{}}`）。`job_start.result`、`job_result.result` 与 `job_status.recentEvents[].data` 不再输出布尔 schema，严格校验的 MCP 客户端不会因此丢弃全部 41 个工具；`uniqueItems` 等布尔数据关键字保持不变。新增协议级与规范化单元测试。
 - **终端选中复制把软换行变成真实换行**：终端因宽度自动回绕的长行，复制时按逻辑行拼接，不再在每个屏幕行之间插入换行；真实换行仍保留。双击/三击与 AI「附加选中」走同一提取逻辑。
 - **终端编辑重绘错漏字符**：补齐行编辑/重绘常用序列的兼容性——IRM 插入模式（`CSI 4 h/l`）、DECSCUSR 光标样式（`CSI Ps SP q`）、DECRQM 模式查询（`CSI ? Ps $ p`）、DECSTR 软复位（`CSI ! p`）与 REP 重复字符（`CSI Ps b`），避免终结字节被当成普通字符画出或字符被覆盖丢失；OSC/DCS 中的中文内容不再泄漏到屏幕；写入/擦除/插入/删除字符时清理被拆散的双宽字符配对；DECAWM 切换时清除待换行状态；普通 LF 不再误清软换行标记，避免重绘后复制/重排把同一逻辑行拆开。
 

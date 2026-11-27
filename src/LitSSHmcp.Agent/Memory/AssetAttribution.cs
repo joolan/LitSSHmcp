@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace LitSSHmcp.Agent;
 
@@ -203,6 +204,45 @@ public sealed class AssetIdResolver
             }
         }
         return resolver;
+    }
+
+    /// <summary>一次文本扫描最多判定出的资产数（与 <see cref="AssetAttribution.MaxAssets"/> 对齐）。</summary>
+    public const int MaxMentions = 5;
+
+    private static readonly Regex PrefixedIdInText = new(
+        @"\b(?:ssh|ds|app|service|container|domain|cert|mq|port):[A-Za-z0-9_.\-]{2,}",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// 扫描一段**连续文本**（会话流水账里没有分隔符，无法按 token 切），返回其中出现的
+    /// 已知资产：名称 / 主机名 / 裸 ID / 带前缀 ID。用于旧 raw 记忆的资产归属回填。
+    /// 清单里的短 key（&lt;3 字符）跳过，避免 "s1" 之类误命中大量文本。
+    /// </summary>
+    public IReadOnlyList<string> ResolveMentions(string? text)
+    {
+        var found = new List<string>(MaxMentions);
+        if (string.IsNullOrWhiteSpace(text) || found.Count >= MaxMentions)
+            return found;
+
+        foreach (var (key, id) in _map)
+        {
+            if (key.Length < 3)
+                continue;
+            if (text.Contains(key, StringComparison.OrdinalIgnoreCase) &&
+                !found.Contains(id, StringComparer.OrdinalIgnoreCase))
+                found.Add(id);
+            if (found.Count >= MaxMentions)
+                break;
+        }
+        foreach (Match m in PrefixedIdInText.Matches(text))
+        {
+            var candidate = m.Value;
+            if (LooksLikeAssetId(candidate) && !found.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                found.Add(candidate);
+            if (found.Count >= MaxMentions)
+                break;
+        }
+        return found;
     }
 
     /// <summary>解析一个 token；无前缀的不在清单中时返回 null，避免把普通命令词当成资产。</summary>

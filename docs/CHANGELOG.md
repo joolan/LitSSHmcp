@@ -2,6 +2,27 @@
 
 本项目的所有重要变更都记录在此文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增
+
+- **设置界面可配置召回阈值**：「AI 助手设置 → 助手设置 → 长期记忆」在 `topK` 同行新增「召回阈值」输入框（绑定 `MemoryRecallThreshold`），此前该字段只能手改 `config.json`。保存时用不变文化解析并归一化到 `(0,1]`，非法值回退默认 `0.45` 且回显归一化结果，确保界面显示值与运行时生效值一致。
+- **长期记忆·旧数据资产归属回填**：新增 `MemoryAssetBackfiller`（启动时幂等执行）。从「会话工具调用参数里的 serverId」+「内容文本里的名称/主机/裸 ID」两条线索，为历史 raw 补全资产归属，判定为 attributed / multi / unknown；unknown 与 multi 在召回打分中降权，不再无条件放行给任意资产。真实库副本验证：172 条无归属 raw → 39 attributed / 66 multi / 67 unknown，复跑不再处理。
+- **长期记忆·事件自动蒸馏成经验草稿**：新增 `ExperienceDistiller`，把已解决事件（现象→根因→处置→结果）整理成结构化经验草稿，写入 `agent_consolidation_candidate`（pending，**不进召回**）。模型用 `ops_memory_write action=drafts / confirm_draft / reject_draft` 确认（可顺手改 key），不必从零撰写；不新增工具、不恢复审核 UI。真实库 52 条 resolved 事件全部生成草稿。
+- **召回遥测**：新增 `agent_recall_log`，记录每轮查询、命中 id/分数/键与两类有效阈值（含零命中）；回合收尾按「助手回答是否提到命中 key」「用户是否在纠正上一轮结论」回填 Referenced / Corrected，为阈值校准与噪声清理提供依据。
+- **golden set 回归门禁**：新增 `Fixtures/recall-golden.json`（34 条真实会话 query + 10 条边界 case）与 `MemoryRecallGoldenSetTests`，用确定性主题向量做门禁：Recall ≥ 0.80、MRR ≥ 0.50。
+
+### 优化
+
+- **召回阈值重校准**：绝对下限 `0.15 → 0.45`（qwen3 1024 维实测：库内两两余弦中位 0.446、99.9% 配对 > 0.15，旧值等于不过滤；0.45 下 98.9% 的相关 top1 仍达标）。结构化与 raw 统一走「绝对下限 + 本类 top1 相对阈值」，但结构化用更宽松的 0.5 margin（raw 仍 0.8），避免把同主题、措辞不同的可复用经验误杀。词法混合加分由 `+0.2` / 短语 `+0.05` 收紧为 `+0.08` / `+0.02`，余弦≈0 的噪声不再能独立越阈。旧配置升级改由 `ConfigMigrator`（schemaVersion v8→v9）在加载时一次性完成：仅当配置版本 < 9 且阈值恰为旧默认 0.15 时升级为 0.45 并**写回 config.json**，之后用户可自由设为任意值（含 0.15）。此前误用的运行时 `EffectiveConfiguredThreshold` 已移除——它每次启动在内存里按值替换、不写回文件，会把用户主动设回 0.15 的可变配置永久劫持。
+- **raw 降级为线索**：`MemoryQuality.BuildRawContent` 不再整段保存助手回答，改为「问题 + 证据路径 + 结论摘要」（剔除 Markdown 表格/代码块行，摘要限 140 字）；含端口/地址/版本/在线状态等快照事实的条目标 `[volatile]` 并降权 0.75。召回时 raw 只在结构化经验不足 topK 时补位（一次最多 2 条），检索上下文提示同步强化「raw 是线索、非结论」。
+- **ID 双形**：资产清单服务器行补 `| serverId=<裸ID>`；召回/事件标签对 ssh 资产显示 `[ssh:xxx | serverId=xxx]`；系统提示与检索上下文明确「工具入参用裸 ID，`ssh:` 只是图谱 ID」。`ToolSupport.ServerNotFound` 在带前缀仍未匹配时提示改传裸 ID。
+- **MCP serverId 前缀兼容加固**：`ToolSupport.ResolveServer` 对 `ssh:` / `ssh://` 前缀的兼容此前已实现并有测试（历史 23 次「服务器未找到: ssh:xxx」均发生于该修复之前），本次补充「带前缀 + 名称/主机」形态与错误文案自纠正的回归测试。
+
+### 修复
+
+- **配置可变项被运行时永久劫持**：`recallThreshold` 与 `contextTokenLimit` 都是用户可配置（后者 UI 可直接改）的字段，但旧迁移逻辑「值等于旧默认就替换」在每次加载/构造时执行且不写回文件，导致用户主动设回旧值（如 0.15 / 24000）后被无声覆盖、`config.json` 显示值与实际生效值长期不一致。改为 `ConfigMigrator` 按 `schemaVersion`（v8→v9）门控的一次性迁移并写回配置；运行时只读不改写。新增回归用例覆盖「迁移幂等 / 用户设回旧值不被覆盖 / 自定义值保留」。
+
 ## [1.8.1] - 2026-11-25
 
 ### 新增

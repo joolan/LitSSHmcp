@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using LitSSHmcp.Core.Services.Storage;
 using Microsoft.Data.Sqlite;
 
@@ -92,6 +94,33 @@ public interface IAgentMemoryStore
     Task<bool> RestoreVersionAsync(long memoryId, int version, CancellationToken ct = default);
     /// <summary>归档一条记忆：状态置为 superseded 并保留历史（可回滚）；返回是否存在。</summary>
     Task<bool> ArchiveByIdAsync(long id, CancellationToken ct = default);
+
+    // —— 旧数据资产归属回填（幂等：只处理 AttributionState='' 的 raw） ——
+    /// <summary>列出尚未判定归属的旧 raw 片段。</summary>
+    Task<IReadOnlyList<RawAttributionItem>> ListRawForAttributionAsync(int limit, CancellationToken ct = default);
+    /// <summary>写回一条 raw 的资产归属与判定状态（attributed/unknown/multi）。</summary>
+    Task<bool> SetRawAttributionAsync(long id, string assetIds, string state, CancellationToken ct = default);
+    /// <summary>从 agent_messages 提取「会话 → serverId」线索；表不存在时返回空。</summary>
+    Task<IReadOnlyList<SessionServerHint>> ListSessionServerHintsAsync(CancellationToken ct = default);
+
+    // —— 召回遥测 ——
+    /// <summary>记录一次召回；返回日志 Id。</summary>
+    Task<long> LogRecallAsync(string sessionId, string query, string hitIds, string hitScores,
+        string floors, int hitCount, string hitKeys, CancellationToken ct = default);
+    /// <summary>取某会话最近的召回日志（用于回合结束时回填 Referenced/Corrected）。</summary>
+    Task<IReadOnlyList<RecallLogEntry>> ListRecentRecallLogsAsync(string sessionId, int limit,
+        CancellationToken ct = default);
+    /// <summary>标记一次召回是否被引用于回答、是否被用户纠正。</summary>
+    Task MarkRecallOutcomeAsync(long id, bool referenced, bool corrected, CancellationToken ct = default);
+
+    // —— 事件 → 结构化经验草稿（P1 自动沉淀） ——
+    /// <summary>新增一条待确认草稿；DedupeKey 已存在时返回 null（去重）。</summary>
+    Task<long?> AddDraftAsync(string kind, string key, string content, string assetIds, string evidence,
+        double confidence, string dedupeKey, CancellationToken ct = default);
+    /// <summary>列出待确认草稿。</summary>
+    Task<IReadOnlyList<ExperienceDraft>> ListDraftsAsync(int limit, CancellationToken ct = default);
+    /// <summary>把草稿标记为已应用/已拒绝；返回是否更新成功。</summary>
+    Task<bool> SetDraftStatusAsync(long id, string status, string note, CancellationToken ct = default);
 }
 
 /// <summary>记忆库统计（设置页"查看记忆统计"用）。</summary>
@@ -108,16 +137,40 @@ public sealed record MemoryVersion(long MemoryId, int Version, string Source, st
 
 public sealed record MemoryHit(string Source, string Content, double Score,
     string Kind = "raw", string Key = "", int Freq = 1, string Status = "active", string AssetIds = "",
-    string CreatedAt = "", string UpdatedAt = "", long Id = 0);
+    string CreatedAt = "", string UpdatedAt = "", long Id = 0, string AttributionState = "");
 
 /// <summary>一次运维事件/事故的结构化记录（现象→证据→根因→处置→结果）。</summary>
 public sealed record IncidentRecord(long Id, string Title, string Symptom, string AssetIds,
     string RootCause, string Actions, string Outcome, string Evidence, double Confidence,
     string Status, string SessionId, string CreatedAt, string UpdatedAt, long? SupersededBy);
 
+/// <summary>待回填归属的旧 raw 片段（Id / 来源 / 内容）。</summary>
+public sealed record RawAttributionItem(long Id, string Source, string Content);
+
+/// <summary>从会话消息里提取到的服务器引用线索（用于回填旧 raw 的资产归属）。</summary>
+public sealed record SessionServerHint(string SessionId, string Reference);
+
+/// <summary>一次召回的遥测记录（命中/分数/阈值/是否被引用于后续回答）。</summary>
+public sealed record RecallLogEntry(long Id, string SessionId, string Query, string HitIds,
+    string HitScores, string Floors, int HitCount, bool Referenced, bool Corrected, string CreatedAt,
+    string HitKeys = "");
+
+/// <summary>由事件自动蒸馏出的结构化经验草稿（模型确认前不进召回）。</summary>
+public sealed record ExperienceDraft(long Id, string Kind, string Key, string Content, string AssetIds,
+    string Evidence, double Confidence, string Status, string CreatedAt);
+
 public class AgentMemoryStore : IAgentMemoryStore
 {
     private const string RawKind = "raw";
+
+    /// <summary>FTS/BM25 命中的最大加分。必须小于默认绝对阈值 0.15，否则余弦≈0 的噪声可独立越阈。</summary>
+    public const double LexicalBoostWeight = 0.08;
+
+    /// <summary>整句短语命中的固定加分。</summary>
+    public const double PhraseBoostWeight = 0.02;
+
+    /// <summary>归属判不出的旧 raw 在召回打分中的降权系数。</summary>
+    public const double UnattributedScoreFactor = 0.6;
 
     /// <summary>每个 MemoryId 默认保留的历史版本数（自动清理；防止长期运行无限膨胀）。</summary>
     public const int DefaultHistoryKeep = 40;
@@ -184,7 +237,8 @@ CREATE TABLE IF NOT EXISTS agent_memory (
     Status TEXT NOT NULL DEFAULT 'active',
     OwnerUserId TEXT NOT NULL DEFAULT '',
     Scope TEXT NOT NULL DEFAULT 'team',
-    Version INTEGER NOT NULL DEFAULT 1
+    Version INTEGER NOT NULL DEFAULT 1,
+    AttributionState TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS IX_agent_memory_Source ON agent_memory(Source);
 CREATE TABLE IF NOT EXISTS agent_memory_history (
@@ -277,7 +331,22 @@ CREATE TABLE IF NOT EXISTS agent_consolidation_run (
     Error TEXT NOT NULL DEFAULT '',
     OwnerUserId TEXT NOT NULL DEFAULT '',
     Scope TEXT NOT NULL DEFAULT 'team'
-);";
+);
+-- 召回遥测：记录每轮查询、命中与阈值，用于量化召回是否被用上并校准阈值。
+CREATE TABLE IF NOT EXISTS agent_recall_log (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    SessionId TEXT NOT NULL DEFAULT '',
+    Query TEXT NOT NULL DEFAULT '',
+    HitIds TEXT NOT NULL DEFAULT '',
+    HitScores TEXT NOT NULL DEFAULT '',
+    Floors TEXT NOT NULL DEFAULT '',
+    HitCount INTEGER NOT NULL DEFAULT 0,
+    Referenced INTEGER NOT NULL DEFAULT 0,
+    Corrected INTEGER NOT NULL DEFAULT 0,
+    HitKeys TEXT NOT NULL DEFAULT '',
+    CreatedAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS IX_agent_recall_log_Session ON agent_recall_log(SessionId, CreatedAt);";
             await cmd.ExecuteNonQueryAsync(ct);
         }
 
@@ -305,6 +374,7 @@ CREATE TABLE IF NOT EXISTS agent_consolidation_run (
             ("Scope", "ALTER TABLE agent_memory ADD COLUMN Scope TEXT NOT NULL DEFAULT 'team';"),
             ("Version", "ALTER TABLE agent_memory ADD COLUMN Version INTEGER NOT NULL DEFAULT 1;"),
             ("ConsolidatedAt", "ALTER TABLE agent_memory ADD COLUMN ConsolidatedAt TEXT NOT NULL DEFAULT '';"),
+            ("AttributionState", "ALTER TABLE agent_memory ADD COLUMN AttributionState TEXT NOT NULL DEFAULT '';"),
         })
         {
             if (existing.Contains(column))
@@ -318,6 +388,20 @@ CREATE TABLE IF NOT EXISTS agent_consolidation_run (
             cmd.CommandText = "CREATE INDEX IF NOT EXISTS IX_agent_memory_KindKey ON agent_memory(Kind, Key); " +
                               "CREATE INDEX IF NOT EXISTS IX_agent_memory_OwnerScope ON agent_memory(OwnerUserId, Scope);";
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+        // 遥测表是本版新增；若早期构建已创建过不带 HitKeys 的表，这里补齐。
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA table_info(agent_recall_log);";
+            var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using (var reader = await cmd.ExecuteReaderAsync(ct))
+                while (await reader.ReadAsync(ct)) cols.Add(reader.GetString(1));
+            if (cols.Count > 0 && !cols.Contains("HitKeys"))
+            {
+                await using var alter = connection.CreateCommand();
+                alter.CommandText = "ALTER TABLE agent_recall_log ADD COLUMN HitKeys TEXT NOT NULL DEFAULT '';";
+                await alter.ExecuteNonQueryAsync(ct);
+            }
         }
         _initialized = true;
     }
@@ -460,7 +544,8 @@ CREATE TABLE IF NOT EXISTS agent_consolidation_run (
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
-        var sql = "SELECT Source, Content, Vector, Kind, Key, Freq, Status, IFNULL(AssetIds,''), CreatedAt, IFNULL(UpdatedAt,''), Id " +
+        var sql = "SELECT Source, Content, Vector, Kind, Key, Freq, Status, IFNULL(AssetIds,''), CreatedAt, " +
+                  "IFNULL(UpdatedAt,''), Id, IFNULL(AttributionState,'') " +
                   "FROM agent_memory WHERE 1=1";
         if (!string.IsNullOrWhiteSpace(kind))
         {
@@ -497,24 +582,35 @@ CREATE TABLE IF NOT EXISTS agent_consolidation_run (
             scored.Add(new MemoryHit(
                 reader.GetString(0), reader.GetString(1), VectorMath.Cosine(query, vector),
                 reader.GetString(3), reader.GetString(4), reader.GetInt32(5), reader.GetString(6),
-                reader.GetString(7), reader.GetString(8), reader.GetString(9), reader.GetInt64(10)));
+                reader.GetString(7), reader.GetString(8), reader.GetString(9), reader.GetInt64(10),
+                reader.GetString(11)));
         }
 
-        // 向量召回是基线；有查询文本且 FTS5 可用时，用 BM25 排名做轻量混合（0.7 向量 + 0.3 词法）。
+        // 向量召回是基线；有查询文本且 FTS5 可用时，用 BM25 排名做轻量混合。
+        // 加分上限必须小于绝对下限（默认 0.15）：否则一条余弦≈0 的噪声只要命中一个词法
+        // token 就能越过阈值被当成相关记忆。原 +0.2/短语 +0.05 会独立越阈，现收紧为
+        // +0.08/短语 +0.02，只让词法命中在语义相近的候选之间改变排序，不再制造"假相关"。
         if (!string.IsNullOrWhiteSpace(queryText))
         {
             var lexical = await SearchFtsAsync(queryText, Math.Max(50, topK * 4), ct);
             if (lexical.Count > 0)
             {
                 scored = scored.Select(hit => lexical.TryGetValue(hit.Id, out var boost)
-                    ? hit with { Score = hit.Score + boost * 0.2 }
+                    ? hit with { Score = hit.Score + boost * LexicalBoostWeight }
                     : hit).ToList();
             }
             var phrase = queryText.Trim();
             if (phrase.Length >= 2)
                 scored = scored.Select(hit => hit.Content.Contains(phrase, StringComparison.OrdinalIgnoreCase)
-                    ? hit with { Score = hit.Score + 0.05 } : hit).ToList();
+                    ? hit with { Score = hit.Score + PhraseBoostWeight } : hit).ToList();
         }
+
+        // 归属判不出的旧 raw（回填后标 unknown/multi）降权：仍可召回作线索，
+        // 但不能靠"普遍高余弦"挤掉归属明确、更可信的条目。
+        scored = scored.Select(hit =>
+            hit.AttributionState is "unknown" or "multi"
+                ? hit with { Score = hit.Score * UnattributedScoreFactor }
+                : hit).ToList();
 
         // 分数为主、频次为辅（同分时经验更多的条目优先）；时间衰减由 AgentMemoryService 统一处理。
         return scored
@@ -1293,6 +1389,229 @@ CREATE TABLE IF NOT EXISTS agent_consolidation_run (
         if (archived)
             await PruneHistoryAsync(connection, id, ct);
         return archived;
+    }
+
+    // ==================== 旧数据资产归属回填 ====================
+
+    private static readonly Regex ServerIdRefPattern = new(
+        "\"serverId\"\\s*:\\s*\"([^\"]+)\"", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    public async Task<IReadOnlyList<RawAttributionItem>> ListRawForAttributionAsync(int limit,
+        CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Id, Source, Content FROM agent_memory " +
+                          "WHERE Kind='raw' AND IFNULL(AttributionState,'')='' AND IFNULL(AssetIds,'')='' " +
+                          "ORDER BY Id LIMIT @limit;";
+        cmd.Parameters.AddWithValue("@limit", Math.Clamp(limit, 1, 10_000));
+        var items = new List<RawAttributionItem>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            items.Add(new RawAttributionItem(reader.GetInt64(0), reader.GetString(1), reader.GetString(2)));
+        return items;
+    }
+
+    public async Task<bool> SetRawAttributionAsync(long id, string assetIds, string state,
+        CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "UPDATE agent_memory SET AssetIds=@a, AttributionState=@st " +
+                          "WHERE Id=@id AND Kind='raw' AND IFNULL(AttributionState,'')='';";
+        cmd.Parameters.AddWithValue("@a", assetIds ?? string.Empty);
+        cmd.Parameters.AddWithValue("@st", state);
+        cmd.Parameters.AddWithValue("@id", id);
+        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+    }
+
+    /// <summary>
+    /// 会话消息里 JSON 引号常被转义成 \u0022，先还原再提取 serverId。
+    /// agent_messages 由桌面 App 建表，Web/测试库可能不存在，此时静默返回空。
+    /// </summary>
+    public async Task<IReadOnlyList<SessionServerHint>> ListSessionServerHintsAsync(CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        var hints = new List<SessionServerHint>();
+        await using var connection = new SqliteConnection(ConnectionString);
+        try { await connection.OpenAsync(ct); }
+        catch { return hints; }
+        await using (var check = connection.CreateCommand())
+        {
+            check.CommandText = "SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_messages';";
+            if (await check.ExecuteScalarAsync(ct) is null)
+                return hints;
+        }
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT CAST(SessionId AS TEXT), Content FROM agent_messages " +
+                          "WHERE Role='tool' AND Content LIKE '%serverId%' LIMIT 5000;";
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var sid = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
+            var raw = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+            var text = raw.Replace("\\u0022", "\"");
+            foreach (Match m in ServerIdRefPattern.Matches(text))
+            {
+                var value = m.Groups[1].Value.Trim();
+                if (value.Length is > 0 and <= 128)
+                    hints.Add(new SessionServerHint(sid, value));
+            }
+        }
+        return hints;
+    }
+
+    // ==================== 召回遥测 ====================
+
+    public async Task<long> LogRecallAsync(string sessionId, string query, string hitIds, string hitScores,
+        string floors, int hitCount, string hitKeys, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "INSERT INTO agent_recall_log(SessionId, Query, HitIds, HitScores, Floors, HitCount, HitKeys, CreatedAt) " +
+                          "VALUES (@s, @q, @ids, @scores, @floors, @n, @keys, @now);";
+        cmd.Parameters.AddWithValue("@s", sessionId ?? string.Empty);
+        cmd.Parameters.AddWithValue("@q", query ?? string.Empty);
+        cmd.Parameters.AddWithValue("@ids", hitIds ?? string.Empty);
+        cmd.Parameters.AddWithValue("@scores", hitScores ?? string.Empty);
+        cmd.Parameters.AddWithValue("@floors", floors ?? string.Empty);
+        cmd.Parameters.AddWithValue("@n", hitCount);
+        cmd.Parameters.AddWithValue("@keys", hitKeys ?? string.Empty);
+        cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+        cmd.CommandText = "SELECT last_insert_rowid();";
+        cmd.Parameters.Clear();
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
+    }
+
+    public async Task<IReadOnlyList<RecallLogEntry>> ListRecentRecallLogsAsync(string sessionId, int limit,
+        CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Id, SessionId, Query, HitIds, HitScores, Floors, HitCount, Referenced, Corrected, CreatedAt, IFNULL(HitKeys,'') " +
+                          "FROM agent_recall_log WHERE SessionId=@s ORDER BY Id DESC LIMIT @n;";
+        cmd.Parameters.AddWithValue("@s", sessionId ?? string.Empty);
+        cmd.Parameters.AddWithValue("@n", Math.Clamp(limit, 1, 50));
+        var logs = new List<RecallLogEntry>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            logs.Add(new RecallLogEntry(reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
+                reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetInt32(6),
+                reader.GetInt32(7) != 0, reader.GetInt32(8) != 0, reader.GetString(9), reader.GetString(10)));
+        return logs;
+    }
+
+    public async Task MarkRecallOutcomeAsync(long id, bool referenced, bool corrected, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        // 合并而非覆盖：一个回合可能被"引用"和"纠正"两次标记，只置 1 不清零。
+        cmd.CommandText = "UPDATE agent_recall_log SET Referenced=MAX(Referenced,@r), Corrected=MAX(Corrected,@c) WHERE Id=@id;";
+        cmd.Parameters.AddWithValue("@r", referenced ? 1 : 0);
+        cmd.Parameters.AddWithValue("@c", corrected ? 1 : 0);
+        cmd.Parameters.AddWithValue("@id", id);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    // ==================== 事件 → 结构化经验草稿 ====================
+
+    public async Task<long?> AddDraftAsync(string kind, string key, string content, string assetIds,
+        string evidence, double confidence, string dedupeKey, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        var scope = _access?.WriteScope ?? "team";
+        var owner = _access?.OwnerUserId ?? string.Empty;
+        var now = DateTime.UtcNow.ToString("O");
+        var payload = JsonSerializer.Serialize(new { kind, key, content });
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        // 唯一索引 (DedupeKey, Scope, OwnerUserId) 保证同一事件不会反复生成草稿。
+        cmd.CommandText = "INSERT OR IGNORE INTO agent_consolidation_candidate" +
+                          "(Kind, PayloadJson, AssetIds, Evidence, Confidence, Status, SourceRefs, DedupeKey, OwnerUserId, Scope, CreatedAt, UpdatedAt) " +
+                          "VALUES (@k, @p, @a, @e, @c, 'pending', '', @d, @o, @s, @now, @now);";
+        cmd.Parameters.AddWithValue("@k", kind);
+        cmd.Parameters.AddWithValue("@p", payload);
+        cmd.Parameters.AddWithValue("@a", assetIds ?? string.Empty);
+        cmd.Parameters.AddWithValue("@e", evidence ?? string.Empty);
+        cmd.Parameters.AddWithValue("@c", confidence);
+        cmd.Parameters.AddWithValue("@d", dedupeKey);
+        cmd.Parameters.AddWithValue("@o", owner);
+        cmd.Parameters.AddWithValue("@s", scope);
+        cmd.Parameters.AddWithValue("@now", now);
+        if (await cmd.ExecuteNonQueryAsync(ct) == 0)
+            return null;
+        cmd.CommandText = "SELECT last_insert_rowid();";
+        cmd.Parameters.Clear();
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
+    }
+
+    public async Task<IReadOnlyList<ExperienceDraft>> ListDraftsAsync(int limit, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        var visible = AddVisibleFilter(cmd);
+        cmd.CommandText = "SELECT Id, Kind, PayloadJson, AssetIds, Evidence, Confidence, Status, CreatedAt " +
+                          "FROM agent_consolidation_candidate WHERE Status='pending'" +
+                          (visible is null ? string.Empty : " AND " + visible) +
+                          " ORDER BY Id DESC LIMIT @n;";
+        cmd.Parameters.AddWithValue("@n", Math.Clamp(limit, 1, 100));
+        var drafts = new List<ExperienceDraft>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var (draftKind, key, content) = ParseDraftPayload(reader.GetString(2), reader.GetString(1));
+            drafts.Add(new ExperienceDraft(reader.GetInt64(0), draftKind, key, content, reader.GetString(3),
+                reader.GetString(4), reader.GetDouble(5), reader.GetString(6), reader.GetString(7)));
+        }
+        return drafts;
+    }
+
+    public async Task<bool> SetDraftStatusAsync(long id, string status, string note, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        var writable = AddWritableFilter(cmd);
+        cmd.CommandText = "UPDATE agent_consolidation_candidate SET Status=@st, " +
+                          (status == "applied" ? "AppliedRef=@note" : "RejectReason=@note") +
+                          ", UpdatedAt=@now WHERE Id=@id AND Status='pending'" +
+                          (writable is null ? string.Empty : " AND " + writable) + ";";
+        cmd.Parameters.AddWithValue("@st", status);
+        cmd.Parameters.AddWithValue("@note", note ?? string.Empty);
+        cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
+        cmd.Parameters.AddWithValue("@id", id);
+        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+    }
+
+    private static (string Kind, string Key, string Content) ParseDraftPayload(string json, string fallbackKind)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            string Read(string name) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+                ? v.GetString() ?? string.Empty : string.Empty;
+            return (Read("kind") is { Length: > 0 } k ? k : fallbackKind, Read("key"), Read("content"));
+        }
+        catch
+        {
+            return (fallbackKind, string.Empty, json);
+        }
     }
 
     /// <summary>同一连接内按 MemoryId 保留最近 N 版（DefaultHistoryKeep）。</summary>

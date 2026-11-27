@@ -16,11 +16,28 @@ public sealed class AgentMemoryService
     /// <summary>事件记录允许的状态。</summary>
     public static readonly IReadOnlyList<string> IncidentStatuses = new[] { "open", "resolved", "superseded" };
 
-    /// <summary>默认召回相似度阈值（agent.memory.recallThreshold 未配置时）。</summary>
-    public const double DefaultRecallThreshold = 0.15;
+    /// <summary>
+    /// 默认召回相似度绝对下限。按 qwen3(1024维) 实测分布重校准：库内两两余弦中位 0.446、
+    /// 99.9% 配对 &gt; 0.15，旧值 0.15 等于不过滤；0.45 下 98.9% 的相关 top1 仍达标。
+    /// 已有 config.json 里的旧默认值由 ConfigMigrator（v8→v9）一次性迁移并写回，此处只读不改写。
+    /// </summary>
+    public const double DefaultRecallThreshold = AgentMemoryConfig.DefaultRecallThreshold;
 
-    /// <summary>默认相对阈值比例：有效阈值 = max(RecallThreshold, 本类 top1 * 0.8)。</summary>
+    /// <summary>raw 默认相对阈值比例：有效阈值 = max(RecallThreshold, 本类 top1 * 0.8)，压制会话流水账噪声。</summary>
     public const double DefaultRecallRelativeMargin = 0.8;
+
+    /// <summary>
+    /// 结构化记忆的相对阈值比例，明显比 raw 宽松：结构化条目是模型精选的高信号经验，
+    /// 措辞差异不代表不相关，用 0.8 会把同主题经验误杀（回归测试实测 3 条只剩 2 条）。
+    /// 0.5 时相对项中位 0.432，通常低于 0.45 绝对下限，只在 top1 极高时轻微收紧。
+    /// </summary>
+    public const double DefaultStructuredRelativeMargin = 0.5;
+
+    /// <summary>结构化不足 topK 时，raw 一次最多补的条数（raw 已降级为线索）。</summary>
+    public const int MaxRawSupplement = 2;
+
+    /// <summary>含 volatile 事实值的 raw 在排序中的降权系数（易过期，不应盖过稳定经验）。</summary>
+    public const double VolatileScoreFactor = 0.75;
 
     /// <summary>近重复判定阈值：新内容与既有任意条目的余弦高于该值时合并（不再新增）。</summary>
     public const double NearDuplicateThreshold = 0.92;
@@ -41,6 +58,7 @@ public sealed class AgentMemoryService
     private readonly int _topK;
     private readonly double _recallThreshold;
     private readonly double _recallRelativeMargin;
+    private readonly double _structuredRelativeMargin;
     private readonly string _embeddingModel;
     private readonly double _recencyHalfLifeDays;
     private readonly int _maxRecallChars;
@@ -57,7 +75,8 @@ public sealed class AgentMemoryService
     public AgentMemoryService(IAgentMemoryStore store, IEmbeddingGenerator<string, Embedding<float>> embedder, int topK,
         double recallThreshold = DefaultRecallThreshold, string? embeddingModel = null, double recencyHalfLifeDays = 30,
         int maxRecallChars = 1500, double embeddingTimeoutSeconds = 0, IChatClient? reranker = null,
-        double recallRelativeMargin = DefaultRecallRelativeMargin, AssetLabelMap? assetLabels = null)
+        double recallRelativeMargin = DefaultRecallRelativeMargin, AssetLabelMap? assetLabels = null,
+        double structuredRelativeMargin = DefaultStructuredRelativeMargin)
     {
         _store = store;
         _embedder = embedder;
@@ -65,6 +84,9 @@ public sealed class AgentMemoryService
         _recallThreshold = recallThreshold <= 0 || recallThreshold > 1 ? DefaultRecallThreshold : recallThreshold;
         _recallRelativeMargin = recallRelativeMargin > 0 && recallRelativeMargin <= 1
             ? recallRelativeMargin
+            : 0;
+        _structuredRelativeMargin = structuredRelativeMargin > 0 && structuredRelativeMargin <= 1
+            ? structuredRelativeMargin
             : 0;
         _embeddingModel = embeddingModel?.Trim() ?? string.Empty;
         _recencyHalfLifeDays = recencyHalfLifeDays > 0 ? recencyHalfLifeDays : 30;
@@ -510,10 +532,11 @@ public sealed class AgentMemoryService
     /// <summary>
     /// 按查询召回 topK 记忆，拼成可直接注入提示的文本；无相关记忆返回 null。kind 非空时只在该类别内检索。
     /// assetIds 非空时优先保留关联资产有交集的条目（raw 与通用经验仍可召回），减少跨资产误用。
-    /// 结构化经验优先；raw(会话/文档片段) 最多占 min(2, topK) 席, 避免挤占复用价值更高的结构化条目。
+    /// 结构化经验优先并可占满全部席位；raw(会话/文档片段) 已降级为线索，只在结构化不足时补位(最多 2 条)。
     /// </summary>
     public async Task<string?> RecallAsync(string query, string? kind = null,
-        IReadOnlyCollection<string>? assetIds = null, CancellationToken ct = default)
+        IReadOnlyCollection<string>? assetIds = null, CancellationToken ct = default,
+        string? sessionId = null)
     {
         if (string.IsNullOrWhiteSpace(query))
             return null;
@@ -529,12 +552,16 @@ public sealed class AgentMemoryService
 
         var rawOnly = string.Equals(kind, "raw", StringComparison.OrdinalIgnoreCase);
         var structuredOnly = !string.IsNullOrWhiteSpace(kind) && !rawOnly;
-        // 结构化优先，raw 预留小配额；topK=1 时先给结构化，但 raw 仍取候选用于兜底。
-        var rawReserve = rawOnly ? _topK : structuredOnly ? 0 : _topK <= 1 ? 0 : Math.Min(2, _topK - 1);
-        var structuredQuota = rawOnly ? 0 : _topK - rawReserve;
+        // 结构化可占满全部席位；raw 不再固定预留，只在结构化不足时补位（最多 MaxRawSupplement 条），
+        // 因为 raw 已降级为「问题+证据路径+结论摘要」的线索，复用价值低于结构化经验。
+        // 阈值说明：qwen3 等 embeddings 的中英文向量余弦普遍偏高（实测本库 1024 维向量
+        // 两两中位 0.446、99.9% 配对 > 0.15），旧绝对下限 0.15 等于不过滤。现在两类
+        // 都用「重校准绝对下限 0.45 + 本类 top1 相对阈值」（raw 0.8 / 结构化 0.5）；
+        // top1 自身恒达标（top1*margin < top1），不会把最相关条目误杀。
+        var structuredQuota = rawOnly ? 0 : _topK;
         var rawFetch = rawOnly ? _topK : structuredOnly ? 0 : Math.Max(2, _topK);
 
-        // 结构化 / raw 分开取候选：避免 raw 高分把结构化经验挤出 topK，也给 raw 固定小配额。
+        // 结构化 / raw 分开取候选：避免 raw 高分把结构化经验挤出 topK。
         var structuredTask = structuredQuota == 0
             ? Task.FromResult(new List<MemoryHit>())
             : _store.SearchAsync(vector, Math.Max(_topK, structuredQuota) * 2, kind, activeOnly: true, assetIds,
@@ -548,9 +575,10 @@ public sealed class AgentMemoryService
         var now = DateTimeOffset.UtcNow;
         var structuredCandidates = structuredTask.Result;
         var rawCandidates = rawTask.Result;
-        // 结构化经验是模型筛选后的高信号条目，保留绝对下限；相对阈值主要用于压制 raw 噪声。
-        var structuredFloor = _recallThreshold;
-        var rawFloor = EffectiveThreshold(rawCandidates);
+        // 两类都按本类 top1 计算有效下限，但结构化用更宽松的 margin，
+        // 避免把"同主题、措辞不同"的可复用经验误杀。
+        var structuredFloor = EffectiveThreshold(structuredCandidates, _structuredRelativeMargin);
+        var rawFloor = EffectiveThreshold(rawCandidates, _recallRelativeMargin);
         var structured = structuredCandidates
             .Where(h => h.Score > structuredFloor)
             .OrderByDescending(h => Rank(h, now))
@@ -563,22 +591,17 @@ public sealed class AgentMemoryService
         var hits = new List<MemoryHit>(_topK);
         foreach (var hit in structured.Take(structuredQuota))
             hits.Add(hit);
-        foreach (var hit in raw.Take(rawReserve))
-            hits.Add(hit);
-        // 某一类不足配额时，用另一类补齐，但总数不超过 topK。
-        if (hits.Count < _topK)
-        {
-            foreach (var hit in structured.Skip(structuredQuota).Concat(raw.Skip(rawReserve)))
-            {
-                if (hits.Count >= _topK)
-                    break;
+        // raw 仅在结构化不足 topK 时补位，且一次最多补 MaxRawSupplement 条。
+        var rawSlots = _topK - hits.Count;
+        if (rawSlots > 0 && !structuredOnly)
+            foreach (var hit in raw.Take(Math.Min(rawSlots, MaxRawSupplement)))
                 hits.Add(hit);
-            }
-        }
+        if (hits.Count > 1 && _reranker is not null)
+            hits = await _reranker.RerankAsync(query, hits, ct);
+        // 召回遥测（含零命中）：阈值调整、噪声清理才有据可依。失败静默，绝不影响本轮。
+        await LogRecallTelemetryAsync(query, hits, structuredFloor, rawFloor, sessionId, ct);
         if (hits.Count == 0)
             return null;
-        if (_reranker is not null && hits.Count > 1)
-            hits = await _reranker.RerankAsync(query, hits, ct);
 
         var sb = new StringBuilder();
         foreach (var hit in hits)
@@ -605,13 +628,41 @@ public sealed class AgentMemoryService
         return sb.Length == 0 ? null : sb.ToString().Trim();
     }
 
-    /// <summary>按类别的相对阈值：max(绝对下限, top1 * 相对比例)，避免跨模型固定 0.15 的漂移。</summary>
-    private double EffectiveThreshold(IReadOnlyList<MemoryHit> candidates)
+    /// <summary>
+    /// 记录一次召回的查询、命中 id/分数/键与两类有效阈值；零命中也记，便于发现阈值过严。
+    /// </summary>
+    private async Task LogRecallTelemetryAsync(string query, IReadOnlyList<MemoryHit> hits,
+        double structuredFloor, double rawFloor, string? sessionId, CancellationToken ct)
     {
-        if (_recallRelativeMargin <= 0 || candidates.Count == 0)
+        try
+        {
+            var ci = CultureInfo.InvariantCulture;
+            var ids = string.Join(",", hits.Select(h => h.Id));
+            var scores = string.Join(",", hits.Select(h => h.Score.ToString("0.###", ci)));
+            var keys = string.Join(",", hits.Select(h =>
+                string.IsNullOrWhiteSpace(h.Key) ? h.Source : $"{h.Kind}:{h.Key}"));
+            var floors = $"structured={structuredFloor.ToString("0.###", ci)};" +
+                         $"raw={rawFloor.ToString("0.###", ci)}";
+            await _store.LogRecallAsync(sessionId ?? string.Empty, query, ids, scores, floors,
+                hits.Count, keys, ct);
+        }
+        catch
+        {
+            // 遥测为尽力而为
+        }
+    }
+
+    /// <summary>
+    /// 按类别的相对阈值：max(绝对下限, top1 * 相对比例)。
+    /// 结构化与 raw 共用但传入不同 margin，既避免跨 embeddings 模型固定下限的漂移，
+    /// 也兼顾"raw 要压噪声、结构化要保留同主题经验"的不同需求。
+    /// </summary>
+    private double EffectiveThreshold(IReadOnlyList<MemoryHit> candidates, double margin)
+    {
+        if (margin <= 0 || candidates.Count == 0)
             return _recallThreshold;
         var top = candidates.Max(h => h.Score);
-        return Math.Max(_recallThreshold, top * _recallRelativeMargin);
+        return Math.Max(_recallThreshold, top * margin);
     }
 
     private static string? FormatAge(MemoryHit hit)
@@ -638,7 +689,11 @@ public sealed class AgentMemoryService
         var ageDays = Math.Max(0, (now - timestamp).TotalDays);
         var recency = Math.Pow(0.5, ageDays / _recencyHalfLifeDays);
         var freqBoost = 1 + 0.02 * Math.Min(Math.Max(hit.Freq - 1, 0), 20);
-        return hit.Score * (0.85 + 0.15 * recency) * freqBoost;
+        var score = hit.Score * (0.85 + 0.15 * recency) * freqBoost;
+        // 含端口/地址/版本/在线状态等快照事实的 raw 容易过期，降权避免盖过稳定经验。
+        if (hit.Kind == "raw" && hit.Content.Contains("[volatile", StringComparison.Ordinal))
+            score *= VolatileScoreFactor;
+        return score;
     }
 
     private static DateTimeOffset ParseTimestamp(string value) =>

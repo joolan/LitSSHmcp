@@ -162,6 +162,38 @@ public class ToolSupportTests
         Assert.Equal("s1", server!.Id);
     }
 
+    [Theory]
+    [InlineData("ssh:web")]
+    [InlineData("ssh://10.0.0.1")]
+    public void ResolveServer_accepts_prefixed_name_or_host(string reference)
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web", Host = "10.0.0.1" } }
+        };
+
+        var (server, status, _) = ToolSupport.ResolveServer(config, reference);
+
+        Assert.NotNull(server);
+        Assert.Null(status);
+        Assert.Equal("s1", server!.Id);
+    }
+
+    [Fact]
+    public void ServerNotFound_tells_model_to_use_bare_id_when_prefix_was_used()
+    {
+        var config = new AppConfig
+        {
+            Servers = new[] { new SshServerConfig { Id = "s1", Name = "web", Host = "10.0.0.1" } }
+        };
+
+        var (server, status, error) = ToolSupport.ResolveServer(config, "ssh:does-not-exist");
+
+        Assert.Null(server);
+        Assert.Equal("server_not_found", status);
+        Assert.Contains("裸 ID", error);
+    }
+
     [Fact]
     public void ResolveDatasource_accepts_ds_prefix()
     {

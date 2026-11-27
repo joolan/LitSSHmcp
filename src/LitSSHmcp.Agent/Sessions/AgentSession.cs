@@ -952,8 +952,12 @@ public sealed class AgentSession
         {
             builder.AppendLine("### 相关历史/文档记忆(可能来自其他服务器或更早时间, 仅供参考)");
             if (recallAssets is { Count: > 0 })
+            {
                 builder.AppendLine($"> 本轮已识别资产: {string.Join(", ", recallAssets)}（记忆已按资产过滤；其他资产的结论不应直接套用）");
+                builder.AppendLine("> 上述 ssh:xxx 是图谱 ID；调用 MCP 工具请改用其尾部裸 ID（或标签里的 serverId=xxx），不要照抄带前缀的 ID。");
+            }
             builder.AppendLine("> 未标注资产的记忆不得直接套用；端口/路径/版本/配置值必须先在目标机核实（如 nginx -T、ss -lntp）再行动。");
+            builder.AppendLine("> raw 为会话线索(问题/证据路径/结论摘要), 不是可复用结论, 仅在结构化经验不足时补位；标 [volatile] 的事实值尤其容易过期。");
             builder.AppendLine(memory.Trim());
         }
 

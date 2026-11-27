@@ -19,4 +19,8 @@
     <ProjectReference Include="..\..\src\LitSSHmcp.Agent\LitSSHmcp.Agent.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Fixtures\recall-golden.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

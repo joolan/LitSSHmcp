@@ -12,8 +12,10 @@ public sealed record MemoryRecallEvalFile(
     IReadOnlyList<MemoryRecallEvalMemory> Memories,
     IReadOnlyList<MemoryRecallEvalCase> Cases);
 
-public sealed record MemoryRecallEvalOptions(int TopK = 5, double Threshold = 0.15,
-    int MaxRecallChars = 1500, double RelativeMargin = AgentMemoryService.DefaultRecallRelativeMargin);
+public sealed record MemoryRecallEvalOptions(int TopK = 5,
+    double Threshold = AgentMemoryService.DefaultRecallThreshold,
+    int MaxRecallChars = 1500, double RelativeMargin = AgentMemoryService.DefaultRecallRelativeMargin,
+    double StructuredRelativeMargin = AgentMemoryService.DefaultStructuredRelativeMargin);
 
 public sealed record MemoryRecallEvalCaseResult(string CaseId, string Query,
     IReadOnlyList<string> RecalledKeys, IReadOnlyList<string> ExpectedKeys,
@@ -51,7 +53,8 @@ public static class MemoryRecallEvaluator
             var store = new AgentMemoryStore(dbPath);
             var service = new AgentMemoryService(store, embedder, options.TopK, options.Threshold,
                 maxRecallChars: options.MaxRecallChars, reranker: reranker,
-                recallRelativeMargin: options.RelativeMargin);
+                recallRelativeMargin: options.RelativeMargin,
+                structuredRelativeMargin: options.StructuredRelativeMargin);
             await service.InitializeAsync(ct);
             foreach (var memory in file.Memories)
             {

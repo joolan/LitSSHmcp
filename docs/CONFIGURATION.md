@@ -132,7 +132,7 @@
 
 ```json
 {
-  "schemaVersion": 8,
+  "schemaVersion": 9,
   "fileTransferSites": [
     {
       "id": "ftp-example",
@@ -190,6 +190,15 @@
   }
 }
 ```
+
+### `agent.memory.recallThreshold`（可自由配置）
+
+长期记忆召回的相似度绝对下限（余弦 `(0,1]`，越高越严格），默认 `0.45`。这是**可变配置项**：可在设置界面「助手设置 → 长期记忆」的「召回阈值」输入框修改，也可直接编辑 `%APPDATA%\LitSSH\config.json`，运行时只读不改写。
+
+- 有效范围 `0 < v <= 1`；填 `0`、负数、大于 1 或非数字会回退为默认 `0.45`（界面保存时即归一化并回显，保证所见即所用）。**`0` 不表示「关闭过滤」**。
+- 设置界面「长期记忆」区同行的还有 `topK`（召回条数）；阈值保存后需重新打开「AI 运维助手」生效。
+- `schemaVersion` v8→v9 会做**一次性**升级：仅当配置版本 `< 9` 且值恰为旧默认 `0.15` 时改为 `0.45` 并写回文件。升级完成后再手动设回 `0.15` 不会被覆盖。
+- 同类默认值刷新（`contextTokenLimit` 旧默认 `24000 → 96000`）同样带版本门控，且该字段在设置界面可直接修改。
 
 - `snapshot.collectAccounts` / `collectAuthorizedKeys` / `collectLoginHistory`：账号安全维度与公钥/登录历史采集开关。
 - `snapshot.storeEffectiveConfig`：默认 `false`，完整 `nginx -T` 存入 `snapshots.db` 的 `NginxConfigs` 表，`detail="full"` 时回填。

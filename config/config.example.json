@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 8,
+  "schemaVersion": 9,
   "servers": [
     {
       "id": "web-server-01",
@@ -243,7 +243,7 @@
       "model": "text-embedding-3-small",
       "apiKey": "",
       "topK": 5,
-      "recallThreshold": 0.15,
+      "recallThreshold": 0.45,
       "recallRelativeMargin": 0.8,
       "rawKeepPerSource": 50,
       "recencyHalfLifeDays": 30,

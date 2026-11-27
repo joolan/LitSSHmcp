@@ -4,7 +4,7 @@ namespace LitSSHmcp.Core.Models;
 
 public class AppConfig
 {
-    public const int CurrentSchemaVersion = 8;
+    public const int CurrentSchemaVersion = 9;
 
     /// <summary>配置结构版本。缺失该字段的旧文件反序列化为 0，由 ConfigMigrator 迁移到当前版本。</summary>
     public int SchemaVersion { get; set; }
@@ -480,6 +480,12 @@ public class AgentBudgetConfig
 /// <summary>长期记忆：用 OpenAI 兼容 embeddings 端点把历史会话/工作区文档向量化并本地检索。</summary>
 public class AgentMemoryConfig
 {
+    /// <summary>召回相似度绝对下限的当前默认值（按 qwen3 向量分布重校准）。配置迁移与运行时共用此常量。</summary>
+    public const double DefaultRecallThreshold = 0.45;
+
+    /// <summary>历史默认值（早期按其它向量模型设定）。仅用于 v8→v9 一次性迁移识别，不参与运行时逻辑。</summary>
+    public const double LegacyRecallThreshold = 0.15;
+
     public bool Enabled { get; set; }
 
     public string Endpoint { get; set; } = string.Empty;
@@ -491,8 +497,12 @@ public class AgentMemoryConfig
     /// <summary>每次召回的记忆条数。</summary>
     public int TopK { get; set; } = 5;
 
-    /// <summary>召回相似度阈值（余弦, 0~1; 越高越严格）。默认 0.15；作为相对阈值的下限。</summary>
-    public double RecallThreshold { get; set; } = 0.15;
+    /// <summary>
+    /// 召回相似度绝对下限（余弦, 0~1; 越高越严格），用户可在 config.json 中自由设置。
+    /// 默认 0.45（按 qwen3 向量分布重校准：库内两两余弦中位 0.446，旧值 0.15 几乎不过滤）。
+    /// 作为相对阈值的下限。v8 及更早配置里恰为旧默认 0.15 的，由 ConfigMigrator 一次性迁移并写回。
+    /// </summary>
+    public double RecallThreshold { get; set; } = DefaultRecallThreshold;
 
     /// <summary>相对召回阈值：有效阈值 = max(RecallThreshold, 本类 top1 分 * 本值)。
     /// 0=关闭；默认 0.8，用于抑制低分噪声，同时保留绝对下限。</summary>

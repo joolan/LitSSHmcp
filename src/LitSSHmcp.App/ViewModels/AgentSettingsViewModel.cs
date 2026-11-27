@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
@@ -474,6 +475,26 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
     private string _memoryTopK = "5";
     public string MemoryTopK { get => _memoryTopK; set => Set(ref _memoryTopK, value); }
 
+    /// <summary>
+    /// 召回相似度绝对下限（0~1，可自由配置）。字符串绑定以便校验；保存时经
+    /// NormalizeRecallThreshold 归一化，语义与运行时 AgentMemoryService 构造函数一致。
+    /// </summary>
+    private string _memoryRecallThreshold = FormatRecallThreshold(AgentMemoryConfig.DefaultRecallThreshold);
+    public string MemoryRecallThreshold { get => _memoryRecallThreshold; set => Set(ref _memoryRecallThreshold, value); }
+
+    /// <summary>用不变文化格式化，避免部分区域设置把 0.45 写成 0,45 导致解析失败。</summary>
+    private static string FormatRecallThreshold(double value) =>
+        value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// 归一化输入框里的召回阈值：合法范围 (0,1]，超出或非法一律回退默认值。
+    /// 与 AgentMemoryService 构造函数「&lt;=0 或 &gt;1 用默认」保持一致，确保界面所见即运行时所用。
+    /// </summary>
+    internal static double NormalizeRecallThreshold(string? text) =>
+        double.TryParse(text?.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && v > 0 && v <= 1
+            ? v
+            : AgentMemoryConfig.DefaultRecallThreshold;
+
     /// <summary>记忆配置警告（启用但缺模型名时提示；运行时会静默禁用——此处提前可见）。</summary>
     public string MemoryConfigWarning =>
         MemoryEnabled && string.IsNullOrWhiteSpace(MemoryModel)
@@ -740,6 +761,7 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
             MemoryModel = agent.Memory?.Model ?? string.Empty;
             MemoryApiKey = agent.Memory?.ApiKey ?? string.Empty;
             MemoryTopK = (agent.Memory?.TopK ?? 5).ToString();
+            MemoryRecallThreshold = FormatRecallThreshold(agent.Memory?.RecallThreshold ?? AgentMemoryConfig.DefaultRecallThreshold);
 
             RetentionMaxSessions = agent.RetentionMaxSessions.ToString();
             RetentionMaxMessages = agent.RetentionMaxMessages.ToString();
@@ -854,6 +876,9 @@ public partial class AgentSettingsViewModel : INotifyPropertyChanged
             config.Agent.Memory.Model = MemoryModel ?? string.Empty;
             config.Agent.Memory.ApiKey = MemoryApiKey;
             config.Agent.Memory.TopK = (int)Math.Max(1, ParseLong(MemoryTopK, 5));
+            config.Agent.Memory.RecallThreshold = NormalizeRecallThreshold(MemoryRecallThreshold);
+            // 回写归一化结果：非法输入（如 0 / 1.5 / 空）已回退默认，界面显示值与运行时生效值保持一致。
+            MemoryRecallThreshold = FormatRecallThreshold(config.Agent.Memory.RecallThreshold);
 
             config.Agent.RetentionMaxSessions = (int)Math.Max(0, ParseLong(RetentionMaxSessions, 50));
             config.Agent.RetentionMaxMessages = (int)Math.Max(0, ParseLong(RetentionMaxMessages, 200));

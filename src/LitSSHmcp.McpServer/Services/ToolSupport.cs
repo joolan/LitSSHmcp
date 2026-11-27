@@ -273,6 +273,11 @@ public static class ToolSupport
         var disabledCount = config.Servers.Count(s => s.Disabled);
         if (disabledCount > 0)
             hint += $"。另有 {disabledCount} 台已禁用的服务器不会出现在 ssh_list_servers 中, 需先在桌面 App 启用";
+        // 模型常照抄资产清单里的 ssh:xxx 图谱 ID。虽然 ResolveServer 已能自动去前缀，
+        // 但去前缀后仍匹配不到时，明确提示改传裸 ID，让模型一次就能自我纠正。
+        if (reference.StartsWith("ssh:", StringComparison.OrdinalIgnoreCase) ||
+            reference.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase))
+            hint += "。已自动尝试去掉 ssh: 前缀仍未匹配；工具入参请直接传列表工具给出的裸 ID(不含前缀)";
         return ("server_not_found", $"服务器未找到: {reference}。{hint}");
     }
 

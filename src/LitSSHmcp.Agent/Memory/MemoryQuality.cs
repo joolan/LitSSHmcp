@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using LitSSHmcp.Core.Services.Security;
 
@@ -37,8 +38,9 @@ public static partial class MemoryQuality
             || AwsAccessKey().IsMatch(text) || GitHubToken().IsMatch(text) || SkKey().IsMatch(text));
 
     /// <summary>
-    /// 构造入 raw 记忆的片段：日志型超长用户输入压缩为「应用/路径要点+助手结论」（≤200 字），
-    /// 普通对话截断到 <see cref="MaxRawChars"/>；返回 null 表示该轮不值得入库。
+    /// 构造入 raw 记忆的片段：日志型超长输入压缩为「要点+结论」（≤200 字）；
+    /// 普通对话也**不再整段保存助手回答**——表格、端口、在线状态等会被当成可复用结论注入，
+    /// 而它们只是当时的快照。改为「问题 + 证据路径 + 结论摘要」，并给事实型值打 volatile 标记。
     /// </summary>
     public static string? BuildRawContent(string userText, string assistantText)
     {
@@ -47,11 +49,40 @@ public static partial class MemoryQuality
         if (userText.Length == 0 && assistantText.Length == 0)
             return null;
         if (userText.Length + assistantText.Length > MaxRawChars || LooksLikeLogDump(userText))
-        {
-            var compressed = CompressLogTurn(userText, assistantText);
-            return compressed;
-        }
-        return $"用户: {userText}\n助手: {assistantText}";
+            return CompressLogTurn(userText, assistantText);
+
+        var sb = new StringBuilder();
+        // 显式 \n（不用 AppendLine）：保持跨平台一致，也便于测试与下游工具稳定断言。
+        sb.Append("[线索·非结论] 问题: ").Append(TruncateLine(StripFacts(userText), 120)).Append('\n');
+        var clues = ExtractClues(userText + "\n" + assistantText);
+        if (clues.Length > 0)
+            sb.Append("证据路径: ").Append(clues).Append('\n');
+        var conclusion = TruncateLine(StripFacts(assistantText), RawConclusionChars);
+        sb.Append("结论摘要: ").Append(conclusion);
+        if (LooksVolatile(conclusion))
+            sb.Append(" [volatile: 端口/路径/版本/在线状态等事实值随时间变化, 必须先在目标机核实]");
+        return sb.ToString();
+    }
+
+    /// <summary>结论摘要保留的字符数（完整回答不再入库）。</summary>
+    public const int RawConclusionChars = 140;
+
+    /// <summary>含 IP / 端口 / 版本号 / 在线状态等易过期事实值的结论。</summary>
+    private static readonly Regex VolatileFactPattern = new(
+        @"\b\d{1,3}(?:\.\d{1,3}){3}\b|:\d{2,5}\b|\bv?\d+\.\d+(?:\.\d+)?\b|在线|离线|运行中|已停止|监听|版本|端口",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static bool LooksVolatile(string text) => VolatileFactPattern.IsMatch(text);
+
+    /// <summary>去掉 Markdown 表格行与代码块围栏，避免把整张事实表当结论注入。</summary>
+    private static string StripFacts(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return string.Empty;
+        var kept = text.Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0 && !line.StartsWith('|') && !line.StartsWith("```", StringComparison.Ordinal));
+        return string.Join(" ", kept);
     }
 
     /// <summary>

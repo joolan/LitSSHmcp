@@ -203,6 +203,63 @@ public class ConfigMigratorTests
         Assert.NotNull(config.RemoteDesktops);
         Assert.Empty(config.RemoteDesktops);
     }
+
+    [Fact]
+    public void V8_legacy_recall_threshold_015_is_migrated_to_045_once()
+    {
+        // 旧版 config.json 显式存了旧默认 0.15；加载时一次性升级并（由 ConfigService）写回文件。
+        var config = new AppConfig { SchemaVersion = 8 };
+        config.Agent.Memory!.RecallThreshold = AgentMemoryConfig.LegacyRecallThreshold;
+
+        Assert.True(ConfigMigrator.Migrate(config));
+        Assert.Equal(AgentMemoryConfig.DefaultRecallThreshold, config.Agent.Memory.RecallThreshold);
+        Assert.Equal(AppConfig.CurrentSchemaVersion, config.SchemaVersion);
+
+        // 幂等：版本已提升，再迁移不再改动任何值。
+        Assert.False(ConfigMigrator.Migrate(config));
+        Assert.Equal(AgentMemoryConfig.DefaultRecallThreshold, config.Agent.Memory.RecallThreshold);
+    }
+
+    [Fact]
+    public void Recall_threshold_set_back_to_015_by_user_on_v9_is_never_overridden()
+    {
+        // 关键回归：阈值是可变配置项。迁移完成后用户主动把阈值设回 0.15，
+        // 运行时与配置加载都不得再把它改写成 0.45。
+        var config = new AppConfig { SchemaVersion = AppConfig.CurrentSchemaVersion };
+        config.Agent.Memory!.RecallThreshold = AgentMemoryConfig.LegacyRecallThreshold;
+
+        Assert.False(ConfigMigrator.Migrate(config));
+        Assert.Equal(AgentMemoryConfig.LegacyRecallThreshold, config.Agent.Memory.RecallThreshold);
+    }
+
+    [Theory]
+    [InlineData(0.3)]
+    [InlineData(0.6)]
+    [InlineData(0.9)]
+    public void Custom_recall_threshold_is_always_kept(double threshold)
+    {
+        var config = new AppConfig { SchemaVersion = 8 };
+        config.Agent.Memory!.RecallThreshold = threshold;
+
+        ConfigMigrator.Migrate(config);
+
+        Assert.Equal(threshold, config.Agent.Memory.RecallThreshold);
+    }
+
+    [Fact]
+    public void Context_token_limit_is_only_migrated_on_old_schema()
+    {
+        // 同一类 bug：contextTokenLimit 在 UI 里可配，旧逻辑「== 24000 就升级」会永久覆盖用户的设置。
+        var old = new AppConfig { SchemaVersion = 8 };
+        old.Agent.ContextTokenLimit = 24000;
+        Assert.True(ConfigMigrator.Migrate(old));
+        Assert.Equal(96000, old.Agent.ContextTokenLimit);
+
+        var current = new AppConfig { SchemaVersion = AppConfig.CurrentSchemaVersion };
+        current.Agent.ContextTokenLimit = 24000;   // 用户主动设回旧值
+        Assert.False(ConfigMigrator.Migrate(current));
+        Assert.Equal(24000, current.Agent.ContextTokenLimit);
+    }
 }
 
 public class ProviderFlattenTests

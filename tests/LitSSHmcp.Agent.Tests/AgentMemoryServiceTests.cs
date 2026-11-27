@@ -147,6 +147,53 @@ public class AgentMemoryServiceTests : IDisposable
     }
 
     [Fact]
+    public void Runtime_respects_configured_threshold_verbatim()
+    {
+        // 阈值是可变配置项：运行时只读，不能在构造时按「旧默认值」把 0.15 悄悄改成 0.45。
+        // 旧配置的升级统一由 ConfigMigrator 按 schemaVersion 一次性完成并写回 config.json
+        // （见 ConfigMigratorTests），此后用户主动设回 0.15 必须原样生效。
+        foreach (var configured in new[] { 0.15, 0.3, 0.45, 0.6 })
+        {
+            var svc = new AgentMemoryService(new AgentMemoryStore(_dbPath), new FakeEmbedder(), 5, configured);
+            var field = typeof(AgentMemoryService).GetField("_recallThreshold",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            Assert.Equal(configured, (double)field.GetValue(svc)!, 6);
+        }
+    }
+
+    [Fact]
+    public async Task Lexical_hit_alone_cannot_cross_absolute_floor()
+    {
+        // 余弦 0（向量正交）+ 词法全命中：旧 +0.2/短语 +0.05 会独立越过 0.15；
+        // 收紧为 +0.08/短语 +0.02 后最多 0.1，仍低于重校准的 0.45 下限，不得召回。
+        var store = new AgentMemoryStore(_dbPath);
+        var svc = new AgentMemoryService(store, new OrthogonalEmbedder(), 5, 0.45);
+        await svc.InitializeAsync();
+        await store.AddAsync("会话", "磁盘满 日志 怎么处理 的无关记录", new[] { 0f, 1f });
+
+        Assert.Null(await svc.RecallAsync("磁盘满 日志 怎么处理"));
+    }
+
+    [Fact]
+    public async Task Structured_margin_keeps_same_topic_experiences()
+    {
+        // 结构化用 0.5（而非 raw 的 0.8）相对阈值：同主题、措辞不同的经验不应被误杀。
+        var store = new AgentMemoryStore(_dbPath);
+        var svc = new AgentMemoryService(store, new FakeEmbedder(), 5, 0.15);
+        await svc.InitializeAsync();
+        await svc.SaveAsync("task", "disk:a", "磁盘满时清理 journald 日志并用 df 验证", null, null);
+        await svc.SaveAsync("task", "disk:b", "磁盘满根分区占用过高: journalctl --vacuum-size 后恢复", null, null);
+        await svc.SaveAsync("task", "disk:c", "磁盘满空间不足排查: 先 df -h 定位分区再清日志", null, null);
+
+        var recalled = await svc.RecallAsync("磁盘满怎么处理");
+
+        Assert.NotNull(recalled);
+        Assert.Contains("task:disk:a", recalled);
+        Assert.Contains("task:disk:b", recalled);
+        Assert.Contains("task:disk:c", recalled);
+    }
+
+    [Fact]
     public async Task Recall_relative_margin_filters_low_score_raw_tail()
     {
         var store = new AgentMemoryStore(_dbPath);
@@ -232,7 +279,7 @@ public class AgentMemoryServiceTests : IDisposable
         var recalled = await svc.RecallAsync("nginx 80");
 
         Assert.NotNull(recalled);
-        Assert.Contains("web01 (10.0.0.1:22) [ssh:abc]", recalled);
+        Assert.Contains("web01 (10.0.0.1:22) [ssh:abc | serverId=abc]", recalled);
     }
 
     [Fact]
@@ -361,10 +408,29 @@ public class AgentMemoryServiceTests : IDisposable
     }
 
     [Fact]
-    public void BuildRawContent_short_turn_keeps_full_text()
+    public void BuildRawContent_short_turn_is_a_lead_not_a_verbatim_answer()
     {
         var content = MemoryQuality.BuildRawContent("磁盘满怎么办", "先 df 定位再处理 /var");
-        Assert.Equal("用户: 磁盘满怎么办\n助手: 先 df 定位再处理 /var", content);
+        Assert.Equal("[线索·非结论] 问题: 磁盘满怎么办\n结论摘要: 先 df 定位再处理 /var", content);
+    }
+
+    [Fact]
+    public void BuildRawContent_extracts_evidence_paths()
+    {
+        var content = MemoryQuality.BuildRawContent("日志在哪", "查看 /opt/app/logs/app.log 后确认");
+        Assert.NotNull(content);
+        Assert.Contains("证据路径: /opt/app/logs/app.log", content);
+    }
+
+    [Fact]
+    public void BuildRawContent_marks_volatile_facts_and_drops_markdown_tables()
+    {
+        var content = MemoryQuality.BuildRawContent("看下 nginx 状态",
+            "| 服务 | 端口 |\n| nginx | 80 |\nnginx 监听 192.168.1.3:80, 版本 1.24.0, 在线");
+        Assert.NotNull(content);
+        Assert.Contains("[volatile", content);
+        Assert.DoesNotContain("| nginx | 80 |", content);   // 表格行不入库
+        Assert.Contains("结论摘要:", content);
     }
 
     [Fact]
@@ -389,7 +455,8 @@ public class AgentMemoryServiceTests : IDisposable
     public void PrepareRawContent_keeps_normal_turn()
     {
         var content = MemoryQuality.PrepareRawContent("磁盘满怎么办", "先 df 定位再处理 /var");
-        Assert.Equal("用户: 磁盘满怎么办\n助手: 先 df 定位再处理 /var", content);
+        Assert.Contains("[线索·非结论] 问题: 磁盘满怎么办", content);
+        Assert.Contains("结论摘要: 先 df 定位再处理 /var", content);
     }
 
     [Fact]
@@ -583,4 +650,18 @@ public class AgentMemoryServiceTests : IDisposable
             return v;
         }
     }
+
+    /// <summary>query 固定为 [1,0]；配合直接写入 [0,1] 的记忆向量可构造余弦 0 的场景。</summary>
+    private sealed class OrthogonalEmbedder : IEmbeddingGenerator<string, Embedding<float>>, IDisposable
+    {
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public void Dispose() { }
+
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values, EmbeddingGenerationOptions? options = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new GeneratedEmbeddings<Embedding<float>>(
+                values.Select(_ => new Embedding<float>(new[] { 1f, 0f })).ToList()));
+    }
+
 }

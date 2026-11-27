@@ -4,7 +4,8 @@ using LitSSHmcp.Core.Services.Security;
 namespace LitSSHmcp.Core.Services.Storage;
 
 /// <summary>
-/// 配置结构迁移。当前 schemaVersion = 3（2→3 大模型接入改为「厂家下挂多模型」，v2 单模型 provider 拆出 models）。
+/// 配置结构迁移。当前 schemaVersion = 9（2→3 大模型接入改为「厂家下挂多模型」；
+/// v9 把记忆召回阈值旧默认 0.15 升级为 0.45）。
 /// 后续结构变更时在此追加迁移步骤并提升 AppConfig.CurrentSchemaVersion。
 /// </summary>
 public static class ConfigMigrator
@@ -120,10 +121,24 @@ public static class ConfigMigrator
         }
 
         // 默认值刷新：旧默认 contextTokenLimit=24000 偏小，随模型窗口普遍增大升级为 96000。
-        // 仅在仍是旧默认值时替换，用户手动设过其它值则保留。
-        if (config.Agent.ContextTokenLimit == 24000)
+        // 加 schemaVersion 门控保证只在旧版本配置上做一次；否则用户在 UI 里主动设回 24000
+        // 会在每次加载时被永久覆盖（该字段是 UI 可配的可变项，不能按值劫持）。
+        if (config.SchemaVersion < 9 && config.Agent.ContextTokenLimit == 24000)
         {
             config.Agent.ContextTokenLimit = 96000;
+            changed = true;
+        }
+
+        // v8→v9：长期记忆召回阈值旧默认 0.15 在 qwen3(1024 维) 向量下几乎等于不过滤
+        // （库内两两余弦中位 0.446、99.9% 配对 > 0.15），重校准为 0.45。
+        // 一次性迁移：仅「旧版本配置 + 值恰为旧默认」时升级并写回 config.json；
+        // 版本提升后用户可自由把阈值设为任意值（含 0.15），运行时不再覆盖。
+        // 注意：不能用「运行时按值替换」实现——那会把用户主动设回 0.15 的配置永久劫持，
+        // 且只改内存不写回文件，造成 config.json 显示 0.15、实际生效 0.45 的不一致。
+        if (config.SchemaVersion < 9 && config.Agent.Memory is { } memory &&
+            System.Math.Abs(memory.RecallThreshold - AgentMemoryConfig.LegacyRecallThreshold) < 0.0001)
+        {
+            memory.RecallThreshold = AgentMemoryConfig.DefaultRecallThreshold;
             changed = true;
         }
 

@@ -87,7 +87,13 @@ public sealed class AssetLabelMap
         }
         if (text.Length > 0)
             text.Append(' ');
-        text.Append('[').Append(id).Append(']');
+        text.Append('[').Append(id);
+        // ID 双形：图谱 ID（ssh:abc）不能直接当 MCP 的 serverId 用，模型照抄会报
+        // "服务器未找到: ssh:abc"（历史会话里出现 23 次）。标签里同时给出可直传的裸 ID。
+        var separator = id.IndexOf(':');
+        if (separator > 0 && id[..separator].Equals("ssh", StringComparison.OrdinalIgnoreCase))
+            text.Append(" | serverId=").Append(id[(separator + 1)..]);
+        text.Append(']');
         return text.ToString();
     }
 }

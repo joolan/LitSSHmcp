@@ -2,6 +2,8 @@
 
 本文针对 LitSSH AI 运维助手（`LitSSHmcp.Agent` + `LitSSHmcp.App`）做一次完整梳理：**关程序重开后的上下文恢复 / provider 缓存**核查，以及 harness（工具、轮次、提示词、技能、上下文、图片）的改进设计与落地记录。附录含 provider 缓存模型与图像 token 事实表。
 
+> **历史评审记录**：下文描述的阈值（`Score>0.15`）、raw 配额（`≤ min(2,topK)`）等为当时实现。2026-11-27 已重校准召回阈值、把 raw 降级为线索并新增资产归属回填 / 事件蒸馏 / 召回遥测 / golden set 门禁；当前行为以 `docs/ARCHITECTURE.md` 与 `docs/CHANGELOG.md` 的 `[Unreleased]` 段为准。
+
 ## 1. 重开恢复：现状核查（file:line 证据）
 
 载入链路：`AgentWindow.Loaded → InitializeAsync`（`AgentViewModel.cs:506`）→ 初始化库/裁剪 → 铺开模型 → `ReloadSessionsAsync` → 取最近更新会话 → `LoadSessionAsync`（`:569`）→ 读 `agent_messages` 重建 UI Turns + 模型 history → `ResetRuntimeAsync` → 首次 `EnsureRuntimeAsync` 重连 MCP、重建系统提示、`RestoreSummaryFromStoreAsync` 回填摘要。

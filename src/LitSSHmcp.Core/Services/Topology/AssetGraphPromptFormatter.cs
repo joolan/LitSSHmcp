@@ -56,8 +56,10 @@ public static class AssetGraphPromptFormatter
         {
             sb.AppendLine("[服务器]");
             foreach (var x in servers)
+                // ID 双形：ssh:xxx 是资产图谱 ID，末尾补可直接传给 MCP 工具的裸 serverId。
                 sb.AppendLine($"- {AssetNode.Ssh(x.Id)} | {x.Name} | {x.Host}:{x.Port}"
-                    + (x.Tags.Length > 0 ? $" | tags={string.Join(",", x.Tags)}" : ""));
+                    + (x.Tags.Length > 0 ? $" | tags={string.Join(",", x.Tags)}" : "")
+                    + $" | serverId={x.Id}");
         }
         if (dataSources.Count > 0)
         {

@@ -162,6 +162,9 @@
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                     <TextBlock Text="召回条数 TopK:" VerticalAlignment="Center"/>
                                     <ui:TextBox FontWeight="Normal" Text="{Binding MemoryTopK, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"/>
+                                    <TextBlock Text="召回阈值:" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                    <ui:TextBox FontWeight="Normal" Text="{Binding MemoryRecallThreshold, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="6,0,0,0"
+                                               ToolTip="长期记忆召回的相似度绝对下限（0~1，越高越严格），默认 0.45。可自由填入 0.15 等任意有效值；填 0 或大于 1 会回退为默认值。保存后重新打开「AI 运维助手」生效。"/>
                                     <ui:Button Content="测试 Embeddings" Padding="12,3" Margin="16,0,8,0" Click="OnTestEmbeddings"
                                                ToolTip="用当前页填写的端点/模型/Key 发起一次向量化请求（无需先保存）；Key 留空复用当前启用对话模型的 Key"/>
                                     <ui:Button Content="查看记忆统计" Padding="12,3" Click="OnMemoryStats"

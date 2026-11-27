@@ -1,0 +1,374 @@
+{
+  "memories": [
+    {
+      "key": "disk",
+      "content": "磁盘满时先 df -h 定位分区, 再清理 journald 日志并用 df 复核",
+      "kind": "task",
+      "assetIds": ""
+    },
+    {
+      "key": "nginx",
+      "content": "nginx 站点排障先 nginx -T 校验配置, 再看 access/error 日志定位 upstream",
+      "kind": "task",
+      "assetIds": ""
+    },
+    {
+      "key": "redis",
+      "content": "redis 读写异常先确认库号与连接, 再用 INFO/DBSIZE 核对 key 数量",
+      "kind": "task",
+      "assetIds": ""
+    },
+    {
+      "key": "mysql",
+      "content": "MySQL 连接失败先查端口与账号权限, 再核对数据源配置与隧道",
+      "kind": "task",
+      "assetIds": ""
+    },
+    {
+      "key": "cert",
+      "content": "证书过期先 certbot 续期, 再 reload nginx 并用 openssl 校验链",
+      "kind": "task",
+      "assetIds": ""
+    },
+    {
+      "key": "docker",
+      "content": "docker 容器异常先看 logs 与 inspect, 再核对端口映射与重启策略",
+      "kind": "task",
+      "assetIds": ""
+    },
+    {
+      "key": "network",
+      "content": "服务器在线探活先用 ssh_test_connection 分类失败原因, 再看整机快照",
+      "kind": "task",
+      "assetIds": ""
+    },
+    {
+      "key": "port",
+      "content": "端口盘点用 ss -lntp 取监听表, 与防火墙规则核对后再下结论",
+      "kind": "task",
+      "assetIds": ""
+    },
+    {
+      "key": "account",
+      "content": "账号权限变更先只读取证, 最小授权后验证, 保留回滚方式",
+      "kind": "task",
+      "assetIds": ""
+    },
+    {
+      "key": "security",
+      "content": "安全评估先盘点端口/账号/版本, 逐项核实后再给风险与加固建议",
+      "kind": "task",
+      "assetIds": ""
+    }
+  ],
+  "cases": [
+    {
+      "id": "real-01",
+      "query": "看下虚拟机服务器   运行时长，nginx站点有哪些，然后测试下提权命令",
+      "expectedKeys": [
+        "nginx"
+      ]
+    },
+    {
+      "id": "real-02",
+      "query": "看下虚拟机服务器 有哪些用户账号",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "real-03",
+      "query": "www用户主目录下有什么文件",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "real-04",
+      "query": "会不会是你没用提权查看 没有权限所以看到是空的",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "real-05",
+      "query": "下载 虚拟机服务器上的nginx配置文件，如果有子配置文件随便下载一个即可",
+      "expectedKeys": [
+        "nginx"
+      ]
+    },
+    {
+      "id": "real-06",
+      "query": "盘点 centos7 的端口/服务并生成档案",
+      "expectedKeys": [
+        "port"
+      ]
+    },
+    {
+      "id": "real-07",
+      "query": "给虚拟机服务器 创建一个 test007 账号，可以ssh登录。",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "real-08",
+      "query": "先禁用 test007账号不要删除",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "real-09",
+      "query": "能不能给这个账号增加 管理 ngingx服务的权限",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "real-10",
+      "query": "恢复test007 账号， 服务器是  虚拟机服务器，按你的建议来给权限",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "real-11",
+      "query": "看下  虚拟机服务器  整机态势",
+      "expectedKeys": [
+        "network"
+      ]
+    },
+    {
+      "id": "real-12",
+      "query": "看下哪些服务器在线",
+      "expectedKeys": [
+        "network"
+      ]
+    },
+    {
+      "id": "real-13",
+      "query": "看下虚拟机服务器上 test007账号的权限",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "real-14",
+      "query": "给 test007 账号增加管理宝塔服务的权限",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "real-15",
+      "query": "看下有哪些数据库列表",
+      "expectedKeys": [
+        "mysql"
+      ]
+    },
+    {
+      "id": "real-16",
+      "query": "给redis 数据库增加一个key， 值就是当前会话中已加载的工具名列表",
+      "expectedKeys": [
+        "redis"
+      ]
+    },
+    {
+      "id": "real-17",
+      "query": "重启redis服务",
+      "expectedKeys": [
+        "redis"
+      ]
+    },
+    {
+      "id": "real-18",
+      "query": "评估下这个服务器的 安全性有无系统风险",
+      "expectedKeys": [
+        "security"
+      ]
+    },
+    {
+      "id": "real-19",
+      "query": "先禁用 虚拟机服务器上的 test007 账号，并查看它有什么权限",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "real-20",
+      "query": "看下最新的100条nginx日志",
+      "expectedKeys": [
+        "nginx"
+      ]
+    },
+    {
+      "id": "real-21",
+      "query": "看下哪些ssh服务器在线",
+      "expectedKeys": [
+        "network"
+      ]
+    },
+    {
+      "id": "real-22",
+      "query": "虚拟机服务器 是否在线",
+      "expectedKeys": [
+        "network"
+      ]
+    },
+    {
+      "id": "real-23",
+      "query": "开放了哪些端口",
+      "expectedKeys": [
+        "port"
+      ]
+    },
+    {
+      "id": "real-24",
+      "query": "给这个新redis 设置一个key 测试下 读写",
+      "expectedKeys": [
+        "redis"
+      ]
+    },
+    {
+      "id": "real-25",
+      "query": "再看下有哪些ssh服务器在线",
+      "expectedKeys": [
+        "network"
+      ]
+    },
+    {
+      "id": "real-26",
+      "query": "看下  centos7 服务器上有监听哪些端口",
+      "expectedKeys": [
+        "port"
+      ]
+    },
+    {
+      "id": "real-27",
+      "query": "看下这2台服务器上 nginx 下的网站的近期访问日志",
+      "expectedKeys": [
+        "nginx"
+      ]
+    },
+    {
+      "id": "real-28",
+      "query": "看下现在有哪些服务器在线",
+      "expectedKeys": [
+        "network"
+      ]
+    },
+    {
+      "id": "real-29",
+      "query": "看下ssh服务列表有哪些，选第一个服务器测试下提权",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "real-30",
+      "query": "看下虚拟机redis 有哪些库 里面有数据",
+      "expectedKeys": [
+        "redis"
+      ]
+    },
+    {
+      "id": "real-31",
+      "query": "给这个redis的  10号库插入100测试key",
+      "expectedKeys": [
+        "redis"
+      ]
+    },
+    {
+      "id": "real-32",
+      "query": "mcp工具更新了，给 redis的 5号库新增5个key",
+      "expectedKeys": [
+        "redis"
+      ]
+    },
+    {
+      "id": "real-33",
+      "query": "看下 虚拟机redis里面key的个数",
+      "expectedKeys": [
+        "redis"
+      ]
+    },
+    {
+      "id": "real-34",
+      "query": "测试下 虚拟机服务器上的 提权命令",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "edge-01",
+      "query": "磁盘告警 空间不足 怎么处置",
+      "expectedKeys": [
+        "disk"
+      ]
+    },
+    {
+      "id": "edge-02",
+      "query": "nginx 配置校验 站点访问异常",
+      "expectedKeys": [
+        "nginx"
+      ]
+    },
+    {
+      "id": "edge-03",
+      "query": "redis 里 key 数量对不上",
+      "expectedKeys": [
+        "redis"
+      ]
+    },
+    {
+      "id": "edge-04",
+      "query": "mysql 数据源连不上",
+      "expectedKeys": [
+        "mysql"
+      ]
+    },
+    {
+      "id": "edge-05",
+      "query": "证书快过期了 如何续期",
+      "expectedKeys": [
+        "cert"
+      ]
+    },
+    {
+      "id": "edge-06",
+      "query": "docker 容器起不来",
+      "expectedKeys": [
+        "docker"
+      ]
+    },
+    {
+      "id": "edge-07",
+      "query": "服务器在线状态 检查",
+      "expectedKeys": [
+        "network"
+      ]
+    },
+    {
+      "id": "edge-08",
+      "query": "监听端口清单 怎么拿",
+      "expectedKeys": [
+        "port"
+      ]
+    },
+    {
+      "id": "edge-09",
+      "query": "提权 sudo 权限不足",
+      "expectedKeys": [
+        "account"
+      ]
+    },
+    {
+      "id": "edge-10",
+      "query": "系统安全风险 评估",
+      "expectedKeys": [
+        "security"
+      ]
+    }
+  ]
+}

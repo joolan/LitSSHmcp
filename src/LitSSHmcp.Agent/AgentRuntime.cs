@@ -593,10 +593,12 @@ public sealed class AgentRuntime : IAsyncDisposable
                 .ToList();
         // 脚本复用登记（写 MANIFEST + 可选同步记忆）：台账恒在共享区（D6 scripts/ 留共享，不随会话割裂）
         var scriptTools = ScriptTools.Create(sharedRoot, memory, sharedWritable).ToList();
+        var recallSessionId = sessionId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
         Func<string, IReadOnlyCollection<string>?, CancellationToken, Task<string?>>? recall =
             memory is null
                 ? null
-                : (query, assetIds, token) => memory.RecallAsync(query, assetIds: assetIds, ct: token);
+                : (query, assetIds, token) => memory.RecallAsync(query, assetIds: assetIds, ct: token,
+                    sessionId: recallSessionId);
 
         // 系统提示按"激活技能"动态构建（未选技能=仅注入索引）；切换技能时用同一定义重算。
         // 技能参考文件只列当前激活技能目录下的文件；索引模式不注入（避免把所有技能的 references 都塞进前缀）。
@@ -724,11 +726,59 @@ public sealed class AgentRuntime : IAsyncDisposable
             await Memory.IndexAsync(source, content, ct,
                 assets.Count == 0 ? null : string.Join(",", assets));
             await Memory.PruneRawAsync(source, RawKeepPerSource, ct);
+            await MarkRecallOutcomeAsync(sessionId, userText, assistantText, ct);
         }
         catch
         {
             // 记忆写入失败不影响主流程
         }
+    }
+
+    /// <summary>
+    /// 回合收尾时回填召回遥测：本轮回答是否引用了召回的 key；本轮用户输入是否在纠正上一轮结论。
+    /// 后续可据此量化"召回有没有用"并自动调阈值/清噪声。全程尽力而为。
+    /// </summary>
+    private async Task MarkRecallOutcomeAsync(string? sessionId, string userText, string assistantText,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return;
+        try
+        {
+            var logs = await Memory!.Store.ListRecentRecallLogsAsync(sessionId!, 2, ct);
+            if (logs.Count == 0)
+                return;
+            await Memory.Store.MarkRecallOutcomeAsync(logs[0].Id,
+                ContainsAnyKey(assistantText, logs[0].HitKeys), false, ct);
+            // logs[1] 是上一轮召回；本轮用户输入即用户对上一轮结论的反馈。
+            if (logs.Count > 1 && LooksLikeCorrection(userText))
+                await Memory.Store.MarkRecallOutcomeAsync(logs[1].Id, false, true, ct);
+        }
+        catch
+        {
+            // 遥测失败不影响主流程
+        }
+    }
+
+    private static bool ContainsAnyKey(string text, string hitKeys)
+    {
+        if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(hitKeys))
+            return false;
+        foreach (var key in hitKeys.Split(',',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            if (key.Length >= 3 && text.Contains(key, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    private static bool LooksLikeCorrection(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+        foreach (var word in new[] { "不对", "错了", "不是这样", "搞错", "纠正", "别用", "不要按", "重新查", "不准确" })
+            if (text.Contains(word, StringComparison.Ordinal))
+                return true;
+        return false;
     }
 
     /// <summary>后台索引一轮对话：不阻塞回合收尾；失败静默（记住内容已脱敏，写入失败不影响主流程）。</summary>
@@ -808,16 +858,46 @@ public sealed class AgentRuntime : IAsyncDisposable
                 }
             }
             var memory = new AgentMemoryService(new AgentMemoryStore(null, access), embedder, config.Memory.TopK,
-                config.Memory.RecallThreshold, config.Memory.Model, config.Memory.RecencyHalfLifeDays,
+                config.Memory.RecallThreshold,
+                config.Memory.Model, config.Memory.RecencyHalfLifeDays,
                 config.Memory.MaxRecallChars, config.Memory.EmbeddingTimeoutSeconds, reranker,
                 config.Memory.RecallRelativeMargin, AssetLabelMap.FromPrompt(assetGraph));
             await memory.InitializeAsync(ct);
+            await RunMemoryMaintenanceAsync(memory, assetGraph, ct);
             return (memory, null);
         }
         catch (Exception ex)
         {
             var msg = ex.Message.Length <= 120 ? ex.Message : ex.Message[..120] + "…";
             return (null, "Embeddings 初始化失败: " + msg);
+        }
+    }
+
+    /// <summary>
+    /// 启动时的一次性记忆维护，两步都幂等：
+    /// 1) 旧 raw 资产归属回填（只处理 AttributionState 为空的条目）；
+    /// 2) 已解决事件自动蒸馏成待确认经验草稿（DedupeKey 去重）。
+    /// 任一失败都静默跳过，绝不让维护任务拖垮记忆初始化。
+    /// </summary>
+    private static async Task RunMemoryMaintenanceAsync(AgentMemoryService memory, string? assetGraph,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(assetGraph))
+                await MemoryAssetBackfiller.RunAsync(memory.Store, assetGraph, ct);
+        }
+        catch
+        {
+            // 回填失败不影响记忆可用性；下次启动会按幂等条件重试
+        }
+        try
+        {
+            await ExperienceDistiller.RunAsync(memory.Store, ct);
+        }
+        catch
+        {
+            // 同上
         }
     }
 

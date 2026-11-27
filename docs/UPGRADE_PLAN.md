@@ -129,7 +129,7 @@
 - 保留现有 stdio 冒烟脚本作为集成验收。
 
 ### D2 配置版本与迁移
-- `AppConfig` 增加 `schemaVersion`（当前为 `1`）；新增 `ConfigMigrator`，`LoadConfigAsync` 载入后按版本迁移并回写。
+- `AppConfig` 增加 `schemaVersion`（当时为 `1`，现为 `9`）；新增 `ConfigMigrator`，`LoadConfigAsync` 载入后按版本迁移并回写。默认值刷新类迁移须带 `SchemaVersion < N` 门控，避免每次加载按值替换、永久覆盖用户已改的可变配置。
 
 ### D3 统一错误模型
 - 新增 `McpToolResult` / `ToolError` 帮助类型，统一 `{ success, status, error, ... }` 生成，替换各工具手写 JSON（渐进式，改一个删一处）。

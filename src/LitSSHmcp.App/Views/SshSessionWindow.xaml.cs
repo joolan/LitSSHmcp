@@ -6,6 +6,7 @@ using System.Windows.Media;
 using LitSSHmcp.App.Controls;
 using LitSSHmcp.App.Services;
 using LitSSHmcp.App.ViewModels;
+using LitSSHmcp.Core.Models;
 using Wpf.Ui.Controls;
 using TextBox = System.Windows.Controls.TextBox;
 
@@ -18,11 +19,22 @@ public partial class SshSessionWindow : FluentWindow
     private const double DefaultTreeWidth = 210;
     private const double MinTreeWidth = 150;
 
+    /// <summary>服务器超过该数量时，新建连接浮层显示搜索框。</summary>
+    private const int ServerSearchThreshold = 10;
+
+    private List<SshServerConfig> _allServerChoices = new();
+    private UIElement? _serverPopupAnchor;
+    private UIElement? _serverPopupLastAnchor;
+    private DateTime _serverPopupClosedAt;
+    private bool _suppressServerSearch;
+
     public SshSessionWindow()
     {
         InitializeComponent();
         WindowLayout.Attach(this, "ssh-session");
         Loaded += OnLoadedHook;
+        // 浮层打开后切走窗口 / 点到别处时收起，避免残留。
+        Deactivated += (_, _) => CloseNewConnectionPopup();
     }
 
     private MainViewModel? _vmHooked;
@@ -541,36 +553,181 @@ public partial class SshSessionWindow : FluentWindow
         if (DataContext is not MainViewModel vm)
             return;
 
-        var menu = new System.Windows.Controls.ContextMenu();
-
-        var local = new System.Windows.Controls.MenuItem { Header = "本机 PowerShell 终端" };
-        local.Click += (_, _) => vm.ConnectLocalTerminal();
-        menu.Items.Add(local);
-        menu.Items.Add(new System.Windows.Controls.Separator());
-
-        var servers = vm.Servers.Where(s => !s.Disabled).ToList();
-        if (servers.Count == 0)
+        if (NewConnectionPopup.IsOpen)
         {
-            menu.Items.Add(new System.Windows.Controls.MenuItem { Header = "（无可用服务器）", IsEnabled = false });
+            NewConnectionPopup.IsOpen = false;
+            return;
         }
-        else
+
+        // StaysOpen=false 会在点击“+”时先关闭浮层，鼠标抬起后又会走到 Click；
+        // 同一按钮在极短时间内不重复打开，避免出现“点了没反应 / 立刻重开”。
+        if (ReferenceEquals(sender, _serverPopupLastAnchor)
+            && (DateTime.UtcNow - _serverPopupClosedAt).TotalMilliseconds < 250)
         {
-            foreach (var server in servers)
+            return;
+        }
+
+        _serverPopupAnchor = sender as UIElement;
+        _allServerChoices = vm.Servers.Where(s => !s.Disabled).ToList();
+
+        _suppressServerSearch = true;
+        ServerSearchBox.Text = string.Empty;
+        _suppressServerSearch = false;
+        ServerSearchBox.Visibility = _allServerChoices.Count > ServerSearchThreshold
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        // 列表高度跟随屏幕工作区，避免小屏时浮层超出屏幕。
+        ServerList.MaxHeight = Math.Clamp(SystemParameters.WorkArea.Height * 0.42, 160, 380);
+        RefreshServerChoices();
+
+        NewConnectionPopup.PlacementTarget = _serverPopupAnchor ?? this;
+        NewConnectionPopup.IsOpen = true;
+    }
+
+    private void OnNewConnectionPopupOpened(object? sender, EventArgs e)
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!NewConnectionPopup.IsOpen)
+                return;
+
+            if (ServerSearchBox.Visibility == Visibility.Visible)
             {
-                var terminal = new System.Windows.Controls.MenuItem { Header = $"{server.Name} ({server.Host})" };
-                terminal.Click += (_, _) => vm.ConnectTerminal(server);
-                menu.Items.Add(terminal);
+                ServerSearchBox.Focus();
+                Keyboard.Focus(ServerSearchBox);
             }
+            else
+            {
+                ServerList.Focus();
+                Keyboard.Focus(ServerList);
+            }
+        }), System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private void OnNewConnectionPopupClosed(object? sender, EventArgs e)
+    {
+        _serverPopupClosedAt = DateTime.UtcNow;
+        _serverPopupLastAnchor = _serverPopupAnchor;
+    }
+
+    private void CloseNewConnectionPopup()
+    {
+        if (NewConnectionPopup.IsOpen)
+            NewConnectionPopup.IsOpen = false;
+    }
+
+    private void RefreshServerChoices()
+    {
+        var query = ServerSearchBox.Text.Trim();
+        var items = query.Length == 0
+            ? _allServerChoices
+            : _allServerChoices.Where(server => MatchesServer(server, query)).ToList();
+
+        ServerList.ItemsSource = items;
+        ServerListEmptyText.Text = _allServerChoices.Count == 0 ? "没有可用的服务器" : "没有匹配的服务器";
+        ServerListEmptyText.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        // 不默认选中第一项：浮层只需要悬停反馈，点击即连接并关闭；
+        // 键盘 Enter 由 ConnectSelectedServer 回退到第一项，方向键操作时再出现选中态。
+        ServerList.SelectedIndex = -1;
+    }
+
+    private static bool MatchesServer(SshServerConfig server, string query)
+    {
+        bool Hit(string? value) =>
+            !string.IsNullOrWhiteSpace(value)
+            && value.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+        return Hit(server.Name)
+            || Hit(server.Host)
+            || Hit(server.Group)
+            || Hit(server.Description)
+            || Hit(server.Username)
+            || (server.Tags?.Any(Hit) ?? false)
+            || (server.Aliases?.Any(Hit) ?? false);
+    }
+
+    private void OnServerSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressServerSearch)
+            return;
+
+        RefreshServerChoices();
+    }
+
+    private void OnServerSearchKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Down)
+        {
+            ServerList.Focus();
+            if (ServerList.Items.Count > 0)
+                ServerList.SelectedIndex = Math.Max(0, ServerList.SelectedIndex);
+            e.Handled = true;
         }
+        else if (e.Key == Key.Enter)
+        {
+            ConnectSelectedServer();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            CloseNewConnectionPopup();
+            e.Handled = true;
+        }
+    }
 
-        menu.Items.Add(new System.Windows.Controls.Separator());
-        var temporary = new System.Windows.Controls.MenuItem { Header = "临时 SSH 连接…" };
-        temporary.Click += (_, _) => OpenTemporarySsh(vm);
-        menu.Items.Add(temporary);
+    private void OnServerListKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            ConnectSelectedServer();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            CloseNewConnectionPopup();
+            e.Handled = true;
+        }
+    }
 
-        menu.PlacementTarget = sender as UIElement;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-        menu.IsOpen = true;
+    private void OnServerListClick(object sender, MouseButtonEventArgs e)
+    {
+        // 单击即连接（和原菜单一致）；滚动条、空白区域的点击不受影响。
+        if (FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject) is { DataContext: SshServerConfig server })
+        {
+            e.Handled = true;
+            ConnectServer(server);
+        }
+    }
+
+    private void ConnectSelectedServer()
+    {
+        // 未用方向键选择时，Enter 直接连接过滤后的第一项。
+        var server = ServerList.SelectedItem as SshServerConfig
+            ?? ServerList.Items.OfType<SshServerConfig>().FirstOrDefault();
+        if (server is not null)
+            ConnectServer(server);
+    }
+
+    private void ConnectServer(SshServerConfig server)
+    {
+        CloseNewConnectionPopup();
+        if (DataContext is MainViewModel vm)
+            vm.ConnectTerminal(server);
+    }
+
+    private void OnNewLocalTerminal(object sender, RoutedEventArgs e)
+    {
+        CloseNewConnectionPopup();
+        if (DataContext is MainViewModel vm)
+            vm.ConnectLocalTerminal();
+    }
+
+    private void OnNewTemporarySsh(object sender, RoutedEventArgs e)
+    {
+        CloseNewConnectionPopup();
+        if (DataContext is MainViewModel vm)
+            OpenTemporarySsh(vm);
     }
 
     private void OpenTemporarySsh(MainViewModel vm)

@@ -1663,6 +1663,9 @@ public class SshService : ISshService
         var client = CreateSshClient(server);
         try
         {
+            // 交互式 PTY 必须开 keepalive：否则 NAT/防火墙静默回收空闲连接后，
+            // 读循环会一直阻塞、UI 仍显示“已连接”，键盘输入被写进死连接。
+            client.KeepAliveInterval = TimeSpan.FromSeconds(15);
             await Task.Run(() => client.Connect(), ct).ConfigureAwait(false);
             var shell = client.CreateShellStream(
                 string.IsNullOrWhiteSpace(terminalType) ? "xterm-256color" : terminalType,

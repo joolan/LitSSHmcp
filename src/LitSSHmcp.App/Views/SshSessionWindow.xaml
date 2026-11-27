@@ -88,7 +88,7 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
                                 shell:WindowChrome.IsHitTestVisibleInChrome="True">
                         <ui:Button Icon="{ui:SymbolIcon MoreHorizontal24}" Appearance="Transparent" Padding="6,3" Margin="0,0,8,0"
-                                   ToolTip="??????" AutomationProperties.Name="??????" Click="OnSessionMoreMenu"/>
+                                   ToolTip="会话操作" AutomationProperties.Name="会话操作" Click="OnSessionMoreMenu"/>
                         <ui:Button Icon="{ui:SymbolIcon Add24}" Appearance="Transparent" Padding="6,3"
                                    ToolTip="新建连接" AutomationProperties.Name="新建 SSH 连接" Click="OnNewConnection"/>
                     </StackPanel>
@@ -354,5 +354,59 @@
             </StackPanel>
             </Grid>
         </Grid>
+
+        <!-- 新建连接：可滚动 + 可搜索的服务器选择浮层（服务器较多时显示搜索框）。 -->
+        <Popup x:Name="NewConnectionPopup" StaysOpen="False" AllowsTransparency="True"
+               Placement="Bottom" PopupAnimation="Fade" Focusable="True"
+               Opened="OnNewConnectionPopupOpened" Closed="OnNewConnectionPopupClosed">
+            <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="{DynamicResource AppRadiusS}" Padding="7"
+                    MinWidth="300" MaxWidth="460" Margin="0,4,0,0">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.35"/>
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <ui:TextBox x:Name="ServerSearchBox" Grid.Row="0" Margin="0,0,0,6"
+                                PlaceholderText="搜索名称 / 主机 / 分组 / 标签"
+                                Visibility="Collapsed" TextChanged="OnServerSearchChanged"
+                                PreviewKeyDown="OnServerSearchKeyDown"/>
+
+                    <Grid Grid.Row="1">
+                        <ListBox x:Name="ServerList" MaxHeight="360" MinHeight="80"
+                                 BorderThickness="0" Background="Transparent"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 PreviewKeyDown="OnServerListKeyDown"
+                                 PreviewMouseLeftButtonUp="OnServerListClick">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="2,3">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding Host}" FontSize="{DynamicResource AppFontSizeMicro}"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock x:Name="ServerListEmptyText" Text="没有匹配的服务器" Visibility="Collapsed"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,12"
+                                   Foreground="{DynamicResource AppTextTertiaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeMicro}" IsHitTestVisible="False"/>
+                    </Grid>
+
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,6,0,0">
+                        <ui:Button Content="本机 PowerShell 终端" Padding="10,3" Click="OnNewLocalTerminal"/>
+                        <ui:Button Content="临时 SSH 连接…" Padding="10,3" Margin="6,0,0,0" Click="OnNewTemporarySsh"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Popup>
     </Grid>
 </ui:FluentWindow>

@@ -85,6 +85,23 @@ public class AssetGraphContextProviderTests
         Assert.Null(AssetGraphContextProvider.Create(null, "- ssh:s1 | web1"));
     }
 
+    [Fact]
+    public void ResolveSeeds_matches_labels_and_explicit_ids_without_duplicates()
+    {
+        var graph = "- ssh:abc | web01 | 10.0.0.1:22\n- ssh:def | db01 | 10.0.0.2:22";
+
+        var seeds = AssetGraphContextProvider.ResolveSeeds(graph, "web01 的 nginx 和 ssh:def 都看一下");
+
+        Assert.Equal(new[] { "ssh:abc", "ssh:def" }, seeds);
+    }
+
+    [Fact]
+    public void ResolveSeeds_returns_empty_for_generic_query()
+    {
+        Assert.Empty(AssetGraphContextProvider.ResolveSeeds("- ssh:abc | web01 | 10.0.0.1:22",
+            "nginx 为什么监听 80"));
+    }
+
     private static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
     private sealed class FakeTool(string name, Func<IDictionary<string, object?>?, object?> handler) : IAgentTool

@@ -148,7 +148,8 @@
                     <DockPanel>
                         <ui:Button DockPanel.Dock="Right" Content="重新连接" Padding="10,2" Margin="8,0,0,0"
                                    Command="{Binding ReconnectCommand}"/>
-                        <TextBlock Text="连接已断开" Foreground="{DynamicResource AppDangerBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource AppDangerBrush}"
+                                   TextWrapping="Wrap" VerticalAlignment="Center"/>
                     </DockPanel>
                 </Border>
             </Grid>

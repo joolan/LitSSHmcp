@@ -44,6 +44,35 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public async Task Tool_calls_record_actual_asset_ids_for_memory_attribution()
+    {
+        var call = new FunctionCallContent("c1", "ssh_execute_command",
+            new Dictionary<string, object?>
+            {
+                ["serverId"] = "web01",
+                ["command"] = "nginx -T"
+            });
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage>
+            {
+                new(ChatRole.Assistant, new AIContent[] { call })
+            }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+
+        var tool = new FakeTool("ssh_execute_command", "ok");
+        var config = new AgentConfig { MaxToolIterations = 5, ContextLimit = 50 };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new[] { tool }, "SYS", config,
+            assetGraph: "- ssh:abc123 | web01 | 10.0.0.1:22");
+
+        await session.SendAsync("hi", null);
+
+        Assert.Equal(new[] { "ssh:abc123" }, session.LastTurnAssetIds);
+        // 非目标参数（command）不应被误判为资产。
+        Assert.DoesNotContain(session.LastTurnAssetIds, id => id.Contains("nginx", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Job_start_terminal_state_is_returned_without_polling()
     {
         var call = new FunctionCallContent("c1", "job_start",

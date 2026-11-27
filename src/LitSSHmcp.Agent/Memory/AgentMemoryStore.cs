@@ -19,9 +19,13 @@ public sealed record MemoryAccessScope(string OwnerUserId, bool IsAdmin)
 public interface IAgentMemoryStore
 {
     Task InitializeAsync(CancellationToken ct = default);
-    Task AddAsync(string source, string content, float[] vector, CancellationToken ct = default);
+    /// <summary>写入 raw 片段（会话/文档）；assetIds 为可选资产归属，用于召回时按资产过滤。</summary>
+    Task AddAsync(string source, string content, float[] vector, CancellationToken ct = default,
+        string? assetIds = null);
     Task<bool> ExistsAsync(string source, string content, CancellationToken ct = default);
     Task<int> CountAsync(CancellationToken ct = default);
+    /// <summary>删除来源以指定前缀开头、且归属指定资产的 raw 片段（终端 AI 清空本机记忆）。</summary>
+    Task<int> DeleteRawAsync(string sourcePrefix, string assetId, CancellationToken ct = default);
     /// <summary>
     /// 向量召回；kind 非空时仅在该类别内检索，activeOnly 时排除 status=superseded 的条目。
     /// assetIds 非空时只保留「raw / 无资产归属的通用经验 / 关联资产有交集」的条目。
@@ -376,18 +380,20 @@ CREATE TABLE IF NOT EXISTS agent_consolidation_run (
         }
     }
 
-    public async Task AddAsync(string source, string content, float[] vector, CancellationToken ct = default)
+    public async Task AddAsync(string source, string content, float[] vector, CancellationToken ct = default,
+        string? assetIds = null)
     {
         await using var connection = new SqliteConnection(ConnectionString);
         await connection.OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "INSERT INTO agent_memory(Source, Content, Vector, CreatedAt, Kind, Key, AssetIds, Tags, Freq, UpdatedAt, Status, OwnerUserId, Scope, Version) " +
-                          "VALUES (@s, @c, @v, @now, @k, '', '', '', 1, @now, 'active', @owner, @scope, 1);";
+                          "VALUES (@s, @c, @v, @now, @k, '', @a, '', 1, @now, 'active', @owner, @scope, 1);";
         cmd.Parameters.AddWithValue("@s", source);
         cmd.Parameters.AddWithValue("@c", content);
         cmd.Parameters.AddWithValue("@v", ToBytes(vector));
         cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
         cmd.Parameters.AddWithValue("@k", RawKind);
+        cmd.Parameters.AddWithValue("@a", NormalizeAssets(assetIds));
         cmd.Parameters.AddWithValue("@owner", _access?.OwnerUserId ?? string.Empty);
         cmd.Parameters.AddWithValue("@scope", _access is null ? "team" : "private");
         await cmd.ExecuteNonQueryAsync(ct);
@@ -404,6 +410,29 @@ CREATE TABLE IF NOT EXISTS agent_consolidation_run (
         cmd.Parameters.AddWithValue("@s", source);
         cmd.Parameters.AddWithValue("@c", content);
         return await cmd.ExecuteScalarAsync(ct) is not null;
+    }
+
+    public async Task<int> DeleteRawAsync(string sourcePrefix, string assetId, CancellationToken ct = default)
+    {
+        var assets = ParseAssetIds(assetId);
+        if (assets.Count == 0)
+            return 0;
+
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        var matches = new List<string>();
+        for (var i = 0; i < assets.Count; i++)
+        {
+            matches.Add($"((',' || IFNULL(AssetIds,'') || ',') LIKE @asset{i} ESCAPE '\\')");
+            cmd.Parameters.AddWithValue($"@asset{i}", $"%,{EscapeLike(assets[i])},%");
+        }
+        var scope = AddVisibleFilter(cmd);
+        cmd.CommandText = "DELETE FROM agent_memory WHERE Kind='raw' AND Source LIKE @prefix ESCAPE '\\' AND " +
+                          $"({string.Join(" OR ", matches)})" +
+                          (scope is null ? string.Empty : " AND " + scope) + ";";
+        cmd.Parameters.AddWithValue("@prefix", EscapeLike(sourcePrefix) + "%");
+        return await cmd.ExecuteNonQueryAsync(ct);
     }
 
     public async Task<int> CountAsync(CancellationToken ct = default)
@@ -447,14 +476,15 @@ CREATE TABLE IF NOT EXISTS agent_consolidation_run (
             sql += " AND " + visible;
         if (assets.Length > 0)
         {
-            // raw 与无资产归属的通用经验保留；结构化经验要求资产交集（逗号边界 + LIKE 转义，避免 ssh:s1 命中 ssh:s10、ssh:web_1 命中 ssh:web01）。
+            // 有归属的条目（含 raw）要求资产交集；未标注资产的通用经验/旧 raw 仍保留。
+            // 这样可避免 A 服务器的会话片段被召回给 B 服务器。
             var matches = new List<string>();
             for (var i = 0; i < assets.Length; i++)
             {
                 matches.Add($"((',' || IFNULL(AssetIds,'') || ',') LIKE @asset{i} ESCAPE '\\')");
                 cmd.Parameters.AddWithValue($"@asset{i}", $"%,{EscapeLike(assets[i])},%");
             }
-            sql += $" AND (Kind='raw' OR IFNULL(AssetIds,'')='' OR {string.Join(" OR ", matches)})";
+            sql += $" AND (IFNULL(AssetIds,'')='' OR {string.Join(" OR ", matches)})";
         }
         // 预过滤后按最新 Id 截断一次扫描量，避免记忆库长期增长后每轮全表载入/逐条余弦。
         sql += " ORDER BY Id DESC LIMIT @scanRows;";
@@ -1110,6 +1140,8 @@ CREATE TABLE IF NOT EXISTS agent_consolidation_run (
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Take(50)
                 .ToList();
+
+    private static string NormalizeAssets(string? value) => string.Join(",", ParseAssetIds(value));
 
     private static IncidentRecord ReadIncident(SqliteDataReader reader) => new(
         reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),

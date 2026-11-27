@@ -551,7 +551,7 @@ public sealed class AgentRuntime : IAsyncDisposable
 
         // 记忆先于工具装配：memory != null 时注册 ops_memory_*（否则不暴露，提示词同步不注入该段）
         var (memory, memoryDisabledReason) = await TryCreateMemoryAsync(config, provider, ownerUserId,
-            scopeMemoryByOwner, isAdmin, ct);
+            scopeMemoryByOwner, isAdmin, ct, assetGraph);
         var memoryTools = memory is null ? new List<IAgentTool>() : MemoryTools.Create(memory).ToList();
         var incidentTools = memory is null ? new List<IAgentTool>() : IncidentTools.Create(memory).ToList();
         // 诊断/变更报告契约：无记忆/只读模式下降级为“只生成报告、不落库”的只读工具。
@@ -708,8 +708,9 @@ public sealed class AgentRuntime : IAsyncDisposable
     }
 
     /// <summary>把一轮对话（用户+助手）加入长期记忆（无记忆时为空操作；按会话分桶、脱敏后入库）。</summary>
+    /// <param name="assetIds">可选的资产归属快照；省略时从本轮工具调用 + 文本自动解析。</param>
     public async Task IndexTurnAsync(string? sessionId, string userText, string assistantText,
-        CancellationToken ct = default)
+        CancellationToken ct = default, IReadOnlyList<string>? assetIds = null)
     {
         if (Memory is null)
             return;
@@ -718,8 +719,10 @@ public sealed class AgentRuntime : IAsyncDisposable
             var content = MemoryQuality.PrepareRawContent(userText, assistantText);
             if (content is null)
                 return;
+            var assets = assetIds ?? ResolveTurnAssets(userText, assistantText);
             var source = RawSource(sessionId);
-            await Memory.IndexAsync(source, content, ct);
+            await Memory.IndexAsync(source, content, ct,
+                assets.Count == 0 ? null : string.Join(",", assets));
             await Memory.PruneRawAsync(source, RawKeepPerSource, ct);
         }
         catch
@@ -733,7 +736,35 @@ public sealed class AgentRuntime : IAsyncDisposable
     {
         if (Memory is null)
             return;
-        _ = Task.Run(() => IndexTurnAsync(sessionId, userText, assistantText, CancellationToken.None));
+        // 在主线程/调用线程同步取快照，避免下一轮工具调用清空 LastTurnAssetIds 后串到旧回合。
+        var assets = ResolveTurnAssets(userText, assistantText);
+        _ = Task.Run(() => IndexTurnAsync(sessionId, userText, assistantText, CancellationToken.None, assets));
+    }
+
+    /// <summary>
+    /// 本轮记忆归属：优先用工具调用实际触达的资产（serverId/assetId/dataSourceId 等），
+    /// 再补用户/助手文本里出现的资产；最多 5 个。
+    /// </summary>
+    private IReadOnlyList<string> ResolveTurnAssets(string userText, string assistantText)
+    {
+        var assets = new List<string>(AssetAttribution.MaxAssets);
+        void AddRange(IEnumerable<string> ids)
+        {
+            foreach (var id in ids)
+            {
+                if (assets.Count >= AssetAttribution.MaxAssets)
+                    return;
+                if (!string.IsNullOrWhiteSpace(id) && !assets.Contains(id, StringComparer.OrdinalIgnoreCase))
+                    assets.Add(id);
+            }
+        }
+
+        if (Session is not null)
+            AddRange(Session.LastTurnAssetIds);
+        AddRange(AssetGraphContextProvider.ResolveSeeds(_assetGraph, userText));
+        if (assets.Count == 0)
+            AddRange(AssetGraphContextProvider.ResolveSeeds(_assetGraph, assistantText));
+        return assets;
     }
 
     /// <summary>同一会话 raw 片段默认保留条数（agent.memory.rawKeepPerSource 未配置/非法时）。</summary>
@@ -752,7 +783,7 @@ public sealed class AgentRuntime : IAsyncDisposable
     /// </summary>
     private static async Task<(AgentMemoryService? Memory, string? Reason)> TryCreateMemoryAsync(
         AgentConfig config, AgentProviderConfig provider, string? ownerUserId, bool scopeByOwner, bool isAdmin,
-        CancellationToken ct)
+        CancellationToken ct, string? assetGraph = null)
     {
         if (config.Memory?.Enabled != true)
             return (null, null);
@@ -779,7 +810,7 @@ public sealed class AgentRuntime : IAsyncDisposable
             var memory = new AgentMemoryService(new AgentMemoryStore(null, access), embedder, config.Memory.TopK,
                 config.Memory.RecallThreshold, config.Memory.Model, config.Memory.RecencyHalfLifeDays,
                 config.Memory.MaxRecallChars, config.Memory.EmbeddingTimeoutSeconds, reranker,
-                config.Memory.RecallRelativeMargin);
+                config.Memory.RecallRelativeMargin, AssetLabelMap.FromPrompt(assetGraph));
             await memory.InitializeAsync(ct);
             return (memory, null);
         }

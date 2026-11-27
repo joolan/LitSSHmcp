@@ -40,6 +40,8 @@ public sealed class AgentSession
     private readonly Action<long, long>? _onUsageDelta;
     private readonly WorkLogStore? _workLog;
     private readonly AgentWorkingMemory _workingMemory = new();
+    private readonly HashSet<string> _turnAssets = new(StringComparer.OrdinalIgnoreCase);
+    private const int MaxTurnAssets = AssetAttribution.MaxAssets;
 
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
     private bool _planMode;
@@ -76,6 +78,12 @@ public sealed class AgentSession
     private const int MaxRetrievalContextChars = 5000;
 
     public List<ChatMessage> Messages { get; } = new();
+
+    /// <summary>
+    /// 本轮工具调用实际触达的资产 ID（从 serverId/assetId/dataSourceId 等参数解析）。
+    /// 回合结束后由 <see cref="AgentRuntime"/> 写入记忆归属；无工具调用时为空。
+    /// </summary>
+    public IReadOnlyList<string> LastTurnAssetIds { get; private set; } = Array.Empty<string>();
 
     public AgentWorkingMemory WorkingMemory => _workingMemory;
 
@@ -332,6 +340,24 @@ public sealed class AgentSession
         transientContext.Add(message);
     }
 
+    /// <summary>从本轮工具参数里累积真实目标资产（名称/主机名会按资产清单解析成规范 ID）。</summary>
+    private void CollectTurnAssets(IEnumerable<FunctionCallContent> calls)
+    {
+        if (_turnAssets.Count >= MaxTurnAssets)
+            return;
+        foreach (var call in calls)
+        {
+            if (call.Arguments is null or { Count: 0 })
+                continue;
+            foreach (var asset in AssetAttribution.FromArguments(_assetGraph, call.Arguments))
+            {
+                if (_turnAssets.Count >= MaxTurnAssets)
+                    return;
+                _turnAssets.Add(asset);
+            }
+        }
+    }
+
     /// <summary>
     /// 复杂只读取证的自动预委派：在调用主模型前，把整段请求交给隔离的 run_subagent，
     /// 主上下文只接收摘要。只做只读取证，不改变后续写操作路径；失败时静默回退主会话。
@@ -392,6 +418,8 @@ public sealed class AgentSession
     {
         var userText = string.Concat(userContents.OfType<TextContent>().Select(t => t.Text));
         _workingMemory.SetGoal(userText);
+        _turnAssets.Clear();
+        LastTurnAssetIds = Array.Empty<string>();
 
         // 发送前修复历史里可能残留的孤儿 tool_calls（如上次中断），避免服务端拒绝整段请求。
         RepairOrphanToolCalls();
@@ -551,6 +579,7 @@ public sealed class AgentSession
 
             var contents = assistantMessages.SelectMany(m => m.Contents).ToList();
             var calls = contents.OfType<FunctionCallContent>().ToList();
+            CollectTurnAssets(calls);
             // 仅本地工具（文档读写等）的轮次不占用「最大工具轮数」；同一轮只要含远程工具就计 1 次。
             var countsTowardToolLimit = calls.Any(c => !IsLocalTool(c.Name) && !IsJobQueryTool(c.Name));
 
@@ -846,6 +875,10 @@ public sealed class AgentSession
             // 检索上下文只服务本轮；移除后持久历史仍是 append-only，下一轮不会被旧召回文本拖大。
             foreach (var message in transientContext)
                 Messages.Remove(message);
+            // 本轮工具实际触达的资产，供回合结束后的记忆写入做归属（失败/取消轮也会保留已解析结果）。
+            LastTurnAssetIds = _turnAssets.Count == 0
+                ? Array.Empty<string>()
+                : _turnAssets.Take(MaxTurnAssets).ToArray();
         }
     }
 
@@ -890,8 +923,11 @@ public sealed class AgentSession
     {
         var builder = new StringBuilder();
 
-        // 先用本地资产清单解析种子（不产生 MCP 调用）；无种子时记忆按 query 召回。
+        // 先用本地资产清单解析种子（不产生 MCP 调用）；当前问题没提资产时，
+        // 用最近一轮用户文本兜底，避免“继续/那台机器呢”这类追问丢掉资产范围。
         var seeds = AssetGraphContextProvider.ResolveSeeds(_assetGraph, userText);
+        if (seeds.Count == 0 && recentUserTexts.Count > 0)
+            seeds = AssetGraphContextProvider.ResolveSeeds(_assetGraph, string.Join("\n", recentUserTexts));
         var recallAssets = seeds.Count > 0 ? seeds : null;
         var recallQuery = MemoryRecallQueryBuilder.Build(userText, recentUserTexts, recallAssets);
 
@@ -914,7 +950,10 @@ public sealed class AgentSession
         var memory = memoryTask is null ? null : await memoryTask;
         if (!string.IsNullOrWhiteSpace(memory))
         {
-            builder.AppendLine("### 相关历史/文档记忆(仅供参考, 以实际工具结果为准)");
+            builder.AppendLine("### 相关历史/文档记忆(可能来自其他服务器或更早时间, 仅供参考)");
+            if (recallAssets is { Count: > 0 })
+                builder.AppendLine($"> 本轮已识别资产: {string.Join(", ", recallAssets)}（记忆已按资产过滤；其他资产的结论不应直接套用）");
+            builder.AppendLine("> 未标注资产的记忆不得直接套用；端口/路径/版本/配置值必须先在目标机核实（如 nginx -T、ss -lntp）再行动。");
             builder.AppendLine(memory.Trim());
         }
 

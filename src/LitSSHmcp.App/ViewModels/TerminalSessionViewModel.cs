@@ -26,6 +26,9 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     private CancellationTokenSource? _cts;
     private bool _started;
     private bool _disposed;
+    private bool _hasConnectedOnce;
+    private System.Threading.Timer? _livenessTimer;
+    private const int LivenessCheckSeconds = 10;
     private Services.SessionLogger? _logger;
     private readonly TerminalOutputBuffer _aiOutput = new(262144);
     private int _aiCommandRunning;
@@ -92,6 +95,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
             return;
 
         CancelReconnect();
+        StopLivenessWatch();
         SshShellSession? old;
         CancellationTokenSource? oldCts;
         lock (_gate)
@@ -245,6 +249,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
 
         Model.Resize(cols, rows);
         StatusMessage = "连接中…";
+        var announceRecovery = _hasConnectedOnce || _reconnectAttempt > 0;
         try
         {
             var shell = await _ssh.OpenShellAsync(Server, "xterm-256color", (uint)cols, (uint)rows);
@@ -272,8 +277,12 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
                 _logger = new Services.SessionLogger(Server.Name, Server.Host, Model.Cols, Model.Rows);
             IsConnected = true;
             StatusMessage = "已连接";
+            if (announceRecovery)
+                SafeFeed("\r\n[连接已恢复]\r\n");
+            _hasConnectedOnce = true;
             // 连接建立前可能已按控件尺寸调整过模型：补一次窗口尺寸同步
             shell.Resize((uint)Model.Cols, (uint)Model.Rows);
+            StartLivenessWatch(shell, cts.Token, generation);
             _ = ReadLoopAsync(shell, cts.Token, generation);
         }
         catch (Exception ex)
@@ -392,12 +401,19 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
             return;
         lock (_gate)
         {
+            // 读循环结束与看门狗可能同时触发：只处理第一次。
+            if (_shell is null && !_started)
+                return;
             _started = false;
             _shell = null;
         }
+        StopLivenessWatch();
         IsConnected = false;
         if (!StatusMessage.StartsWith("连接失败", StringComparison.Ordinal))
             StatusMessage = unexpectedlyFailed ? "连接异常，准备重连…" : "连接已断开";
+        SafeFeed(unexpectedlyFailed
+            ? "\r\n[连接异常] 正在自动重连…\r\n"
+            : "\r\n[连接已断开]\r\n");
         if (unexpectedlyFailed)
             ScheduleAutoReconnect(generation);
     }
@@ -405,13 +421,19 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     /// <summary>程序化下发（文件浏览器 cd、重连、AI 等）：不参与命令同步广播。</summary>
     private void ScheduleAutoReconnect(long generation)
     {
-        if (_disposed || generation != _generation || _reconnectAttempt >= 5)
+        if (_disposed || generation != _generation)
             return;
+        if (_reconnectAttempt >= 5)
+        {
+            SetStatus("自动重连已停止，请点击「重新连接」。");
+            return;
+        }
         CancelReconnect();
         var cts = new CancellationTokenSource();
         _reconnectCts = cts;
         var attempt = ++_reconnectAttempt;
         var delay = TimeSpan.FromSeconds(Math.Min(30, Math.Pow(2, attempt)));
+        SetStatus($"连接异常，{delay.TotalSeconds:0} 秒后自动重连（第 {attempt}/5 次）…");
         _ = Task.Run(async () =>
         {
             try
@@ -429,6 +451,45 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
                 // 手动重连/关闭会取消自动重连
             }
         });
+    }
+
+    /// <summary>后台线程也要安全地更新界面状态。</summary>
+    private void SetStatus(string text)
+    {
+        if (string.Equals(StatusMessage, text, StringComparison.Ordinal))
+            return;
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+            _ = dispatcher.BeginInvoke(new Action(() => StatusMessage = text));
+        else
+            StatusMessage = text;
+    }
+
+    /// <summary>每 10 秒确认一次底层 SSH 客户端仍然在线；keepalive 失败/半开连接会被这里兜住。</summary>
+    private void StartLivenessWatch(SshShellSession shell, CancellationToken ct, long generation)
+    {
+        StopLivenessWatch();
+        _livenessTimer = new System.Threading.Timer(_ =>
+        {
+            try
+            {
+                if (_disposed || ct.IsCancellationRequested || generation != _generation)
+                    return;
+                if (!shell.IsConnected)
+                    OnDisconnected(unexpectedlyFailed: true, generation);
+            }
+            catch
+            {
+                // 看门狗自身异常不影响终端
+            }
+        }, null, TimeSpan.FromSeconds(LivenessCheckSeconds), TimeSpan.FromSeconds(LivenessCheckSeconds));
+    }
+
+    private void StopLivenessWatch()
+    {
+        var timer = _livenessTimer;
+        _livenessTimer = null;
+        try { timer?.Dispose(); } catch { /* ignore */ }
     }
 
     private void CancelReconnect()
@@ -472,8 +533,16 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     {
         if (string.IsNullOrEmpty(text))
             return;
+        SshShellSession? shell;
         lock (_gate)
-            _shell?.Write(text);
+            shell = _shell;
+        if (shell is null || !IsConnected)
+        {
+            NotifyInputNotSent();
+            return;
+        }
+        try { shell.Write(text); }
+        catch (Exception ex) { HandleIoFailure(ex); }
     }
 
     public bool IsAiCommandRunning => Volatile.Read(ref _aiCommandRunning) != 0;
@@ -574,10 +643,44 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
     {
         if (string.IsNullOrEmpty(text))
             return;
-        if (logInput)
-            _logger?.WriteInput(text);
+        SshShellSession? shell;
         lock (_gate)
-            _shell?.Write(text);
+            shell = _shell;
+        if (shell is null || !IsConnected)
+        {
+            NotifyInputNotSent();
+            return;
+        }
+
+        if (logInput)
+        {
+            try { _logger?.WriteInput(text); } catch { /* 日志失败不影响输入 */ }
+        }
+        try
+        {
+            shell.Write(text);
+        }
+        catch (Exception ex)
+        {
+            HandleIoFailure(ex);
+        }
+    }
+
+    /// <summary>输入没有写进 PTY 时给出可见反馈，避免“终端看着正常但键盘没反应”。</summary>
+    private void NotifyInputNotSent()
+    {
+        if (IsAiAwaitingManualInput)
+            return;
+        SetStatus(_reconnectCts is not null
+            ? "终端已断开，键盘输入未发送；正在自动重连…"
+            : "终端已断开，键盘输入未发送；请点击「重新连接」。");
+    }
+
+    /// <summary>写入失败通常意味着通道已断（RST/连接被回收）：立即走断线流程并触发自动重连。</summary>
+    private void HandleIoFailure(Exception ex)
+    {
+        SetStatus("终端连接异常：" + ex.Message);
+        OnDisconnected(unexpectedlyFailed: true, _generation);
     }
 
     public void SendBytes(byte[] data)
@@ -592,8 +695,17 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         {
             try { _logger?.WriteInput(System.Text.Encoding.UTF8.GetString(data)); } catch { /* ignore */ }
         }
+
+        SshShellSession? shell;
         lock (_gate)
-            _shell?.Write(data, 0, data.Length);
+            shell = _shell;
+        if (shell is null || !IsConnected)
+        {
+            NotifyInputNotSent();
+            return;
+        }
+        try { shell.Write(data, 0, data.Length); }
+        catch (Exception ex) { HandleIoFailure(ex); }
     }
 
     public void Resize(int cols, int rows)
@@ -616,6 +728,7 @@ public sealed class TerminalSessionViewModel : INotifyPropertyChanged, IAsyncDis
         }
         Model.ShellStateChanged -= OnShellStateChanged;
         CancelReconnect();
+        StopLivenessWatch();
         try { _cts?.Cancel(); } catch { /* ignore */ }
         SshShellSession? shell;
         lock (_gate)

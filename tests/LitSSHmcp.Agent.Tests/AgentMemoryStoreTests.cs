@@ -32,6 +32,25 @@ public class AgentMemoryStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteRaw_scopes_source_prefix_and_asset()
+    {
+        var store = NewStore();
+        await store.InitializeAsync();
+        await store.AddAsync("终端会话:web01-term", "A 80 端口排查一", new[] { 1f, 0f }, assetIds: "ssh:abc");
+        await store.AddAsync("终端会话:web01-term", "A 80 端口排查二", new[] { 1f, 0f }, assetIds: "ssh:abc");
+        await store.AddAsync("终端会话:db01-term", "B 8080 端口排查", new[] { 1f, 0f }, assetIds: "ssh:def");
+        await store.AddAsync("会话:main", "A 80 主助手片段", new[] { 1f, 0f }, assetIds: "ssh:abc");
+
+        var removed = await store.DeleteRawAsync("终端会话:web01-term", "ssh:abc");
+
+        Assert.Equal(2, removed);
+        var remaining = await store.ListAsync(null, null, 50, includeRaw: true);
+        Assert.Equal(2, remaining.Count);
+        Assert.Contains(remaining, r => r.Source == "终端会话:db01-term");
+        Assert.Contains(remaining, r => r.Source == "会话:main");
+    }
+
+    [Fact]
     public async Task Search_hybrid_fts_boosts_lexical_matches()
     {
         var store = NewStore();

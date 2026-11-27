@@ -45,16 +45,39 @@
                                Command="{Binding NewConversationCommand}"
                                ToolTip="清空当前终端的 AI 对话历史（Ctrl+Shift+N）"/>
                 </Grid>
-                <DockPanel Margin="0,4,0,0">
-                    <TextBlock Text="{Binding UsageText}" DockPanel.Dock="Right" VerticalAlignment="Center"
+                <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding ScopeText}"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeMicro}"
+                               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding ScopeToolTip}"
+                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal"
+                                VerticalAlignment="Center" Visibility="{Binding MemoryToggleVisibility}">
+                        <CheckBox Content="记忆" IsChecked="{Binding MemoryEnabled, Mode=TwoWay}" FontSize="11"
+                                  VerticalAlignment="Center" ToolTip="{Binding MemoryStatusText}"
+                                  Margin="0,0,4,0"/>
+                        <ui:Button Content="清空" Padding="6,1" FontSize="11" Appearance="Transparent"
+                                   Command="{Binding ClearTerminalMemoryCommand}"
+                                   ToolTip="清空本服务器由终端 AI 写入的记忆片段"/>
+                    </StackPanel>
+
+                    <!-- 用量信息单独一行，避免和“仅当前服务器…”在窄抽屉里抢宽度导致逐字换行。 -->
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding UsageText}"
+                               HorizontalAlignment="Left" VerticalAlignment="Center"
                                Foreground="{DynamicResource AppTextTertiaryBrush}"
                                FontSize="{DynamicResource AppFontSizeMicro}"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding UsageText}"/>
-                    <TextBlock Text="{Binding ScopeText}"
-                               Foreground="{DynamicResource AppTextSecondaryBrush}"
-                               FontSize="{DynamicResource AppFontSizeMicro}" TextWrapping="Wrap"
-                               VerticalAlignment="Center"/>
-                </DockPanel>
+                </Grid>
 
             </StackPanel>
         </Border>
@@ -194,6 +217,12 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
+
+        <ui:Button x:Name="ScrollToBottomButton" Grid.Row="3" Panel.ZIndex="10" Content="回到底部"
+                   Icon="{ui:SymbolIcon ArrowDown24}" Appearance="Secondary" Padding="12,5"
+                   HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                   Margin="0,0,18,14" Visibility="Collapsed" Click="OnScrollToBottom"
+                   ToolTip="回到最新消息"/>
 
         <Border Grid.Row="4" Margin="8" Style="{DynamicResource CardBorderStyle}" Padding="8">
             <Grid>

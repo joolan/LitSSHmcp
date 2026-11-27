@@ -26,6 +26,7 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
     private readonly IConfigService _configService;
     private readonly IAuditLogService _audit;
     private readonly TerminalAiApprovalHandler _approval;
+    private readonly IUserDialogService _dialogs;
     private readonly TerminalCommandRunner _runner = new();
     private readonly ISecurityOptionsProvider _security = new SecurityOptionsProvider();
     private readonly DispatcherTimer _streamTimer;
@@ -36,6 +37,8 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
     private AgentConfig _config = new();
     private AgentProviderConfig? _provider;
     private AgentSession? _session;
+    private AgentMemoryService? _memory;
+    private bool _memoryEnabled;
     private CancellationTokenSource? _cts;
     private bool _initialized;
     private bool _contextDirty;
@@ -44,13 +47,18 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
         TerminalSessionViewModel terminal,
         IConfigService configService,
         IAuditLogService audit,
-        TerminalAiApprovalHandler approval)
+        TerminalAiApprovalHandler approval,
+        IUserDialogService? dialogs = null)
     {
         _terminal = terminal;
         _configService = configService;
         _audit = audit;
         _approval = approval;
+        _dialogs = dialogs ?? new UserDialogService();
         _filter = new CommandFilterService(_security);
+        _memoryEnabled = !string.Equals(
+            UiPrefs.GetString("terminal.ai.memory." + terminal.LayoutKey, "true"),
+            "false", StringComparison.OrdinalIgnoreCase);
         _streamTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
         _streamTimer.Tick += (_, _) => FlushAssistantStream();
         _terminal.PropertyChanged += OnTerminalPropertyChanged;
@@ -76,6 +84,9 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
         });
         AttachSelectionCommand = new RelayCommand(_ => AttachSelectionRequested?.Invoke());
         NewConversationCommand = new RelayCommand(_ => NewConversation());
+        ClearTerminalMemoryCommand = new RelayCommand(
+            _ => AsyncOperation.Run("清空终端记忆", ClearTerminalMemoryAsync),
+            _ => _memory is not null);
         _ = InitializeAsync();
     }
 
@@ -90,6 +101,7 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
     public ICommand CopyTextCommand { get; }
     public ICommand AttachSelectionCommand { get; }
     public ICommand NewConversationCommand { get; }
+    public ICommand ClearTerminalMemoryCommand { get; }
 
     private bool _isContextExpanded = true;
     public bool IsContextExpanded
@@ -98,7 +110,8 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
         set { if (_isContextExpanded == value) return; _isContextExpanded = value; Raise(); }
     }
 
-    public string ScopeText => $"仅当前服务器 · {_terminal.Server.Name} · 命令/提权";
+    public string ScopeText => "仅当前服务器 · 命令/提权";
+    public string ScopeToolTip => $"仅当前服务器 · {_terminal.Server.Name} · 命令/提权";
     public string AutoApproveText => "自动执行已开启：普通命令会直接运行；危险命令和 sudo 仍会确认。";
 
     private bool _isOpen;
@@ -179,6 +192,30 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
     }
 
     public Visibility AutoApproveVisibility => _autoApprove ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>是否对本服务器启用长期记忆的召回与写入（按终端会话持久化）。</summary>
+    public bool MemoryEnabled
+    {
+        get => _memoryEnabled;
+        set
+        {
+            if (_memoryEnabled == value)
+                return;
+            _memoryEnabled = value;
+            UiPrefs.SetString("terminal.ai.memory." + _terminal.LayoutKey, value ? "true" : "false");
+            Raise();
+            Raise(nameof(MemoryStatusText));
+        }
+    }
+
+    /// <summary>全局未启用长期记忆时隐藏开关，避免给出无效选项。</summary>
+    public Visibility MemoryToggleVisibility => _memory is null ? Visibility.Collapsed : Visibility.Visible;
+
+    public string MemoryStatusText => _memory is null
+        ? "长期记忆未启用（在 AI 设置中开启 agent.memory）"
+        : _memoryEnabled
+            ? "召回并写入本服务器终端记忆"
+            : "已关闭本服务器终端记忆（不读不写）";
 
     public ObservableCollection<AgentProviderConfig> Providers { get; } = new();
 
@@ -281,6 +318,19 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
                 ?? providers.FirstOrDefault();
             // 终端 AI 默认不设成本上限；预算 UI 暂不展示。
             _budgetLimit = 0;
+            // 长期记忆与主助手共用 agent.memory 配置；召回固定按当前服务器作用域。
+            if (_config.Memory?.Enabled == true)
+            {
+                try
+                {
+                    var server = _terminal.Server;
+                    _memory = await AgentMemoryService.CreateFromConfigAsync(_config, _provider?.ApiKey,
+                        assetGraph: $"- {AssetNode.Ssh(server.Id)} | {server.Name} | {server.Host}:{server.Port}");
+                }
+                catch { _memory = null; }
+            }
+            Raise(nameof(MemoryToggleVisibility));
+            Raise(nameof(MemoryStatusText));
             AutoApproveEnabled = string.Equals(fullConfig.Security?.Approval?.Mode, "auto-approve",
                 StringComparison.OrdinalIgnoreCase);
             try { await _audit.InitializeAsync(); } catch { /* 审计不可用时仍允许终端 AI，但操作不会入库 */ }
@@ -328,6 +378,11 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
         var text = Input.Trim();
         if (text.Length == 0)
             return;
+        if (!_terminal.IsConnected)
+        {
+            StatusMessage = "终端当前未连接，命令不会执行；请等待自动重连或点击「重新连接」后再试。";
+            return;
+        }
 
         // 每次发送前读取一次当前审批模式，避免用户修改设置后仍沿用旧状态。
         AutoApproveEnabled = string.Equals(_security.Approval.Mode, "auto-approve",
@@ -368,10 +423,12 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
         IsBusy = true;
         _cts = new CancellationTokenSource();
         var progress = new Progress<AgentEvent>(e => OnEvent(e, turn));
+        var succeeded = false;
         try
         {
             var contents = BuildContents(text);
             await session.SendAsync(contents, progress, _cts.Token);
+            succeeded = true;
             StatusMessage = "完成。";
         }
         catch (OperationCanceledException)
@@ -388,6 +445,8 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
             {
                 FlushAssistantStream();
                 turn.MarkDone();
+                if (succeeded)
+                    QueueMemoryIndex(text, turn.AssistantText);
                 IsBusy = false;
                 _cts?.Dispose();
                 _cts = null;
@@ -396,6 +455,62 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
                 if (!_contextDirty)
                     RefreshContext(markDirty: false);
             }
+    }
+
+    /// <summary>
+    /// 成功轮后台写入长期记忆：source 按终端会话分桶，资产固定为当前服务器。
+    /// 失败/取消轮不写入；写入失败不影响主流程。
+    /// </summary>
+    private void QueueMemoryIndex(string userText, string assistantText)
+    {
+        var memory = _memory;
+        if (memory is null || !MemoryEnabled || string.IsNullOrWhiteSpace(assistantText))
+            return;
+
+        var source = "终端会话:" + _terminal.LayoutKey;
+        var assetId = AssetNode.Ssh(_terminal.Server.Id);
+        var keep = _config.Memory?.RawKeepPerSource is > 0 ? _config.Memory.RawKeepPerSource : 50;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var content = MemoryQuality.PrepareRawContent(userText, assistantText);
+                if (content is null)
+                    return;
+                await memory.IndexAsync(source, content, CancellationToken.None, assetId);
+                await memory.PruneRawAsync(source, keep, CancellationToken.None);
+            }
+            catch
+            {
+                // 记忆写入失败不影响终端任务
+            }
+        });
+    }
+
+    private async Task ClearTerminalMemoryAsync()
+    {
+        var memory = _memory;
+        if (memory is null)
+            return;
+        if (!_dialogs.Confirm(
+                "清空本服务器由终端 AI 写入的记忆片段？\n\n" +
+                "只删除终端 AI 的会话片段，不影响手动保存的结构化经验，也不影响其他服务器。",
+                "清空终端记忆"))
+            return;
+
+        try
+        {
+            StatusMessage = "正在清空本服务器终端记忆…";
+            var removed = await memory.DeleteRawAsync(
+                "终端会话:", AssetNode.Ssh(_terminal.Server.Id));
+            StatusMessage = removed > 0
+                ? $"已清空本服务器 {removed} 条终端记忆片段。"
+                : "本服务器没有可清空的终端记忆片段。";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "清空终端记忆失败：" + ex.Message;
+        }
     }
 
     private AgentSession EnsureSession()
@@ -422,9 +537,19 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
         cfg.MaxToolIterations = Math.Min(Math.Max(1, cfg.MaxToolIterations), 12);
 
         var providerPrices = provider.InputPricePerMTok > 0 || provider.OutputPricePerMTok > 0;
+        var serverAsset = AssetNode.Ssh(_terminal.Server.Id);
+        var server = _terminal.Server;
+        var memory = _memory;
         _session = new AgentSession(
             client, provider, tools, BuildSystemPrompt(), cfg,
-            history: null, recall: null, spill: null,
+            history: null,
+            recall: memory is null
+                ? null
+                : (query, _, token) => MemoryEnabled
+                    ? memory.RecallAsync(query, assetIds: new[] { serverAsset }, ct: token)
+                    : Task.FromResult<string?>(null),
+            spill: null,
+            assetGraph: $"- {serverAsset} | {server.Name} | {server.Host}:{server.Port}",
             maxIterationsOverride: cfg.MaxToolIterations,
             budgetCheck: (input, output) =>
             {
@@ -495,6 +620,7 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
         var sb = new StringBuilder();
         sb.AppendLine("你是 LitSSH 的服务器终端助手，绑定到单台 SSH 服务器。");
         sb.AppendLine($"服务器：{server.Name}（serverId={server.Id}，{server.Host}:{server.Port}）。");
+        sb.AppendLine("系统会自动召回与本服务器相关的历史经验，仅供参考；端口/路径/版本/配置值可能与其他服务器不同，必须先用命令核实，不要直接套用其他机器的结论。");
         sb.AppendLine("你只能使用 terminal_exec、terminal_sudo、terminal_job 三个工具，不能操作其他服务器，也不能调用文件传输、快照、拓扑、数据库或任何其他工具。");
         sb.AppendLine("terminal_exec 在当前用户可见的 SSH 终端 PTY 中执行，共享当前 cwd/env/alias/后台任务；terminal_sudo 用于提权。");
         sb.AppendLine("每次只提交一条会自行结束的命令；不要使用 vim/top/tail -f/watch/REPL 等交互式或长驻命令。");
@@ -600,6 +726,15 @@ public sealed class TerminalAiViewModel : INotifyPropertyChanged, IAsyncDisposab
                         turn.SetManualCommand(command);
                     }
                     step.Complete(e.ToolSuccess, e.Text, e.DurationMs);
+                }
+                break;
+            case AgentEventKind.MemoryRecall:
+                // 与本服务器相关的历史经验（只读、仅展示）；固定按当前服务器作用域召回。
+                if (!string.IsNullOrWhiteSpace(e.Text))
+                {
+                    var recallStep = new TerminalAiStep("记忆召回", null, destructive: false);
+                    recallStep.Complete(true, e.Text, 0);
+                    turn.Steps.Add(recallStep);
                 }
                 break;
             case AgentEventKind.Incomplete:

@@ -42,9 +42,43 @@ public class MarkdownRendererTests
         var container = doc.Blocks.OfType<BlockUIContainer>().First();
         var border = container.Child as Border;
         var stack = border?.Child as System.Windows.Controls.StackPanel;
-        var codeText = stack?.Children.OfType<System.Windows.Controls.TextBlock>().LastOrDefault();
-        Assert.NotNull(codeText);
-        Assert.Contains("ls -la", new System.Windows.Documents.TextRange(codeText!.ContentStart, codeText.ContentEnd).Text);
+        var codeBox = stack?.Children.OfType<System.Windows.Controls.RichTextBox>().LastOrDefault();
+        Assert.NotNull(codeBox);
+        Assert.True(codeBox!.IsReadOnly);
+        Assert.False(codeBox.IsTabStop);
+        var codeText = new System.Windows.Documents.TextRange(codeBox.Document.ContentStart, codeBox.Document.ContentEnd).Text;
+        Assert.Contains("ls -la", codeText);
+    });
+
+    [Fact]
+    public void Streaming_code_block_uses_lightweight_textblock() => OnSta(() =>
+    {
+        var doc = MarkdownRenderer.Render("```bash\nls -la\n```", selectableCode: false);
+
+        var stack = (doc.Blocks.OfType<BlockUIContainer>().First().Child as Border)?.Child as System.Windows.Controls.StackPanel;
+        Assert.NotNull(stack);
+        Assert.Empty(stack!.Children.OfType<System.Windows.Controls.RichTextBox>());
+        Assert.Contains("ls -la", new System.Windows.Documents.TextRange(
+            stack.Children.OfType<System.Windows.Controls.TextBlock>().Last().ContentStart,
+            stack.Children.OfType<System.Windows.Controls.TextBlock>().Last().ContentEnd).Text);
+    });
+
+    [Fact]
+    public void Code_block_keeps_syntax_highlight_runs_and_is_selectable() => OnSta(() =>
+    {
+        var doc = MarkdownRenderer.Render("```bash\necho \"hi\" # 注释\n```");
+
+        var codeBox = Assert.IsType<System.Windows.Controls.RichTextBox>(
+            (doc.Blocks.OfType<BlockUIContainer>().First().Child as Border)?.Child is System.Windows.Controls.StackPanel stack
+                ? stack.Children.OfType<System.Windows.Controls.RichTextBox>().Last()
+                : null);
+        Assert.True(codeBox.IsReadOnly);
+        Assert.True(codeBox.IsInactiveSelectionHighlightEnabled);
+
+        var runs = codeBox.Document.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines).OfType<Run>().ToList();
+        Assert.Contains(runs, r => r.Text.Contains("注释"));               // 注释仍单独着色
+        Assert.Contains(runs, r => r.Foreground is not null);
+        Assert.Equal("echo \"hi\" # 注释", new TextRange(codeBox.Document.ContentStart, codeBox.Document.ContentEnd).Text.Trim());
     });
 
     [Fact]

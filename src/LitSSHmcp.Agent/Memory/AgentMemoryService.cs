@@ -46,6 +46,7 @@ public sealed class AgentMemoryService
     private readonly int _maxRecallChars;
     private readonly TimeSpan _embeddingTimeout;
     private readonly MemoryReranker? _reranker;
+    private readonly AssetLabelMap? _assetLabels;
 
     private const int QueryCacheLimit = 64;
     private const int DefaultScanRows = 5000;
@@ -56,7 +57,7 @@ public sealed class AgentMemoryService
     public AgentMemoryService(IAgentMemoryStore store, IEmbeddingGenerator<string, Embedding<float>> embedder, int topK,
         double recallThreshold = DefaultRecallThreshold, string? embeddingModel = null, double recencyHalfLifeDays = 30,
         int maxRecallChars = 1500, double embeddingTimeoutSeconds = 0, IChatClient? reranker = null,
-        double recallRelativeMargin = DefaultRecallRelativeMargin)
+        double recallRelativeMargin = DefaultRecallRelativeMargin, AssetLabelMap? assetLabels = null)
     {
         _store = store;
         _embedder = embedder;
@@ -72,6 +73,7 @@ public sealed class AgentMemoryService
             ? TimeSpan.FromSeconds(embeddingTimeoutSeconds)
             : TimeSpan.Zero;
         _reranker = reranker is null ? null : new MemoryReranker(reranker);
+        _assetLabels = assetLabels;
     }
 
     /// <summary>当前 embeddings 模型标识；模型变化时文档索引会自动重建，避免旧维度向量不可用。</summary>
@@ -82,7 +84,7 @@ public sealed class AgentMemoryService
 
     /// <summary>按 AgentConfig 创建记忆服务（供 Web/桌面审核等非运行时场景使用）；未启用/未配置模型返回 null。</summary>
     public static async Task<AgentMemoryService?> CreateFromConfigAsync(AgentConfig config, string? fallbackApiKey,
-        MemoryAccessScope? access = null, CancellationToken ct = default)
+        MemoryAccessScope? access = null, CancellationToken ct = default, string? assetGraph = null)
     {
         var memoryConfig = config.Memory;
         if (memoryConfig?.Enabled != true || string.IsNullOrWhiteSpace(memoryConfig.Model))
@@ -91,7 +93,8 @@ public sealed class AgentMemoryService
         var service = new AgentMemoryService(new AgentMemoryStore(null, access), embedder, memoryConfig.TopK,
             memoryConfig.RecallThreshold, memoryConfig.Model, memoryConfig.RecencyHalfLifeDays,
             memoryConfig.MaxRecallChars, memoryConfig.EmbeddingTimeoutSeconds,
-            recallRelativeMargin: memoryConfig.RecallRelativeMargin);
+            recallRelativeMargin: memoryConfig.RecallRelativeMargin,
+            assetLabels: AssetLabelMap.FromPrompt(assetGraph));
         await service.InitializeAsync(ct);
         return service;
     }
@@ -100,7 +103,8 @@ public sealed class AgentMemoryService
     public Task<int> CountAsync(CancellationToken ct = default) => _store.CountAsync(ct);
 
     /// <summary>索引一段文本（source 用于展示来源；相同内容不重复索引）。系统侧自动索引（会话/文档），kind=raw。</summary>
-    public async Task IndexAsync(string source, string content, CancellationToken ct = default)
+    /// <param name="assetIds">可选资产归属（逗号分隔）；有归属的 raw 只会召回给相关资产，避免跨服务器误用。</param>
+    public async Task IndexAsync(string source, string content, CancellationToken ct = default, string? assetIds = null)
     {
         if (string.IsNullOrWhiteSpace(content))
             return;
@@ -108,7 +112,7 @@ public sealed class AgentMemoryService
             return;
 
         var vector = await EmbedAsync(content, ct);
-        await _store.AddAsync(source, content, vector, ct);
+        await _store.AddAsync(source, content, vector, ct, assetIds);
     }
 
     /// <summary>同源(raw)保留条数上限：超出时删除最旧的，防止会话片段无限膨胀。</summary>
@@ -118,6 +122,10 @@ public sealed class AgentMemoryService
             return 0;
         return await _store.PruneRawAsync(source, keep, ct);
     }
+
+    /// <summary>清空指定来源前缀下、归属指定资产的 raw 片段（终端 AI“清空本机记忆”）。</summary>
+    public Task<int> DeleteRawAsync(string sourcePrefix, string assetId, CancellationToken ct = default) =>
+        _store.DeleteRawAsync(sourcePrefix, assetId, ct);
 
     /// <summary>按资产精确查询结构化记忆（走 memory_asset 关系）。</summary>
     public Task<List<MemoryRecord>> ListByAssetAsync(string assetId, string? kind, int limit,
@@ -168,6 +176,12 @@ public sealed class AgentMemoryService
         var tagList = NormalizeList(tags);
 
         var existing = await _store.FindByKeyAsync(kind, key, ct);
+        if (existing is not null && !CanOverwrite(existing, content, assets))
+        {
+            return $"错误: [{kind}:{key}] 已关联资产 {existing.AssetIds}, 与本次资产 {string.Join(",", assets)} 无交集且内容不同; " +
+                   $"为避免把 A 服务器的结论覆盖到 B 服务器, 请改用包含资产 ID 的 key (如 {key}:{assets[0]}) 或先 ops_memory_list 核对";
+        }
+
         var vector = await EmbedAsync(content, ct);
 
         if (existing is null)
@@ -176,7 +190,7 @@ public sealed class AgentMemoryService
             var near = await FindNearDuplicateAsync(kind, content, vector, ct);
             if (near is not null)
             {
-                if (IsPossibleConflict(near, content, assets))
+                if (IsPossibleConflict(near, content, assets) || !ScopesCompatible(near, content, assets))
                 {
                     await _store.AddStructuredAsync(kind, key, $"{kind}:{key}", content, vector,
                         string.Join(",", assets), string.Join(",", tagList), 1, ct);
@@ -222,6 +236,35 @@ public sealed class AgentMemoryService
         return nearAction is not null && newAction is not null &&
                !string.Equals(nearAction, newAction, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// 同 key 覆盖前检查：只有资产有交集、或内容实质相同（确实是一条通用结论）时才允许覆盖。
+    /// 防止 "nginx 端口:80" 和 "nginx 端口:8080" 因复用同一个 key 而互相覆盖。
+    /// </summary>
+    private static bool CanOverwrite(MemoryRecord existing, string content, IReadOnlyCollection<string> newAssets)
+    {
+        var existingAssets = SplitList(existing.AssetIds);
+        if (existingAssets.Count == 0 || newAssets.Count == 0 || existingAssets.Overlaps(newAssets))
+            return true;
+        return string.Equals(NormalizeContent(existing.Content), NormalizeContent(content), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 近重复合并前的资产作用域检查：不同资产且内容不同时保持为两条独立经验，
+    /// 避免把 B 服务器的端口/路径版本合并进 A 服务器的条目后又被召回给 A。
+    /// </summary>
+    private static bool ScopesCompatible(MemoryRecord near, string content, IReadOnlyCollection<string> newAssets)
+    {
+        var nearAssets = SplitList(near.AssetIds);
+        if (nearAssets.Count == 0 && newAssets.Count == 0)
+            return true;
+        if (nearAssets.Count > 0 && newAssets.Count > 0 && nearAssets.Overlaps(newAssets))
+            return true;
+        return string.Equals(NormalizeContent(near.Content), NormalizeContent(content), StringComparison.Ordinal);
+    }
+
+    private static string NormalizeContent(string value) =>
+        Regex.Replace(value ?? string.Empty, @"\s+", " ").Trim();
 
     private static string? ExtractSection(Regex pattern, string text)
     {
@@ -293,7 +336,8 @@ public sealed class AgentMemoryService
         foreach (var r in records)
         {
             sb.Append("- [").Append(r.Kind).Append(':').Append(r.Key).Append("] 频次=").Append(r.Freq);
-            if (!string.IsNullOrEmpty(r.AssetIds)) sb.Append(" 资产=").Append(r.AssetIds);
+            if (!string.IsNullOrEmpty(r.AssetIds))
+                sb.Append(" 资产=").Append(_assetLabels?.DescribeList(r.AssetIds) ?? r.AssetIds);
             if (!string.IsNullOrEmpty(r.Tags)) sb.Append(" 标签=").Append(r.Tags);
             if (r.Status != "active") sb.Append(" 状态=").Append(r.Status);
             if (!string.IsNullOrEmpty(r.UpdatedAt)) sb.Append(" 更新=").Append(r.UpdatedAt[..Math.Min(10, r.UpdatedAt.Length)]);
@@ -327,7 +371,7 @@ public sealed class AgentMemoryService
                 .Append(" 状态=").Append(v.Status)
                 .Append(" 使用=").Append(v.Freq)
                 .Append(" 归档=").Append(ShortDate(v.ArchivedAt));
-            if (!string.IsNullOrEmpty(v.AssetIds)) sb.Append(" 资产=").Append(v.AssetIds);
+            if (!string.IsNullOrEmpty(v.AssetIds)) sb.Append(" 资产=").Append(_assetLabels?.DescribeList(v.AssetIds) ?? v.AssetIds);
             sb.AppendLine();
             sb.Append("  ").AppendLine(Truncate(v.Content, 300));
         }
@@ -434,7 +478,7 @@ public sealed class AgentMemoryService
         foreach (var r in records)
         {
             sb.Append("- #").Append(r.Id).Append(" [").Append(r.Status).Append("] ").Append(r.Title);
-            if (!string.IsNullOrWhiteSpace(r.AssetIds)) sb.Append(" | 资产=").Append(r.AssetIds);
+            if (!string.IsNullOrWhiteSpace(r.AssetIds)) sb.Append(" | 资产=").Append(_assetLabels?.DescribeList(r.AssetIds) ?? r.AssetIds);
             sb.Append(" | 置信度=").Append(r.Confidence.ToString("0.##", CultureInfo.InvariantCulture));
             if (!string.IsNullOrWhiteSpace(r.UpdatedAt))
                 sb.Append(" | 更新=").Append(r.UpdatedAt[..Math.Min(10, r.UpdatedAt.Length)]);
@@ -539,15 +583,15 @@ public sealed class AgentMemoryService
         var sb = new StringBuilder();
         foreach (var hit in hits)
         {
-            // 结构化记忆带语义键与频次展示，便于模型判断"这是可复用经验"；资产相关经验额外标注
-            var tag = hit.Kind == "raw"
-                ? RawSourceLabel(hit.Source)
-                : $"{hit.Kind}:{hit.Key} ×{hit.Freq}";
-            var age = hit.Kind == "raw" ? null : FormatAge(hit);
+            // 每条都带来源/资产/时间：跨服务器同名问题（A:80、B:8080）不能只给结论不给归属。
+            var tag = hit.Kind == "raw" ? RawSourceLabel(hit.Source) : $"{hit.Kind}:{hit.Key} ×{hit.Freq}";
+            var age = FormatAge(hit);
             if (age is not null)
                 tag += $", {age}";
-            if (hit.Kind != "raw" && !string.IsNullOrWhiteSpace(hit.AssetIds))
-                tag += $" → {Truncate(hit.AssetIds, 120)}";   // 该经验验证过的资产
+            if (string.IsNullOrWhiteSpace(hit.AssetIds))
+                tag += hit.Kind == "raw" ? ", 资产未标注" : " · 通用";
+            else
+                tag += $" → {Truncate(_assetLabels?.DescribeList(hit.AssetIds) ?? hit.AssetIds, 180)}";   // 名称/主机 + 资产 ID
             var line = $"- [{tag}] {Truncate(hit.Content, 500)}";
             if (sb.Length + line.Length + 1 > _maxRecallChars)
             {
@@ -675,7 +719,9 @@ public sealed class AgentMemoryService
 
     /// <summary>raw 记忆按会话分桶后，注入提示时仍显示为“会话”，避免把内部会话 ID 带进上下文。</summary>
     private static string RawSourceLabel(string source) =>
-        source.StartsWith("会话:", StringComparison.Ordinal) ? "会话" : source;
+        source.StartsWith("终端会话:", StringComparison.Ordinal) ? "终端会话"
+        : source.StartsWith("会话:", StringComparison.Ordinal) ? "会话"
+        : source;
 
     private static string Truncate(string text, int max) => text.Length <= max ? text : text[..max] + "…";
 

@@ -328,10 +328,18 @@
                                     <!-- 用户气泡：气泡仅包消息；时间/操作在气泡外一行，常占位不下撑 -->
                                     <Border Background="Transparent">
                                         <StackPanel>
-                                            <Border Style="{DynamicResource UserBubbleStyle}" Cursor="Hand" MouseLeftButtonUp="OnUserClick"
-                                                    ToolTip="点击展开/折叠本轮工具过程">
+                                            <Border Style="{DynamicResource UserBubbleStyle}">
                                                 <StackPanel>
-                                                    <TextBlock Text="{Binding UserText}" TextWrapping="Wrap" FontFamily="{DynamicResource AppFontUiFamily}" FontSize="13"/>
+                                                    <!-- 只读文本框：支持鼠标选中部分指令文字复制；点击不再展开/收起工具过程（用下方 Expander 头部切换）。 -->
+                                                    <TextBox Text="{Binding UserText, Mode=OneWay}" TextWrapping="Wrap" AcceptsReturn="True"
+                                                             IsReadOnly="True" IsReadOnlyCaretVisible="False" IsInactiveSelectionHighlightEnabled="True"
+                                                             IsTabStop="False" Style="{x:Null}" FocusVisualStyle="{x:Null}"
+                                                             BorderThickness="0" Background="Transparent" Padding="0" MinHeight="0" MinWidth="0"
+                                                             VerticalContentAlignment="Top"
+                                                             Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                                             FontFamily="{DynamicResource AppFontUiFamily}" FontSize="13"
+                                                             SpellCheck.IsEnabled="False"
+                                                             PreviewMouseWheel="OnSelectableTextPreviewMouseWheel"/>
                                                     <ItemsControl ItemsSource="{Binding Images}" Margin="0,4,0,0">
                                                         <ItemsControl.ItemsPanel>
                                                             <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>

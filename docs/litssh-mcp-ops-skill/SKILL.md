@@ -14,7 +14,7 @@ description: Use when operating or troubleshooting servers and applications thro
 ## 0. 开始前
 
 0. **资产档案按需读取**：需要既有的服务器/应用/日志路径/拓扑信息时，才读工作区 `OPS_ASSETS.md`（见第 9 节）；本次确认/纠正了新事实再**增量更新**，**不必每轮都读写**。
-   **先查记忆再动手**：每轮用户消息会**自动召回**相关记忆注入上下文（格式 `[kind:key ×freq] 内容`，`×freq` 越高 = 越多环境验证过；`superseded` 条目不再出现）——先看有没有现成路径；没有或想按类别翻阅时用 `ops_memory_list(kind=task|asset|script, assetId?)`。用过脚本再查 `scripts/MANIFEST.md`（见第 10 节）。
+   **先查记忆再动手**：每轮用户消息会**自动召回**相关记忆注入上下文（格式 `[kind:key ×freq → 名称 (主机) [资产ID]] 内容`，或 `· 通用` / `资产未标注`；`×freq` 越高 = 越多环境验证过；`superseded` 条目不再出现）——先看有没有现成路径，并确认该经验属于当前目标资产；没有或想按类别翻阅时用 `ops_memory_list(kind=task|asset|script, assetId?)`。用过脚本再查 `scripts/MANIFEST.md`（见第 10 节）。
    **先匹配场景技能**：按问题/告警/资产类型调用 `skill(action="match", query=..., assetTypes=...)`，再用 `skill(action="read", path=...)` 读取匹配技能的正文；不要只凭技能索引猜步骤，匹配结果仅供参考，执行仍以工具实际结果为准。
 1. 不确定有哪些工具 / 怎么用 → 调 `mcp_usage_guide`；MCP 自身异常 → `mcp_self_check`。
 2. 拿到准确的标识：
@@ -145,9 +145,9 @@ description: Use when operating or troubleshooting servers and applications thro
 
 **目标**：把“每次重新摸索”变成“查一下照着走”。记忆由**模型主动调用**工具写入（SQLite），工作区 `scripts/` 存可复用脚本，二者都随工作区沉淀。
 
-- **查后做**：相关记忆**每轮自动召回**注入上下文（`[kind:key ×freq] 内容`，`×freq` 越高 = 越多环境验证过）；主动翻阅/按类别筛选用 `ops_memory_list(kind, assetId?, limit)`。
+- **查后做**：相关记忆**每轮自动召回**注入上下文（`[kind:key ×freq → 名称 (主机) [资产ID]] 内容`，或 `· 通用` / `资产未标注`；`×freq` 越高 = 越多环境验证过）；主动翻阅/按类别筛选用 `ops_memory_list(kind, assetId?, limit)`。不同服务器/时间的经验可能冲突，端口/路径/版本等具体值必须先在目标机核实。
 - **成后记**（只记可复用的，失败教训也可）：
-  - `ops_record(action="memory_save", kind, key, content, assetIds?, tags?)` — `kind`：`task`（已验证操作路径/排障步骤）、`script`（脚本用途与要点）、`asset`（服务器/应用事实，文档之外的机器可读补充）。
+  - `ops_record(action="memory_save", kind, key, content, assetIds?, tags?)` — `kind`：`task`（通用排查步骤/已验证操作路径）、`script`（脚本用途与要点）、`asset`（服务器/应用事实，文档之外的机器可读补充）。资产专属的值（端口/路径/版本/实例名）必须写进内容并填 `assetIds`，资产 ID 从系统提示的资产清单**原样复制**（`ssh:`/`ds:`/`app:` 前缀），不要自造 `ssh:web01` 这类简称；只有真正通用的步骤才写成无资产 task 经验。
   - 同 `kind+key` 再次保存 = 合并更新（频次+1、资产合并）；**路径改进时**用 `ops_record(action="memory_update", key, content, status="superseded")` 让旧记录退役，不要原地抹掉历史。
   - `ops_memory_list(kind, limit)` / `ops_record(action="memory_delete", kind, key)`（按 kind 管理，删除同 key 最新一条）。
   - 记一条 = 一段话可直接照做的事实（含关键参数/输出特征），不记流水账；**绝密钥/口令/私钥路径**。

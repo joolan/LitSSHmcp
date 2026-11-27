@@ -24,6 +24,18 @@ public class TerminalMultiSessionTests
     }
 
     [Fact]
+    public void Input_while_disconnected_is_not_silently_dropped()
+    {
+        var terminal = new TerminalSessionViewModel(Server(), new SshService());
+
+        terminal.SendUserInput("ls\r");
+
+        Assert.False(terminal.IsConnected);
+        Assert.Contains("未发送", terminal.StatusMessage);
+        Assert.Contains("重新连接", terminal.StatusMessage);
+    }
+
+    [Fact]
     public void Renamed_terminal_keeps_custom_title()
     {
         var terminal = new TerminalSessionViewModel(Server(), new SshService(), ordinal: 3);

@@ -50,6 +50,10 @@ public partial class AgentView : UserControl
         _viewModel.OlderHistoryApplying += OnOlderHistoryApplying;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         ChatScroll.ScrollChanged += OnChatScrollChanged;
+        // 鼠标停在 Markdown / 用户消息等子控件上时滚轮会被转发到这里；用 handledEventsToo
+        // 保证即使 ScrollViewer 已处理也能第一时间识别“用户正在向上翻”。
+        ChatScroll.AddHandler(MouseWheelEvent, new MouseWheelEventHandler(OnChatScrollMouseWheel),
+            handledEventsToo: true);
         foreach (var turn in _viewModel.Turns)
             HookTurn(turn);
         IsVisibleChanged += (_, e) =>
@@ -128,8 +132,14 @@ public partial class AgentView : UserControl
         Dispatcher.BeginInvoke(new Action(() =>
         {
             ChatScroll.ScrollToVerticalOffset(scrollOffset);
+            // 恢复到的位置不在底部时不要继续自动跟随，否则流式更新会把用户拉回底部。
+            _autoFollow = Controls.ChatScrollPolicy.IsAtBottom(
+                ChatScroll.VerticalOffset, ChatScroll.ViewportHeight, ChatScroll.ExtentHeight);
+            _unseenMessages = 0;
+            _hasUnseenContent = false;
             InputBox.Focus();
             InputBox.CaretIndex = Math.Clamp(caretIndex, 0, InputBox.Text.Length);
+            UpdateScrollToBottomButton();
         }), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
@@ -212,6 +222,7 @@ public partial class AgentView : UserControl
 
         _autoFollow = true;
         _unseenMessages = 0;
+        _hasUnseenContent = false;
         Dispatcher.BeginInvoke(new Action(() =>
         {
             ChatScroll.ScrollToEnd();
@@ -228,6 +239,7 @@ public partial class AgentView : UserControl
     private double _olderAnchorOffset;
     private double _olderAnchorExtent;
     private int _unseenMessages;
+    private bool _hasUnseenContent;
 
     private void OnTurnsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -256,6 +268,7 @@ public partial class AgentView : UserControl
 
             _autoFollow = true;
             _unseenMessages = 0;
+            _hasUnseenContent = false;
             RequestScrollToEnd();
             return;
         }
@@ -263,6 +276,7 @@ public partial class AgentView : UserControl
         if (e.Action == NotifyCollectionChangedAction.Add && !_autoFollow && e.NewItems is { Count: > 0 })
         {
             _unseenMessages += e.NewItems.Count;
+            _hasUnseenContent = true;
             UpdateScrollToBottomButton();
             return;
         }
@@ -284,19 +298,29 @@ public partial class AgentView : UserControl
 
     private void OnTurnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (!_autoFollow)
-            return;
-
-        if (e.PropertyName is nameof(AgentTurn.AssistantText)
+        var isContentUpdate = e.PropertyName is nameof(AgentTurn.AssistantText)
             or nameof(AgentTurn.ReasoningText)
             or nameof(AgentTurn.RunningText)
             or nameof(AgentTurn.Footer)
             or nameof(AgentTurn.Note)
             or nameof(AgentTurn.ToolHeader)
-            or nameof(AgentTurn.ToolsVisibility))
+            or nameof(AgentTurn.ToolsVisibility);
+        if (!isContentUpdate)
+            return;
+
+        if (!_autoFollow)
         {
-            RequestScrollToEnd();
+            // 用户正在翻历史：内容照常渲染，但只把“有新内容”提示刷新一次，
+            // 不再为每个流式增量安排一次滚动。
+            if (!_hasUnseenContent)
+            {
+                _hasUnseenContent = true;
+                UpdateScrollToBottomButton();
+            }
+            return;
         }
+
+        RequestScrollToEnd();
     }
 
     private void RequestScrollToEnd()
@@ -314,25 +338,41 @@ public partial class AgentView : UserControl
         }));
     }
 
+    /// <summary>
+    /// 用户向上滚动滚轮时立即暂停跟随。只靠 ScrollChanged 判断不够：流式输出时内容高度也在变化，
+    /// 同一批事件里“内容变高”可能先于“向上滚动”被处理，导致视图被拉回底部。
+    /// </summary>
+    private void OnChatScrollMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Delta <= 0)
+            return;
+        if (ChatScroll.ExtentHeight <= ChatScroll.ViewportHeight + 1)
+            return;
+
+        _autoFollow = false;
+        UpdateScrollToBottomButton();
+    }
+
     private void OnChatScrollChanged(object sender, System.Windows.Controls.ScrollChangedEventArgs e)
     {
-        if (_autoFollow && e.ExtentHeightChange != 0)
+        var wasFollowing = _autoFollow;
+        _autoFollow = Controls.ChatScrollPolicy.Resolve(
+            _autoFollow,
+            e.VerticalChange,
+            ChatScroll.VerticalOffset,
+            ChatScroll.ViewportHeight,
+            ChatScroll.ExtentHeight);
+
+        if (_autoFollow && !wasFollowing)
         {
-            ChatScroll.ScrollToEnd();
-            UpdateScrollToBottomButton();
-            return;
+            // 用户自己滚回了底部：清空未读提示并恢复跟随。
+            _unseenMessages = 0;
+            _hasUnseenContent = false;
         }
 
-        var nearBottom = e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - 40;
-        if (nearBottom)
-        {
-            _autoFollow = true;
-            _unseenMessages = 0;
-        }
-        else if (e.VerticalChange < 0)
-        {
-            _autoFollow = false;
-        }
+        // 只有“内容变高且仍在跟随”才需要滚到底部；用户翻历史时保持其当前位置。
+        if (_autoFollow && e.ExtentHeightChange != 0)
+            ChatScroll.ScrollToEnd();
 
         UpdateScrollToBottomButton();
     }
@@ -343,13 +383,14 @@ public partial class AgentView : UserControl
         ScrollToBottomButton.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         ScrollToBottomButton.Content = _unseenMessages > 0
             ? $"回到底部 · {_unseenMessages} 条新消息"
-            : "回到底部";
+            : _hasUnseenContent ? "回到底部 · 有新内容" : "回到底部";
     }
 
     private void OnScrollToBottom(object sender, RoutedEventArgs e)
     {
         _autoFollow = true;
         _unseenMessages = 0;
+        _hasUnseenContent = false;
         ChatScroll.ScrollToEnd();
         UpdateScrollToBottomButton();
     }
@@ -401,11 +442,21 @@ public partial class AgentView : UserControl
         _hasOlderScrollAnchor = true;
     }
 
-    // 点击用户指令：展开/折叠本轮工具过程
-    private void OnUserClick(object sender, MouseButtonEventArgs e)
+    /// <summary>
+    /// 用户消息改为可选中复制的只读文本框后，TextBox 会截获滚轮；这里转发给聊天区，
+    /// 保证鼠标停在消息文字上也能正常滚动对话。
+    /// </summary>
+    private void OnSelectableTextPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is AgentTurn turn && turn.HasSteps)
-            turn.ShowTools = !turn.ShowTools;
+        if (e.Handled)
+            return;
+
+        e.Handled = true;
+        ChatScroll.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+        {
+            RoutedEvent = UIElement.MouseWheelEvent,
+            Source = ChatScroll
+        });
     }
 
     /// <summary>对外暴露的助手 ViewModel（供主页快捷提问写入输入/附件）。</summary>
@@ -1126,6 +1177,7 @@ public partial class AgentView : UserControl
 
         _autoFollow = true;
         _unseenMessages = 0;
+        _hasUnseenContent = false;
         if (_viewModel.SendCommand.CanExecute(null))
             _viewModel.SendCommand.Execute(null);
         e.Handled = true;
@@ -1215,6 +1267,7 @@ public partial class AgentView : UserControl
     {
         _autoFollow = true;
         _unseenMessages = 0;
+        _hasUnseenContent = false;
         Dispatcher.BeginInvoke(new Action(() =>
         {
             ChatScroll.ScrollToEnd();

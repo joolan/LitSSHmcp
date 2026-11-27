@@ -11,7 +11,7 @@ assets: [ssh, script]
 
 ## 0. 先查复用（省一次上传+审批）
 1. 读工作区 `scripts/MANIFEST.md` 与 `scripts/remote/`：目标机已有等价脚本则直接执行。
-2. 看自动召回的相关记忆（每轮注入，格式 `[kind:key ×freq] 内容`），或 `ops_memory_list(kind="script"|"task")`：历史脚本与已验证执行路径；`superseded` 条目表示有更新版本。
+2. 看自动召回的相关记忆（每轮注入，格式 `[kind:key ×freq → 名称 (主机) [资产ID]] 内容`，或 `· 通用` / `资产未标注`）；不同服务器/时间的结论可能冲突，端口/路径/版本等具体值须先在目标机核实。也可用 `ops_memory_list(kind="script"|"task")`：历史脚本与已验证执行路径；`superseded` 条目表示有更新版本。
 3. 都没有再新写；写完准备登记（第 6 步）。
 
 ## 1. 生成脚本（写在工作区，不直接塞长命令）
@@ -49,7 +49,7 @@ bash --version | head -1; ls -l /bin/sh; sh --version 2>&1 | head -1 || true
 
 ## 6. 清理 + 沉淀
 - 清理远端临时脚本：`ssh_execute_command(serverId, "rm -f /tmp/x.sh")`（`rm` 属敏感，照常审批；或用户要求保留现场）。
-- 登记复用资产：`ops_script_register(path="scripts/local/x.sh", summary="用途与验证结论", compat="bash4+ / POSIX sh / python3", deployedTo="ssh:web01", verified=true)` → 写 `scripts/MANIFEST.md` 并同步 `kind=script` 记忆（含已部署资产）。
+- 登记复用资产：`ops_script_register(path="scripts/local/x.sh", summary="用途与验证结论", compat="bash4+ / POSIX sh / python3", deployedTo="<从资产清单原样复制的 ssh:ID>", verified=true)` → 写 `scripts/MANIFEST.md` 并同步 `kind=script` 记忆（含已部署资产）。
 - 任务复盘（成功后才记）：`ops_record(action="memory_save", kind="task", key=<一句话路径>, content=验证通过的执行方式+关键输出特征)`；同一路径改进时用 `ops_record(action="memory_update", status="superseded")` 指向新记录。
 
 ## 安全约束（不可协商）

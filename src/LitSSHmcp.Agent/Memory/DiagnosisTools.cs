@@ -20,7 +20,7 @@ public static class DiagnosisTools
             {"type":"object","properties":{
               "mode":{"type":"string","enum":["diagnose","change"],"description":"diagnose=诊断/排障, change=变更/发布"},
               "title":{"type":"string","description":"一句话结论/标题"},
-              "assetIds":{"type":"string","description":"关联资产ID, 逗号分隔"},
+              "assetIds":{"type":"string","description":"关联资产ID, 逗号分隔; 从资产清单原样复制(ssh:/ds:/app:...), 排障前据此查历史事件"},
               "symptom":{"type":"string","description":"现象/告警/用户描述"},
               "evidence":{"type":"string","description":"证据: 工具/快照ID/日志路径/关键输出"},
               "rootCause":{"type":"string","description":"根因(不确定可写假设)"},

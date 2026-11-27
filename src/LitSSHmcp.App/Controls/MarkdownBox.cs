@@ -52,8 +52,23 @@ public sealed class MarkdownBox : FlowDocumentScrollViewer
         Padding = new Thickness(0);
         Document = MarkdownRenderer.Render(string.Empty);
 
+        // 文档内控件（复制按钮、可选中代码框）获得焦点时，FlowDocumentScrollViewer 会对自己发起一次
+        // BringIntoView；外层聊天 ScrollViewer 收到后会把整个 Markdown 区块滚到顶部，表现为点“复制”页面跳动。
+        AddHandler(RequestBringIntoViewEvent, new RequestBringIntoViewEventHandler(OnRequestBringIntoView),
+            handledEventsToo: true);
+
         ThemeService.ThemeChanged += OnThemeChanged;
         Unloaded += (_, _) => ThemeService.ThemeChanged -= OnThemeChanged;
+    }
+
+    /// <summary>
+    /// 只拦 FlowDocumentScrollViewer 自己发起的“把我滚到可见区”请求，保留文档内子元素
+    /// （按钮/可选代码）正常的 BringIntoView，避免键盘导航和拖选失去滚动跟随。
+    /// </summary>
+    private void OnRequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+    {
+        if (ReferenceEquals(e.Source, this))
+            e.Handled = true;
     }
 
     // 主题切换后按新 token 重渲染（FlowDocument 用的是具体画刷，不会自动跟随动态资源）。
@@ -119,6 +134,7 @@ public sealed class MarkdownBox : FlowDocumentScrollViewer
 
         _streamDocument = null;
         _streamRun = null;
-        Document = MarkdownRenderer.Render(text);
+        // 流式期间代码块用轻量 TextBlock，结束后再换成可选中的 RichTextBox，避免每个增量重建富文本框。
+        Document = MarkdownRenderer.Render(text, selectableCode: !IsStreaming);
     }
 }

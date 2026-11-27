@@ -133,7 +133,8 @@ internal static class PromptComposer
             return;
         sb.AppendLine();
         sb.AppendLine("## 知识记录(ops_record / ops_memory_list)");
-        sb.AppendLine("- 排障前可先用 ops_memory_list 查同类经验；记忆仅作参考，以本次工具结果为准。");
+        sb.AppendLine("- 排障前可先用 ops_memory_list 查同类经验；记忆仅作参考，不同服务器/时间的结论可能冲突，以本次工具结果为准。");
+        sb.AppendLine("- 资产专属的值（端口/路径/版本/实例名）必须写进内容并填 assetIds；只有真正通用的排查步骤才写成无资产 task 经验，不要把某台机器的具体值写成通用结论。");
         sb.AppendLine("- 成功/失败的可复用结论用 `ops_record(action=memory_save|memory_update, kind=task|script|asset, key=..., content=...)` 记录（现象→根因→处置→验证）；可复用失败教训加 tags=pitfall。");
         sb.AppendLine("- 单次排查/变更记录用 `ops_record(action=diagnosis|change, ...)`（自动写 incident）；只有跨事件复用的结论才写 memory_*，历史事件/资产画像用 ops_insight。不要把同一结论同时写两处。凭据、密码、令牌绝不写入。");
     }

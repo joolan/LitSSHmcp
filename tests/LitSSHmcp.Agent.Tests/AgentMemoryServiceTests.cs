@@ -132,7 +132,7 @@ public class AgentMemoryServiceTests : IDisposable
         var recalled = await svc.RecallAsync("磁盘满怎么处理");
         Assert.NotNull(recalled);
         var structuredCount = recalled!.Split('\n').Count(l => l.Contains("task:"));
-        var rawCount = recalled.Split('\n').Count(l => l.StartsWith("- [会话]", StringComparison.Ordinal));
+        var rawCount = recalled.Split('\n').Count(l => l.StartsWith("- [会话", StringComparison.Ordinal));
         Assert.Equal(3, structuredCount);
         Assert.True(rawCount <= 2, $"raw 条数 {rawCount} 应 ≤ 2");
     }
@@ -218,6 +218,91 @@ public class AgentMemoryServiceTests : IDisposable
         Assert.NotNull(recalled);
         Assert.Contains("task:disk:web-1", recalled);
         Assert.DoesNotContain("task:disk:web01", recalled);
+    }
+
+    [Fact]
+    public async Task Recall_renders_asset_labels_with_ids()
+    {
+        var store = new AgentMemoryStore(_dbPath);
+        var labels = AssetLabelMap.FromPrompt("- ssh:abc | web01 | 10.0.0.1:22");
+        var svc = new AgentMemoryService(store, new FixedEmbedder(), 5, 0.15, assetLabels: labels);
+        await svc.InitializeAsync();
+        await svc.SaveAsync("task", "nginx:web01", "nginx 监听 80 的排查与恢复", "ssh:abc", null);
+
+        var recalled = await svc.RecallAsync("nginx 80");
+
+        Assert.NotNull(recalled);
+        Assert.Contains("web01 (10.0.0.1:22) [ssh:abc]", recalled);
+    }
+
+    [Fact]
+    public async Task Recall_excludes_other_asset_raw_but_keeps_unattributed()
+    {
+        var store = new AgentMemoryStore(_dbPath);
+        var svc = new AgentMemoryService(store, new FixedEmbedder(), 5, 0.15);
+        await svc.InitializeAsync();
+        await svc.IndexAsync("会话:1", "A 服务器 nginx 监听 80 端口的排查记录", default, "ssh:a");
+        await svc.IndexAsync("会话:2", "nginx 通用排查: 先 nginx -T 检查配置", default);
+
+        var b = await svc.RecallAsync("nginx 监听端口 排查", assetIds: new[] { "ssh:b" });
+        Assert.NotNull(b);
+        Assert.DoesNotContain("80 端口", b);
+        Assert.Contains("通用排查", b);
+        Assert.Contains("资产未标注", b);
+
+        var a = await svc.RecallAsync("nginx 监听端口 排查", assetIds: new[] { "ssh:a" });
+        Assert.NotNull(a);
+        Assert.Contains("80 端口", a);
+        Assert.Contains("→ ssh:a", a);
+    }
+
+    [Fact]
+    public async Task Save_does_not_overwrite_same_key_from_another_asset()
+    {
+        var (svc, store) = await CreateAsync();
+        await svc.SaveAsync("task", "nginx 端口", "A 服务器 nginx 监听 80, 修改 nginx.conf 后 reload", "ssh:a", null);
+
+        var result = await svc.SaveAsync("task", "nginx 端口", "B 服务器 nginx 监听 8080, 修改 conf.d 后 reload", "ssh:b", null);
+
+        Assert.StartsWith("错误:", result);
+        Assert.Contains("无交集", result);
+        var rec = await store.FindByKeyAsync("task", "nginx 端口");
+        Assert.NotNull(rec);
+        Assert.Contains("80", rec!.Content);
+        Assert.Equal("ssh:a", rec.AssetIds);
+    }
+
+    [Fact]
+    public async Task Save_does_not_merge_near_duplicate_across_assets_with_different_values()
+    {
+        var store = new AgentMemoryStore(_dbPath);
+        var svc = new AgentMemoryService(store, new FixedEmbedder(), 5, 0.15);
+        await svc.InitializeAsync();
+        await svc.SaveAsync("task", "nginx:a", "nginx 监听 80 端口, 修改 nginx.conf 后 reload", "ssh:a", null);
+
+        var result = await svc.SaveAsync("task", "nginx:b", "nginx 监听 8080 端口, 修改 conf.d 后 reload", "ssh:b", null);
+
+        Assert.Contains("可能冲突", result);
+        Assert.NotNull(await store.FindByKeyAsync("task", "nginx:a"));
+        Assert.NotNull(await store.FindByKeyAsync("task", "nginx:b"));
+    }
+
+    [Fact]
+    public async Task Save_merges_identical_content_verified_on_two_assets()
+    {
+        var store = new AgentMemoryStore(_dbPath);
+        var svc = new AgentMemoryService(store, new FixedEmbedder(), 5, 0.15);
+        await svc.InitializeAsync();
+        const string body = "现象: upstream 502; 根因: 后端未启动; 处置: 启动后端并 reload";
+        await svc.SaveAsync("task", "upstream:a", body, "ssh:a", null);
+
+        var result = await svc.SaveAsync("task", "upstream:b", body, "ssh:b", null);
+
+        Assert.Contains("已合并", result);
+        var rec = await store.FindByKeyAsync("task", "upstream:a");
+        Assert.NotNull(rec);
+        Assert.Contains("ssh:a", rec!.AssetIds);
+        Assert.Contains("ssh:b", rec.AssetIds);
     }
 
     [Fact]
@@ -384,7 +469,7 @@ public class AgentMemoryServiceTests : IDisposable
     {
         var (svc, store) = await CreateAsync();
         await svc.SaveAsync("task", "disk", "磁盘满: 先 df 定位分区, journalctl 清理日志后恢复", "ssh:s1", "nginx");
-        await svc.SaveAsync("task", "disk", "磁盘满: 先 df 定位, 删旧日志并重启服务后恢复", "ssh:s2", "nginx");
+        await svc.SaveAsync("task", "disk", "磁盘满: 先 df 定位, 删旧日志并重启服务后恢复", "ssh:s1", "nginx");
 
         var history = await svc.HistoryAsync("task", "disk");
         Assert.Contains("v1", history);

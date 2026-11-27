@@ -19,7 +19,7 @@ public static class OpsRecordTools
             {"type":"object","properties":{
               "action":{"type":"string","enum":["diagnosis","change","memory_save","memory_update","memory_delete"],"description":"diagnosis/change=诊断或变更报告, memory_*=可复用经验"},
               "title":{"type":"string","description":"diagnosis/change: 一句话结论"},
-              "assetIds":{"type":"string","description":"资产 ID, 逗号分隔, 如 ssh:web01,ds:mysql01"},
+              "assetIds":{"type":"string","description":"资产 ID, 逗号分隔; 从资产清单原样复制(ssh:/ds:/app:...), 不要写简称或主机名"},
               "symptom":{"type":"string","description":"diagnosis/change: 现象/告警/用户描述"},
               "evidence":{"type":"string","description":"diagnosis/change: 证据(命令/日志路径/关键输出)"},
               "rootCause":{"type":"string","description":"diagnosis/change: 根因(不确定可留空)"},
@@ -30,8 +30,8 @@ public static class OpsRecordTools
               "outcome":{"type":"string","description":"diagnosis/change: 最终结果"},
               "status":{"type":"string","enum":["open","resolved"],"description":"diagnosis/change: 事件状态"},
               "confidence":{"type":"number","description":"diagnosis/change: 置信度 0~1"},
-              "kind":{"type":"string","enum":["task","script","asset"],"description":"memory_*: 记忆类型"},
-              "key":{"type":"string","description":"memory_*: 记忆唯一键, 如 路径:ssh:web01"},
+              "kind":{"type":"string","enum":["task","script","asset"],"description":"memory_*: task=通用排查步骤, script=脚本工具, asset=单资产事实/经验"},
+              "key":{"type":"string","description":"memory_*: 记忆唯一键; 资产专属经验用 `<现象>:<资产ID>`, 通用步骤不要带资产ID"},
               "content":{"type":"string","description":"memory_save/update: 记忆内容"},
               "tags":{"type":"string","description":"memory_*: 标签, 逗号分隔"},
               "memoryStatus":{"type":"string","enum":["active","superseded"],"description":"memory_update: active/superseded"}

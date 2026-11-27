@@ -15,10 +15,19 @@ namespace LitSSHmcp.App.Controls;
 /// </summary>
 public static class MarkdownRenderer
 {
-    public static FlowDocument Render(string? markdown) => new Renderer().Render(markdown);
+    /// <param name="selectableCode">
+    /// 代码块是否用可选中的 RichTextBox 承载。流式输出期间传 <c>false</c> 用轻量 TextBlock，
+    /// 避免每个增量都重建多个 RichTextBox 造成卡顿；流式结束后再渲染成可选版本。
+    /// </param>
+    public static FlowDocument Render(string? markdown, bool selectableCode = true) =>
+        new Renderer(selectableCode).Render(markdown);
 
     private sealed class Renderer
     {
+        private readonly bool _selectableCode;
+
+        public Renderer(bool selectableCode) => _selectableCode = selectableCode;
+
         // 字体对象可复用：每次渲染都 new FontFamily 会产生多余分配。
         private static readonly FontFamily UiFont = new("Microsoft YaHei");
         private static readonly FontFamily MonoFont = new("Consolas");
@@ -158,16 +167,9 @@ public static class MarkdownRenderer
             if (i < lines.Length) i++;   // 跳过结束围栏
             var code = sb.ToString().TrimEnd('\n');
 
-            var text = new TextBlock
-            {
-                FontFamily = MonoFont,
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = ThemeBrushes.CodeText,
-                Background = Brushes.Transparent
-            };
-            foreach (var token in SyntaxHighlighter.Highlight(code, language))
-                text.Inlines.Add(new Run(token.Text) { Foreground = token.Brush, FontWeight = token.Bold ? FontWeights.Bold : FontWeights.Normal });
+            UIElement text = _selectableCode
+                ? BuildSelectableCode(code, language)
+                : BuildPlainCode(code, language);
 
             var copy = new Button
             {
@@ -176,7 +178,11 @@ public static class MarkdownRenderer
                 Margin = new Thickness(6, 0, 0, 0),
                 FontSize = 11,
                 Tag = code,
-                ToolTip = "复制该代码块"
+                ToolTip = "复制该代码块",
+                // 鼠标点击不抢键盘焦点：首次点击若让按钮获得焦点，FlowDocumentScrollViewer/
+                // 外层聊天区可能发起 BringIntoView，表现为点一次“复制”页面跳一下。
+                Focusable = false,
+                IsTabStop = false
             };
             copy.Click += (_, _) =>
             {
@@ -208,6 +214,61 @@ public static class MarkdownRenderer
                 Child = panel
             })
             { Margin = new Thickness(0, 6, 0, 6) };
+        }
+
+        /// <summary>只读 RichTextBox：保留语法高亮，同时支持鼠标选中部分代码复制。</summary>
+        private static RichTextBox BuildSelectableCode(string code, string language)
+        {
+            var codeDocument = new FlowDocument
+            {
+                PagePadding = new Thickness(0),
+                FontFamily = MonoFont,
+                FontSize = 12,
+                Foreground = ThemeBrushes.CodeText
+            };
+            var codeParagraph = new Paragraph { Margin = new Thickness(0) };
+            foreach (var token in SyntaxHighlighter.Highlight(code, language))
+                codeParagraph.Inlines.Add(new Run(token.Text) { Foreground = token.Brush, FontWeight = token.Bold ? FontWeights.Bold : FontWeights.Normal });
+            codeDocument.Blocks.Add(codeParagraph);
+
+            var text = new RichTextBox
+            {
+                Document = codeDocument,
+                IsReadOnly = true,
+                IsReadOnlyCaretVisible = false,
+                IsInactiveSelectionHighlightEnabled = true,
+                IsUndoEnabled = false,
+                IsTabStop = false,
+                Style = null,
+                BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent,
+                Foreground = ThemeBrushes.CodeText,
+                Padding = new Thickness(0),
+                Margin = new Thickness(0),
+                MinHeight = 0,
+                MinWidth = 0,
+                VerticalContentAlignment = VerticalAlignment.Top,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            };
+            SpellCheck.SetIsEnabled(text, false);
+            return text;
+        }
+
+        /// <summary>流式输出期间的轻量代码块（不可选中，但保留高亮与整块复制按钮）。</summary>
+        private static TextBlock BuildPlainCode(string code, string language)
+        {
+            var text = new TextBlock
+            {
+                FontFamily = MonoFont,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = ThemeBrushes.CodeText,
+                Background = Brushes.Transparent
+            };
+            foreach (var token in SyntaxHighlighter.Highlight(code, language))
+                text.Inlines.Add(new Run(token.Text) { Foreground = token.Brush, FontWeight = token.Bold ? FontWeights.Bold : FontWeights.Normal });
+            return text;
         }
 
         // ---------- 列表（含嵌套 + 任务清单） ----------

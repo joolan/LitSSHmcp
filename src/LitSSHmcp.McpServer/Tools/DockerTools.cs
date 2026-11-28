@@ -128,7 +128,7 @@ public class DockerTools
             : $" --since {Core.Services.Security.ShellQuote.Single(since)}";
 
         var command = $"docker logs --tail {tail}{sinceArg} -- {Core.Services.Security.ShellQuote.Single(container)}";
-        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken, 120));
+        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken, 120, preferTail: true));
     }
 
     public async Task<RemoteCommandResultDto> DockerInspect(

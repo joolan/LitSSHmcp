@@ -111,6 +111,6 @@ public class ServiceTools
             : $" --since {ShellQuote.Single(since)}";
 
         var command = $"journalctl -u {ShellQuote.Single(service)} -n {lines} --no-pager{sinceArg}";
-        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken, 180));
+        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken, 180, preferTail: true));
     }
 }

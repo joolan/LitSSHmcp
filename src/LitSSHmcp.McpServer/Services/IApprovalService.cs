@@ -306,7 +306,13 @@ public class DesktopApprovalService : IApprovalService
             _ = DrainAsync(process.StandardOutput);
             _ = DrainAsync(process.StandardError);
 
-            var waitMs = (options.TimeoutSeconds > 0 ? options.TimeoutSeconds + 20 : 300) * 1000;
+            // 等待上限 = 子进程弹窗可见的实际启动耗时 + 完整审批窗口 + 2s 清理宽限。
+            // 旧实现固定"TimeoutSeconds + 20s"启发式：冷启动（杀毒扫描/JIT）超过 20s 时，
+            // 还在自身倒计时窗口内的子进程会被父进程误杀成 Timeout——而子进程本保证在
+            // TimeoutSeconds 内带 ExitTimeout 自行退出，启动耗时应实测而非拍脑袋。
+            var startupMs = await WaitForDialogVisibleAsync(process, TimeSpan.FromSeconds(60));
+            var budgetSeconds = options.TimeoutSeconds > 0 ? options.TimeoutSeconds : 300;
+            var waitMs = (int)Math.Min(startupMs + budgetSeconds * 1000L + 2000L, int.MaxValue);
             using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             waitCts.CancelAfter(waitMs);
 
@@ -359,6 +365,31 @@ public class DesktopApprovalService : IApprovalService
         {
             // 子进程退出后读取会抛，忽略
         }
+    }
+
+    /// <summary>
+    /// 轮询等待审批子进程的弹窗可见（MainWindowHandle 非零），返回从启动到可见的毫秒数。
+    /// 弹窗一直不可见（极端环境/窗口被安全软件拦截）时按 <paramref name="maxWait"/> 全额计为启动耗时。
+    /// </summary>
+    private static async Task<long> WaitForDialogVisibleAsync(Process process, TimeSpan maxWait)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.Elapsed < maxWait && !process.HasExited)
+        {
+            try
+            {
+                process.Refresh();
+                if (process.MainWindowHandle != IntPtr.Zero)
+                    return sw.ElapsedMilliseconds;
+            }
+            catch
+            {
+                // 句柄查询失败（进程已退出等）按当前耗时返回
+                return sw.ElapsedMilliseconds;
+            }
+            await Task.Delay(200).ConfigureAwait(false);
+        }
+        return sw.ElapsedMilliseconds;
     }
 
     private ApprovalOutcome SafeNative(string serverName, string operation, string command, string? filePath, ApprovalConfig options)

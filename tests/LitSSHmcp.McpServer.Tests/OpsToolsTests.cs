@@ -138,6 +138,27 @@ public class OpsToolsTests
     }
 
     [Fact]
+    public async Task Log_query_find_timeout_reports_actionable_hint()
+    {
+        var runner = new CapturingRunner
+        {
+            NextOutcome = new GuardedCommandOutcome
+            {
+                ServerFound = true, Success = false, Status = "timeout", Output = string.Empty,
+                Error = "command timed out after 180s"
+            }
+        };
+        var tools = new LogTools(StubConfig.WithLogPaths("/var/log"), runner);
+
+        var result = await tools.LogQuery("s1", "find", minutes: 60, maxResults: 50);
+
+        Assert.False(result.Success);
+        Assert.Equal("timeout", result.Status);
+        Assert.Contains("缩小 minutes", result.Hint);
+        Assert.Contains("path 指定更窄的子目录", result.Hint);
+    }
+
+    [Fact]
     public async Task Log_query_tail_resolves_path_from_app_config()
     {
         var config = new AppConfig();
@@ -248,7 +269,7 @@ public class OpsToolsTests
         public string? LastCommand { get; private set; }
         public GuardedCommandOutcome? NextOutcome { get; set; }
 
-        public Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default, int timeoutSeconds = 60)
+        public Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default, int timeoutSeconds = 60, bool preferTail = false)
         {
             LastCommand = command;
             return Task.FromResult(NextOutcome ?? new GuardedCommandOutcome { ServerFound = true, Success = true, Output = string.Empty });

@@ -20,16 +20,14 @@ public static class SpillTools
         var budget = maxResultChars <= 0 ? int.MaxValue : Math.Max(500, maxResultChars);
         var function = new LocalFunction(
             "spill",
-            "大工具结果落盘：action=list 列出句柄；action=read 分段读取（超长单行可按 offset 分页或传 column 指定字符偏移）；action=grep 按正则搜索（单行大 JSON 会返回匹配点前后上下文窗口）；action=json 按 path 取 JSON 子节点。handle 可传 spill://xxx 或文件名。",
-            """{"type":"object","properties":{"action":{"type":"string","enum":["list","read","grep","json"],"description":"list=列出句柄, read=分段读取(默认), grep=正则搜索"},"handle":{"type":"string","description":"read/grep: 句柄(spill://xxx 或文件名)"},"offset":{"type":"integer","description":"read: 起始行(0 起), 默认 0；单行超长文件按分页序号解释"},"limit":{"type":"integer","description":"read: 读取行数, 默认 200, 上限 2000"},"column":{"type":"integer","description":"read: 单行超长时的字符偏移(0 起), 默认 0"},"pattern":{"type":"string","description":"grep: 正则表达式"},"path":{"type":"string","description":"json: path, e.g. data.sections.resource"},"max":{"type":"integer","description":"grep: 最多返回条数, 默认 100"}},"required":[]}""",
+            "大工具结果落盘：action=list 列出句柄；action=read 分段读取（多行文件 offset=起始行，单行超长文件 offset=分页序号，返回 header 会标注本次按行还是按字符分页；column 指定行内字符偏移）；action=grep 按正则搜索（单行大 JSON 返回匹配点前后上下文窗口）；action=json 按 path 取 JSON 子节点。handle 可传 spill://xxx 或文件名。",
+            """{"type":"object","properties":{"action":{"type":"string","enum":["list","read","grep","json"],"description":"list=列出句柄, read=分段读取(默认), grep=正则搜索"},"handle":{"type":"string","description":"read/grep: 句柄(spill://xxx 或文件名)"},"offset":{"type":"integer","description":"read: 起始位置(0 起), 默认 0。多行文件=行号; 单行超长文件=分页序号(每页约 2000 字符); 具体语义见返回 header"},"limit":{"type":"integer","description":"read: 读取行数, 默认 200, 上限 2000"},"column":{"type":"integer","description":"read: 单行超长时的字符偏移(0 起), 默认 0"},"pattern":{"type":"string","description":"grep: 正则表达式"},"path":{"type":"string","description":"json: path, e.g. data.sections.resource"},"max":{"type":"integer","description":"grep: 最多返回条数, 默认 100"}},"required":[]}""",
             args =>
             {
                 var action = (ArgumentReader.ReadString(args, "action") ?? "read").Trim().ToLowerInvariant();
                 return action switch
                 {
-                    "list" => store.List() is { Count: > 0 } items
-                        ? string.Join('\n', items)
-                        : "(无落盘结果)",
+                    "list" => ListText(store),
                     "read" => Read(store, ArgumentReader.ReadString(args, "handle"),
                         ArgumentReader.ReadInt(args, "offset"), ArgumentReader.ReadInt(args, "limit"),
                         ArgumentReader.ReadInt(args, "column"), budget),
@@ -42,6 +40,19 @@ public static class SpillTools
             });
 
         return new IAgentTool[] { new LocalAgentTool(function, readOnly: true) };
+    }
+
+    /// <summary>列出句柄；超过 200 个时显式提示总数与"更早句柄可凭摘要中的 spill:// 直接读取"。</summary>
+    private static string ListText(SpillStore store)
+    {
+        var items = store.List();
+        if (items.Count == 0)
+            return "(无落盘结果)";
+        var total = store.CountAll();
+        var hint = total > items.Count
+            ? $"\n[共 {total} 个句柄, 仅列出最近 {items.Count} 个; 更早句柄可凭工具结果摘要中的 spill:// 地址直接 read/grep]"
+            : string.Empty;
+        return string.Join('\n', items) + hint;
     }
 
     private static string Read(SpillStore store, string? handle, int? offset, int? limit, int? column, int maxResultChars)
@@ -74,7 +85,7 @@ public static class SpillTools
 
             var endChar = Math.Min(raw.Length, startChar + windowChars);
             var moreChars = endChar < raw.Length;
-            var singleHeader = $"[{name} 共 1 行; 单行超长(共 {raw.Length} 字符); 已返回字符 {startChar}..{endChar}";
+            var singleHeader = $"[{name} 共 1 行; 本次按字符分页(offset=页号, 非行号); 单行超长(共 {raw.Length} 字符); 已返回字符 {startChar}..{endChar}";
             singleHeader += moreChars ? $"; 下次 offset={start + 1}" : "; 已到末尾";
             return singleHeader + "]" + Environment.NewLine + $"0: {raw[startChar..endChar]}" +
                    (moreChars ? "…" : string.Empty);
@@ -155,7 +166,7 @@ public static class SpillTools
         var end = lastEmitted;
         var next = end + 1;
         var more = next < total;
-        var header = $"[{name} 共 {total} 行; 已返回 {start}..{end}";
+        var header = $"[{name} 共 {total} 行; 本次按行(offset=行号); 已返回 {start}..{end}";
         header += more ? $"; 下次 offset={next}" : "; 已到末尾";
         if (longLineTruncated && longLineIndex >= 0 && longLineNextColumn >= 0)
             header += $"; 单行超长请下次 offset={longLineIndex} column={longLineNextColumn} 继续";

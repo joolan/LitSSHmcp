@@ -24,7 +24,8 @@ public partial class RemoteFilePropertiesWindow : FluentWindow
         PathText.Text = item.FullName;
         TypeText.Text = item.IsDirectory ? "目录" : item.IsSymbolicLink ? "符号链接" : "文件";
         SizeText.Text = item.IsDirectory ? "—" : $"{item.SizeText}（{item.Size} 字节）";
-        ModifiedText.Text = item.LastModified == default ? "—" : item.LastModified.ToString("yyyy-MM-dd HH:mm:ss");
+        // LastModified 现为 UTC（源自 SFTP epoch mtime），显示时转本地时区
+        ModifiedText.Text = item.LastModified == default ? "—" : item.LastModified.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
         (_ownerInitial, _groupInitial) = SplitOwner(item.Owner);
 

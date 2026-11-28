@@ -6,6 +6,37 @@
 
 ### 新增
 
+- **AgentEvent 错误可观测性补全 + 长任务/长日志规模验证**：第二轮审计 harness P2-② 收尾，把错误分类与 token 从「翻 worklog 原文」变成事件与日志的结构化字段。
+  - **AgentEvent 携带稳定错误分类与 token**：`AgentEvent` 新增 `ErrorKind`/`InputTokens`/`OutputTokens`（可选参数，旧调用点源码兼容）；`AgentErrorKind` 显式赋值并新增 `Budget`/`Guardrail`/`ContentFilter` 三类 harness 内部错误，`ChatErrorClassifier.Describe(AgentErrorKind)` 提供统一可操作文案（异常重载保持 Unknown 的原消息摘要）。`AgentSession` 10 处错误上报统一走 `ReportError`，预算超限/护栏停止/内容过滤均带分类；`Done` 事件携带会话累计 token。
+  - **worklog 与 Web 事件透传**：`WorkLogTurn` 新增错误分类/token，`AppendTurnAsync` 落盘 `- 错误类型: xxx` 与 `- Token: in=xxx, out=xxx`；外层异常与取消路径也写入分类；Web error/warning 帧增 `errorKind`/`inputTokens`/`outputTokens`。
+  - **规模化回归测试**：按专项评估 §验证建议 补齐 4 类场景——10 万行日志 tail/grep 截断（含耗时预算）、>5MB 单行 JSON 代理对安全、job 等待期间瞬时断连一次可恢复、连续 3 次轮末压缩后摘要保留目标与最新结论。全部用生成数据/等比短超时，可重复运行不依赖真实服务器。
+  - 新增测试 15 项（Agent 11 + McpServer 4），全量构建 0 警告 0 错误。
+
+- **长任务/长日志专项第三批（P1-4 + P1-5 + P2-1~4）**：来自 2026-11-28 专项评估，长会话磁盘卫生与提示一致性收尾。
+  - **SpillStore 增量清理（P1-4）**：`Save` 每 50 次或距上次清理 >1 小时触发 `Prune`（替代仅构造时清理），长会话不再磁盘无界增长；`List()` 仍限最近 200 个，但 `spill(list)` 返回总数并提示"更早句柄可凭摘要中的 spill:// 直接 read/grep"。
+  - **恢复提示一致性（P1-5）**：提取 `ResultRecoveryHint`，`ToolResultOmitted` 与 `BuildToolResultContextText` fallback 统一为"完整结果见界面轨迹，不要重复执行有副作用的命令；可用 spill(list) 检查落盘句柄"——不再引导模型重放昂贵/有副作用的命令。
+  - **P2 四项**：`PreferTail` 收敛为 `ToolResultBudget.PreferTail` 单一来源；spill read 工具描述/header 明确 offset 语义（多行=行号/单行超长=字符分页）；`CompactSummary` 只聚合以「必须保留：」开头的行（工具正文含该字样不再误置顶）、必须保留段自身超预算时保最近条目避免 budget 为负；`log_query(find)` 超时返回可操作 Hint（缩小 minutes / path 限定子目录）。
+  - 新增测试 6 项（Agent 5 + McpServer 1），同步更新 2 处旧断言文案。
+
+- **长任务/长日志专项第二批（P1-2 + P1-3）**：来自 2026-11-28 专项评估。
+  - **job 轮询异常接续（P1-2）**：`TryAwaitJobResultAsync` 此前只捕获取消异常，`job_status`/`job_result` 因 MCP 断连或工具超时抛异常时会冒到主循环，等待数分钟后整轮失败且丢失 jobId。现对两类轮询调用捕获非取消异常，连续失败 3 次才放弃（瞬时抖动自动退避重试），放弃时返回与超时路径同构的 partial + jobId + 最后状态 + `job_status`/`job_result`/`job_cancel` 可操作指引；用户停止仍联动取消后台任务。
+  - **摘要输入双端采样（P1-3）**：`BuildTranscript` 此前从最旧消息追加到 8000 字符即 break，错误结论/根因常位于轮次尾部而被截掉，摘要器看不到。现单条消息限长 2000 字符（首尾采样），整体超预算时按头部 40%/尾部 60% 双端采样并显式标注省略条数，保证最新结论与报错进入 `SummarizeAsync` 输入。
+  - 新增测试：`AgentSessionTests.Job_start_poll_exception_returns_partial_with_job_id`、`SummaryTranscriptTests`（3 项）。
+
+- **长任务/长日志专项第一批（P0-1 + P1-1）**：来自 2026-11-28 专项评估。
+  - **日志截断方向统一（P0-1）**：此前 MCP 层 `ToolSupport.Truncate` 一律保头（`s[..max]`），而 Agent 层日志类工具按 `PreferTail` 保尾——`log_query(tail=500)` 的 40KB 输出会先在 MCP 层被砍成最早的 200 行，最新错误在到达 Agent 前就已丢失。现 `Truncate` 增加 `preferTail` 参数（含 UTF-16 代理对安全切点），`GuardedCommandService.RunAsync` 贯通该参数；`log_query` 的 tail/grep、`docker logs`、`journalctl` 调用点传 `preferTail: true`，文件列表/命令类仍保头；截断提示按方向区分（日志类提示用 grep 缩小范围，不再误导"调整行数"）。
+  - **轮末压缩排除动态上下文（P1-1）**：`CompactToolResults` 找最后用户轮时未排除 `_activeDynamicContext`，轮末压缩（动态上下文在 `finally` 才移除）会把本轮刚取回的大工具结果误判为"更早轮次"立即压掉。现提取 `FindLastUserTurnIndex`（与 `ManageContextAsync` 边界判定对齐）并补 3 项回归测试。
+  - 新增测试：`OutputTruncationDirectionTests`（4 项，含代理对切点）、`DockerToolsTests.Docker_logs_keeps_latest_output_on_truncation`、`ContextBoundaryTests`（3 项），3 处测试 Fake 同步接口签名。
+
+- **harness 强健性第四批（遗留 P2 清仓）**：第二轮审计遗留的 P2 全部落地。
+  - **时间序列化统一（P2-⑦）**：MCP 输出 DTO 的时间字段此前三种形态并存（`DateTime?`/`DateTimeOffset?` 直接序列化、预格式化 string、`ToString("O")`），模型无法统一解析也无法比较。现统一为 ISO-8601 字符串：`SshServerSummaryDto.LastConnectedAt`、`RemoteFileDto.LastModified`、`LogFileDto.ModifiedAt` 改为 string；Core 侧 `RemoteFileInfo.LastModified` 改用 SFTP epoch 的 UTC（`LastWriteTimeUtc`），桌面文件属性窗口显示时转本地时区。
+  - **BatchFileDto 大小字段分离（P2-②）**：新增 `SizeBytes`（精确字节数，与 `TotalBytes` 同单位），`Size` 保留为人类可读字符串——模型此前只能拿到 "1.5 MB" 无法比较大小。
+  - **协议层拒绝补机器可读 status（P2-③）**：授权矩阵拒绝（`authorization_denied`）、写互斥（`write_busy`，含 `retryAfterSeconds=5`）、全局安全开关关闭（`security_disabled`）三类协议层拒绝在 `StructuredContent` 中补 status 字段，客户端/Agent 可按 status 分支处理而非解析中文文本。
+  - **审批子进程等待去启发式（P2-④）**：桌面审批子进程等待上限从固定"TimeoutSeconds + 20s"改为「实测弹窗可见耗时（轮询 MainWindowHandle，上限 60s）+ 完整审批窗口 + 2s 清理宽限」——冷启动（杀毒扫描/JIT）超过 20s 时不再把还在倒计时内的子进程误杀为 Timeout。
+  - **job 等待纳入墙钟预算（P2-⑤）**：job_start 后台等待适配器（最长 900s）此前在工具执行内阻塞、回不到轮循环做预算检查。现在等待时长受运行墙钟预算剩余量约束，预算耗尽时返回 partial 结果并标注「墙钟预算耗尽」。
+  - **落库图片路径 PathGuard（P2-⑦harness）**：附件图片落库前补 `PathGuard.IsUnder` 归属校验（与会话重建侧 `SessionContextBuilder.ResolveImage` 同一物理路径判定），越界路径不再入库。
+  - **CompactToolResults 去除 O(n²)（P2-⑧）**：每压缩一条工具结果后不再对全部 Messages 做全量 token 重估，改为对该条消息的增量估算回补差值（Calibrate 为线性换算，逐条之和=总量）。
+  - **子代理同任务计数修复（P2-⑩）**：委派**成功即清零**该任务计数；失败记录 15 分钟过期（旧实现永不过期且成功不清零，用户隔天重发相似任务仍被永久拒绝）。
 - **harness 强健性第三批（M8/M9/H7 + 精选 P2）**：来自 2026-11-28 第二轮强健性审计的第三批落地。
   - **Guarded 域命令超时可调（M9）**：`IGuardedCommandService.RunAsync` 新增 `timeoutSeconds` 形参（1-3600），日志类（log_query tail/grep/find、journalctl 服务日志）默认 180s、docker stats/logs 与 java_diagnostics 默认 120s——此前一律 60s，大日志量/慢主机场景必超时。
   - **log_query 上限披露与钳制提示（M8）**：tail/grep/find 的 `lines`/`maxMatches`/`minutes`/`maxResults` 上限补进工具描述；请求超上限被钳制时结果写入 `Hint`（DTO 新增字段）并置 `Truncated=true`，模型不再把"只返回了 2000 条"当全量。

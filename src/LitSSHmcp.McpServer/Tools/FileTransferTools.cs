@@ -263,6 +263,7 @@ public class FileTransferTools
                 LocalPath = f.LocalPath,
                 Success = f.Success,
                 Size = FormatFileSize(f.Bytes),
+                SizeBytes = f.Bytes,
                 Error = f.Error
             }).ToList()
         };
@@ -388,6 +389,7 @@ public class FileTransferTools
                 LocalPath = f.LocalPath,
                 Success = f.Success,
                 Size = FormatFileSize(f.Bytes),
+                SizeBytes = f.Bytes,
                 Error = f.Error
             }).ToList()
         };
@@ -527,7 +529,7 @@ public class FileTransferTools
                 Name = f.Name,
                 FullName = f.FullName,
                 Size = FormatFileSize(f.Size),
-                LastModified = f.LastModified,
+                LastModified = f.LastModified.ToUniversalTime().ToString("O"),
                 IsDirectory = f.IsDirectory,
                 IsSymbolicLink = f.IsSymbolicLink
             }).ToList()

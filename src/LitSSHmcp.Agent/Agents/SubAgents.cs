@@ -14,6 +14,11 @@ public static class SubAgents
 {
     public const string ToolName = "run_subagent";
 
+    /// <summary>失败计数过期窗口：超过该时间未重试同一任务，计数视为首次。</summary>
+    private static readonly TimeSpan FailureWindow = TimeSpan.FromMinutes(15);
+
+    private sealed record TaskCount(int Count, DateTime LastAttemptUtc);
+
     public static IAgentTool Create(
         IChatClient client,
         AgentProviderConfig provider,
@@ -29,9 +34,11 @@ public static class SubAgents
         Func<IReadOnlyDictionary<string, AgentToolPolicy>?>? toolPolicyProvider = null,
         Func<bool>? planModeProvider = null)
     {
-        // 同一子任务的调用计数（防止主模型对着“无输出”的子任务反复重试导致卡住）。
+        // 同一子任务的调用计数（防止主模型对着"无输出"的子任务反复重试导致卡住）。
         // 并行会话下工具可能被并发调用，必须线程安全（评估报告 §4.2）。
-        var taskCounts = new ConcurrentDictionary<string, int>(StringComparer.Ordinal);
+        // 旧实现两点问题：①委派成功也不清零、②失败记录永不过期——用户隔天重发相似任务仍被拒。
+        // 现改为：成功产出结论即移除计数；失败记录 15 分钟后视为首次（TaskCount 值含最近尝试时间）。
+        var taskCounts = new ConcurrentDictionary<string, TaskCount>();
 
         var function = new LocalFunction(
             ToolName,
@@ -57,7 +64,7 @@ public static class SubAgents
         Action<long, long>? onUsageDelta,
         Func<IReadOnlyDictionary<string, AgentToolPolicy>?>? toolPolicyProvider,
         Func<bool>? planModeProvider,
-        ConcurrentDictionary<string, int> taskCounts,
+        ConcurrentDictionary<string, TaskCount> taskCounts,
         IDictionary<string, object?> args,
         CancellationToken ct)
     {
@@ -65,11 +72,17 @@ public static class SubAgents
         if (string.IsNullOrWhiteSpace(task))
             return "(缺少 task)";
 
-        // 同一任务限次：已被委派过 2 次仍无结论时直接阻止，避免无限重试。
+        // 同一任务限次：15 分钟内已被委派 2 次仍无结论时直接阻止，避免无限重试；
+        // 15 分钟前的失败记录过期（用户重发相似任务不再被历史拖累），委派成功也会清零。
         var key = Normalize(task!);
-        var count = taskCounts.AddOrUpdate(key, 1, (_, existing) => existing + 1);
-        if (count > 2)
-            return $"(同一子任务已委派 {count - 1} 次仍无结论，已阻止重复调用；请不要再对同一任务调用 run_subagent——请改换策略、缩小任务范围，或调整会话工具/只读设置后自行继续。)";
+        var now = DateTime.UtcNow;
+        var entry = taskCounts.AddOrUpdate(key,
+            _ => new TaskCount(1, now),
+            (_, existing) => now - existing.LastAttemptUtc >= FailureWindow
+                ? new TaskCount(1, now)
+                : new TaskCount(existing.Count + 1, now));
+        if (entry.Count > 2)
+            return $"(同一子任务已委派 {entry.Count - 1} 次仍无结论，已阻止重复调用；请不要再对同一任务调用 run_subagent——请改换策略、缩小任务范围，或调整会话工具/只读设置后自行继续。)";
 
         var tools = FilterByGroups(subTools, ArgumentReader.ReadString(args, "groups"));
         var summaryMaxChars = config.SubAgentSummaryMaxChars > 0
@@ -125,6 +138,9 @@ public static class SubAgents
                 : "无工具输出";
             return $"(子代理未产出结论 · {detail})。请勿重复委派同一任务；请基于已有信息继续、缩小任务范围，或调整会话工具/只读设置。";
         }
+
+        // 委派成功：清掉该任务的失败计数（下一次委派从 0 开始）。
+        taskCounts.TryRemove(key, out _);
         if (text.Length > summaryMaxChars)
             text = text[..summaryMaxChars] + "\n…[子代理摘要已按上限截断]";
         return text;

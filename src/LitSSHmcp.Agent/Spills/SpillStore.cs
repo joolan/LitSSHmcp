@@ -14,6 +14,9 @@ public sealed class SpillStore
     public const string Scheme = "spill://";
 
     private readonly string _dir;
+    private readonly int _retentionDays;
+    private int _savesSincePrune;
+    private DateTime _lastPruneUtc;
 
     public SpillStore(string dir, int retentionDays, string? ownerUserId = null)
     {
@@ -21,18 +24,33 @@ public sealed class SpillStore
         if (!string.IsNullOrWhiteSpace(ownerUserId))
             root = Path.Combine(root, WorkspaceLayout.SanitizeSegment(ownerUserId, "local"));
         _dir = root;
+        _retentionDays = retentionDays;
         Directory.CreateDirectory(_dir);
         if (retentionDays > 0)
+        {
             Prune(retentionDays);
+            _lastPruneUtc = DateTime.UtcNow;
+        }
     }
 
     public string Dir => _dir;
 
-    /// <summary>保存完整结果，返回句柄（文件名）。</summary>
+    /// <summary>保存完整结果，返回句柄（文件名）。每 50 次保存或距上次清理超 1 小时增量 Prune，避免长会话磁盘无界增长。</summary>
     public string Save(string toolName, string content)
     {
         var id = $"{DateTime.Now:yyyyMMdd-HHmmss}-{Sanitize(toolName)}-{Guid.NewGuid():N}.txt";
         File.WriteAllText(Path.Combine(_dir, id), FormatForStorage(content), Encoding.UTF8);
+        if (_retentionDays > 0)
+        {
+            var count = Interlocked.Increment(ref _savesSincePrune);
+            var due = DateTime.UtcNow - _lastPruneUtc > TimeSpan.FromHours(1);
+            if (count >= 50 || due)
+            {
+                Interlocked.Exchange(ref _savesSincePrune, 0);
+                _lastPruneUtc = DateTime.UtcNow;
+                Prune(_retentionDays);
+            }
+        }
         return id;
     }
 
@@ -75,11 +93,16 @@ public sealed class SpillStore
         return full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && File.Exists(full) ? full : null;
     }
 
+    /// <summary>最近 200 个句柄（按文件名倒序）。更早句柄虽在磁盘上但不列入，可凭摘要中的 spill:// 直接 read。</summary>
     public IReadOnlyList<string> List() =>
         Directory.Exists(_dir)
             ? Directory.EnumerateFiles(_dir, "*.txt").Select(Path.GetFileName).Where(n => n is not null).Cast<string>()
                 .OrderByDescending(n => n, StringComparer.Ordinal).Take(200).ToList()
             : Array.Empty<string>();
+
+    /// <summary>落盘文件总数（用于提示 List() 是否截断）。</summary>
+    public int CountAll() =>
+        Directory.Exists(_dir) ? Directory.EnumerateFiles(_dir, "*.txt").Count() : 0;
 
     private void Prune(int retentionDays)
     {

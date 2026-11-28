@@ -47,7 +47,7 @@ public class ServerTools
                 AuthType = s.AuthType.ToString(),
                 Description = s.Description,
                 Tags = s.Tags,
-                LastConnectedAt = s.LastConnectedAt,
+                LastConnectedAt = s.LastConnectedAt?.ToString("O"),
                 CanExec = McpAuthorizationFilter.IsTargetExecutableForCaller(policy, AssetNode.Ssh(s.Id))
             }).ToList();
 

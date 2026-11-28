@@ -125,6 +125,7 @@ public class RemoteFileInfo
     public string Name { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public long Size { get; set; }
+    /// <summary>最后修改时间（UTC，Kind=Utc；源自 SFTP epoch mtime）。</summary>
     public DateTime LastModified { get; set; }
     public bool IsDirectory { get; set; }
     public bool IsSymbolicLink { get; set; }

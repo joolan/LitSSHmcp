@@ -24,6 +24,9 @@ public sealed class WorkLogTurn
     public bool Succeeded { get; set; }
     public bool Cancelled { get; set; }
     public string? Error { get; set; }
+    public AgentErrorKind? ErrorKind { get; set; }
+    public long? InputTokens { get; set; }
+    public long? OutputTokens { get; set; }
 
     public void RecordToolCall(string name, IDictionary<string, object?>? arguments, bool ok,
         bool readOnly, bool destructive, long durationMs, string? resultSummary)
@@ -148,7 +151,14 @@ public sealed class WorkLogStore
 
             var error = OneLine(Clip(turn.Error, MaxErrorChars));
             if (error.Length > 0)
+            {
                 sb.AppendLine($"- 错误: {error}");
+                if (turn.ErrorKind is { } kind)
+                    sb.AppendLine($"- 错误类型: {kind}");
+            }
+
+            if (turn.InputTokens.HasValue || turn.OutputTokens.HasValue)
+                sb.AppendLine($"- Token: in={turn.InputTokens ?? 0L}, out={turn.OutputTokens ?? 0L}");
 
             sb.AppendLine($"- 会话: {SessionLabel(turn.SessionId)}");
             sb.AppendLine();

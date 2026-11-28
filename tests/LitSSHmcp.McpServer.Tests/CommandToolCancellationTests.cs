@@ -31,7 +31,7 @@ public class CommandToolCancellationTests
         public CancellationToken? Token { get; private set; }
 
         public Task<GuardedCommandOutcome> RunAsync(string serverReference, string command,
-            CancellationToken ct = default, int timeoutSeconds = 60) => throw new NotSupportedException();
+            CancellationToken ct = default, int timeoutSeconds = 60, bool preferTail = false) => throw new NotSupportedException();
 
         public async Task<GuardedFleetOutcome> RunFleetAsync(IReadOnlyList<string> serverReferences,
             string command, int concurrency = 4, int maxTargets = 20, string? operationLabel = null,

@@ -40,7 +40,9 @@ public class AgentSessionTests
         Assert.Contains(events, e => e.Kind == AgentEventKind.ToolCall && e.ToolName == "echo");
         Assert.Contains(events, e => e.Kind == AgentEventKind.ToolResult && e.Text == "pong");
         Assert.Contains(events, e => e.Kind == AgentEventKind.AssistantText && e.Text == "done");
-        Assert.Contains(events, e => e.Kind == AgentEventKind.Done);
+        var done = Assert.Single(events, e => e.Kind == AgentEventKind.Done);
+        Assert.NotNull(done.InputTokens);   // Done 事件携带会话累计 token，供事后成本核对
+        Assert.NotNull(done.OutputTokens);
     }
 
     [Fact]
@@ -142,6 +144,50 @@ public class AgentSessionTests
         var text = result.Result?.ToString() ?? string.Empty;
         Assert.Contains("job 等待超时", text);
         Assert.Contains("job_1", text);
+    }
+
+    [Fact]
+    public async Task Job_start_poll_exception_returns_partial_with_job_id()
+    {
+        var call = new FunctionCallContent("c1", "job_start",
+            new Dictionary<string, object?> { ["operation"] = "topology_discover" });
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage>
+            {
+                new(ChatRole.Assistant, new AIContent[] { call })
+            }),
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "done") }));
+
+        var statusCalls = 0;
+        var tools = new IAgentTool[]
+        {
+            new FakeTool("job_start", """{"success":true,"jobId":"job_1","state":"running"}"""),
+            new FakeTool("job_status", "{}", readOnly: true, invoke: _ =>
+            {
+                statusCalls++;
+                return Task.FromException<object?>(new InvalidOperationException("MCP 连接中断"));
+            }),
+            new FakeTool("job_result", "{}", readOnly: true)
+        };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            tools, "sys", new AgentConfig
+            {
+                MaxToolIterations = 5,
+                ContextLimit = 50,
+                JobWaitTimeoutSeconds = 30,
+                JobPollMinSeconds = 1,
+                JobPollMaxSeconds = 1
+            });
+
+        await session.SendAsync("hi", new SyncProgress(_ => { }));
+
+        Assert.Equal(3, statusCalls); // 连续 3 次失败才放弃
+        var toolMessage = Assert.Single(session.Messages, m => m.Role == ChatRole.Tool);
+        var result = Assert.IsType<FunctionResultContent>(Assert.Single(toolMessage.Contents));
+        var text = result.Result?.ToString() ?? string.Empty;
+        Assert.Contains("轮询中断", text);
+        Assert.Contains("job_1", text);
+        Assert.Contains("job_status", text);
     }
 
     [Fact]
@@ -1051,6 +1097,9 @@ public class AgentSessionTests
         Assert.True(contextText.Length < big.Length);
         Assert.Contains("文本摘要", contextText);
         Assert.Contains("预算压缩", contextText);
+        // P1-5：fallback 与 ToolResultOmitted 使用同一套恢复指引。
+        Assert.Contains("不要重复执行有副作用的命令", contextText);
+        Assert.Contains("spill(action=\"list\")", contextText);
 
         var ev = Assert.Single(events, e => e.Kind == AgentEventKind.ToolResult);
         Assert.Equal(big, ev.Text);   // 界面仍拿到完整结果
@@ -1083,7 +1132,11 @@ public class AgentSessionTests
         var texts = session.Messages.Where(m => m.Role == ChatRole.Tool)
             .Select(m => ((FunctionResultContent)m.Contents[0]).Result!.ToString()!).ToList();
         Assert.Equal(3, texts.Count);
-        Assert.Contains("[较早的工具结果已省略以节省上下文；如需完整内容请重新调用该工具]", texts);
+        // P1-5：不可恢复时不再引导重放昂贵命令，统一指向界面轨迹 + spill 列表。
+        Assert.Contains(texts, t => t.Contains("较早的工具结果已省略以节省上下文") &&
+                                    t.Contains("不要重复执行有副作用的命令") &&
+                                    t.Contains("spill(action=\"list\")"));
+        Assert.DoesNotContain(texts, t => t.Contains("请重新调用该工具"));
         Assert.Equal(2, texts.Count(t => t == big));   // 最近两个保持完整
     }
 
@@ -1579,9 +1632,31 @@ public class AgentSessionTests
         var events = new List<AgentEvent>();
         await session.SendAsync("hi", new SyncProgress(events.Add));
 
-        Assert.Contains(events, e => e.Kind == AgentEventKind.Error && e.Text!.Contains("预算"));
+        var error = Assert.Single(events, e => e.Kind == AgentEventKind.Error && e.Text!.Contains("预算"));
+        Assert.Equal(AgentErrorKind.Budget, error.ErrorKind);
+        Assert.NotNull(error.InputTokens);
+        Assert.NotNull(error.OutputTokens);
         var assistant = Assert.Single(session.Messages, m => m.Role == ChatRole.Assistant);
         Assert.Contains("最终结论已生成", assistant.Text);
+    }
+
+    [Fact]
+    public async Task Content_filter_error_carries_stable_error_kind()
+    {
+        var client = new FakeChatClient(new ChatResponse(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, "被拦截")
+        })
+        { FinishReason = ChatFinishReason.ContentFilter });
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", new AgentConfig { MaxToolIterations = 5, ContextLimit = 50 });
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        var error = Assert.Single(events, e => e.Kind == AgentEventKind.Error);
+        Assert.Equal(AgentErrorKind.ContentFilter, error.ErrorKind);
+        Assert.NotNull(error.InputTokens);
     }
 
     [Fact]

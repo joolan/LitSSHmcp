@@ -164,6 +164,14 @@ public static class McpWriteGateFilter
     private static CallToolResult WriteBusy(string targetKey, string? reason) => new()
     {
         IsError = true,
+        // 机器可读 status：status=write_busy + 建议等待秒数，客户端可据此安排退避重试
+        StructuredContent = System.Text.Json.JsonSerializer.SerializeToElement(new
+        {
+            status = "write_busy",
+            target = targetKey,
+            reason,
+            retryAfterSeconds = 5
+        }),
         Content = new List<ContentBlock>
         {
             new TextContentBlock

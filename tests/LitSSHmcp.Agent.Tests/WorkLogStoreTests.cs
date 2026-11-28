@@ -95,6 +95,24 @@ public class WorkLogStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Error_kind_and_token_usage_are_persisted()
+    {
+        var store = CreateStore(c => c.IncludeFailures = true);
+        var turn = Turn(succeeded: false, calls: Call("ssh_execute_command", ok: false, result: "timeout"));
+        turn.Error = "请求超时：检查网络/端点，或调大超时";
+        turn.ErrorKind = AgentErrorKind.Timeout;
+        turn.InputTokens = 1234;
+        turn.OutputTokens = 56;
+
+        var path = await store.AppendTurnAsync(turn);
+
+        Assert.NotNull(path);
+        var text = await File.ReadAllTextAsync(path!);
+        Assert.Contains("- 错误类型: Timeout", text);
+        Assert.Contains("- Token: in=1234, out=56", text);
+    }
+
+    [Fact]
     public async Task Secrets_are_redacted_before_write()
     {
         var store = CreateStore();

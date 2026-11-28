@@ -7,6 +7,17 @@ namespace LitSSHmcp.McpServer.Tests;
 public class DockerToolsTests
 {
     [Fact]
+    public async Task Docker_logs_keeps_latest_output_on_truncation()
+    {
+        var runner = new CapturingRunner();
+        var tools = new DockerTools(runner);
+
+        await tools.DockerLogs("s1", "app", 200, null, CancellationToken.None);
+
+        Assert.True(runner.PreferTail, "docker logs 必须让 Guarded 层截断时保留末尾最新日志");
+    }
+
+    [Fact]
     public async Task Docker_exec_quotes_each_argv_element()
     {
         var runner = new CapturingRunner();
@@ -69,11 +80,13 @@ public class DockerToolsTests
     {
         public string? Command { get; private set; }
         public int Calls { get; private set; }
+        public bool PreferTail { get; private set; }
 
-        public Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default, int timeoutSeconds = 60)
+        public Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default, int timeoutSeconds = 60, bool preferTail = false)
         {
             Calls++;
             Command = command;
+            PreferTail = preferTail;
             return Task.FromResult(new GuardedCommandOutcome
             {
                 ServerFound = true,

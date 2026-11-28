@@ -30,14 +30,30 @@ public static class ToolSupport
 
     public static int ClampLimit(int limit) => Math.Clamp(limit, 1, MaxHistoryLimit);
 
-    /// <summary>截断长输出；返回 (文本, 是否被截断, 原始长度)。</summary>
-    public static (string Text, bool Truncated, long OriginalLength) Truncate(string? value, int maxChars)
+    /// <summary>
+    /// 截断长输出；返回 (文本, 是否被截断, 原始长度)。
+    /// preferTail=true 保留**末尾最新内容**（日志类工具必须用，否则会把最新错误砍掉）；
+    /// 默认保留头部（命令类输出的惯例）。切点不会落在 UTF-16 代理对中间。
+    /// </summary>
+    public static (string Text, bool Truncated, long OriginalLength) Truncate(string? value, int maxChars, bool preferTail = false)
     {
         var s = value ?? string.Empty;
         if (s.Length <= maxChars)
             return (s, false, s.Length);
-        return (s[..maxChars] + $"\n...[输出已截断, 原始 {s.Length} 字符, 请用更精确的条件/行数参数重新查询]", true, s.Length);
+
+        var keep = Math.Clamp(maxChars, 1, s.Length);
+        var cut = SafeCut(s, preferTail ? s.Length - keep : keep);
+        var body = preferTail ? s[cut..] : s[..cut];
+        var hint = preferTail
+            ? $"[早期 {cut} 字符已截断, 以下为最新内容; 日志排障可用 grep 缩小匹配范围, 增大 lines 会先被服务端上限钳制]"
+            : $"...[输出已截断, 原始 {s.Length} 字符, 请用更精确的条件/行数参数重新查询]";
+        var text = preferTail ? hint + "\n" + body : body + "\n" + hint;
+        return (text, true, s.Length);
     }
+
+    /// <summary>把切点从 UTF-16 低代理项前移一位，避免截出孤立代理对导致下游解析失败。</summary>
+    private static int SafeCut(string s, int index) =>
+        index > 0 && index < s.Length && char.IsLowSurrogate(s[index]) ? index - 1 : index;
 
     /// <summary>审计写入为尽力而为：副作用已发生，审计失败绝不能让工具报错（否则模型重试=重复执行）。</summary>
     public static async Task SafeLogCommandAsync(IAuditLogService audit, CommandAuditLog log)

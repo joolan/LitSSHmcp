@@ -48,6 +48,11 @@ public sealed class AgentSession
     /// 会误触发轮截断压缩与摘要模型调用（摘要还会误消费并发中的模型调用队列）。
     /// </summary>
     private readonly List<ChatMessage> _activeDynamicContext = new();
+
+    /// <summary>本次运行的墙钟预算截止时间（agent.budget.maxTurnSeconds；null=不限）。
+    /// 供 job 等待适配器等「工具内长阻塞」路径读取——它们回不到轮循环做预算检查。</summary>
+    private DateTime? _turnDeadlineUtc;
+
     private const int MaxTurnAssets = AssetAttribution.MaxAssets;
 
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
@@ -74,7 +79,9 @@ public sealed class AgentSession
         "计划尚未完成。请立即继续执行下一步，不要只描述将要做什么；如果无法继续，请明确说明阻塞原因。";
     private const string BudgetExceededMessage =
         "会话成本预算已耗尽，停止本轮模型调用。请提高 agent.budget.maxSessionCost 或切换到更便宜的模型。";
-    private const string ToolResultOmitted = "[较早的工具结果已省略以节省上下文；如需完整内容请重新调用该工具]";
+    /// <summary>不可恢复时的统一指引：界面轨迹是第一恢复来源，spill 检查是第二来源；绝不引导模型重放有副作用的命令。</summary>
+    private const string ResultRecoveryHint = "完整结果见界面轨迹，不要重复执行有副作用的命令；可用 spill(action=\"list\") 检查是否有落盘句柄";
+    private const string ToolResultOmitted = "[较早的工具结果已省略以节省上下文；" + ResultRecoveryHint + "]";
     private const string SummaryPromptPrefix = "以下是更早对话的摘要(仅供参考, 以实际工具结果为准):\n";
 
     /// <summary>Graph-RAG 单轮最长等待时间；超时跳过本轮注入，不阻塞对话。</summary>
@@ -318,13 +325,21 @@ public sealed class AgentSession
             {
                 workLogTurn.Cancelled = true;
                 workLogTurn.Error = "本轮已取消";
+                workLogTurn.ErrorKind = AgentErrorKind.Cancelled;
+                workLogTurn.InputTokens = SessionInputTokens;
+                workLogTurn.OutputTokens = SessionOutputTokens;
             }
             throw;
         }
         catch (Exception ex)
         {
             if (workLogTurn is not null)
+            {
                 workLogTurn.Error = ex.Message;
+                workLogTurn.ErrorKind = ChatErrorClassifier.Classify(ex);
+                workLogTurn.InputTokens = SessionInputTokens;
+                workLogTurn.OutputTokens = SessionOutputTokens;
+            }
             throw;
         }
         finally
@@ -484,6 +499,11 @@ public sealed class AgentSession
         // 运行预算：单轮墙钟上限（agent.budget.maxTurnSeconds，0=不限）——每轮模型调用前检查，超限停止本轮。
         var turnBudgetSeconds = _config.Budget?.MaxTurnSeconds ?? 0;
         var turnSw = System.Diagnostics.Stopwatch.StartNew();
+        // 墙钟预算的绝对截止时间：job 等待适配器（TryAwaitJobResultAsync）在工具执行内阻塞最长 900s，
+        // 无法回到轮循环做预算检查，用该字段把预算贯穿到等待循环里（旧实现等待期间预算完全失效）。
+        _turnDeadlineUtc = turnBudgetSeconds > 0
+            ? DateTime.UtcNow.AddSeconds(turnBudgetSeconds)
+            : null;
         var iteration = 0;
         // 本地工具不计入远程工具上限，但必须防止模型对相同入参/同一 spill 结果无限空转。
         const int sameLocalNudgeAfter = 10;
@@ -514,8 +534,7 @@ public sealed class AgentSession
             {
                 if (_toolLimitContinuation is null)
                 {
-                    progress?.Report(new AgentEvent(AgentEventKind.Error,
-                        Text: $"工具调用超过 {maxIterations} 轮, 已停止本轮（本地工具不计入）"));
+                    ReportError(progress, $"工具调用超过 {maxIterations} 轮, 已停止本轮（本地工具不计入）");
                     return;
                 }
 
@@ -530,8 +549,7 @@ public sealed class AgentSession
                 }
                 catch (Exception ex)
                 {
-                    progress?.Report(new AgentEvent(AgentEventKind.Error,
-                        Text: $"工具次数上限继续确认失败，已停止本轮：{ex.Message}"));
+                    ReportError(progress, $"工具次数上限继续确认失败，已停止本轮：{ex.Message}");
                     return;
                 }
 
@@ -549,8 +567,9 @@ public sealed class AgentSession
 
             if (turnBudgetSeconds > 0 && turnSw.Elapsed.TotalSeconds >= turnBudgetSeconds)
             {
-                progress?.Report(new AgentEvent(AgentEventKind.Error,
-                    Text: $"运行预算超限：本轮墙钟 {turnSw.Elapsed.TotalSeconds:F0}s ≥ 上限 {turnBudgetSeconds}s，已停止本轮（可在 AI 助手设置调整「单轮墙钟预算」）"));
+                ReportError(progress,
+                    $"运行预算超限：本轮墙钟 {turnSw.Elapsed.TotalSeconds:F0}s ≥ 上限 {turnBudgetSeconds}s，已停止本轮（可在 AI 助手设置调整「单轮墙钟预算」）",
+                    AgentErrorKind.Budget);
                 return;
             }
 
@@ -600,7 +619,7 @@ public sealed class AgentSession
                 foreach (var call in assistantMessages.SelectMany(m => m.Contents).OfType<FunctionCallContent>())
                     Messages.Add(new ChatMessage(ChatRole.Tool,
                         new AIContent[] { new FunctionResultContent(call.CallId, "（会话成本预算已达上限，未执行）") }));
-                progress?.Report(new AgentEvent(AgentEventKind.Error, Text: BudgetExceededMessage));
+                ReportError(progress, BudgetExceededMessage, AgentErrorKind.Budget);
                 return;
             }
 
@@ -668,9 +687,9 @@ public sealed class AgentSession
 
                 if (sameLocalRounds >= maxSameLocalRounds || sameSpillTargetRounds >= maxSameSpillTargetRounds)
                 {
-                    progress?.Report(new AgentEvent(AgentEventKind.Error,
-                        Text: $"本地工具连续重复调用过多（相同入参 {sameLocalRounds} 轮，同一 spill 目标 {sameSpillTargetRounds} 轮），" +
-                              "已停止本轮以避免空转；请直接基于已有结果回答，或用 section/detail 精确取数。"));
+                    ReportError(progress,
+                        $"本地工具连续重复调用过多（相同入参 {sameLocalRounds} 轮，同一 spill 目标 {sameSpillTargetRounds} 轮），" +
+                        "已停止本轮以避免空转；请直接基于已有结果回答，或用 section/detail 精确取数。");
                     return;
                 }
 
@@ -705,9 +724,9 @@ public sealed class AgentSession
 
                 if (repeatedCount >= maxRepeatCallCount)
                 {
-                    progress?.Report(new AgentEvent(AgentEventKind.Error,
-                        Text: $"同一工具+入参重复调用达到 {repeatedCount} 次（{repeatedTool}），" +
-                              "已停止本轮以避免空转；请改用不同参数或直接基于已有结果回答。"));
+                    ReportError(progress,
+                        $"同一工具+入参重复调用达到 {repeatedCount} 次（{repeatedTool}），" +
+                        "已停止本轮以避免空转；请改用不同参数或直接基于已有结果回答。");
                     return;
                 }
 
@@ -726,9 +745,9 @@ public sealed class AgentSession
                 }
                 if (jobQueryCalls >= maxJobQueryCalls)
                 {
-                    progress?.Report(new AgentEvent(AgentEventKind.Error,
-                        Text: $"任务状态查询达到 {maxJobQueryCalls} 次，已停止，避免长时间空转；" +
-                              "请基于已有状态回答，或使用 job_cancel 后重新规划。"));
+                    ReportError(progress,
+                        $"任务状态查询达到 {maxJobQueryCalls} 次，已停止，避免长时间空转；" +
+                        "请基于已有状态回答，或使用 job_cancel 后重新规划。");
                     return;
                 }
 
@@ -746,9 +765,9 @@ public sealed class AgentSession
                 }
                 if (localToolCalls >= maxLocalToolCalls)
                 {
-                    progress?.Report(new AgentEvent(AgentEventKind.Error,
-                        Text: $"本轮本地工具调用达到 {localToolCalls} 次，已停止以避免空转；" +
-                              "请缩小范围或用 grep/json 精确取数后再继续。"));
+                    ReportError(progress,
+                        $"本轮本地工具调用达到 {localToolCalls} 次，已停止以避免空转；" +
+                        "请缩小范围或用 grep/json 精确取数后再继续。");
                     return;
                 }
             }
@@ -758,8 +777,7 @@ public sealed class AgentSession
                 var responseText = string.Concat(contents.OfType<TextContent>().Select(t => t.Text));
                 if (response.FinishReason == ChatFinishReason.ContentFilter)
                 {
-                    progress?.Report(new AgentEvent(AgentEventKind.Error,
-                        Text: "模型输出被内容过滤，任务已阻塞，本轮未完成。"));
+                    ReportError(progress, "模型输出被内容过滤，任务已阻塞，本轮未完成。", AgentErrorKind.ContentFilter);
                     return;
                 }
                 if (response.FinishReason == ChatFinishReason.Length)
@@ -804,7 +822,8 @@ public sealed class AgentSession
                     return;
                 }
 
-                progress?.Report(new AgentEvent(AgentEventKind.Done));
+                progress?.Report(new AgentEvent(AgentEventKind.Done,
+                    InputTokens: SessionInputTokens, OutputTokens: SessionOutputTokens));
                 return;
             }
 
@@ -872,8 +891,8 @@ public sealed class AgentSession
                 // 连续失败熔断：工具反复失败（含审批被拒）时不空转，提前结束本轮。
                 if (consecutiveFailures >= MaxConsecutiveToolFailures)
                 {
-                    progress?.Report(new AgentEvent(AgentEventKind.Error,
-                        Text: $"连续 {consecutiveFailures} 次工具调用失败，已停止本轮（避免空转）；请检查参数/权限后重试。"));
+                    ReportError(progress,
+                        $"连续 {consecutiveFailures} 次工具调用失败，已停止本轮（避免空转）；请检查参数/权限后重试。");
                     return;
                 }
             }
@@ -941,8 +960,16 @@ public sealed class AgentSession
         }
     }
 
-    private static void ReportIncomplete(IProgress<AgentEvent>? progress, string text) =>
-        progress?.Report(new AgentEvent(AgentEventKind.Incomplete, Text: text));
+    /// <summary>上报错误事件：稳定分类 + 会话累计 token 一并发出，事后定位无需翻 worklog 原文。</summary>
+    private void ReportError(IProgress<AgentEvent>? progress, string text,
+        AgentErrorKind kind = AgentErrorKind.Guardrail) =>
+        progress?.Report(new AgentEvent(AgentEventKind.Error, Text: text, ErrorKind: kind,
+            InputTokens: SessionInputTokens, OutputTokens: SessionOutputTokens));
+
+    private void ReportIncomplete(IProgress<AgentEvent>? progress, string text,
+        AgentErrorKind kind = AgentErrorKind.Guardrail) =>
+        progress?.Report(new AgentEvent(AgentEventKind.Incomplete, Text: text, ErrorKind: kind,
+            InputTokens: SessionInputTokens, OutputTokens: SessionOutputTokens));
 
     /// <summary>最近若干条用户文本（不含当前轮），用于短追问的召回查询补全。</summary>
     private List<string> RecentUserTexts(int max)
@@ -1157,13 +1184,21 @@ public sealed class AgentSession
                     break;
                 case AgentEventKind.Incomplete when value.Text is not null:
                     _turn.Error = value.Text;
+                    _turn.ErrorKind = value.ErrorKind;
+                    _turn.InputTokens = value.InputTokens;
+                    _turn.OutputTokens = value.OutputTokens;
                     break;
                 case AgentEventKind.Done:
                     _turn.Succeeded = string.IsNullOrEmpty(_turn.Error);
                     _turn.AssistantText = _text.ToString();
+                    _turn.InputTokens = value.InputTokens ?? _turn.InputTokens;
+                    _turn.OutputTokens = value.OutputTokens ?? _turn.OutputTokens;
                     break;
                 case AgentEventKind.Error when value.Text is not null:
                     _turn.Error = value.Text;
+                    _turn.ErrorKind = value.ErrorKind;
+                    _turn.InputTokens = value.InputTokens;
+                    _turn.OutputTokens = value.OutputTokens;
                     break;
             }
             _inner?.Report(value);
@@ -1286,7 +1321,8 @@ public sealed class AgentSession
 
     // ---- WaitableJobAdapter（长任务 Job 模型设计 §3.9）----
 
-
+    // 轮询瞬时失败容忍度：MCP 连接抖动/工具超时连续失败达此值才放弃，避免一次抖动就丢 jobId。
+    private const int MaxConsecutivePollFailures = 3;
 
     /// <summary>
     /// job_start 返回运行中的 jobId 时进入等待循环：harness 内部轮询 job_status（不经过模型），
@@ -1313,12 +1349,49 @@ public sealed class AgentSession
             return null; // job 工具面被裁剪：退化为立即返回 jobId（模型可自行决定后续动作）
 
         var waitSeconds = Math.Clamp(_config.JobWaitTimeoutSeconds, 1, 7200);
+        // 墙钟预算联动：等待时长不得超过本次运行的剩余预算（旧实现等待最长 900s 期间预算失效）。
+        var budgetLimited = false;
+        if (_turnDeadlineUtc is { } turnDeadline)
+        {
+            var remainingSeconds = (int)(turnDeadline - DateTime.UtcNow).TotalSeconds;
+            if (remainingSeconds < waitSeconds)
+            {
+                waitSeconds = Math.Max(0, remainingSeconds);
+                budgetLimited = true;
+            }
+        }
         var pollMinSeconds = Math.Clamp(_config.JobPollMinSeconds, 1, 30);
         var pollMaxSeconds = Math.Clamp(_config.JobPollMaxSeconds, pollMinSeconds, 60);
         var delay = TimeSpan.FromSeconds(pollMinSeconds);
         var maxDelay = TimeSpan.FromSeconds(pollMaxSeconds);
         var deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
         var lastState = "running";
+        var consecutivePollFailures = 0;
+        string? lastPollError = null;
+        var lastPollAction = "轮询";
+
+        // 连续失败达阈值：返回与超时同构的 partial + jobId，模型/用户可接续而不丢后台任务。
+        bool HandlePollFailure(string action, Exception ex)
+        {
+            lastPollAction = action;
+            lastPollError = TextTruncate.Head(ex.Message, 200);
+            consecutivePollFailures++;
+            if (consecutivePollFailures < MaxConsecutivePollFailures)
+            {
+                progress?.Report(new AgentEvent(AgentEventKind.Warning,
+                    Text: $"job {jobId} {action}失败({consecutivePollFailures}/{MaxConsecutivePollFailures})：{lastPollError}",
+                    ToolName: toolName));
+                return false;
+            }
+            return true;
+        }
+
+        string PollInterruptedResult() => resultText +
+            $"\n[轮询中断({consecutivePollFailures}次)] job {jobId} {lastPollAction}失败：{lastPollError}；" +
+            $"任务仍在后台执行（最后状态 {lastState}），未取消；" +
+            $"可稍后用 job_status(jobId=\"{jobId}\") 确认状态、job_result(jobId=\"{jobId}\") 获取完整结果，" +
+            $"或 job_cancel(jobId=\"{jobId}\") 停止。";
+
         try
         {
             while (true)
@@ -1326,17 +1399,31 @@ public sealed class AgentSession
                 ct.ThrowIfCancellationRequested();
                 if (DateTime.UtcNow >= deadline)
                     return resultText +
-                        $"\n[job 等待超时({waitSeconds}s)] 任务 {jobId} 仍在后台执行（状态 {lastState}），未取消；" +
-                        $"可稍后用 job_result(jobId=\"{jobId}\") 获取完整结果，或 job_cancel(jobId=\"{jobId}\") 停止。";
+                        (budgetLimited
+                            ? $"\n[墙钟预算耗尽({waitSeconds}s)] 任务 {jobId} 仍在后台执行（状态 {lastState}），未取消；" +
+                              $"可稍后用 job_result(jobId=\"{jobId}\") 获取完整结果，或 job_cancel(jobId=\"{jobId}\") 停止。"
+                            : $"\n[job 等待超时({waitSeconds}s)] 任务 {jobId} 仍在后台执行（状态 {lastState}），未取消；" +
+                              $"可稍后用 job_result(jobId=\"{jobId}\") 获取完整结果，或 job_cancel(jobId=\"{jobId}\") 停止。");
 
                 await Task.Delay(delay, ct);
                 if (delay < maxDelay)
                     delay = TimeSpan.FromSeconds(Math.Min(maxDelay.TotalSeconds, delay.TotalSeconds * 1.5));
 
-                var statusText = await InvokeJobToolTextAsync(statusTool, new Dictionary<string, object?>
+                string statusText;
+                try
                 {
-                    ["jobId"] = jobId
-                }, ct);
+                    statusText = await InvokeJobToolTextAsync(statusTool, new Dictionary<string, object?>
+                    {
+                        ["jobId"] = jobId
+                    }, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    if (HandlePollFailure("状态查询", ex)) return PollInterruptedResult();
+                    continue;
+                }
+                consecutivePollFailures = 0;
+                lastPollError = null;
                 lastState = ReadJsonStringField(statusText, "state") ?? lastState;
                 var done = ReadJsonIntField(statusText, "progressDone");
                 var total = ReadJsonIntField(statusText, "progressTotal");
@@ -1346,12 +1433,21 @@ public sealed class AgentSession
 
                 if (lastState is "succeeded" or "failed" or "cancelled" or "orphaned")
                 {
-                    var finalText = await InvokeJobToolTextAsync(resultTool, new Dictionary<string, object?>
+                    try
                     {
-                        ["jobId"] = jobId
-                    }, ct);
-                    return string.IsNullOrWhiteSpace(finalText) ? statusText : finalText;
+                        var finalText = await InvokeJobToolTextAsync(resultTool, new Dictionary<string, object?>
+                        {
+                            ["jobId"] = jobId
+                        }, ct);
+                        return string.IsNullOrWhiteSpace(finalText) ? statusText : finalText;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        if (HandlePollFailure("结果读取", ex)) return PollInterruptedResult();
+                        continue;
+                    }
                 }
+
             }
         }
         catch (OperationCanceledException)
@@ -1944,7 +2040,18 @@ public sealed class AgentSession
 
     private void CompactToolResults()
     {
-        if (!OverLimits())
+        var countLimit = EffectiveCountLimit;
+        var tokenLimit = EffectiveTokenLimit;
+        if (countLimit <= 0 && tokenLimit <= 0)
+            return;
+
+        // 增量估算：只对刚压缩的那条消息重估并回补差值（Calibrate 为线性换算，逐条之和=总量），
+        // 旧实现每压缩一条都对全部 Messages 做一次全量估算（O(n²)，长会话下单次压缩可拖到数百 ms）。
+        var estimate = Calibrate(TokenEstimator.Estimate(Messages));
+        bool Over() =>
+            (countLimit > 0 && Messages.Count > countLimit) ||
+            (tokenLimit > 0 && estimate > tokenLimit);
+        if (!Over())
             return;
 
         var toolIndices = new List<int>();
@@ -1952,22 +2059,17 @@ public sealed class AgentSession
             if (Messages[i].Role == ChatRole.Tool)
                 toolIndices.Add(i);
 
-        // 当前用户轮次从最后一条 User 消息开始；先压缩更早轮次，尽量保留本轮完整取证。
-        var lastUserIndex = -1;
-        for (var i = Messages.Count - 1; i >= 0; i--)
-        {
-            if (Messages[i].Role == ChatRole.User)
-            {
-                lastUserIndex = i;
-                break;
-            }
-        }
+        // 当前用户轮次从最后一条**真实**用户消息开始；先压缩更早轮次，尽量保留本轮完整取证。
+        // 动态上下文（工作记忆/检索/子代理摘要）虽是 User 角色，但不是真实用户轮边界——
+        // 轮末压缩发生时它们仍在 Messages 中（finally 才移除），若误判为本轮起点，
+        // 会把本轮刚取回的工具结果当作"更早轮次"全部压掉。与 ManageContextAsync:1853 对齐。
+        var lastUserIndex = FindLastUserTurnIndex(Messages, _activeDynamicContext);
 
         foreach (var index in toolIndices.Where(i => i < lastUserIndex))
         {
-            if (!OverLimits())
+            if (!Over())
                 return;
-            CompactToolResultAt(index);
+            estimate += EstimateDeltaAfterCompact(index);
         }
 
         // 仍超限时才压缩本轮较早的工具结果；保留最近 2 个完整。
@@ -1975,10 +2077,31 @@ public sealed class AgentSession
         var currentRound = toolIndices.Where(i => i >= lastUserIndex).ToList();
         foreach (var index in currentRound.Take(Math.Max(0, currentRound.Count - protectRecent)))
         {
-            if (!OverLimits())
+            if (!Over())
                 return;
-            CompactToolResultAt(index);
+            estimate += EstimateDeltaAfterCompact(index);
         }
+    }
+
+    /// <summary>
+    /// 找最后一条**真实**用户轮的索引：动态上下文用 User 角色注入以免提示注入，
+    /// 但不能被当作用户轮边界（否则轮末压缩会把本轮工具结果误判为更早轮次）。
+    /// </summary>
+    internal static int FindLastUserTurnIndex(IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ChatMessage> dynamicContext)
+    {
+        for (var i = messages.Count - 1; i >= 0; i--)
+            if (messages[i].Role == ChatRole.User && !dynamicContext.Contains(messages[i]))
+                return i;
+        return -1;
+    }
+
+    /// <summary>压缩 <paramref name="index"/> 处的工具结果并返回其 token 估算变化量（负数=变小）。</summary>
+    private int EstimateDeltaAfterCompact(int index)
+    {
+        var before = Calibrate(TokenEstimator.Estimate(Messages[index]));
+        CompactToolResultAt(index);
+        return Calibrate(TokenEstimator.Estimate(Messages[index])) - before;
     }
 
     /// <summary>
@@ -2022,13 +2145,6 @@ public sealed class AgentSession
         return end > start ? text[start..end] : null;
     }
 
-    /// <summary>日志类工具（<c>*_logs</c>/<c>log_query</c>/<c>docker_query</c>）的截断保留**尾部最新内容**，其余保留头部。</summary>
-    private static bool PreferTail(string toolName) =>
-        toolName.Equals("log_query", StringComparison.OrdinalIgnoreCase) ||
-        toolName.Equals("docker_query", StringComparison.OrdinalIgnoreCase) ||
-        toolName.Equals("local_shell", StringComparison.OrdinalIgnoreCase) ||
-        toolName.EndsWith("_logs", StringComparison.OrdinalIgnoreCase);
-
     /// <summary>mcp_usage_guide 是参考文档，默认 4000 字符会把路由段截掉；单独放宽到 8000（summary 模式已控制在 8000 内）。</summary>
     private const int GuideResultMaxChars = 8000;
 
@@ -2046,7 +2162,7 @@ public sealed class AgentSession
             return TextTruncate.Head(resultText, max) +
                    $"\n…[spill 读取结果仍超过 {max} 字符, 已截断; 请减小 limit 或调整 offset 分段读取]";
 
-        var tail = PreferTail(toolName);
+        var tail = ToolResultBudget.PreferTail(toolName);
 
         if (_config.SpillLargeToolResults && _spill is not null)
         {
@@ -2073,11 +2189,12 @@ public sealed class AgentSession
 
         var fallbackSummary = ToolResultSummaryBuilder.Build(toolName, resultText, Math.Min(max, 3000));
         if (fallbackSummary.Length > 0)
-            return fallbackSummary + "\n…[原始结果已按工具预算压缩; 完整结果见界面轨迹]";
+            return fallbackSummary + "\n…[原始结果已按工具预算压缩; " + ResultRecoveryHint + "]";
 
         return tail
-            ? $"[前 {resultText.Length - max} 字符已截断, 以下为最新内容]\n" + TextTruncate.Tail(resultText, max)
-            : TextTruncate.Head(resultText, max) + $"\n…[已截断 {resultText.Length - max} 字符，完整结果见界面轨迹]";
+            ? $"[前 {resultText.Length - max} 字符已截断, 以下为最新内容]\n" + TextTruncate.Tail(resultText, max) +
+              $"\n…[" + ResultRecoveryHint + "]"
+            : TextTruncate.Head(resultText, max) + $"\n…[已截断 {resultText.Length - max} 字符，" + ResultRecoveryHint + "]";
     }
 
     /// <summary>
@@ -2166,22 +2283,37 @@ public sealed class AgentSession
     /// </summary>
     internal static string CompactSummary(string summary)
     {
-        const string pinnedTag = "必须保留";
         const string pinnedHeader = "【必须保留(历史累积)】\n";
         var lines = summary.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var pinned = lines.Where(l => l.Contains(pinnedTag, StringComparison.Ordinal)).ToList();
+        // 只聚合摘要格式中以「必须保留：」开头的行；工具输出里偶然出现该字样的正文不能误置顶。
+        var pinned = lines.Where(IsPinnedContentLine).ToList();
         var pinnedChars = pinned.Count > 0
             ? pinned.Sum(l => l.Length + 1) + pinnedHeader.Length
             : 0;
-        var budget = MaxSummaryChars - pinnedChars;
+        if (pinnedChars > MaxSummaryChars)
+        {
+            // 必须保留段自身超预算：保留最近的若干条，避免 budget 变负导致正文全丢。
+            var keep = new List<string>();
+            var usedPinned = pinnedHeader.Length;
+            for (var i = pinned.Count - 1; i >= 0; i--)
+            {
+                if (usedPinned + pinned[i].Length + 1 > MaxSummaryChars) break;
+                usedPinned += pinned[i].Length + 1;
+                keep.Insert(0, pinned[i]);
+            }
+            pinned.Clear();
+            pinned.AddRange(keep);
+            pinnedChars = usedPinned;
+        }
+        var budget = Math.Max(0, MaxSummaryChars - pinnedChars);
 
         var recent = new List<string>();
         var used = 0;
         for (var i = lines.Length - 1; i >= 0; i--)
         {
             var line = lines[i];
-            if (line.Contains(pinnedTag, StringComparison.Ordinal))
-                continue;   // 已聚合到置顶段
+            if (IsPinnedContentLine(line) || IsPinnedHeaderLine(line))
+                continue;   // 已聚合到置顶段 / 旧聚合头（内容在 pinned 行中）
             if (used + line.Length + 1 > budget)
                 break;
             used += line.Length + 1;
@@ -2190,15 +2322,34 @@ public sealed class AgentSession
 
         var parts = new List<string>(2);
         if (pinned.Count > 0)
-            parts.Add(pinnedHeader + string.Join("\n", pinned));
+            parts.Add(pinnedHeader.TrimEnd() + "\n" + string.Join("\n", pinned));
         if (recent.Count > 0)
             parts.Add(string.Join("\n", recent));
         return string.Join("\n", parts);
     }
 
-    private static string BuildTranscript(IReadOnlyList<ChatMessage> messages)
+    /// <summary>摘要节里的「必须保留：...」行（允许 "- " 前缀），才允许聚合置顶。</summary>
+    private static bool IsPinnedContentLine(string line)
     {
-        var builder = new StringBuilder();
+        var text = line.TrimStart();
+        if (text.StartsWith("- ", StringComparison.Ordinal))
+            text = text[2..].TrimStart();
+        return text.StartsWith("必须保留:", StringComparison.Ordinal) ||
+               text.StartsWith("必须保留：", StringComparison.Ordinal);
+    }
+
+    private static bool IsPinnedHeaderLine(string line) =>
+        line.TrimStart().StartsWith("【必须保留(历史累积)】", StringComparison.Ordinal);
+
+    /// <summary>
+    /// 摘要输入：单条限长 + 头尾双端采样。旧实现从最旧消息 append 到 8000 字符即 break，
+    /// 而错误结论/根因常在轮次尾部——摘要器看不到错误。新实现头部留目标/早期探查骨架，
+    /// 尾部留最新结论与报错（尾部预算更大），中间显式标注省略条数。
+    /// </summary>
+    internal static string BuildTranscript(IReadOnlyList<ChatMessage> messages)
+    {
+        const int perMessageChars = 2000;
+        var parts = new List<string>(messages.Count);
         foreach (var message in messages)
         {
             var role = message.Role == ChatRole.User ? "用户"
@@ -2209,11 +2360,40 @@ public sealed class AgentSession
                 text = string.Concat(message.Contents.OfType<FunctionResultContent>().Select(r => r.Result?.ToString()));
             if (string.IsNullOrWhiteSpace(text))
                 continue;
-            builder.Append(role).Append(": ").AppendLine(text);
-            if (builder.Length > MaxSummarizeInputChars)
-                break;
+            if (text.Length > perMessageChars)
+                text = TextTruncate.Head(text, perMessageChars / 3) + "\n…[本条中段省略…]\n" +
+                       TextTruncate.Tail(text, perMessageChars * 2 / 3);
+            parts.Add(role + ": " + text);
         }
-        return builder.ToString().Trim();
+        if (parts.Count == 0)
+            return string.Empty;
+
+        var total = parts.Sum(p => p.Length + 1);
+        if (total <= MaxSummarizeInputChars)
+            return string.Join("\n", parts);
+
+        const int headPercent = 40;
+        var headBudget = MaxSummarizeInputChars * headPercent / 100;
+        var tailBudget = MaxSummarizeInputChars - headBudget;
+        var head = new List<string>();
+        var headUsed = 0;
+        foreach (var part in parts)
+        {
+            if (headUsed + part.Length + 1 > headBudget) break;
+            head.Add(part);
+            headUsed += part.Length + 1;
+        }
+        var tail = new List<string>();
+        var tailUsed = 0;
+        for (var i = parts.Count - 1; i >= 0; i--)
+        {
+            if (tailUsed + parts[i].Length + 1 > tailBudget) break;
+            tail.Insert(0, parts[i]);
+            tailUsed += parts[i].Length + 1;
+        }
+        var omitted = parts.Count - head.Count - tail.Count;
+        var separator = omitted > 0 ? $"\n…[中间 {omitted} 条消息已省略]…\n" : "\n";
+        return string.Join("\n", head).Trim() + separator + string.Join("\n", tail).Trim();
     }
 
     private static string? SerializeArgs(IDictionary<string, object?>? arguments)

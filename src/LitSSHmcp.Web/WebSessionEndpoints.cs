@@ -749,9 +749,9 @@ public static class WebSessionEndpoints
             AgentEventKind.ToolResult => new { type = "tool_result", tool = e.ToolName, ok = e.ToolSuccess, ms = e.DurationMs },
             AgentEventKind.MemoryRecall => new { type = "memory_recall", text = e.Text },
             AgentEventKind.AssetGraphContext => new { type = "asset_graph_context", text = e.Text },
-            AgentEventKind.Incomplete => new { type = "warning", message = e.Text },
+            AgentEventKind.Incomplete => new { type = "warning", message = e.Text, errorKind = e.ErrorKind?.ToString(), inputTokens = e.InputTokens, outputTokens = e.OutputTokens },
             AgentEventKind.Warning => new { type = "warning", message = e.Text },
-            AgentEventKind.Error => new { type = "error", message = e.Text },
+            AgentEventKind.Error => new { type = "error", message = e.Text, errorKind = e.ErrorKind?.ToString(), inputTokens = e.InputTokens, outputTokens = e.OutputTokens },
             _ => new { type = "event", kind = e.Kind.ToString() }
         };
     }

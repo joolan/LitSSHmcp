@@ -331,6 +331,14 @@ public static class McpAuthorizationFilter
     private static CallToolResult Denied(string tool, string targetKey, string? reason) => new()
     {
         IsError = true,
+        // 机器可读 status：客户端/Agent 可按 status 分支处理（重试/换目标/提示管理员），不必解析文本
+        StructuredContent = System.Text.Json.JsonSerializer.SerializeToElement(new
+        {
+            status = "authorization_denied",
+            tool,
+            target = targetKey,
+            reason
+        }),
         Content = new List<ContentBlock>
         {
             new TextContentBlock

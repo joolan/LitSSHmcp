@@ -477,6 +477,53 @@ public class SpillAndSubAgentTests : IDisposable
         Assert.StartsWith("你是 LitSSH 运维助手", a);
     }
 
+    [Fact]
+    public async Task Spill_list_reports_total_and_hidden_older_handles()
+    {
+        var store = new SpillStore(_dir, 0);
+        // 用直接写文件的方式造 205 个句柄，避免 205 次 Save 触发增量 Prune。
+        for (var i = 0; i < 205; i++)
+            File.WriteAllText(Path.Combine(store.Dir, $"20260101-000000-tool-{i:D4}-{Guid.NewGuid():N}.txt"), "x");
+        var spill = Tool(SpillTools.Create(store), "spill");
+
+        var text = (string)(await spill.InvokeAsync(Args(("action", "list")), default))!;
+
+        Assert.Contains("共 205 个句柄", text);
+        Assert.Contains("仅列出最近 200 个", text);
+        Assert.Contains("spill:// 地址直接 read/grep", text);
+    }
+
+    [Fact]
+    public void Spill_save_incrementally_prunes_old_files()
+    {
+        var store = new SpillStore(_dir, 1);
+        var old = Path.Combine(store.Dir, $"20200101-000000-tool-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(old, "stale");
+        File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddDays(-10));
+
+        // 第 50 次 Save 触发增量清理（无需等待 1 小时）。
+        for (var i = 0; i < 50; i++)
+            store.Save("tool", "fresh");
+
+        Assert.False(File.Exists(old), "增量 Prune 应删除超过保留期的旧文件");
+        Assert.Equal(50, store.CountAll());
+    }
+
+    [Fact]
+    public async Task Spill_read_header_states_offset_semantics()
+    {
+        var store = new SpillStore(_dir, 0);
+        var multiline = store.Save("multi", string.Join('\n', Enumerable.Range(0, 10).Select(i => $"line{i}")));
+        var single = store.Save("single", "START-" + new string('x', 2500) + "-END");
+        var spill = Tool(SpillTools.Create(store, maxResultChars: 1000), "spill");
+
+        var multiText = (string)(await spill.InvokeAsync(Args(("handle", multiline)), default))!;
+        var singleText = (string)(await spill.InvokeAsync(Args(("handle", single)), default))!;
+
+        Assert.Contains("本次按行(offset=行号)", multiText);
+        Assert.Contains("本次按字符分页(offset=页号, 非行号)", singleText);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_dir, true); } catch { }

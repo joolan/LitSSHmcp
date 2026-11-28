@@ -112,7 +112,8 @@ public class LogTools
         var requestedLines = lines;
         lines = Math.Clamp(lines, 1, Math.Max(1, config.Security.Logs.MaxLines));
         var command = $"tail -n {lines} -- {ShellQuote.Single(resolved)}";
-        var outcome = await _runner.RunAsync(serverId, command, cancellationToken, 180);
+        // preferTail：日志超限必须保留最新错误，不能砍成最早的 lines 条
+        var outcome = await _runner.RunAsync(serverId, command, cancellationToken, 180, preferTail: true);
 
         if (!outcome.Success)
             return LogResultDto.Fail(outcome.Status ?? "read_failed",
@@ -146,7 +147,7 @@ public class LogTools
         maxMatches = Math.Clamp(maxMatches, 1, 2000);
         var flag = ignoreCase ? "-i " : string.Empty;
         var command = $"grep -n {flag}-- {ShellQuote.Single(pattern)} {ShellQuote.Single(resolved)} | tail -n {maxMatches}";
-        var outcome = await _runner.RunAsync(serverId, command, cancellationToken, 180);
+        var outcome = await _runner.RunAsync(serverId, command, cancellationToken, 180, preferTail: true);
 
         // grep 无匹配时退出码为 1（不是错误）
         if (!outcome.Success && outcome.ExitCode == 1 && string.IsNullOrWhiteSpace(outcome.Output))
@@ -209,9 +210,15 @@ public class LogTools
         var outcome = await _runner.RunAsync(serverId, command, cancellationToken, 180);
 
         if (!outcome.Success)
-            return LogFileListDto.Fail(outcome.Status ?? "find_failed",
+        {
+            var fail = LogFileListDto.Fail(outcome.Status ?? "find_failed",
                 outcome.Error ?? "日志发现失败。",
                 outcome.ServerId, outcome.ServerName, outcome.ServerHost);
+            // find|sort 在海量目录上可能超时：给出可缩小的维度，避免模型反复原样重试。
+            if (string.Equals(outcome.Status, "timeout", StringComparison.OrdinalIgnoreCase))
+                fail.Hint = $"日志发现超时（扫描 {minutes} 分钟内文件过多）：请缩小 minutes、用 path 指定更窄的子目录，或降低 maxResults 后重试。";
+            return fail;
+        }
 
         var files = new List<LogFileDto>();
         foreach (var line in outcome.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
@@ -228,7 +235,7 @@ public class LogTools
                 modified = DateTimeOffset.FromUnixTimeSeconds((long)epoch);
 
             if (pathPart.Length > 0)
-                files.Add(new LogFileDto { Path = pathPart, ModifiedAt = modified });
+                files.Add(new LogFileDto { Path = pathPart, ModifiedAt = modified?.ToString("O") });
         }
 
         var findResult = new LogFileListDto

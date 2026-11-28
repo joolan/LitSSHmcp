@@ -99,7 +99,8 @@ public sealed class SshServerSummaryDto
     public string AuthType { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string[] Tags { get; set; } = Array.Empty<string>();
-    public DateTime? LastConnectedAt { get; set; }
+    /// <summary>最近连接时间（ISO-8601 UTC 字符串，如 2026-11-28T05:12:33.0000000Z；null=从未连接）。</summary>
+    public string? LastConnectedAt { get; set; }
 
     /// <summary>当前调用者是否具备 exec 权限；null 表示服务器未提供该信息（旧版本/桌面不强制）。</summary>
     public bool? CanExec { get; set; }
@@ -307,7 +308,8 @@ public sealed class RemoteFileDto
     public string Name { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public string Size { get; set; } = string.Empty;
-    public DateTime LastModified { get; set; }
+    /// <summary>最后修改时间（ISO-8601 UTC 字符串，如 2026-11-28T05:12:33.0000000Z）。</summary>
+    public string LastModified { get; set; } = string.Empty;
     public bool IsDirectory { get; set; }
     public bool IsSymbolicLink { get; set; }
 }
@@ -317,7 +319,13 @@ public sealed class BatchFileDto
     public string? RemotePath { get; set; }
     public string? LocalPath { get; set; }
     public bool Success { get; set; }
+
+    /// <summary>人类可读大小（如 "1.5 MB"）；机器可比较的精确字节数用 <see cref="SizeBytes"/>。</summary>
     public string Size { get; set; } = string.Empty;
+
+    /// <summary>精确字节数（失败/未知为 0）；与 TotalBytes 同单位，供模型比较大小。</summary>
+    public long SizeBytes { get; set; }
+
     public string? Error { get; set; }
 }
 
@@ -610,7 +618,8 @@ public sealed class LogResultDto
 public sealed class LogFileDto
 {
     public string Path { get; set; } = string.Empty;
-    public DateTimeOffset? ModifiedAt { get; set; }
+    /// <summary>最后修改时间（ISO-8601 字符串；解析失败为 null）。</summary>
+    public string? ModifiedAt { get; set; }
 }
 
 public sealed class LogFileListDto

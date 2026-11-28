@@ -105,6 +105,33 @@ public class RobustnessBatch2Tests
         Assert.DoesNotContain("最早的目标", compacted);
     }
 
+    [Fact]
+    public void CompactSummary_does_not_pin_tool_output_that_merely_mentions_must_keep()
+    {
+        // 工具输出正文里恰好出现"必须保留"字样，但不是摘要节标题——不能被误置顶。
+        var summary = "出现错误：日志里写着『用户说必须保留这一行』只是正文\n" +
+                      "当前状态：正常\n必须保留：真正的连接路径 /opt/app\n尚未解决：无";
+
+        var compacted = AgentSession.CompactSummary(summary);
+
+        Assert.Contains("真正的连接路径 /opt/app", compacted);
+        Assert.DoesNotContain("【必须保留(历史累积)】\n出现错误：日志里写着", compacted);
+    }
+
+    [Fact]
+    public void CompactSummary_oversized_pinned_section_stays_within_budget()
+    {
+        var blocks = new List<string>();
+        for (var i = 0; i < 200; i++)
+            blocks.Add($"必须保留：关键路径{i}-" + new string('p', 100));
+        blocks.Add("当前状态：普通正文不应导致溢出");
+
+        var compacted = AgentSession.CompactSummary(string.Join("\n", blocks));
+
+        Assert.True(compacted.Length <= AgentSession.MaxSummaryChars, $"压缩后仍超预算: {compacted.Length}");
+        Assert.Contains("必须保留", compacted);
+    }
+
     // —— QW12：指数退避 + Retry-After ——
 
     [Fact]

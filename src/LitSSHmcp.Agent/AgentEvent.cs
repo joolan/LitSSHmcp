@@ -37,4 +37,10 @@ public sealed record AgentEvent(
     bool ToolSuccess = true,
     long DurationMs = 0,
     bool Destructive = false,
-    string? CallId = null);
+    string? CallId = null,
+    /// <summary>错误/未完成事件的稳定分类，供 UI 与事后定位使用（非错误事件为 null）。</summary>
+    AgentErrorKind? ErrorKind = null,
+    /// <summary>事件发生时会话累计输入 token（Done/Error/Incomplete 携带，供成本核对）。</summary>
+    long? InputTokens = null,
+    /// <summary>事件发生时会话累计输出 token（Done/Error/Incomplete 携带）。</summary>
+    long? OutputTokens = null);

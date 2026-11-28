@@ -1081,7 +1081,7 @@ public class SshService : ISshService
                         Name = f.Name,
                         FullName = f.FullName,
                         Size = (long)f.Length,
-                        LastModified = f.LastWriteTime,
+                        LastModified = f.LastWriteTimeUtc,
                         IsDirectory = f.IsDirectory,
                         IsSymbolicLink = f.IsSymbolicLink,
                         Permissions = FormatPermissions(f)

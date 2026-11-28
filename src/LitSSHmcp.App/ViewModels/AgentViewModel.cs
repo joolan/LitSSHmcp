@@ -16,6 +16,7 @@ using LitSSHmcp.App.Services;
 using LitSSHmcp.App.Services.LocalTerminal;
 using LitSSHmcp.App.Services.Pet;
 using LitSSHmcp.Core.Models;
+using LitSSHmcp.Core.Services.Security;
 using LitSSHmcp.Core.Services.Storage;
 using AsyncOperation = LitSSHmcp.App.Services.AsyncOperation;
 using Microsoft.Extensions.AI;
@@ -2239,7 +2240,10 @@ public partial class AgentViewModel : INotifyPropertyChanged, IAsyncDisposable
                 if (vision && attachment.ImageBytes is not null)
                 {
                     images.Add(new DataContent(attachment.ImageBytes, attachment.MediaType ?? "image/png"));
-                    imagePaths.Add(absolute);
+                    // 与会话重建侧（SessionContextBuilder.ResolveImage）一致：落库前做 PathGuard 归属校验，
+                    // 防止异常形态的 workspaceRoot/relative 把图片路径带到工作区之外（重放时会被静默丢弃）。
+                    if (PathGuard.IsUnder(workspaceRoot, absolute))
+                        imagePaths.Add(absolute);
                 }
                 else
                 {

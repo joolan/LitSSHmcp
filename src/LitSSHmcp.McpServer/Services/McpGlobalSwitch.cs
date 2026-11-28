@@ -21,6 +21,11 @@ public static class McpGlobalSwitch
                     return ValueTask.FromResult(new CallToolResult
                     {
                         IsError = true,
+                        // 机器可读 status：status=security_disabled（全局安全开关关闭，非单工具问题）
+                        StructuredContent = System.Text.Json.JsonSerializer.SerializeToElement(new
+                        {
+                            status = "security_disabled"
+                        }),
                         Content = new List<ContentBlock>
                         {
                             new TextContentBlock

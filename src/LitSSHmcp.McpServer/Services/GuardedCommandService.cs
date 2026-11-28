@@ -67,8 +67,10 @@ public interface IGuardedCommandService
     /// 敏感人工审批 → 执行 → 审计兜底 → 输出截断。
     /// 供 Docker/Service/Log/Java 等领域工具"复用"，避免各自拼装安全链路时漏步骤。
     /// timeoutSeconds：远端命令超时（1-3600，默认 60）；日志/诊断类调用方建议传 120-180。
+    /// preferTail：输出超限时保留末尾最新内容（日志类工具必须传 true；默认保留头部）。
     /// </summary>
-    Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default, int timeoutSeconds = 60);
+    Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default,
+        int timeoutSeconds = 60, bool preferTail = false);
 
     /// <summary>批量变更：一次审批 + 多台执行；仅支持非脚本命令（脚本文件请走单目标审批）。</summary>
     Task<GuardedFleetOutcome> RunFleetAsync(IReadOnlyList<string> serverReferences, string command,
@@ -108,7 +110,8 @@ public sealed class GuardedCommandService : IGuardedCommandService
         _sshService = sshService;
     }
 
-    public async Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default, int timeoutSeconds = 60)
+    public async Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default,
+        int timeoutSeconds = 60, bool preferTail = false)
     {
         var config = await _configService.LoadConfigAsync();
         var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverReference);
@@ -153,12 +156,12 @@ public sealed class GuardedCommandService : IGuardedCommandService
                 : result.Error,
             result.ExitCode, AuditCategory.Exec);
 
-        var (output, truncated, originalLength) = ToolSupport.Truncate(result.Output, ToolSupport.MaxOutputChars);
+        var (output, truncated, originalLength) = ToolSupport.Truncate(result.Output, ToolSupport.MaxOutputChars, preferTail);
         // docker logs 等场景：容器把日志写 stderr、退出码 0 → stdout 为空会伪装成“无输出”。
         // 成功且 stdout 为空而 stderr 有内容时，把 stderr 并入输出并显式标注，避免模型误判“没有日志”。
         if (result.Success && output.Length == 0 && !string.IsNullOrWhiteSpace(result.Error))
         {
-            var (stderr, stderrTruncated, stderrLength) = ToolSupport.Truncate(result.Error, ToolSupport.MaxOutputChars);
+            var (stderr, stderrTruncated, stderrLength) = ToolSupport.Truncate(result.Error, ToolSupport.MaxOutputChars, preferTail);
             output = "[stderr] " + stderr;
             truncated = stderrTruncated;
             originalLength = stderrLength;

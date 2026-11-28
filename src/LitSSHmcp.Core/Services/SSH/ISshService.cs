@@ -14,7 +14,8 @@ public interface ISshService
     Task<ConnectionProbeResult> ProbeConnectionAsync(SshServerConfig server, CancellationToken ct = default);
 
     Task<CommandResult> ExecuteCommandAsync(SshServerConfig server, string command, CancellationToken ct = default, int timeoutSeconds = 60);
-    Task<CommandResult> ExecuteWithSudoAsync(SshServerConfig server, string command, CancellationToken ct = default);
+    /// <param name="timeoutSeconds">命令超时秒数(1-3600)。提权路径默认 60；长提权(装包等)由调用方调大。</param>
+    Task<CommandResult> ExecuteWithSudoAsync(SshServerConfig server, string command, CancellationToken ct = default, int timeoutSeconds = 60);
 
     /// <summary>打开一条交互式 shell（PTY）会话，供终端标签使用。调用方负责释放。</summary>
     Task<SshShellSession> OpenShellAsync(SshServerConfig server, string terminalType, uint columns, uint rows, CancellationToken ct = default);

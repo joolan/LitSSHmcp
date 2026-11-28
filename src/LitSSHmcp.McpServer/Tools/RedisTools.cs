@@ -50,7 +50,7 @@ public class RedisTools
     [Description("Redis整体诊断: 内存/客户端/命中率/键空间/慢日志/主从/持久化。问'缓存慢/内存涨/命中率低'时优先用; 看具体key用redis_read")]
     public async Task<DiagnosticsResultDto> RedisDiagnostics(
         [Description("数据源 ID/名称(type=redis)")] string datasourceId,
-        [Description("Redis DB 索引(0..15, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
+        [Description("Redis DB 索引(0..63, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
         CancellationToken cancellationToken = default)
     {
         var (ds, status, error) = await ResolveAsync(datasourceId);
@@ -94,7 +94,7 @@ public class RedisTools
     public async Task<RedisCommandResultDto> RedisRead(
         [Description("数据源 ID/名称")] string datasourceId,
         [Description("Redis命令, 如 GET key / HGETALL user:1 / SLOWLOG GET 10")] string command,
-        [Description("Redis DB 索引(0..15, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
+        [Description("Redis DB 索引(0..63, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
         [Description("数组返回的最大元素数(默认200, 上限1000), 超出截断")] int maxItems = 200,
         CancellationToken cancellationToken = default)
     {
@@ -183,7 +183,7 @@ public class RedisTools
     public async Task<RedisCommandResultDto> RedisExecute(
         [Description("数据源 ID/名称")] string datasourceId,
         [Description("要执行的Redis写命令, 含空格的值用引号包裹, 如 SET session:1 'abc' EX 60")] string command,
-        [Description("Redis DB 索引(0..15, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
+        [Description("Redis DB 索引(0..63, 可选; 不传用数据源默认库)。建议用本参数切库而不是在命令里发 SELECT")] int? db = null,
         CancellationToken cancellationToken = default)
     {
         var (ds, status, error) = await ResolveAsync(datasourceId);
@@ -263,6 +263,7 @@ public class RedisTools
                 reply.Kind == RedisValueKind.Integer ? reply.Integer : null,
                 stopwatch.Elapsed.TotalMilliseconds);
 
+            var formatted = RedisValueFormatter.Format(reply, 100);
             return new RedisCommandResultDto
             {
                 Success = true,
@@ -270,7 +271,9 @@ public class RedisTools
                 Name = ds.Name,
                 Command = args,
                 Db = EffectiveDb(ds),
-                Result = JsonSerializer.Serialize(RedisValueFormatter.Format(reply, 100).Value, JsonOutput.Options),
+                // 结果与截断信号一并返回：静默截断会让模型把 100 项当全量集合下结论
+                Result = JsonSerializer.Serialize(formatted.Value, JsonOutput.Options),
+                Truncated = formatted.Truncated,
                 DurationMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 2)
             };
         }

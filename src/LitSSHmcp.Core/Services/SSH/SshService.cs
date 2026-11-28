@@ -334,8 +334,9 @@ public class SshService : ISshService
         return false;
     }
 
-    public async Task<CommandResult> ExecuteWithSudoAsync(SshServerConfig server, string command, CancellationToken ct = default)
+    public async Task<CommandResult> ExecuteWithSudoAsync(SshServerConfig server, string command, CancellationToken ct = default, int timeoutSeconds = 60)
     {
+        var effectiveTimeout = Math.Clamp(timeoutSeconds, 1, 3600);
         return await Task.Run(() =>
         {
             if (!TryAcquireTarget($"ssh:{server.Id}", out var lease, out var limitReason))
@@ -357,16 +358,16 @@ public class SshService : ISshService
 
                 CommandResult Execute() => server.SudoType switch
                 {
-                    SudoType.None => ExecuteCommandDirect(client, effectiveCommand, sw),
-                    SudoType.CurrentUser => ExecuteWithCurrentUserSudo(client, server, effectiveCommand, sw),
+                    SudoType.None => ExecuteCommandDirect(client, effectiveCommand, sw, effectiveTimeout),
+                    SudoType.CurrentUser => ExecuteWithCurrentUserSudo(client, server, effectiveCommand, sw, effectiveTimeout),
                     SudoType.RootUser => server.Username == "root"
-                        ? ExecuteCommandDirect(client, effectiveCommand, sw)
-                        : ExecuteWithSuUser(client, server, "root", effectiveCommand, sw),
+                        ? ExecuteCommandDirect(client, effectiveCommand, sw, effectiveTimeout)
+                        : ExecuteWithSuUser(client, server, "root", effectiveCommand, sw, effectiveTimeout),
                     SudoType.CustomUser => string.IsNullOrEmpty(server.SudoUsername) || server.Username == server.SudoUsername
-                        ? ExecuteCommandDirect(client, effectiveCommand, sw)
-                        : ExecuteWithSuUser(client, server, server.SudoUsername, effectiveCommand, sw),
-                    SudoType.Auto => ExecuteAutoSudo(client, server, effectiveCommand, sw),
-                    _ => ExecuteCommandDirect(client, effectiveCommand, sw)
+                        ? ExecuteCommandDirect(client, effectiveCommand, sw, effectiveTimeout)
+                        : ExecuteWithSuUser(client, server, server.SudoUsername, effectiveCommand, sw, effectiveTimeout),
+                    SudoType.Auto => ExecuteAutoSudo(client, server, effectiveCommand, sw, effectiveTimeout),
+                    _ => ExecuteCommandDirect(client, effectiveCommand, sw, effectiveTimeout)
                 };
 
                 // 最终结果统一脱敏（即使内层已脱敏，这里再兜底，确保任何路径/异常都不外泄密码）
@@ -400,10 +401,10 @@ public class SshService : ISshService
         }, ct);
     }
 
-    private CommandResult ExecuteCommandDirect(SshClient client, string command, Stopwatch sw)
+    private CommandResult ExecuteCommandDirect(SshClient client, string command, Stopwatch sw, int timeoutSeconds = 60)
     {
         using var cmd = client.CreateCommand(command);
-        cmd.CommandTimeout = TimeSpan.FromSeconds(60);
+        cmd.CommandTimeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 3600));
         var result = cmd.Execute();
         sw.Stop();
 
@@ -420,18 +421,18 @@ public class SshService : ISshService
         };
     }
 
-    private CommandResult ExecuteWithCurrentUserSudo(SshClient client, SshServerConfig server, string command, Stopwatch sw)
+    private CommandResult ExecuteWithCurrentUserSudo(SshClient client, SshServerConfig server, string command, Stopwatch sw, int timeoutSeconds = SudoShellTimeoutSeconds)
     {
         var password = server.SudoPassword ?? server.Password ?? string.Empty;
         // sudo -S 从 stdin 读取密码（不依赖 tty）；/bin/sh -c 兼容各发行版(不依赖 bash)；-p '' 关闭提示语。
         var sudoCmd = $"sudo -S -p '' /bin/sh -c '{command.Replace("'", "'\\''")}'";
 
-        var result = ExecuteWithStdinPassword(client, sudoCmd, password, sw);
+        var result = ExecuteWithStdinPassword(client, sudoCmd, password, sw, timeoutSeconds);
 
         // 部分发行版(RHEL/CentOS 的 Defaults requiretty 等)要求 sudo 必须有 tty，exec 通道无 tty 会被拒；
         // 此时回退到交互式 shell(pty) 重新执行（不兜底下发密码，避免误写到已运行命令的 stdin）。
         if (!result.Success && RequiresTty(result))
-            result = ExecuteWithPasswordViaShell(client, sudoCmd, password, sw, fallbackSendPassword: false);
+            result = ExecuteWithPasswordViaShell(client, sudoCmd, password, sw, fallbackSendPassword: false, timeoutSeconds: timeoutSeconds);
 
         result.Escalation = "sudo";
         return result;
@@ -453,10 +454,10 @@ public class SshService : ISshService
     /// 通过 exec 通道执行命令，并把提权密码写入其 stdin（sudo -S 从 stdin 读密码）。
     /// 这是 SSH.NET 官方推荐的 sudo -S 用法，不依赖交互式 shell，也不会有密码回显。
     /// </summary>
-    private CommandResult ExecuteWithStdinPassword(SshClient client, string command, string password, Stopwatch sw)
+    private CommandResult ExecuteWithStdinPassword(SshClient client, string command, string password, Stopwatch sw, int timeoutSeconds = SudoShellTimeoutSeconds)
     {
         using var cmd = client.CreateCommand(command);
-        cmd.CommandTimeout = TimeSpan.FromSeconds(SudoShellTimeoutSeconds);
+        cmd.CommandTimeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 3600));
         try
         {
             // 先启动执行，再获取 stdin（SSH.NET 2026 要求：输入流只能在执行期间使用）
@@ -509,12 +510,12 @@ public class SshService : ISshService
         }
     }
 
-    private CommandResult ExecuteWithSuUser(SshClient client, SshServerConfig server, string targetUser, string command, Stopwatch sw)
+    private CommandResult ExecuteWithSuUser(SshClient client, SshServerConfig server, string targetUser, string command, Stopwatch sw, int timeoutSeconds = SudoShellTimeoutSeconds)
     {
         var password = server.SudoPassword ?? string.Empty;
         var escapedCmd = command.Replace("'", "'\\''");
         var shellCmd = $"su - {targetUser} -c '{escapedCmd}'";
-        var result = ExecuteWithPasswordViaShell(client, shellCmd, password, sw);
+        var result = ExecuteWithPasswordViaShell(client, shellCmd, password, sw, timeoutSeconds: timeoutSeconds);
         result.Escalation = "su";
         return result;
     }
@@ -523,19 +524,19 @@ public class SshService : ISshService
     /// 自动提权：先试"当前用户 sudo"(用配置的提权密码)，失败(未授权/密码不通过)再回退 <c>su - root</c>。
     /// 适配"登录账号不在 sudoers、但可以 su 到 root"或反之的环境，无需用户事先判断。
     /// </summary>
-    private CommandResult ExecuteAutoSudo(SshClient client, SshServerConfig server, string command, Stopwatch sw)
+    private CommandResult ExecuteAutoSudo(SshClient client, SshServerConfig server, string command, Stopwatch sw, int timeoutSeconds = SudoShellTimeoutSeconds)
     {
         if (server.Username == "root")
-            return ExecuteCommandDirect(client, command, sw);
+            return ExecuteCommandDirect(client, command, sw, timeoutSeconds);
 
-        var viaSudo = ExecuteWithCurrentUserSudo(client, server, command, sw);
+        var viaSudo = ExecuteWithCurrentUserSudo(client, server, command, sw, timeoutSeconds);
         if (viaSudo.Success)
         {
             viaSudo.Escalation = "auto:sudo";
             return viaSudo;
         }
 
-        var viaSu = ExecuteWithSuUser(client, server, "root", command, sw);
+        var viaSu = ExecuteWithSuUser(client, server, "root", command, sw, timeoutSeconds);
         if (viaSu.Success)
         {
             viaSu.Escalation = "auto:su";
@@ -560,7 +561,7 @@ public class SshService : ISshService
     // 旧实现把"未取到退出码(-1)"也当作成功，导致失败被吞掉，这里改为明确超时。
     private const int SudoShellTimeoutSeconds = 120;
 
-    private CommandResult ExecuteWithPasswordViaShell(SshClient client, string command, string password, Stopwatch sw, bool fallbackSendPassword = true)
+    private CommandResult ExecuteWithPasswordViaShell(SshClient client, string command, string password, Stopwatch sw, bool fallbackSendPassword = true, int timeoutSeconds = SudoShellTimeoutSeconds)
     {
         try
         {
@@ -576,7 +577,8 @@ public class SshService : ISshService
             shell.WriteLine(command + "; echo LITSSH_EXIT:$?");
             Thread.Sleep(300);
 
-            while ((DateTime.UtcNow - startTime).TotalSeconds < SudoShellTimeoutSeconds)
+            var effectiveShellTimeout = Math.Clamp(timeoutSeconds, 1, 3600);
+            while ((DateTime.UtcNow - startTime).TotalSeconds < effectiveShellTimeout)
             {
                 if (shell.DataAvailable)
                 {
@@ -637,7 +639,7 @@ public class SshService : ISshService
                 errorKind = "timeout";
                 error = string.IsNullOrEmpty(password)
                     ? "未配置提权密码(su/sudo 需要密码), 无法提权; 请在服务器配置里填写提权密码(SudoPassword)。"
-                    : $"sudo/su 执行超时或未取得退出码({SudoShellTimeoutSeconds}秒内未回传 LITSSH_EXIT); " +
+                    : $"sudo/su 执行超时或未取得退出码({effectiveShellTimeout}秒内未回传 LITSSH_EXIT); " +
                       "若因 requiretty/提示未识别导致, 请检查该服务器的提权方式, 或改用 ssh_execute_command。";
             }
             else if (exitCode != 0)

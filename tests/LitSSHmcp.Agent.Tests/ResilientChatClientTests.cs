@@ -36,6 +36,41 @@ public class ResilientChatClientTests
         Assert.Equal(1, probe.MaxConcurrency);
     }
 
+    [Fact]
+    public async Task Streaming_timeout_throws_timeout_exception_not_cancelled()
+    {
+        // 内部超时必须转成 TimeoutException：否则会被归类为 Cancelled（误报“已停止”）且不参与重试。
+        var client = new ResilientChatClient(new HangingStreamChatClient(), 1, 1, 0);
+
+        static async Task ConsumeAll(IAsyncEnumerable<ChatResponseUpdate> stream)
+        {
+            await foreach (var _ in stream) { }
+        }
+
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() =>
+            ConsumeAll(client.GetStreamingResponseAsync(new[] { new ChatMessage(ChatRole.User, "hi") })));
+        // TaskCanceledException 是 OperationCanceledException 的子类（Task.Delay 取消的标准形态）
+        Assert.IsAssignableFrom<OperationCanceledException>(ex.InnerException);
+    }
+
+    private sealed class HangingStreamChatClient : IChatClient
+    {
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            yield break;
+        }
+
+        public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public void Dispose() { }
+    }
+
     private sealed class ConcurrencyProbeChatClient : IChatClient
     {
         private readonly object _sync = new();

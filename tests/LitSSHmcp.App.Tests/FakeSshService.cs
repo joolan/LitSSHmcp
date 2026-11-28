@@ -29,7 +29,8 @@ internal sealed class FakeSshService : ISshService
     public Task<CommandResult> ExecuteWithSudoAsync(
         SshServerConfig server,
         string command,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        int timeoutSeconds = 60)
         => ExecuteRecordedAsync(command, SudoOutputResolver ?? OutputResolver);
 
     public Task<SshShellSession> OpenShellAsync(

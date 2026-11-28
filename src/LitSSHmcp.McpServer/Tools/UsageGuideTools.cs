@@ -92,32 +92,45 @@ public class UsageGuideTools
 
         var jobsEnabled = enabled is null ||
                           enabled.Any(g => string.Equals(g, ToolGroups.Jobs, StringComparison.OrdinalIgnoreCase));
-        if (!summaryOnly && jobsEnabled)
+        if (jobsEnabled)
         {
-            var operationItems = new List<object>();
             var actual = jobOperations is { Count: > 0 }
                 ? jobOperations
                 : JobOperationPolicies.ForGroups(enabled).Select(p => (p.Operation, p.Description)).ToArray();
-            foreach (var (operation, fallbackDescription) in actual)
+            if (summaryOnly)
             {
-                var policy = JobOperationPolicies.Find(operation);
-                operationItems.Add(new
-                {
-                    operation,
-                    description = policy?.Description ?? fallbackDescription,
-                    arguments = policy?.ArgumentsHint ?? string.Empty,
-                    argumentsSchema = policy?.ArgumentsSchema?.Select(a => new
-                    {
-                        name = a.Name,
-                        type = a.Type,
-                        required = a.Required,
-                        description = a.Description
-                    }).ToArray(),
-                    readOnly = policy?.ReadOnly ?? true
-                });
+                // summary 档也要给 operation 参数摘要：否则 job_start 的 operation/argumentsObject
+                // 参数对外部 AI 客户端完全不可见，只能靠猜（full 档才有完整 schema）。
+                guide["job_operations"] = actual
+                    .Select(item => JobOperationPolicies.Find(item.Operation) is { } policy
+                        ? $"{policy.Operation}({policy.ArgumentsHint}) [{(policy.ReadOnly ? "只读" : "写")}]: {policy.Description}"
+                        : $"{item.Operation}: {item.Description}")
+                    .ToArray();
             }
-            if (operationItems.Count > 0)
-                guide["job_operations"] = operationItems;
+            else
+            {
+                var operationItems = new List<object>();
+                foreach (var (operation, fallbackDescription) in actual)
+                {
+                    var policy = JobOperationPolicies.Find(operation);
+                    operationItems.Add(new
+                    {
+                        operation,
+                        description = policy?.Description ?? fallbackDescription,
+                        arguments = policy?.ArgumentsHint ?? string.Empty,
+                        argumentsSchema = policy?.ArgumentsSchema?.Select(a => new
+                        {
+                            name = a.Name,
+                            type = a.Type,
+                            required = a.Required,
+                            description = a.Description
+                        }).ToArray(),
+                        readOnly = policy?.ReadOnly ?? true
+                    });
+                }
+                if (operationItems.Count > 0)
+                    guide["job_operations"] = operationItems;
+            }
         }
 
         var serverGuideLines = Keep(new[]
@@ -136,7 +149,7 @@ public class UsageGuideTools
             "用户要看日志文件尾部、在日志里搜错误/关键字或发现日志路径时,使用 log_query(action=tail/grep/find; 可传 path, 也可传 appId 用应用管理里配置的日志路径; 路径受 security.logs.allowedPaths 约束)",
             "用户问Java进程/线程/死锁/CPU飙高/内存/GC时,先用 java_processes 拿pid(可传appId过滤), 再用 java_diagnostics(action=threads/heap/info, 也可直接传appId自动解析pid)",
             "用户要对某个应用做整体体检(跨服务器+依赖数据库)时,优先用 app_health_snapshot, 再按需下钻",
-            "长任务统一用 job_start(operation=..., argumentsObject={...}, wait=false)；具体 operation 见 job_operations。查询用 job_status/job_result、事件用 job_events(fromSeq) 断点续读、取消用 job_cancel、本人任务列表用 job_list"
+            "长任务统一用 job_start(operation=..., argumentsObject={...}, wait=false)；各 operation 与参数见 job_operations 摘要。查询用 job_status/job_result、事件用 job_events(fromSeq) 断点续读、取消用 job_cancel、本人任务列表用 job_list"
         });
         if (serverGuideLines.Length > 0)
         {

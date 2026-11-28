@@ -636,7 +636,8 @@ public sealed class AgentRuntime : IAsyncDisposable
             fleetChangeTools: fleetChangeEnabled,
             profileName: ToolProfileFilter.Display(config.Profile),
             diagnosisTools: diagnosisEnabled,
-            insightTools: insightTool is not null);
+            insightTools: insightTool is not null,
+            availableToolNames: mcpTools.Select(t => t.Name).ToArray());
         };
 
         // 主代理基础工具 = MCP + 工作区文档 + 技能参考 + 落盘读取 + 记忆/脚本登记 + 宿主注入的本地工具（不含子代理/计划，它们依赖 client/回调，按会话构建）
@@ -648,8 +649,11 @@ public sealed class AgentRuntime : IAsyncDisposable
             .Concat(fleetChangeEnabled ? new[] { fleetChangeTool! } : Array.Empty<IAgentTool>())
             .Concat(scriptTools)
             .Concat(extraTools ?? Enumerable.Empty<IAgentTool>()).ToList();
-        // 子代理只给只读类工具(MCP/技能/落盘)，不给工作区写工具与计划, 避免副作用与递归
-        var subTools = mcpTools.Concat(skillTools).Concat(spillTools).ToList();
+        // 子代理硬只读闸（此前仅有系统提示词约束）：远程 MCP 工具只放行 ReadOnly 注解，
+        // 或“只写本地缓存、远端仅固定只读命令”的安全探测白名单；本地 skill/spill 工具
+        // 无远端副作用，保持放行。避免隔离子代理在用户不可见处执行写操作（含提示词注入诱发的路径）。
+        var subTools = mcpTools.Where(ToolProfileFilter.IsProfileReadOnly)
+            .Concat(skillTools).Concat(spillTools).ToList();
         // profile 的本地工具白名单（远程工具已在上方按分组/只读裁剪）。
         baseTools = baseTools.Where(t => t.ToolGroup is not null ||
                                          ToolProfileFilter.AllowsLocal(t.Name, config.Profile)).ToList();

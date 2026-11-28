@@ -36,6 +36,9 @@ public sealed class GuardedFleetItem
     public string? Error { get; init; }
     public string Output { get; init; } = string.Empty;
     public bool Truncated { get; init; }
+
+    /// <summary>截断前的原始输出字符数（Output 被截断时可据此判断丢了多少内容）。</summary>
+    public int OutputChars { get; init; }
     public int ExitCode { get; init; }
     public double DurationMs { get; init; }
 }
@@ -150,6 +153,15 @@ public sealed class GuardedCommandService : IGuardedCommandService
             result.ExitCode, AuditCategory.Exec);
 
         var (output, truncated, originalLength) = ToolSupport.Truncate(result.Output, ToolSupport.MaxOutputChars);
+        // docker logs 等场景：容器把日志写 stderr、退出码 0 → stdout 为空会伪装成“无输出”。
+        // 成功且 stdout 为空而 stderr 有内容时，把 stderr 并入输出并显式标注，避免模型误判“没有日志”。
+        if (result.Success && output.Length == 0 && !string.IsNullOrWhiteSpace(result.Error))
+        {
+            var (stderr, stderrTruncated, stderrLength) = ToolSupport.Truncate(result.Error, ToolSupport.MaxOutputChars);
+            output = "[stderr] " + stderr;
+            truncated = stderrTruncated;
+            originalLength = stderrLength;
+        }
         return new GuardedCommandOutcome
         {
             ServerFound = true,
@@ -253,6 +265,7 @@ public sealed class GuardedCommandService : IGuardedCommandService
                         Error = result.Success ? null : ToolSupport.RedactSecrets(result.Error, server),
                         Output = ToolSupport.RedactSecrets(output, server),
                         Truncated = truncated,
+                        OutputChars = result.Output.Length,
                         ExitCode = result.ExitCode,
                         DurationMs = sw.Elapsed.TotalMilliseconds
                     };

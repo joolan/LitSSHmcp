@@ -23,6 +23,10 @@ public static class ChatErrorClassifier
         if (ex is OperationCanceledException)
             return AgentErrorKind.Cancelled;
 
+        // ResilientChatClient 把内部超时 CTS 的 OCE 包装为 TimeoutException；与用户取消区分开
+        if (ex is TimeoutException)
+            return AgentErrorKind.Timeout;
+
         if (ex is ClientResultException client)
             return client.Status switch
             {

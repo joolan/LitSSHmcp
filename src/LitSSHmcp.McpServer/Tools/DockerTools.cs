@@ -15,6 +15,16 @@ namespace LitSSHmcp.McpServer.Tools;
 public class DockerTools
 {
     private static readonly Regex ContainerName = new("^[A-Za-z0-9][A-Za-z0-9_.-]*$", RegexOptions.Compiled);
+
+    /// <summary>容器名校验失败的统一提示：给出合法字符规则与下一步查询入口，便于模型自纠正。</summary>
+    private static RemoteCommandResultDto InvalidContainer(string container) =>
+        new()
+        {
+            Success = false,
+            Status = "invalid_container",
+            Error = $"非法的容器名: {container}。容器名须以字母/数字开头，仅可含字母、数字、点(.)、下划线(_)、横线(-)；" +
+                    "先用 docker_query(action=ps) 查看实际容器名或容器ID，再重试。"
+        };
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly IGuardedCommandService _runner;
@@ -110,7 +120,7 @@ public class DockerTools
         CancellationToken cancellationToken = default)
     {
         if (!ContainerName.IsMatch(container))
-            return new RemoteCommandResultDto { Success = false, Status = "invalid_container", Error = $"非法的容器名: {container}" };
+            return InvalidContainer(container);
 
         tail = Math.Clamp(tail, 1, 5000);
         var sinceArg = string.IsNullOrWhiteSpace(since)
@@ -127,7 +137,7 @@ public class DockerTools
         CancellationToken cancellationToken = default)
     {
         if (!ContainerName.IsMatch(container))
-            return new RemoteCommandResultDto { Success = false, Status = "invalid_container", Error = $"非法的容器名: {container}" };
+            return InvalidContainer(container);
 
         var command = $"docker inspect -- {Core.Services.Security.ShellQuote.Single(container)}";
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
@@ -157,7 +167,7 @@ public class DockerTools
         CancellationToken cancellationToken = default)
     {
         if (!ContainerName.IsMatch(container))
-            return new RemoteCommandResultDto { Success = false, Status = "invalid_container", Error = $"非法的容器名: {container}" };
+            return InvalidContainer(container);
 
         var command = $"docker restart -- {Core.Services.Security.ShellQuote.Single(container)}";
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
@@ -172,7 +182,7 @@ public class DockerTools
         CancellationToken cancellationToken = default)
     {
         if (!ContainerName.IsMatch(container))
-            return new RemoteCommandResultDto { Success = false, Status = "invalid_container", Error = $"非法的容器名: {container}" };
+            return InvalidContainer(container);
         if (!Core.Services.Security.PosixCommandLine.TrySplit(command, out var argv, out var error))
             return new RemoteCommandResultDto { Success = false, Status = "invalid_argument", Error = error };
 

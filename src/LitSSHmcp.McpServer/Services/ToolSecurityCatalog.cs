@@ -211,9 +211,20 @@ public static class ToolSecurityCatalog
         return (routed, UnwrapJobArguments(args));
     }
 
-    /// <summary>把 job_start 的 arguments(JSON 对象文本) 展开为内层参数字典；解析失败返回外层参数。</summary>
+    /// <summary>把 job_start 的 arguments(JSON 对象文本) / argumentsObject(结构化对象) 展开为内层参数字典；解析失败返回外层参数。</summary>
     public static IDictionary<string, JsonElement>? UnwrapJobArguments(IDictionary<string, JsonElement>? args)
     {
+        // argumentsObject（job_start 描述标注为“推荐”的结构化传参）此前只有工具体认识，
+        // 授权/目标解析只认 arguments 字符串 → 推荐形态会被 enforce 拒绝或回退为全量目标。
+        if (args is not null && args.TryGetValue("argumentsObject", out var structured) &&
+            structured.ValueKind == JsonValueKind.Object)
+        {
+            var direct = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var property in structured.EnumerateObject())
+                direct[property.Name] = property.Value.Clone();
+            return direct;
+        }
+
         var raw = ToolTargetResolver.GetStringArg(args, "arguments");
         if (string.IsNullOrWhiteSpace(raw))
             return args;

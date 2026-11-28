@@ -43,10 +43,11 @@ public class SudoTools
     }
 
     [McpServerTool(Name = "ssh_execute_sudo", UseStructuredContent = true, OutputSchemaType = typeof(CommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("提权执行命令(sudo/su)，用于启停服务/装软件/改系统配置等。总是需要人工确认；未配置提权返回sudo_not_configured。需要root时直接用，无需先预检")]
+    [Description("提权执行命令(sudo/su)：启停服务/装软件/改配置。总需人工确认；未配置提权返回 sudo_not_configured。超时默认60秒，长提权(apt安装)请调大 timeoutSeconds")]
     public async Task<CommandResultDto> ExecuteWithSudo(
         [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("要以sudo执行的命令(单条)")] string command,
+        [Description("命令超时秒数(1-3600, 默认60)。长提权(如 apt install)请设 300-1200")] int timeoutSeconds = 60,
         CancellationToken cancellationToken = default)
     {
         var config = await _configService.LoadConfigAsync();
@@ -167,7 +168,7 @@ public class SudoTools
                 Decision = ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode)
             });
 
-        var result = await _sshService.ExecuteWithSudoAsync(server, command, cancellationToken);
+        var result = await _sshService.ExecuteWithSudoAsync(server, command, cancellationToken, timeoutSeconds);
 
         await ToolSupport.SafeLogCommandAsync(_auditLogService, new CommandAuditLog
         {

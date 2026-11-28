@@ -27,7 +27,7 @@ public static class SystemPromptBuilder
         string? sessionWorkspaceDir = null, string? sharedWorkspaceDir = null,
         bool workLog = false, string? workLogDir = null, string? workLogPath = null, string? workLogRoot = null,
         bool fleetTools = false, bool fleetChangeTools = false, string? profileName = null, bool diagnosisTools = false,
-        bool insightTools = false)
+        bool insightTools = false, IReadOnlyCollection<string>? availableToolNames = null)
     {
         return PromptComposer.Compose(new SystemPromptContext
         {
@@ -59,19 +59,21 @@ public static class SystemPromptBuilder
             FleetChangeTools = fleetChangeTools,
             ProfileName = profileName,
             DiagnosisTools = diagnosisTools,
-            InsightTools = insightTools
+            InsightTools = insightTools,
+            AvailableToolNames = availableToolNames
         });
     }
 
     /// <summary>外部 MCP / 内置 MCP 启停状态段（含第三方工具的安全边界说明）。</summary>
     /// <summary>短工具路由表：10~15 行，降低模型在 35+ 工具间的选择成本；完整路由仍用 mcp_usage_guide。</summary>
+    /// <param name="availableToolNames">会话实际可用的 MCP 工具名（已按 profile 裁剪）；null 表示不过滤。
+    /// 只读 profile 下按名过滤，避免系统提示教模型调用已裁剪的写工具 → “未知工具”失败白耗熔断配额。</param>
     internal static void AppendToolRouting(StringBuilder sb, IReadOnlyCollection<string>? availableGroups,
-        bool subAgent, bool fleetTools, bool fleetChangeTools)
+        bool subAgent, bool fleetTools, bool fleetChangeTools, IReadOnlyCollection<string>? availableToolNames = null)
     {
         var lines = ToolRoutingCatalog.ForGroups(availableGroups)
-            .Select(route =>
-                $"- {route.Intent}：{route.Tools}" +
-                (string.IsNullOrWhiteSpace(route.Note) ? "。" : $"（{route.Note}）。"))
+            .Select(route => FormatRoute(route, availableToolNames))
+            .OfType<string>()
             .ToList();
 
         if (availableGroups is null ||
@@ -99,6 +101,42 @@ public static class SystemPromptBuilder
         sb.AppendLine("## 工具路由(优先)");
         foreach (var line in lines)
             sb.AppendLine(line);
+    }
+
+    /// <summary>
+    /// 单条路由格式化：按实际可用工具名过滤——提到的工具全部不可用 → 返回 null（整行剔除）；
+    /// 部分不可用 → 行尾加“(只读模式下 x 不可用)”。工具名从反引号片段中提取。
+    /// </summary>
+    private static string? FormatRoute(ToolRoute route, IReadOnlyCollection<string>? availableToolNames)
+    {
+        if (availableToolNames is null)
+            return FormatRouteLine(route, null);
+
+        var mentioned = System.Text.RegularExpressions.Regex.Matches(route.Tools, "`([A-Za-z][A-Za-z0-9_]*)")
+            .Select(m => m.Groups[1].Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (mentioned.Count == 0)
+            return FormatRouteLine(route, null);
+
+        // 工具是否可用：在可用集合中，或不在路由表的写工具清单里（清单是保守全集，避免集合缺漏时误删路由）
+        var unavailable = mentioned
+            .Where(name => !availableToolNames.Contains(name) && ToolRoutingCatalog.WriteOnlyToolNames.Contains(name))
+            .ToList();
+
+        if (unavailable.Count >= mentioned.Count)
+            return null;    // 整条路由的工具都不可用
+        return unavailable.Count > 0
+            ? FormatRouteLine(route, $"只读模式下 {string.Join(" / ", unavailable)} 不可用")
+            : FormatRouteLine(route, null);
+    }
+
+    private static string FormatRouteLine(ToolRoute route, string? unavailability)
+    {
+        var note = string.IsNullOrWhiteSpace(route.Note) ? null : route.Note;
+        if (unavailability is not null)
+            note = note is null ? unavailability : $"{note}；{unavailability}";
+        return $"- {route.Intent}：{route.Tools}" + (note is null ? "。" : $"（{note}）。");
     }
 
     internal static void AppendExternalMcpSection(

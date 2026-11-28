@@ -6,6 +6,25 @@
 
 ### 新增
 
+- **harness 强健性第二批（QW9-12 + H5/H6 + M4/M5/M6）**：第二批聚焦调用成功率与提示词一致性。
+  - **路由表按实际可用工具过滤（H5）**：只读 profile（诊断/资产/问答）裁掉写工具后，系统提示路由表仍在教模型调 `ssh_execute_sudo`/`mysql_execute` 等——模型按提示调用必得「未知工具」失败并白耗熔断配额。现在 `AppendToolRouting` 按会话实际暴露的 MCP 工具名集合过滤：整条路由的工具全部不可用 → 整行剔除；部分不可用 → 行尾加「只读模式下 x 不可用」标注。
+  - **滚动摘要按节压缩（H6）**：摘要超预算的旧实现 `summary[^4000..]` 砍头截断，恰好丢掉最早写入的「必须保留：连接方式/路径/凭据线索」节。改为按节压缩：所有摘要块的「必须保留」行聚合置顶，其余节从最新往旧保留到预算耗尽。
+  - **重试退避指数化 + Retry-After（QW12）**：旧实现线性 300ms×attempt 且无视 Retry-After，429 场景重试必然二次撞墙。现在优先按响应 `Retry-After` 头等待（≤2 分钟），否则指数退避（300ms 起步、8s 封顶）加 ±15% jitter。
+  - **sudo 命令超时可配（M3）**：`ssh_execute_sudo` 新增 `timeoutSeconds`（1-3600，默认 60），工具描述明确「长提权(apt 安装)必须调大」；超时贯通 sudo/su/自动提权三条内部执行路径。
+  - **Redis 契约统一与截断信号（M1/M2）**：`db` 参数三处描述统一为 0..63（与代码校验一致，旧描述写 0..15 自相矛盾）；`redis_execute` 结果写入 `Truncated`（此前静默截 100 项且恒 false，模型会把 100 项当全量集合下结论）。
+  - **docker/service 校验错误可操作化（M4）**：`invalid_container`/`invalid_argument` 错误补「合法字符规则 + 先用 docker_query(action=ps)/service(action=list) 查名」的自纠正指引。
+  - **job operation 参数对 AI 可见（M5）**：`mcp_usage_guide` summary 档（默认档）此前完全没有 `job_operations`，外部 AI 客户端对 `job_start` 的 operation 与参数只能靠猜。现在 summary 档输出每个 operation 的「名称(参数提示) [只读/写]: 描述」紧凑清单。
+  - **fleet 单台截断披露（M6）**：`ssh_execute_fleet` 每台输出截 600 字符，旧描述未提。现在描述披露截断与 `OutputChars`（DTO 新增原始输出长度字段），提示需要完整输出改用单台工具。
+  - **ssh_download 注解纠偏（M7）**：注解从 `Destructive=true` 改为 `ReadOnly=true, Idempotent=true`（下载只读远端、写入本地，安全目录本就归类 ServerRead），不再给客户端错误信号。
+- **harness 强健性第二轮修复（P0×4 + 会话层×4）**：来自 2026-11-28 第二轮强健性审计（`maybe-to/2026-11-28-AI运维助手与MCP服务第二轮强健性审计.md`）的第一批落地。
+  - **子代理硬只读闸**：子代理此前只有系统提示词约束"只读"，`mcpTools` 实际包含全部写工具——自动委派的隔离子代理可在用户不可见处执行写操作（含提示词注入诱发路径）。现在构建子代理工具集时硬过滤：远程 MCP 工具仅放行 `ReadOnly` 注解或"只写本地缓存、远端固定只读"的安全探测白名单（`ToolProfileFilter.IsProfileReadOnly`），本地 skill/spill 工具保持放行。
+  - **provider 超时与用户取消分离**：`ResilientChatClient` 的内部超时 CTS 触发的 `OperationCanceledException` 与用户取消共享异常类型，被归类为「已取消/已停止」且永不重试。现在内部超时统一包装为 `TimeoutException`，`ChatErrorClassifier` 新增映射 → 正确归类 Timeout（可重试、提示"请求超时"），流式首包与中途超时都覆盖。
+  - **docker logs stderr 不再丢弃**：容器把日志写 stderr、退出码 0 时 stdout 为空，`docker_query(action=logs)` 会伪装成"无日志"。`GuardedCommandService` 出口在「成功且 stdout 空、stderr 非空」时把 stderr 并入输出并加 `[stderr]` 前缀。
+  - **`job_start` 的 `argumentsObject` 授权解析兼容**：工具体与工具描述都把 `argumentsObject` 标为推荐传参，但授权/目标解析的 `UnwrapJobArguments` 只认识 `arguments` 字符串——Web enforce 模式下推荐形态被拒，MultiServer 目标回退为扫描全部服务器。现在两种形态都识别。
+  - **会话成本预算超限保留回答**：预算检查原在 assistant 消息入历史之前，而文本增量已流给用户——超限会把"用户看到的回答"从历史/落库里抹掉（追问失忆）。现在先入历史再判定，超限时为已入历史的 tool_calls 补占位结果。
+  - **tool_call id 规范化**：弱模型/流式解析异常会产生空 id 或重复 id，服务端会整单拒绝请求。每轮请求前（`RepairOrphanToolCalls`，新增调用点）统一修复：空 id 合成、重复 id 重命名（同序的重复结果跟随改名、空 id 垃圾结果删除），缺失结果补占位。
+  - **动态上下文注入面收敛**：工作记忆/检索召回/子代理摘要由 `System` 角色改为 `User` 角色注入（内容来自历史工具输出与远端资产，不能以最高权限注入）；同时上下文管理（`ManageContextAsync`）显式排除这些在发动态上下文，既不当作用户轮边界也不进入裁剪丢弃范围——避免长轮次误触发轮截断压缩与摘要模型调用。
+  - **并行工具取消保留已完成结果**：并行只读取证中一路被取消时，`Task.WhenAll` 抛出后已完成的任务结果原先会被整体替换为"已被取消"占位（模型只能全部重做）。现在 catch 中回填已完成任务的真实结果，只对未完成的补占位。
 - **设置界面可配置召回阈值**：「AI 助手设置 → 助手设置 → 长期记忆」在 `topK` 同行新增「召回阈值」输入框（绑定 `MemoryRecallThreshold`），此前该字段只能手改 `config.json`。保存时用不变文化解析并归一化到 `(0,1]`，非法值回退默认 `0.45` 且回显归一化结果，确保界面显示值与运行时生效值一致。
 - **长期记忆·旧数据资产归属回填**：新增 `MemoryAssetBackfiller`（启动时幂等执行）。从「会话工具调用参数里的 serverId」+「内容文本里的名称/主机/裸 ID」两条线索，为历史 raw 补全资产归属，判定为 attributed / multi / unknown；unknown 与 multi 在召回打分中降权，不再无条件放行给任意资产。真实库副本验证：172 条无归属 raw → 39 attributed / 66 multi / 67 unknown，复跑不再处理。
 - **长期记忆·事件自动蒸馏成经验草稿**：新增 `ExperienceDistiller`，把已解决事件（现象→根因→处置→结果）整理成结构化经验草稿，写入 `agent_consolidation_candidate`（pending，**不进召回**）。模型用 `ops_memory_write action=drafts / confirm_draft / reject_draft` 确认（可顺手改 key），不必从零撰写；不新增工具、不恢复审核 UI。真实库 52 条 resolved 事件全部生成草稿。

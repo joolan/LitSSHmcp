@@ -478,7 +478,7 @@ public sealed class JobToolsTests : IDisposable
         public Task<CommandResult> ExecuteCommandAsync(SshServerConfig server, string command,
             CancellationToken ct = default, int timeoutSeconds = 60) => Task.FromResult(new CommandResult { Success = true });
         public Task<CommandResult> ExecuteWithSudoAsync(SshServerConfig server, string command,
-            CancellationToken ct = default) => Task.FromResult(new CommandResult { Success = true });
+            CancellationToken ct = default, int timeoutSeconds = 60) => Task.FromResult(new CommandResult { Success = true });
         public Task<SshShellSession> OpenShellAsync(SshServerConfig server, string terminalType, uint columns,
             uint rows, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<FileTransferResult> UploadFileAsync(SshServerConfig server, string localPath, string remotePath,

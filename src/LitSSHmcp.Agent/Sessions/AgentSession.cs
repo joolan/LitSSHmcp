@@ -41,6 +41,13 @@ public sealed class AgentSession
     private readonly WorkLogStore? _workLog;
     private readonly AgentWorkingMemory _workingMemory = new();
     private readonly HashSet<string> _turnAssets = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 本回合在发的动态上下文（工作记忆/检索召回/子代理摘要）。它们以 User 角色注入（收敛提示注入面），
+    /// 但必须被上下文管理排除：既不算「用户轮边界」，也不进入裁剪丢弃范围——否则长轮次中
+    /// 会误触发轮截断压缩与摘要模型调用（摘要还会误消费并发中的模型调用队列）。
+    /// </summary>
+    private readonly List<ChatMessage> _activeDynamicContext = new();
     private const int MaxTurnAssets = AssetAttribution.MaxAssets;
 
     private IReadOnlyDictionary<string, AgentToolPolicy>? _toolPolicy;
@@ -57,7 +64,7 @@ public sealed class AgentSession
     /// <summary>滚动摘要：被裁剪掉的旧轮次压缩成的一段文本（注入为继系统提示后的第一条 System 消息）。</summary>
     private string? _summary;
 
-    private const int MaxSummaryChars = 4000;
+    internal const int MaxSummaryChars = 4000;
     private const int MaxSummarizeInputChars = 8000;
     /// <summary>同一轮内连续工具失败的熔断阈值（含审批被拒；达到即停止本轮，避免空转）。</summary>
     private const int MaxConsecutiveToolFailures = 4;
@@ -335,9 +342,11 @@ public sealed class AgentSession
         if (text is null)
             return;
 
-        var message = new ChatMessage(ChatRole.System, text);
+        // User 角色：工作记忆含本轮工具结果摘要，不能以 System 最高权限注入（提示注入面收敛）
+        var message = new ChatMessage(ChatRole.User, text);
         Messages.Insert(Messages.Count - 1, message);
         transientContext.Add(message);
+        _activeDynamicContext.Add(message);
     }
 
     /// <summary>从本轮工具参数里累积真实目标资产（名称/主机名会按资产清单解析成规范 ID）。</summary>
@@ -387,12 +396,15 @@ public sealed class AgentSession
             return;
         }
 
-        var context = new ChatMessage(ChatRole.System,
-            "## 自动子代理只读预取证\n" +
+        // User 角色：摘要内容来自隔离子代理的工具输出（可能含被监控主机的注入文本），
+        // 不能以 System 最高权限注入；前缀已声明“仅供参考”。
+        var context = new ChatMessage(ChatRole.User,
+            "## 自动子代理只读预取证(仅供参考)\n" +
             "以下摘要由隔离子代理生成，原始大输出未进入主上下文。优先基于该摘要回答；" +
             "仅当摘要不足时再调用必要的只读工具，不要重复委派同一任务。\n\n" + text.Trim());
         Messages.Insert(Messages.Count - 1, context);
         transientContext.Add(context);
+        _activeDynamicContext.Add(context);
     }
 
     internal static bool ShouldAutoDelegate(string userText, AgentConfig config)
@@ -444,6 +456,7 @@ public sealed class AgentSession
         // 检索上下文（图谱 + 记忆）合并成一条**临时** System 消息：本轮结束后移除，
         // 持久历史保持 append-only，避免长会话累积历史召回文本、也尽量不打断前缀缓存。
         var transientContext = new List<ChatMessage>(1);
+        _activeDynamicContext.Clear();
         try
         {
             await TryAutoDelegateAsync(userText, progress, transientContext, ct);
@@ -454,6 +467,7 @@ public sealed class AgentSession
             {
                 Messages.Insert(Messages.Count - 1, retrieval);
                 transientContext.Add(retrieval);
+                _activeDynamicContext.Add(retrieval);
             }
 
             var options = new ChatOptions
@@ -542,6 +556,9 @@ public sealed class AgentSession
 
             // 本轮请求发出前的估算值：消息 + 工具定义（provider 的 input 包含 tools，不含会让校准比值虚高）
             await DrainSteeringAsync(ct, progress);
+            // 每轮请求前修复历史：规范化空/重复 tool_call id、补齐孤儿结果（轮内 catch 只兜住异常路径，
+            // 弱模型产生的畸形 id 会在下一轮请求被服务端整单拒绝，这里统一修复）。
+            RepairOrphanToolCalls();
 
             var estimatedBeforeRequest = TokenEstimator.Estimate(Messages) + _toolDefinitionTokens;
 
@@ -561,12 +578,9 @@ public sealed class AgentSession
 
             var response = updates.ToChatResponse();
             RecordUsage(response, estimatedBeforeRequest);
-            if (_budgetCheck is not null && !_budgetCheck(SessionInputTokens, SessionOutputTokens))
-            {
-                progress?.Report(new AgentEvent(AgentEventKind.Error, Text: BudgetExceededMessage));
-                return;
-            }
             var assistantMessages = response.Messages;
+            // 先把已生成的 assistant 消息入历史，再做成本预算判定：
+            // 此时文本增量已经流给用户，若不入历史会造成「用户看到的回答」与模型历史/落库不一致（追问失忆）。
             foreach (var message in assistantMessages)
             {
                 // 思考内容仅用于展示，绝不回喂上下文（部分 provider 不接受输入含 reasoning，且会白白撑大历史）。
@@ -575,6 +589,15 @@ public sealed class AgentSession
                         if (contentsList[i] is TextReasoningContent)
                             contentsList.RemoveAt(i);
                 Messages.Add(message);
+            }
+            if (_budgetCheck is not null && !_budgetCheck(SessionInputTokens, SessionOutputTokens))
+            {
+                // 为已入历史的 tool_calls 补占位结果，避免孤儿 tool_calls 导致下一轮请求被拒。
+                foreach (var call in assistantMessages.SelectMany(m => m.Contents).OfType<FunctionCallContent>())
+                    Messages.Add(new ChatMessage(ChatRole.Tool,
+                        new AIContent[] { new FunctionResultContent(call.CallId, "（会话成本预算已达上限，未执行）") }));
+                progress?.Report(new AgentEvent(AgentEventKind.Error, Text: BudgetExceededMessage));
+                return;
             }
 
             var contents = assistantMessages.SelectMany(m => m.Contents).ToList();
@@ -791,12 +814,14 @@ public sealed class AgentSession
             }
 
             var answered = new HashSet<string>(StringComparer.Ordinal);
+            // 提升到 try 外：catch 需要访问并行任务列表，回填已完成的真实结果。
+            var parallelIndices = new List<int>();
+            Task<(bool Ok, string Text, long Ms)>[] parallelTasks = Array.Empty<Task<(bool Ok, string Text, long Ms)>>();
             try
             {
                 var results = new (bool Ok, string Text, long Ms)[calls.Count];
 
                 // 只读且非破坏性的调用并行执行（一次取证多台/多维时显著降延迟）；写/需审批/未知工具保持串行。
-                var parallelIndices = new List<int>();
                 for (var i = 0; i < calls.Count; i++)
                     if (_toolsByName.TryGetValue(calls[i].Name, out var meta) && meta.ReadOnly && !meta.Destructive)
                         parallelIndices.Add(i);
@@ -805,12 +830,12 @@ public sealed class AgentSession
                 {
                     // 用 Task.Run 隔离：部分本地工具在首个 await 前可能同步阻塞，
                     // 直接调用会先占满当前线程，导致“并行”退化为串行（见并行工具测试）。
-                    var tasks = parallelIndices
+                    parallelTasks = parallelIndices
                         .Select(i => Task.Run(() => InvokeOneAsync(calls[i], progress, ct), ct))
                         .ToArray();
-                    await Task.WhenAll(tasks);   // 任一取消将抛出，由外层补齐孤儿并中止
+                    await Task.WhenAll(parallelTasks);   // 任一取消将抛出，由 catch 回填后补齐孤儿并中止
                     for (var k = 0; k < parallelIndices.Count; k++)
-                        results[parallelIndices[k]] = tasks[k].Result;
+                        results[parallelIndices[k]] = parallelTasks[k].Result;
                 }
                 else if (parallelIndices.Count == 1)
                 {
@@ -850,8 +875,25 @@ public sealed class AgentSession
             }
             catch (Exception ex)
             {
-                // 中断（用户取消/网络错误）时为未回答的 tool_calls 补齐占位结果，
+                // 先回填已完成的并行任务真实结果（WhenAll 抛出时不能把已成功的取证丢成“无结果”，
+                // 否则模型只能全部重做、浪费 token 与目标机负载），再为未回答的 tool_calls 补占位，
                 // 避免历史里留下"孤儿 tool_calls"导致下一轮请求被服务端拒绝。
+                for (var k = 0; k < parallelTasks.Length; k++)
+                {
+                    if (!parallelTasks[k].IsCompletedSuccessfully)
+                        continue;
+                    var idx = parallelIndices[k];
+                    var (ok, resultText, ms) = parallelTasks[k].Result;
+                    answered.Add(calls[idx].CallId);
+                    _workingMemory.RecordToolResult(calls[idx].Name, ok, resultText);
+                    progress?.Report(new AgentEvent(
+                        AgentEventKind.ToolResult, ToolName: calls[idx].Name, Text: resultText,
+                        ToolSuccess: ok, DurationMs: ms, CallId: calls[idx].CallId));
+                    Messages.Add(new ChatMessage(ChatRole.Tool, new AIContent[]
+                    {
+                        new FunctionResultContent(calls[idx].CallId, BuildToolResultContextText(calls[idx].Name, resultText))
+                    }));
+                }
                 var fill = ex is OperationCanceledException
                     ? "（本次工具调用已被取消，无结果）"
                     : $"（本次工具调用中断: {ex.Message}）";
@@ -875,6 +917,7 @@ public sealed class AgentSession
             // 检索上下文只服务本轮；移除后持久历史仍是 append-only，下一轮不会被旧召回文本拖大。
             foreach (var message in transientContext)
                 Messages.Remove(message);
+            _activeDynamicContext.Clear();
             // 本轮工具实际触达的资产，供回合结束后的记忆写入做归属（失败/取消轮也会保留已解析结果）。
             LastTurnAssetIds = _turnAssets.Count == 0
                 ? Array.Empty<string>()
@@ -967,7 +1010,8 @@ public sealed class AgentSession
         var text = "以下是根据本次请求自动检索的上下文(仅供参考, 以实际工具结果为准):\n" + builder.ToString().Trim();
         if (text.Length > MaxRetrievalContextChars)
             text = text[..MaxRetrievalContextChars].TrimEnd() + "\n…(检索上下文已截断)";
-        return new ChatMessage(ChatRole.System, text);
+        // User 角色：记忆召回与图谱内容来自历史工具输出与远端资产，不能以 System 最高权限注入。
+        return new ChatMessage(ChatRole.User, text);
     }
 
     private async Task<AssetGraphContextResult?> FetchGraphContextAsync(string userText,
@@ -1555,6 +1599,93 @@ public sealed class AgentSession
         if (Messages.Count == 0)
             return;
 
+        // 规范化 tool_call id（弱模型/流式解析异常会产生空 id 或重复 id）：
+        // 空 id 的调用永无结果、重复 id 会让第二个调用被第一个的结果“代表”，
+        // 服务端会因孤儿/重复 id 整单拒绝请求。重命名的调用由下方统一补占位结果；
+        // 重复 id 对应的多余结果按出现顺序跟随重命名，保持配对完整。
+        var seenCallIds = new HashSet<string>(StringComparer.Ordinal);
+        var seenResultIds = new HashSet<string>(StringComparer.Ordinal);
+        var pendingCallRenames = new List<(int Msg, int Content, string? OldId, string NewId)>();
+        var pendingResultRenames = new List<(int Msg, int Content, string OldId)>();
+        var emptyResultDeletions = new List<(int Msg, int Content)>();
+        var callDupSeq = new Dictionary<string, int>(StringComparer.Ordinal);
+        var resultDupSeq = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var i = 0; i < Messages.Count; i++)
+        {
+            var contents = Messages[i].Contents;
+            for (var j = 0; j < contents.Count; j++)
+            {
+                if (contents[j] is FunctionCallContent call)
+                {
+                    string newId;
+                    string? oldId = call.CallId;
+                    if (string.IsNullOrEmpty(call.CallId))
+                    {
+                        newId = "call_" + Guid.NewGuid().ToString("N")[..12];
+                        oldId = null; // 空 id 不会有任何结果，改名后由 missing 逻辑补占位
+                    }
+                    else if (!seenCallIds.Add(call.CallId))
+                    {
+                        var seq = (callDupSeq.TryGetValue(call.CallId, out var n) ? n : 0) + 1;
+                        callDupSeq[call.CallId] = seq;
+                        newId = $"{call.CallId}_dup{seq}";
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                    pendingCallRenames.Add((i, j, oldId, newId));
+                }
+                else if (contents[j] is FunctionResultContent result && string.IsNullOrEmpty(result.CallId))
+                {
+                    // 空 id 结果是垃圾数据（空 id 调用无法配对），直接删除，改由占位结果补齐配对
+                    emptyResultDeletions.Add((i, j));
+                }
+                else if (contents[j] is FunctionResultContent duplicated &&
+                         !string.IsNullOrEmpty(duplicated.CallId) && !seenResultIds.Add(duplicated.CallId))
+                {
+                    var seq = (resultDupSeq.TryGetValue(duplicated.CallId, out var n) ? n : 0) + 1;
+                    resultDupSeq[duplicated.CallId] = seq;
+                    pendingResultRenames.Add((i, j, $"{duplicated.CallId}_dup{seq}"));
+                }
+            }
+        }
+
+        foreach (var (msg, content, oldId, newId) in pendingCallRenames)
+        {
+            if (Messages[msg].Contents[content] is FunctionCallContent call)
+            {
+                IDictionary<string, object?>? args = call.Arguments is null
+                    ? null
+                    : new Dictionary<string, object?>(call.Arguments);
+                Messages[msg].Contents[content] = new FunctionCallContent(newId, call.Name, args);
+            }
+
+            // 与该重命名调用同序的重复结果跟随改名（执行顺序与消息顺序一致，一一对应）
+            if (oldId is not null)
+            {
+                var match = pendingResultRenames.FirstOrDefault(r => r.OldId == newId);
+                if (match != default && Messages[match.Msg].Contents[match.Content] is FunctionResultContent rr)
+                {
+                    Messages[match.Msg].Contents[match.Content] = new FunctionResultContent(newId, rr.Result);
+                    pendingResultRenames.Remove(match);
+                }
+            }
+        }
+
+        // 删除空 id 的垃圾结果：ChatMessage.Contents 可能是固定大小集合（数组包装），重建消息而不是原地删除
+        foreach (var group in emptyResultDeletions.GroupBy(d => d.Msg).OrderByDescending(g => g.Key))
+        {
+            var contents = Messages[group.Key].Contents;
+            var remaining = new List<AIContent>(contents);
+            foreach (var content in group.Select(d => d.Content).OrderByDescending(x => x))
+                remaining.RemoveAt(content);
+            if (remaining.Count == 0)
+                Messages.RemoveAt(group.Key);
+            else
+                Messages[group.Key] = new ChatMessage(Messages[group.Key].Role, remaining);
+        }
+
         var answered = new HashSet<string>(StringComparer.Ordinal);
         foreach (var message in Messages)
             foreach (var result in message.Contents.OfType<FunctionResultContent>())
@@ -1600,7 +1731,8 @@ public sealed class AgentSession
     {
         var boundaries = new List<int>();
         for (var i = 0; i < Messages.Count; i++)
-            if (Messages[i].Role == ChatRole.User)
+            // 动态上下文（工作记忆/检索/子代理摘要）虽是 User 角色，但不是真实的用户轮边界
+            if (Messages[i].Role == ChatRole.User && !_activeDynamicContext.Contains(Messages[i]))
                 boundaries.Add(i);
 
         if (boundaries.Count <= 2)
@@ -1689,7 +1821,8 @@ public sealed class AgentSession
 
         var boundaries = new List<int>();
         for (var i = 0; i < Messages.Count; i++)
-            if (Messages[i].Role == ChatRole.User)
+            // 动态上下文（工作记忆/检索/子代理摘要）虽是 User 角色，但不是真实的用户轮边界
+            if (Messages[i].Role == ChatRole.User && !_activeDynamicContext.Contains(Messages[i]))
                 boundaries.Add(i);
 
         if (boundaries.Count == 0)
@@ -1709,9 +1842,11 @@ public sealed class AgentSession
         if (cutIndex < 0)
             cutIndex = boundaries[^1];
 
-        // 丢弃范围：系统提示(0)之后、cutIndex 之前；跳过紧随系统提示的摘要消息，避免重复摘要叠加。
+        // 丢弃范围：系统提示(0)之后、cutIndex 之前；跳过紧随系统提示的摘要消息与在发的动态上下文，
+        // 避免重复摘要叠加、也避免把仅服务本轮的临时上下文误当历史压缩（并误触发摘要模型调用）。
         var start = 1;
-        while (start < cutIndex && Messages[start].Role == ChatRole.System)
+        while (start < cutIndex && (Messages[start].Role == ChatRole.System ||
+                                    _activeDynamicContext.Contains(Messages[start])))
             start++;
         if (start >= cutIndex)
             return;
@@ -2017,7 +2152,44 @@ public sealed class AgentSession
 
         _summary = string.IsNullOrWhiteSpace(_summary) ? text : _summary + "\n" + text;
         if (_summary.Length > MaxSummaryChars)
-            _summary = _summary[^MaxSummaryChars..];
+            _summary = CompactSummary(_summary);
+    }
+
+    /// <summary>
+    /// 滚动摘要超预算时按节压缩（替代旧的砍头截断）：旧实现 <c>summary[^Max..]</c> 恰好把最早写入的
+    /// “必须保留：连接方式/路径/凭据线索”节丢掉。新策略：所有摘要块中的“必须保留”行聚合置顶，
+    /// 其余节从最新往旧保留到预算耗尽，低价值的旧“目标/状态”节先丢。
+    /// </summary>
+    internal static string CompactSummary(string summary)
+    {
+        const string pinnedTag = "必须保留";
+        const string pinnedHeader = "【必须保留(历史累积)】\n";
+        var lines = summary.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var pinned = lines.Where(l => l.Contains(pinnedTag, StringComparison.Ordinal)).ToList();
+        var pinnedChars = pinned.Count > 0
+            ? pinned.Sum(l => l.Length + 1) + pinnedHeader.Length
+            : 0;
+        var budget = MaxSummaryChars - pinnedChars;
+
+        var recent = new List<string>();
+        var used = 0;
+        for (var i = lines.Length - 1; i >= 0; i--)
+        {
+            var line = lines[i];
+            if (line.Contains(pinnedTag, StringComparison.Ordinal))
+                continue;   // 已聚合到置顶段
+            if (used + line.Length + 1 > budget)
+                break;
+            used += line.Length + 1;
+            recent.Insert(0, line);
+        }
+
+        var parts = new List<string>(2);
+        if (pinned.Count > 0)
+            parts.Add(pinnedHeader + string.Join("\n", pinned));
+        if (recent.Count > 0)
+            parts.Add(string.Join("\n", recent));
+        return string.Join("\n", parts);
     }
 
     private static string BuildTranscript(IReadOnlyList<ChatMessage> messages)

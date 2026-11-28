@@ -99,6 +99,30 @@ public class GuardedCommandServiceRedactionTests
         });
     }
 
+    [Fact]
+    public async Task RunAsync_merges_stderr_into_output_when_stdout_empty_and_success()
+    {
+        // docker logs 场景：容器把日志写 stderr、退出码 0 → stdout 空。
+        // 成功且 stdout 空而 stderr 有内容时必须并入输出并标注，避免模型误判“没有日志”。
+        var ssh = new StubSsh
+        {
+            NextResult = new CommandResult
+            {
+                Success = true,
+                Output = string.Empty,
+                Error = "web-01 - - [GET /health] 404 not found",
+                ExitCode = 0
+            }
+        };
+        var service = CreateService(ssh);
+
+        var outcome = await service.RunAsync("s1", "docker logs web");
+
+        Assert.True(outcome.Success);
+        Assert.StartsWith("[stderr] ", outcome.Output);
+        Assert.Contains("404", outcome.Output);
+    }
+
     // —— 测试替身 ——
 
     private sealed class StubSsh : ISshService
@@ -117,7 +141,7 @@ public class GuardedCommandServiceRedactionTests
 
         public Task<bool> TestConnectionAsync(SshServerConfig server, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConnectionProbeResult> ProbeConnectionAsync(SshServerConfig server, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<CommandResult> ExecuteWithSudoAsync(SshServerConfig server, string command, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CommandResult> ExecuteWithSudoAsync(SshServerConfig server, string command, CancellationToken ct = default, int timeoutSeconds = 60) => throw new NotSupportedException();
         public Task<SshShellSession> OpenShellAsync(SshServerConfig server, string terminalType, uint columns, uint rows, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<FileTransferResult> UploadFileAsync(SshServerConfig server, string localPath, string remotePath, IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<FileTransferResult> DownloadFileAsync(SshServerConfig server, string remotePath, string localPath, IProgress<FileTransferProgress>? progress = null, CancellationToken ct = default) => throw new NotSupportedException();

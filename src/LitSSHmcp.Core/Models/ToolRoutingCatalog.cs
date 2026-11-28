@@ -69,4 +69,19 @@ public static class ToolRoutingCatalog
         return Routes.Where(route => route.Groups.All(group =>
             enabled.Any(e => string.Equals(e, group, StringComparison.OrdinalIgnoreCase)))).ToArray();
     }
+
+    /// <summary>
+    /// 只读型 profile（诊断/资产/问答）下会被裁剪的写工具名（与 MCP 注解 Destructive=true 对应，
+    /// 且不在 <c>ToolProfileFilter.ProfileSafeNonMutating</c> 探测白名单内）。
+    /// 路由表用按名过滤，避免系统提示教模型调用已裁剪的写工具 → “未知工具”失败白耗熔断配额。
+    /// </summary>
+    public static readonly HashSet<string> WriteOnlyToolNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ssh_execute_command", "ssh_execute_sudo",
+        "ssh_upload",
+        "docker_restart", "docker_exec",
+        "service_restart",
+        "mysql_execute", "postgres_execute", "redis_execute",
+        "job_cancel"
+    };
 }

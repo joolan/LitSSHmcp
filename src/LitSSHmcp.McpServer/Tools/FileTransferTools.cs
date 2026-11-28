@@ -55,7 +55,7 @@ public class FileTransferTools
         CancellationToken cancellationToken = default)
         => UploadFiles(serverId, localPaths, remoteDirectory, recursive, maxFiles, riskNote, cancellationToken, progress);
 
-    [McpServerTool(Name = "ssh_download", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), Destructive = true, OpenWorld = true)]
+    [McpServerTool(Name = "ssh_download", UseStructuredContent = true, OutputSchemaType = typeof(BatchTransferResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
     [Description("从 SSH 目标下载一个或多个文件/目录：remotePaths 每行一个（目录可递归）；单次操作统一人工审批，返回逐项结果；多文件时通过 progress 通知逐文件进度。")]
     public Task<BatchTransferResultDto> Download(
         [Description("服务器 ID/名称/主机名")] string serverId,

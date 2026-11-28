@@ -13,6 +13,37 @@ namespace LitSSHmcp.McpServer.Tests;
 public class ToolTargetResolverTests
 {
     [Fact]
+    public void UnwrapJobArguments_supports_structured_arguments_object()
+    {
+        // job_start 描述把 argumentsObject 标注为“推荐”传参；授权/目标解析必须认识它，
+        // 否则推荐形态会被 enforce 拒绝或回退为全量目标（P0）。
+        var obj = JsonDocument.Parse("{\"serverIds\":\"web-1,db-1\",\"refresh\":true}").RootElement.Clone();
+        var args = new Dictionary<string, JsonElement> { ["argumentsObject"] = obj };
+
+        var inner = ToolSecurityCatalog.UnwrapJobArguments(args);
+
+        Assert.NotNull(inner);
+        Assert.Equal("web-1,db-1", inner!["serverIds"].GetString());
+        Assert.True(inner["refresh"].GetBoolean());
+    }
+
+    [Fact]
+    public void UnwrapJobArguments_prefers_arguments_string_when_object_is_not_structured()
+    {
+        var args = new Dictionary<string, JsonElement>
+        {
+            // argumentsObject 为字符串形态时（旧客户端传 JSON 文本）不展开，回退到 arguments（字符串 JSON 文本）
+            ["argumentsObject"] = JsonDocument.Parse("\"not-an-object\"").RootElement.Clone(),
+            ["arguments"] = JsonDocument.Parse("\"{\\\"serverIds\\\":\\\"db-1\\\"}\"").RootElement.Clone()
+        };
+
+        var inner = ToolSecurityCatalog.UnwrapJobArguments(args);
+
+        Assert.NotNull(inner);
+        Assert.Equal("db-1", inner!["serverIds"].GetString());
+    }
+
+    [Fact]
     public void Resolve_server_by_id_and_name()
     {
         var descriptor = ToolSecurityCatalog.Find("ssh_list_files")!;

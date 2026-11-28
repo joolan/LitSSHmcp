@@ -1101,7 +1101,9 @@ public class AgentSessionTests
         };
         await session.SendAsync(contents, null);
 
-        var userMessage = Assert.Single(client.LastMessages!, m => m.Role == ChatRole.User);
+        // 工作记忆/检索上下文同为 User 角色（注入面收敛），这里须锁定带附件的真实用户消息
+        var userMessage = Assert.Single(client.LastMessages!,
+            m => m.Role == ChatRole.User && m.Contents.Any(c => c is DataContent));
         Assert.Equal(2, userMessage.Contents.Count);
         Assert.Contains(userMessage.Contents, c => c is DataContent);
         Assert.Contains(userMessage.Contents, c => c is TextContent { Text: "看下这张图" });
@@ -1363,10 +1365,11 @@ public class AgentSessionTests
         await session.SendAsync("磁盘满", new SyncProgress(events.Add));
 
         Assert.NotNull(client.LastMessages);
+        // 动态上下文以 User 角色注入（不能以 System 最高权限注入，收敛提示注入面）
         Assert.Contains(client.LastMessages!,
-            m => m.Role == ChatRole.System && (m.Text ?? string.Empty).Contains("记忆内容"));
+            m => m.Role == ChatRole.User && (m.Text ?? string.Empty).Contains("记忆内容"));
         Assert.DoesNotContain(session.Messages,
-            m => m.Role == ChatRole.System && (m.Text ?? string.Empty).Contains("记忆内容"));
+            m => m.Role == ChatRole.User && (m.Text ?? string.Empty).Contains("记忆内容"));
         Assert.Contains(events, e => e.Kind == AgentEventKind.MemoryRecall);
     }
 
@@ -1561,6 +1564,92 @@ public class AgentSessionTests
 
         public object? GetService(Type serviceType, object? serviceKey = null) => null;
         public void Dispose() { }
+    }
+
+    [Fact]
+    public async Task Budget_exceeded_keeps_streamed_assistant_text_in_history()
+    {
+        // 预算检查时文本增量已流给用户：回答必须留在历史里，否则用户追问“你刚才说什么”时模型失忆。
+        var client = new FakeChatClient(
+            new ChatResponse(new List<ChatMessage> { new(ChatRole.Assistant, "最终结论已生成") }));
+        var config = new AgentConfig { MaxToolIterations = 5, ContextLimit = 50 };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            Array.Empty<IAgentTool>(), "sys", config, budgetCheck: (_, _) => false);
+
+        var events = new List<AgentEvent>();
+        await session.SendAsync("hi", new SyncProgress(events.Add));
+
+        Assert.Contains(events, e => e.Kind == AgentEventKind.Error && e.Text!.Contains("预算"));
+        var assistant = Assert.Single(session.Messages, m => m.Role == ChatRole.Assistant);
+        Assert.Contains("最终结论已生成", assistant.Text);
+    }
+
+    [Fact]
+    public async Task Malformed_tool_call_ids_are_normalized_and_results_paired()
+    {
+        // 弱模型/流式解析异常的真实形态：重复 id（c1 两次）+ 空 id。下一轮请求前必须规范化，
+        // 否则服务端会因孤儿/重复 tool_call id 整单拒绝。
+        var dup1 = new FunctionCallContent("c1", "echo", new Dictionary<string, object?> { ["x"] = "1" });
+        var dup2 = new FunctionCallContent("c1", "echo", new Dictionary<string, object?> { ["x"] = "2" });
+        var empty = new FunctionCallContent("", "echo", new Dictionary<string, object?> { ["x"] = "3" });
+        var client = new FakeChatClient(new ChatResponse(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[] { dup1, dup2, empty })
+        }));
+
+        var tool = new FakeTool("echo", "pong");
+        var config = new AgentConfig { MaxToolIterations = 5, ContextLimit = 50 };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new[] { tool }, "sys", config);
+
+        await session.SendAsync("hi", new SyncProgress(_ => { }));
+
+        var callIds = session.Messages.SelectMany(m => m.Contents.OfType<FunctionCallContent>())
+            .Select(c => c.CallId).ToList();
+        Assert.True(callIds.All(id => !string.IsNullOrEmpty(id)), "空 id 应被合成为可配对的 id");
+        Assert.Equal(callIds.Count, callIds.Distinct().Count());
+
+        // 每个 call id 恰好一个结果：重复 id 的多余结果跟随重命名，空 id 由占位补齐
+        var resultIds = session.Messages.SelectMany(m => m.Contents.OfType<FunctionResultContent>())
+            .Select(r => r.CallId).ToList();
+        Assert.Equal(callIds.OrderBy(x => x), resultIds.OrderBy(x => x));
+    }
+
+    [Fact]
+    public async Task Parallel_tool_cancel_keeps_completed_results()
+    {
+        // 并行只读取证中一路被取消：已成功完成的工具结果必须回填真实结果，而不是全部变成“已被取消”。
+        var okCall = new FunctionCallContent("ok1", "fast_read", new Dictionary<string, object?>());
+        var hangCall = new FunctionCallContent("hx1", "hang_read", new Dictionary<string, object?>());
+        var client = new FakeChatClient(new ChatResponse(new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, new AIContent[] { okCall, hangCall })
+        }));
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var okTool = new FakeTool("fast_read", "pong", readOnly: true);
+        var hangTool = new FakeTool("hang_read", null, readOnly: true, invoke: async ct =>
+        {
+            entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, ct);
+            return null;
+        });
+        var config = new AgentConfig { MaxToolIterations = 5, ContextLimit = 50 };
+        var session = new AgentSession(client, new AgentProviderConfig { Model = "m", ApiKey = "k" },
+            new IAgentTool[] { okTool, hangTool }, "sys", config);
+
+        using var cts = new CancellationTokenSource();
+        var send = session.SendAsync("hi", new SyncProgress(_ => { }), cts.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => send);
+
+        var results = session.Messages.SelectMany(m => m.Contents.OfType<FunctionResultContent>()).ToList();
+        var okResult = results.Single(r => r.CallId == "ok1");
+        Assert.Contains("pong", okResult.Result?.ToString());
+        var hangResult = results.Single(r => r.CallId == "hx1");
+        Assert.Contains("已被取消", hangResult.Result?.ToString());
     }
 
     /// <summary>阻塞在模型调用上的客户端：用于确定性地制造“turn 进行中”窗口。</summary>

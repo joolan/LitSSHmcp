@@ -1049,7 +1049,7 @@ public class TopologyDiscoveryTests
 
         public Task<bool> TestConnectionAsync(SshServerConfig server, CancellationToken ct = default) => Task.FromResult(true);
         public Task<ConnectionProbeResult> ProbeConnectionAsync(SshServerConfig server, CancellationToken ct = default) => Task.FromResult(new ConnectionProbeResult { Success = true });
-        public Task<CommandResult> ExecuteWithSudoAsync(SshServerConfig server, string command, CancellationToken ct = default)
+        public Task<CommandResult> ExecuteWithSudoAsync(SshServerConfig server, string command, CancellationToken ct = default, int timeoutSeconds = 60)
         {
             SudoUsed = true;
             return ExecuteCommandAsync(server, command, ct);

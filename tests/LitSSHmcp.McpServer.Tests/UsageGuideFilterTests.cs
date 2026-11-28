@@ -76,6 +76,18 @@ public class UsageGuideFilterTests
         Assert.True(json.Length < 8000, $"summary guide too long: {json.Length}");
     }
 
+    /// <summary>summary 档也要给 job operation 参数摘要：job_start 的 operation/argumentsObject 对 AI 不可见只能靠猜。</summary>
+    [Fact]
+    public void BuildGuide_summary_includes_job_operation_argument_hints()
+    {
+        var json = UsageGuideTools.BuildGuide(null, includeInternalTools: true,
+            includeToolList: false, summaryOnly: true);
+
+        Assert.Contains("topology_discover(serverIds?", json);
+        Assert.Contains("fleet_inventory(serverIds", json);
+        Assert.Contains("[只读]", json);
+    }
+
     [Fact]
     public async Task GetUsageGuide_defaults_to_summary_and_full_includes_tools()
     {

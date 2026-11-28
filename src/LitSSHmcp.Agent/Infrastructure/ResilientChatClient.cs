@@ -1,3 +1,4 @@
+using System.ClientModel;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 
@@ -49,11 +50,15 @@ public sealed class ResilientChatClient : DelegatingChatClient
                 {
                     return await base.GetResponseAsync(list, options, timeout.Token);
                 }
-                catch (Exception ex)
+                catch (Exception caught)
                 {
+                    var ex = NormalizeTimeout(caught, cancellationToken, timeout);
                     if (!ShouldRetry(ex, cancellationToken, ref attempt))
+                    {
+                        if (!ReferenceEquals(ex, caught)) throw ex;
                         throw;
-                    await DelayAsync(attempt, cancellationToken);
+                    }
+                    await DelayAsync(attempt, ex, cancellationToken);
                 }
             }
         }
@@ -83,12 +88,16 @@ public sealed class ResilientChatClient : DelegatingChatClient
                 {
                     hasFirst = await enumerator.MoveNextAsync();
                 }
-                catch (Exception ex)
+                catch (Exception caught)
                 {
                     await enumerator.DisposeAsync();
+                    var ex = NormalizeTimeout(caught, cancellationToken, timeout);
                     if (!ShouldRetry(ex, cancellationToken, ref attempt))
+                    {
+                        if (!ReferenceEquals(ex, caught)) throw ex;
                         throw;
-                    await DelayAsync(attempt, cancellationToken);
+                    }
+                    await DelayAsync(attempt, ex, cancellationToken);
                     continue;
                 }
 
@@ -100,10 +109,21 @@ public sealed class ResilientChatClient : DelegatingChatClient
 
                 yield return enumerator.Current;
 
-                // 首个增量之后不再重试：直接透传（含可能的异常）
+                // 首个增量之后不再重试：直接透传（含可能的异常；超时统一转 TimeoutException 以与用户取消区分）
                 while (true)
                 {
-                    var moved = await enumerator.MoveNextAsync();
+                    bool moved;
+                    try
+                    {
+                        moved = await enumerator.MoveNextAsync();
+                    }
+                    catch (Exception caught)
+                    {
+                        await enumerator.DisposeAsync();
+                        var ex = NormalizeTimeout(caught, cancellationToken, timeout);
+                        if (!ReferenceEquals(ex, caught)) throw ex;
+                        throw;
+                    }
                     if (!moved)
                         break;
                     yield return enumerator.Current;
@@ -146,6 +166,18 @@ public sealed class ResilientChatClient : DelegatingChatClient
         return cts;
     }
 
+    /// <summary>
+    /// 内部超时 CTS 触发的 OperationCanceledException 与用户取消共享同一异常类型，
+    /// 会被下游归类为“已取消/已停止”且不参与重试 → 转为 TimeoutException，
+    /// 让分类器识别为 Timeout（可重试、给出正确提示）。
+    /// </summary>
+    private Exception NormalizeTimeout(Exception ex, CancellationToken callerToken, CancellationTokenSource timeout)
+    {
+        if (ex is OperationCanceledException && !callerToken.IsCancellationRequested && timeout.IsCancellationRequested)
+            return new TimeoutException($"模型请求超时（{_timeoutSeconds}s 内未完成）", ex);
+        return ex;
+    }
+
     private bool ShouldRetry(Exception ex, CancellationToken callerToken, ref int attempt)
     {
         if (callerToken.IsCancellationRequested || attempt >= _maxRetries)
@@ -156,8 +188,42 @@ public sealed class ResilientChatClient : DelegatingChatClient
         return true;
     }
 
-    private static Task DelayAsync(int attempt, CancellationToken ct) =>
-        Task.Delay(TimeSpan.FromMilliseconds(300 * attempt), ct);
+    /// <summary>退避策略：429/503 带 Retry-After 头时按头等待；否则指数退避(300ms 起步、8s 封顶)加 ±15% jitter。
+    /// 旧实现线性 300ms×attempt 且无视 Retry-After，限流场景下重试必然二次撞墙。</summary>
+    private static Task DelayAsync(int attempt, Exception? lastError, CancellationToken ct) =>
+        Task.Delay(RetryDelay(lastError, attempt), ct);
+
+    internal static TimeSpan RetryDelay(Exception? lastError, int attempt)
+    {
+        var retryAfter = TryGetRetryAfter(lastError);
+        if (retryAfter is { } header && header > TimeSpan.Zero && header <= TimeSpan.FromMinutes(2))
+            return header;
+
+        var baseMs = Math.Min(300d * Math.Pow(2, Math.Max(1, attempt) - 1), 8000);
+        var jitter = 0.85 + Random.Shared.NextDouble() * 0.3;   // 0.85~1.15
+        return TimeSpan.FromMilliseconds(baseMs * jitter);
+    }
+
+    /// <summary>从限流/服务端错误响应里提取 Retry-After（秒数形态；主流 LLM 网关都用秒数，HTTP-date 形态忽略）。</summary>
+    private static TimeSpan? TryGetRetryAfter(Exception? lastError)
+    {
+        if (lastError is not ClientResultException cre)
+            return null;
+        try
+        {
+            if (cre.GetRawResponse()?.Headers is not { } headers ||
+                !headers.TryGetValues("Retry-After", out var values))
+                return null;
+            var text = values?.FirstOrDefault();
+            return double.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out var seconds)
+                ? TimeSpan.FromSeconds(seconds)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// 不释放内部客户端：它由 <see cref="ChatClientFactory"/> 跨会话共享缓存，

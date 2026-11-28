@@ -17,7 +17,8 @@ internal static class PromptComposer
     {
         var sb = new StringBuilder();
         AppendCore(sb);
-        SystemPromptBuilder.AppendToolRouting(sb, ctx.AvailableGroups, ctx.SubAgent, ctx.FleetTools, ctx.FleetChangeTools);
+        SystemPromptBuilder.AppendToolRouting(sb, ctx.AvailableGroups, ctx.SubAgent, ctx.FleetTools, ctx.FleetChangeTools,
+            ctx.AvailableToolNames);
         AppendCapabilityBoundary(sb, ctx.AvailableGroups);
         AppendProfile(sb, ctx.ProfileName);
         AppendSecurity(sb);

@@ -220,7 +220,7 @@ public class CommandTools
     }
 
     [McpServerTool(Name = "ssh_execute_fleet", UseStructuredContent = true, OutputSchemaType = typeof(FleetCommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("多台服务器批量执行同一条非脚本命令(一次审批，逐台返回)。仅支持幂等命令，不支持脚本文件与 tail -f/vi/top 等交互命令；命令过滤/审批/审计仍生效。建议先做只读预检并用 1 台 canary")]
+    [Description("多台批量执行同一条非脚本命令(一次审批,逐台返回)。仅幂等命令,禁脚本与交互命令。每台输出截 600 字符(见 OutputChars),完整输出用 ssh_execute_command")]
     public async Task<FleetCommandResultDto> ExecuteFleet(
         [Description("目标服务器 ID/名称，逗号或空格分隔（最多 maxTargets 台）")] string serverIds,
         [Description("要执行的单条非脚本命令，如 systemctl restart nginx")] string command,

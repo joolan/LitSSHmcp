@@ -12,6 +12,9 @@ public sealed class SystemPromptContext
     public bool SubAgent { get; init; }
     public string? ResponseStyle { get; init; }
     public IReadOnlyCollection<string>? AvailableGroups { get; init; }
+
+    /// <summary>实际暴露给会话的 MCP 工具名集合（已按 profile/分组裁剪）；null 表示不过滤。路由表按它过滤，避免教模型调已裁剪工具。</summary>
+    public IReadOnlyCollection<string>? AvailableToolNames { get; init; }
     public string? AgentName { get; init; }
     public string? AgentPrompt { get; init; }
     public string? AgentStyle { get; init; }

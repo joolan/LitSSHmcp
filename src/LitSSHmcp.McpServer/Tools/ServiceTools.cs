@@ -16,6 +16,16 @@ public class ServiceTools
 {
     private static readonly Regex ServiceName = new("^[A-Za-z0-9_.@:-]+$", RegexOptions.Compiled);
 
+    /// <summary>服务名校验失败的统一提示：给出合法字符规则与下一步查询入口，便于模型自纠正。</summary>
+    private static RemoteCommandResultDto InvalidService(string service) =>
+        new()
+        {
+            Success = false,
+            Status = "invalid_argument",
+            Error = $"非法的服务名: {service}。服务名仅允许字母、数字与 _ . @ : -（如 nginx 或 myapp.service）；" +
+                    "先用 service(action=list) 或 docker_query(action=ps) 查看实际服务/容器名，再重试。"
+        };
+
     private readonly IGuardedCommandService _runner;
 
     public ServiceTools(IGuardedCommandService runner)
@@ -52,7 +62,7 @@ public class ServiceTools
         CancellationToken cancellationToken = default)
     {
         if (!ServiceName.IsMatch(service))
-            return new RemoteCommandResultDto { Success = false, Status = "invalid_argument", Error = $"非法的服务名: {service}" };
+            return InvalidService(service);
 
         var command = $"systemctl status --no-pager -- {ShellQuote.Single(service)}";
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
@@ -79,7 +89,7 @@ public class ServiceTools
         CancellationToken cancellationToken = default)
     {
         if (!ServiceName.IsMatch(service))
-            return new RemoteCommandResultDto { Success = false, Status = "invalid_argument", Error = $"非法的服务名: {service}" };
+            return InvalidService(service);
 
         var command = $"systemctl restart -- {ShellQuote.Single(service)}";
         return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
@@ -93,7 +103,7 @@ public class ServiceTools
         CancellationToken cancellationToken = default)
     {
         if (!ServiceName.IsMatch(service))
-            return new RemoteCommandResultDto { Success = false, Status = "invalid_argument", Error = $"非法的服务名: {service}" };
+            return InvalidService(service);
 
         lines = Math.Clamp(lines, 1, 5000);
         var sinceArg = string.IsNullOrWhiteSpace(since)

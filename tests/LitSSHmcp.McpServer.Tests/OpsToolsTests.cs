@@ -248,7 +248,7 @@ public class OpsToolsTests
         public string? LastCommand { get; private set; }
         public GuardedCommandOutcome? NextOutcome { get; set; }
 
-        public Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default)
+        public Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default, int timeoutSeconds = 60)
         {
             LastCommand = command;
             return Task.FromResult(NextOutcome ?? new GuardedCommandOutcome { ServerFound = true, Success = true, Output = string.Empty });

@@ -128,7 +128,7 @@ public class DockerTools
             : $" --since {Core.Services.Security.ShellQuote.Single(since)}";
 
         var command = $"docker logs --tail {tail}{sinceArg} -- {Core.Services.Security.ShellQuote.Single(container)}";
-        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
+        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken, 120));
     }
 
     public async Task<RemoteCommandResultDto> DockerInspect(
@@ -148,7 +148,7 @@ public class DockerTools
         CancellationToken cancellationToken = default)
     {
         const string command = "docker stats --no-stream --format '{{.Name}} | CPU {{.CPUPerc}} | MEM {{.MemUsage}} ({{.MemPerc}}) | NET {{.NetIO}} | BLOCK {{.BlockIO}} | PIDs {{.PIDs}}'";
-        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
+        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken, 120));
     }
 
     public async Task<RemoteCommandResultDto> DockerImages(
@@ -214,6 +214,11 @@ public class DockerTools
         ServerName = result.ServerName,
         Host = result.Host,
         Action = action,
+        // 非 ps 动作按输出行数回填 Count（logs/stats/images 每行一条记录），
+        // 旧实现恒 0 会被模型误读为“无容器/无日志”。
+        Count = string.IsNullOrWhiteSpace(result.Output)
+            ? 0
+            : result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length,
         Truncated = result.Truncated,
         Output = result.Output,
         OutputChars = result.OutputChars,

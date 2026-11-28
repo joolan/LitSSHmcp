@@ -588,6 +588,10 @@ public sealed class AgentSession
                     for (var i = contentsList.Count - 1; i >= 0; i--)
                         if (contentsList[i] is TextReasoningContent)
                             contentsList.RemoveAt(i);
+                // 空响应/纯空文本的 assistant 消息不入历史：steering/追问循环里会连续累积，
+                // 污染上下文且浪费 token（旧实现照单全收）。
+                if (!HasMeaningfulContent(message))
+                    continue;
                 Messages.Add(message);
             }
             if (_budgetCheck is not null && !_budgetCheck(SessionInputTokens, SessionOutputTokens))
@@ -1009,7 +1013,7 @@ public sealed class AgentSession
 
         var text = "以下是根据本次请求自动检索的上下文(仅供参考, 以实际工具结果为准):\n" + builder.ToString().Trim();
         if (text.Length > MaxRetrievalContextChars)
-            text = text[..MaxRetrievalContextChars].TrimEnd() + "\n…(检索上下文已截断)";
+            text = TextTruncate.Head(text, MaxRetrievalContextChars).TrimEnd() + "\n…(检索上下文已截断)";
         // User 角色：记忆召回与图谱内容来自历史工具输出与远端资产，不能以 System 最高权限注入。
         return new ChatMessage(ChatRole.User, text);
     }
@@ -1069,7 +1073,7 @@ public sealed class AgentSession
     private static string Shorten(string? message)
     {
         var text = (message ?? "unknown").Replace('\r', ' ').Replace('\n', ' ').Trim();
-        return text.Length <= 120 ? text : text[..120] + "…";
+        return text.Length <= 120 ? text : TextTruncate.Head(text, 120) + "…";
     }
 
     public int EstimatedTokens => TokenEstimator.Estimate(Messages);
@@ -2039,7 +2043,7 @@ public sealed class AgentSession
             return resultText;
 
         if (string.Equals(toolName, "spill", StringComparison.OrdinalIgnoreCase))
-            return resultText[..max] +
+            return TextTruncate.Head(resultText, max) +
                    $"\n…[spill 读取结果仍超过 {max} 字符, 已截断; 请减小 limit 或调整 offset 分段读取]";
 
         var tail = PreferTail(toolName);
@@ -2054,8 +2058,8 @@ public sealed class AgentSession
                 var preview = summary.Length > 0
                     ? summary
                     : (tail
-                        ? resultText[^Math.Min(max, resultText.Length)..]
-                        : resultText[..Math.Min(max, resultText.Length)]);
+                        ? TextTruncate.Tail(resultText, Math.Min(max, resultText.Length))
+                        : TextTruncate.Head(resultText, Math.Min(max, resultText.Length)));
                 var label = tail ? "以下为最新内容" : "预览";
                 return preview + BuildSpillSectionIndex(resultText) +
                     $"\n…[结果过大({resultText.Length} 字符/{lines} 行), 已落盘为 {SpillStore.Scheme}{handle}; " +
@@ -2072,8 +2076,8 @@ public sealed class AgentSession
             return fallbackSummary + "\n…[原始结果已按工具预算压缩; 完整结果见界面轨迹]";
 
         return tail
-            ? $"[前 {resultText.Length - max} 字符已截断, 以下为最新内容]\n" + resultText[^max..]
-            : resultText[..max] + $"\n…[已截断 {resultText.Length - max} 字符，完整结果见界面轨迹]";
+            ? $"[前 {resultText.Length - max} 字符已截断, 以下为最新内容]\n" + TextTruncate.Tail(resultText, max)
+            : TextTruncate.Head(resultText, max) + $"\n…[已截断 {resultText.Length - max} 字符，完整结果见界面轨迹]";
     }
 
     /// <summary>
@@ -2216,10 +2220,20 @@ public sealed class AgentSession
     {
         if (arguments is null || arguments.Count == 0)
             return null;
-        // ��ת��� ASCII������������λᱻ���л��� \uXXXX������/ģ�Ͷ��Ѷ�����
+        // 不转义非 ASCII：中文参数若被序列化成 \uXXXX，用户/模型都难阅读
         try { return JsonSerializer.Serialize(arguments, JsonOptions); }
         catch { return null; }
     }
+
+    /// <summary>assistant 消息是否含有值得入历史的内容：工具调用、非空文本，或文本/思考之外的其他内容。</summary>
+    private static bool HasMeaningfulContent(ChatMessage message) =>
+        message.Contents.Any(c => c switch
+        {
+            FunctionCallContent or FunctionResultContent => true,
+            TextContent text => !string.IsNullOrWhiteSpace(text.Text),
+            TextReasoningContent => false,
+            _ => true
+        });
 
     private static string BuildLocalCallSignature(IReadOnlyList<FunctionCallContent> calls) =>
         string.Join('\n', calls.Select(c => c.Name + ":" + (SerializeArgs(c.Arguments) ?? string.Empty)));

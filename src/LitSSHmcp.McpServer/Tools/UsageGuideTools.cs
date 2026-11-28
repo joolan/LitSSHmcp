@@ -149,7 +149,7 @@ public class UsageGuideTools
             "用户要看日志文件尾部、在日志里搜错误/关键字或发现日志路径时,使用 log_query(action=tail/grep/find; 可传 path, 也可传 appId 用应用管理里配置的日志路径; 路径受 security.logs.allowedPaths 约束)",
             "用户问Java进程/线程/死锁/CPU飙高/内存/GC时,先用 java_processes 拿pid(可传appId过滤), 再用 java_diagnostics(action=threads/heap/info, 也可直接传appId自动解析pid)",
             "用户要对某个应用做整体体检(跨服务器+依赖数据库)时,优先用 app_health_snapshot, 再按需下钻",
-            "长任务统一用 job_start(operation=..., argumentsObject={...}, wait=false)；各 operation 与参数见 job_operations 摘要。查询用 job_status/job_result、事件用 job_events(fromSeq) 断点续读、取消用 job_cancel、本人任务列表用 job_list"
+            "长任务统一用 job_start(operation=..., argumentsObject={...}, wait=false)；各 operation 与参数见 job_operations 摘要。查询用 job_status/job_result(未完成时每 5-10 秒轮询, job_result 返回 running+Hint 属正常)、事件用 job_events(fromSeq 传上次最大 Seq 增量续读)、取消用 job_cancel、本人任务列表用 job_list"
         });
         if (serverGuideLines.Length > 0)
         {
@@ -240,10 +240,10 @@ public class UsageGuideTools
                 "'查缓存/读key'→redis_read, '写缓存/删key/设过期'→redis_execute, 'Redis体检'→redis_diagnostics",
                 "datasource_list 返回 host/port/username 可以直接用于与应用日志中的连接串比对; type=redis 的数据源只能用 Redis 工具",
                 "mysql_query 统一只读入口: action=query 执行 SELECT/SHOW/EXPLAIN/DESC/WITH(单条, 结果最多1000行), action=explain 看执行计划, action=diagnostics 做整体诊断; 数据修改型CTE与 EXPLAIN ANALYZE <DML> 会被识别为写操作并拒绝(请改用 mysql_execute)",
-                "mysql_execute 用于 INSERT/UPDATE/DELETE/DDL, 会触发安全策略与用户审批",
+                "mysql_execute 用于 INSERT/UPDATE/DELETE/DDL, 会触发安全策略与用户审批; SQL 命令超时默认 30s(数据源 TimeoutSeconds 可调), 大批量写入请在语句内分批",
                 "redis_read 只允许只读白名单命令, 结果已JSON化并截断超长字符串/超大数组; 非白名单命令会提示改用 redis_execute",
                 "redis_execute 的写命令一律弹桌面确认, 危险命令(清库/关服/换主从/加载模块/阻塞连接类)直接拒绝",
-                "Redis 切库用 redis_read/redis_execute/redis_diagnostics 的 db 参数(0..15, 返回里的 db 字段回显实际库); 不要在命令里发 SELECT(跨调用不保证同一连接); 连接与SSH隧道按 数据源+DB 复用(空闲30s释放)",
+                "Redis 切库用 redis_read/redis_execute/redis_diagnostics 的 db 参数(0..63, 返回里的 db 字段回显实际库); 不要在命令里发 SELECT(跨调用不保证同一连接); 连接与SSH隧道按 数据源+DB 复用(空闲30s释放)",
                 "数据源 accessMode=sshTunnel 时数据库只能经指定SSH服务器访问, MCP会自动建隧道(Redis同样适用)",
                 "凭据由用户通过管理界面或配置文件录入, 任何工具都不会返回密码"
             });

@@ -1,4 +1,5 @@
 using System.ClientModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 
@@ -39,7 +40,7 @@ public sealed class ResilientChatClient : DelegatingChatClient
     {
         var list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
         options = ApplyCacheKey(options);
-        await _gate.WaitAsync(cancellationToken);
+        await AcquireGateAsync(cancellationToken);
         try
         {
             var attempt = 0;
@@ -74,7 +75,7 @@ public sealed class ResilientChatClient : DelegatingChatClient
     {
         var list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
         options = ApplyCacheKey(options);
-        await _gate.WaitAsync(cancellationToken);
+        await AcquireGateAsync(cancellationToken);
         try
         {
             var attempt = 0;
@@ -164,6 +165,25 @@ public sealed class ResilientChatClient : DelegatingChatClient
         if (_timeoutSeconds > 0)
             cts.CancelAfter(TimeSpan.FromSeconds(_timeoutSeconds));
         return cts;
+    }
+
+    /// <summary>
+    /// 获取并发闸门。排队等待同样受超时预算约束（旧实现 <c>WaitAsync(ct)</c> 无界，
+    /// 上游繁忙时请求会无限期挂在排队上，墙钟预算完全失效）：
+    /// 排队超过 _timeoutSeconds 抛 <see cref="TimeoutException"/>（可辨识、可重试），
+    /// 用户取消仍以 OperationCanceledException 正常传播。
+    /// </summary>
+    private async Task AcquireGateAsync(CancellationToken ct)
+    {
+        if (_timeoutSeconds <= 0)
+        {
+            await _gate.WaitAsync(ct);
+            return;
+        }
+
+        var budget = TimeSpan.FromSeconds(_timeoutSeconds);
+        if (!await _gate.WaitAsync(budget, ct))
+            throw new TimeoutException($"模型请求在并发闸门排队超过 {_timeoutSeconds}s 未获得执行机会（上游并发繁忙）");
     }
 
     /// <summary>

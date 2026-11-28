@@ -70,7 +70,7 @@ public class DockerToolsTests
         public string? Command { get; private set; }
         public int Calls { get; private set; }
 
-        public Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default)
+        public Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default, int timeoutSeconds = 60)
         {
             Calls++;
             Command = command;

@@ -515,7 +515,7 @@ public sealed class NginxTlsSnapshotCollector : ISnapshotCollector
                 else if (IsDirective(line, "ssl_certificate"))
                 {
                     var path = line["ssl_certificate".Length..].Trim().TrimEnd(';').Trim();
-                    if (path.Length > 0 && !path.Contains('$'))   // ��������֤��·���޷���̬��ȡ
+                    if (path.Length > 0 && !path.Contains('$'))   // 含变量的证书路径无法静态读取
                         current.CertPaths.Add(path);
                 }
                 else if (IsDirective(line, "root"))

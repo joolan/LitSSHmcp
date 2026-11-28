@@ -219,7 +219,7 @@ public class DatasourceManageViewModel : INotifyPropertyChanged, IConfigReloadab
 
     private void OpenWorkbench(DataSourceConfig? target, bool openAi = false)
     {
-        // 同一数据源已打开则激活该窗口；否则新开一个工作台窗口（支持多窗口/多数据源并行）�?
+        // 同一数据源已打开则激活该窗口；否则新开一个工作台窗口（支持多窗口/多数据源并行）
         if (target is not null)
         {
             var existing = _workbenches.FirstOrDefault(w => w.IsLoaded && w.CurrentDatasourceId == target.Id);

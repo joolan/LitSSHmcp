@@ -48,7 +48,7 @@ public class CommandTools
     }
 
     [McpServerTool(Name = "ssh_execute_command", UseStructuredContent = true, OutputSchemaType = typeof(CommandResultDto), Destructive = true, OpenWorld = true)]
-    [Description("在SSH服务器执行Shell命令。SQL用mysql_*/postgres_*、Redis用redis_*；危险命令blocked、敏感命令需审批；挂起命令(tail -f/vi/sudo)返回blocking_command；脚本会扫描")]
+    [Description("在SSH服务器执行Shell命令。Docker/服务/日志/Java优先领域工具；危险命令blocked、敏感命令需审批；挂起命令返回blocking_command")]
     public async Task<CommandResultDto> ExecuteCommand(
         [Description("服务器 ID/名称/主机名")] string serverId,
         [Description("要执行的Shell命令(单条), 如 'df -h'、'tail -n 100 /var/log/app.log'")] string command,

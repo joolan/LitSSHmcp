@@ -20,7 +20,7 @@ public static class SpillTools
         var budget = maxResultChars <= 0 ? int.MaxValue : Math.Max(500, maxResultChars);
         var function = new LocalFunction(
             "spill",
-            "大工具结果落盘：action=list 列出句柄；action=read 分段读取（超长单行可按 offset 分页或传 column 指定字符偏移）；action=grep 按正则搜索（单行大 JSON 会返回匹配点前后上下文窗口）。handle 可传 spill://xxx 或文件名。",
+            "大工具结果落盘：action=list 列出句柄；action=read 分段读取（超长单行可按 offset 分页或传 column 指定字符偏移）；action=grep 按正则搜索（单行大 JSON 会返回匹配点前后上下文窗口）；action=json 按 path 取 JSON 子节点。handle 可传 spill://xxx 或文件名。",
             """{"type":"object","properties":{"action":{"type":"string","enum":["list","read","grep","json"],"description":"list=列出句柄, read=分段读取(默认), grep=正则搜索"},"handle":{"type":"string","description":"read/grep: 句柄(spill://xxx 或文件名)"},"offset":{"type":"integer","description":"read: 起始行(0 起), 默认 0；单行超长文件按分页序号解释"},"limit":{"type":"integer","description":"read: 读取行数, 默认 200, 上限 2000"},"column":{"type":"integer","description":"read: 单行超长时的字符偏移(0 起), 默认 0"},"pattern":{"type":"string","description":"grep: 正则表达式"},"path":{"type":"string","description":"json: path, e.g. data.sections.resource"},"max":{"type":"integer","description":"grep: 最多返回条数, 默认 100"}},"required":[]}""",
             args =>
             {
@@ -37,7 +37,7 @@ public static class SpillTools
                         ArgumentReader.ReadString(args, "pattern"), ArgumentReader.ReadInt(args, "max"), budget),
                     "json" => ReadJson(store, ArgumentReader.ReadString(args, "handle"),
                         ArgumentReader.ReadString(args, "path"), ArgumentReader.ReadInt(args, "max"), budget),
-                    _ => "错误: action 仅支持 list/read/grep"
+                    _ => "错误: action 仅支持 list/read/grep/json"
                 };
             });
 

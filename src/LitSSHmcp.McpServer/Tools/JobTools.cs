@@ -106,6 +106,9 @@ public sealed class JobResultDto
     /// <summary>获取完整结果的提示（summary 模式）。</summary>
     public string? ResultHint { get; set; }
 
+    /// <summary>非错误性引导语（如任务未完成时的轮询建议）；错误仍走 Error。</summary>
+    public string? Hint { get; set; }
+
     public static JobResultDto Fail(string status, string error) =>
         new() { Success = false, Status = status, Error = error };
 }
@@ -292,7 +295,7 @@ public class JobTools
                 JobId = job.Id,
                 Operation = job.Operation,
                 State = job.State,
-                Error = $"任务仍在{job.State}, 进度 {job.ProgressDone}/{job.ProgressTotal}; 请稍后重试或用 job_status 轮询"
+                Hint = $"任务仍在{job.State}, 进度 {job.ProgressDone}/{job.ProgressTotal}; 请稍后重试或用 job_status 轮询(建议 5-10 秒一次)"
             };
 
         var result = ParseResult(job.ResultJson);

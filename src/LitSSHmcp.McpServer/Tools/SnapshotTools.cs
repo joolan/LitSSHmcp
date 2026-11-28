@@ -39,7 +39,7 @@ public class SnapshotTools
         _auditLogService = auditLogService;
     }
 
-    [McpServerTool(Name = "ssh_snapshot_get", UseStructuredContent = true, OutputSchemaType = typeof(SnapshotDto), ReadOnly = true, OpenWorld = true)]
+    [McpServerTool(Name = "ssh_snapshot_get", UseStructuredContent = true, OutputSchemaType = typeof(SnapshotDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
     [Description("查询服务器整机快照(默认最新一份)。默认只返回各维度概览(status/关键指标/数据大小)，需要完整数据用 section 指定或 detail=\"full\"。从未生成过会提示用 ssh_snapshot_refresh")]
     public async Task<SnapshotDto> GetSnapshot(
         [Description("服务器 ID/名称/主机名")] string serverId,

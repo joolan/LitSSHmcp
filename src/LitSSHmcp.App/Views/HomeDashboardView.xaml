@@ -135,7 +135,7 @@
             </Grid>
         </Border>
 
-        <!-- 顶部状态：机器、健康评分、运行时�?-->
+        <!-- 顶部状态：机器、健康评分、运行时 -->
         <Border Style="{DynamicResource CardBorderStyle}" Padding="16,12" DataContext="{Binding HomeDashboard}">
             <Grid>
                 <Grid.ColumnDefinitions>

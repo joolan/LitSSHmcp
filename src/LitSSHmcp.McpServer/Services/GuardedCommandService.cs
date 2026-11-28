@@ -66,8 +66,9 @@ public interface IGuardedCommandService
     /// 在指定服务器上执行一条远端命令，统一走：ID 宽松解析 → 命令过滤(Blocked/Sensitive) →
     /// 敏感人工审批 → 执行 → 审计兜底 → 输出截断。
     /// 供 Docker/Service/Log/Java 等领域工具"复用"，避免各自拼装安全链路时漏步骤。
+    /// timeoutSeconds：远端命令超时（1-3600，默认 60）；日志/诊断类调用方建议传 120-180。
     /// </summary>
-    Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default);
+    Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default, int timeoutSeconds = 60);
 
     /// <summary>批量变更：一次审批 + 多台执行；仅支持非脚本命令（脚本文件请走单目标审批）。</summary>
     Task<GuardedFleetOutcome> RunFleetAsync(IReadOnlyList<string> serverReferences, string command,
@@ -107,7 +108,7 @@ public sealed class GuardedCommandService : IGuardedCommandService
         _sshService = sshService;
     }
 
-    public async Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default)
+    public async Task<GuardedCommandOutcome> RunAsync(string serverReference, string command, CancellationToken ct = default, int timeoutSeconds = 60)
     {
         var config = await _configService.LoadConfigAsync();
         var (server, resolveStatus, resolveError) = ToolSupport.ResolveServer(config, serverReference);
@@ -143,7 +144,7 @@ public sealed class GuardedCommandService : IGuardedCommandService
             await AuditAsync(server, command, CommandStatus.Approved, null, null, AuditCategory.Gate, ToolSupport.DecisionFor(outcome, _securityOptions.Approval.Mode));
         }
 
-        var result = await _sshService.ExecuteCommandAsync(server, command, ct);
+        var result = await _sshService.ExecuteCommandAsync(server, command, ct, Math.Clamp(timeoutSeconds, 1, 3600));
 
         await AuditAsync(server, command,
             result.Success ? CommandStatus.Executed : CommandStatus.Failed,

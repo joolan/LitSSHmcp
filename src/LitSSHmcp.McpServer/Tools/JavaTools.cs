@@ -111,7 +111,7 @@ public class JavaTools
             return new RemoteCommandResultDto { Success = false, Status = status, Error = error };
 
         var command = $"jstack -l {resolved}";
-        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
+        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken, 120));
     }
 
     public async Task<RemoteCommandResultDto> JavaHeap(
@@ -125,7 +125,7 @@ public class JavaTools
             return new RemoteCommandResultDto { Success = false, Status = status, Error = error };
 
         var command = $"jcmd {resolved} GC.heap_info; echo '--- jstat -gcutil ---'; jstat -gcutil {resolved} 1000 1";
-        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
+        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken, 120));
     }
 
     public async Task<RemoteCommandResultDto> JavaInfo(
@@ -139,7 +139,7 @@ public class JavaTools
             return new RemoteCommandResultDto { Success = false, Status = status, Error = error };
 
         var command = $"jcmd {resolved} VM.version; echo '--- uptime ---'; jcmd {resolved} VM.uptime";
-        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken));
+        return RemoteCommandResultDto.From(await _runner.RunAsync(serverId, command, cancellationToken, 120));
     }
 
     /// <summary>pid 优先；否则按 appId 解析：在目标机的 Java 进程里匹配应用的名称/容器名，唯一命中才返回。</summary>

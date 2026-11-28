@@ -89,7 +89,7 @@ public class RedisTools
         }
     }
 
-    [McpServerTool(Name = "redis_read", UseStructuredContent = true, OutputSchemaType = typeof(RedisCommandResultDto), ReadOnly = true, OpenWorld = true)]
+    [McpServerTool(Name = "redis_read", UseStructuredContent = true, OutputSchemaType = typeof(RedisCommandResultDto), ReadOnly = true, Idempotent = true, OpenWorld = true)]
     [Description("在Redis数据源执行只读命令(GET/HGETALL/INFO/SLOWLOG等白名单)。写命令用 redis_execute，整体体检用 redis_diagnostics；含空格的值用引号；切库用 db 参数(不要发 SELECT)")]
     public async Task<RedisCommandResultDto> RedisRead(
         [Description("数据源 ID/名称")] string datasourceId,

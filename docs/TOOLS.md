@@ -243,6 +243,7 @@ MCP 服务器代码注册 **42 个工具**，按用途分为 15 组；其中 `mc
 
 ### `ssh_execute_command`
 - **参数**：`serverId`（服务器标识）、`command`（Shell命令）、`timeoutSeconds`（可选，命令超时秒数，1-3600，默认 60；超时返回 `status=timeout`）、`riskNote`（可选，助手对该操作的风险评估摘要，展示在审批弹窗并标注「助手评估(仅供参考)」；服务端扫描才是权威）
+- **领域路由**：Docker/服务/日志文件/Java 诊断场景优先用领域工具（`docker_query`/`service_query`/`log_query`/`java_diagnostics` 等），它们内置安全链路与结构化输出，不要用本工具绕行拼命令。
 - **返回**：`{ success, status, reason, error, command, output, truncated, outputChars, exitCode, durationMs }`（`output` 为命令输出，超 2 万字符截断并置 `truncated: true`；被拒绝/禁止时 `status` 为 `rejected`/`blocked`/`approval_timeout`/`approval_unavailable`；脚本扫描硬拒时 `status=blocked`、`reason=blocked_script`）
 - **防挂起**：会持续输出/需交互的命令（`tail -f`、`docker logs -f`、`journalctl -f`、`vi/vim/less/top/watch`、普通通道的 `sudo/su`、`ping` 不带 `-c`、`nc/telnet`、`docker exec -it`、`docker attach` 等）**不会执行**，直接返回 `status=blocking_command` 并给出替代写法（如 `tail -n`/`--tail`/`--no-pager`/用 `ssh_execute_sudo`）。启动常驻进程请用 `nohup ... &`/`setsid`/`systemctl`/`docker -d`，不要前台跑。
 - **脚本安全门**：识别"执行脚本文件"形态（`bash x.sh`、`python3 /opt/a.py`、`powershell -File a.ps1`、`./x.sh`；`bash -c "…"` 内联形态不走此门）时，执行前先 `cat` 预读远端内容做**服务端规则扫描**（命令过滤规则 + 脚本专用规则：fork炸弹/`curl|sh`/写裸盘/反弹shell/SSH凭据/清历史/crontab等）：命中危险模式**直接 `status=blocked` 不进审批**；扫描报告（结论/命中行/sha256/助手评估）附在审批弹窗，**脚本形态一律需人工同意**（即使命令行本身无敏感词）。探测读取本身写审计（`category=probe`）。脚本专用内置规则可在 `security.scriptRules` 按标签禁用单条或整体关闭，并可追加自定义危险/可疑正则；`trustedScriptHashes` 可按完整 SHA-256 精确内容放行脚本硬拦截，但**仍强制人工审批**。安全设置页可编辑可信脚本哈希，保存后热生效。被硬拦截的返回会附带完整 `full` SHA-256 与“人工核对后在 设置 → 安全设置 → 脚本风险规则 → 可信脚本哈希 添加”的处理提示。

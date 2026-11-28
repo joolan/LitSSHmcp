@@ -115,7 +115,7 @@ internal static class ToolResultSummaryBuilder
         var budget = Math.Max(40, maxChars - 40);
         if (preferTail)
         {
-            var tail = text.Length > budget ? text[^budget..] : text;
+            var tail = TextTruncate.Tail(text, budget);
             return $"[文本摘要] 约 {nonEmpty} 行，最新片段:\n{tail}";
         }
 
@@ -132,5 +132,5 @@ internal static class ToolResultSummaryBuilder
     }
 
     private static string Truncate(string text, int max) =>
-        text.Length <= max ? text : text[..max] + "…";
+        text.Length <= max ? text : TextTruncate.Head(text, max) + "…";
 }

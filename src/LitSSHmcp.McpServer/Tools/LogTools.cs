@@ -37,7 +37,7 @@ public class LogTools
         [Description("应用标识(ID/名称): 用应用管理里配置的日志路径（tail/grep）")] string? appId = null,
         [Description("按访问 URL 自动解析应用和服务器；与 serverId 二选一，多个后端时需再传 appId")] string? url = null,
         [Description("grep 检索关键字或正则")] string? pattern = null,
-        [Description("tail 返回最后 N 行（默认200）；grep 时忽略")] int lines = 200,
+        [Description("tail 返回最后 N 行（默认200，上限为服务端配置 security.logs.maxLines，超出自动钳制并在结果 Hint 中提示）；grep 时忽略")] int lines = 200,
         [Description("grep 是否忽略大小写（默认true）")] bool ignoreCase = true,
         [Description("grep 返回最近匹配数上限（默认200，上限2000）")] int maxMatches = 200,
         [Description("find 只列最近 N 分钟内修改的文件（默认1440=24小时）")] int minutes = 1440,
@@ -109,16 +109,20 @@ public class LogTools
         if (resolved == null)
             return LogResultDto.Fail(status!, error!);
 
+        var requestedLines = lines;
         lines = Math.Clamp(lines, 1, Math.Max(1, config.Security.Logs.MaxLines));
         var command = $"tail -n {lines} -- {ShellQuote.Single(resolved)}";
-        var outcome = await _runner.RunAsync(serverId, command, cancellationToken);
+        var outcome = await _runner.RunAsync(serverId, command, cancellationToken, 180);
 
         if (!outcome.Success)
             return LogResultDto.Fail(outcome.Status ?? "read_failed",
                 outcome.Error ?? $"读取日志失败: {resolved}（确认文件存在且当前账号有读权限）",
                 outcome.ServerId, outcome.ServerName, outcome.ServerHost);
 
-        return ToLogResult(resolved, pattern: null, outcome);
+        var result = ToLogResult(resolved, pattern: null, outcome);
+        if (requestedLines > lines)
+            result.Hint = $"lines={requestedLines} 超过服务端上限 security.logs.maxLines={config.Security.Logs.MaxLines}，已按上限返回";
+        return result;
     }
 
     public async Task<LogResultDto> LogGrep(
@@ -138,10 +142,11 @@ public class LogTools
         if (string.IsNullOrWhiteSpace(pattern))
             return LogResultDto.Fail("invalid_argument", "检索关键字不能为空。");
 
+        var requestedMatches = maxMatches;
         maxMatches = Math.Clamp(maxMatches, 1, 2000);
         var flag = ignoreCase ? "-i " : string.Empty;
         var command = $"grep -n {flag}-- {ShellQuote.Single(pattern)} {ShellQuote.Single(resolved)} | tail -n {maxMatches}";
-        var outcome = await _runner.RunAsync(serverId, command, cancellationToken);
+        var outcome = await _runner.RunAsync(serverId, command, cancellationToken, 180);
 
         // grep 无匹配时退出码为 1（不是错误）
         if (!outcome.Success && outcome.ExitCode == 1 && string.IsNullOrWhiteSpace(outcome.Output))
@@ -161,7 +166,10 @@ public class LogTools
                 outcome.Error ?? $"检索日志失败: {resolved}（确认文件存在且当前账号有读权限）",
                 outcome.ServerId, outcome.ServerName, outcome.ServerHost);
 
-        return ToLogResult(resolved, pattern, outcome);
+        var grepResult = ToLogResult(resolved, pattern, outcome);
+        if (requestedMatches > 2000)
+            grepResult.Hint = $"maxMatches={requestedMatches} 超过上限 2000，已按上限返回最近 2000 条匹配";
+        return grepResult;
     }
 
     public async Task<LogFileListDto> LogFind(
@@ -189,6 +197,8 @@ public class LogTools
                 return LogFileListDto.Fail("no_allowed_paths", "security.logs.allowedPaths 为空, 无法发现日志。");
         }
 
+        var requestedMinutes = minutes;
+        var requestedMaxResults = maxResults;
         minutes = Math.Clamp(minutes, 1, 10080);
         maxResults = Math.Clamp(maxResults, 1, 500);
 
@@ -196,7 +206,7 @@ public class LogTools
         var command =
             $"find {rootsArg} -type f -name '*.log' -mmin -{minutes} -printf '%T@ %p\\n' 2>/dev/null " +
             $"| sort -rn | head -{maxResults}";
-        var outcome = await _runner.RunAsync(serverId, command, cancellationToken);
+        var outcome = await _runner.RunAsync(serverId, command, cancellationToken, 180);
 
         if (!outcome.Success)
             return LogFileListDto.Fail(outcome.Status ?? "find_failed",
@@ -221,7 +231,7 @@ public class LogTools
                 files.Add(new LogFileDto { Path = pathPart, ModifiedAt = modified });
         }
 
-        return new LogFileListDto
+        var findResult = new LogFileListDto
         {
             Success = true,
             ServerId = outcome.ServerId,
@@ -231,6 +241,19 @@ public class LogTools
             Truncated = outcome.Truncated || files.Count >= maxResults,
             Files = files
         };
+
+        if (requestedMinutes > 10080 || requestedMaxResults > 500)
+        {
+            findResult.Truncated = true;
+            var hints = new List<string>();
+            if (requestedMinutes > 10080)
+                hints.Add($"minutes={requestedMinutes} 超过上限 10080（7 天），已按 10080 返回");
+            if (requestedMaxResults > 500)
+                hints.Add($"maxResults={requestedMaxResults} 超过上限 500，已按 500 返回");
+            findResult.Hint = string.Join("；", hints);
+        }
+
+        return findResult;
     }
 
     /// <summary>
@@ -281,6 +304,7 @@ public class LogTools
         Pattern = r.Pattern,
         Count = r.Count,
         Truncated = r.Truncated,
+        Hint = r.Hint,
         Lines = r.Lines
     };
 
@@ -295,6 +319,7 @@ public class LogTools
         Action = action,
         Count = r.Count,
         Truncated = r.Truncated,
+        Hint = r.Hint,
         Files = r.Files
     };
 

@@ -599,6 +599,7 @@ public sealed class LogResultDto
     public string? Pattern { get; set; }
     public int Count { get; set; }
     public bool Truncated { get; set; }
+    public string? Hint { get; set; }
     public List<string> Lines { get; set; } = new();
 
     public static LogResultDto Fail(string status, string error,
@@ -622,6 +623,7 @@ public sealed class LogFileListDto
     public string? Host { get; set; }
     public int Count { get; set; }
     public bool Truncated { get; set; }
+    public string? Hint { get; set; }
     public List<LogFileDto> Files { get; set; } = new();
 
     public static LogFileListDto Fail(string status, string error,
@@ -642,6 +644,7 @@ public sealed class LogQueryResultDto
     public string? Pattern { get; set; }
     public int Count { get; set; }
     public bool Truncated { get; set; }
+    public string? Hint { get; set; }
     public List<string> Lines { get; set; } = new();
     public List<LogFileDto> Files { get; set; } = new();
 

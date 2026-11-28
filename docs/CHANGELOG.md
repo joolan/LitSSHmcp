@@ -6,6 +6,19 @@
 
 ### 新增
 
+- **harness 强健性第三批（M8/M9/H7 + 精选 P2）**：来自 2026-11-28 第二轮强健性审计的第三批落地。
+  - **Guarded 域命令超时可调（M9）**：`IGuardedCommandService.RunAsync` 新增 `timeoutSeconds` 形参（1-3600），日志类（log_query tail/grep/find、journalctl 服务日志）默认 180s、docker stats/logs 与 java_diagnostics 默认 120s——此前一律 60s，大日志量/慢主机场景必超时。
+  - **log_query 上限披露与钳制提示（M8）**：tail/grep/find 的 `lines`/`maxMatches`/`minutes`/`maxResults` 上限补进工具描述；请求超上限被钳制时结果写入 `Hint`（DTO 新增字段）并置 `Truncated=true`，模型不再把"只返回了 2000 条"当全量。
+  - **并发闸门排队纳入超时预算（H7）**：`ResilientChatClient` 获取并发信号量此前用无界 `WaitAsync(ct)`——上游繁忙时请求无限期挂在排队上，墙钟预算完全失效。现在排队受 `timeoutSeconds` 约束，超时抛可辨识、可重试的 `TimeoutException`。
+  - **docker_query 非 ps 动作 Count 回填（P2-①）**：logs/stats/images 的 `Count` 按输出行数回填（旧实现恒 0，模型会误读为"无容器/无日志"）。
+  - **快照/Redis 只读工具注解补齐（P2-④）**：`ssh_snapshot_get`/`redis_read` 补 `Idempotent=true`；顺带修正 usage_guide 残留的 `db 参数(0..15)` 旧文案。
+  - **spill 错误文案补 json 枚举（P2-⑤）**：非法 action 提示补上 `json`（该枚举本就支持但从未出现在错误指引与描述里）。
+  - **job_result 引导语移入 Hint（P2-⑥）**：任务未完成时旧实现返回 `Success=true + Error=轮询引导语`，误导模型以为出错。现在引导语放 `Hint` 字段。
+  - **job 轮询节奏与 mysql 超时披露（P2-⑧/⑩）**：usage_guide 补「job_status/job_result 未完成时每 5-10 秒轮询、job_events fromSeq 增量续读」「mysql_execute 命令超时默认 30s（数据源 TimeoutSeconds 可调）」。
+  - **ssh_execute_command 领域路由提示（P2-⑨）**：描述改为「Docker/服务/日志/Java 优先领域工具」，docs/TOOLS.md 补领域路由说明，减少用通用命令拼安全链路的绕行调用。
+  - **代理对安全截断（P2-③）**：新增 `TextTruncate.Head/Tail`（切点落在 UTF-16 代理对中间时回退/前进一个字符），替换 AgentSession 工具结果截断（spill 读取/预览/兜底）、检索上下文、ToolResultBudget 摘要等回喂模型上下文的高风险截断——emoji/生僻字日志不再产生非法 UTF-16 导致个别端点 400。
+  - **空 assistant 消息不入历史（P2-⑥harness）**：空响应/纯空白文本的 assistant 消息跳过入历史（steering/追问循环里旧实现会连续累积，污染上下文）。
+  - **源码注释乱码修复（P2-⑨）**：修复 4 处编码损坏注释（`AgentSession` 序列化注释、`AgentEvent.Done` XML doc、nginx 证书采集注释、数据源工作台注释）——其中 XML doc 损坏会污染生成文档。
 - **harness 强健性第二批（QW9-12 + H5/H6 + M4/M5/M6）**：第二批聚焦调用成功率与提示词一致性。
   - **路由表按实际可用工具过滤（H5）**：只读 profile（诊断/资产/问答）裁掉写工具后，系统提示路由表仍在教模型调 `ssh_execute_sudo`/`mysql_execute` 等——模型按提示调用必得「未知工具」失败并白耗熔断配额。现在 `AppendToolRouting` 按会话实际暴露的 MCP 工具名集合过滤：整条路由的工具全部不可用 → 整行剔除；部分不可用 → 行尾加「只读模式下 x 不可用」标注。
   - **滚动摘要按节压缩（H6）**：摘要超预算的旧实现 `summary[^4000..]` 砍头截断，恰好丢掉最早写入的「必须保留：连接方式/路径/凭据线索」节。改为按节压缩：所有摘要块的「必须保留」行聚合置顶，其余节从最新往旧保留到预算耗尽。
